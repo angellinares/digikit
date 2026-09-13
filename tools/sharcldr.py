@@ -4,21 +4,39 @@
 Section 7 is the SHARC DSP image. The ColdFire MAIN OS makes no audio; it
 RPCs parameter changes to this DSP, so anything sound-related lives here.
 
-The blob is NOT a pure boot-stream: only the first 11,248 bytes parse as ADI
-boot-stream blocks, and that prologue is byte-identical between Digitakt II
-1.15C and Digitone II 1.10E, so it is a shared second-stage loader, not
-product code. The product-specific material is everything after it, in a
-format this tool does not decode.
+The blob IS a pure boot-stream, end to end. An earlier reading here said only
+the first 11,248 bytes parse and the rest was "a format this tool does not
+decode" -- that was this parser desyncing, not a change of format. FILL is
+bit 8, not bit 12 (see below), and with it corrected the chain consumes the
+whole section exactly.
 
-The blob begins with an ADI boot-stream: a 16-byte, little-endian, four
-32-bit-field (block_code, target_address, byte_count, argument) header per
-block. A header is valid iff the byte-wise XOR of all 16 header bytes is
-zero -- that is the format's header checksum and the reliable way to find
-block boundaries. block_code bit 12 is FILL: when set, no payload follows
-the header (the block is a zero/constant fill of byte_count bytes);
-otherwise exactly byte_count payload bytes follow. Other block_code bits are
-NOT decoded here -- their ADI semantics have not been verified, so this
-tool only reports them as bitN rather than inventing meanings.
+The blob is an ADI boot-stream: a 16-byte, little-endian, four 32-bit-field
+(block_code, target_address, byte_count, argument) header per block. A header
+is valid iff the byte-wise XOR of all 16 header bytes is zero -- that is the
+format's header checksum and the reliable way to find block boundaries.
+block_code bit 8 is FILL: when set, no payload follows the header (the block
+is a zero/constant fill of byte_count bytes); otherwise exactly byte_count
+payload bytes follow. Other block_code bits are NOT decoded here -- their ADI
+semantics have not been verified, so this tool only reports them as bitN
+rather than inventing meanings.
+
+Why bit 8 and not bit 12, measured rather than argued. Walking with FILL at
+bit 12 stops after 4 blocks at exactly 11,248 bytes on every image tried --
+which is where the "prologue" came from. Walking with FILL at bit 8:
+
+    Digitone II 1.11   95 blocks, 836,956 of 836,956 bytes   exact
+    Digitone II 1.10E  96 blocks, 833,060 of 833,060 bytes   exact
+
+Both terminate on a block whose flags include bit 15, whose target is then an
+entry point rather than a load address, and -- the part that makes this more
+than a curve fit -- **every one of those 95/96 headers still passes the XOR
+check above**, including the 77 that lie beyond the old 11,248-byte cutoff.
+Bit 12 is set on only 2 blocks in the whole image, bit 8 on 37. (Digitakt II
+was not re-tested here for want of an image, but its prologue is the same
+11,248 bytes, which is the same signature.)
+
+This also resolves the discrepancy flagged below: a wrong FILL bit is exactly
+how a walk finds 4 blocks where another tool found 32.
 
 Measured region split, as examples, not universal rules: Digitakt's tail
 (everything after the 11,248-byte prologue) is roughly 56 KB of float-like
@@ -33,9 +51,11 @@ no SHARC, Blackfin or ADSP processor module (verified by listing its
 Processors directory).
 
 A previously circulated figure of "32 blocks, 178,796 of 320,780 bytes
-loaded" does not reproduce with this parser: it finds 4 blocks and 11,184
-payload bytes. That is a discrepancy to re-check, not a claim that either
-figure is right.
+loaded" did not reproduce with this parser, which found 4 blocks and 11,184
+payload bytes. **That discrepancy was this parser's FILL bit**, and it goes
+away with bit 8: a fill block advances the load address without advancing the
+file, so mistaking one for a payload block skips byte_count bytes that were
+never there and lands mid-data.
 
 Alignment analysis of the 10,312-byte loader payload (see `alignment()`)
 finds repeated code motifs landing on even offsets exclusively but spread
@@ -57,7 +77,11 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 HEADER_LEN = 16
-FILL_BIT = 12
+# Bit 8, not bit 12 -- see the module docstring. With bit 12 the walk desyncs
+# after four blocks and stops at 11,248 bytes on every image tried; with bit 8
+# it consumes the whole section exactly and every header still passes the XOR
+# check this file already applies.
+FILL_BIT = 8
 
 # Measured on this firmware's own aPLib-compressed container streams, which
 # is the only honest local definition of "compressed": sections 2/3/7 of
