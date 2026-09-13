@@ -193,7 +193,8 @@ def disassemble(data: bytes, start_offset: int = 0, count: Optional[int] = None,
             if group is not None:
                 reason = (
                     f"word0 matches multi-word group {group} but the second-word test did not "
-                    f"resolve it (word1={word1:#06x} if read); see LENGTH_RULE_MULTIWORD "
+                    f"resolve it (word1={f'{word1:#06x}' if word1 is not None else 'not read'}); "
+                    f"see LENGTH_RULE_MULTIWORD "
                     f"residual_ambiguity for {group}"
                 )
             elif hypotheses:
