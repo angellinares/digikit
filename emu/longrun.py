@@ -34,6 +34,60 @@ USR8, UDR8         = 0xEC070004, 0xEC07000C
 PEND_A, PEND_B = 0x4000141a, 0x400013a6   # sem object is the arg at 4(a7)
 
 
+# `weak_ptr::lock`'s two branches, for `build(weakptr=True)`. The Digitakt II
+# 1.15C addresses are tried first so that build behaves exactly as before; any
+# other firmware is located by the function's shape instead, because a hardcoded
+# address fails loudly and uselessly elsewhere -- on Digitone II 1.11 it reports
+#
+#     weakptr: 0x40188b40 holds 4878, expected 6714
+#
+# where that address is unrelated code.
+_WEAK_BEQ, _WEAK_NOP = bytes.fromhex('6714'), bytes.fromhex('4e71')
+_WEAK_BNE, _WEAK_BRA = bytes.fromhex('660a'), bytes.fromhex('600a')
+_WEAK_DT2 = ((0x40188b40, _WEAK_BEQ, _WEAK_NOP),
+             (0x40188b50, _WEAK_BNE, _WEAK_BRA))
+
+# `_M_add_ref_lock` without the atomic: load the use count, increment, store,
+# test the OLD value, undo if it was zero. The two patched branches bracket it.
+#
+#     67 14           beq.b  +0x14      <- control block null
+#     20 28 00 04     move.l 4(a0),d0   <- use count
+#     22 00           move.l d0,d1
+#     52 81           addq.l #1,d1
+#     21 41 00 04     move.l d1,4(a0)
+#     4a 80           tst.l  d0
+#     66 0a           bne.b  +0x0a      <- old count nonzero, keep it
+_WEAK_SIG = bytes.fromhex('67142028000422005281214100044a80660a')
+
+
+def _weak_sites(main_img, load_addr):
+    """-> ((addr, expected, replacement), ...) for every `weak_ptr::lock` found.
+
+    Digitakt II 1.15C keeps its measured addresses, so that build is unchanged.
+    Everything else is matched by `_WEAK_SIG`; the compiler emits one copy per
+    template instantiation, so several matches are normal and all are patched --
+    `weakptr` is a diagnostic that papers over condition-code corruption, not a
+    fix, and neutralising an instantiation the run never reaches costs nothing.
+    """
+    a, b = _WEAK_DT2
+    if (main_img[a[0] - load_addr:a[0] - load_addr + 2] == a[1]
+            and main_img[b[0] - load_addr:b[0] - load_addr + 2] == b[1]):
+        return _WEAK_DT2
+    sites = []
+    start = 0
+    while True:
+        i = main_img.find(_WEAK_SIG, start)
+        if i < 0:
+            break
+        sites.append((load_addr + i, _WEAK_BEQ, _WEAK_NOP))
+        sites.append((load_addr + i + 0x10, _WEAK_BNE, _WEAK_BRA))
+        start = i + 1
+    if not sites:
+        raise RuntimeError(
+            'weakptr: neither the Digitakt II 1.15C addresses nor the '
+            'weak_ptr::lock signature matched this image')
+    return tuple(sites)
+
 def build(snapshot, send=b'', syx=None, isa='scoped',
           unblock=False, softfloat=False, bitmap=False, on_pixel=None,
           unblock_except=(), edma=True, real_sleep=False, dsp=False,
@@ -445,8 +499,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     if srtrap:
         m.install_srtrap()
     m.install_exceptions()
-    weak_sites = ((0x40188b40, b'\x67\x14', b'\x4e\x71'),
-                  (0x40188b50, b'\x66\x0a', b'\x60\x0a'))
+    weak_sites = _weak_sites(main_img, db.MAIN_LOAD)
     # restore_into merges the snapshot's own mmio entries, and install_mmio
     # registers a hook per address, so it has to come after the merge or a
     # snapshot-carried address would go unhooked.
