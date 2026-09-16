@@ -991,6 +991,7 @@ SYMBOLS = [
     ('job_pump', Sig('4fefffcc48d77c3c246f0038240f2a0a260a068500000014'), False),
     ('display_start', Sig('701041f9fc08c000245f13c1fc050050722313c0fc05001d'), False),
 
+
     # ----------------------------------------------------------------
     # UI-trace hook points: the UI queue, key dispatch to views, and view
     # activate/close. Verified by disassembly on Digitakt II 1.15C (see
@@ -998,7 +999,15 @@ SYMBOLS = [
     # ----------------------------------------------------------------
     ('queue_send',       Fixed(0x40001896, verify='2f0a2f02206f000c'), False),
     ('ui_queue',         Operand('mainloop', at=2), False),
-    ('ui_key_dispatch',  Fixed(0x40033518, verify='4eb9401072bc2f02'), False),
+    # Three inlined call targets, all of which relocate, so Sig's address
+    # masking does the work -- but only with enough bytes around them. The
+    # eight bytes recorded before were `jsr <abs>; move.l %d2,-(%sp)`, which
+    # masks down to two opcodes and matches 1,401 sites on Digitone II 1.11.
+    # 20 bytes is unique on 1.15C, 1.16 and 1.11, and is the longest common
+    # prefix: at 24 the body diverges and 1.16 stops matching.
+    ('ui_key_dispatch',  Sig('4eb9401072bc2f022f2eff804eb9400305182f02'),
+     False),
+
     # The view manager relinked as one block on Digitone II 1.11, moving by
     # +0xedbc. Three of these resolve on their own because their verify bytes
     # are unique; the other three are not unique and take the offset from a
