@@ -651,8 +651,6 @@ SYMBOLS = [
     # screen's frame semaphore here (`pea.l display_sem` before the give);
     # the progress-screen task pends on it once per frame at 0x40126132 as
     # well as at display_wait.
-    ('display_frame_post', Fixed(0x40125f4e, verify='487944e2d1488081'), False),
-    ('display_sem', Operand('display_frame_post', at=2), False),
 
     ('pump_wait', Sig('42002f43002849f94018c0a41f40002c2f034e96'
                       '7001266a002c1f4000304200'), False),
@@ -870,6 +868,15 @@ SYMBOLS = [
     ('main_queue', Operand('mainloop', at=2), False),
     ('job_pump', Sig('4fefffcc48d77c3c246f0038240f2a0a260a068500000014'), False),
     ('display_start', Sig('701041f9fc08c000245f13c1fc050050722313c0fc05001d'), False),
+    # Must follow display_start: the anchor is an offset from it. `pea <abs>.l ;
+    # or.l %d1,%d0` has three sites on Digitone II 1.11 -- one posts frame_sem
+    # (the intro's own, just after intro_pit3_isr), one is unrelated early code,
+    # and the third sits 182 bytes below display_start, which is this one.
+    ('display_frame_post', Reloc(0x40125f4e, '4879........8081',
+                                 anchor='display_start',
+                                 anchor_addr=0x40125f4e + 182), False),
+    ('display_sem',      Operand('display_frame_post', at=2), False),
+
 
     # ----------------------------------------------------------------
     # UI-trace hook points: the UI queue, key dispatch to views, and view
@@ -878,7 +885,15 @@ SYMBOLS = [
     # ----------------------------------------------------------------
     ('queue_send',       Fixed(0x40001896, verify='2f0a2f02206f000c'), False),
     ('ui_queue',         Operand('mainloop', at=2), False),
-    ('ui_key_dispatch',  Fixed(0x40033518, verify='4eb9401072bc2f02'), False),
+    # Three inlined call targets, all of which relocate, so Sig's address
+    # masking does the work -- but only with enough bytes around them. The
+    # eight bytes recorded before were `jsr <abs>; move.l %d2,-(%sp)`, which
+    # masks down to two opcodes and matches 1,401 sites on Digitone II 1.11.
+    # 20 bytes is unique on 1.15C, 1.16 and 1.11, and is the longest common
+    # prefix: at 24 the body diverges and 1.16 stops matching.
+    ('ui_key_dispatch',  Sig('4eb9401072bc2f022f2eff804eb9400305182f02'),
+     False),
+
     # The view manager relinked as one block on Digitone II 1.11, moving by
     # +0xedbc. Three of these resolve on their own because their verify bytes
     # are unique; the other three are not unique and take the offset from a
