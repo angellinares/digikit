@@ -117,6 +117,71 @@ class Fixed:
         return self.addr, 'fixed 0x%08x (RTOS base, byte-identical across builds)' % self.addr
 
 
+class Reloc:
+    """A Digitakt II address that may have moved in another build.
+
+    Resolution goes in three steps, cheapest first. The literal address is
+    tried with its verify bytes, so the reference build resolves with no
+    search at all. Failing that the verify bytes are searched for, and a
+    single match wins.
+
+    Short preambles are often not unique, though, and that is what `anchor`
+    is for: it names a symbol from the same relinked block, and the offset
+    the two addresses had on the reference build is applied to wherever the
+    anchor actually landed. The result is still checked against the verify
+    bytes, so a wrong anchor fails loudly instead of naming plausible code.
+
+    That last step assumes the block relinked as a unit, which is a claim
+    about the build and not a general truth -- the verify is what keeps it
+    honest.
+
+    `verify` takes '..' per wildcard byte, same convention as XrefShape, so a
+    preamble carrying an inlined address that relocates can still be matched
+    on its opcodes."""
+
+    def __init__(self, addr, verify, anchor=None, anchor_addr=None):
+        self.addr = addr
+        self.shape = verify
+        self.n = len(verify) // 2
+        self.anchor = anchor
+        self.anchor_addr = anchor_addr
+
+    def _check(self, img, load_addr, addr):
+        off = addr - load_addr
+        if off < 0 or off + self.n > len(img):
+            return False
+        return _shape_match(img[off:off + self.n], self.shape)
+
+    def _search(self, img):
+        return [i for i in range(len(img) - self.n + 1)
+                if _shape_match(img[i:i + self.n], self.shape)]
+
+    def resolve(self, img, load_addr, got):
+        if self._check(img, load_addr, self.addr):
+            return self.addr, 'fixed 0x%08x, verify matches' % self.addr
+
+        hits = self._search(img)
+        if len(hits) == 1:
+            addr = load_addr + hits[0]
+            return addr, ('moved: unique verify match at 0x%08x (%+#x)'
+                          % (addr, addr - self.addr))
+
+        if self.anchor is None:
+            return None, ('%d verify match(es) for 0x%08x and no anchor to '
+                          'disambiguate' % (len(hits), self.addr))
+        base = got.get(self.anchor)
+        if base is None:
+            return None, "depends on unresolved '%s'" % self.anchor
+        addr = base + (self.addr - self.anchor_addr)
+        if not self._check(img, load_addr, addr):
+            return None, ('%d verify match(es); %s%+#x = 0x%08x does not verify'
+                          % (len(hits), self.anchor, self.addr - self.anchor_addr,
+                             addr))
+        return addr, ('moved: %s%+#x = 0x%08x, verified (%d other candidates '
+                      'rejected)' % (self.anchor, self.addr - self.anchor_addr,
+                                     addr, len(hits) - 1))
+
+
 class Xrefs:
     """Every `jsr <target>` call site (opcode 4EB9 + abs32 operand). Resolves
     to a tuple of call-site (opcode) addresses; unresolved if there are none."""
@@ -814,13 +879,30 @@ SYMBOLS = [
     ('queue_send',       Fixed(0x40001896, verify='2f0a2f02206f000c'), False),
     ('ui_queue',         Operand('mainloop', at=2), False),
     ('ui_key_dispatch',  Fixed(0x40033518, verify='4eb9401072bc2f02'), False),
-    ('view_offer',       Fixed(0x4010ed64, verify='4e90508f4a0067c2'), False),
-    ('view_activate',    Fixed(0x4010dc8a, verify='42004fefffd048d7'), False),
-    ('view_close',       Fixed(0x4010daa2, verify='2f0a246f00084878'), False),
-    ('view_closed_mark', Fixed(0x4010daba, verify='15400030202a002c'), False),
-    ('view_request_pop', Fixed(0x4010e52c, verify='7001206f00041140'), False),
-    ('view_sweep',       Fixed(0x4010ec44, verify='4fefffd048d77c7c'), False),
-    ('ui_tick_inc',      Fixed(0x40110828, verify='52b947dc5a6c2039'), False),
+    # The view manager relinked as one block on Digitone II 1.11, moving by
+    # +0xedbc. Three of these resolve on their own because their verify bytes
+    # are unique; the other three are not unique and take the offset from a
+    # sibling that is, then verify. Order matters -- an anchor must be listed
+    # before whatever anchors to it.
+    ('view_offer',       Reloc(0x4010ed64, '4e90508f4a0067c2'), False),
+    ('view_activate',    Reloc(0x4010dc8a, '42004fefffd048d7'), False),
+    ('view_closed_mark', Reloc(0x4010daba, '15400030202a002c'), False),
+    ('view_close',       Reloc(0x4010daa2, '2f0a246f00084878',
+                               anchor='view_closed_mark',
+                               anchor_addr=0x4010daba), False),
+    ('view_request_pop', Reloc(0x4010e52c, '7001206f00041140',
+                               anchor='view_offer',
+                               anchor_addr=0x4010ed64), False),
+    ('view_sweep',       Reloc(0x4010ec44, '4fefffd048d77c7c',
+                               anchor='view_offer',
+                               anchor_addr=0x4010ed64), False),
+    # addq.l #1,<counter> ; move.l <abs>,%d0 -- the counter operand is BSS and
+    # relocates, so it is wildcarded and the opcodes carry the match. Three
+    # sites have this pair on Digitone II 1.11; the anchor picks the one in
+    # the view manager's block, and it is the same one the opcodes point at.
+    ('ui_tick_inc',      Reloc(0x40110828, '52b9........2039',
+                               anchor='view_offer',
+                               anchor_addr=0x4010ed64), False),
     ('ui_tick_counter',  Operand('ui_tick_inc', at=2), False),
 
     # Every `bra.b $self` (opcode 60FE) -- the RTOS idiom for "nothing to do,
