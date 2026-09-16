@@ -38,6 +38,12 @@ from emu import config
 SET_PIXEL = 0x40104eb4
 GET_PIXEL = 0x40104f80
 
+# The return address of the setPixel call being reported to on_pixel, set just
+# before each callback. Lets a tracer attribute every pixel to the code that
+# drew it -- which routine draws which region of the intro -- without changing
+# on_pixel's four-argument signature that emu/frame.py and emu/gui.py rely on.
+LAST_PIXEL_CALLER = None
+
 
 def _s32(v):
     return v - (1 << 32) if v & 0x80000000 else v
@@ -78,6 +84,8 @@ def install_bitmap(at, stats=None, on_pixel=None, set_pixel=None, get_pixel=None
             word = (word | mask) if (val & 1) else (word & ~mask & 0xFFFFFFFF)
             uc.mem_write(off, SI.pack(word))
             if on_pixel is not None:
+                global LAST_PIXEL_CALLER
+                LAST_PIXEL_CALLER = ret
                 on_pixel(x, y, val & 1, bmp)
         uc.reg_write(UC_M68K_REG_A7, sp + 4)
         uc.reg_write(UC_M68K_REG_PC, ret)
