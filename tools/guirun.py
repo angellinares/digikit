@@ -332,7 +332,17 @@ def main():
         if not state['terminal']:
             state['terminal'] = True
             print('[guirun] TERMINAL LOOP reached at ~%dM' % (state['instrs'] // 1_000_000))
-    at(0x4012d2fa, terminal_hit)
+    # The terminal loop is a `bra.b $self`, and this address is the one measured on
+    # Digitakt II 1.15C. Verify the instruction rather than trust the address: on
+    # Digitone II 1.11 the same address holds ordinary code (move.l %d2,-(%sp)),
+    # the hook fires on a healthy run, and because state['terminal'] breaks the run
+    # loop below, the whole run is abandoned at ~63M with the firmware still in the
+    # intro. A false positive that ends the run is worse than no detector.
+    if bytes(m.uc.mem_read(0x4012d2fa, 2)) == bytes.fromhex('60fe'):
+        at(0x4012d2fa, terminal_hit)
+    else:
+        print('[guirun] no terminal-loop hook: 0x4012d2fa is not a bra.b to '
+              'itself on this build')
 
     def drain_input(pc):
         """Apply queued panel input at a chunk boundary. -> the new PC.
