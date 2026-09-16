@@ -22,6 +22,17 @@ version = "1.10E"
 sha256 = "9881ee5ca4624be2b833e5eb94e294f2f8425371e6729781baccd1c256cac504"
 filename = "Digitone_II_OS1.10E.syx"
 
+# 1.11. Same physical product, so the panel geometry below is unchanged; only
+# the identity hash is new. Verified with tools/panelsweep.py on this build:
+# all 56 (channel, bit) groups in channels 0-6 report code = channel*8 + bit + 1,
+# and the nine encoders report code = channel + 1, matching 1.10E exactly. The
+# one anomaly the sweep flags -- code 0x00 shared by (6, 2) and (6, 3) -- is the
+# same shape as the non-linear channel 6 documented below.
+[[firmware]]
+version = "1.11"
+sha256 = "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"
+filename = "Digitone_II_OS1.11.syx"
+
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
 # Channels 0..5 are linear -- code = channel * 8 + bit + 1, codes 1..48 --
