@@ -4002,3 +4002,30 @@ fields of an existing Bitmap. See the note in `emu/hle.py`.
 The lesson matches the earlier `install_mmio` one, and the fictitious 118x
 above, and the "2.90M ceiling" this section replaces: only trust an A/B where
 the two sides do the same work.
+
+## Panel input: the "encoder accumulator" counts turns since a push, it is not an undrained delta (Digitone II 1.11) **[V][D]**
+
+Relevant to issue #6 (encoder deltas arrive but the value never moves). The
+per-encoder counter at `0x445a0dc4` climbs with every detent and never clears
+under emulation, which read like a missing drain. Reading its only clearing
+code says otherwise.
+
+- The panel MCU's UART stream is dispatched on the wire tag at `0x4011fd5c`:
+  tag 3 accumulates encoder detents, tag 7 is the console block, tag 2 calls
+  `0x4011f9ac`. **[D]**
+- `0x4011f9ac(obj, byte)` is the **button-byte handler for one channel**. For
+  each changed bit it looks the control code up in
+  `0x401f39dc[channel*32 + bit]`. Only codes **41..48 -- ENCODER A..H pressed
+  as buttons** -- reach the clear at `0x4011fbb0` (counter and pending bit).
+  On release (`0x4011fc08`) the push is timestamped if the counter is <= 9: a
+  click versus press-and-turn test. **[D]**
+- So the counter means "detents since this encoder was pushed". It never clears
+  in a test that sends only turns, or button frames for other controls, and
+  that is correct firmware behaviour. **[V]** Five +1 deltas give 5 with the
+  pending bit set; a no-edge frame, a press and a release of channel 0 bit 5
+  (not an encoder push) each leave it at 5; five more give 10.
+- The encoder's own event still reaches the main task's loop with the right
+  code and delta (hooking `queue_send`). So #6's stuck value lies downstream of
+  that loop, in how the page applies a delta, not in panel input. **[O]**
+
+Measured with Digitone II OS 1.11, `boot400M.snap`, `--weakptr --slc`.
