@@ -486,6 +486,10 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
         # overwrite the patch.
         for addr, want, new in weak_sites:
             cur = bytes(m.uc.mem_read(addr, 2))
+            if cur == new:
+                # A snapshot saved from a weakptr run already carries the
+                # patch in its memory; resuming it must not refuse.
+                continue
             if cur != want:
                 raise RuntimeError('weakptr: %#010x holds %s, expected %s'
                                    % (addr, cur.hex(), want.hex()))
