@@ -4017,11 +4017,16 @@ code says otherwise.
   each changed bit it looks the control code up in
   `0x401f39dc[channel*32 + bit]`. Only codes **41..48 -- ENCODER A..H pressed
   as buttons** -- reach the clear at `0x4011fbb0` (counter and pending bit).
-  On release (`0x4011fc08`) the push is timestamped if the counter is <= 9: a
-  click versus press-and-turn test. **[D]**
-- So the counter means "detents since this encoder was pushed". It never clears
-  in a test that sends only turns, or button frames for other controls, and
-  that is correct firmware behaviour. **[V]** Five +1 deltas give 5 with the
+  On release (`0x4011fc08`) the push is timestamped if the counter is <= 9. **[D]**
+- On the instrument, turning an encoder **while it is pushed** changes the value
+  in a coarser, rounder step (for example whole units instead of 0.01; the step
+  is set per control). The owner reports this from the hardware. **[V on
+  hardware]** So the counter plausibly tracks turns made during or since a push,
+  for that coarse mode, and a push released with few turns may count as a click.
+  Which code applies the coarse step has **not** been read. **[O]**
+- The counter clears only on a push of its own encoder. A test that sends only
+  turns, or button frames for other controls, will never clear it, and that is
+  correct firmware behaviour. **[V]** Five +1 deltas give 5 with the
   pending bit set; a no-edge frame, a press and a release of channel 0 bit 5
   (not an encoder push) each leave it at 5; five more give 10.
 - The encoder's own event still reaches the main task's loop with the right
