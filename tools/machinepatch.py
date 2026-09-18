@@ -123,6 +123,8 @@ from unicorn.m68k_const import UC_M68K_REG_A0, UC_M68K_REG_D0, UC_M68K_REG_PC
 from addrtrace import load_main_image
 from mmiotrace import CountingSink
 
+import machineprofile
+
 from emu import symbols
 from emu.dtim import Dtims, Timers
 from emu.harness import PAGE
@@ -224,6 +226,119 @@ PARTS = ('list', 'dispatch', 'group', 'name', 'rank', 'permit', 'hint', 'pertype
 NEW_TYPE = 7    # the one new machine type this tool installs
 
 
+class Anchors:
+    """The image-specific addresses `plan_b` patches, taken from a profile.
+
+    `tools/machineprofile.py` holds these per image, keyed by MAIN OS SHA-256.
+    Its `checks` tuple already carries the expected bytes at the nine
+    load-bearing sites -- the same values this module kept as separate `*_WANT`
+    constants -- so both the address and the bytes come from one `checks` entry
+    and cannot drift apart.
+
+    Cave offsets are deliberately not here. `TRAMP_OFF` and its siblings are
+    this tool's own scratch layout, not firmware structure, so they stay
+    module constants and are the same on every image.
+
+    An anchor the profile does not carry is None rather than absent, and
+    `require()` turns that into an error naming the part and the image. That is
+    how Digitone II, which has no sort comparator and no per-type table, says
+    so instead of planning a write to address None.
+    """
+
+    # (address attribute, expected-bytes attribute, check label, profile key).
+    # The address comes from the named profile field where there is one, so an
+    # image whose anchors are known but whose bytes have not been checked yet
+    # still plans; the expected bytes come from `checks` and are None without
+    # one. `name table lea` has no named field, so that site is reachable only
+    # through its check -- a profile gap worth closing if another image needs it.
+    FROM_CHECKS = (
+        ('DISPATCH', 'DISPATCH_WANT', 'dispatch head', 'dispatch'),
+        ('END_SITE', 'END_WANT', 'list end pea', 'list_end_site'),
+        ('START_SITE', 'START_WANT', 'list start pea', 'list_start_site'),
+        ('GROUP_ADDR', 'GROUP_WANT', 'group bound', 'group_bound'),
+        ('NAME_ADDR', 'NAME_HEAD_WANT', 'name accessor head', None),
+        ('NAME_LEA_ADDR', 'NAME_LEA_WANT', 'name table lea', None),
+        ('RANK_CALL', 'RANK_CALL_WANT', 'rank insert jsr', 'rank_call'),
+        ('PERMIT_BOUND_ADDR', 'PERMIT_BOUND_WANT', 'permit bound', 'permit_bound'),
+        ('PERMIT_LEA_ADDR', 'PERMIT_LEA_WANT', 'permit table lea', 'permit_lea'),
+    )
+
+    # (profile key, attribute): the anchors that are a plain address or count.
+    FROM_FIELDS = (
+        ('descriptor_base', 'DESCRIPTOR_BASE'),
+        ('descriptor_stride', 'DESCRIPTOR_STRIDE'),
+        ('fallback_descriptor', 'FALLBACK_DESCRIPTOR'),
+        ('list_source', 'TABLE_D_LO'),
+        ('name_table', 'NAME_TABLE_SRC'),
+        ('name_table_rows', 'NAME_TABLE_ROWS'),
+        ('name_table_row_bytes', 'NAME_TABLE_ROW_BYTES'),
+        ('rank_insert', 'RANK_INSERT'),
+        ('rank_guard', 'RANK_GUARD'),
+        ('permit_table', 'PERMIT_TABLE_SRC'),
+        ('permit_table_rows', 'PERMIT_TABLE_ROWS'),
+        ('pertype_table', 'PERTYPE_TABLE_SRC'),
+        ('pertype_sites', 'PERTYPE_SITES'),
+        ('cave_a', 'DEFAULT_CAVE'),
+        ('cave_b', 'DEFAULT_CAVE_B'),
+    )
+
+    def __init__(self, profile):
+        self.profile = profile
+        self.name = profile['name']
+        self.count = profile['machine_count']
+        # The new machine takes the next type number after the stock ones, and
+        # every bound this tool raises is raised to exactly that.
+        self.NEW_TYPE = self.count
+        checks = {label: (addr, bytes.fromhex(want))
+                  for addr, want, label in profile['checks']}
+        accessors = profile.get('name_accessors') or ()
+        for addr_attr, want_attr, label, key in self.FROM_CHECKS:
+            checked, want = checks.get(label, (None, None))
+            addr = profile.get(key) if key else None
+            if addr_attr == 'NAME_ADDR' and addr is None and accessors:
+                addr = accessors[0][0]
+            if addr is not None and checked is not None and addr != checked:
+                raise SystemExit(
+                    'machinepatch: %s disagrees with itself: %s is %#010x but '
+                    'its %r check is at %#010x'
+                    % (self.name, key or addr_attr, addr, label, checked))
+            setattr(self, addr_attr, checked if addr is None else addr)
+            setattr(self, want_attr, want)
+        for key, attr in self.FROM_FIELDS:
+            setattr(self, attr, profile.get(key))
+        end = profile.get('list_source_end')
+        self.TABLE_D_HI = None if end is None else end - 1
+        # The other two name-table accessors, as (function, column offset).
+        self.LABEL_FUNCS = tuple(
+            (addr, table - self.NAME_TABLE_SRC) for addr, table in accessors[1:])
+        # `moveq #count,D1; cmp.l D0,D1; bcs.s +4`: the range test that replaces
+        # the stock equality against count - 1.
+        self.GROUP_NEW = bytes([0x72, self.count]) + bytes.fromhex('b2806504')
+        # Entry `clone_of`'s nine descriptor longs. The descriptor array is
+        # bss, so these cannot be read from a static image; a profile that has
+        # not had them captured from a run leaves this None and the caller must
+        # pass spec.fields.
+        self.ENTRY_FIELDS = profile.get('entry_fields')
+
+    def require(self, part, *attrs):
+        """SystemExit naming every anchor this image does not carry."""
+        missing = [a for a in attrs if getattr(self, a, None) is None]
+        if missing:
+            raise SystemExit(
+                'machinepatch: %s carries no %s, so the %r part cannot be '
+                'planned for it. See machineprofile.PROFILES[...]["missing"].'
+                % (self.name, ', '.join(missing), part))
+
+
+def anchors_for(profile=None):
+    """-> Anchors for a profile dict, or for Digitakt II 1.15C by default."""
+    if profile is None:
+        profile = machineprofile.DT2_115C
+    if isinstance(profile, Anchors):
+        return profile
+    return Anchors(profile)
+
+
 @dataclass(frozen=True)
 class MachineSpec:
     """One new machine, type NEW_TYPE. Only one is supported: every bound this
@@ -265,7 +380,8 @@ def spec_from_arg(value):
                         clone_of=clone_of, position=position)
 
 
-def validate_spec(spec):
+def validate_spec(spec, count=7):
+    """SystemExit on a spec that cannot be installed on a `count`-machine image."""
     for field_name in ('name', 'short', 'desc_name', 'desc_short'):
         value = getattr(spec, field_name)
         if not value:
@@ -287,12 +403,12 @@ def validate_spec(spec):
     if len(spec.short) > SHORT_MAX:
         raise SystemExit('machinepatch: spec.short %r is longer than %d chars'
                          % (spec.short, SHORT_MAX))
-    if spec.clone_of not in range(7):
-        raise SystemExit('machinepatch: spec.clone_of must be 0..6, got %r'
-                         % (spec.clone_of,))
-    if spec.position not in range(8):
-        raise SystemExit('machinepatch: spec.position must be 0..7, got %r'
-                         % (spec.position,))
+    if spec.clone_of not in range(count):
+        raise SystemExit('machinepatch: spec.clone_of must be 0..%d, got %r'
+                         % (count - 1, spec.clone_of))
+    if spec.position not in range(count + 1):
+        raise SystemExit('machinepatch: spec.position must be 0..%d, got %r'
+                         % (count, spec.position))
     if spec.fields is not None:
         if len(spec.fields) != 9 or not all(
                 isinstance(f, int) and 0 <= f <= 0xffffffff for f in spec.fields):
@@ -308,23 +424,27 @@ LONGSTR = DEFAULT_SPEC.name.encode('ascii') + b'\x00'
 SHORTSTR = DEFAULT_SPEC.short.encode('ascii') + b'\x00'
 
 
-def build_trampoline(cave_b):
+def build_trampoline(cave_b, profile=None):
+    """The cave dispatch: the new type gets the cave descriptor, a stock type
+    indexes the original array, anything else falls back -- the same forgiving
+    failure mode as the code it replaces."""
+    a = anchors_for(profile)
     desc = cave_b + DESC_OFF
     return (
         bytes.fromhex('202f0004')
-        + bytes.fromhex('7207')
+        + bytes([0x72, a.NEW_TYPE])                 # moveq #new,D1
         + bytes.fromhex('b280')
         + bytes.fromhex('6608')
         + bytes.fromhex('203c') + struct.pack('>I', desc)
         + bytes.fromhex('4e75')
-        + bytes.fromhex('7206')
+        + bytes([0x72, a.count - 1])                # moveq #count-1,D1
         + bytes.fromhex('b280')
         + bytes.fromhex('6510')
-        + bytes.fromhex('123c002c')
+        + bytes.fromhex('123c') + struct.pack('>H', a.DESCRIPTOR_STRIDE)
         + bytes.fromhex('4c010800')
-        + bytes.fromhex('0680') + struct.pack('>I', DESCRIPTOR_BASE)
+        + bytes.fromhex('0680') + struct.pack('>I', a.DESCRIPTOR_BASE)
         + bytes.fromhex('4e75')
-        + bytes.fromhex('203c') + struct.pack('>I', FALLBACK_DESCRIPTOR)
+        + bytes.fromhex('203c') + struct.pack('>I', a.FALLBACK_DESCRIPTOR)
         + bytes.fromhex('4e75')
     )
 
@@ -361,20 +481,22 @@ def build_rank_shim(cave_b, table_len):
     )
 
 
-def build_eq_shim(prefix, reg, match, nomatch):
-    """Replay a site's 4-byte compare; go to `match` if it matched or the type is 7."""
+def build_eq_shim(prefix, reg, match, nomatch, new_type=NEW_TYPE):
+    """Replay a site's 4-byte compare; go to `match` if it matched or the
+    type is the new one."""
     assert len(prefix) == 4
     return (prefix
             + bytes.fromhex('67000012')                     # beq.w match
-            + struct.pack('>HI', 0x0c80 | reg, NEW_TYPE)    # cmpi.l #7,Dreg
+            + struct.pack('>HI', 0x0c80 | reg, new_type)    # cmpi.l #new,Dreg
             + bytes.fromhex('67000008')                     # beq.w match
             + bytes.fromhex('4ef9') + struct.pack('>I', nomatch)
             + bytes.fromhex('4ef9') + struct.pack('>I', match))
 
 
-def build_mask_shim(clone_of, match, nomatch):
-    """FUN_4005cb7c: turn type 7 into clone_of, then replay (type & ~2) == 4."""
-    return (struct.pack('>HI', 0x0c80, NEW_TYPE)            # cmpi.l #7,D0
+def build_mask_shim(clone_of, match, nomatch, new_type=NEW_TYPE):
+    """FUN_4005cb7c: turn the new type into clone_of, then replay
+    (type & ~2) == 4."""
+    return (struct.pack('>HI', 0x0c80, new_type)            # cmpi.l #new,D0
             + bytes.fromhex('6602')                         # bne.b +2
             + bytes([0x70, clone_of])                       # moveq #clone_of,D0
             + bytes.fromhex('72fdc0817204b280')             # moveq #-3,D1; and.l D1,D0; moveq #4,D1; cmp.l D0,D1
@@ -391,63 +513,76 @@ def check_parts(parts):
                             '+'.join(PARTS)))
 
 
-def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
-    """-> [(addr, old, new), ...] in write order. Pure: every byte comes from
-    `read(addr, n) -> bytes` or from the spec, so the same plan can be applied
-    to live guest memory or to a static MAIN OS image."""
+def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC,
+           profile=None):
+    """-> [(addr, old, new), ...] in write order.
+
+    Every byte comes from `read(addr, n) -> bytes` or from the spec, and every
+    address from `profile`, so the same plan can be applied to live guest
+    memory or to a static MAIN OS image, for any image `machineprofile.py`
+    carries anchors for. `profile` defaults to Digitakt II 1.15C, which is what
+    every address in this module used to be hard-coded to.
+
+    One image-specific value is still not in the profile: `ENTRY6_FIELDS`, the
+    nine descriptor longs cloned when `spec.fields` is None. The descriptor
+    array is bss, so it cannot be read from a static image and has to be
+    captured from a run. Pass `spec.fields` explicitly for any image other
+    than 1.15C.
+    """
+    a = anchors_for(profile)
     check_parts(parts)
-    validate_spec(spec)
+    validate_spec(spec, a.count)
     if eighth is None:
-        eighth = NEW_TYPE
+        eighth = a.NEW_TYPE
     writes = []
 
     if 'dispatch' in parts:
-        cur = read(DISPATCH, 6)
-        if cur != DISPATCH_WANT:
+        cur = read(a.DISPATCH, 6)
+        if cur != a.DISPATCH_WANT:
             raise SystemExit(
                 'machinepatch: %#010x holds %s, expected %s'
-                % (DISPATCH, cur.hex(), DISPATCH_WANT.hex()))
+                % (a.DISPATCH, cur.hex(), a.DISPATCH_WANT.hex()))
     if 'list' in parts:
-        for site, want in ((END_SITE, END_WANT), (START_SITE, START_WANT)):
+        for site, want in ((a.END_SITE, a.END_WANT), (a.START_SITE, a.START_WANT)):
             cur = read(site, 6)
             if cur != want:
                 raise SystemExit(
                     'machinepatch: %#010x holds %s, expected %s'
                     % (site, cur.hex(), want.hex()))
     if 'group' in parts:
-        cur = read(GROUP_ADDR, len(GROUP_WANT))
-        if cur != GROUP_WANT:
+        cur = read(a.GROUP_ADDR, len(a.GROUP_WANT))
+        if cur != a.GROUP_WANT:
             raise SystemExit(
                 'machinepatch: %#010x holds %s, expected %s'
-                % (GROUP_ADDR, cur.hex(), GROUP_WANT.hex()))
+                % (a.GROUP_ADDR, cur.hex(), a.GROUP_WANT.hex()))
     if 'name' in parts:
-        cur = read(NAME_ADDR, len(NAME_HEAD_WANT))
-        if cur != NAME_HEAD_WANT:
+        cur = read(a.NAME_ADDR, len(a.NAME_HEAD_WANT))
+        if cur != a.NAME_HEAD_WANT:
             raise SystemExit(
                 'machinepatch: %#010x holds %s, expected %s'
-                % (NAME_ADDR, cur.hex(), NAME_HEAD_WANT.hex()))
-        cur = read(NAME_LEA_ADDR, len(NAME_LEA_WANT))
-        if cur != NAME_LEA_WANT:
+                % (a.NAME_ADDR, cur.hex(), a.NAME_HEAD_WANT.hex()))
+        cur = read(a.NAME_LEA_ADDR, len(a.NAME_LEA_WANT))
+        if cur != a.NAME_LEA_WANT:
             raise SystemExit(
                 'machinepatch: %#010x holds %s, expected %s'
-                % (NAME_LEA_ADDR, cur.hex(), NAME_LEA_WANT.hex()))
+                % (a.NAME_LEA_ADDR, cur.hex(), a.NAME_LEA_WANT.hex()))
     if 'rank' in parts:
-        cur = read(RANK_CALL, len(RANK_CALL_WANT))
-        if cur != RANK_CALL_WANT:
+        cur = read(a.RANK_CALL, len(a.RANK_CALL_WANT))
+        if cur != a.RANK_CALL_WANT:
             raise SystemExit(
                 'machinepatch: %#010x holds %s, expected %s'
-                % (RANK_CALL, cur.hex(), RANK_CALL_WANT.hex()))
+                % (a.RANK_CALL, cur.hex(), a.RANK_CALL_WANT.hex()))
     if 'permit' in parts:
-        cur = read(PERMIT_BOUND_ADDR, len(PERMIT_BOUND_WANT))
-        if cur != PERMIT_BOUND_WANT:
+        cur = read(a.PERMIT_BOUND_ADDR, len(a.PERMIT_BOUND_WANT))
+        if cur != a.PERMIT_BOUND_WANT:
             raise SystemExit(
                 'machinepatch: %#010x holds %s, expected %s'
-                % (PERMIT_BOUND_ADDR, cur.hex(), PERMIT_BOUND_WANT.hex()))
-        cur = read(PERMIT_LEA_ADDR, len(PERMIT_LEA_WANT))
-        if cur != PERMIT_LEA_WANT:
+                % (a.PERMIT_BOUND_ADDR, cur.hex(), a.PERMIT_BOUND_WANT.hex()))
+        cur = read(a.PERMIT_LEA_ADDR, len(a.PERMIT_LEA_WANT))
+        if cur != a.PERMIT_LEA_WANT:
             raise SystemExit(
                 'machinepatch: %#010x holds %s, expected %s'
-                % (PERMIT_LEA_ADDR, cur.hex(), PERMIT_LEA_WANT.hex()))
+                % (a.PERMIT_LEA_ADDR, cur.hex(), a.PERMIT_LEA_WANT.hex()))
 
     if spec.fields is not None:
         fields = spec.fields
@@ -457,9 +592,10 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
         # The descriptor array is bss, so a static-image caller must pass
         # `fields` for any clone other than 6.
         fields = struct.unpack(
-            '>9I', read(DESCRIPTOR_BASE + spec.clone_of * DESCRIPTOR_STRIDE + 8, 36))
+            '>9I', read(a.DESCRIPTOR_BASE + spec.clone_of * a.DESCRIPTOR_STRIDE + 8, 36))
 
-    order = list(ORIGINAL_TABLE)
+    order = list(struct.unpack('>%dI' % a.count,
+                               read(a.TABLE_D_LO, a.count * 4)))
     order.insert(spec.position, eighth)
 
     def add(addr, new):
@@ -467,7 +603,7 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
         writes.append((addr, old, new))
 
     if 'dispatch' in parts:
-        add(cave_b + TRAMP_OFF, build_trampoline(cave_b))
+        add(cave_b + TRAMP_OFF, build_trampoline(cave_b, a))
         add(cave_b + DESC_OFF, build_descriptor(cave_b, fields))
         add(cave_b + LNAME_OFF, build_rep(spec.desc_name))
         add(cave_b + SNAME_OFF, build_rep(spec.desc_short))
@@ -475,12 +611,12 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
     if 'list' in parts:
         tbytes = struct.pack('>8I', *order)
         add(cave_b + TABLE_B_OFF, tbytes)
-        for site, new_ptr in ((START_SITE, cave_b + TABLE_B_OFF),
-                               (END_SITE, cave_b + TABLE_B_OFF + len(tbytes))):
+        for site, new_ptr in ((a.START_SITE, cave_b + TABLE_B_OFF),
+                               (a.END_SITE, cave_b + TABLE_B_OFF + len(tbytes))):
             add(site + 2, struct.pack('>I', new_ptr))
 
     if 'group' in parts:
-        add(GROUP_ADDR, GROUP_NEW)
+        add(a.GROUP_ADDR, a.GROUP_NEW)
 
     if 'name' in parts:
         table_addr = cave_b + NAME_TABLE_OFF
@@ -489,11 +625,11 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
         longstr = spec.name.encode('ascii') + b'\x00'
         shortstr = spec.short.encode('ascii') + b'\x00'
 
-        rows = read(NAME_TABLE_SRC, NAME_TABLE_ROWS * NAME_TABLE_ROW_BYTES)
+        rows = read(a.NAME_TABLE_SRC, a.NAME_TABLE_ROWS * a.NAME_TABLE_ROW_BYTES)
         add(table_addr, rows)
 
         row8 = struct.pack('>III', long_addr, short_addr, 0)
-        row8_addr = table_addr + NAME_TABLE_ROWS * NAME_TABLE_ROW_BYTES
+        row8_addr = table_addr + a.NAME_TABLE_ROWS * a.NAME_TABLE_ROW_BYTES
         add(row8_addr, row8)
 
         add(long_addr, longstr)
@@ -502,9 +638,9 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
         # The bound is the moveq's IMMEDIATE, the second byte of `72 06`, not
         # the opcode byte -- writing at NAME_ADDR itself destroys the
         # instruction.
-        add(NAME_ADDR + 1, b'\x07')
+        add(a.NAME_ADDR + 1, b'\x07')
 
-        add(NAME_LEA_ADDR + 2, struct.pack('>I', table_addr))
+        add(a.NAME_LEA_ADDR + 2, struct.pack('>I', table_addr))
 
     if 'rank' in parts:
         table = build_rank_table(order)
@@ -514,10 +650,10 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
         add(cave_b + RANK_SHIM_OFF, shim)
 
         # The jsr's operand only, not its opcode.
-        add(RANK_CALL + 2, struct.pack('>I', cave_b + RANK_SHIM_OFF))
+        add(a.RANK_CALL + 2, struct.pack('>I', cave_b + RANK_SHIM_OFF))
 
     if 'dispatch' in parts:
-        add(DISPATCH, b'\x4e\xf9' + struct.pack('>I', cave_b))
+        add(a.DISPATCH, b'\x4e\xf9' + struct.pack('>I', cave_b))
 
     if 'permit' in parts:
         slot = cave_b + PERMIT_TABLE_OFF
@@ -526,31 +662,31 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
             raise SystemExit(
                 'machinepatch: cave slot %#010x is not free (holds %s)'
                 % (slot, old.hex()))
-        stock = read(PERMIT_TABLE_SRC, 28)
+        stock = read(a.PERMIT_TABLE_SRC, 28)
         table = stock + stock[spec.clone_of * 4:spec.clone_of * 4 + 4]
         writes.append((slot, old, table))
-        writes.append((PERMIT_LEA_ADDR, PERMIT_LEA_WANT,
+        writes.append((a.PERMIT_LEA_ADDR, a.PERMIT_LEA_WANT,
                        bytes.fromhex('41f9') + struct.pack('>I', slot)))
-        writes.append((PERMIT_BOUND_ADDR, PERMIT_BOUND_WANT,
-                       bytes([0x74, NEW_TYPE])))
+        writes.append((a.PERMIT_BOUND_ADDR, a.PERMIT_BOUND_WANT,
+                       bytes([0x74, a.NEW_TYPE])))
 
     if 'hint' in parts:
         if 'name' not in parts:
             raise SystemExit('machinepatch: hint needs name, whose relocated '
                              'table it fills')
         table_addr = cave_b + NAME_TABLE_OFF
-        for func, column in LABEL_FUNCS:
-            addi = bytes.fromhex('0680') + struct.pack('>I', NAME_TABLE_SRC + column)
-            for addr, want in ((func, NAME_HEAD_WANT), (func + LABEL_ADDI_OFF, addi)):
+        for func, column in a.LABEL_FUNCS:
+            addi = bytes.fromhex('0680') + struct.pack('>I', a.NAME_TABLE_SRC + column)
+            for addr, want in ((func, a.NAME_HEAD_WANT), (func + LABEL_ADDI_OFF, addi)):
                 cur = read(addr, len(want))
                 if cur != want:
                     raise SystemExit('machinepatch: %#010x holds %s, expected %s'
                                      % (addr, cur.hex(), want.hex()))
-            add(func + 1, bytes([NEW_TYPE]))
+            add(func + 1, bytes([a.NEW_TYPE]))
             add(func + LABEL_ADDI_OFF + 2, struct.pack('>I', table_addr + column))
         # The name part leaves row 8's hint 0; give it clone_of's.
-        add(table_addr + NAME_TABLE_ROWS * NAME_TABLE_ROW_BYTES + 8,
-            read(NAME_TABLE_SRC + spec.clone_of * NAME_TABLE_ROW_BYTES + 8, 4))
+        add(table_addr + a.NAME_TABLE_ROWS * a.NAME_TABLE_ROW_BYTES + 8,
+            read(a.NAME_TABLE_SRC + spec.clone_of * a.NAME_TABLE_ROW_BYTES + 8, 4))
 
     if 'pertype' in parts:
         slot = cave_b + PERTYPE_TABLE_OFF
@@ -558,31 +694,33 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC):
         if old != bytes(8):
             raise SystemExit('machinepatch: cave slot %#010x is not free (holds %s)'
                              % (slot, old.hex()))
-        for bound, lea in PERTYPE_SITES:
+        for bound, lea in a.PERTYPE_SITES:
             cur = read(bound, 2)
             if cur[0] & 0xf1 != 0x70 or cur[1] != 6:
                 raise SystemExit('machinepatch: %#010x holds %s, expected moveq #6,Dn'
                                  % (bound, cur.hex()))
             cur = read(lea, 6)
             if (cur[0] & 0xf1 != 0x41 or cur[1] != 0xf9
-                    or cur[2:] != struct.pack('>I', PERTYPE_TABLE_SRC)):
+                    or cur[2:] != struct.pack('>I', a.PERTYPE_TABLE_SRC)):
                 raise SystemExit('machinepatch: %#010x holds %s, expected lea (%#010x).l,An'
-                                 % (lea, cur.hex(), PERTYPE_TABLE_SRC))
-        stock = read(PERTYPE_TABLE_SRC, 7)
+                                 % (lea, cur.hex(), a.PERTYPE_TABLE_SRC))
+        stock = read(a.PERTYPE_TABLE_SRC, 7)
         add(slot, stock + stock[spec.clone_of:spec.clone_of + 1])
-        for bound, lea in PERTYPE_SITES:
-            add(bound + 1, bytes([NEW_TYPE]))
+        for bound, lea in a.PERTYPE_SITES:
+            add(bound + 1, bytes([a.NEW_TYPE]))
             add(lea + 2, struct.pack('>I', slot))
 
     if 'clone' in parts:
         sites = [(addr, bytes.fromhex(want),
-                  build_eq_shim(bytes.fromhex(prefix), reg, match, nomatch))
+                  build_eq_shim(bytes.fromhex(prefix), reg, match, nomatch,
+                                a.NEW_TYPE))
                  for addr, want, prefix, reg, match, nomatch
                  in CLONE_EQ_SITES.get(spec.clone_of, ())]
         if spec.clone_of in CLONE_EQ_SITES:
             addr, want, match, nomatch = CLONE_MASK_SITE
             sites.append((addr, bytes.fromhex(want),
-                          build_mask_shim(spec.clone_of, match, nomatch)))
+                          build_mask_shim(spec.clone_of, match, nomatch,
+                                          a.NEW_TYPE)))
         shim = cave_b + CLONE_SHIM_OFF
         total = sum(len(code) for _, _, code in sites)
         old = read(shim, total)

@@ -166,9 +166,14 @@ emu/panel.py       the framebuffer the firmware actually draws into
 emu/esdhc.py       SD/MMC controller + eMMC (identification only)
 emu/oracle.py      runs the DEVICE'S OWN validators against a candidate image
 docs/HANDOVER.md   current state, what to do next, and the traps that cost time
+docs/TOOLS.md      reverse-engineering tool index and workflow guide
 ```
 
 ## Other tools
+
+See **[docs/TOOLS.md](docs/TOOLS.md)** for the full tool index, including the
+Ghidra, SHARC+ loader/decoder, targeted data-flow, patching, and measurement
+workflows.
 
 ```sh
 uv run python -m dt2.container Digitakt_II_OS1.15C.syx   # section table

@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """tools/framelink.py profiles."""
 
 import os
@@ -21,6 +22,10 @@ class FramelinkTest(unittest.TestCase):
             self.assertEqual(set(prof), KEYS)
             for name in framelink.VARIABLES:
                 self.assertIsInstance(prof[name], int)
+
+    def test_track_9a_table_uses_sram_row_base(self):
+        self.assertIn((0x80003cd0, 0x9a, 16, 'track_9a'), framelink.TABLES)
+        self.assertNotIn((0x80003340, 0x9a, 16, 'track_9a'), framelink.TABLES)
 
     def test_unknown_image_stops(self):
         with tempfile.NamedTemporaryFile(delete=False) as f:

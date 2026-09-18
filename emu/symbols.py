@@ -531,7 +531,10 @@ SYMBOLS = [
     ('ctx_switch', Fixed(0x40000410, verify='46fc27002f48fffc2079'), False),
     # move.l a0,current_tcb inside ctx_switch: the variable still holds the
     # outgoing task, A0 the incoming one (emu/taskprof.py).
-    ('ctx_switch_load', Fixed(0x4000044a, verify='23c847d9adb42288'), False),
+    # The store back to current_tcb is at a stable RTOS address, but its
+    # abs32 operand relocates with the application's RAM layout.  Resolve the
+    # instruction rather than verifying 1.15C's embedded operand.
+    ('ctx_switch_load', Sig('23c847d9adb422884ce8ffff000c4e73', hi=DATA_HI), False),
     ('current_tcb', Operand('ctx_switch', at=0x0a), False),
     ('ready_cursor', Operand('ctx_switch', at=0x16), False),
 
@@ -721,6 +724,9 @@ SYMBOLS = [
     # same offsets from 0x44e26eec.
     ('sd_cmd_sem', Offset('sd_flag', 0x4C), False),
     ('sd_data_sem', Offset('sd_flag', 0x44), False),
+    # SoC eDMA completion for the eSDHC bulk-data channel.  CMD18 waits for
+    # this at sd_flag+0x3c before it waits for sd_data_sem.
+    ('sd_dma_sem', Offset('sd_flag', 0x3C), False),
 
     # ----------------------------------------------------------------
     # The front-panel serial link. There is no memory-mapped key matrix to
@@ -756,9 +762,29 @@ SYMBOLS = [
      Fixed(0x4000243e,
            verify='2f02740f41f9ec09404b1210202f000843f9ec07000042b9'), False),
     ('_uart8_globals', Operand('uart8_init', at=0x18), False),
+    # The globals block begins with the firmware's "TX transfer armed"
+    # flag.  emu.edma's legacy-snapshot kick must read this image-relative
+    # address: it is 0x4094cd74 on DT2 1.15C and 0x40964d74 on 1.16.
+    ('uart8_tx_state', Offset('_uart8_globals', 0), False),
     ('uart8_ring_ptr', Offset('_uart8_globals', 0x10), False),
     ('uart8_consume_idx', Offset('_uart8_globals', 0x30), False),
     ('uart8_rx_callback', Offset('_uart8_globals', 0x40), False),
+
+    # Head of UART8's free-space loop.  The code is stable across DT2
+    # versions while its three globals-block operands relocate, so Sig masks
+    # those operands and refuses ambiguity instead of retaining a 1.15C PC.
+    ('uart8_tx_wait',
+     Sig('24394094cd90d48022794094cd8828394094cd9493c43239fc0454743639fc04',
+         hi=DATA_HI), False),
+
+    # The normal SSI0/eDMA50 completion ISR clears CINT50, sets
+    # INTC1.INTFRCH bit 31 (software source 63), restores its scratch
+    # registers, and returns.  An SSI model may only hand vector 191 over at
+    # this narrow RTE boundary; changing PC from the INTFRCH memory-write hook
+    # is unsafe.  Anchor on the MMIO/OR/tail sequence, then expose the RTE.
+    ('_ssi0_dma_force_tail',
+     Sig('13c1fc04401c81904cd701034fef000c4e73'), False),
+    ('ssi0_dma_force_rte', Offset('_ssi0_dma_force_tail', 0x10), False),
 
     # The factory test mode's own names for the front-panel controls, which
     # is the firmware telling us what each control code means rather than us

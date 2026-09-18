@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """The eSDHC controller and the eMMC behind it.
 
 `0xFC0CC000`, 16 KB, PBC0 slot 51 (RM chapter 25). Reached only when
@@ -46,7 +47,19 @@ written, and `0x4012001e` spins forever -- measured at 36,988,467 reads.
 """
 import struct
 
-from emu.edma import SERQ, TCD_BASE, SADDR, NBYTES, DADDR, CITER, DOFF, BITER, CSR
+from emu.edma import (
+    SERQ,
+    TCD_BASE,
+    SADDR,
+    SOFF,
+    NBYTES,
+    SLAST,
+    DADDR,
+    CITER,
+    DOFF,
+    BITER,
+    CSR,
+)
 
 BASE = 0xFC0CC000
 SIZE = 0x1000
@@ -111,6 +124,7 @@ DRV_STATUS = 0x44E26F1C
 # EXT_CSD is 512 bytes, DMA'd to this buffer by eDMA channel 59; the driver
 # programs DADDR at 0x40120302 and arms the channel at 0x4012037e.
 EXTCSD_BUF = 0x4FE49100
+DMA_CHAN = 59
 
 # Offsets INTO EXT_CSD that this firmware reads. `SLC_OK` is the one that
 # matters: 0x4fe49198 is EXTCSD_BUF + 0x98, so the "MMC NOT IN SLC MODE" flag
@@ -162,6 +176,7 @@ class Card:
         self.selected = False
         # OCR: bit31 power-up done, bit30 sector addressing, voltage window.
         self.ocr = 0xC0FF8080
+        self.overlay = {}
         # CID/CSD as four longwords each, R2 order {RSP3[23:0],RSP2,RSP1,RSP0}.
         self.cid = [0x00000000, 0x00000000, 0x00000000, 0x00110000]
         self.csd = [0x00000000, 0x00000000, 0x00000000, 0x00000000]
@@ -196,18 +211,40 @@ class Card:
             return (~pattern) & 0xFFFFFFFF
         return 0
 
-    def data_for(self, idx):
+    def data_for(self, idx, arg=0, length=None):
         """-> the block of data a data-read command hands back, or None."""
         if idx == 8:                 # SEND_EXT_CSD
             return self.ext_csd
+        if idx == 18:                # READ_MULTIPLE_BLOCK, sector addressed
+            start = arg * 512
+            if length is None:
+                length = max(0, len(self.image) - start) if self.image else 0
+            if self.image is None:
+                data = bytearray(length)
+            else:
+                data = bytearray(self.image[start:start + length])
+                data.extend(b'\0' * (length - len(data)))
+            for offset in range(length):
+                value = self.overlay.get(start + offset)
+                if value is not None:
+                    data[offset] = value
+            return bytes(data)
         return None
+
+    def write_data(self, idx, arg, payload):
+        """Accept block data sent by the host, retaining a sparse overlay."""
+        if idx != 25:                 # WRITE_MULTIPLE_BLOCK
+            return
+        start = arg * 512
+        self.overlay.update((start + offset, value)
+                            for offset, value in enumerate(payload))
 
 
 class Esdhc:
     """The controller. `log` collects (command index, argument) in order."""
 
     def __init__(self, m, card=None, trace=False, drv_status=None,
-                 cmd_sem=None, data_sem=None):
+                 cmd_sem=None, data_sem=None, dma_sem=None):
         from unicorn import UC_HOOK_MEM_WRITE
         self.m = m
         self.uc = m.uc
@@ -216,6 +253,7 @@ class Esdhc:
         self.drv_status = DRV_STATUS if drv_status is None else drv_status
         self.cmd_sem = cmd_sem
         self.data_sem = data_sem
+        self.dma_sem = dma_sem
         self.log = []
         self.pattern = 0           # last word the host wrote to DATPORT
         self.armed = None          # eDMA channel armed via SERQ for this cmd
@@ -247,6 +285,51 @@ class Esdhc:
         # happy with more than one hook on an address.
         self.uc.hook_add(UC_HOOK_MEM_WRITE, self._on_serq,
                          begin=SERQ, end=SERQ)
+
+    def checkpoint_state(self):
+        """Preserve card state that is not represented in guest memory."""
+        return {
+            'type': 'Esdhc',
+            'version': 1,
+            'pattern': self.pattern,
+            'armed': self.armed,
+            'dma_bytes': self.dma_bytes,
+            'card_blocks': self.card.blocks,
+            'card_rca': self.card.rca,
+            'card_selected': self.card.selected,
+            'card_overlay': dict(self.card.overlay),
+        }
+
+    def restore_checkpoint_state(self, state):
+        if state.get('type') != 'Esdhc' or state.get('version') != 1:
+            raise RuntimeError('unsupported Esdhc checkpoint state')
+        if state.get('card_blocks') != self.card.blocks:
+            raise RuntimeError('Esdhc card capacity mismatch')
+        overlay = state.get('card_overlay')
+        if not isinstance(overlay, dict) or any(
+            type(offset) is not int
+            or offset < 0
+            or type(value) is not int
+            or not 0 <= value <= 0xFF
+            for offset, value in overlay.items()
+        ):
+            raise RuntimeError('invalid Esdhc card overlay')
+        armed = state.get('armed')
+        if armed is not None and (type(armed) is not int or not 0 <= armed < 64):
+            raise RuntimeError('invalid Esdhc armed channel')
+        for key in ('pattern', 'dma_bytes', 'card_rca'):
+            if type(state.get(key)) is not int or state[key] < 0:
+                raise RuntimeError('invalid Esdhc checkpoint field %s' % key)
+        if type(state.get('card_selected')) is not bool:
+            raise RuntimeError('invalid Esdhc selected state')
+        self.pattern = state['pattern']
+        # Early v1 checkpoints recorded every SERQ writer, including UART8
+        # channel 35. Only channel 59 can belong to this controller.
+        self.armed = armed if armed == DMA_CHAN else None
+        self.dma_bytes = state['dma_bytes']
+        self.card.rca = state['card_rca']
+        self.card.selected = state['card_selected']
+        self.card.overlay = dict(overlay)
 
     def _post(self, sem):
         """Post an RTOS semaphore, as the eSDHC ISR does on real hardware.
@@ -326,10 +409,15 @@ class Esdhc:
                 self._set_bits(PRSSTAT, BREN)
                 self._set_bits(IRQSTAT, BRR)
                 self._put(DATPORT, self.card.read_word(idx, self.pattern))
-                payload = self.card.data_for(idx)
+                payload = self.card.data_for(idx, arg, self._dma_size())
                 if payload is not None and self.armed is not None:
                     n = self._dma_out(payload)
                     self.armed = None
+                    # Channel 59's completion ISR posts this before the
+                    # eSDHC transfer-complete ISR posts data_sem.  Model the
+                    # two producers separately instead of satisfying every
+                    # blocked wait globally.
+                    self._post(self.dma_sem)
                     if self.trace:
                         print('[esdhc]   CMD%d -> %d bytes by eDMA' % (idx, n))
                 # The bring-up pends on this one after the EXT_CSD DMA read.
@@ -337,6 +425,14 @@ class Esdhc:
             else:                                   # host -> card
                 self._set_bits(PRSSTAT, BWEN)
                 self._set_bits(IRQSTAT, BWR)
+                if self.armed is not None:
+                    payload = self._dma_in()
+                    self.card.write_data(idx, arg, payload)
+                    self.armed = None
+                    self._post(self.dma_sem)
+                    if self.trace:
+                        print('[esdhc]   CMD%d <- %d bytes by eDMA'
+                              % (idx, len(payload)))
                 self._post(self.data_sem)
         # The ISR's bookkeeping. 0x4011fe10 pre-sets this to 1 and returns it
         # after the wait; `unblock` satisfies the wait, so without this the
@@ -354,9 +450,9 @@ class Esdhc:
                   % (idx, arg, xfer, r0))
 
     def _on_serq(self, uc, typ, addr, size, val, data):
-        """Remember which channel is waiting on us. Bit 6 = all channels."""
-        if not (val & 0x40):
-            self.armed = val & 0x3F
+        """Remember when the eSDHC's channel is armed. Bit 6 means all."""
+        if not (val & 0x40) and (val & 0x3F) == DMA_CHAN:
+            self.armed = DMA_CHAN
 
     def _dma_out(self, payload):
         """Push `payload` through the armed channel's TCD, as the eDMA would.
@@ -365,6 +461,8 @@ class Esdhc:
         read over and over -- and DOFF equals NBYTES, so the destination is
         contiguous and this is a straight copy plus TCD bookkeeping.
         """
+        if self.armed is None:
+            return 0
         tcd = TCD_BASE + self.armed * 0x20
         def u32(o):
             return struct.unpack('>I', bytes(self.uc.mem_read(tcd + o, 4)))[0]
@@ -396,6 +494,50 @@ class Esdhc:
         self.uc.mem_write(tcd + CSR, struct.pack('>H', u16(CSR) | 0x80))
         self.dma_bytes += total
         return total
+
+    def _dma_size(self):
+        """Return the armed channel's remaining major-loop byte count."""
+        if self.armed is None:
+            return 0
+        tcd = TCD_BASE + self.armed * 0x20
+        citer = struct.unpack(
+            '>H', bytes(self.uc.mem_read(tcd + CITER, 2))
+        )[0] & 0x7FFF
+        nbytes = struct.unpack(
+            '>I', bytes(self.uc.mem_read(tcd + NBYTES, 4))
+        )[0]
+        return citer * nbytes
+
+    def _dma_in(self):
+        """Pull the armed channel's host buffer into the card."""
+        if self.armed is None:
+            return b''
+        tcd = TCD_BASE + self.armed * 0x20
+
+        def u32(o):
+            return struct.unpack('>I', bytes(self.uc.mem_read(tcd + o, 4)))[0]
+
+        def s32(o):
+            return struct.unpack('>i', bytes(self.uc.mem_read(tcd + o, 4)))[0]
+
+        def u16(o):
+            return struct.unpack('>H', bytes(self.uc.mem_read(tcd + o, 2)))[0]
+
+        def s16(o):
+            return struct.unpack('>h', bytes(self.uc.mem_read(tcd + o, 2)))[0]
+
+        citer, nbytes = u16(CITER) & 0x7FFF, u32(NBYTES)
+        src, soff = u32(SADDR), s16(SOFF)
+        payload = bytearray()
+        for _ in range(citer):
+            payload.extend(self.uc.mem_read(src, nbytes))
+            src += soff
+        src += s32(SLAST)
+        self.uc.mem_write(tcd + SADDR, struct.pack('>I', src & 0xFFFFFFFF))
+        self.uc.mem_write(tcd + CITER, struct.pack('>H', u16(BITER) & 0x7FFF))
+        self.uc.mem_write(tcd + CSR, struct.pack('>H', u16(CSR) | 0x80))
+        self.dma_bytes += len(payload)
+        return bytes(payload)
 
     def _on_datport_write(self, uc, typ, addr, size, val, data):
         """Capture what the host puts in the buffer, for the bus test."""

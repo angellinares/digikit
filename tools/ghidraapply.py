@@ -194,6 +194,14 @@ def apply_seeds(ap, data):
         sites.setdefault(c['target'], []).append(c['site'])
     for target, ss in sorted(sites.items()):
         ap.ensure_function(target, ss)
+    # Addresses only ever taken as a pointer. Ghidra records the data
+    # reference and stops there, so nothing creates a function unless we do.
+    # Seed files written before this existed have no 'pointers' key.
+    psites = {}
+    for p in data.get('pointers', []):
+        psites.setdefault(p['target'], []).append(p['site'])
+    for target, ss in sorted(psites.items()):
+        ap.ensure_function(target, ss)
 
 
 def apply_rtti(ap, data):

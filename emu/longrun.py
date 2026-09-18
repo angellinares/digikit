@@ -34,12 +34,29 @@ USR8, UDR8         = 0xEC070004, 0xEC07000C
 PEND_A, PEND_B = 0x4000141a, 0x400013a6   # sem object is the arg at 4(a7)
 
 
+def register_esdhc_checkpoint_component(machine, events, profile, components):
+    """Install eSDHC and register its host-side card state for snapshots."""
+    from emu.esdhc import Esdhc
+
+    model = Esdhc(
+        machine,
+        drv_status=profile.sd_status,
+        cmd_sem=profile.sd_cmd_sem,
+        data_sem=profile.sd_data_sem,
+        dma_sem=profile.sd_dma_sem,
+    )
+    events['esdhc'] = model
+    components['esdhc'] = model
+    return model
+
+
 def build(snapshot, send=b'', syx=None, isa='scoped',
           unblock=False, softfloat=False, bitmap=False, on_pixel=None,
           unblock_except=(), edma=True, real_sleep=False, dsp=False,
           srtrap=False, weakptr=False, slc=False, sdgate=True, esdhc=True,
           trace=None, trace_path=None, trace_ranges=(), trace_registers=None,
-          deferred_components=(), idle_yield=20000):
+          deferred_components=(), idle_yield=20000, ssi0_request_hz=None,
+          ssi0_legacy_upgrade=False):
     """Stand up a hooked Machine and restore `snapshot` onto it.
 
     -> (m, ev, st, pc, inq, at) where `at(addr, fn)` registers a further
@@ -177,9 +194,10 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
 
     It needs `sdgate=True` to be any use: without the gate the driver is never
     entered and the model is never touched. With both, PRSSTAT goes from
-    36,988,314 reads to 7. Bulk block data is NOT served yet -- CMD18 reads
-    move through the SoC eDMA with SADDR=DATPORT and nothing backs them, so
-    read_blocks returns zeros.
+    36,988,314 reads to 7. CMD18 and CMD25 bulk data moves through SoC eDMA
+    channel 59. An absent backing image reads as zero-filled media; writes
+    are retained in a sparse card overlay and checkpointed so later reads
+    and resumed runs see them.
 
     Both default to True now. Without them the firmware's SD bring-up never
     runs, the storage-ready flag stays 0, and every block-storage read
@@ -190,9 +208,19 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     reaches MAIN_OS_RUNNING both with and without them, so turning them on
     does not regress the previously-working build. Pass sdgate=False and/or
     esdhc=False to get the old unmodelled-storage behaviour back.
+
+    ``ssi0_request_hz`` opts into the separate SSI0/eDMA48/50 event source.
+    The explicit rate is mandatory because the board's external SSI_CLKIN
+    frequency is not recovered. ``ssi0_legacy_upgrade=True`` is the only way
+    to add it to an old checkpoint: the restored guest TCDs are validated,
+    the fresh SSI clock begins at that checkpoint boundary, and subsequent
+    saves carry both a topology manifest entry and an independent component.
+    It is never silently added to legacy snapshots.
     """
     if trace is not None and trace_path is not None:
         raise ValueError('pass either trace or trace_path, not both')
+    if ssi0_legacy_upgrade and ssi0_request_hz is None:
+        raise ValueError('SSI0 legacy upgrade requires an explicit request rate')
     syx = config.firmware(syx)
     flash = db.build_flash(syx)
     # This is intentionally bounded data, not the hook closures themselves.
@@ -205,6 +233,8 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
         'real_sleep': bool(real_sleep), 'unblock_except': tuple(unblock_except),
         'flash_sha256': hashlib.sha256(flash).hexdigest(),
     }
+    if ssi0_request_hz is not None and not ssi0_legacy_upgrade:
+        checkpoint_manifest['ssi0_dma'] = {'request_hz': int(ssi0_request_hz)}
     m = Machine(); st = {'seen': set(), 'n': 0, 'task_create_hits': {}}
     ev = {'tasks': [], 'prints': [], 'setpixel': 0, 'pxcopy': 0,
           'switch': collections.Counter(), 'switch_seq': [],
@@ -352,7 +382,22 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     tx = None
     if edma:                           # see emu/edma.py
         from emu.edma import install as install_edma
-        tx = install_edma(m, at, ev)
+        tx = install_edma(m, at, ev, wait_loop=profile.uart8_tx_wait)
+
+    ssi0 = None
+    if ssi0_request_hz is not None:
+        if profile.ssi0_dma_force_rte is None:
+            raise RuntimeError("SSI0 DMA model requires the force-ISR RTE symbol")
+        from emu.pit import INSTR_PER_SEC
+        from emu.ssi import install as install_ssi0
+        ssi0 = install_ssi0(
+            m,
+            at,
+            ev,
+            request_hz=int(ssi0_request_hz),
+            instr_per_sec=INSTR_PER_SEC,
+            force_rte=profile.ssi0_dma_force_rte,
+        )
 
     if dsp:                            # see emu/dsp.py
         from emu.dsp import install as install_dsp
@@ -455,6 +500,16 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     checkpoint_components: dict[str, Any] = {'uart_in': inq}
     if tx is not None:
         checkpoint_components['edma_tx'] = tx
+    if ssi0 is not None:
+        checkpoint_components['ssi0_dma'] = ssi0
+    if esdhc:
+        # Construct before restore_into: the constructor seeds reset values,
+        # then the snapshot overwrites them with its actual controller state.
+        # Constructing afterward silently reset in-flight register state on
+        # every resume.
+        register_esdhc_checkpoint_component(
+            m, ev, profile, checkpoint_components
+        )
     deferred_restore = DeferredComponentRestore(deferred_components)
 
     def claim_checkpoint_component(name, component):
@@ -481,6 +536,17 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     m._checkpoint_deferred_restore = deferred_restore
     pc = restore_into(m, snapshot, st, components=checkpoint_components,
                       manifest=checkpoint_manifest, deferred=deferred_restore)
+    if ssi0 is not None:
+        if ssi0_legacy_upgrade:
+            assert ssi0_request_hz is not None
+            ssi0.arm_legacy()
+            checkpoint_manifest['ssi0_dma'] = {
+                'request_hz': int(ssi0_request_hz)
+            }
+        elif not ssi0._checkpoint_restored:
+            raise RuntimeError(
+                "SSI0 DMA topology is absent; use an explicit legacy upgrade"
+            )
     if weakptr:
         # After restore_into, or the snapshot's own copy of MAIN OS would
         # overwrite the patch.
@@ -506,18 +572,6 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     if sdgate:
         from emu.gpio import SdGate
         ev['sdgate'] = SdGate(m)
-    if esdhc:
-        from emu.esdhc import Esdhc
-        # drv_status is per image, for the same reason slc_status_addr above
-        # is: the driver struct is at 0x44459024 on Digitone and 0x44e26eec on
-        # Digitakt, and the status word is base+0x30. Leaving it at the module
-        # default writes Digitakt's literal, so on Digitone the word the
-        # command primitive returns is never cleared -- every command reports
-        # "still in progress" and CMD0 takes the -1 exit before CMD1 is ever
-        # reached. Measured: cmd0 returned d0=1 and 0x44459054 stayed 1.
-        # cmd_sem/data_sem are per-image for the same reason.
-        ev['esdhc'] = Esdhc(m, drv_status=profile.sd_status,
-                            cmd_sem=profile.sd_cmd_sem, data_sem=profile.sd_data_sem)
     m.install_mmio()
     if trace_path is not None:
         from emu.trace import JsonlMmioTrace
@@ -530,7 +584,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
             # A stateful checkpoint has the model's pending completions;
             # rerunning its guest-derived transfer duplicates bytes.
             if edma_model.needs_legacy_kick(tx):
-                edma_model.kick(m, tx)
+                edma_model.kick(m, tx, tx_state=profile.uart8_tx_state)
         return m, ev, st, pc, inq, at
     except Exception:
         m.close()
@@ -698,7 +752,7 @@ def _fast_stepper(m):
 
 
 def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
-         fast=False):
+         fast=False, async_events=()):
     """Run in chunks. -> (pc, executed, stop_reason).
 
     Pass `pits` (an emu.pit.Pits) to run to each timer deadline exactly
@@ -709,7 +763,10 @@ def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
     callback counts for nothing but a different chunk size. Only timer
     deadlines may subdivide timer-stepped execution; arbitrary subdivisions
     are unsupported. Servicing the timers is part of this loop when `pits` is given, so do
-    not also service them from `on_chunk`.
+    not also service them from `on_chunk`. `async_events` contains additional
+    exact-deadline sources such as Ssi0Dma. They share the timers' absolute
+    instruction clock but retain independent checkpoint components; the
+    legacy Timers checkpoint topology is not changed.
 
     A `Pits` holds its deadlines as absolute instruction counts, and `done`
     here restarts at zero on every call, so successive calls with the same
@@ -758,6 +815,8 @@ def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
     deferred = getattr(m, '_checkpoint_deferred_restore', None)
     if deferred is not None:
         deferred.require_claimed()
+    if async_events and pits is None:
+        raise ValueError("async event sources require the shared timer clock")
     done, stop = 0, 'limit'
     base = pits.now if pits is not None else 0      # resume, do not rewind
     while done < instrs:
@@ -768,8 +827,16 @@ def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
         # overshoot `instrs` rather than truncating, so every emu_start
         # boundary is a timer deadline no matter how the caller splits its
         # budget. See Pits.step.
-        step = (pits.step(base + done, None) if pits is not None
-                else min(chunk, instrs - done))
+        if pits is not None:
+            steps = [pits.step(base + done, None)]
+            steps.extend(
+                event_step
+                for event in async_events
+                if (event_step := event.step(base + done, None)) is not None
+            )
+            step = min(steps)
+        else:
+            step = min(chunk, instrs - done)
         m.halt_vec = None
         try:
             if fast:
@@ -791,6 +858,8 @@ def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
         done += executed
         if pits is not None:
             pits.now = base + done
+            for event in async_events:
+                event.service(base + done)
             pits.service(base + done)
             # raise_vector moves PC. Resuming at the stale one leaves the
             # exception frame stranded on the stack: the next rts pops it as

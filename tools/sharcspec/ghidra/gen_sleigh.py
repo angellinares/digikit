@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Generate a Ghidra SLEIGH processor module for SHARC+ VISA from decode_table.json.
 
-CLEAN-ROOM: this generator reads ONLY decode_table.json (our validated form/field
-table) and emits SLEIGH source using constructs documented in Ghidra's own SLEIGH
-reference (docs/languages/html/sleigh_*.html). It does not read or copy anything
-from the prior-art SHARC processor module shipped with Ghidra.
+CLEAN-ROOM: this generator reads decode_table.json (our validated form/field
+table) and embeds the UREG names transcribed from the public SHARC+ PRM UREG and
+SYSREG tables (pp. 26-12--26-16). It emits SLEIGH source using constructs
+documented in Ghidra's own SLEIGH reference (docs/languages/html/sleigh_*.html).
+It does not read or copy anything from the prior-art SHARC processor module
+shipped with Ghidra.
 
 ======================================================================
 BIT-MAPPING (the crux of this generator)
@@ -113,12 +115,13 @@ SCOPE (disassembly-first, per task spec)
    explicitly out of scope for this pass (see task spec).
  - Registers: R0-R15 and F0-F15 (separate namespaces, same idea as
    fixed/float aliasing but not literally aliased -- simplification), I0-I15,
-   M0-M15, L0-L15, B0-B15, PC declared. Only the unambiguous 4-bit dreg/cdreg
-   register-index fields are `attach`ed to R0-R15; everything else (ureg,
-   sreg, index-register selects mixed with DAG-group bits, etc.) is left as a
-   raw hex field -- building the full ureg encoding table was judged
-   out-of-scope/speculative for this pass (documented as incomplete).
+   M0-M15, L0-L15, B0-B15, S0-S15, and the UREG system registers are declared.
+   The unambiguous 4-bit dreg/cdreg fields attach to R0-R15, and complete,
+   unsplit 7-bit ureg fields attach to the public-manual UREG table. Other
+   register selects (srcureg/dstureg/cureg, sreg, and index-register selects
+   mixed with DAG-group bits) remain raw hex fields.
 """
+
 import json
 import os
 import re
@@ -166,7 +169,7 @@ def split_by_word(hi, lo):
 # ----------------------------------------------------------------------
 class FieldRegistry:
     def __init__(self):
-        self.by_key = {}       # (word,hi,lo,signed) -> name
+        self.by_key = {}  # (word,hi,lo,signed) -> name
         self.order = {0: [], 1: [], 2: []}  # word -> [(name,hi,lo,signed)]
         self.used_names = set()
 
@@ -243,16 +246,26 @@ def label_base_and_shift(label):
 class Constructor:
     """Holds everything needed to emit one SLEIGH constructor line."""
 
-    def __init__(self, mnemonic, display_ops, word_terms, nwords,
-                 disasm_actions=None, semantic_lines=None, extra_decl=None,
-                 active_words=None):
+    def __init__(
+        self,
+        mnemonic,
+        display_ops,
+        word_terms,
+        nwords,
+        disasm_actions=None,
+        semantic_lines=None,
+        extra_decl=None,
+        active_words=None,
+    ):
         self.mnemonic = mnemonic
-        self.display_ops = display_ops        # list of operand identifiers (for display)
-        self.word_terms = word_terms           # dict word-> [pattern terms]
+        self.display_ops = display_ops  # list of operand identifiers (for display)
+        self.word_terms = word_terms  # dict word-> [pattern terms]
         self.nwords = nwords
-        self.disasm_actions = disasm_actions or []   # lines inside [ ... ]
-        self.semantic_lines = semantic_lines or []   # lines inside { ... }
-        self.extra_decl = extra_decl or []     # e.g. "local tmp:4;" style decls only needed inline
+        self.disasm_actions = disasm_actions or []  # lines inside [ ... ]
+        self.semantic_lines = semantic_lines or []  # lines inside { ... }
+        self.extra_decl = (
+            extra_decl or []
+        )  # e.g. "local tmp:4;" style decls only needed inline
         # Which words get their own explicit ";"-separated pattern group.
         # Normally every word 0..nwords-1 (the default). A branch form whose
         # target subtable's OWN span swallows a MIDDLE word (e.g. Type9a_rel:
@@ -262,7 +275,9 @@ class Constructor:
         # word, and emitting a second explicit group for it would ask SLEIGH
         # to consume those bits twice. See gen_constructor's `swallowed`
         # computation.
-        self.active_words = active_words if active_words is not None else list(range(nwords))
+        self.active_words = (
+            active_words if active_words is not None else list(range(nwords))
+        )
         # Force token consumption even for a word that's entirely "don't
         # care" for this form: reference a full-word wildcard field bare
         # (unconstrained) so SLEIGH still advances past it. Must happen here
@@ -324,7 +339,7 @@ def build_field_terms(form, width, exclude_labels=(), no_bare_labels=()):
         b -= 1
 
     # --- variable fields: bare operand references, split at word boundaries ---
-    field_info = {}   # label -> list of (word, fname, shift, nbits, hi, lo)
+    field_info = {}  # label -> list of (word, fname, shift, nbits, hi, lo)
     for fl in form["fields"]:
         label = fl["label"]
         if label in exclude_labels:
@@ -365,14 +380,30 @@ def reassemble_expr(frags_sorted):
 # their PRM JUMPCLAUSE encode tables: b=0 jump, b=1 call); forms without a
 # call variant (Type25a) just give a fixed `mnemonic` instead.
 BRANCH_FORMS = {
-    "Type8a_abs": dict(target_label="addr", mode="abs", split_field="b",
-                        split_map={0: "jump", 1: "call"}),
-    "Type8a_rel": dict(target_label="reladdr", mode="pcrel", split_field="b",
-                        split_map={0: "jump", 1: "call"}),
-    "Type9a_rel": dict(target_label="reladdr", mode="pcrel", split_field="b",
-                        split_map={0: "jump", 1: "call"}),
-    "Type9b_rel": dict(target_label="reladdr", mode="pcrel", split_field="b",
-                        split_map={0: "jump", 1: "call"}),
+    "Type8a_abs": dict(
+        target_label="addr",
+        mode="abs",
+        split_field="b",
+        split_map={0: "jump", 1: "call"},
+    ),
+    "Type8a_rel": dict(
+        target_label="reladdr",
+        mode="pcrel",
+        split_field="b",
+        split_map={0: "jump", 1: "call"},
+    ),
+    "Type9a_rel": dict(
+        target_label="reladdr",
+        mode="pcrel",
+        split_field="b",
+        split_map={0: "jump", 1: "call"},
+    ),
+    "Type9b_rel": dict(
+        target_label="reladdr",
+        mode="pcrel",
+        split_field="b",
+        split_map={0: "jump", 1: "call"},
+    ),
     # CJUMP is always a delayed call (SHARC+ Core Programming Reference, Type 25a).
     "Type25a_direct": dict(target_label="addr", mode="abs", mnemonic="call"),
     "Type25a_pcrel": dict(target_label="reladdr", mode="pcrel", mnemonic="call"),
@@ -401,7 +432,7 @@ RETURN_FORMS = {
 # High-confidence real mnemonics for otherwise-generic forms.
 NOP_FORMS = {"Type21a": "nop"}
 
-COND_TRUE = 0x1F   # PGR Table 10-4: TRUE (FOREVER)
+COND_TRUE = 0x1F  # PGR Table 10-4: TRUE (FOREVER)
 
 
 def cond_chunk(field_info):
@@ -469,8 +500,9 @@ def get_target_subtable(mode, frag_list, extra_by_word=None):
     frags = list(frag_list)
     if mode == "pcrel" and frags:
         top = frags[0]
-        signed_name = FIELDS.get(top["w"], top["chi"], top["clo"],
-                                  top["label"], signed=True)
+        signed_name = FIELDS.get(
+            top["w"], top["chi"], top["clo"], top["label"], signed=True
+        )
         frags[0] = dict(top, fname=signed_name)
 
     by_word = {}
@@ -491,9 +523,15 @@ def get_target_subtable(mode, frag_list, extra_by_word=None):
     span = words_used[-1] - words_used[0] + 1
     base_name = f"target_{mode}_{total_bits}b_w{words_used[0]}"
     siblings_same_shape = sum(1 for k in SUBTABLES if k[0] == mode and k[1] == shape)
-    name = base_name if not siblings_same_shape else f"{base_name}_v{siblings_same_shape + 1}"
-    text = (f"{name}: target is {pattern} [ target = {rhs}; ] "
-            "{\n    export *[ram]:4 target;\n}\n")
+    name = (
+        base_name
+        if not siblings_same_shape
+        else f"{base_name}_v{siblings_same_shape + 1}"
+    )
+    text = (
+        f"{name}: target is {pattern} [ target = {rhs}; ] "
+        "{\n    export *[ram]:4 target;\n}\n"
+    )
     SUBTABLES[key] = dict(name=name, word=words_used[0], span=span, text=text)
     return name, words_used[0], span
 
@@ -518,11 +556,22 @@ def find_target_fragments(field_info, base_label):
         if base != base_label:
             continue
         exclude.add(label)
-        assert len(chunks) == 1, f"{label}: target field unexpectedly split across words"
+        assert len(chunks) == 1, (
+            f"{label}: target field unexpectedly split across words"
+        )
         w, fname, clo_inword, nbits = chunks[0]
         chi_inword = clo_inword + nbits - 1
-        frags.append(dict(fname=fname, shift=shift, hi=hi, w=w,
-                           chi=chi_inword, clo=clo_inword, label=label))
+        frags.append(
+            dict(
+                fname=fname,
+                shift=shift,
+                hi=hi,
+                w=w,
+                chi=chi_inword,
+                clo=clo_inword,
+                label=label,
+            )
+        )
     # sort fragments most-significant-first using each label's own hi bit
     frags.sort(key=lambda d: -d["hi"])
     return frags, exclude
@@ -567,7 +616,8 @@ def gen_constructor(form):
     if branch_cfg:
         frag_list, target_exclude = find_target_fragments(field_info, target_base_label)
         target_subtable_name, target_word, target_span = get_target_subtable(
-            branch_cfg["mode"], frag_list)
+            branch_cfg["mode"], frag_list
+        )
         # Any word strictly AFTER target_word but still within the
         # subtable's own span is swallowed whole by the bare subtable
         # reference placed at target_word (e.g. Type9a_rel/Type9b_rel's
@@ -619,8 +669,12 @@ def gen_constructor(form):
             display_ops.append(fname)
 
     if dropped_bases:
-        drop_fnames = {fname for label, (base, shift, chunks, hi, lo) in field_info.items()
-                       if base in dropped_bases for w, fname, clo, nbits in chunks}
+        drop_fnames = {
+            fname
+            for label, (base, shift, chunks, hi, lo) in field_info.items()
+            if base in dropped_bases
+            for w, fname, clo, nbits in chunks
+        }
         for w in word_terms:
             word_terms[w] = [t for t in word_terms[w] if t not in drop_fnames]
 
@@ -633,11 +687,14 @@ def gen_constructor(form):
         base, shift, chunks, hi, lo = field_info[split_field_label]
         assert len(chunks) == 1
         w, fname, clo, nbits = chunks[0]
-        for val, mnem in split_cfg["split_map"].items():
+        for val, mnem in split_cfg["split_map"].items():  # pyright: ignore[reportAttributeAccessIssue]
             variants.append((mnem, (w, fname, val)))
     else:
-        mnem = branch_cfg["mnemonic"] if branch_cfg else RETURN_FORMS.get(
-            name, NOP_FORMS.get(name, ident))
+        mnem = (
+            branch_cfg["mnemonic"]
+            if branch_cfg
+            else RETURN_FORMS.get(name, NOP_FORMS.get(name, ident))
+        )
         variants.append((mnem, None))
 
     # Words that get their OWN explicit pattern group: everything except the
@@ -647,10 +704,14 @@ def gen_constructor(form):
     cond = cond_chunk(field_info)
     ctors = []
     for mnem, split_override in variants:
-        has_flow = (bool(branch_cfg) or (bool(indirect_cfg) and mnem == "jump")
-                    or name in RETURN_FORMS)
-        cond_cases = ((True, False) if has_flow and cond and cond[1] in display_ops
-                      else (None,))
+        has_flow = (
+            bool(branch_cfg)
+            or (bool(indirect_cfg) and mnem == "jump")
+            or name in RETURN_FORMS
+        )
+        cond_cases = (
+            (True, False) if has_flow and cond and cond[1] in display_ops else (None,)
+        )
         for cond_true in cond_cases:
             wt = {w: list(terms) for w, terms in word_terms.items()}
             disp_ops = list(display_ops)
@@ -659,9 +720,43 @@ def gen_constructor(form):
                 w, fname, val = split_override
                 wt[w].append(f"{fname}=0x{val:x}")
             if cond_true:
-                w, _fname, clo, nbits = cond
+                w, _fname, clo, nbits = cond  # pyright: ignore[reportGeneralTypeIssues]
                 alias = FIELDS.get(w, clo + nbits - 1, clo, "condtrue")
                 wt.setdefault(w, []).append(f"{alias}=0x{COND_TRUE:x}")
+
+            # Type17 models only the explicit SISD/PEx UREG write.  The manual's
+            # SIMD complementary CUREG write is deliberately deferred.
+            if name == "Type17a":
+                _base, _shift, high_chunks, _hi, _lo = field_info["data[31:16]"]
+                _base, _shift, low_chunks, _hi, _lo = field_info["data[15:0]"]
+                assert len(high_chunks) == len(low_chunks) == 1
+                _w, high, _clo, _nbits = high_chunks[0]
+                _w, low, _clo, _nbits = low_chunks[0]
+                _base, _shift, ureg_chunks, _hi, _lo = field_info["ureg[6:0]"]
+                assert len(ureg_chunks) == 1
+                _w, ureg, _clo, _nbits = ureg_chunks[0]
+                semantic.extend(
+                    [
+                        f"local high16:2 = {high};",
+                        f"local low16:2 = {low};",
+                        "local imm:4 = (zext(high16) << 16) | zext(low16);",
+                        f"{ureg} = imm;",
+                    ]
+                )
+            elif name == "Type17b":
+                _base, _shift, data_chunks, _hi, _lo = field_info["data[15:0]"]
+                assert len(data_chunks) == 1
+                _w, data, _clo, _nbits = data_chunks[0]
+                _base, _shift, ureg_chunks, _hi, _lo = field_info["ureg[6:0]"]
+                assert len(ureg_chunks) == 1
+                _w, ureg, _clo, _nbits = ureg_chunks[0]
+                semantic.extend(
+                    [
+                        f"local imm16:2 = {data};",
+                        "local imm:4 = sext(imm16);",
+                        f"{ureg} = imm;",
+                    ]
+                )
 
             if branch_cfg:
                 # A bare subtable reference in the pattern links the LOCAL symbol
@@ -701,13 +796,21 @@ def gen_constructor(form):
                 subtable_name = target_subtable_name
                 if extra_by_word:
                     subtable_name, _, _ = get_target_subtable(
-                        branch_cfg["mode"], frag_list, extra_by_word)
-                siblings = wt.setdefault(target_word, [])
-                combined = f"({' & '.join(siblings)}) ... & {subtable_name}" if siblings else subtable_name
-                wt[target_word] = [combined]
+                        branch_cfg["mode"], frag_list, extra_by_word
+                    )
+                siblings = wt.setdefault(target_word, [])  # pyright: ignore[reportArgumentType]
+                combined = (
+                    f"({' & '.join(siblings)}) ... & {subtable_name}"
+                    if siblings
+                    else subtable_name
+                )
+                wt[target_word] = [combined]  # pyright: ignore[reportArgumentType]
                 disp_ops = [subtable_name] + disp_ops
-                semantic.append(f"call {subtable_name};" if mnem == "call"
-                                 else f"goto {subtable_name};")
+                semantic.append(
+                    f"call {subtable_name};"
+                    if mnem == "call"
+                    else f"goto {subtable_name};"
+                )
             elif indirect_cfg:
                 # Register-indirect jump/call: no statically resolvable target
                 # (needs the DAG pointer/modify register file -- out of scope
@@ -725,9 +828,17 @@ def gen_constructor(form):
                 semantic.append("return [0:4];")
 
             if cond_true is False:
-                semantic = conditional_semantics(cond[1], semantic)
-            ctors.append(Constructor(mnem, disp_ops, wt, nwords,
-                                      semantic_lines=semantic, active_words=active_words))
+                semantic = conditional_semantics(cond[1], semantic)  # pyright: ignore[reportOptionalSubscript]
+            ctors.append(
+                Constructor(
+                    mnem,
+                    disp_ops,
+                    wt,
+                    nwords,
+                    semantic_lines=semantic,
+                    active_words=active_words,
+                )
+            )
     return ctors
 
 
@@ -755,15 +866,18 @@ CROSSING_RESOLVERS = [
     # (winner form, loser form, [(frame_hi, frame_lo, value), ...],
     #  base label of a winner field to drop from display/pattern because
     #  the resolver's extra constraint exactly subsumes it -- or None)
-    dict(winner="Type7d", loser="Type7b", extra=[(22, 16, 0x3f)],
-         drop_label="compute"),
+    dict(winner="Type7d", loser="Type7b", extra=[(22, 16, 0x3F)], drop_label="compute"),
     # Type21a is now the all-zero word, so it no longer crosses Type22c (bit 32
     # is 0 there and 1 here); the provisional Type21p_undoc16 inherits the
     # crossing, since it fixes bits 47-39 while Type22c fixes 47-40 and bit 32.
-    dict(winner="Type21p_undoc16", loser="Type22c", extra=[(32, 32, 1)], drop_label=None),
+    dict(
+        winner="Type21p_undoc16", loser="Type22c", extra=[(32, 32, 1)], drop_label=None
+    ),
     # Type22a now fixes every bit but `emu`, so Type22c no longer crosses it;
     # the provisional Type22p_undoc48 inherits the crossing as Type21p did.
-    dict(winner="Type22p_undoc48", loser="Type22c", extra=[(32, 32, 1)], drop_label=None),
+    dict(
+        winner="Type22p_undoc48", loser="Type22c", extra=[(32, 32, 1)], drop_label=None
+    ),
 ]
 
 
@@ -779,8 +893,9 @@ def gen_crossing_resolvers(ctors_by_form):
         if spec["drop_label"] is not None:
             # Remove the bare field reference this resolver's extra
             # constraint subsumes (can't be both bare and value-constrained).
-            drop_names = {n for n in FIELDS.used_names
-                          if n.startswith(spec["drop_label"] + "_")}
+            drop_names = {
+                n for n in FIELDS.used_names if n.startswith(spec["drop_label"] + "_")
+            }
             for w in wt:
                 wt[w] = [t for t in wt[w] if t not in drop_names]
             disp_ops = [o for o in disp_ops if o not in drop_names]
@@ -797,8 +912,15 @@ def gen_crossing_resolvers(ctors_by_form):
             const = val & ((1 << (chi - clo + 1)) - 1)
             wt.setdefault(w, []).append(f"{fname}=0x{const:x}")
 
-        resolvers.append(Constructor(base.mnemonic, disp_ops, wt, base.nwords,
-                                      semantic_lines=list(base.semantic_lines)))
+        resolvers.append(
+            Constructor(
+                base.mnemonic,
+                disp_ops,
+                wt,
+                base.nwords,
+                semantic_lines=list(base.semantic_lines),
+            )
+        )
     return resolvers
 
 
@@ -824,12 +946,16 @@ def _identifiers(text):
 def main():
     forms = load_forms()
     visa_forms = [f for f in forms if f["visa"]]
-    print(f"# {len(forms)} total forms, {len(visa_forms)} VISA forms "
-          f"(excluding {len(forms) - len(visa_forms)} ISA-only)", file=sys.stderr)
+    print(
+        f"# {len(forms)} total forms, {len(visa_forms)} VISA forms "
+        f"(excluding {len(forms) - len(visa_forms)} ISA-only)",
+        file=sys.stderr,
+    )
 
     all_ctors = []
     ctors_by_form = {}
     dreg_fields = []  # (word,hi,lo) ranges to attach to R0-R15
+    ureg_fields = []  # (word,hi,lo) ranges to attach to the 7-bit UREG table
 
     for form in visa_forms:
         ctors = gen_constructor(form)
@@ -845,18 +971,83 @@ def main():
             base, _ = label_base_and_shift(fl["label"])
             if base in ("dreg", "cdreg") and (fl["hi"] - fl["lo"] + 1) == 4:
                 for w, chi, clo in split_by_word(fl["hi"], fl["lo"]):
-                    key = (w, chi, clo, False)
+                    key = (w, chi, clo, False, FIELDS.sanitize(base))
                     if key in FIELDS.by_key:
                         dreg_fields.append(FIELDS.by_key[key])
 
     dreg_fields = sorted(set(dreg_fields))
+
+    # Collect only registered, unsplit 7-bit fields whose label base is
+    # exactly `ureg`. The registry key includes that base as its fifth part;
+    # srcureg/dstureg/cureg therefore cannot enter this attachment.
+    for form in visa_forms:
+        for fl in form["fields"]:
+            base, _ = label_base_and_shift(fl["label"])
+            if base != "ureg" or fl["hi"] - fl["lo"] + 1 != 7:
+                continue
+            chunks = split_by_word(fl["hi"], fl["lo"])
+            if len(chunks) != 1:
+                continue
+            w, chi, clo = chunks[0]
+            key = (w, chi, clo, False, FIELDS.sanitize(base))
+            if key in FIELDS.by_key:
+                ureg_fields.append(FIELDS.by_key[key])
+
+    ureg_fields = sorted(set(ureg_fields))
+    ureg_registers = (
+        [f"R{i}" for i in range(16)]
+        + [f"I{i}" for i in range(16)]
+        + [f"M{i}" for i in range(16)]
+        + [f"L{i}" for i in range(16)]
+        + [f"B{i}" for i in range(16)]
+        + [f"S{i}" for i in range(16)]
+        + [
+            "FADDR",
+            "DADDR",
+            "UREG_RESERVED_62",
+            "PC",
+            "PCSTK",
+            "PCSTKP",
+            "LADDR",
+            "CURLCNTR",
+            "LCNTR",
+            "EMUCLK",
+            "EMUCLK2",
+            "PX",
+            "PX1",
+            "PX2",
+            "TPERIOD",
+            "TCOUNT",
+        ]
+        + [
+            "USTAT1",
+            "USTAT2",
+            "MODE1",
+            "MMASK",
+            "MODE2",
+            "FLAGS",
+            "ASTATX",
+            "ASTATY",
+            "STKYX",
+            "STKYY",
+            "IRPTL",
+            "IMASK",
+            "IMASKP",
+            "MODE1STK",
+            "USTAT3",
+            "USTAT4",
+        ]
+    )
+    assert len(ureg_registers) == 128
 
     # ------------------------------------------------------------------
     # Emit sharc_visa.slaspec
     # ------------------------------------------------------------------
     lines = []
     lines.append("# SHARC+ VISA SLEIGH module -- GENERATED by gen_sleigh.py")
-    lines.append("# Clean-room: derived solely from decode_table.json. Do not hand-edit;")
+    lines.append(
+        "# Clean-room: derived from decode_table.json and public PRM UREG/SYSREG tables. Do not hand-edit;"
+    )
     lines.append("# edit gen_sleigh.py and regenerate.")
     lines.append("")
     lines.append("define endian=little;")
@@ -868,34 +1059,86 @@ def main():
     # value, matching how CP1600 (another wordsize=2 Ghidra processor)
     # declares alignment=2. Using 1 here silently made every
     # Disassembler-based disassembly fail with an empty result (see report).
-    lines.append("define alignment=2;   # word-addressed space (see gen_sleigh.py docstring)")
+    lines.append(
+        "define alignment=2;   # word-addressed space (see gen_sleigh.py docstring)"
+    )
     lines.append("")
     lines.append("define space ram type=ram_space size=4 wordsize=2 default;")
     lines.append("define space register type=register_space size=4;")
     lines.append("")
-    lines.append("define register offset=0x000 size=4 [ " +
-                  " ".join(f"R{i}" for i in range(16)) + " ];")
-    lines.append("define register offset=0x040 size=4 [ " +
-                  " ".join(f"F{i}" for i in range(16)) + " ];")
-    lines.append("define register offset=0x080 size=4 [ " +
-                  " ".join(f"I{i}" for i in range(16)) + " ];")
-    lines.append("define register offset=0x0c0 size=4 [ " +
-                  " ".join(f"M{i}" for i in range(16)) + " ];")
-    lines.append("define register offset=0x100 size=4 [ " +
-                  " ".join(f"L{i}" for i in range(16)) + " ];")
-    lines.append("define register offset=0x140 size=4 [ " +
-                  " ".join(f"B{i}" for i in range(16)) + " ];")
+    lines.append(
+        "define register offset=0x000 size=4 [ "
+        + " ".join(f"R{i}" for i in range(16))
+        + " ];"
+    )
+    lines.append(
+        "define register offset=0x040 size=4 [ "
+        + " ".join(f"F{i}" for i in range(16))
+        + " ];"
+    )
+    lines.append(
+        "define register offset=0x080 size=4 [ "
+        + " ".join(f"I{i}" for i in range(16))
+        + " ];"
+    )
+    lines.append(
+        "define register offset=0x0c0 size=4 [ "
+        + " ".join(f"M{i}" for i in range(16))
+        + " ];"
+    )
+    lines.append(
+        "define register offset=0x100 size=4 [ "
+        + " ".join(f"L{i}" for i in range(16))
+        + " ];"
+    )
+    lines.append(
+        "define register offset=0x140 size=4 [ "
+        + " ".join(f"B{i}" for i in range(16))
+        + " ];"
+    )
     lines.append("define register offset=0x180 size=4 [ PC ];")
+    lines.append(
+        "define register offset=0x1c0 size=4 [ "
+        + " ".join(f"S{i}" for i in range(16))
+        + " ];"
+    )
+    lines.append(
+        "define register offset=0x200 size=4 [ "
+        + " ".join(ureg_registers[96:99] + ureg_registers[100:112])
+        + " ];"
+    )
+    lines.append(
+        "define register offset=0x240 size=4 [ "
+        + " ".join(ureg_registers[112:])
+        + " ];"
+    )
     lines.append("")
-    lines.append("define pcodeop condition;   # cond code (PGR Table 10-4) holds; flags not modelled yet")
+    lines.append(
+        "define pcodeop condition;   # cond code (PGR Table 10-4) holds; flags not modelled yet"
+    )
     lines.append("")
 
     for w in range(3):
         lines.append(FIELDS.emit_token(w))
 
     if dreg_fields:
-        lines.append("attach variables [ " + " ".join(dreg_fields) + " ] [ " +
-                      " ".join(f"R{i}" for i in range(16)) + " ];")
+        lines.append(
+            "attach variables [ "
+            + " ".join(dreg_fields)
+            + " ] [ "
+            + " ".join(f"R{i}" for i in range(16))
+            + " ];"
+        )
+        lines.append("")
+
+    if ureg_fields:
+        lines.append(
+            "attach variables [ "
+            + " ".join(ureg_fields)
+            + " ] [ "
+            + " ".join(ureg_registers)
+            + " ];"
+        )
         lines.append("")
 
     # get_target_subtable() registers the plain, no-extra-bits variant for a
@@ -910,36 +1153,60 @@ def main():
     live = [e for e in SUBTABLES.values() if e["name"] in used]
     orphans = sorted(e["name"] for e in SUBTABLES.values() if e["name"] not in used)
     if orphans:
-        print(f"# {len(orphans)} unreferenced subtable(s) not emitted: "
-              + ", ".join(orphans), file=sys.stderr)
+        print(
+            f"# {len(orphans)} unreferenced subtable(s) not emitted: "
+            + ", ".join(orphans),
+            file=sys.stderr,
+        )
 
     if live:
-        lines.append("# ---------------------------------------------------------------------")
-        lines.append("# Shared branch-target subtables (export a sized address varnode so the")
-        lines.append("# control-flow forms below can `goto target;` / `call target;` directly).")
-        lines.append("# ---------------------------------------------------------------------")
+        lines.append(
+            "# ---------------------------------------------------------------------"
+        )
+        lines.append(
+            "# Shared branch-target subtables (export a sized address varnode so the"
+        )
+        lines.append(
+            "# control-flow forms below can `goto target;` / `call target;` directly)."
+        )
+        lines.append(
+            "# ---------------------------------------------------------------------"
+        )
         for entry in live:
             lines.append(entry["text"])
 
-    lines.append("# ---------------------------------------------------------------------")
-    lines.append("# Instruction constructors (one per decode_table.json VISA form; the two")
-    lines.append("# forms flagged as control-flow-with-static-target get real goto/call")
-    lines.append("# p-code, the register-indirect return forms get a generic `return`, and")
+    lines.append(
+        "# ---------------------------------------------------------------------"
+    )
+    lines.append(
+        "# Instruction constructors (one per decode_table.json VISA form; the two"
+    )
+    lines.append(
+        "# forms flagged as control-flow-with-static-target get real goto/call"
+    )
+    lines.append(
+        "# p-code, the register-indirect return forms get a generic `return`, and"
+    )
     lines.append("# everything else is disassembly-only (empty {} body) for this pass.")
-    lines.append("# ---------------------------------------------------------------------")
+    lines.append(
+        "# ---------------------------------------------------------------------"
+    )
     lines.extend(ctor_text)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     slaspec_path = os.path.join(OUT_DIR, "sharc_visa.slaspec")
     with open(slaspec_path, "w") as f:
         f.write("\n".join(lines) + "\n")
-    print(f"wrote {slaspec_path} ({len(all_ctors)} constructors, "
-          f"{sum(len(v) for v in FIELDS.order.values())} fields)", file=sys.stderr)
+    print(
+        f"wrote {slaspec_path} ({len(all_ctors)} constructors, "
+        f"{sum(len(v) for v in FIELDS.order.values())} fields)",
+        file=sys.stderr,
+    )
 
     # ------------------------------------------------------------------
     # Emit .ldefs
     # ------------------------------------------------------------------
-    ldefs = f"""<?xml version="1.0" encoding="UTF-8"?>
+    ldefs = """<?xml version="1.0" encoding="UTF-8"?>
 
 <language_definitions>
    <language processor="SHARC_VISA"

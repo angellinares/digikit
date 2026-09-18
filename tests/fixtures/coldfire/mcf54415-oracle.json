@@ -1,0 +1,155 @@
+{
+  "schema": 1,
+  "source": "mcf54415-oracle.s",
+  "code_hex": "a1c1a2000800a41010c0a81931d2a511ab03af844e7b000c4e7b100d4e7b200e4e7b300f4e7b4009a14200c302c404c54e71",
+  "manual_basis": [
+    "NXP MCF54418RM Rev. 5, Table 3-1 (MCF5441x control-register selectors)",
+    "NXP MCF54418RM Rev. 5, Table 3-4 (ISA-C instruction enhancements)",
+    "NXP MCF54418RM Rev. 5, Chapter 5 (EMAC)",
+    "NXP CFPRM, EMAC and individual instruction descriptions"
+  ],
+  "gnu_oracle": {
+    "release": "GNU Binutils 2.47",
+    "version": "GNU assembler (GNU Binutils) 2.47.20260726",
+    "archive": "binutils-2.47.tar.xz",
+    "archive_url": "https://ftp.gnu.org/gnu/binutils/binutils-2.47.tar.xz",
+    "sha512": "3126a1064374d8da40d4d70630c204ed1e75d542c447d53fca9778c7ceff095c28e9b445e15a313fef9729082d7966471ee6b5b715d479aa6d568528743e1d98",
+    "configure": "configure --target=m68k-elf --disable-nls --disable-werror",
+    "positive_cpus": ["54415", "54418"],
+    "negative_cpu": "5206"
+  },
+  "instructions": [
+    {
+      "offset": 0,
+      "length": 2,
+      "bytes": "a1c1",
+      "gnu": "movclrl %acc0,%d1",
+      "ghidra_current": "movclr.l ACC0, D1",
+      "pcode_contains": ["D1 = emacSaturate(ACC0, MACSR)", "ACC0 = 0x0"]
+    },
+    {
+      "offset": 2,
+      "length": 4,
+      "bytes": "a2000800",
+      "gnu": "macl %d0,%d1,%acc0",
+      "ghidra_current": "mac.l D0, D1, ACC0",
+      "pcode_contains": ["D0 * D1", "ACC0 = ACC0 +"]
+    },
+    {
+      "offset": 6,
+      "length": 4,
+      "bytes": "a41010c0",
+      "gnu": "macw %d0u,%d1u,%a0@,%d2,%acc1",
+      "ghidra_current": "mac.w D0u, D1u, (A0), D2, ACC1",
+      "pcode_contains": ["D0u * D1u", "ACC1 = ACC1 +", "*[ram]A0", "D2 ="]
+    },
+    {
+      "offset": 10,
+      "length": 4,
+      "bytes": "a81931d2",
+      "gnu": "msacw %d2u,%d3u,%a1@+,%d4,%acc3",
+      "ghidra_current": "msac.w D2u, D3u, (A1)+, D4, ACC3",
+      "pcode_contains": ["A1 = A1 + 0x4", "D2u * D3u", "ACC3 = ACC3 -", "D4 ="]
+    },
+    {
+      "offset": 14,
+      "length": 2,
+      "bytes": "a511",
+      "gnu": "movel %acc1,%acc2",
+      "ghidra_current": "move.l ACC1, ACC2",
+      "pcode_contains": ["ACC2 = ACC1"]
+    },
+    {
+      "offset": 16,
+      "length": 2,
+      "bytes": "ab03",
+      "gnu": "movel %d3,%accext01",
+      "ghidra_current": "move.l D3, ACCext01",
+      "pcode_contains": ["ACCext01 = D3"]
+    },
+    {
+      "offset": 18,
+      "length": 2,
+      "bytes": "af84",
+      "gnu": "movel %accext23,%d4",
+      "ghidra_current": "move.l ACCext23, D4",
+      "pcode_contains": ["D4 = ACCext23"]
+    },
+    {
+      "offset": 20,
+      "length": 4,
+      "bytes": "4e7b000c",
+      "gnu": "movec %d0,%acr4",
+      "ghidra_current": "movec D0,UNK_CTL_0xc",
+      "ghidra_target": "movec D0,ACR4"
+    },
+    {
+      "offset": 24,
+      "length": 4,
+      "bytes": "4e7b100d",
+      "gnu": "movec %d1,%acr5",
+      "ghidra_current": "movec D1,UNK_CTL_0xd",
+      "ghidra_target": "movec D1,ACR5"
+    },
+    {
+      "offset": 28,
+      "length": 4,
+      "bytes": "4e7b200e",
+      "gnu": "movec %d2,%acr6",
+      "ghidra_current": "movec D2,UNK_CTL_0xe",
+      "ghidra_target": "movec D2,ACR6"
+    },
+    {
+      "offset": 32,
+      "length": 4,
+      "bytes": "4e7b300f",
+      "gnu": "movec %d3,%acr7",
+      "ghidra_current": "movec D3,UNK_CTL_0xf",
+      "ghidra_target": "movec D3,ACR7"
+    },
+    {
+      "offset": 36,
+      "length": 4,
+      "bytes": "4e7b4009",
+      "gnu": "movec %d4,%rgpiobar",
+      "ghidra_current": "movec D4,UNK_CTL_0x9",
+      "ghidra_target": "movec D4,RGPIOBAR"
+    },
+    {
+      "offset": 40,
+      "length": 2,
+      "bytes": "a142",
+      "gnu": "mov3ql #-1,%d2",
+      "ghidra_current": "mov3q #-0x1, D2",
+      "pcode_contains": ["D2 = 0xffffffff"]
+    },
+    {
+      "offset": 42,
+      "length": 2,
+      "bytes": "00c3",
+      "gnu": "bitrev %d3",
+      "ghidra_current": "bitrev D3"
+    },
+    {
+      "offset": 44,
+      "length": 2,
+      "bytes": "02c4",
+      "gnu": "byterev %d4",
+      "ghidra_current": "byterev D4"
+    },
+    {
+      "offset": 46,
+      "length": 2,
+      "bytes": "04c5",
+      "gnu": "ff1 %d5",
+      "ghidra_current": "ff1 D5"
+    },
+    {
+      "offset": 48,
+      "length": 2,
+      "bytes": "4e71",
+      "gnu": "nop",
+      "ghidra_current": "nop"
+    }
+  ]
+}

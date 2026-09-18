@@ -813,6 +813,50 @@ five machine patches; instruction counts start at 0 there.
   `0x401e36f8` → typeinfo `0x401e36b4` → `"20MachineSelectionView"`.
   **[V]**
 
+### A1 FUNC+SRC A/B is repeatable across state and profile lanes **[V]**
+
+`experiments/a1-func-src.json` was run from `snapshots/postintro.snap` against
+1.15C (`62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c`)
+as `out/experiments/a1-func-src/a1-real-002/`.  It delivered the raw FUNC/SRC
+sequence `2201`, `2002`, `2000`, `2200`, requested an observation while the
+chord was held at 14.4M, and ended at 40M.  Two fresh repeats of each
+baseline/manipulated case passed in both the non-perturbing state lane and the
+separately perturbing profile lane.  Every child returned zero, touched zero
+fault pages, saved at the same actual boundaries (14,664,427 and 40,388,243),
+and repeated its case's snapshot, panel, UiTrace and block-profile bytes.
+
+- The four manipulated feeds landed repeatably at 624,018, 8,736,192,
+  20,592,235 and 28,704,264 instructions.  UiTrace then shows a queue-send of
+  `SRC(2) 0x03`, activation of `MachineSelectionView`, no subsequent SRC
+  release/repeat or MachineSelectionView close, and a later queue-send of
+  `FUNC(17) 0x00`.  This is the low-backlog behaviour described above: the
+  raw `2000` proves SRC-up delivery, while the firmware suppresses its queued
+  `0x12` release after the view activates.
+- At observation, the state panels are repeatable 1,024-byte buffers and 772
+  bytes differ across cases.  The baseline is the normal track page; the
+  manipulated frame is the open `MACHINE SEL > TRACK 1` list.  The latest
+  untorn-frame latches were 14,554,643 (baseline) and 9,048,263
+  (manipulated), both before the 14,664,427 observation save.
+- The configured on-chip SRAM range `0x80000000..0x80010000` differs by zero
+  bytes at both observation and final endpoint.  A provenance-bound sweep of
+  every mapped snapshot page instead finds 4,487 changed bytes on 13 of 134
+  pages at observation and 4,413 bytes on 13 pages at the endpoint; see
+  `mapped-page-diff.json` in the run directory.  These broader differences
+  are state-lane evidence, but are not yet producer ownership.
+- The perturbing profile lane has 16 baseline versus 57 manipulated UiTrace
+  events.  Its address-sorted basic-block-entry profiles contain 11,749 versus
+  12,351 `(address, hit-count)` tuples, with 1,416 baseline-only and 2,018
+  manipulated-only tuples.  This is scoped dynamic call/view and block-entry
+  evidence, not instruction coverage or a complete call graph.
+
+The earlier `a1-real-001` artifacts are diagnostic only: their state/profile
+bytes were already repeatable, but the report rejected every panel because it
+compared an absolute restored timer clock with run-relative save counts.
+`guirun.py` now records the live hook-time clock relative to the resumed run's
+timer origin; `a1-real-002` is the accepted run.  The report and the raw
+snapshot, panel and profile bytes were checked independently before this was
+marked verified.
+
 ### Raising the timer rate after boot drains the UI queue **[V][O][C][D]**
 
 `tools/guirun.py --ips-at WHEN:N` changes the timers' instructions per
@@ -1155,10 +1199,19 @@ Ghidra or disassembly output and it was not re-checked.
   When the counter at `0x4028ac90` is zero, it calls
   `FUN_400cf9c4(0x802, 0x80005348, 0xabc, 0x8000488c)` at `0x4002d6ba`.
   **[V]**
-- Channel 50 is SSI0 transmit, and the RM lists INTC1 source 63 as not
-  used. No instruction reloads `0x4028ac90` by a literal address. What
-  raises source 63, and how many exchanges run per second, is not known.
-  **[D][O]**
+- **Correction: the vector-191 producer is now identified.** Channel 50 is
+  SSI0 transmit, but its major-loop completion is INTC1 source 42/vector 170,
+  not source 63. The RM lists source 63 as unused hardware and documents bit
+  31 of `INTFRCH1` (`0xFC04C010`) as its software-force bit. On 1.16,
+  initialization arms TCD48/TCD50, writes SERQ 48 and 50, and initially
+  installs the generic vector-170 handler `0x400d2f98`. It also retains
+  `0x4002d322` as the later channel-50 ISR. That ISR writes 50 to
+  `EDMA_CINT` at `0x4002d35a`, then sets `INTFRCH1` bit 31 at `0x4002d360`.
+  Vector 191 enters `0x4002dd0c` and clears the force bit at `0x4002dd30`.
+  The same chain is present at relocated addresses in 1.15C. Thus the real
+  cadence is SSI0-paced eDMA50 completion -> vector 170 -> software-forced
+  vector 191. No instruction reloads the frame gate counter by its literal
+  address, so the exchange cadence and counter reload remain open. **[V][C][O]**
 - `FUN_400cf9c4` is a DSPI2 (`0xEC038000`) send and receive driver using
   eDMA channels 28 and 29. `FUN_400cf67c` sets CTAR0 to `0xFA010000`
   (16-bit frames). Each PUSHR entry is `0x8001xxxx` (CONT, PCS0). The last
@@ -1215,10 +1268,49 @@ Ghidra or disassembly output and it was not re-checked.
   they were not traced one by one. So "stock engine and own parameters" for
   a new sample machine is still open. No engine id has been found in the
   frame. **[D][O]**
-- The handler cannot run in the emulator today. Vector 191 is never
-  raised. DSPI2, SSI0 and eDMA channels 28, 29 and 50 are not modelled:
-  `emu/edma.py` handles channel 35 only, and `0xEC03802C` is a constant.
-  **[V]**
+- The 1.16 post-gesture checkpoint's SSI0 configuration is externally
+  clocked: `MISCCR=0`, `CDRH=0`, `TCR=0x82` (FIFO0 enabled, external bit
+  clock and frame sync), `RCR=0x482`, and `CCR=0x16f00` (24-bit words,
+  16 words per frame). `TMASK=RMASK=0xffff0000`; `FCSR=0x88` sets the FIFO0
+  receive and transmit watermarks to eight words. TCD48/50 minor loops are
+  32 bytes, so one DMA request accounts for eight serial words and a 64-minor
+  major loop accounts for 512 words. The external `SSI_CLKIN`/frame frequency
+  is not captured, so there is no defensible numeric request-rate default;
+  for a continuous stream the request rate is external bit clock / (24*8),
+  or twice the frame rate with all 16 slots active. **[D][O]**
+- The same checkpoint has no `0x007fffff` row head among the 32 entries in
+  any of `0x4fe57100`, `0x4fe57900`, `0x4fe58100`, or `0x4fe58900`; all are
+  zero. The generic vector-170 handler at `0x400d2f98` acknowledges CINT50,
+  scans the currently completed RX bank for that marker, increments
+  `0x43153a20` only when the marker is at index zero, and installs the pending
+  `0x43153a28` callback into vector slot `0x400002a8` only after that counter
+  exceeds 63. At this checkpoint the counter is zero, the pending callback is
+  `0x4002d322`, and the slot still contains the generic handler. This is the
+  missing external RX synchronization/handover, not merely a missing TX DMA
+  tick. A second agent checked the marker scan, threshold, row heads, globals,
+  and vector slot against the 1.16 bytes/restored pages. **[V][O]**
+- `emu/ssi.py` now supplies an opt-in, exact-deadline event source for only
+  TCD48/TCD50. It models the observed 32-byte minors, 64-minor completion,
+  scatter/gather reload and vector 170; preserves RX destination bytes rather
+  than inventing peer data; lets the guest CINT50/`INTFRCH1[31]` ISR run; and
+  hands vector 191 over only at that ISR's image-resolved RTE boundary. Its
+  request rate is mandatory, its checkpoint component is separate from the
+  version-1 PIT/DTIM layout, and adding it to a legacy checkpoint requires an
+  explicit upgrade. **[D]**
+- At the explicitly exploratory 48,000-request/s profile,
+  `out/experiments/ssi0-dma/control-001/` reaches the generic vector-170
+  handler 16 times in 400,140 exact instructions with zero fault pages. A
+  clean and narrow-traced run produce byte-identical endpoint snapshots
+  (`11f81e1c...`). They correctly do not reach `0x4002d322` or vector 191,
+  because no external RX marker was supplied. The separate
+  `vector-chain-control-001` host-patches only the vector-170 slot and, at a
+  separate 1,000-request/s exploration rate, records two each of the normal
+  vector-170 ISR and vector 191, proving the model's
+  CINT/force handoff as calibration, not natural behavioral provenance. No RX
+  or SHARC payload was synthesized. **[D][O]**
+- DSPI2 and eDMA channels 28/29 remain outside a general peripheral model:
+  `emu/edma.py` handles UART8 channel 35, `emu/ssi.py` narrowly handles SSI0
+  channels 48/50, and `0xEC03802C` is still a constant. **[V][O]**
 - Ruled out as the control link **[D]**:
   - FlexBus `0x8C000000` (`FUN_400cfd40`, callers `FUN_40146148`,
     `FUN_4014653c`, `FUN_401465a4`) carries sample pages and slot headers
@@ -1645,8 +1737,8 @@ one-cycle-delayed double buffer, not build-then-send. **[D]**
   The handler addresses a row as `0x80003340 + i*0x9a` plus a `+0x990`
   displacement, and `0x80003340 + 0x990 = 0x80003cd0`; the base register, not
   the table, sits at `0x80003340`. `tools/framelink.py`'s `TABLES` entry
-  `(0x80003340, 0x9a, 16, 'track_9a')` therefore names the wrong 2,464 bytes:
-  the rows run `0x80003cd0`-`0x80004670`. Not yet corrected in the tool.
+  `(0x80003340, 0x9a, 16, 'track_9a')` therefore named the wrong 2,464 bytes:
+  the rows run `0x80003cd0`-`0x80004670`; the tool now uses the corrected base.
   **[C][O]**
 - `FUN_4002d438`'s `0x8e`-byte copy goes to `0x80003362 + track*0x8e`, from
   `src + 0x14`. Whether that is the same structure as the
@@ -1671,6 +1763,407 @@ one-cycle-delayed double buffer, not build-then-send. **[D]**
   of that table as consecutive small integers came from using load base
   `0x40000000` instead of `0x40000400`, and is withdrawn. Both images load at
   `0x40000400`. **[V][C]**
+
+#### The SRAM row refreshes only when the track's source pointer changes **[V]**
+
+Step 1a of the 2026-09-16 handover asked whether a machine commit reaches
+`FUN_4002d438` or whether the row only refreshes on a pattern load. The front
+half of the chain is now mapped. Three agents read it independently, by
+decompile, by disassembly and by a raw-image scan, and agree.
+
+`FUN_4002d438(src, track)` is a wholesale resync, not an incremental one, and
+it caches the pointer it last synced from: **[V]**
+
+```
+*(int *)(&DAT_80003340 + (track + 0x4f3) * 4) = src;          /* 0x4002d47a */
+FUN_401360ac(track * 0x8e + -0x7fffcc9e, src + 0x14, 0x8e);   /* the 0x8e mirror */
+FUN_401360ac(&DAT_80003cd0 + track * 0x9a, src + 0xa2, 0x9a); /* the DSP row */
+FUN_400d9000();
+```
+
+`0x80003340 + 0x4f3*4 = 0x8000470c`, so the cache is sixteen longs at
+`0x8000470c`-`0x8000474b`. The compiler materialises that address directly, as
+`lea (-0x7fffb8f4).l`, in the two places that clear the whole array, which
+confirms the arithmetic independently of the decompiler. **[V]**
+
+The vector-191 handler calls `FUN_4002d438` only on a cache miss, and takes a
+different path on a hit (`decomp/4002dd0c_vector_191_handler.c`, around
+`0x4002e50c`-`0x4002e574`): **[V]**
+
+```
+if (iVar4 != *(int *)(&DAT_80003340 + (uVar17 + 0x4f3) * 4)) {
+LAB_4002e572:
+    FUN_4002d438(iVar4,uVar17);           /* pointer identity changed */
+    goto LAB_4002e578;
+}
+if (*(int *)(&DAT_80003340 + (uVar17 + 0x4f3) * 4) == 0) {
+    iVar4 = _DAT_80004704 + uVar17 * 0x450 + 0x34;
+    goto LAB_4002e572;                    /* slot zeroed: forced refresh */
+}
+FUN_400d90ac(uVar17,&DAT_80003340,*(int *)(&DAT_80003340 + (uVar17 + 0x4f3) * 4));
+```
+
+A zero in a slot is therefore an **invalidate**: it forces a full row refresh
+on the next frame.
+
+The steady-state path `FUN_400d90ac` cannot change the machine type. It walks a
+per-track dirty bitmask at `0x47db461c + track*0xc` (three words, up to 96
+bits) and, for each set bit, copies one short from `src + 0x14 + idx*2` into
+the `0x8e` mirror at `0x80003362 + track*0x8e` and into a DSP fixed-point table
+at `0x8000dd40`. It never addresses `0x80003cd0` and never reads `src + 0xa2`:
+its whole domain is source offsets `0x14`-`0xa1`, and the machine type is at
+`0xa2`. Its dirty bits are set by `FUN_400d9204`, which the same handler calls
+twice per interrupt when a queued parameter-edit event is present. **[V]**
+
+Every writer of the cache, found three ways -- Ghidra `data_refs`, a `disasm/`
+grep for both `8000 470c` and the `addi.l #0x4f3` displacement, and
+`tools/refscan.py` over the raw image at 96.78% coverage. Only six functions in
+the image hard-code the `0x4f3` displacement. **[V]**
+
+| address | function | writes |
+|---|---|---|
+| `0x4002d47a` | `FUN_4002d438` | the pointer |
+| `0x4002e052` | vector-191 handler | zero, all 16 slots, when the live track base `_DAT_80004704` changed |
+| `0x4002e516` | vector-191 handler | zero, one slot, after a refresh from an explicit override pointer |
+| `0x4002e640` | vector-191 handler | zero, one slot, in the slice branch |
+| `0x4002da8a` | `FUN_4002da7a` | zero, all 16 slots, unconditional on entry, right after `_DAT_80004704 = param_1` |
+| `0x4002da48` | `FUN_4002da38(track)` | zero, one slot, unconditional -- the invalidate helper |
+| `0x4002d7fa` | `FUN_4002d7a4` | zero, one slot, only when the cached pointer already differs from the live one |
+
+`FUN_4002d7a4(value, track, index)` is the per-parameter apply: it writes one
+short into the `0x8e` mirror, and its callers are `SoundParameterSet::vfunc_13`,
+`SoundParameterSet::vfunc_31`, `FxParameterSet::vfunc_13` and
+`FxParameterSet::vfunc_31`. Its invalidate is conditional on a pointer mismatch
+the handler would catch on its own, so it is a consistency fixup, not a
+machine-type path. **[V]**
+
+`FUN_4002da38` is the unconditional invalidate, and Ghidra lists **no** caller
+for it. That is an artifact: `tools/refscan.py` finds two real
+`jsr $4002da38.l`, at `0x4004319c` and `0x400431d4`, with the bytes
+`4eb9 4002da38` at both. They lie in `0x40042fe2`-`0x4004335c`, a range no
+entry in `function_ranges` covers, so Ghidra never built a function there and
+its call table is silently empty -- a textbook case of the rule that an empty
+Ghidra caller list is not evidence. **[V][C]**
+
+#### The notification dispatcher at `0x40042fe2` **[V][O]**
+
+`0x40042fe2` is a real entry: it opens with the movem prologue
+`lea.l -$18(a7),a7` / `movem.l d2-d3/a2-a5,(a7)`, and Ghidra knows the address
+only as `LAB_40042fe2`. It is a `DataChangeInfo` notification dispatcher in the
+same style as `FUN_40042eaa`, running its third argument through five RTTI
+checks in order, each one a
+`FUN_401e2d66(info, &DataChangeInfo::typeinfo, &X::typeinfo, 0)`: **[V]**
+
+| check | at | class | typeinfo |
+|---|---|---|---|
+| 1 | `0x40042ffc` | `MultipleSoundParamsChangedInfo` | `0x401f2970` |
+| 2 | `0x40043050` | `SoundParamChangedInfo` | `0x401f2964` |
+| 3 | `0x400430fe` | `SoundConfigChangedInfo` | `0x401f3fdc` |
+| 4 | `0x40043132` | `SoundSlicesChangedInfo` | `0x401f3fe8` |
+| 5 | `0x4004316c` | `SoundConfigPlayModeChangedInfo` | `0x401f3ff4` |
+
+The two invalidate calls sit on: **[V]**
+
+- `0x4004319c`, reached when check 5 matches `SoundConfigPlayModeChangedInfo`;
+- `0x400431d4` at `LAB_400431d0`, the fallback, reached either when the info
+  pointer is null (`beq.w $400431d0` at `0x40042ff8`) or when all five checks
+  fail.
+
+`SoundParamChangedInfo`, check 2, takes its own branch and reaches neither. It
+calls `FUN_4002d7a4` per field, then `FUN_40035cca` twice, `FUN_400506ac` /
+`FUN_4005063e` and `FUN_400da23e`, sends message code 5 through
+`FUN_400d3418`, and exits. **[V]**
+
+The dispatcher is registered, not virtual: `vtables` has no target in
+`0x40042eaa`-`0x4004335c`. Instead `FUN_40044852` writes `FUN_40042eaa` and
+`0x40042fe2` into the same record, at record offsets `0x54` and `0x5c`, sixteen
+times in a loop over keys 0-15 (`0x40044ad6`-`0x40044b50`), and `FUN_40044e28`
+references `0x40042fe2` twice more. It is installed deliberately, alongside a
+dispatcher already known to be live. **[V]**
+
+#### What this means for a new machine, and the one open link **[O]**
+
+`FUN_40051712` is the in-place machine-type setter. It writes the new value to
+`+0xa2` of the track object through the accessor at vtable `+0x28` and, on a
+change, constructs a `SoundParamChangedInfo` and calls the notify vfunc at
+`+0x10`: **[V]**
+
+```
+400517b0  jsr $40050b14(pc)    ; SoundParamChangedInfo::ctor_dtor(obj, 1, old, 0)
+400517b4  movea.l (a2),a0
+400517b6  clr.l -(a7)          ; push 0
+400517b8  move.l a2,-(a7)      ; push obj
+400517ba  movea.l $10(a0),a0   ; the notify vfunc
+400517be  jsr (a0)             ; vfunc(obj, 0)
+```
+
+The constructed object's address in `d0` is discarded, and the vfunc is passed
+a literal `0`. Everything turns on what that `0` has become by the time the
+dispatcher at `0x40042fe2` runs: **[O]**
+
+- if it arrives as the dispatcher's third argument, the null test at
+  `0x40042ff8` sends it straight to the unconditional invalidate at
+  `0x400431d4`, the next frame re-runs `FUN_4002d438`, and a machine change
+  reaches the DSP with no reload;
+- if the notify substitutes the `SoundParamChangedInfo` it just built, the
+  dispatcher takes check 2, which never invalidates, and the DSP keeps being
+  sent the old type until a kit or pattern load swaps the track object.
+
+The vfunc is indirect and its concrete class is unresolved, so reading further
+will not settle it. **[O]**
+
+The decisive test is cheap and headless: resume
+`out/snapshots/dt2-1.16/boot400M.snap`, watch `0x8000470c + track*4`, hook
+`0x4002da38` and `0x4002d438`, then drive a type change through `FUN_40051712`
+with `emu/harness.py`'s `call(machine, func, args)`. If `0x4002da38` fires, the
+chain closes. That is step 1b of the handover, and because it needs no GUI it
+does not wait on the 1.16 emulator literals.
+
+Either answer already constrains the design. The DSP row is refreshed only
+wholesale, only from `src + 0xa2`, and only on a cache miss or an invalidate;
+nothing incremental writes it. So type substitution (handover step 3) has
+exactly one place to act: `FUN_4002d438`'s copy, or the byte that copy
+reads. **[V]**
+
+#### The frame handler drains a queue; it does not sweep sixteen tracks **[V][C]**
+
+This corrects the reading above, and it corrects the premise of handover step
+1a. The vector-191 handler does **not** walk tracks 0-15 refreshing rows. It
+drains a linked list of change records and touches only the tracks those
+records name. Found after a headless run of `tools/machinecommit.py` on
+`out/snapshots/dt2-1.16/boot400M.snap` reached `FUN_4002d438` zero times in
+three conditions, including one that zeroed the sync-cache slot on purpose.
+**[V][C]**
+
+The queue module is `0x4013a3c4`-`0x4013a7f4`: **[V]**
+
+| function | role |
+|---|---|
+| `FUN_4013a408` | init: zeroes the head, lays the two static pools out as free lists |
+| `FUN_4013a3f4` | `return _DAT_44e6b488` -- peek the outer head |
+| `FUN_4013a3fc` | `_DAT_44e6b488 = p` -- pop / advance |
+| `FUN_4013a3c4` | outer-node alloc, pops `_DAT_44e6b490` |
+| `FUN_4013a52a` | record alloc, pops `_DAT_44e6b494`, zeroes words `[0]`, `[0xf]`, `[0x10]`, `[0x15]` |
+| `FUN_4013a560` / `FUN_4013a5d8` | free a record / an outer node |
+| `FUN_4013a6b0(rec, key)` | enqueue, sorted into a bucket by `key` |
+| `FUN_4013a78a(rec)` | enqueue onto the front bucket (tag `[0] == 1`) |
+
+Outer nodes chain through `+0x10`; each node's `+8` is the head of its record
+list, and records chain through `+0x68`. The handler's `local_68` is a record
+pointer walked down that inner list, not a stack buffer. **[V]**
+
+A record reaches the per-track apply path only if its tag `[0]` is outside
+`{2,3,4,5,6,7,8}`, `[1] == 1`, `[4]` (the track) is not `0x10`,
+`DAT_47db4310[track] <= [5]`, the byte selected by `[7]`/`[8]` is
+non-negative, and `([0xe] & 0x81) != 1`. Then: **[V]**
+
+- `[0x10]` non-zero is passed straight to `FUN_4002d438([0x10], track)`, and
+  the sync-cache slot is zeroed afterwards at `0x4002e516`;
+- `[0x10]` zero falls back to `[0xf]`, and `[0xf]` zero falls back to the live
+  track object `_DAT_80004704 + track*0x450 + 0x34`.
+
+So `[0xf]` and `[0x10]` are per-record **source-object overrides**. That is the
+shape of a sound lock, and it explains why the row is refreshed wholesale from
+`src + 0xa2` rather than incrementally: each record can name a different source
+object for the same track.
+
+The producer is `FUN_40139878`, called only from `FUN_4011fe12`. It fills a
+template in a static per-(track, slot) array, allocates a record, memcpys
+`0x6c` bytes over it and enqueues it: **[V]**
+
+```
+iVar3 = param_1[0xc];
+puVar7[0xf] = 0;
+puVar7[0x10] = iVar3;          /* the source-object override */
+...
+iVar4 = FUN_4013a52a();                        /* alloc */
+FUN_401360ac(iVar4, iVar9 + iVar6 + 0x414, 0x6c);  /* template -> record */
+FUN_4013a78a();                                /* enqueue */
+```
+
+In `FUN_4011fe12` the value that becomes `[0x10]` is `local_14`, and it is set
+three ways: zero; a cached pointer (`_DAT_44e08970`, else
+`DAT_44e08930[track]`); or, when its sixth argument is below `0x80`, a direct
+`param_6 * 0x450 + 0x4291377a`. Seven of the eight call sites pass the sentinel
+`0xffffffff` and take the cached path. **[V]**
+
+The eight callers are UI and playback sites -- `PatternGridView::vfunc_2`,
+`TrackSwapMenuView::vfunc_2`, `KeyboardView::vfunc_2` (through
+`FUN_4005c5e8`), `SoundManager::vfunc_32`, `KitActiveSettingsChangedInfo::
+ctor_dtor` at `0x400d4460`, and three more. **[D]**
+
+That the queue is therefore the trig path -- that a track's machine type
+reaches the DSP when the track next sounds a note, carrying whatever source
+object the trig resolves to -- is the natural reading of those callers and of
+the per-record override, but it is inference from names and shape, not from a
+trace. **[O]**
+
+#### Why the first headless run said nothing **[V]**
+
+`tools/machinecommit.py` resumes the snapshot three times and, per track,
+compares the object's type byte, the SRAM row byte and TX frame offset
+`0x94 + 2i` across three conditions: nothing poked; the track object's `+0xa2`
+poked; and that poke plus the sync-cache slot zeroed. On
+`out/snapshots/dt2-1.16/boot400M.snap`, track 0, type 5:
+
+| condition | obj type | row type | frame `0x94` | hooks hit |
+|---|---|---|---|---|
+| base | 0 -> 0 | 0 -> 0 | 0, 0 | none |
+| inplace | 0 -> 5 | 0 -> 0 | 0, 0 | none |
+| invalid | 0 -> 5 | 0 -> 0 | 0, 0 | none |
+
+Every pass reported `returned` and a 2050-byte frame, so the handler ran to
+completion; the pokes landed, so the harness wrote what it meant to. But
+`FUN_4002d438`, `FUN_4002da38`, `FUN_4002d7a4` and the dispatcher at
+`0x40042fe2` were reached zero times **in the control as well**, so the run
+does not show the mechanism working at all and says nothing about the
+question. The tool prints `INCONCLUSIVE` for exactly this case. **[V]**
+
+The cause is the correction above: with the queue empty on a stock resumed
+boot, the handler's outer `while` never executes, and nothing downstream of it
+can run however the cache slot is set. A sweep-based reading of the handler
+would have called this run a clean negative result. **[C]**
+
+#### The smallest qualified 1.15C panel gesture commits STRETCH **[V]**
+
+`out/experiments/panel-machine-commit/qualify-1.15c-001/report.json` records
+two clean and two narrowly traced repetitions of the same raw panel sequence:
+FUNC+SRC opens Machine Selection, one DOWN tap selects the next entry, and YES
+commits it. FUNC uses button channel 2 (`22xx`); DOWN and YES use channel 1
+(`21xx`). Requested feed counts are deterministic lower bounds serviced at the
+next 400,000-instruction loop boundary, not exact delivery counts. **[V]**
+
+All four runs exited zero, touched no fault page, and produced the same
+1024-byte panel (`8ba3d66b…`) and endpoint snapshot (`b467d62f…`). Each traced
+run entered the commit setter `0x40035e90` exactly once with track 0 and type
+2, then wrote `0x4263b1a2` from PC `0x40050d62`, `00 -> 02`. The final panel
+highlights `STRETCH`. This qualifies the gesture and its real UART8/eDMA panel
+path on 1.15C. It does not complete behavioral A2: these runs used the
+historical global-unblock mode, and the target setter/back half is the
+relocated 1.16 build. **[V]**
+
+#### Faithful 1.16 panel input reaches the relocated setter, not refresh **[V]**
+
+`out/experiments/panel-machine-commit/qualify-1.16-001/report.json` repeats
+the same FUNC+SRC, DOWN, YES sequence twice clean and twice with narrow hooks
+from one immutable 1.16 user-screen snapshot. Its retained command provenance
+uses `--exact --no-unblock`, never enables `--weakptr`, and the source snapshot
+has a wholly counted three-stage lineage from `boot400M.snap` through
+`explore-1.16-pit3-004`, `-005`, and `-013`. All lineage stages and all four
+qualification runs touched zero fault pages. **[V]**
+
+The port required three hardware/model corrections rather than generic wait
+satisfaction: the image-resolved UART8 TX state is `0x40964d74`; PIT3 alone
+runs during the intro while DTIM remains held; and eSDHC CMD18/CMD25 transfers
+now complete channel 59, post its resolved completion semaphore, and preserve
+the card's sparse write overlay in checkpoints. The final user screen is
+therefore reached with `unblock=False` and `weakptr=False`. **[V]**
+
+All four qualification runs delivered the same eight feeds at the same actual
+lower bounds, latched the panel at `53,047,610`, and saved at `80,004,410`.
+Their 1024-byte panel hash is `8ba3d66b…`, and their endpoint snapshot hash is
+`4327aebe…`; clean and traced endpoints are byte-identical. Each traced run
+entered commit `0x40036798` and setter `0x40051712` exactly once, with track 0
+and type 2, then wrote `0x4265338e`, `00 -> 02`, at PC `0x4005179e`. The raw
+1.16 image bytes independently place the commit call into the setter and the
+byte write at those addresses. **[V]**
+
+The equivalent shorter qualification at
+`out/experiments/panel-machine-commit/qualify-1.16-fast-001/report.json`
+keeps the opening and DOWN timings but asks for YES at 46.4M rather than
+52.4M and ends at 64M rather than 80M. Two clean and two traced exact runs
+again have byte-identical endpoints, the same `8ba3d66b…` panel hash, zero
+fault pages, and one type-2 commit/setter pair in each traced run. The panel
+latched 5,616,000 instructions earlier and the actual final save was
+15,849,359 instructions earlier. This is the preferred repeat recipe; it
+shortens the scenario rather than increasing per-instruction emulator speed.
+**[V]**
+
+`FUN_4002d438` was reached zero times in both traced runs. Thus this closes the
+real-panel provenance only through the setter; it does not connect the
+setter's indirect notification to invalidation, the SRAM row, or the frame.
+Behavioral A2 remains open. **[O]**
+
+One follow-up control narrows the next missing event. From the committed 1.16
+snapshot, a real TRIG 1 press/release in
+`out/experiments/panel-machine-commit/explore-1.16-pit3-012/` reaches
+`FUN_4011fe12` once and the record producer/enqueue pair twice, but still hits
+`FUN_4002d438` zero times. At the time of that run SSI0-paced eDMA48/50,
+vector 170, and `INTFRCH1` software-force delivery were unmodelled. The new
+narrow model closes those mechanics, but without external RX data it remains
+in the generic vector-170 synchronization handler and still does not provide
+a natural refresh. This run identifies only the queue side dynamically.
+**[C][D][O]**
+
+An earlier proposed front-half control was to poke a type byte into a source
+object and call `FUN_4011fe12` through
+`emu/harness.py`'s
+`call()` with a sixth argument below `0x80` so the record carries `[0x10]`
+directly, then raise vector 191 and read the row and the frame. Confirm what
+`0x4291377a + idx*0x450` actually is first -- the base is odd-aligned, which
+is not the shape of a `0x450`-stride object array, so it may be a decompiler
+artifact rather than a real address. The real TRIG path now reaches the
+producer, so this is optional calibration, not the next behavioral-A2 test.
+**[C][O]**
+
+#### Direct-refresh control establishes source byte -> SRAM row -> TX frame **[V]**
+
+`tools/machinecommit.py` now tests the narrow back half directly on Digitakt
+II 1.16. It does **not** pretend that the unresolved setter notification fired:
+each condition starts from a fresh restore, optionally changes the live source
+object's type byte, optionally calls `FUN_4002d438(src, track)` through
+`emu/harness.py`, then enters vector 191 three times. The final accepted report
+is `out/experiments/a2-machine-provenance/a2-real-005/report.json`. **[V]**
+
+This is calibration/control evidence for behavioral A2, not completion of A2.
+The run used track 0 and source object `0x426532ec`; the selected addresses were
+`src + 0xa2`, row `0x80003cd0`, and cache slot `0x8000470c`. Its immutable
+inputs were: **[V]**
+
+- SysEx SHA-256 `278541e466edcd77d6b3e018a91fb90185932d3c7de224dd3e68294dddf3a9ec`,
+  equal to `out/sections/dt2-1.16/.source-sha256`;
+- MAIN OS SHA-256 `57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d`;
+- snapshot SHA-256 `c23b733dfb11eb0239e44b517102c9719d966e5cd344fa3363c9a16af920a9b2`.
+
+The build contract was `unblock=False`, `weakptr=False`, no GUI fast mode,
+and state-only `softfloat=True`, `bitmap=True`, `dsp=True`. Four conditions
+were each repeated clean and with the bounded refresh-entry/full-row-write
+observers. Every handler entry returned, every captured frame was 2050 bytes,
+and clean/instrumented state, row hashes, frame hashes and stop reasons were
+identical in all four pairs. **[V]**
+
+| condition | source type after poke | direct refresh | row type after | frame type words |
+|---|---:|---:|---:|---|
+| baseline | 0 | no | 0 | `0, 0, 0` |
+| source only | 5 | no | 0 | `0, 0, 0` |
+| unchanged refresh | 0 | yes | 0 | `0, 0, 0` |
+| changed refresh | 5 | yes | 5 | `0, 5, 5` |
+
+In each instrumented refresh condition the entry hook fired exactly once at
+`0x4002d438`, with stacked arguments `[0x426532ec, 0]`. The row observer saw
+40 writes; it retained the first 32 by design and reported truncation rather
+than silently losing the count. The complete row after-images provide the
+discriminator: changed refresh versus unchanged refresh differs at exactly
+row offset 0, `00 -> 05`. The corresponding complete-frame comparison differs
+nowhere in pass 0 and, in passes 1 and 2, at exactly `0x95: 00 -> 05` and
+`0x73d: 00 -> 01`. Thus the big-endian word at `0x94` becomes `0x0005`; the
+`0,5,5` sequence is a measured one-cycle delay, not a claim about local static
+send/rebuild ordering. **[V]**
+
+The unchanged-refresh control also corrects an over-strong first acceptance
+gate. A wholesale refresh legitimately changes other stale row bytes, so its
+whole frame need not equal a no-refresh baseline. The discriminating A/B is
+changed refresh versus unchanged refresh: those conditions execute the same
+copy and differ in only `src + 0xa2`. `a2-real-001` was rejected solely by the
+old whole-frame-equality gate; `a2-real-005` uses the corrected controlled
+comparison and fails closed on duplicate/missing conditions, address drift,
+input-state drift, inactive hooks or clean/instrumented disagreement. **[V]**
+
+This establishes only the direct 1.16 chain
+`source + 0xa2 -> FUN_4002d438 -> row byte 0 -> TX 0x94`. It does not establish
+that `FUN_40051712`'s indirect notify vfunc invalidates the cache or schedules
+that refresh, and it does not replace a future faithful 1.16 UI commit trace.
+That front-half link remains open. **[O]**
 
 ### Digitone II 1.11 has the same machine machinery, with five machines **[D]**
 
@@ -4002,3 +4495,93 @@ fields of an existing Bitmap. See the note in `emu/hle.py`.
 The lesson matches the earlier `install_mmio` one, and the fictitious 118x
 above, and the "2.90M ceiling" this section replaces: only trust an A/B where
 the two sides do the same work.
+
+## Ghidra misses functions that are only ever pointed at **[V]**
+
+Ghidra records a data reference to an address held in an immediate and stops
+there. If nothing ever reaches that address with a `jsr`, no function is
+created, so it gets no decompilation and does not appear in `decomp/` at all --
+a blind spot that is silent rather than noisy, because a `rg` over the dump
+returns nothing and looks like a clean negative. Two hours were lost to this on
+2026-09-16 before the dispatcher at `0x40042fe2` was found by
+`tools/refscan.py`.
+
+Measured on Digitakt II 1.16, MAIN OS sha-256 `57bb4dfa…`:
+
+- Decoding is not the problem. Of the code-dominant region
+  `0x40000400`-`0x401e97a7` (2,003,879 bytes, 61% of the image; the rest is a
+  1.19 MB string/RTTI/data blob), **99.92%** decodes cleanly -- 1,546 undecoded
+  bytes in 339 spans, 242 of them exactly two bytes. A sample of the largest
+  and of ~25 scattered spans found no failed instruction: they are switch
+  displacement tables (`0x40021fe4` sits right after a
+  `jmp $21fe4(pc,d0.l)`) and runs of one repeated word. **[V][C]**
+
+  The 96.78% figure quoted in earlier handovers is a whole-image number. A
+  linear sweep of the data blob still "decodes" ~89% of it into plausible
+  instructions, so that average says nothing about decoder quality. Writing a
+  better ColdFire SLEIGH language would recover nothing. **[C]**
+
+- Function discovery is the problem. **6.87%** of that code region, 148,862
+  bytes, sat outside every `function_ranges` entry. Of the twenty largest
+  in-code gaps, none look like data and at least eleven open with a prologue.
+
+- **Ghidra's own analyzers recover none of them.** On a copy, with
+  `tools/ghidraopts.py`, `Function Start Search` was already on;
+  `Function Start Search.Search Data Blocks` and `Aggressive Instruction
+  Finder` were off. Turning both on and re-analysing: functions 14,743 ->
+  14,743, and the two entry sets are identical in both directions. Code
+  coverage unchanged at 93.43%. `0x40042fe2` still had no function. The only
+  effect was seven more Error bookmarks. **[V]**
+
+### Seeding them from the pointers **[V]**
+
+`tools/codeseeds.py` gained a third candidate kind, `pointers`: an address
+taken as an immediate (`#$X` in any instruction) or by `pea $X.l`, which lands
+in a code range on a function prologue -- `lea -N(a7),a7` (`0x4fef` with a
+negative displacement), `link.w aN,#-d` (`0x4e50`-`0x4e57`), or a `movem.l`
+save (`0x48e7`, `0x48d7`). `tools/ghidraapply.py seeds` applies them through
+the same `ensure_function` guards as the call targets, which skip a target
+inside defined data or mid-instruction and roll the edit back if it raises an
+Error bookmark.
+
+```
+uv run python tools/codeseeds.py out/sections/dt2-1.16/section_3_MAIN_OS.bin \
+  --base 0x40000400 \
+  --code 0x40000400 0x401e97a8 --code 0x4030cd04 0x4030f89d \
+  --json out/symbols/dt2-1.16-seeds.json
+uv run python tools/ghidraapply.py seeds out/symbols/dt2-1.16-seeds.json \
+  --project ~/ghidra-projects/elektron-emac --project-name elektron-emac \
+  --program /dt2-1.16-seeded/section_3_MAIN_OS.bin --analyze
+```
+
+The 1.16 code ranges above come from `function_ranges` (functions span
+`0x40000410`-`0x4030f89d` with one 1.19 MB gap); `codeseeds.py`'s defaults are
+1.15C's. Result: **[V]**
+
+| | baseline | seeded |
+|---|---|---|
+| functions | 14,743 | **14,857** (+114) |
+| entries missing from the other set | 0 | 0 |
+| code coverage, `0x40000400`-`0x401e97a7` | 93.43% | **94.37%** |
+| Error bookmarks | 40 | **40** |
+| decompile failures | 16 | **16** (the same 16) |
+
+1,067 pointer records to 921 distinct targets, 816 of them not a call target;
+464 `link`, 456 `lea`, 1 `movem` by distinct target. Most already had functions
+by another route, and 114 were new. The dry run predicted 114 and the real run
+created 114.
+
+Nothing suggests junk: Error bookmarks and decompile failures both held exactly
+still, no baseline function disappeared, and the new functions run 40 to 4,694
+bytes with none under 8. `0x40042fe2` came back as a single clean 558-byte
+range, `0x40042fe2`-`0x4004320f`.
+
+Worth noting as a cross-check: an independent sweep for addresses that are
+data-referenced, not a function entry, and start with a prologue predicted
+**115**; the pipeline created **114**. Two methods, written separately, landing
+one apart.
+
+The remaining ~130,000 uncovered bytes are mostly gaps whose first bytes are
+alignment or tail data rather than the entry, plus a repeated non-standard
+prologue idiom (`8f2f 0a2f 0224` after a varying first word) that the three
+patterns above do not match. **[O]**

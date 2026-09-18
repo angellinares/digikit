@@ -1,7 +1,7 @@
 {
   "contract": "digitakt2.mcf5441x-mmio-reference",
   "schema_version": 1,
-  "notes": "Stable hardware facts only, cross-checked against two independent sources: torvalds/linux (arch/m68k in-tree MCF5441x platform, GPL source cited as file/line references only) and the NetBurner NNDK's MCF5441x register headers (vendored at docs/refs/netburner-coldfire/, see its README for provenance/URL and corpus limitations). Every fact below carries its own 'source' field naming which corpus backs it -- do not assume one corpus for the whole file. See docs/refs/linux-m5441x-893e1178.md and docs/refs/netburner-mcf5441x-layout.md for full HW/QUIRK/POLICY/NEW labels, mismatches and open questions. Renamed from linux-m5441x-893e1178.json because DTIM base/register facts are now NetBurner-sourced, not Linux-sourced -- a single-vendor filename would misattribute them.",
+  "notes": "Curated stable hardware facts with per-fact provenance. Linux and NetBurner independently corroborate many base/layout facts; the public NXP MCF5441x reference manual supplies access semantics, interrupt/request routing, and field behavior that headers cannot. Do not infer a source for one fact from another fact's source field. See docs/refs/linux-m5441x-893e1178.md, docs/refs/netburner-mcf5441x-layout.md, and the extracted manual under out/refs/MCF5441XRM/.",
   "sources": {
     "linux": {
       "repo": "torvalds/linux",
@@ -12,8 +12,24 @@
       "corpus": "docs/refs/netburner-coldfire/",
       "original_url": "https://www.netburner.com/NBDocsTest/Developer/html/",
       "limitation": "headers only (declarations, macros), no .c implementation files, no reset values or behavioral documentation -- see docs/refs/netburner-coldfire/README.md"
+    },
+    "mcf5441x_rm": {
+      "document": "MCF5441x Reference Manual, Rev. 5, 05/2018",
+      "canonical_url": "https://www.nxp.com/docs/en/reference-manual/MCF54418RM.pdf",
+      "extracted_text": "out/refs/MCF5441XRM/",
+      "source_notes": "docs/refs/MCF5441X-notes.md"
     }
   },
+  "memory_map": [
+    {"name": "low_boot_dependent", "start": "0x00000000", "end": "0x3FFFFFFF", "description": "FlexBus/NAND/internal SRAM mapping depends on boot source", "source": "mcf5441x_rm", "source_ref": "chapter 1 table 1-2; pages/p0056.txt"},
+    {"name": "sdram", "start": "0x40000000", "end": "0x7FFFFFFF", "description": "SDRAM controller space", "source": "mcf5441x_rm", "source_ref": "chapter 1 table 1-2; pages/p0056.txt"},
+    {"name": "internal_sram_backdoor", "start": "0x80000000", "end": "0x8BFFFFFF", "description": "64 KiB internal SRAM alias for non-core masters; wraps through this range", "source": "mcf5441x_rm", "source_ref": "chapter 1 table 1-2 note 3; pages/p0056.txt"},
+    {"name": "rapid_gpio", "start": "0x8C000000", "end": "0x8FFFFFFF", "description": "Rapid GPIO space", "source": "mcf5441x_rm", "source_ref": "chapter 1 table 1-2; pages/p0056.txt"},
+    {"name": "reserved_9000", "start": "0x90000000", "end": "0xBFFFFFFF", "description": "Reserved; must not be accessed", "source": "mcf5441x_rm", "source_ref": "chapter 1 table 1-2; pages/p0056.txt"},
+    {"name": "flexbus_high", "start": "0xC0000000", "end": "0xDFFFFFFF", "description": "Non-cacheable FlexBus/device space", "source": "mcf5441x_rm", "source_ref": "chapter 1 section 1.8; pages/p0056.txt"},
+    {"name": "peripheral_bus_1", "start": "0xE0000000", "end": "0xEFFFFFFF", "description": "Peripheral bus controller 1 space", "source": "mcf5441x_rm", "source_ref": "chapter 1 table 1-2; pages/p0056.txt"},
+    {"name": "peripheral_bus_0", "start": "0xF0000000", "end": "0xFFFFFFFF", "description": "Peripheral bus controller 0 space", "source": "mcf5441x_rm", "source_ref": "chapter 1 table 1-2; pages/p0056.txt"}
+  ],
   "intc": {
     "controllers": [
       {"name": "INTC0", "base": "0xFC048000", "vector_base": 64, "icr0_offset": "0x40", "source": "linux", "source_ref": "arch/m68k/include/asm/m5441xsim.h:36-49"},
@@ -29,7 +45,18 @@
     "imr_offset_source_ref": "arch/coldfire/cpu/MCF5441X/include/sim5441x.h:534-566 (intcstruct: imrh +0x08, imrl +0x0C)",
     "simr_cimr_offset": {"simr": "0x1C", "cimr": "0x1D"},
     "simr_cimr_offset_source": "both",
-    "simr_cimr_offset_source_ref": "linux: arch/m68k/coldfire/intc-simr.c (SIMR/CIMR write-source-number); netburner: sim5441x.h:534-566 (intcstruct.simr/cimr)"
+    "simr_cimr_offset_source_ref": "linux: arch/m68k/coldfire/intc-simr.c (SIMR/CIMR write-source-number); netburner: sim5441x.h:534-566 (intcstruct.simr/cimr)",
+    "registers": [
+      {"name": "INTFRCH", "offset": "0x10", "width": 4, "access": "rw", "description": "Software-force sources 32-63; bit source-32", "source": "mcf5441x_rm", "source_ref": "chapter 17 section 17.2.3; pages/p0339.txt"},
+      {"name": "INTFRCL", "offset": "0x14", "width": 4, "access": "rw", "description": "Software-force sources 0-31; bit source", "source": "mcf5441x_rm", "source_ref": "chapter 17 section 17.2.3; pages/p0339.txt"},
+      {"name": "SIMR", "offset": "0x1C", "width": 1, "access": "wo", "description": "Set interrupt mask for source named by low six bits", "source": "both"},
+      {"name": "CIMR", "offset": "0x1D", "width": 1, "access": "wo", "description": "Clear interrupt mask for source named by low six bits", "source": "both"}
+    ],
+    "sources": [
+      {"controller": "INTC1", "source": 40, "vector": 168, "module": "eDMA", "description": "DMA channel 48 transfer complete", "clear": "write EDMA_CINT=48", "source_ref": "chapter 17 table 17-16; pages/p0348.txt"},
+      {"controller": "INTC1", "source": 42, "vector": 170, "module": "eDMA", "description": "DMA channel 50 transfer complete", "clear": "write EDMA_CINT=50", "source_ref": "chapter 17 table 17-16; pages/p0348.txt"},
+      {"controller": "INTC1", "source": 63, "vector": 191, "module": null, "description": "No assigned hardware source; available to firmware through INTFRCH bit 31", "clear": "clear INTFRCH1 bit 31", "source_ref": "chapter 17 table 17-16 and section 17.2.3; pages/p0349.txt,p0339.txt"}
+    ]
   },
   "pit": {
     "channels": [
@@ -121,8 +148,44 @@
       "SLAST": "0x0C", "DADDR": "0x10", "CITER": "0x14", "DOFF": "0x16",
       "DLAST_SGA": "0x18", "BITER": "0x1C", "CSR": "0x1E"
     },
+    "tcd_widths": {
+      "SADDR": 4, "ATTR": 2, "SOFF": 2, "NBYTES": 4,
+      "SLAST": 4, "DADDR": 4, "CITER": 2, "DOFF": 2,
+      "DLAST_SGA": 4, "BITER": 2, "CSR": 2
+    },
+    "registers": [
+      {"name": "SERQ", "offset": "0x18", "width": 1, "access": "wo", "description": "Set channel enable request; low six bits select channel, bit 6 selects all", "source": "mcf5441x_rm", "source_ref": "chapter 19 section 19.4.5"},
+      {"name": "CINT", "offset": "0x1C", "width": 1, "access": "wo", "description": "Clear channel interrupt; low six bits select channel, bit 6 clears all", "source": "mcf5441x_rm", "source_ref": "chapter 19 section 19.4.9; pages/p0377.txt"}
+    ],
+    "csr_fields": [
+      {"name": "E_SG", "bit": 4, "description": "Load next 32-byte TCD from DLAST_SGA at major-loop completion", "source": "mcf5441x_rm", "source_ref": "chapter 19 table 19-31; pages/p0391.txt"},
+      {"name": "INT_HALF", "bit": 2, "description": "Interrupt when CITER reaches BITER/2", "source": "mcf5441x_rm", "source_ref": "chapter 19 table 19-31; pages/p0392.txt"},
+      {"name": "INT_MAJOR", "bit": 1, "description": "Interrupt when the major iteration count reaches zero", "source": "mcf5441x_rm", "source_ref": "chapter 19 table 19-31; pages/p0392.txt"},
+      {"name": "START", "bit": 0, "description": "Software channel service request", "source": "mcf5441x_rm", "source_ref": "chapter 19 table 19-31; pages/p0392.txt"}
+    ],
+    "channels": [
+      {"channel": 48, "request": "SSI0_SR[RFF0]", "request_description": "SSI0 receive FIFO 0 full", "peripheral": "SSI0_RX0", "peripheral_address": "0xFC0BC008", "completion_controller": "INTC1", "completion_source": 40, "completion_vector": 168, "source": "mcf5441x_rm", "source_ref": "chapter 19 table 19-6; pages/p0373.txt"},
+      {"channel": 50, "request": "SSI0_SR[TFE0]", "request_description": "SSI0 transmit FIFO 0 empty", "peripheral": "SSI0_TX0", "peripheral_address": "0xFC0BC000", "completion_controller": "INTC1", "completion_source": 42, "completion_vector": 170, "source": "mcf5441x_rm", "source_ref": "chapter 19 table 19-6; pages/p0373.txt"}
+    ],
     "source": "netburner",
     "source_ref": "arch/coldfire/cpu/MCF5441X/include/sim5441x.h:483-497,527,1404 (edmastruct, edma_tcdstruct: base 0xFC04_4000, tcd[64] at 0xFC04_5000, 0x20-byte stride, CITER at +0x14 / BITER at +0x1C -- the non-Kinetis ordering emu/edma.py's docstring already flags)",
     "note": "Matches emu/edma.py's EDMA_BASE/TCD_BASE/field offsets, which were already reverse-engineered from a live firmware trace (TCD35 at 0xFC045460) and MCF5441XRM.pdf ch.23, not from Linux. NetBurner corroborates; not the origin of these constants."
-  }
+  },
+  "register_blocks": [
+    {"name": "SSI0", "base": "0xFC0BC000", "size": "0x4000", "source": "mcf5441x_rm", "source_ref": "chapter 35 register map; pages/p1061.txt,p1062.txt", "registers": [
+      {"name": "TX0", "offset": "0x00", "width": 4, "access": "rw", "reset": "0x00000000", "description": "Transmit FIFO 0 data"},
+      {"name": "TX1", "offset": "0x04", "width": 4, "access": "rw", "reset": "0x00000000", "description": "Transmit FIFO 1 data"},
+      {"name": "RX0", "offset": "0x08", "width": 4, "access": "r", "reset": "0x00000000", "description": "Receive FIFO 0 data"},
+      {"name": "RX1", "offset": "0x0C", "width": 4, "access": "r", "reset": "0x00000000", "description": "Receive FIFO 1 data"},
+      {"name": "CR", "offset": "0x10", "width": 4, "access": "rw", "reset": "0x00000000", "description": "Control register"},
+      {"name": "ISR", "offset": "0x14", "width": 4, "access": "mixed", "reset": "0x00003003", "description": "Interrupt/status register; includes RFF0 and TFE0 request conditions"},
+      {"name": "IER", "offset": "0x18", "width": 4, "access": "rw", "reset": "0x00003003", "description": "Interrupt enable register"},
+      {"name": "TCR", "offset": "0x1C", "width": 4, "access": "rw", "reset": "0x00000200", "description": "Transmit configuration register"},
+      {"name": "RCR", "offset": "0x20", "width": 4, "access": "rw", "reset": "0x00000200", "description": "Receive configuration register"},
+      {"name": "CCR", "offset": "0x24", "width": 4, "access": "rw", "reset": "0x00040000", "description": "Clock control register"},
+      {"name": "FCSR", "offset": "0x2C", "width": 4, "access": "rw", "reset": "0x00810081", "description": "FIFO control/status register"},
+      {"name": "TMASK", "offset": "0x48", "width": 4, "access": "rw", "reset": "0x00000000", "description": "Transmit time-slot mask register"},
+      {"name": "RMASK", "offset": "0x4C", "width": 4, "access": "rw", "reset": "0x00000000", "description": "Receive time-slot mask register"}
+    ]}
+  ]
 }

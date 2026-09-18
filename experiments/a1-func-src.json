@@ -1,0 +1,25 @@
+{
+  "name": "a1-func-src",
+  "snapshot": "snapshots/postintro.snap",
+  "endpoint": 40000000,
+  "repeat": 2,
+  "exact": true,
+  "panel_dwell": 16,
+  "manipulation": {
+    "feeds": [
+      {"at": 400000, "hex": "2201"},
+      {"at": 8400000, "hex": "2002"},
+      {"at": 20400000, "hex": "2000"},
+      {"at": 28400000, "hex": "2200"}
+    ]
+  },
+  "a1": {
+    "observation_at": 14400000,
+    "panel_raw": true,
+    "ui_trace": true,
+    "block_coverage": true
+  },
+  "ranges": [
+    {"lo": 2147483648, "hi": 2147549184, "name": "sram"}
+  ]
+}

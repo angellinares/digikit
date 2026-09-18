@@ -154,7 +154,8 @@ class TxChannel:
         return self.m.raise_vector(self.vector)
 
 
-def install(m, at, ev, chan=TX_CHAN, vector=TX_VECTOR):
+def install(m, at, ev, chan=TX_CHAN, vector=TX_VECTOR,
+            wait_loop=WAIT_LOOP):
     """Model the UART8 TX channel. -> the TxChannel, also at ev['edma_tx']."""
     ch = TxChannel(m, ev["uart_out"], chan, vector)
     ev["edma_tx"] = ch
@@ -168,7 +169,8 @@ def install(m, at, ev, chan=TX_CHAN, vector=TX_VECTOR):
 
     # The free-space spin loop runs with interrupts enabled and is exactly
     # where hardware would take the completion, so deliver it there.
-    at(WAIT_LOOP, lambda uc, a, s, d: ch.deliver())
+    if wait_loop is not None:
+        at(wait_loop, lambda uc, a, s, d: ch.deliver())
     return ch
 
 
@@ -177,16 +179,18 @@ def needs_legacy_kick(ch):
     return not ch._checkpoint_restored
 
 
-def kick(m, ch):
+def kick(m, ch, tx_state=TX_STATE):
     """Drain a transfer a snapshot resumed with already armed.
 
-    A snapshot restores the firmware's `[0x4094cd74] != 0` ("a transfer is in
-    flight") without restoring EDMA_ERQ, so the channel would sit half-started
-    forever and the very first free-space check would block. Running it once
-    hands the chain back to the firmware's ISR, which takes it from there.
+    A legacy snapshot restores the firmware's image-specific "transfer is in
+    flight" flag without restoring EDMA_ERQ, so the channel would sit
+    half-started forever and the first free-space check would block. Running
+    it once hands the chain back to the firmware's ISR. New callers pass the
+    address resolved from the image; the default preserves direct users of
+    the original 1.15C-only helper.
     """
     try:
-        armed = struct.unpack(">I", m.uc.mem_read(TX_STATE, 4))[0]
+        armed = struct.unpack(">I", m.uc.mem_read(tx_state, 4))[0]
     except Exception:
         return 0
     return ch.run() if armed else 0

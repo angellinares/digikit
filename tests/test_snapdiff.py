@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """tools/snapdiff.py: page reads, run merging and table labels."""
 
 import os
@@ -32,7 +33,9 @@ class SnapdiffTest(unittest.TestCase):
         self.assertEqual(got, [(0x80003340, 0x80003344), (0x80003350, 0x80003351)])
 
     def test_labels(self):
-        self.assertEqual(snapdiff.label(0x80003340 + 2 * 0x9a + 5), 'track_9a[2]+0x5')
+        self.assertEqual(snapdiff.label(0x80003cd0), 'track_9a[0]+0x0')
+        self.assertEqual(snapdiff.label(0x80003cd0 + 2 * 0x9a + 5), 'track_9a[2]+0x5')
+        self.assertEqual(snapdiff.label(0x80003340), '')
         self.assertEqual(snapdiff.label(0x80005348 + 0x10), 'tx_frame+0x10')
         self.assertEqual(snapdiff.label(SRAM), '')
 
