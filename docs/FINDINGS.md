@@ -4585,3 +4585,62 @@ The remaining ~130,000 uncovered bytes are mostly gaps whose first bytes are
 alignment or tail data rather than the entry, plus a repeated non-standard
 prologue idiom (`8f2f 0a2f 0224` after a varying first word) that the three
 patterns above do not match. **[O]**
+
+## Digitone II 1.11: machine selection in the emulator, and where a track becomes MIDI **[V]**
+
+Measured 2026-09-18 on Digitone II OS 1.11, MAIN OS loaded at `0x40000400`, with
+this branch's code plus #19 (DN2 boot fixes), #24 (resume weakptr snapshots) and
+#28 (`--patch-ranges`, `--poke`, `--stack-when`).
+
+### Getting there **[V]**
+
+- `boot400M` is still booting: FUNC+SYN opens the selector at ~70M, and the
+  +Drive loading screens then take the panel over. A run from `boot400M` to
+  +800M reaches the SYN page (LIGHTHOUSE loaded by +200M); a snapshot saved
+  there (`ui1200M.snap`) is where menu work starts.
+- Resuming a snapshot that `guirun --save-at` wrote needs the timers claimed
+  (`deferred_components=('timers',)`, which `main` does); an older `guirun`
+  fails with `checkpoint missing configured components: timers`.
+- DN2 key codes follow the bootstrap's KEY TEST table, which uses the shared
+  platform names: **FUNC 17 + SRC 2** is the DN2's FUNC+SYN, then UP 11,
+  DOWN 14, LEFT 13, RIGHT 15, YES 10, NO 12.
+
+### The selector **[V]**
+
+MACHINE SEL has two pages; LEFT/RIGHT switch them (the owner's tip, confirmed).
+The menu's own lists (`view+388` SYN, `view+400` FLTR, 8-byte entries; cursor
+`view+420`, page `view+424`, committed type `view+412`) give each row's type:
+
+| SYN row | type | FLTR row | type |
+|---|---|---|---|
+| FM TONE | 0 | MULTI-MODE | 0 |
+| FM DRUM | 2 | LOWPASS 4 | 1 |
+| WAVETONE | 1 | LEGACY LP/HP | 4 |
+| SWARMER | 3 | COMB- | 3 |
+| (divider) | -1 | COMB+ | 5 |
+| MIDI | 4 | EQUALIZER | 2 |
+
+Type 4 = MIDI agrees with DNX's reading of saved kits.
+
+### The commit **[V]**
+
+YES calls `0x40031880(model, track, type)` from `0x4005bba0`; the type comes
+from `0x4005b162(view)` (row -> list entry -> `0x40116e54`). `0x40031880`:
+
+- sets the kit's per-track MIDI mask at `kit+0x5cda` -- **bit `track` set exactly
+  when `type == 4`**, cleared otherwise (`0x400318d0`) -- written at `0x40031902`;
+- calls `0x4004cc08(sound, type, 0)`, which writes the machine type at
+  **`sound+0xde`** (`0x4004cc94`; the sound for track `t` is `kit + 52 + 1163*t`);
+- the frame ISR's mirror of the mask at `0x8000537c` follows in the same
+  instant (`0x40025b9a`).
+
+All three writes were caught with `--watch` at one instruction count.
+
+### An input artefact worth knowing **[V]**
+
+A `--input` press is held for ~9M instructions before its release is serviced,
+which is long enough for the firmware's key repeat: one DOWN from WAVETONE left
+the model's cursor on **row 5 (MIDI)**, while the panel still drew row 3
+(SWARMER) highlighted. YES then committed MIDI. Read the cursor (`view+420`)
+rather than trusting the panel after a held key; a shorter hold would need the
+press and release serviced closer together.
