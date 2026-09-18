@@ -30,6 +30,10 @@ argument ARG (1, 2 or 3) on every hit.
 `--poke ADDR=LONG` writes one big-endian 32-bit value after restoring the
 snapshot and before execution. It is an explicit host-state calibration;
 repeat the option for multiple writes.
+`--poke-at WHEN:ADDR:HEX` writes any number of bytes *during* the run, at an
+instruction count -- for state that has to change after something else has
+happened, which a seed before execution cannot express. Both are host writes
+and both are calibration; they differ only in when they land.
 `--watch ADDR:LEN[=NAME]` and `--watch-max N` install a memory write watch
 over LEN bytes at ADDR, printing up to N hits with a stack scan each.
 `--ips N` overrides the emulator's instructions-per-second timer rate
@@ -107,6 +111,10 @@ def parse_args(argv):
         help='explicitly add fresh SSI0 state at this legacy checkpoint boundary',
     )
     p.add_argument('--syx')
+    p.add_argument('--patch-ranges', default=None,
+                   help='JSON {"ranges": [{"va": hex, "hex": bytes}]} written into'
+                        ' guest memory after restore: run a modified MAIN OS'
+                        ' over a stock snapshot')
     p.add_argument('--patch-machine', nargs='?',
                     const='list+dispatch+group+name+rank+permit'
                           '+hint+pertype+clone',
@@ -146,6 +154,11 @@ def parse_args(argv):
     p.add_argument('--ring', type=int, default=64)
     p.add_argument('--input', action='append', default=[])
     p.add_argument('--feed', action='append', default=[])
+    p.add_argument('--stack-when', action='append', default=[],
+                   help='ADDR:ARG:VALUE -- stack scan (up to 4) when stack arg ARG equals VALUE')
+    p.add_argument('--poke-at', action='append', default=[],
+                   help='WHEN:ADDR:HEX -- write guest memory AT an instruction count, '
+                        'unlike --poke which seeds once before execution')
     p.add_argument('--png-at', action='append', default=[])
     p.add_argument('--panel-raw-at', action='append', default=[])
     p.add_argument('--save-at', action='append', default=[])
@@ -376,6 +389,20 @@ def main():
             raise SystemExit(2) from exc
         print('[guirun] host poke 0x%08x = %s (calibration)'
               % (addr, data.hex()))
+    if args.patch_ranges:
+        import json
+        from unicorn import UC_PROT_ALL
+        with open(args.patch_ranges) as f:
+            ranges = json.load(f)['ranges']
+        for r in ranges:
+            va, data = int(r['va'], 16), bytes.fromhex(r['hex'])
+            try:
+                m.uc.mem_write(va, data)
+            except UcError:
+                lo, hi = va & ~0xFFFFF, (va + len(data) + 0xFFFFF) & ~0xFFFFF  # the fault sink's 1 MB pages
+                m.uc.mem_map(lo, hi - lo, UC_PROT_ALL)
+                m.uc.mem_write(va, data)
+        print('[guirun] patched %d ranges from %s' % (len(ranges), args.patch_ranges))
 
     if args.patch_machine is not None:
         parts, eighth = parse_patch_machine(args.patch_machine)
@@ -552,6 +579,10 @@ def main():
                           for spec in args.panel_raw_at]
     pending_saves = [parse_save_at(spec) for spec in args.save_at]
     pending_feeds = [parse_feed(s) for s in args.feed]
+    pending_pokes = []
+    for spec in args.poke_at:
+        when_str, addr_str, hex_str = spec.split(':', 2)
+        pending_pokes.append((parse_when(when_str), int(addr_str, 0), bytes.fromhex(hex_str)))
 
     at_targets = [parse_at(spec) for spec in args.at]
     hit_counts = collections.Counter()
@@ -594,6 +625,25 @@ def main():
 
     for addr in args.stack_at:
         at(addr, make_stack_at_hook(addr))
+
+    def make_stack_when(addr, argn, value):
+        seen = [0]
+        def hook(uc, a, s_, d):
+            if seen[0] >= 4:
+                return
+            a7 = uc.reg_read(UC_M68K_REG_A7)
+            v = struct.unpack('>I', uc.mem_read(a7 + 4 * argn, 4))[0]
+            if v != value:
+                return
+            seen[0] += 1
+            sa7, found = stack_scan(uc, args.stack_depth)
+            print('[guirun] stack-when %#010x arg%d=%#x (A7=%#010x):' % (addr, argn, value, sa7))
+            for off, word in found:
+                print('  +0x%03x  0x%08x' % (off, word))
+        return hook
+    for spec in args.stack_when:
+        a_, n_, v_ = spec.split(':')
+        at(int(a_, 0), make_stack_when(int(a_, 0), int(n_), int(v_, 0)))
 
     def print_stack_lines(found):
         for offset, word in found:
@@ -715,6 +765,12 @@ def main():
             if ssi0 is not None:
                 ssi0.ips = n
             print('[guirun] ips -> %d at %d' % (n, state['instrs']))
+        due_pokes, pending_pokes[:] = (
+            [e for e in pending_pokes if e[0] <= state['instrs']],
+            [e for e in pending_pokes if e[0] > state['instrs']])
+        for when, addr, data in due_pokes:
+            m.uc.mem_write(addr, data)
+            print('[guirun] poke %d: %#010x <- %s' % (state['instrs'], addr, data.hex()))
         due_feeds, pending_feeds[:] = (
             [e for e in pending_feeds if e[0] <= state['instrs']],
             [e for e in pending_feeds if e[0] > state['instrs']])
