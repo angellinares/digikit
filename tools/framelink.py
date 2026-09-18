@@ -22,7 +22,7 @@ TABLES = (
     (0x80005348, 0x802, 1, 'tx_frame'),
     (0x8000488c, 0xabc, 1, 'rx_frame'),
     (0x800047fc, 4, 16, 'track_long'),
-    (0x80003340, 0x9a, 16, 'track_9a'),
+    (0x80003cd0, 0x9a, 16, 'track_9a'),
     (0x80005b50, 0x8e, 16, 'track_8e'),
     (0x80004684, 4, 16, 'midi_flag_a'),
     (0x800046c4, 4, 16, 'midi_flag_b'),

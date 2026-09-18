@@ -9,6 +9,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "unicorn==2.1.4",
     "capstone==5.0.7",
+    "pypcode==4.0.0",
 ]
 
 # Pinned to 3.12 deliberately. On 3.14 (the Homebrew default here) binary

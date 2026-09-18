@@ -5,9 +5,11 @@ import os
 import pickle
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 from emu.dtim import BASES, DTMR, Dtims, Timers, restore_timers
-from emu.edma import TxChannel, needs_legacy_kick
+from emu.edma import TxChannel, kick, needs_legacy_kick
+from emu.longrun import register_esdhc_checkpoint_component
 from emu.pit import Pits
 from emu.snapshot import (
     DeferredComponentRestore,
@@ -127,6 +129,24 @@ class CheckpointStateTest(unittest.TestCase):
         self.assertFalse(needs_legacy_kick(clone))
         self.assertTrue(needs_legacy_kick(fresh))
 
+    def test_legacy_edma_kick_uses_resolved_tx_state(self):
+        machine = _FakeMachine()
+        old_state, resolved_state = 0x4094CD74, 0x40964D74
+        machine.uc.mem_write(old_state, b"\x00\x00\x00\x00")
+        machine.uc.mem_write(resolved_state, b"\x00\x00\x00\x01")
+
+        class Channel:
+            def __init__(self):
+                self.runs = 0
+
+            def run(self):
+                self.runs += 1
+                return 5
+
+        channel = Channel()
+        self.assertEqual(kick(machine, channel, tx_state=resolved_state), 5)
+        self.assertEqual(channel.runs, 1)
+
     def test_restore_timers_preserves_armed_dtim_registers(self):
         machine = _FakeMachine()
         machine.uc.mem_write(BASES[3] + DTMR, b"\x00\x1d")
@@ -176,6 +196,43 @@ class CheckpointStateTest(unittest.TestCase):
             deferred.require_claimed()
             with self.assertRaisesRegex(RuntimeError, "not configured for deferral"):
                 deferred.claim("other", _Component())
+        finally:
+            os.unlink(path)
+
+    def test_esdhc_component_is_registered_serialized_and_restored(self):
+        profile = SimpleNamespace(
+            sd_status=0x50000000,
+            sd_cmd_sem=0x50000010,
+            sd_data_sem=0x50000020,
+            sd_dma_sem=0x50000030,
+        )
+        machine, events = _FakeMachine(), {}
+        components = {"uart_in": collections.deque()}
+        model = register_esdhc_checkpoint_component(
+            machine, events, profile, components
+        )
+        model.card.overlay[7 * 512] = 0xA5
+
+        handle, path = tempfile.mkstemp()
+        os.close(handle)
+        try:
+            save(machine, path, components=components)
+            restored_machine, restored_events = _FakeMachine(), {}
+            restored_components = {"uart_in": collections.deque()}
+            restored = register_esdhc_checkpoint_component(
+                restored_machine,
+                restored_events,
+                profile,
+                restored_components,
+            )
+            restore_into(
+                restored_machine,
+                path,
+                components=restored_components,
+            )
+            self.assertIs(restored_events["esdhc"], restored)
+            self.assertIs(restored_components["esdhc"], restored)
+            self.assertEqual(restored.card.data_for(18, 7, 1), b"\xA5")
         finally:
             os.unlink(path)
 

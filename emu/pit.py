@@ -97,6 +97,24 @@ IDLE_STEP = 1_000_000
 PIT3_VECTOR_SLOT = 0x40000340     # VBR + 208*4, not build-specific
 
 
+def interrupt_level(m, vec, respect_mask=True):
+    """Return a vector's programmed level, or None if disabled/masked."""
+    for base, first in INTC:
+        if first <= vec < first + 64:
+            src = vec - first
+            break
+    else:
+        return None
+    icr = m.uc.mem_read(base + ICR_BASE + src, 1)[0] & 0x07
+    if not icr:
+        return None
+    if not respect_mask:
+        return icr
+    imrh, imrl = struct.unpack('>II', m.uc.mem_read(base + IMR_BASE, 8))
+    masked = (imrl >> src) & 1 if src < 32 else (imrh >> (src - 32)) & 1
+    return None if masked else icr
+
+
 def intro_running(m, intro_isr):
     """-> True while the intro still owns PIT3.
 
@@ -216,18 +234,7 @@ class Pits:
         Read from the INTC rather than assumed, because the RTOS changes it:
         the context switcher unmasks PIT0's source on every switch.
         """
-        for base, first in INTC:
-            if first <= vec < first + 64:
-                src = vec - first
-                break
-        else:
-            return None
-        icr = self.m.uc.mem_read(base + ICR_BASE + src, 1)[0] & 0x07
-        if not icr:                       # level 0 means the source is off
-            return None
-        imrh, imrl = struct.unpack('>II', self.m.uc.mem_read(base + IMR_BASE, 8))
-        masked = (imrl >> src) & 1 if src < 32 else (imrh >> (src - 32)) & 1
-        return None if masked else icr
+        return interrupt_level(self.m, vec)
 
     def deadline(self, done):
         """-> the instruction count at which the next channel is due.

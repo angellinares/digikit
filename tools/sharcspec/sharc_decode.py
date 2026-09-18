@@ -69,6 +69,14 @@ def linear(mem, start, count, dec):
         for i, v in enumerate(w + [0] * (3 - len(w))):
             frame |= v << (32 - 16 * i)
         form, cands = dec.decode_frame(frame)
+        if form is not None and form["width"] // 16 > len(w):
+            # The frame was zero-padded past the end of the buffer, so a match
+            # that needs those padding words is not a real instruction.
+            # sharc_disasm.py makes the same check; without it the last word of
+            # an image ending on an all-zero word reads as a phantom 48-bit
+            # Type21a, which is the whole of the two decoders' disagreement on
+            # Digitone II 1.11.
+            form = None
         if form is None:
             out.append((pos, 1, None, cands, frame))
             pos += 2

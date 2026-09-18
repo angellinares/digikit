@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional
+from typing import Dict, Iterator, List, Optional, Protocol
 
 from sharc_visa_tables import TYPES, decode, get_type
 
@@ -71,12 +71,19 @@ def identify(insn: int, bits: int, include_uncertain: bool = False) -> List[str]
     names = [t["name"] for t in TYPES
              if t["bits"] == bits and (include_uncertain or not t["uncertain"])
              and insn & t["opcode_mask"] == t["opcode_value"]]
-    return sorted(names, key=lambda n: -get_type(n)["fixed_bits"])
+    def fixed_bits(name: str) -> int:
+        entry = get_type(name)
+        assert entry is not None
+        return entry["fixed_bits"]
+
+    return sorted(names, key=lambda n: -fixed_bits(n))
 
 
 def _decode_fields(insn: int, type_name: str) -> Dict[str, int]:
+    entry = get_type(type_name)
+    assert entry is not None
     return {label: (insn >> lo) & ((1 << (hi - lo + 1)) - 1)
-            for label, (hi, lo) in get_type(type_name)["fields"].items()}
+            for label, (hi, lo) in entry["fields"].items()}
 
 
 def disassemble(data: bytes, start_offset: int = 0, count: Optional[int] = None,
@@ -118,6 +125,7 @@ def disassemble(data: bytes, start_offset: int = 0, count: Optional[int] = None,
             yield Instruction(offset=offset, length_bytes=None, type_name="unknown", fields={},
                               raw=words[0] if words else None, kind="unknown", note=reason)
             return
+        assert entry is not None
         insn = 0
         for word in words[:entry["bits"] // 16]:
             insn = (insn << 16) | word
@@ -146,6 +154,27 @@ class WalkReport:
         return self.bytes_decoded / self.bytes_total if self.bytes_total else 0.0
 
 
+class ShortWordReader(Protocol):
+    """Minimal loader-memory interface for exact-PC decoding."""
+
+    def read_sw(self, pc_sw: int, size: int) -> Optional[bytes]: ...
+
+
+def decode_loaded_at(reader: ShortWordReader, pc_sw: int) -> Instruction:
+    """Decode exactly at a loader-backed short-word PC.
+
+    Decode from the largest contiguous mapped window (6, 4, then 2 bytes),
+    rather than sweeping across loader blocks or gaps.
+    """
+    for size in (6, 4, 2):
+        window = reader.read_sw(pc_sw, size)
+        if window is not None:
+            return next(disassemble(window, count=1))
+    return Instruction(
+        0, None, "unknown", kind="unknown", note="PC unmapped in loader memory"
+    )
+
+
 def walk_and_report(data: bytes, start_offset: int = 0) -> WalkReport:
     """Run disassemble() until it stops, and report how far it got and why."""
     offset = start_offset
@@ -161,6 +190,7 @@ def walk_and_report(data: bytes, start_offset: int = 0) -> WalkReport:
             n_conf += 1
         else:
             n_unc += 1
+        assert rec.length_bytes is not None
         offset = rec.offset + rec.length_bytes
     return WalkReport(
         start_offset=start_offset, end_offset=offset, bytes_total=len(data) - start_offset,

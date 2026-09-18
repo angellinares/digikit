@@ -136,8 +136,15 @@ def usable_rung(prefix, default):
 
     So choose by state rather than by number: newest rung first, take the
     first one whose intro is both live and not already parked. Digitakt
-    qualifies at every rung and therefore still gets 400M, unchanged. On
-    Digitone only 400M is disqualified, and it gets 280M.
+    qualifies at every rung and therefore still gets 400M, unchanged.
+
+    The rung a given firmware lands on is an OBSERVATION, not a rule, and it
+    moves when the image is relinked. Digitakt II 1.15C gets 400M and Digitone
+    II 1.10E gets 280M; Digitone II **1.11** gets 400M again -- on that build
+    the 280M rung composes no frame at all and leaves the timers held, so a
+    caller who hard-codes 280M "because it is a Digitone" resumes a machine
+    that never draws. This function is the answer to that question; call it
+    rather than copying a number out of this docstring.
 
     Falls back to `default` when nothing qualifies -- a firmware whose intro
     this cannot recognise is no worse off than before.

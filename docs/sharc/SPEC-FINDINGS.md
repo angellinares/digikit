@@ -157,15 +157,24 @@ Use the PGR value, not the PRM figure digits, for these:
 | Type 5b move, 9b | VISA marker drawn `0000000` | PGR `0111111` |
 | Type 11c, 17b | figures carry template digits | PGR |
 | Type 17a | `i[2:0]` label over a 7-bit field | `ureg[6:0]` |
-| Type 19a bitrev | bits 41–39 disagree | open |
+| Type 19a | figure draws bits 41–40 as a field `sc[1:0]` | PGR fixes them `10`; §3.9 |
+| Type 19a bitrev | bits 41–39 disagree | PGR `101`; bit 39 is the bit-reverse flag, §3.9 |
 | Type 25c rframe | figure is a copy of 25a rframe | PGR 16-bit form |
 
 ### 3.3 SHARC+-only forms (PRM only, no second source)
 
 Types 3d, 4d, 7d (`b2w`/`w2b` address switch), 12a-ureg, 14d, 22a, 25a-rframe,
-26a (`sync`), plus new fields in 3b/4b/19a. Marked `unconfirmed` in the table.
+26a (`sync`), plus new fields in 3b/4b. Marked `unconfirmed` in the table.
 Note: Types **7a and 7d print identical fixed bits** in the PRM — at least one
 figure is imprecise; distinguish by field values in context.
+
+Resolved on 2026-09-16 by a third source: the ADSP-2106x, ADSP-21065L and
+ADSP-21160 manuals (`docs/sharc/SOURCES.md`). Type 7a's fixed bits are the eight
+of `000 00100`, with bit 39 the `G` field, "Selects DAG1 or DAG2" — so the PRM's
+ninth digit is a shaded field bit, and the table, which already declines to fix
+it, is right. Type 19a's claimed new field `sc[1:0]` goes the same way; see §3.9.
+Type 7d keeps bit 39 fixed at 1 and stays unconfirmed, since the classic manuals
+have no Type 7d to check it against.
 
 ### 3.4 The Type 2b correction (firmware-arbitrated)
 
@@ -192,7 +201,7 @@ here; the firmware is the arbiter.
   47..16. In memory, code is 16-bit little-endian words, most-significant word
   first for multi-word instructions.
 
-### 3.6 The undocumented instruction (Type 23/24)
+### 3.6 The undocumented 16-bit instruction (`Type23p_undoc16`)
 
 - ADI's public PRM **skips Type 23 and Type 24** entirely.
 - The firmware contains a heavily-used **16-bit** instruction the manual never
@@ -210,6 +219,120 @@ here; the firmware is the arbiter.
 - One open boundary case: the Ghidra prior-art module sizes `0x0300` as 48-bit
   where our provisional form makes it 16-bit. Branch alignment did not regress, so
   the 16-bit call holds for now, but the exact extent of the family is not final.
+
+### 3.7 Type 21a is the whole word, not a prefix
+
+- The PRM prints a value for every bit of Type 21a (Figure 17-5, p.413: 48
+  zero bits) and Type 21c (Figure 17-6: `0x0001`). The classic PGR grid leaves
+  those bits blank, and `build_table.py` read a blank as "any value", so
+  `Type21a` matched any first word `0x0000`-`0x007f` and swallowed the one or
+  two short instructions after it: **904 matches in Digitakt II 1.16, of which
+  only 44 (4.9%) are the all-zero word** (Digitone II 1.11: 31 of 898).
+- `FULL_WORD` in `build_table.py` now takes every bit from the figure for these
+  two forms: Type21a `0xffffffffffff`/`0`, Type21c `0xffff00000000`/
+  `0x000100000000`.
+- The left-over first words become **`Type21p_undoc16`**, provisional in the
+  same sense as Type23p_undoc16: top nine bits zero, a 7-bit operand, 16 bits
+  long, no name and no semantics. 883 in 1.16, 969 in 1.11. Its commonest
+  first words are `0x0032`, `0x001c`, `0x0008`, `0x0030`, `0x0010`. It is
+  followed by itself 18% of the time, then by `2a`, `23p_undoc16` and `3a` —
+  not the signature 3.6 records for Type23p_undoc16, so the two are probably
+  unrelated despite the shared construction.
+- In the SLEIGH module the crossing pattern with Type22c moves from Type21a to
+  Type21p_undoc16 (bit 32), and Type21c stops crossing anything.
+- Open: what the instruction is. The first-word values cluster, which is a
+  lead; the manuals document nothing in this range beyond `0x0001`.
+
+### 3.8 The same rule over the rest of the table
+
+- `tools/sharcspec/audit_bits.py` lists, per form, the bits the PRM figure
+  prints that the table does not fix. Ranked by how many: Type22a 38,
+  Type26a 32, Type20a 28, Type3d and Type4d 16, Type2a 12, Type13a 11,
+  Type11a 9.
+- Only the idle-class forms are wrong. Type22a (idle/emuidle, Figure 17-7,
+  p.414) prints every bit but `emu`, and Type26a (`sync`) prints every bit.
+  Neither strict word occurs in either image, while their nine- and
+  sixteen-bit prefixes took 220 and 2 instructions. Both are now tightened,
+  and the words they took become `Type22p_undoc48` and `Type26p_undoc48`:
+  48 bits, the width the loose forms always read them at.
+- Restoring the dropped bits on the compute forms destroys real matches:
+  Type2a loses all 1,089 of its instances in Digitakt II 1.16 and the aligned
+  instruction count falls 22%, Type13a goes to zero, Type11a to two. Those
+  PRM digits are the stale template values the merge rule exists to ignore,
+  so it stands for them. Type3d, Type4d and Type20a change nothing
+  measurable either way.
+- A 16-bit reading of Type22a's leftovers was tried first and rejected: it
+  stranded the two words after each one, split the RPC dispatcher into two
+  functions and added 33 truncated functions in 1.16.
+- Open: what the Type22p and Type26p words are. Their length is what the
+  decoder always read; nothing else about them is confirmed.
+
+### 3.9 Type 19a took two bits too many, and `Type19p_undoc48` has them
+
+- Both classic manuals fix Type 19's bits 44–40 at `10110` and make bit 39 the
+  bit-reverse flag, `0` for `MODIFY` and `1` for `BITREV` (ADSP-21065L
+  `all.txt` 3617-3670; ADSP-21160 ISR `all.txt` 5723-5745). The PRM figure
+  shades only bits 47–42 and draws bits 41–40 as a SHARC+ field `sc[1:0]` and
+  bit 39 as `w`, so the merge rule — a PRM field wins over a PGR value — left
+  `Type19a` matching on six bits where `Type18a` and `Type20a` match on eight.
+- On six bits it claimed the whole `000101` block. Its tighter neighbours took
+  what they own and `Type19a` kept the rest: its own `10110` with bit 39 clear,
+  **and all of `10101`, which no ADI manual documents**. Bits 44–40 run Type 18
+  `10100`, the gap, Type 19 `10110`, Type 20 `10111` — in the PGR Rev 2.4 and in
+  the ADSP-21160, ADSP-21065L and ADSP-2106x manuals alike.
+- `tools/sharcfields.py`, new, is the mirror of `audit_bits.py`: it tallies the
+  values the table's declared fields actually take across the aligned
+  instructions of both images and flags a field sitting on bits the classic grid
+  fixes. The joint value of `sc[1:0]` and `w` is `10 0` for 1,178 instructions,
+  `01 1` for 748 and `01 0` for 9.
+- `DROP_FIELDS` in `build_table.py` now drops Type19a's `sc[1:0]` and `w`
+  declarations, so the classic values at bits 41–39 are used and `Type19a` fixes
+  nine bits, `000101100`. The 757 words in the gap become
+  **`Type19p_undoc48`**: 48 bits, prefix `00010101`, Type19a's remaining field
+  layout with bit 39 an unknown `u`. 410 in 1.16, 347 in 1.11.
+- The override lives in `build_table.py`, not in `figures.json`, which
+  `extract_figures.py` regenerates from the PDF.
+- Measured, `out/sharcpcode/t23` against `t24`: **0 regressions**. Aligned and
+  decoded counts, function counts and size histograms, functions truncated at
+  bad data, probe verdicts and every Error and warning bookmark count are
+  identical in both images, and `19a` plus `19p_undoc48` sums exactly to the old
+  `19a` — 969 to 559 + 410, and 966 to 619 + 347.
+- The provisional names in 3.6, 3.7, 3.8 and here read `21p`, `22p`, `23p`,
+  `26p`, `19p` after the form whose loose prefix used to take the words. They
+  are not claims about ADI's numbering: Types 23 and 24 are now known to be
+  `IDLE16` and `CJUMP`/`RFRAME` (`docs/FINDINGS.md`).
+- Open: what `10101` is. Bit 39 is set in 748 of the 757, which is the one thing
+  arguing it is a distinct instruction rather than a wider Type 19 — if `w` were
+  still the bit-reverse flag then nearly all of them would be `BITREV`, and the
+  documented bit-reverse form occurs 8 times in both images combined.
+
+### 3.10 The branch figures' gap digits, and `Type8p_undoc48`
+
+- `audit_bits.py` reports `Type8a_abs`/`Type8a_rel` dropping seven PRM bits
+  (32–27 and 25), `Type9a_*` one (23) and `Type9b_*` two (25, 23). Split forms
+  take their fixed bits from one classic table only — `fixed_bits_for` never
+  looked at the PRM pattern at all — so every bit that table blanks was dropped
+  unconditionally.
+- Restoring them all is wrong, and measurably: **225 aligned instructions lost
+  in 1.16 and 279 in 1.11**, and `Type8a_abs` falls from 29 matches to 6. The
+  PRM's digits in those gaps are the same stale template values as on the
+  compute forms (§3.8).
+- Per bit over both images, only bit 25 on the Type8a pair discriminates: set in
+  13 of `8a_rel`'s 1,382 and 19 of `8a_abs`'s 54, with 30 of those 32 carrying a
+  target that is not a plausible address. Bit 23 on Type9a is a field in use —
+  set in 18 of `Type9a_abs`'s 98 and 14 of `Type9a_rel`'s 34. `RESTORE_PRM_GAP`
+  in `build_table.py` names the bits, per form; measure before adding one.
+- Excluding the bit-25 words without rehoming them still regressed (decoded
+  instructions −50 and −71, `halt_baddata` 296 → 298): an undecoded word strands
+  the alignment sweep. **`Type8p_undoc48`** takes them instead — bits 47–41 =
+  `0000011` with bit 25 set, one prefix covering both halves since bit 40 is
+  Type8a's own abs/rel selector, kept as the field `r`. `undocumented_form`
+  grew an `extra_fixed` entry to express a fixed bit outside the top prefix.
+- Measured: 0 regressions against both `t23` and `t24`; aligned counts identical
+  to baseline; `8a_rel` + `8a_abs` + `8p_undoc48` = the old `8a_rel` + `8a_abs`
+  in both images.
+- Open: what the Type8p words are. 32 across two images, several byte-identical
+  in both, so they are shared code rather than misalignment.
 
 ---
 

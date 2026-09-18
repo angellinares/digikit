@@ -62,6 +62,23 @@ from L1 into L2 (or vice versa) was observed to validate this independently;
 **treat all L2 SW addresses in this document as hypothesis-scale, not
 confirmed-scale**, same caveat v1 raised for L2 in general.
 
+**The L1 and L2 names themselves are cross-checked against the public ADI
+manuals.** The SHARC+ Core Programming Reference (Rev 1.5, chapter 7, "L1 Memory
+Interface") describes L1 as four independent blocks, each mapped to its own
+region of the address space and each reachable through several word-size aliases
+of the same bytes. That matches the `0x28xxxxxx` regions above: separate
+sub-bases at `0x2824xxxx`, `0x282Cxxxx`, `0x282Dxxxx` and `0x28380000`, and the
+confirmed `BW = 2·SW + 0x28000000` alias. The ADSP-2156x SHARC+ Processor
+Hardware Reference (Rev 1.0, chapter 8, "L2 System Memory") describes one L2
+instance, L2CTL0, a single unified SRAM with the boot ROM rather than four
+blocks, which matches the single `0x20000000` region. So the labels used here
+are right, and `docs/SHARC-ADDRESS-MAP.md` had them the other way round when it
+was merged. **[D][C]**
+
+The datasheet page that states this part's numeric memory map outright is not
+extracted under `out/refs/` -- the Core Programming Reference defers to it -- so
+this rests on the structural match above and not on a single table. **[O]**
+
 ---
 
 ## 1. Full call graph (Task 1)

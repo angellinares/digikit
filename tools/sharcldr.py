@@ -16,9 +16,9 @@ for Digitone). BFLAG_FINAL's target_address carries no documented meaning
 
 The blob begins with an ADI boot-stream: a 16-byte, little-endian, four
 32-bit-field (block_code, target_address, byte_count, argument) header per
-block. A header is valid iff the byte-wise XOR of all 16 header bytes is
-zero -- that is the format's header checksum and the reliable way to find
-block boundaries. block_code bit 8 is BFLAG_FILL (0x100): when set, no
+block. A header is valid when its HDRSIGN names a target core and the
+byte-wise XOR of all 16 header bytes is zero. block_code bit 8 is
+BFLAG_FILL (0x100): when set, no
 payload follows the header (the block is a zero/constant fill of
 byte_count bytes) -- a FILL block has no payload in the stream; otherwise
 exactly byte_count payload bytes follow. Table 40-33 confirms a FILL
@@ -66,8 +66,16 @@ Usage:
 that starts at the last BFLAG_FIRST entry (as a byte address) and continues
 while each block starts where the previous one ends, FILL blocks included.
 """
-import argparse, hashlib, json, math, os, struct, sys
+
+import argparse
+import hashlib
+import json
+import math
+import os
+import struct
+import sys
 from collections import defaultdict
+from types import MappingProxyType
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -110,6 +118,7 @@ def byte_to_sw(addr):
         return None
     return delta // 2
 
+
 # Measured on this firmware's own aPLib-compressed container streams, which
 # is the only honest local definition of "compressed": sections 2/3/7 of
 # both shipping images sit at 7.83-7.88 bits/byte. Two known-raw controls
@@ -122,12 +131,10 @@ def byte_to_sw(addr):
 APLIB_ENTROPY_BAND = (7.83, 7.88)
 ENTROPY_RAW_CEILING = 7.5
 
-# Bits 24-31 of block_code are the header checksum byte, not flags: the whole
-# 16-byte header XORs to zero, and that byte is what makes it do so. Reporting
-# them as flags is how every block ends up looking like it has eight of them.
-# Every shipping block here has 0xad there, which is a property of the other
-# fields, not a meaning.
-HDRCHK_SHIFT = 24
+# Bits 16-23 are HDRCHK and bits 24-31 are HDRSIGN; neither byte contains
+# block flags. HDRCHK makes the byte-wise XOR of the 16-byte header zero,
+# while HDRSIGN selects core 0/1/2 as documented in Table 40-27.
+FLAG_BITS = 16
 
 
 _BIT_NAMES = {bit: name for name, bit in BFLAGS.items()}
@@ -135,17 +142,158 @@ _BIT_NAMES = {bit: name for name, bit in BFLAGS.items()}
 
 def _flags(block_code):
     flags = []
-    for bit in range(HDRCHK_SHIFT):
+    for bit in range(FLAG_BITS):
         if block_code & (1 << bit):
             flags.append(_BIT_NAMES.get(bit, "bit%d" % bit))
     return flags
 
 
 def _header_valid(hdr):
+    if len(hdr) != HEADER_LEN or hdr[3] not in HDRSIGN:
+        return False
     x = 0
     for b in hdr:
         x ^= b
     return x == 0
+
+
+class LoadedMemory:
+    """Read-only view of the address space written by an ADI boot stream.
+
+    Loader byte addresses are canonical.  Repeated or overlapping writes are
+    resolved in stream order, with the last write winning.  FILL values use
+    the same repeated little-endian 32-bit argument semantics as
+    :func:`main_program`; an importer such as Ghidra may instead represent
+    fills as uninitialized memory as an analysis policy.
+    """
+
+    def __init__(self, data, blocks):
+        try:
+            self.data = bytes(data)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("stream data must be bytes-like") from exc
+        self.blocks = tuple(self._validate_block(block) for block in blocks)
+
+    @classmethod
+    def from_stream(cls, data, blocks=None):
+        """Build a view from stream bytes and optional parsed block records."""
+        try:
+            immutable_data = bytes(data)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("stream data must be bytes-like") from exc
+        return cls(
+            immutable_data, parse_blocks(immutable_data) if blocks is None else blocks
+        )
+
+    def _validate_block(self, block):
+        if not hasattr(block, "__getitem__"):
+            raise ValueError("block metadata must be a mapping")
+        try:
+            record = dict(block)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("block metadata must be a mapping") from exc
+
+        def nonnegative(name):
+            value = record.get(name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(
+                    "block metadata %s must be a nonnegative integer" % name
+                )
+            return value
+
+        nonnegative("target_address")
+        if "index" in record:
+            nonnegative("index")
+        count = nonnegative("byte_count")
+        fill = record.get("fill")
+        if not isinstance(fill, bool):
+            raise ValueError("block metadata fill must be a boolean")
+        if fill:
+            argument = record.get("argument")
+            if (
+                not isinstance(argument, int)
+                or isinstance(argument, bool)
+                or not 0 <= argument <= 0xFFFFFFFF
+            ):
+                raise ValueError(
+                    "FILL block argument must be a 32-bit unsigned integer"
+                )
+        else:
+            offset = nonnegative("payload_offset")
+            payload_len = nonnegative("payload_len")
+            if payload_len != count:
+                raise ValueError("non-FILL block payload_len must equal byte_count")
+            if offset + payload_len > len(self.data):
+                raise ValueError("non-FILL block payload metadata exceeds stream data")
+        if "flags" in record:
+            record["flags"] = tuple(record["flags"])
+        return MappingProxyType(record)
+
+    @staticmethod
+    def _check_address_size(address, size):
+        for name, value in (("address", address), ("size", size)):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError("%s must be a nonnegative integer" % name)
+
+    def _covering_block(self, address):
+        for index in range(len(self.blocks) - 1, -1, -1):
+            block = self.blocks[index]
+            if (
+                block["byte_count"]
+                and block["target_address"]
+                <= address
+                < block["target_address"] + block["byte_count"]
+            ):
+                return index, block
+        return None, None
+
+    def read(self, address, size):
+        """Return exactly *size* final loaded bytes, or None for any gap."""
+        self._check_address_size(address, size)
+        result = bytearray(size)
+        for i in range(size):
+            _, block = self._covering_block(address + i)
+            if block is None:
+                return None
+            offset = address + i - block["target_address"]
+            if block["fill"]:
+                result[i] = (block["argument"] >> (8 * (offset % 4))) & 0xFF
+            else:
+                result[i] = self.data[block["payload_offset"] + offset]
+        return bytes(result)
+
+    def read_sw(self, pc_sw, size=6):
+        """Read from a VISA short-word PC using loader byte addressing."""
+        if not isinstance(pc_sw, int) or isinstance(pc_sw, bool) or pc_sw < 0:
+            raise ValueError("pc_sw must be a nonnegative integer")
+        return self.read(sw_to_byte(pc_sw), size)
+
+    def source_block(self, address):
+        """Return the stream-order index of the final block covering address."""
+        self._check_address_size(address, 0)
+        position, block = self._covering_block(address)
+        if block is None:
+            return None
+        return block.get("index", position)
+
+    def ranges(self):
+        """Return sorted, merged half-open ranges written by nonempty blocks."""
+        spans = sorted(
+            (block["target_address"], block["target_address"] + block["byte_count"])
+            for block in self.blocks
+            if block["byte_count"]
+        )
+        merged = []
+        for start, end in spans:
+            if merged and start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        return tuple(merged)
+
+    def has_final_marker(self):
+        """Whether parsing reached a final loader-stream marker block."""
+        return bool(self.blocks and "FINAL" in self.blocks[-1].get("flags", ()))
 
 
 def parse_blocks(data):
@@ -158,29 +306,30 @@ def parse_blocks(data):
     offset = 0
     index = 0
     while offset + HEADER_LEN <= len(data):
-        hdr = data[offset:offset + HEADER_LEN]
+        hdr = data[offset : offset + HEADER_LEN]
         if not _header_valid(hdr):
             break
-        block_code, target_address, byte_count, argument = struct.unpack(
-            "<IIII", hdr)
+        block_code, target_address, byte_count, argument = struct.unpack("<IIII", hdr)
         fill = bool(block_code & (1 << FILL_BIT))
         payload_offset = offset + HEADER_LEN
         payload_len = 0 if fill else byte_count
         if payload_offset + payload_len > len(data):
             break
-        blocks.append({
-            "index": index,
-            "offset": offset,
-            "block_code": block_code,
-            "target_address": target_address,
-            "byte_count": byte_count,
-            "argument": argument,
-            "fill": fill,
-            "flags": _flags(block_code),
-            "core": target_core(block_code),
-            "payload_offset": payload_offset,
-            "payload_len": payload_len,
-        })
+        blocks.append(
+            {
+                "index": index,
+                "offset": offset,
+                "block_code": block_code,
+                "target_address": target_address,
+                "byte_count": byte_count,
+                "argument": argument,
+                "fill": fill,
+                "flags": _flags(block_code),
+                "core": target_core(block_code),
+                "payload_offset": payload_offset,
+                "payload_len": payload_len,
+            }
+        )
         offset = payload_offset + payload_len
         index += 1
     return blocks
@@ -237,8 +386,14 @@ def main_program(data, blocks):
     if not firsts:
         return None, b"", []
     entry = sw_to_byte(firsts[-1])
-    start = next((i for i, b in enumerate(blocks)
-                  if not b["fill"] and b["byte_count"] and b["target_address"] == entry), None)
+    start = next(
+        (
+            i
+            for i, b in enumerate(blocks)
+            if not b["fill"] and b["byte_count"] and b["target_address"] == entry
+        ),
+        None,
+    )
     if start is None:
         return None, b"", []
     code, used, end = bytearray(), [], None
@@ -247,9 +402,9 @@ def main_program(data, blocks):
             break
         if b["fill"]:
             pattern = struct.pack("<I", b["argument"])
-            code += (pattern * (b["byte_count"] // 4 + 1))[:b["byte_count"]]
+            code += (pattern * (b["byte_count"] // 4 + 1))[: b["byte_count"]]
         else:
-            code += data[b["payload_offset"]:b["payload_offset"] + b["payload_len"]]
+            code += data[b["payload_offset"] : b["payload_offset"] + b["payload_len"]]
         used.append(b["index"])
         end = b["target_address"] + b["byte_count"]
     return entry, bytes(code), used
@@ -303,7 +458,7 @@ def alignment(data, min_count=8, gram=4, strides=(2, 4, 6, 8)):
     """
     seen = defaultdict(list)
     for i in range(len(data) - gram + 1):
-        seen[data[i:i + gram]].append(i)
+        seen[data[i : i + gram]].append(i)
     occurrences = []
     for offs in seen.values():
         if len(offs) >= min_count:
@@ -334,8 +489,10 @@ def _is_float_like(word):
 
 
 def _classify_window(chunk):
-    words = [struct.unpack("<I", chunk[i:i + 4])[0]
-              for i in range(0, len(chunk) - (len(chunk) % 4), 4)]
+    words = [
+        struct.unpack("<I", chunk[i : i + 4])[0]
+        for i in range(0, len(chunk) - (len(chunk) % 4), 4)
+    ]
     n = len(words)
     if n == 0:
         return "other", 0.0, 0.0
@@ -357,32 +514,39 @@ def characterise(data, start, window):
     windows = []
     offset = start
     while offset < len(data):
-        chunk = data[offset:offset + window]
+        chunk = data[offset : offset + window]
         kind, pct_float, pct_zero = _classify_window(chunk)
-        windows.append({
-            "offset": offset,
-            "length": len(chunk),
-            "kind": kind,
-            "pct_float": round(pct_float, 2),
-            "pct_zero": round(pct_zero, 2),
-        })
+        windows.append(
+            {
+                "offset": offset,
+                "length": len(chunk),
+                "kind": kind,
+                "pct_float": round(pct_float, 2),
+                "pct_zero": round(pct_zero, 2),
+            }
+        )
         offset += len(chunk)
 
     regions = []
     for w in windows:
-        if regions and regions[-1]["kind"] == w["kind"] \
-                and regions[-1]["end"] == w["offset"]:
+        if (
+            regions
+            and regions[-1]["kind"] == w["kind"]
+            and regions[-1]["end"] == w["offset"]
+        ):
             regions[-1]["end"] = w["offset"] + w["length"]
             regions[-1]["length"] = regions[-1]["end"] - regions[-1]["offset"]
         else:
-            regions.append({
-                "offset": w["offset"],
-                "end": w["offset"] + w["length"],
-                "length": w["length"],
-                "kind": w["kind"],
-            })
+            regions.append(
+                {
+                    "offset": w["offset"],
+                    "end": w["offset"] + w["length"],
+                    "length": w["length"],
+                    "kind": w["kind"],
+                }
+            )
     for r in regions:
-        r["entropy"] = round(entropy(data[r["offset"]:r["end"]]), 3)
+        r["entropy"] = round(entropy(data[r["offset"] : r["end"]]), 3)
     return windows, regions
 
 
@@ -405,27 +569,42 @@ def summarise(path, data, blocks, stop_offset):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("blob", help="path to a section_7_*.bin")
-    ap.add_argument("--window", type=int, default=4096,
-                    help="characterisation window size in bytes")
+    ap.add_argument(
+        "--window", type=int, default=4096, help="characterisation window size in bytes"
+    )
     ap.add_argument("--json", help="write the full result dict as JSON")
     ap.add_argument("--dump-blocks", help="write each block's payload here")
-    ap.add_argument("--main", help="write the final application's code region to this file")
-    ap.add_argument("--align", action="store_true",
-                    help="run alignment() over regions and block payloads")
-    ap.add_argument("--addr", action="append", default=[],
-                    help="address to resolve to a file offset (hex 0x... or "
-                         "decimal); repeatable")
-    ap.add_argument("--addr-space", choices=("sw", "byte"), default="sw",
-                    help="how to interpret --addr values (default: sw)")
+    ap.add_argument(
+        "--main", help="write the final application's code region to this file"
+    )
+    ap.add_argument(
+        "--align",
+        action="store_true",
+        help="run alignment() over regions and block payloads",
+    )
+    ap.add_argument(
+        "--addr",
+        action="append",
+        default=[],
+        help="address to resolve to a file offset (hex 0x... or decimal); repeatable",
+    )
+    ap.add_argument(
+        "--addr-space",
+        choices=("sw", "byte"),
+        default="sw",
+        help="how to interpret --addr values (default: sw)",
+    )
     args = ap.parse_args()
 
     data = open(args.blob, "rb").read()
     blocks = parse_blocks(data)
-    stop_offset = blocks[-1]["payload_offset"] + blocks[-1]["payload_len"] \
-        if blocks else 0
+    stop_offset = (
+        blocks[-1]["payload_offset"] + blocks[-1]["payload_len"] if blocks else 0
+    )
     windows, regions = characterise(data, stop_offset, args.window)
     summary = summarise(args.blob, data, blocks, stop_offset)
 
@@ -436,8 +615,9 @@ def main():
                 continue
             name = "blk%02d_%08x.bin" % (b["index"], b["target_address"])
             with open(os.path.join(args.dump_blocks, name), "wb") as f:
-                f.write(data[b["payload_offset"]:
-                             b["payload_offset"] + b["payload_len"]])
+                f.write(
+                    data[b["payload_offset"] : b["payload_offset"] + b["payload_len"]]
+                )
 
     if args.main:
         base, code, used = main_program(data, blocks)
@@ -446,8 +626,10 @@ def main():
         os.makedirs(os.path.dirname(os.path.abspath(args.main)), exist_ok=True)
         with open(args.main, "wb") as f:
             f.write(code)
-        print("main program: %d bytes at byte address 0x%x, sha256 %s, blocks %s -> %s" % (
-            len(code), base, hashlib.sha256(code).hexdigest(), used, args.main))
+        print(
+            "main program: %d bytes at byte address 0x%x, sha256 %s, blocks %s -> %s"
+            % (len(code), base, hashlib.sha256(code).hexdigest(), used, args.main)
+        )
 
     result = {
         "summary": summary,
@@ -456,50 +638,75 @@ def main():
         "regions": regions,
     }
 
-    alignment_results = None
+    alignment_results = {}
     if args.align:
         alignment_results = {"regions": [], "blocks": []}
         for r in regions:
             if r["kind"] == "zero":
                 continue
-            span = data[r["offset"]:r["end"]]
-            alignment_results["regions"].append({
-                "label": "%s@%d..%d" % (r["kind"], r["offset"], r["end"]),
-                "length": len(span),
-                "alignment": alignment(span),
-            })
+            span = data[r["offset"] : r["end"]]
+            alignment_results["regions"].append(
+                {
+                    "label": "%s@%d..%d" % (r["kind"], r["offset"], r["end"]),
+                    "length": len(span),
+                    "alignment": alignment(span),
+                }
+            )
         for b in blocks:
             if b["fill"]:
                 continue
-            span = data[b["payload_offset"]:
-                        b["payload_offset"] + b["payload_len"]]
-            alignment_results["blocks"].append({
-                "label": "blk%02d" % b["index"],
-                "length": len(span),
-                "alignment": alignment(span),
-            })
+            span = data[b["payload_offset"] : b["payload_offset"] + b["payload_len"]]
+            alignment_results["blocks"].append(
+                {
+                    "label": "blk%02d" % b["index"],
+                    "length": len(span),
+                    "alignment": alignment(span),
+                }
+            )
         result["alignment"] = alignment_results
 
     if args.json:
         json.dump(result, open(args.json, "w"), indent=2)
 
     print("=== %s ===" % args.blob)
-    print("size=%d  sha256=%s  entropy=%.3f %s" % (
-        summary["size"], summary["sha256"], summary["entropy"],
-        _entropy_annotation(summary["entropy"])))
-    print("blocks=%d  header_bytes=%d  payload_bytes=%d  fill_bytes=%d" % (
-        summary["block_count"], summary["header_bytes"],
-        summary["payload_bytes"], summary["fill_bytes"]))
-    print("parse_stopped_at=%d  unparsed_bytes=%d" % (
-        summary["parse_stopped_at"], summary["unparsed_bytes"]))
+    print(
+        "size=%d  sha256=%s  entropy=%.3f %s"
+        % (
+            summary["size"],
+            summary["sha256"],
+            summary["entropy"],
+            _entropy_annotation(summary["entropy"]),
+        )
+    )
+    print(
+        "blocks=%d  header_bytes=%d  payload_bytes=%d  fill_bytes=%d"
+        % (
+            summary["block_count"],
+            summary["header_bytes"],
+            summary["payload_bytes"],
+            summary["fill_bytes"],
+        )
+    )
+    print(
+        "parse_stopped_at=%d  unparsed_bytes=%d"
+        % (summary["parse_stopped_at"], summary["unparsed_bytes"])
+    )
 
     print("\n--- blocks ---")
     for b in blocks:
-        print("blk%02d  @%-6d  code=0x%08x  addr=0x%08x  cnt=%-6d  arg=0x%08x  core=%s  %s" % (
-            b["index"], b["offset"], b["block_code"], b["target_address"],
-            b["byte_count"], b["argument"],
-            b["core"] if b["core"] is not None else "?",
-            ",".join(b["flags"]) or "-"))
+        print(
+            "blk%02d  @%-6d  code=0x%08x  addr=0x%08x  cnt=%-6d  arg=0x%08x  core=%s  %s"
+            % (
+                b["index"],
+                b["offset"],
+                b["block_code"],
+                b["target_address"],
+                b["byte_count"],
+                b["argument"],
+                b["core"] if b["core"] is not None else "?",
+                ",".join(b["flags"]) or "-",
+            )
+        )
 
     print("\n--- entry points (BFLAG_FIRST) ---")
     for ep in entry_points(blocks):
@@ -507,9 +714,17 @@ def main():
 
     print("\n--- regions ---")
     for r in regions:
-        print("%-6s %8d..%-8d  (%d KB)  entropy=%.3f %s" % (
-            r["kind"], r["offset"], r["end"], r["length"] // 1024,
-            r["entropy"], _entropy_annotation(r["entropy"])))
+        print(
+            "%-6s %8d..%-8d  (%d KB)  entropy=%.3f %s"
+            % (
+                r["kind"],
+                r["offset"],
+                r["end"],
+                r["length"] // 1024,
+                r["entropy"],
+                _entropy_annotation(r["entropy"]),
+            )
+        )
 
     if args.align:
         print("\n--- alignment ---")
@@ -517,9 +732,12 @@ def main():
             a = item["alignment"]
             hist_str = "  ".join(
                 "mod%d=%s" % (stride, _format_hist(a[stride], stride))
-                for stride in sorted(k for k in a if k != "total"))
-            print("%-20s len=%-8d n=%-6d %s" % (
-                item["label"], item["length"], a["total"], hist_str))
+                for stride in sorted(k for k in a if k != "total")
+            )
+            print(
+                "%-20s len=%-8d n=%-6d %s"
+                % (item["label"], item["length"], a["total"], hist_str)
+            )
 
     if args.addr:
         print("\n--- addr ---")
@@ -532,13 +750,19 @@ def main():
                 continue
             block = None
             for b in blocks:
-                if not b["fill"] and \
-                        b["payload_offset"] <= offset < b["payload_offset"] + b["payload_len"]:
+                if (
+                    not b["fill"]
+                    and b["payload_offset"]
+                    <= offset
+                    < b["payload_offset"] + b["payload_len"]
+                ):
                     block = b
                     break
-            print("  offset=0x%x  block=blk%02d" % (
-                offset, block["index"] if block else -1))
-            chunk = data[offset:offset + 32]
+            print(
+                "  offset=0x%x  block=blk%02d"
+                % (offset, block["index"] if block else -1)
+            )
+            chunk = data[offset : offset + 32]
             print("  " + " ".join("%02x" % byte for byte in chunk))
 
     return 0

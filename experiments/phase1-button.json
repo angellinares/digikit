@@ -1,0 +1,20 @@
+{
+  "name": "phase1-button",
+  "snapshot": "snapshots/postintro.snap",
+  "endpoint": 12000000,
+  "repeat": 2,
+  "exact": true,
+  "panel_dwell": 16,
+  "manipulation": {
+    "code": 14,
+    "press": 400000,
+    "release": 800000
+  },
+  "ranges": [
+    {
+      "lo": 2147483648,
+      "hi": 2147549184,
+      "name": "sram"
+    }
+  ]
+}

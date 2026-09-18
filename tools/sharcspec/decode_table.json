@@ -66,6 +66,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 1a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -124,6 +127,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 1b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -152,6 +158,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 2a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -175,6 +184,9 @@
     }
    ],
    "source": "prm figure (overrides PGR; firmware-confirmed)",
+   "classic_keys": [
+    "Type 2b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -193,6 +205,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 2c"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -251,6 +266,7 @@
     }
    ],
    "source": "pgr (PRM figure is a copy of Type 1a)",
+   "classic_keys": [],
    "unconfirmed_bits": 0
   },
   {
@@ -314,6 +330,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 3b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -347,6 +366,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 3c"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -415,6 +437,7 @@
     }
    ],
    "source": "prm",
+   "classic_keys": [],
    "unconfirmed_bits": 7
   },
   {
@@ -478,6 +501,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 4a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -546,6 +572,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 4b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -614,6 +643,7 @@
     }
    ],
    "source": "prm",
+   "classic_keys": [],
    "unconfirmed_bits": 8
   },
   {
@@ -662,6 +692,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 5a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -700,6 +733,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 5a #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -738,6 +774,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 5b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -766,6 +805,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 5b #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -824,6 +866,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 6a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -857,6 +902,7 @@
     }
    ],
    "source": "prm",
+   "classic_keys": [],
    "unconfirmed_bits": 16
   },
   {
@@ -915,6 +961,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 7a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -958,6 +1007,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 7b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1016,6 +1068,7 @@
     }
    ],
    "source": "prm",
+   "classic_keys": [],
    "unconfirmed_bits": 11
   },
   {
@@ -1023,9 +1076,9 @@
    "width": 48,
    "visa": true,
    "isa": true,
-   "mask": "0xff0000000000",
+   "mask": "0xff0002000000",
    "value": "0x060000000000",
-   "fixed_bits": 8,
+   "fixed_bits": 9,
    "fields": [
     {
      "label": "b",
@@ -1064,6 +1117,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 8a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1071,9 +1127,9 @@
    "width": 48,
    "visa": true,
    "isa": true,
-   "mask": "0xff0000000000",
+   "mask": "0xff0002000000",
    "value": "0x070000000000",
-   "fixed_bits": 8,
+   "fixed_bits": 9,
    "fields": [
     {
      "label": "b",
@@ -1112,6 +1168,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 8a #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1180,6 +1239,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 9a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1243,6 +1305,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 9a #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1296,6 +1361,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 9b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1344,6 +1412,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 9b #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1407,6 +1478,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 10a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1465,6 +1539,9 @@
     }
    ],
    "source": "pgr (split from merged PRM figure; see build_table.py SPLIT_FORMS)",
+   "classic_keys": [
+    "Type 10a #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1513,6 +1590,10 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 11a",
+    "Type 11a #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1546,6 +1627,10 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 11c",
+    "Type 11c #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1584,6 +1669,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 12a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1617,6 +1705,7 @@
     }
    ],
    "source": "prm",
+   "classic_keys": [],
    "unconfirmed_bits": 17
   },
   {
@@ -1650,6 +1739,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 13a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1693,6 +1785,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 14a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1746,6 +1841,7 @@
     }
    ],
    "source": "prm",
+   "classic_keys": [],
    "unconfirmed_bits": 7
   },
   {
@@ -1794,6 +1890,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 15a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1837,6 +1936,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 15b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1885,6 +1987,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 16a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1918,6 +2023,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 16b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1946,6 +2054,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 17a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -1969,6 +2080,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 17b"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2002,6 +2116,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 18a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2009,20 +2126,10 @@
    "width": 48,
    "visa": true,
    "isa": true,
-   "mask": "0xfc0000000000",
-   "value": "0x140000000000",
-   "fixed_bits": 6,
+   "mask": "0xff8000000000",
+   "value": "0x160000000000",
+   "fixed_bits": 9,
    "fields": [
-    {
-     "label": "sc[1:0]",
-     "hi": 41,
-     "lo": 40
-    },
-    {
-     "label": "w",
-     "hi": 39,
-     "lo": 39
-    },
     {
      "label": "g",
      "hi": 38,
@@ -2050,6 +2157,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 19a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2088,6 +2198,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 19a #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2161,6 +2274,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 20a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2168,11 +2284,14 @@
    "width": 48,
    "visa": true,
    "isa": true,
-   "mask": "0xff8000000000",
+   "mask": "0xffffffffffff",
    "value": "0x000000000000",
-   "fixed_bits": 9,
+   "fixed_bits": 48,
    "fields": [],
-   "source": "pgr values + prm layout",
+   "source": "prm figure (every bit printed; the PGR grid leaves them blank)",
+   "classic_keys": [
+    "Type 21a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2180,11 +2299,14 @@
    "width": 16,
    "visa": true,
    "isa": false,
-   "mask": "0xffc100000000",
+   "mask": "0xffff00000000",
    "value": "0x000100000000",
-   "fixed_bits": 11,
+   "fixed_bits": 16,
    "fields": [],
-   "source": "pgr values + prm layout",
+   "source": "prm figure (every bit printed; the PGR grid leaves them blank)",
+   "classic_keys": [
+    "Type 21c"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2192,9 +2314,9 @@
    "width": 48,
    "visa": true,
    "isa": true,
-   "mask": "0xff8000000000",
+   "mask": "0xffbfffffffff",
    "value": "0x008000000000",
-   "fixed_bits": 9,
+   "fixed_bits": 47,
    "fields": [
     {
      "label": "emu",
@@ -2202,7 +2324,8 @@
      "lo": 38
     }
    ],
-   "source": "prm",
+   "source": "prm figure (every bit printed; the PGR grid leaves them blank)",
+   "classic_keys": [],
    "unconfirmed_bits": 9
   },
   {
@@ -2221,6 +2344,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 22c"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2244,6 +2370,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 25a"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2267,6 +2396,9 @@
     }
    ],
    "source": "pgr values + prm layout",
+   "classic_keys": [
+    "Type 25a #2"
+   ],
    "unconfirmed_bits": 0
   },
   {
@@ -2279,6 +2411,7 @@
    "fixed_bits": 24,
    "fields": [],
    "source": "prm",
+   "classic_keys": [],
    "unconfirmed_bits": 24
   },
   {
@@ -2291,6 +2424,7 @@
    "fixed_bits": 16,
    "fields": [],
    "source": "pgr (PRM figure is a copy of Type 25a rframe)",
+   "classic_keys": [],
    "unconfirmed_bits": 0
   },
   {
@@ -2298,11 +2432,12 @@
    "width": 48,
    "visa": true,
    "isa": true,
-   "mask": "0xffff00000000",
+   "mask": "0xffffffffffff",
    "value": "0x004000000000",
-   "fixed_bits": 16,
+   "fixed_bits": 48,
    "fields": [],
-   "source": "prm",
+   "source": "prm figure (every bit printed; the PGR grid leaves them blank)",
+   "classic_keys": [],
    "unconfirmed_bits": 16
   },
   {
@@ -2320,8 +2455,158 @@
      "lo": 32
     }
    ],
-   "source": "firmware (undocumented; likely Type23/24; unconfirmed)",
+   "source": "firmware (undocumented; unconfirmed)",
+   "classic_keys": [],
    "unconfirmed_bits": 7
+  },
+  {
+   "name": "Type21p_undoc16",
+   "width": 16,
+   "visa": true,
+   "isa": false,
+   "mask": "0xff8000000000",
+   "value": "0x000000000000",
+   "fixed_bits": 9,
+   "fields": [
+    {
+     "label": "operand[6:0]",
+     "hi": 38,
+     "lo": 32
+    }
+   ],
+   "source": "firmware (undocumented; unconfirmed)",
+   "classic_keys": [],
+   "unconfirmed_bits": 9
+  },
+  {
+   "name": "Type22p_undoc48",
+   "width": 48,
+   "visa": true,
+   "isa": true,
+   "mask": "0xff8000000000",
+   "value": "0x008000000000",
+   "fixed_bits": 9,
+   "fields": [
+    {
+     "label": "operand[6:0]",
+     "hi": 38,
+     "lo": 32
+    }
+   ],
+   "source": "firmware (undocumented; unconfirmed)",
+   "classic_keys": [],
+   "unconfirmed_bits": 9
+  },
+  {
+   "name": "Type26p_undoc48",
+   "width": 48,
+   "visa": true,
+   "isa": true,
+   "mask": "0xffff00000000",
+   "value": "0x004000000000",
+   "fixed_bits": 16,
+   "fields": [],
+   "source": "firmware (undocumented; unconfirmed)",
+   "classic_keys": [],
+   "unconfirmed_bits": 16
+  },
+  {
+   "name": "Type8p_undoc48",
+   "width": 48,
+   "visa": true,
+   "isa": true,
+   "mask": "0xfe0002000000",
+   "value": "0x060002000000",
+   "fixed_bits": 8,
+   "fields": [
+    {
+     "label": "r",
+     "hi": 40,
+     "lo": 40
+    },
+    {
+     "label": "b",
+     "hi": 39,
+     "lo": 39
+    },
+    {
+     "label": "a",
+     "hi": 38,
+     "lo": 38
+    },
+    {
+     "label": "cond[4:0]",
+     "hi": 37,
+     "lo": 33
+    },
+    {
+     "label": "j",
+     "hi": 26,
+     "lo": 26
+    },
+    {
+     "label": "ci",
+     "hi": 24,
+     "lo": 24
+    },
+    {
+     "label": "imm[23:16]",
+     "hi": 23,
+     "lo": 16
+    },
+    {
+     "label": "imm[15:0]",
+     "hi": 15,
+     "lo": 0
+    }
+   ],
+   "source": "firmware (undocumented; the bit-25 words Type8a used to take; unconfirmed)",
+   "classic_keys": [],
+   "unconfirmed_bits": 8
+  },
+  {
+   "name": "Type19p_undoc48",
+   "width": 48,
+   "visa": true,
+   "isa": true,
+   "mask": "0xff0000000000",
+   "value": "0x150000000000",
+   "fixed_bits": 8,
+   "fields": [
+    {
+     "label": "u",
+     "hi": 39,
+     "lo": 39
+    },
+    {
+     "label": "g",
+     "hi": 38,
+     "lo": 38
+    },
+    {
+     "label": "idis[2:0]",
+     "hi": 37,
+     "lo": 35
+    },
+    {
+     "label": "is[2:0]",
+     "hi": 34,
+     "lo": 32
+    },
+    {
+     "label": "data[31:16]",
+     "hi": 31,
+     "lo": 16
+    },
+    {
+     "label": "data[15:0]",
+     "hi": 15,
+     "lo": 0
+    }
+   ],
+   "source": "firmware (undocumented; the 10101 gap between Type 18 and Type 19; unconfirmed)",
+   "classic_keys": [],
+   "unconfirmed_bits": 8
   }
  ],
  "notes": [
@@ -2331,7 +2616,13 @@
   "Type9a: split into Type9a_abs/Type9a_rel -- classic.json keeps these as separate absolute-or-indirect/PC-relative tables; see SPLIT_FORMS",
   "Type9b: split into Type9b_abs/Type9b_rel -- classic.json keeps these as separate absolute-or-indirect/PC-relative tables; see SPLIT_FORMS",
   "Type10a: split into Type10a_abs/Type10a_rel -- classic.json keeps these as separate absolute-or-indirect/PC-relative tables; see SPLIT_FORMS",
+  "Type19a: PRM field declarations ['sc[1:0]', 'w'] dropped so the classic grid's fixed values at those bits are used",
   "Type25c_rframe: 16-bit form from PGR",
-  "Type23p_undoc16: provisional, from firmware only (0x023e x329, top-7 0000001 family = 62% of unknowns)"
+  "Type23p_undoc16: provisional, from firmware only (0x023e x329, top-7 0000001 family = 62% of unknowns)",
+  "Type21p_undoc16: provisional, from firmware only (the old Type21a prefix; 95% of its matches are not the all-zero NOP word)",
+  "Type22p_undoc48: provisional, from firmware only (the old Type22a prefix; its strict word occurs in neither image; 48 bits as the loose Type22a read them -- a 16-bit reading strands the other two words)",
+  "Type26p_undoc48: provisional, from firmware only (the old Type26a prefix; one instance per image, too few to judge)",
+  "Type8p_undoc48: provisional, from firmware only (bits 47-41 = 0000011 with bit 25 set, which no real Type 8a branch has; 32 across the two images)",
+  "Type19p_undoc48: provisional, from firmware only (bits 44-40 = 10101, which no manual documents; taken from Type19a when its mask is tightened to the nine bits the classic grid fixes)"
  ]
 }

@@ -1,38 +1,46 @@
-"""Mark the SHARC+ software call and return in a Ghidra program.
+"""Find SHARC+ calls and returns, and cover the DSP program in Ghidra.
 
     uv run python tools/sharcflow.py REGION.bin [--base-sw 0x1c1338]
-        [--lookback N] [--min-depth N] [--json OUT]
+        [--min-depth N] [--json OUT]
         [--program /dt2-1.16_SHARC [--project DIR --project-name NAME]
          [--cover] [--analyze] [--save]]
 
-The DSP code calls a function with a push (`3c`), a store (`16a`, through
-I7/M7, of the store's own short-word address + 2) and a goto (`25a_direct`),
-sometimes with argument loads between the store and the goto, and returns
-with an indirect jump (`9b_abs`) followed by `25c_rframe`. The generated
-language models the goto as a plain branch, so Ghidra merges callees into
-their callers and never disassembles the code after a call.
+A call is CJUMP (`25a_direct`, or `25a_pcrel`), which is always delayed:
+the two instructions after it execute before the target, and the return
+address is the instruction after them. The compiler puts a push of R2
+through I7/M7 (`3c` raw 0x9ff2, or a 48-bit `3a`) and a `16a` that stores its
+own short-word address + 2 (the return address - 1) in those two slots
+(SHARC+ Core Programming Reference, Type 25a; SHARC Processor Programming
+Reference Rev 2.4, "Compiler Related Stalls"). An indirect call moves I6 to
+R2 and I7 to I6 itself and jumps through `9b_abs` with M5 (DB), followed by
+the same push and store. A return is the delayed `9b_abs` jump through I4/M6
+(raw 0x083f343f); its two delay slots hold `25c_rframe` and an epilogue
+instruction, in either order.
 
 Without --program the tool only reports, from REGION.bin (raw code, 16-bit
-little-endian words; --base-sw is the short-word address of its first word):
+little-endian words; --base-sw is the short-word address of its first word),
+over the aligned instructions (on the linear sweep of tools/sharcimm.py, with
+a decoded run of at least --min-depth instructions):
 
-- calls: every aligned `25a_direct` (on the linear sweep of
-  tools/sharcimm.py, with a decoded run of at least --min-depth instructions)
-  with a `16a` among the --lookback instructions before it and no control
-  transfer between them. "strict" marks the adjacent triple 3c, 16a, goto.
-  "delta" is the goto's short-word address less the value the 16a stores;
-- gotos: the other aligned `25a_direct`, left as branches;
-- returns: aligned `9b_abs` followed within two instructions by `25c_rframe`.
+- calls: each CJUMP with its target, the forms in its two delay slots,
+  whether they are the push and store, and the return address;
+- indirect_calls: each `9b_abs` jump through M5 (DB) whose delay slots are
+  the push and store;
+- returns: each return jump, its delay-slot forms, and the address after them.
 
 With --program it opens that program and, per call site, disassembles the
-goto if needed, sets FlowOverride.CALL on it, disassembles the fall-through
-and the target, and creates a function at the target. A return whose jump
-does not already have a terminal flow gets FlowOverride.RETURN. --cover then
-disassembles, one instruction at a time, every aligned instruction Ghidra has
-not reached (following flow stops at returns, indirect jumps and data), counts
-those that clash with an existing instruction or data, and starts a function
-after every return pair. Then it recomputes every function body, optionally
-runs auto-analysis, and prints functions, instructions and call references
-before and after. Nothing is saved without --save.
+call if needed, sets FlowOverride.CALL where the language still models it as
+a jump (and on the indirect calls), disassembles the fall-through and the
+target, and creates a function at the target. --cover then disassembles, one
+instruction at a time, every aligned instruction Ghidra has not reached,
+counts those that clash with an existing instruction or data, starts a
+function after each return's delay slots, and then at each run of
+main-program code that no function holds. It recomputes every function body,
+optionally runs auto-analysis, and prints functions, instructions and call
+references before and after. Nothing is saved without --save.
+
+Ghidra gets no delay-slot semantics from this: the push and store after a
+call appear after it in the listing.
 """
 
 from __future__ import annotations
@@ -51,13 +59,37 @@ import sharcimm  # noqa: E402
 DEFAULT_GHIDRA = '/opt/homebrew/Cellar/ghidra/12.1.3/libexec'
 PUSH_R2 = 0x9FF2
 RETURN_JUMP = 0x083F343F
-TRANSFER_PREFIXES = ('8a', '9a', '9b', '11a', '25a', '25c')
+
+
+def _field(fields, stem):
+    """The field whose label is STEM or starts with STEM[."""
+    for label, value in fields.items():
+        if label == stem or label.startswith(stem + '['):
+            return value
+    return None
 
 
 def _value(fields, stem):
     """The value split across fields STEM[31:16] or STEM[23:16], and STEM[15:0]."""
     high = fields.get(stem + '[31:16]', fields.get(stem + '[23:16]'))
     return (high << 16) | fields[stem + '[15:0]']
+
+
+def is_push(insn) -> bool:
+    """DM(I7, M7) = R2, as `3c` or as the 48-bit `3a`."""
+    if insn.type_name == '3c':
+        return insn.raw == PUSH_R2
+    if insn.type_name == '3a':
+        f = insn.fields
+        return (_field(f, 'u'), _field(f, 'i'), _field(f, 'm'), _field(f, 'g'),
+                _field(f, 'd'), _field(f, 'ureg')) == (1, 7, 7, 0, 1, 2)
+    return False
+
+
+def is_store(insn, sw) -> bool:
+    """DM(I7, M7) = return address - 1, a `16a` storing its own address + 2."""
+    return (insn.type_name == '16a' and _field(insn.fields, 'i') == 7
+            and _field(insn.fields, 'm') == 7 and _value(insn.fields, 'data') == sw + 2)
 
 
 def aligned(data: bytes, min_depth: int = 8):
@@ -68,70 +100,66 @@ def aligned(data: bytes, min_depth: int = 8):
     return [(off, table[off]) for off in sorted(sweep) if depth[off] >= min_depth]
 
 
-def find_sites(data: bytes, base_sw: int, lookback: int = 3, min_depth: int = 8) -> dict:
-    """calls, gotos and returns, plus 'aligned': [(sw, length in bytes)] of every
-    aligned instruction."""
+def find_sites(data: bytes, base_sw: int, min_depth: int = 8) -> dict:
+    """calls, indirect_calls and returns, plus 'aligned': [(sw, length in bytes)]
+    of every aligned instruction."""
     insns = aligned(data, min_depth)
-    calls, gotos, returns = [], [], []
+
+    def slots(n):
+        """The two instructions after insns[n] if they follow it without a gap."""
+        out = []
+        for k in (1, 2):
+            if n + k >= len(insns):
+                return None
+            prev_off, prev = insns[n + k - 1]
+            if prev_off + prev.length_bytes != insns[n + k][0]:
+                return None
+            out.append(insns[n + k])
+        return out
+
+    def after(pair):
+        off, insn = pair[1]
+        return base_sw + (off + insn.length_bytes) // 2
+
+    calls, indirect_calls, returns = [], [], []
     for n, (off, insn) in enumerate(insns):
         sw = base_sw + off // 2
-        if insn.type_name == '25a_direct':
-            target = _value(insn.fields, 'addr')
-            store = None
-            for back in range(1, lookback + 1):
-                if n - back < 0:
-                    break
-                p_off, prev = insns[n - back]
-                # the run back to the store must be contiguous and hold no transfer
-                if p_off + prev.length_bytes != insns[n - back + 1][0]:
-                    break
-                # the call's store pushes, through I7/M7, its own address + 2
-                if (prev.type_name == '16a' and prev.fields['i[2:0]'] == 7
-                        and prev.fields['m[2:0]'] == 7
-                        and _value(prev.fields, 'data') == base_sw + p_off // 2 + 2):
-                    store = (n - back, p_off, prev)
-                    break
-                if prev.type_name.startswith(TRANSFER_PREFIXES):
-                    break
-            if store is None:
-                gotos.append({'sw': sw, 'target': target})
-                continue
-            s_n, s_off, s_insn = store
-            stored = _value(s_insn.fields, 'data')
-            push = s_n > 0 and insns[s_n - 1][1].raw == PUSH_R2 \
-                and insns[s_n - 1][0] + 2 == s_off
-            calls.append({
-                'sw': sw, 'target': target, 'store_sw': base_sw + s_off // 2,
-                'stored': stored, 'delta': sw - stored,
-                'between': n - s_n - 1, 'push': push,
-                'strict': push and n - s_n == 1,
-                'store_fields': {k: v for k, v in s_insn.fields.items() if not k.startswith('data')},
-            })
-        elif insn.type_name == '9b_abs' and insn.raw == RETURN_JUMP:
-            for ahead in (1, 2):
-                if n + ahead < len(insns) and insns[n + ahead][1].type_name == '25c_rframe':
-                    returns.append({'sw': sw, 'rframe_sw': base_sw + insns[n + ahead][0] // 2})
-                    break
-    return {'calls': calls, 'gotos': gotos, 'returns': returns,
+        pair = slots(n)
+        forms = [p[1].type_name for p in pair] if pair else None
+        linked = bool(pair) and is_push(pair[0][1]) and \
+            is_store(pair[1][1], base_sw + pair[1][0] // 2)
+        if insn.type_name in ('25a_direct', '25a_pcrel'):
+            if insn.type_name == '25a_direct':
+                target = _value(insn.fields, 'addr')
+            else:
+                rel = _value(insn.fields, 'reladdr')
+                target = sw + (rel - (1 << 24) if rel & (1 << 23) else rel)
+            calls.append({'sw': sw, 'target': target, 'slots': forms, 'linked': linked,
+                          'returns_to': after(pair) if pair else None})
+        elif insn.type_name == '9b_abs':
+            f = insn.fields
+            if insn.raw == RETURN_JUMP:
+                returns.append({'sw': sw, 'slots': forms,
+                                'after': after(pair) if pair else None})
+            elif linked and (_field(f, 'b'), _field(f, 'j'), _field(f, 'pmm')) == (0, 1, 5):
+                indirect_calls.append({'sw': sw, 'slots': forms, 'returns_to': after(pair)})
+    return {'calls': calls, 'indirect_calls': indirect_calls, 'returns': returns,
             'aligned': [(base_sw + off // 2, insn.length_bytes) for off, insn in insns]}
 
 
 def summary(sites: dict) -> list:
-    calls = sites['calls']
-    lines = [
-        f"calls {len(calls)} (strict triples {sum(c['strict'] for c in calls)}, "
-        f"with push {sum(c['push'] for c in calls)}), "
+    calls, returns = sites['calls'], sites['returns']
+
+    def hist(items, key):
+        return ', '.join(f'{k}:{v}' for k, v in collections.Counter(key(i) for i in items).most_common(8))
+
+    return [
+        f"calls {len(calls)} (push and store in the delay slots {sum(c['linked'] for c in calls)}), "
         f"distinct targets {len({c['target'] for c in calls})}",
-        f"other gotos {len(sites['gotos'])}, returns {len(sites['returns'])}",
-        "instructions between store and goto: "
-        + ", ".join(f"{k}:{v}" for k, v in sorted(collections.Counter(c['between'] for c in calls).items())),
-        "goto sw - stored: "
-        + ", ".join(f"{k}:{v}" for k, v in sorted(collections.Counter(c['delta'] for c in calls).items())),
-        "store fields: "
-        + ", ".join(f"{dict(k)}:{v}" for k, v in collections.Counter(
-            tuple(sorted(c['store_fields'].items())) for c in calls).most_common(5)),
+        "call delay slots: " + hist(calls, lambda c: '+'.join(c['slots'] or ['?'])),
+        f"indirect calls {len(sites['indirect_calls'])}, returns {len(returns)}",
+        "return delay slots: " + hist(returns, lambda r: '+'.join(r['slots'] or ['?'])),
     ]
-    return lines
 
 
 # --- Ghidra -----------------------------------------------------------------
@@ -162,8 +190,8 @@ def _measure(program, lo_sw, hi_sw):
 
 def cover(program, sites, stats, lo_sw, hi_sw):
     """Disassemble every aligned instruction Ghidra has not reached, one
-    instruction each, start a function after every return pair, then start a
-    function at each run of main-program instructions no function holds."""
+    instruction each, start a function after each return's delay slots, then
+    at each run of main-program instructions no function holds."""
     from ghidra.app.cmd.disassemble import DisassembleCommand
     from ghidra.app.cmd.function import CreateFunctionCmd
     from ghidra.program.model.address import AddressSet
@@ -199,7 +227,9 @@ def cover(program, sites, stats, lo_sw, hi_sw):
             stats['cover_failed'] += 1
 
     for ret in sites['returns']:
-        addr = space.getAddress(2 * (ret['rframe_sw'] + 1))
+        if ret['after'] is None:
+            continue
+        addr = space.getAddress(2 * ret['after'])
         if listing.getInstructionAt(addr) is None or fm.getFunctionContaining(addr) is not None:
             continue
         if CreateFunctionCmd(addr).applyTo(program, mon):
@@ -255,19 +285,23 @@ def apply(program, sites, lo_sw, hi_sw, analyze, do_cover=False):
             DisassembleCommand(addr, None, False).applyTo(program, mon)
         return addr, listing.getInstructionAt(addr)
 
-    for call in sites['calls']:
-        addr, insn = insn_at(call['sw'])
+    def mark_call(sw, kind):
+        addr, insn = insn_at(sw)
         if insn is None:
-            stats['call_not_disassembled'] += 1
-            continue
+            stats[f'{kind}_not_disassembled'] += 1
+            return None
         flow = insn.getFlowType()
-        if not (flow.isJump() and flow.isUnConditional()):
-            stats[f'call_flow_{flow}'] += 1
-            continue
-        if insn.getFlowOverride() != FlowOverride.CALL:
+        if flow.isCall():
+            stats[f'{kind}_already_call'] += 1
+        elif insn.getFlowOverride() != FlowOverride.CALL:
             insn.setFlowOverride(FlowOverride.CALL)
-            stats['call_override'] += 1
+            stats[f'{kind}_override'] += 1
         DisassembleCommand(insn.getMaxAddress().next(), None, True).applyTo(program, mon)
+        return insn
+
+    for call in sites['calls']:
+        if mark_call(call['sw'], 'call') is None:
+            continue
         taddr = space.getAddress(2 * call['target'])
         if not mem.contains(taddr):
             stats['target_outside_memory'] += 1
@@ -279,12 +313,14 @@ def apply(program, sites, lo_sw, hi_sw, analyze, do_cover=False):
             else:
                 stats['function_failed'] += 1
 
+    for call in sites['indirect_calls']:
+        mark_call(call['sw'], 'indirect_call')
+
     for ret in sites['returns']:
         addr, insn = insn_at(ret['sw'])
         if insn is None:
             stats['return_not_disassembled'] += 1
-            continue
-        if insn.getFlowType().isTerminal():
+        elif insn.getFlowType().isTerminal():
             stats['return_already_terminal'] += 1
         else:
             insn.setFlowOverride(FlowOverride.RETURN)
@@ -316,7 +352,7 @@ def run_ghidra(args, sites, lo_sw, hi_sw):
     program = project.openProgram(folder or '/', name, False)
     try:
         before = _measure(program, lo_sw, hi_sw)
-        tx = program.startTransaction('sharcflow: software calls and returns')
+        tx = program.startTransaction('sharcflow: calls, returns and coverage')
         try:
             stats = apply(program, sites, lo_sw, hi_sw, args.analyze, args.cover)
         finally:
@@ -338,23 +374,21 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('region')
     ap.add_argument('--base-sw', type=_int, default=0x1C1338)
-    ap.add_argument('--lookback', type=int, default=3,
-                    help='instructions to search back from a goto for its 16a (default 3)')
     ap.add_argument('--min-depth', type=int, default=8)
     ap.add_argument('--json')
     ap.add_argument('--program', help='program path in the project, e.g. /dt2-1.16_SHARC')
     ap.add_argument('--project', default='~/ghidra-projects/elektron-sharc')
     ap.add_argument('--project-name', default='elektron-sharc')
     ap.add_argument('--cover', action='store_true',
-                    help='also disassemble every aligned instruction and start functions after returns')
-    ap.add_argument('--analyze', action='store_true', help='run auto-analysis after the overrides')
+                    help='also disassemble every aligned instruction and create functions for uncovered code')
+    ap.add_argument('--analyze', action='store_true', help='run auto-analysis afterwards')
     ap.add_argument('--save', action='store_true', help='save the program (default: discard)')
     args = ap.parse_args(argv)
 
     with open(args.region, 'rb') as f:
         data = f.read()
     lo_sw, hi_sw = args.base_sw, args.base_sw + len(data) // 2
-    sites = find_sites(data, args.base_sw, args.lookback, args.min_depth)
+    sites = find_sites(data, args.base_sw, args.min_depth)
     for line in summary(sites):
         print(line)
     print(f"aligned instructions {len(sites['aligned'])}")
