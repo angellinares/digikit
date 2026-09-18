@@ -116,6 +116,8 @@ def parse_args(argv):
     p.add_argument('--stack-at', action='append', default=[],
                     type=lambda s: int(s, 0))
     p.add_argument('--stack-depth', type=int, default=128)
+    p.add_argument('--regs-at', action='append', default=[],
+                   help='ADDR[:N] -- print D0-D7/A0-A7 at the first N hits (default 4)')
     p.add_argument('--dump-at', action='append', default=[], type=parse_dump_at)
     p.add_argument('--watch', action='append', default=[], type=parse_watch)
     p.add_argument('--watch-max', type=int, default=16)
@@ -562,6 +564,25 @@ def main():
     for addr in args.stack_at:
         at(addr, make_stack_at_hook(addr))
 
+    def make_regs_at_hook(addr, limit):
+        seen = [0]
+        from unicorn import m68k_const as mc
+        dregs = [getattr(mc, 'UC_M68K_REG_D%d' % i) for i in range(8)]
+        aregs = [getattr(mc, 'UC_M68K_REG_A%d' % i) for i in range(8)]
+        def hook(uc, a, s_, d):
+            if seen[0] >= limit:
+                return
+            seen[0] += 1
+            ds = ' '.join('d%d=%08x' % (i, uc.reg_read(r)) for i, r in enumerate(dregs))
+            as_ = ' '.join('a%d=%08x' % (i, uc.reg_read(r)) for i, r in enumerate(aregs))
+            print('[regs] %#010x #%d @%d  %s  %s' % (addr, seen[0], state['instrs'], ds, as_),
+                  flush=True)
+        return hook
+
+    for spec in args.regs_at:
+        a_, _, n_ = spec.partition(':')
+        at(int(a_, 0), make_regs_at_hook(int(a_, 0), int(n_) if n_ else 4))
+
     def print_stack_lines(found):
         for offset, word in found:
             print('  +0x%03x  0x%08x' % (offset, word))
@@ -779,6 +800,8 @@ def main():
         for ret, n in ev['satisfied_by'].most_common(15):
             print('  ret=0x%08x  %d' % (ret, n))
     print('[guirun] faults: %d distinct pages touched' % len(m.fault_pages))
+    for page in sorted(m.fault_pages)[:16]:
+        print('  fault page %s' % (('0x%08x' % page) if isinstance(page, int) else repr(page)))
     if args.trace_ui_json:
         with open(args.trace_ui_json, 'w') as f:
             json.dump({
