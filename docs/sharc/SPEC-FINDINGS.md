@@ -28,6 +28,12 @@ One **format** reference used for the section codec: `mischa85/elektron-firmware
 (`aplib.c`), MIT-licensed, cited where relevant. Only the codec's format was used,
 reimplemented independently.
 
+One open-source **cross-check**, run outside this repository: `js216/selache`, an
+independent SHARC+ toolchain (GPL-3.0). Its decoder was scored against the
+firmware as a second opinion (§3.4, §3.5, `docs/sharc/selache-comparison.html`).
+None of its code or tables are in this repository; every change it prompted
+rests on the firmware measurements recorded here.
+
 > Note: the SHARC processor module inside the local Ghidra install is NOT stock
 > Ghidra (stock Ghidra has no SHARC). It is prior art generated from this
 > repo's `tools/sharc_visa_tables.py` (`tools/ghidra/SHARC/`). It was deliberately not used as a source; a clean Ghidra
@@ -151,7 +157,7 @@ Use the PGR value, not the PRM figure digits, for these:
 | PRM figure | Problem | Fix |
 |---|---|---|
 | Type 2a | fixed digits are the Type 1a template | PGR values |
-| Type 2b | figure `110000000` flagged as template — **but see §3.4** | **PRM is right here** |
+| Type 2b | figure `110000000` is a template after all — **see §3.4** | PGR `000000011` |
 | Type 3a | figure is a copy of Type 1a (inner tag "Type1a") | PGR Type 3a |
 | Type 4b | `dreg[6:0]` label over a 4-bit field; `data[5:5` typo | 4 bits |
 | Type 5b move, 9b | VISA marker drawn `0000000` | PGR `0111111` |
@@ -186,6 +192,39 @@ branch forms and caused width collisions. The **PRM value `110000000` is correct
 `0xc00000000000`. Lesson: the "template digit" heuristic produced a false positive
 here; the firmware is the arbiter.
 
+**Corrected 2026-09-19: the PGR value `000000011` is right.** The collisions above
+were measured under the old "most fixed bits" width rule (§3.5), which mis-sized
+~28% of instructions. Under longest-leading-prefix, `000000011` (nine leading
+bits) cleanly beats Type 2a's `00000001` (eight) and collides with no branch form.
+With `110000000`, every Type 2 word with bit 39 set is read as 48 bits instead of
+32, and every `0xC000`–`0xC07F` word as 32 bits instead of 16.
+
+The firmware decides it, with a control that can come out either way. Every
+absolute `cjump` site is a known instruction start, and so is every `cjump`
+target. A linear walk between two consecutive known starts must land **exactly**
+on the second. The walk can stop at a word no form matches, land exactly, or
+overshoot, and only a correct length for every instruction in between lands
+exactly:
+
+| image | spans | PRM `110000000` | PGR `000000011` | + Type10a_rel (§3.5) | overshoots, any column |
+|---|---|---|---|---|---|
+| DT2 1.15C | 2,102 | 1,827 | 1,997 | 2,018 | 0 |
+| DT2 1.16 | 2,102 | 1,826 | 1,996 | 2,017 | 0 |
+| DN2 1.10E | 2,043 | 1,718 | 1,949 | 1,979 | 0 |
+| DN2 1.11 | 2,030 | 1,712 | 1,935 | 1,966 | 0 |
+
+The rest of each row stops at a word no form matches; none overshoots. So the
+PGR value lands 170–231 more spans per image and breaks none that landed before.
+`tools/sharcpcode.py compare` on the regenerated language: 0 regressions; aligned
+instructions that decode 21,792 → 22,825 (DT2 1.16) and 21,361 → 22,678 (DN2 1.11).
+
+Two independent checks agree with the firmware. An open-source SHARC+ assembler
+(`js216/selache`) encodes `r1 = r0 + r1` as `0x0180 0x1101`, a 32-bit Type 2b
+with bit 39 set (`tests/test_sharc_disasm.py`, `test_assembled_sequence`). Its
+decoder sizes Type 2 by the same bit. Where our old table and that decoder
+disagreed on Type 2a/2b and the walk could tell them apart, it sided with bit 39
+in 119 of 119 cases. Final: Type2b mask `0xff8000000000`, value `0x018000000000`.
+
 ### 3.5 VISA length (width) selection
 
 - There is **no explicit length-prefix table** in the PRM. The only statement is
@@ -197,6 +236,14 @@ here; the firmware is the arbiter.
   "most total fixed bits anywhere" heuristic was wrong and mis-sized ~28%.
 - **Type 10a is ISA-only** ("not supported in VISA address space", PRM) — exclude
   it from VISA candidates. Marked `visa:false`.
+  **Amended 2026-09-19:** `Type10a_rel` (bits 47–45 `111`) is `visa:true` on
+  firmware evidence (`build_table.py` `VISA_BY_FIRMWARE`). No VISA form claims
+  `111`, so these words used to stop the walk. Reading them as 48 bits lands
+  21–31 more spans per image exactly (the §3.4 table), with no overshoot.
+  `Type10a_abs` (`110`) stays excluded: there it competes with Type 2c
+  (`1100`). Read as 48-bit 10a_abs or as 16-bit 2c, the `1101` words land the
+  same number of extra spans on DN2 1.11 (six either way), so the walk cannot
+  choose. selache's decoder reads all of `110x` as 16-bit Type 2c.
 - Frames are 48-bit MSB-aligned; a 16-bit form occupies bits 47..32, a 32-bit form
   47..16. In memory, code is 16-bit little-endian words, most-significant word
   first for multi-word instructions.

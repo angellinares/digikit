@@ -37,11 +37,20 @@ PAIRS = {
     "Type22c": ["Type 22c"], "Type25a_direct": ["Type 25a"], "Type25a_pcrel": ["Type 25a #2"], "Type25c_rframe": ["Type 25c"],
 }
 ISA_ONLY = {"Type10a"}  # PRM heading "Type 10a ISA (...)"; every other form is ISA/VISA or VISA
+# ISA_ONLY forms the firmware nonetheless runs from VISA code. Type10a_rel
+# words (bits 47-45 = 111) sit inside VISA functions on DT2 1.15C/1.16 and DN2
+# 1.10E/1.11, and reading them as 48 bits walks 21-31 more spans per image
+# exactly onto the next cjump boundary, with no overshoot (SPEC-FINDINGS 3.5).
+# Type10a_abs (110) stays out: there it competes with Type2c, and the same
+# test cannot tell the two readings apart.
+VISA_BY_FIRMWARE = {"Type10a_rel"}
 
 # Forms where the PRM figure's fixed bits are correct and the PGR disagrees.
-# Firmware decoding confirms the PRM value; the earlier "stale template digit"
-# call against the PRM was wrong for these.
-PRM_VALUE_WINS = {"Type2b"}
+# Empty since Type2b went back to the PGR's 000000011: the PRM's 110000000
+# was adopted under the old most-fixed-bits width rule, and under
+# longest-leading-prefix the PGR value is the one the firmware bears out
+# (SPEC-FINDINGS 3.4).
+PRM_VALUE_WINS = set()
 
 # Forms whose PRM figure prints a value for every bit: the instruction is the
 # whole word, not a prefix. The classic PGR grid leaves the low bits blank, and
@@ -271,7 +280,7 @@ def fixed_bits_for(width, fields, keys, prm=None, gap_bits=()):
 def make_form(name, width, fields, fixed, source, keys=()):
     mask = sum(1 << b for b in fixed)
     value = sum(v << b for b, v in fixed.items())
-    isa_only = name.split("_")[0] in ISA_ONLY
+    isa_only = name.split("_")[0] in ISA_ONLY and name not in VISA_BY_FIRMWARE
     return {
         "name": name, "width": width, "visa": not isa_only, "isa": width == 48,
         "mask": f"0x{mask:012x}", "value": f"0x{value:012x}", "fixed_bits": len(fixed),

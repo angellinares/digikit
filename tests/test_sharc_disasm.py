@@ -48,6 +48,19 @@ class TableTest(unittest.TestCase):
         self.assertEqual(t['fixed_bits'], 7)
         self.assertEqual(bin(t['opcode_mask']).count('1'), 7)
 
+    def test_type2_width_is_bit_39(self):
+        # PGR prefix 000000011 (SPEC-FINDINGS 3.4): Type 2 with bit 39 set is
+        # the 32-bit 2b, clear is the 48-bit 2a; 1100 stays the 16-bit 2c.
+        for words, name, bits in (([0x0193, 0x0421, 0], '2b', 32),
+                                  ([0x0110, 0x0000, 0], '2a', 48),
+                                  ([0xC012, 0x0000, 0], '2c', 16)):
+            entry, _ = T.decode(words)
+            self.assertEqual((entry['name'], entry['bits']), (name, bits), hex(words[0]))
+
+    def test_10a_rel_decodes_in_visa(self):
+        entry, _ = T.decode([0xE5E8, 0x0F04, 0x0000])
+        self.assertEqual((entry['name'], entry['bits']), ('10a_rel', 48))
+
 
 class DisasmTest(unittest.TestCase):
     def test_walk(self):
@@ -58,6 +71,14 @@ class DisasmTest(unittest.TestCase):
         self.assertEqual([(r.offset, r.type_name, r.length_bytes) for r in recs],
                          [(0, '17b', 4), (4, '15b', 4)])
         self.assertEqual(recs[0].fields['ureg[6:0]'], 0x55)
+
+    def test_assembled_sequence(self):
+        # r0 = 0x1234; r1 = r0 + r1; nop; jump start -- assembled from source
+        # with an open-source SHARC+ assembler, linked at 0x180000.
+        data = bytes.fromhex('800f34128001011101003e0618000000')
+        recs = list(sharc_disasm.disassemble(data))
+        self.assertEqual([(r.offset, r.type_name, r.length_bytes) for r in recs],
+                         [(0, '17b', 4), (4, '2b', 4), (8, '21c', 2), (10, '8a_abs', 6)])
 
     def test_unknown_stops(self):
         data = encode('17b') + struct.pack('<HHH', undecodable_word(), 0, 0) + encode('17b')

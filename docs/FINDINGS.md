@@ -4585,3 +4585,30 @@ The remaining ~130,000 uncovered bytes are mostly gaps whose first bytes are
 alignment or tail data rather than the entry, plus a repeated non-standard
 prologue idiom (`8f2f 0a2f 0224` after a varying first word) that the three
 patterns above do not match. **[O]**
+
+## SHARC+ Type 2b is the PGR's `000000011`, and Type10a_rel runs from VISA code **[C]**
+
+Corrects `docs/sharc/SPEC-FINDINGS.md` §3.4 (which had moved Type 2b to the PRM's
+`110000000`) and amends §3.5 (Type 10a ISA-only). Both are measured with
+the known-boundary span test described in SPEC-FINDINGS §3.4. Every absolute
+`cjump` site and every `cjump` target is a known instruction start, and a walk
+between two consecutive ones must land on the second exactly. The test can come
+out as stop, exact or overshoot:
+
+| image | spans | stock table | Type 2b `000000011` | + Type10a_rel in VISA |
+|---|---|---|---|---|
+| DT2 1.15C | 2,102 | 1,827 | 1,997 | 2,018 |
+| DT2 1.16 | 2,102 | 1,826 | 1,996 | 2,017 |
+| DN2 1.10E | 2,043 | 1,718 | 1,949 | 1,979 |
+| DN2 1.11 | 2,030 | 1,712 | 1,935 | 1,966 |
+
+No overshoot in any cell. `tools/sharcpcode.py compare`: 0 regressions; aligned
+instructions that decode 21,792 → 22,825 (DT2 1.16) and 21,361 → 22,678 (DN2 1.11).
+The open-source `js216/selache` SHARC+ toolchain agrees. It sizes Type 2 by bit 39,
+and its assembler emits `r1 = r0 + r1` as `0x0180 0x1101`. Neither its code nor its
+tables are in this repository. The comparison is in
+`docs/sharc/selache-comparison.html`.
+
+Measured on this machine; a second-agent check against the image bytes is still
+owed before this is marked **[V]**. `Type10a_abs` (`110`) is left out: against
+Type 2c it is not decidable by this test. **[O]**

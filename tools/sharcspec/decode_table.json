@@ -169,7 +169,7 @@
    "visa": true,
    "isa": false,
    "mask": "0xff8000000000",
-   "value": "0xc00000000000",
+   "value": "0x018000000000",
    "fixed_bits": 9,
    "fields": [
     {
@@ -183,7 +183,7 @@
      "lo": 16
     }
    ],
-   "source": "prm figure (overrides PGR; firmware-confirmed)",
+   "source": "pgr values + prm layout",
    "classic_keys": [
     "Type 2b"
    ],
@@ -1486,7 +1486,7 @@
   {
    "name": "Type10a_rel",
    "width": 48,
-   "visa": false,
+   "visa": true,
    "isa": true,
    "mask": "0xe00000000000",
    "value": "0xe00000000000",
@@ -2610,7 +2610,6 @@
   }
  ],
  "notes": [
-  "Type2b: fixed-bit values from PRM figure (overrides PGR; firmware-confirmed)",
   "Type3a: layout and values from PGR",
   "Type8a: split into Type8a_abs/Type8a_rel -- classic.json keeps these as separate absolute-or-indirect/PC-relative tables; see SPLIT_FORMS",
   "Type9a: split into Type9a_abs/Type9a_rel -- classic.json keeps these as separate absolute-or-indirect/PC-relative tables; see SPLIT_FORMS",

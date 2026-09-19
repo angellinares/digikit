@@ -39,7 +39,7 @@ PAIRS = {
     "Type19a": ["Type 19a"], "Type19a_bitrev": ["Type 19a #2"], "Type20a": ["Type 20a"], "Type21a": ["Type 21a"], "Type21c": ["Type 21c"],
     "Type22c": ["Type 22c"], "Type25a_direct": ["Type 25a"], "Type25a_pcrel": ["Type 25a #2"], "Type25c_rframe": ["Type 25c"],
 }
-PRM_VALUE_WINS = {"Type2b"}
+PRM_VALUE_WINS = set()   # mirrors build_table.py
 FULL_WORD = {"Type21a": (48, 0x000000000000), "Type21c": (16, 0x000100000000)}
 SPLIT_FORMS = {
     "Type8a":  dict(abs_key="Type 8a", rel_key="Type 8a #2"),
