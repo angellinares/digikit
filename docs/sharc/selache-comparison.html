@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selache Against the Firmware</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root {
+  --ground: #f6f7f9;
+  --paper: #ffffff;
+  --ink: #16202b;
+  --ink-soft: #4a5866;
+  --rule: #d9dee5;
+  --tint: #eef1f5;
+  --accent: #b4540d;
+  --accent-soft: #fbeee3;
+  --good: #2f7a4b;
+  --warn: #9a6a00;
+  --bad: #a3322d;
+  --bar-a: #8a97a6;
+  --bar-b: #b4540d;
+  --bar-c: #2f5f8a;
+  --bar-d: #c8ced6;
+  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --sans: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #10151b; --paper: #161d25; --ink: #e4e9ef; --ink-soft: #9aa7b4;
+    --rule: #2a3440; --tint: #1c252f; --accent: #f0914a; --accent-soft: #2e2118;
+    --good: #6cc38f; --warn: #e2b44a; --bad: #ef7d77;
+    --bar-a: #6b7886; --bar-b: #f0914a; --bar-c: #6fa3d3; --bar-d: #3a4552;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #10151b; --paper: #161d25; --ink: #e4e9ef; --ink-soft: #9aa7b4;
+  --rule: #2a3440; --tint: #1c252f; --accent: #f0914a; --accent-soft: #2e2118;
+  --good: #6cc38f; --warn: #e2b44a; --bad: #ef7d77;
+  --bar-a: #6b7886; --bar-b: #f0914a; --bar-c: #6fa3d3; --bar-d: #3a4552;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 400 16px/1.6 var(--sans); padding: 0 16px;
+}
+main { max-width: 860px; margin: 0 auto; padding-block: 48px 72px; display: grid; gap: 44px; }
+header { display: grid; gap: 12px; }
+.eyebrow { font: 600 12px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font: 400 clamp(34px, 6vw, 50px)/1.05 var(--serif); margin: 0; text-wrap: balance; }
+h2 { font: 400 30px/1.15 var(--serif); margin: 0; text-wrap: balance; }
+h3 { font: 600 16px/1.3 var(--sans); margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { font-size: 18px; color: var(--ink-soft); max-width: 64ch; }
+section { display: grid; gap: 16px; }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+code { background: var(--tint); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font: 400 13px/1.4 var(--mono); color: var(--ink-soft); }
+.verdict {
+  background: var(--paper); border: 1px solid var(--rule); border-left: 4px solid var(--accent);
+  padding: 18px 20px; display: grid; gap: 10px;
+}
+.verdict ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 600 12px/1.3 var(--sans); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); background: var(--tint); }
+td.n, th.n { text-align: right; font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.pill { display: inline-block; font: 600 11px/1 var(--mono); letter-spacing: .04em; padding: 4px 7px; border-radius: 999px; white-space: nowrap; }
+.pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.pill.bad  { color: var(--bad);  background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.chart { background: var(--paper); border: 1px solid var(--rule); padding: 16px 16px 8px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--ink); font-family: var(--sans); font-size: 12px; }
+.chart .soft { fill: var(--ink-soft); }
+.chart .num { font-family: var(--mono); font-size: 11px; }
+.caption { font-size: 13px; color: var(--ink-soft); }
+.flow { display: grid; gap: 0; border: 1px solid var(--rule); background: var(--paper); }
+.stage { display: grid; grid-template-columns: 112px 1fr; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--rule); }
+.stage:last-child { border-bottom: 0; }
+.stage .tag { font: 600 12px/1.4 var(--mono); color: var(--accent); }
+.stage .tag small { display: block; font-weight: 400; color: var(--ink-soft); }
+.stage div { display: grid; gap: 6px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.note { background: var(--accent-soft); padding: 14px 16px; font-size: 14px; }
+pre { margin: 0; background: var(--tint); padding: 12px 14px; overflow-x: auto; font: 400 12.5px/1.55 var(--mono); }
+footer { font-size: 13px; color: var(--ink-soft); border-top: 1px solid var(--rule); padding-top: 16px; display: grid; gap: 6px; }
+@media (max-width: 560px) {
+  .stage { grid-template-columns: 1fr; gap: 6px; }
+  main { padding-block: 32px 56px; gap: 36px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="eyebrow">SHARC+ VISA decoding · ADSP-21569 · Digitone II 1.11 main program</div>
+  <h1>Selache against the firmware</h1>
+  <p class="lede">An independent open-source SHARC+ toolchain, <code>js216/selache</code>, run
+  on the same DSP bytes as digikit's <code>tools/sharc_disasm.py</code>. Both are scored against
+  the one oracle that doesn't depend on either decoder: the firmware's own call sites.</p>
+  <div class="meta">
+    <span>2026-09-19</span>
+    <span>selache @ 2b26d3b</span>
+    <span>digikit @ a5643ba</span>
+    <span>images: DN2 1.10E, 1.11 · DT2 1.15C, 1.16</span>
+  </div>
+</header>
+
+<section class="verdict" aria-label="Summary">
+  <h3>What came out of it</h3>
+  <ul>
+    <li><strong>Two table fixes, adopted in this PR.</strong> Type 2b goes back to the PGR prefix
+      <code>000000011</code>, and <code>Type10a_rel</code> is decoded in VISA. On four images the
+      known-boundary walk lands 191–261 more spans exactly, never overshoots, and
+      <code>sharcpcode compare</code> reports 0 regressions.</li>
+    <li><strong>selache's instruction lengths are the stronger of the two today</strong>: 99.0% of spans land
+      exactly, against 84.3% for the current table. But VISA resynchronises fast, so a walk that
+      starts 2 bytes off still lands 94.9%. The margin is real but modest.</li>
+    <li><strong>digikit is right where selache is not</strong> in most of the <code>0x0000–0x007F</code> family,
+      which digikit's firmware-derived form reads as 16 bits and selache as 48, and in Type 4a, which
+      selache shortens to 32.</li>
+    <li><strong>Disassembly text is not a round-trip format.</strong> Only 83.9% of unique instructions
+      reassemble to identical bytes. Patches must be written as source and verified by
+      re-decoding, never edited as disassembly.</li>
+    <li><strong>selache stays outside digikit.</strong> It is GPL-3.0 and digikit is GPL-2.0, so no
+      code or tables move across. It is used as an external oracle and authoring tool.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>The oracle</h2>
+  <p>Every absolute <code>cjump</code> (<code>0x1804</code> + 24-bit target) is found by a byte
+  scan that needs no decoder: 1,606 sites on DN2 1.11, all inside the two code regions, none in 6.2 MB
+  of data. Each site is an instruction start, and so is each target (461 function entries).
+  Between two consecutive known starts, correct lengths must sum <em>exactly</em> to the distance.
+  A walk can stop at a word it cannot size, land exactly, or overshoot. The test can come out
+  either way, which a "percent decoded" figure cannot.</p>
+  <p>Every figure below also has a control: the same walk started 2 bytes late, or random targets
+  in place of decoded ones. Without it, VISA's self-synchronisation would make any decoder look good.</p>
+</section>
+
+<section>
+  <h2>Scoreboard, DN2 1.11</h2>
+  <div class="chart" role="img" aria-label="Spans landed exactly out of 2,030: digikit stock 1,712; digikit with this PR 1,966; selache 1,927 when started 2 bytes late; selache 2,009.">
+    <svg viewBox="0 0 640 196" xmlns="http://www.w3.org/2000/svg">
+      <!-- scale: 0..2030 spans over x 190..600 (410 px) -->
+      <g>
+        <line x1="190" y1="10" x2="190" y2="164" style="stroke: var(--rule)"/>
+        <line x1="600" y1="10" x2="600" y2="164" style="stroke: var(--rule)" stroke-dasharray="3 3"/>
+        <line x1="395" y1="10" x2="395" y2="164" style="stroke: var(--rule)" stroke-dasharray="3 3"/>
+        <text x="190" y="182" text-anchor="middle" class="soft num">0</text>
+        <text x="395" y="182" text-anchor="middle" class="soft num">1,015</text>
+        <text x="600" y="182" text-anchor="middle" class="soft num">2,030</text>
+      </g>
+      <g>
+        <text x="180" y="32" text-anchor="end">digikit, stock table</text>
+        <rect x="190" y="18" width="345.8" height="22" style="fill: var(--bar-a)"/>
+        <text x="541" y="33" class="num">1,712</text>
+
+        <text x="180" y="70" text-anchor="end">digikit, this PR</text>
+        <rect x="190" y="56" width="397.1" height="22" style="fill: var(--bar-b)"/>
+        <text x="592" y="71" class="num" text-anchor="end" style="fill: var(--paper)">1,966</text>
+
+        <text x="180" y="108" text-anchor="end">selache, 2 B late</text>
+        <rect x="190" y="94" width="389.2" height="22" style="fill: var(--bar-d)"/>
+        <text x="584" y="109" class="num" text-anchor="end">1,927</text>
+
+        <text x="180" y="146" text-anchor="end">selache</text>
+        <rect x="190" y="132" width="405.8" height="22" style="fill: var(--bar-c)"/>
+        <text x="590" y="147" class="num" text-anchor="end" style="fill: var(--paper)">2,009</text>
+      </g>
+    </svg>
+  </div>
+  <p class="caption">Spans between consecutive known instruction starts that the walk lands on exactly, of 2,030.
+  digikit never overshoots; it stops (318 stock, 64 with this PR). selache never stops; it
+  overshoots 21. The late-start bar is the control.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Measure</th><th class="n">digikit stock</th><th class="n">digikit, this PR</th><th class="n">selache</th><th class="n">control</th></tr></thead>
+      <tbody>
+        <tr><td>Spans landed exactly (of 2,030)</td><td class="n">1,712</td><td class="n">1,966</td><td class="n">2,009</td><td class="n">1,927 <span class="caption">selache, 2 B late</span></td></tr>
+        <tr><td>In-function cjump sites a walk from the entry lands on (of 1,589)</td><td class="n">949</td><td class="n">1,399</td><td class="n">1,570</td><td class="n">1,548 <span class="caption">selache, 2 B late</span></td></tr>
+        <tr><td>Relative-branch targets on an instruction start</td><td class="n">—</td><td class="n">—</td><td class="n">92.2%</td><td class="n">43.7% <span class="caption">random targets</span></td></tr>
+        <tr><td>Walked instructions with an unknown or <code>?</code> field</td><td class="n">stops</td><td class="n">stops</td><td class="n">0.48%</td><td class="n">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">selache's walks never stop, so an unknown word costs it an alignment guess rather than
+  the rest of the function. That also means it can walk confidently through data. Its misses cluster on
+  <code>if av</code>, <code>if flag0_in</code> and <code>if nbm</code> jumps, which is what data decoded
+  as code looks like.</p>
+</section>
+
+<section>
+  <h2>Where the two disagree, and who is right</h2>
+  <p>Along digikit's walks, the two decoders give different lengths for 2,667 of 27,542 instructions (9.7%).
+  For each one, both lengths were tried and the walk continued to the next known start. Most
+  disagreements resynchronise either way (2,388 undecidable). The 232 that decide are not spread
+  evenly. They split by family:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Form (digikit name)</th><th>Words</th><th class="n">digikit says</th><th class="n">selache says</th><th class="n">Oracle sides with</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><code>2a</code> → really <code>2b</code></td><td class="mono">0x0180–0x01FF</td><td class="n">48</td><td class="n">32</td><td class="n">selache 119 : 0</td><td><span class="pill good">fixed here</span></td></tr>
+        <tr><td><code>21p_undoc16</code></td><td class="mono">0x0000–0x007F</td><td class="n">16</td><td class="n">48</td><td class="n">digikit 62 : 25</td><td><span class="pill warn">mixed, open</span></td></tr>
+        <tr><td><code>23p_undoc16</code></td><td class="mono">0x0200–0x03FF</td><td class="n">16</td><td class="n">48</td><td class="n">selache 10 : 4</td><td><span class="pill warn">mixed, open</span></td></tr>
+        <tr><td><code>4a</code></td><td class="mono">0x6A3E …</td><td class="n">48</td><td class="n">32</td><td class="n">digikit 8 : 0</td><td><span class="pill good">digikit right</span></td></tr>
+        <tr><td><code>16a</code>, <code>7a</code>, <code>3c</code></td><td class="mono">various</td><td class="n">—</td><td class="n">—</td><td class="n">digikit 4 : 0</td><td><span class="pill good">digikit right</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The Type 2 row explains itself once the history is read. digikit first used the PGR's
+  <code>000000011</code>, then moved to the PRM's <code>110000000</code> after "width collisions".
+  Those collisions were measured under the old most-fixed-bits width rule, which
+  SPEC-FINDINGS §3.5 records as mis-sizing ~28% of instructions. Under longest-leading-prefix,
+  the PGR value collides with nothing. An assembler agrees:
+  selache encodes <code>r1 = r0 + r1</code> as <code>0x0180 0x1101</code>.</p>
+  <pre>source            r0 = 0x1234;  r1 = r0 + r1;  nop;   jump start;
+bytes (LE words)  800f 3412     8001 0111      0100   3e06 1800 0000
+digikit stock     17b  (4)      2a   (6) ✗  … desynchronised
+digikit, this PR  17b  (4)      2b   (4)       21c    8a_abs (6)</pre>
+</section>
+
+<section>
+  <h2>The fix, on every image we have</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Image</th><th class="n">Spans</th><th class="n">Stock</th><th class="n">2b = PGR</th><th class="n">+ 10a_rel in VISA</th><th class="n">Overshoot</th></tr></thead>
+      <tbody>
+        <tr><td>Digitakt II 1.15C</td><td class="n">2,102</td><td class="n">1,827</td><td class="n">1,997</td><td class="n">2,018</td><td class="n">0</td></tr>
+        <tr><td>Digitakt II 1.16</td><td class="n">2,102</td><td class="n">1,826</td><td class="n">1,996</td><td class="n">2,017</td><td class="n">0</td></tr>
+        <tr><td>Digitone II 1.10E</td><td class="n">2,043</td><td class="n">1,718</td><td class="n">1,949</td><td class="n">1,979</td><td class="n">0</td></tr>
+        <tr><td>Digitone II 1.11</td><td class="n">2,030</td><td class="n">1,712</td><td class="n">1,935</td><td class="n">1,966</td><td class="n">0</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><code>tools/sharcpcode.py compare</code> before → after: 0 regressions; aligned instructions that decode
+  21,792 → 22,825 on DT2 1.16 and 21,361 → 22,678 on DN2 1.11, with no length differences against the
+  generated language. The digikit test suite fails the same 22 environment-bound tests before and after.
+  The three new tests fail on the stock table and pass with the fix.</p>
+  <p class="note"><strong>Left open on purpose.</strong> <code>Type10a_abs</code> (<code>110</code>) competes with
+  Type 2c (<code>1100</code>) for <code>0xDxxx</code> words. Read either way, those words land the same number of extra
+  spans (six on DN2 1.11), so this test cannot choose, and the PR does not. selache reads all of
+  <code>110x</code> as 16-bit Type 2c.</p>
+</section>
+
+<section>
+  <h2>Round trip: disassemble, reassemble, compare</h2>
+  <p>Every distinct instruction on the DN2 1.11 main program's walks (11,366 unique encodings) was
+  printed by selache's disassembler, fed back to its assembler one per section, and compared byte for byte.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Outcome</th><th class="n">Encodings</th><th>What it looks like</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill good">identical</span></td><td class="n">9,538 (83.9%)</td><td>—</td></tr>
+        <tr><td><span class="pill warn">same width, other bits</span></td><td class="n">1,254</td><td>register fields dropped by the text, e.g. <code>i4=bitrev (i3,…)</code> comes back <code>0x1643</code> for <code>0x167B</code>; <code>modify</code>, <code>dm</code> moves</td></tr>
+        <tr><td><span class="pill warn">different width</span></td><td class="n">215</td><td>32-bit loads re-encoded as 16-bit (145) or 48-bit (70)</td></tr>
+        <tr><td><span class="pill bad">rejected or crashed</span></td><td class="n">359</td><td>forms it prints but cannot parse: <code>compute(0x…)</code>, <code>alu opcode 0x…</code>, <code>ureg(0x7e)</code>; 40 assembler panics</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>So its disassembly is a reading aid, not a patch source. Its assembler is sound for code
+  written from scratch, which is the useful direction.</p>
+</section>
+
+<section>
+  <h2>The boot stream, checked from the other side</h2>
+  <p>A four-instruction program was assembled, linked at VISA <code>0x180000</code> and turned into an
+  LDR by selache's <code>selload</code>. An independent boot-stream reader parsed it back into exactly the
+  linked sections. The code sits at byte address <code>0x28300000 = 2 × 0x180000 + 0x28000000</code>, with
+  0xAD-signed headers that XOR to zero and LE words, MSB word first. That is the §2 address model,
+  confirmed by a producer rather than inferred from a consumer.</p>
+</section>
+
+<section>
+  <h2>Proposed integration</h2>
+  <p>Selache enters as a tool beside the pipeline, never as a dependency inside it.</p>
+  <div class="flow">
+    <div class="stage">
+      <div class="tag">Oracle<small>now</small></div>
+      <div>
+        <h3>Second decoder, scored by the firmware</h3>
+        <p>Build selache out of tree (Linux or WSL, <code>cargo build --release</code>). A 30-line harness
+        prints selache's length and text for every even offset of a region. The known-boundary walk scores it
+        next to <code>sharc_disasm.py</code>, with the late-start control.</p>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="tag">Differential<small>per table change</small></div>
+      <div>
+        <h3>Disagreements become table fixes</h3>
+        <p>Where the two disagree and the walk decides, the firmware measurement goes to
+        <code>build_table.py</code> with a test, as in this PR. selache is cited as corroboration, never as
+        the source. Next candidates: the <code>0x00xx</code> and <code>0x02xx</code> undocumented families, and
+        <code>0xDxxx</code>.</p>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="tag">Authoring<small>for DSP patches</small></div>
+      <div>
+        <h3>New code from source, spliced into section 7</h3>
+        <p>Write the patch in assembly or C, then build it with <code>selas</code>/<code>selcc</code> and
+        <code>seld</code>, using an LDF that describes only the free region. Re-decode every emitted instruction
+        with both decoders, and write the bytes into the matching boot-stream block. Never round-trip through
+        disassembly text.</p>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="tag">Whole programs<small>later, gated</small></div>
+      <div>
+        <h3><code>selload</code> for complete boot streams</h3>
+        <p>Validated here on a toy program only. Anything that replaces a DSP program on an instrument
+        first needs the ColdFire side's upload path understood, and a recovery path proven.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What selache is</h2>
+  <div class="two">
+    <div>
+      <h3>Tools</h3>
+      <p><code>selas</code> assembler, <code>selcc</code> C99 compiler, <code>seld</code> LDF linker,
+      <code>selload</code> ELF → LDR, <code>seldump</code>, <code>selpatch</code>, <code>selmem</code> and friends,
+      plus <code>selinstr</code>: encoder, disassembler and VISA compression. Rust, one workspace.</p>
+    </div>
+    <div>
+      <h3>Licence and limits</h3>
+      <p>GPL-3.0; its C library is MIT. Its width rule reads at most two words, with one
+      <code>word1 &amp; 0x3F ≥ 0x38</code> test for the ambiguous families (the same bits as digikit's 4b).
+      It has <code>???</code> fallbacks and a few forms its own authors mark uncertain.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>Firmware and anything derived from it stays out of this repository. The bytes quoted above are
+  the output of an assembler run on four lines of our own source.</p>
+  <p>Method and numbers: <code>docs/sharc/SPEC-FINDINGS.md</code> §3.4–3.5, <code>docs/FINDINGS.md</code>.
+  Measured with <code>scripts/sharc_selache_compare.py</code> and its selache harness in
+  <code>angellinares/dn2_firmware_explore</code>, which also carry the integration notes for that repository.</p>
+</footer>
+
+</main>
+</body>
+</html>
