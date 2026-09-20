@@ -1289,6 +1289,61 @@ Ghidra or disassembly output and it was not re-checked.
   missing external RX synchronization/handover, not merely a missing TX DMA
   tick. A second agent checked the marker scan, threshold, row heads, globals,
   and vector slot against the 1.16 bytes/restored pages. **[V][O]**
+- **The same handler exists on Digitone II OS 1.11, and it shows what the
+  firmware does when the marker is *not* at index zero.** DN2 1.11 MAIN OS
+  loads at `0x40000400`; the counterpart of `0x400d2f98` is `0x400d5470`,
+  installed into the same vector slot `0x400002a8` (vector 170) by
+  `movel #0x400d5470,%d0` at `0x400d57f8` and `movel %d0,0x400002a8` at
+  `0x400d57fe`. It has no direct callers, as an ISR installed through a slot
+  does not. The shape matches the 1.16 reading bullet for bullet -- scan the
+  completed RX bank for `0x007fffff`, count only an index-zero hit, act once
+  the counter exceeds 63 -- and it adds the corrective branch:
+
+  ```
+  0x400d5478  moveq #50,%d0
+  0x400d547a  moveb %d0,0xfc04401c      ; EDMA SERQ, channel 50
+  0x400d5480  movel 0xfc045640,%d0      ; TCD50 SADDR
+  0x400d5486  cmpil #0x4e6e0900,%d0     ; which TX half is in flight
+  0x400d548c  scs %d1
+  0x400d548e  movel #5000,%d0           ; a spin, then d0 = 0 = the frame index
+  0x400d54a2  addil #0x4e6df100,%d1     ; -> the matching RX half
+  0x400d54aa  moveal #0x7fffff,%a1
+  0x400d54b0  lsll #6,%d2               ; index * 64 bytes per frame
+  0x400d54b4  cmpal %a0@(0,%d2:l),%a1   ; is the marker this frame's first word?
+  0x400d54b8  beqs <found>
+  0x400d54bc  moveq #32,%d2             ; ... over 32 frames, then give up
+  ```
+
+  On a hit at a **non-zero** index, and only when the hold-off counter
+  `0x42c4baf0` has run down, it takes the scatter-gather pointers of **both**
+  channels -- `0xfc045618` (TCD48 + 0x18) and `0xfc045658` (TCD50 + 0x18) --
+  and writes **62** into the linked descriptor's `CITER` (+0x14) and `BITER`
+  (+0x1c) of each, where the index-zero path writes **64**
+  (`0x400d54d2`-`0x400d54fa` against `0x400d5500`-`0x400d551a`). It then sets
+  `0x42c4baf0` to 4 as a hold-off and clears the lock counter `0x42c4baec`.
+  **So the link is aligned by shortening both major loops by two frames until
+  the marker falls at index zero, not by restarting the channels** -- which is
+  why the counter only advances on an index-zero hit, and why the threshold is
+  64 consecutive aligned completions.
+
+  Past the threshold (`0x400d5542` onward) it writes 40 then 42 to `ICR1`
+  (`0xfc04c01c`), sets `0x42c4bafc`, and installs **two** pending handlers:
+  `0x42c4baf8` into `0x400002a0` (vector 168) and `0x42c4baf4` into
+  `0x400002a8` (vector 170), clearing each pending word as it goes. The 1.16
+  reading names only the second.
+
+  For an emulator: an injected RX bank carrying `0x007fffff` **at index zero**
+  for 64 consecutive completions is what the handover waits for. A bank with
+  the marker at any other index is not a dead end either -- it exercises the
+  slip path above, and the observable is `CITER`/`BITER` going to 62 on both
+  descriptors, which is checkable without fabricating a plausible peer.
+
+  Read statically on DN2 1.11 only, by the dn2_firmware side; **not** re-read
+  against DT2 1.15C/1.16, where the addresses will differ. To locate the
+  equivalent there: the immediate `0x7fffff` loaded into an address register
+  next to a `cmpal (Ax,Dn.l),An` loop bounded by 32; a pair of `movew` of 62
+  or 64 into +20/+28 of pointers read from `0xfc045618` and `0xfc045658`; and
+  the `moveb #50,0xfc04401c` at entry. **[D][O]**
 - `emu/ssi.py` now supplies an opt-in, exact-deadline event source for only
   TCD48/TCD50. It models the observed 32-byte minors, 64-minor completion,
   scatter/gather reload and vector 170; preserves RX destination bytes rather
