@@ -5908,3 +5908,35 @@ cannot run -- every snapshot in `snapshots/` is 1.15C and no 1.16 `.syx` is in t
 tree, so a 1.16 snapshot ladder must be built first (`DT2_SYX` -> the 1.16 `.syx`,
 `emu.checkpoint make`). This is the standing gate for any 1.16 emulator
 measurement, not just this trace.
+
+## Panel input: the "encoder accumulator" counts turns since a push, it is not an undrained delta (Digitone II 1.11) **[V][D]**
+
+Relevant to issue #6 (encoder deltas arrive but the value never moves). The
+per-encoder counter at `0x445a0dc4` climbs with every detent and never clears
+under emulation, which read like a missing drain. Reading its only clearing
+code says otherwise.
+
+- The panel MCU's UART stream is dispatched on the wire tag at `0x4011fd5c`:
+  tag 3 accumulates encoder detents, tag 7 is the console block, tag 2 calls
+  `0x4011f9ac`. **[D]**
+- `0x4011f9ac(obj, byte)` is the **button-byte handler for one channel**. For
+  each changed bit it looks the control code up in
+  `0x401f39dc[channel*32 + bit]`. Only codes **41..48 -- ENCODER A..H pressed
+  as buttons** -- reach the clear at `0x4011fbb0` (counter and pending bit).
+  On release (`0x4011fc08`) the push is timestamped if the counter is <= 9. **[D]**
+- On the instrument, turning an encoder **while it is pushed** changes the value
+  in a coarser, rounder step (for example whole units instead of 0.01; the step
+  is set per control). The owner reports this from the hardware. **[V on
+  hardware]** So the counter plausibly tracks turns made during or since a push,
+  for that coarse mode, and a push released with few turns may count as a click.
+  Which code applies the coarse step has **not** been read. **[O]**
+- The counter clears only on a push of its own encoder. A test that sends only
+  turns, or button frames for other controls, will never clear it, and that is
+  correct firmware behaviour. **[V]** Five +1 deltas give 5 with the
+  pending bit set; a no-edge frame, a press and a release of channel 0 bit 5
+  (not an encoder push) each leave it at 5; five more give 10.
+- The encoder's own event still reaches the main task's loop with the right
+  code and delta (hooking `queue_send`). So #6's stuck value lies downstream of
+  that loop, in how the page applies a delta, not in panel input. **[O]**
+
+Measured with Digitone II OS 1.11, `boot400M.snap`, `--weakptr --slc`.
