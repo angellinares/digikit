@@ -239,6 +239,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     ev = {'tasks': [], 'prints': [], 'setpixel': 0, 'pxcopy': 0,
           'switch': collections.Counter(), 'switch_seq': [],
           'uart_out': bytearray(), 'satisfied': 0, 'satisfied_by': collections.Counter(),
+          'satisfied_by_sem': collections.Counter(),
           'depack_clamps': 0}
     inq = collections.deque(send)
     with open(config.main_image(), 'rb') as fh:
@@ -441,23 +442,55 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
         # of the system. That handoff is wired up below rather than left to
         # each caller -- getting it wrong is silent, it just looks like a hang.
         skip = set(unblock_except)
-        # The progress screen's frame semaphore is posted by the display
-        # module's own PIT3 ISR at ~7.5 Hz, and PIT3 is modelled, so it must
-        # never be faked. `display_wait` only covers the task's first pend;
-        # its per-frame pend (0x40126132) was being force-satisfied, so the
-        # prio-6 task drew about 40 frames per real one and starved the prio-2
-        # job worker doing +Drive initialization.
-        if profile.display_sem is not None:
-            skip.add(profile.display_sem)
-        # A background worker's completion semaphore (display_sem+8; see
-        # emu/symbols.py:worker_done_sem). It is given by plain guest code
-        # (a BgWorker's own teardown), not by any unmodeled hardware, so
-        # force-satisfying it has nothing to protect against -- and doing so
-        # releases the caller about 250M instructions before the worker's
-        # real completion. Excluding it restores that order; it does not by
-        # itself clear the 1.16 "FACTORY PROJECT >> +DRIVE..." freeze.
-        if profile.worker_done_sem is not None:
-            skip.add(profile.worker_done_sem)
+        # NEVER_FAKE: semaphores an image-derived scan of every give/give_b
+        # post site (see emu/symbols.py's `give`/`give_b`/`bq_free_giver`,
+        # and the methodology in scratch/semscan.py) showed have a guest
+        # poster that CAN run in the emulator -- either ordinary task code,
+        # or an ISR of a source this build models. Those are exactly the
+        # cases `unblock` must not fake: faking a pend whose real poster
+        # would eventually run just races ahead of it instead of waiting,
+        # which is the display_sem/worker_done_sem bug class (see their own
+        # comments in emu/symbols.py) generalised from "found by chasing one
+        # hang" to "found by enumerating every post site". A semaphore with
+        # NO guest poster found (or only an ISR of an unmodelled source,
+        # e.g. give_b's vector-134 pair) is not on this list and keeps being
+        # faked -- that is the correct default for hardware nothing here
+        # emulates.
+        never_fake = [
+            # The display module's own PIT3 ISR posts this at ~7.5 Hz, and
+            # PIT3 is modelled, so it must never be faked -- see
+            # emu/symbols.py:display_sem. `display_wait` only covers the
+            # task's first pend; its per-frame pend (0x40126132) was being
+            # force-satisfied, so the prio-6 task drew about 40 frames per
+            # real one and starved the prio-2 job worker doing +Drive
+            # initialization.
+            profile.display_sem,
+            # A background worker's completion semaphore (display_sem+8;
+            # see emu/symbols.py:worker_done_sem). Given by plain guest code
+            # (a BgWorker's own teardown), not by any unmodeled hardware, so
+            # force-satisfying it released the caller about 250M
+            # instructions before the worker's real completion.
+            profile.worker_done_sem,
+            # A second producer/consumer pair found by the same give/give_b
+            # audit (see emu/symbols.py:bq_free_sem / bq_ready_sem). Neither
+            # give is inside an ISR, so both are plain task code.
+            profile.bq_free_sem,
+            profile.bq_ready_sem,
+        ]
+        if esdhc:
+            # The eSDHC/eDMA command, data and DMA-completion semaphores.
+            # Their guest ISRs exist in the image but this build's Esdhc
+            # model (emu/esdhc.py) bypasses them and posts these three
+            # directly from host code when a command/transfer actually
+            # completes -- so they DO have a poster that "runs" in the
+            # emulator, just not through the vector/ISR path the give/give_b
+            # scan looks for. Faking them via unblock races ahead of the
+            # model instead of after it, the same hazard as display_sem,
+            # even though nothing has yet been observed to depend on the
+            # difference.
+            never_fake += [profile.sd_cmd_sem, profile.sd_data_sem,
+                          profile.sd_dma_sem]
+        skip.update(s for s in never_fake if s is not None)
         ev['unblock_skip'] = skip
         skip_callers = set(recheck)
         if real_sleep:
@@ -474,6 +507,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
                     uc.mem_write(sem, struct.pack('>I', 1))
                     ev['satisfied'] += 1
                     ev['satisfied_by'][ret] += 1
+                    ev['satisfied_by_sem'][sem] += 1
             except Exception:
                 pass
         at(profile.sem_pend, satisfy); maybe_at(profile.pend_b, satisfy)
