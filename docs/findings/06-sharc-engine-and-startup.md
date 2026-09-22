@@ -2774,3 +2774,26 @@ destinations for 19a/16a/16b forms. **[V]**
 
 `tools/sharc_trace.py` now implements FEXT (se) (shift-immediate opcode
 0x12, PRM Table 17-9) and register-operand ASHIFT (cu=2 opcode 0x04).
+
+## Where the SRC-page words go in `FUN_1c24e9` **[D][O]**
+
+With `R8` held symbolic and `R12=0`, `tools/sharc_trace.py` resolves the
+destination of `FUN_1c24e9`'s stores: `I5 = R8*0xdc + 0x2506ec` (`0x1c2560`,
+`0x1c256e`, `0x1c25ca`), a table of 32 slots of 0xdc bytes indexed by
+`FUN_1c2b24`'s slot argument. `FUN_1c2b24` passes the same base to
+`FUN_1c642a` (`R8=0x2506ec; R4=0x2412c8; CALL 0x1c642a` at `0x1c307d`), and a
+concrete run of `FUN_1c642a` walks it with stride 220 until an indirect jump
+through I12/M13 at `0x1c6579`.
+
+| frame word | mirror | fate in `FUN_1c24e9` |
+|---|---|---|
+| `+0xde` CFADE | 27 | read, shifted, spilled, then overwritten at `0x1c26f2`; never stored |
+| `+0xe6` | 31 | float-converted and scaled, then dropped |
+| `+0xe8` | 32 | gates the branch at `0x1c2727`; not stored as data |
+| `+0xea` | 33 | stored at table `+12` as `raw/30720.0` |
+| `+0xec` LEV | 34 | stored at table `+72` as `raw/32768.0` |
+
+So the CFADE control on XSLICE reaches the frame (`+0xde = 0x00c0` after a
+turn, HUD "Crossfade=50") but the SHARC discards it. Mirror 33 is the live
+unused slot on SLICE; SAMPLE's LOOP (`0xd0`, max `0x7802`) uses it. From a
+single agent's trace; needs a second check. **[D][O]**

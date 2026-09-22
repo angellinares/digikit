@@ -2382,7 +2382,14 @@ def _apply_compute(
     if operation in ("compare", "bit-test", "float-compare"):
         _event(state, insn, "compute", operation=operation, status_only=True)
     else:
-        _event(state, insn, "compute", operation=operation, result_register="R%d" % rn)
+        _event(
+            state,
+            insn,
+            "compute",
+            operation=operation,
+            result_register="R%d" % rn,
+            value=value,
+        )
         state.uregs[rn] = value
 
 
