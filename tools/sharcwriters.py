@@ -59,6 +59,7 @@ import os
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Any, cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -180,6 +181,13 @@ _LXW_LIKE_4B = {(1, 1, 1): 4, (0, 0, 0): 1, (1, 0, 0): 2,
                 (0, 1, 0): 1, (1, 1, 0): 2}
 
 
+def _lxw_key(fields: dict[str, Any]) -> tuple[int, int, int] | None:
+    values = (fields.get('l'), fields.get('x'), fields.get('w'))
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return cast(tuple[int, int, int], values)
+    return None
+
+
 def static_store_width(form: str, fields: dict):
     """-> byte width of one store from its decoded fields alone, or None
     for a field combination tools/sharc_trace.py itself refuses (e.g. an
@@ -192,9 +200,11 @@ def static_store_width(form: str, fields: dict):
     if form == '14d':
         return 2 if fields.get('l') else 1
     if form in ('3b', '3d'):
-        return _LXW_LIKE_3B.get((fields.get('l'), fields.get('x'), fields.get('w')))
+        key = _lxw_key(fields)
+        return _LXW_LIKE_3B.get(key) if key is not None else None
     if form in ('4b', '4d'):
-        return _LXW_LIKE_4B.get((fields.get('l'), fields.get('x'), fields.get('w')))
+        key = _lxw_key(fields)
+        return _LXW_LIKE_4B.get(key) if key is not None else None
     return None
 
 
@@ -379,7 +389,7 @@ def seed_sets(seed_global_constants: bool = True) -> dict:
     not clear (L3/L4/L15 keep today's L=0 default, not because it is
     proven, but because turning it off was not asked for and would
     reopen the scaled-MODIFY poisoning the module docstring describes)."""
-    sets = {reg: '@' + symbol for symbol, reg in ENTRY_SEED_NAMES.items()}
+    sets: dict[str, int | str] = {reg: '@' + symbol for symbol, reg in ENTRY_SEED_NAMES.items()}
     sets.update({'L%d' % n: 0 for n in range(16)})
     if seed_global_constants:
         sets.update(GLOBAL_CONSTANT_SEEDS)
@@ -476,10 +486,9 @@ def combined_affine_range(constant: int, terms, stack_lo: int, stack_hi: int,
     return _affine_range_with(constant, terms, bound_for)
 
 
-def ranges_overlap(range_lo: int, range_hi: int, width: int, target: int) -> bool:
-    """True if some address in the inclusive bound [range_lo, range_hi]
-    stores across `target`, for a store of `width` bytes."""
-    return range_lo <= target < range_hi + width
+def ranges_overlap(range_lo: int, range_hi: int, width: int, target: int, target_width: int = 1) -> bool:
+    """True if a possible store overlaps requested [target,target+width)."""
+    return range_lo < target + target_width and target < range_hi + width
 
 
 def _format_affine(constant: int, terms) -> str:
@@ -492,7 +501,7 @@ def _format_affine(constant: int, terms) -> str:
     return ' + '.join(parts) if parts else '0x0'
 
 
-def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
+def classify_store_address(addr, width, target: int, stack_lo, stack_hi, target_width: int = 1):
     """Pure classifier. `addr` is the JSON-rendered resolved address exactly
     as tools/sharc_trace.py's summarize()/_json_value() produce it: an int
     (Const), {'affine': {'constant': int, 'terms': [[name, coef], ...]}},
@@ -509,7 +518,7 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
     if isinstance(addr, bool):
         return 'UNRESOLVED', {'reason': 'unrecognized address representation: %r' % (addr,)}
     if isinstance(addr, int):
-        hit = addr <= target < addr + width
+        hit = addr < target + target_width and target < addr + width
         return ('HIT' if hit else 'EXCLUDED-CONST'), {'address': addr}
     if not isinstance(addr, dict):
         return 'UNRESOLVED', {'reason': 'unrecognized address representation: %r' % (addr,)}
@@ -533,7 +542,7 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
         constant = affine['constant']
         terms = [tuple(term) for term in affine['terms']]
         if not terms:
-            hit = constant <= target < constant + width
+            hit = constant < target + target_width and target < constant + width
             return ('HIT' if hit else 'EXCLUDED-CONST'), {'address': constant}
 
         def is_stack_term(name):
@@ -549,7 +558,11 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
             # ordinary DM(I7,M7) push/pop idiom) is still driven by the
             # frame/stack pointer, and reporting 'M7' alone there would
             # wrongly suggest it had nothing to do with the stack.
-            registers = sorted({ENTRY_SEED_NAMES.get(name, name) for name, _ in terms})
+            register_names: set[str] = set()
+            for name, _ in terms:
+                display = ENTRY_SEED_NAMES.get(name)
+                register_names.add(display if isinstance(display, str) else str(name))
+            registers = sorted(register_names)
             return 'ENTRY-RELATIVE', {'registers': registers, 'expression': expression}
 
         if stack_lo is None or stack_hi is None:
@@ -566,7 +579,7 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
             # bound, so a reader (or a future stricter run) can find every
             # store that depends on it without re-parsing `expression`.
             detail['via_circular_modify'] = True
-        if ranges_overlap(range_lo, range_hi, width, target):
+        if ranges_overlap(range_lo, range_hi, width, target, target_width):
             return 'UNRESOLVED', {
                 'reason': ('stack-relative address range overlaps the target; '
                            'Phase 1 bounds do not exclude it'),
@@ -631,7 +644,7 @@ def resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_consta
     return chosen, stop_reasons
 
 
-def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_lo, stack_hi):
+def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_lo, stack_hi, target_width=1):
     width = row['width'] if row['width'] is not None else fallback_width
     if chosen_event is None:
         reasons = sorted(reason for reason in stop_reasons if reason)
@@ -640,7 +653,7 @@ def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_
     event_width = event_store_width(row['form'], chosen_event)
     if event_width is not None:
         width = event_width
-    cls, detail = classify_store_address(chosen_event.get('address'), width, target, stack_lo, stack_hi)
+    cls, detail = classify_store_address(chosen_event.get('address'), width, target, stack_lo, stack_hi, target_width)
     return cls, detail, width
 
 
@@ -649,6 +662,16 @@ _WORKER = {}
 
 def _init_worker(blob_path, block_idxs, min_depth):
     _WORKER['ctx'] = sharcfn.load_context(blob_path, block_idxs, min_depth)
+
+
+def _process_function_batch(fn_id, max_steps, max_states, seed_global_constants=True):
+    """Spawn-safe unit: trace one function once and return plain records."""
+    ctx = _WORKER['ctx']
+    fn = ctx['by_id'][fn_id]
+    block = ctx['analyzed'][fn['block']]
+    dm_rows = [row for row in census_instructions(sharcinv.instructions_in(block, fn['entry'], fn['exit'])) if row['is_dm']]
+    chosen, stop_reasons = resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_constants)
+    return fn_id, fn['entry'], dm_rows, chosen, sorted(stop_reasons)
 
 
 def _process_function(fn_id, target, max_steps, max_states, fallback_width, stack_lo, stack_hi,
@@ -671,9 +694,27 @@ def _process_function(fn_id, target, max_steps, max_states, fallback_width, stac
     return fn_id, out
 
 
-def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,
-        fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
-    ctx = sharcfn.load_context(blob_path, block_idxs, min_depth)
+def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
+             fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
+    """Classify all *targets* from one census and one trace per function.
+
+    Targets are ``(byte_address, width)`` pairs.  The trace is independent of
+    a target, so doing this here prevents a caller from accidentally paying a
+    full project scan for every byte in a range.
+    """
+    try:
+        normalized_targets = {(int(address), int(width)) for address, width in targets}
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("writer targets must be (integer address, integer width) pairs") from error
+    targets = tuple(sorted(normalized_targets))
+    if not targets:
+        return {}
+    if jobs <= 0:
+        raise ValueError('jobs must be positive')
+    try:
+        ctx = sharcfn.load_context(blob_path, block_idxs, min_depth)
+    except Exception as error:
+        raise RuntimeError(f"cannot build writer census context for {blob_path}") from error
     by_function, orphan = full_project_census(ctx)
 
     census = Counter()
@@ -686,66 +727,58 @@ def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,
     all_rows = []
     if jobs <= 1:
         _init_worker(blob_path, block_idxs, min_depth)
-        for fn_id in work:
-            _, out = _process_function(fn_id, target, max_steps, max_states,
-                                        fallback_width, stack_lo, stack_hi,
-                                        seed_global_constants)
-            all_rows.extend(out)
+        batches = [_process_function_batch(fn_id, max_steps, max_states, seed_global_constants) for fn_id in work]
     else:
-        with ProcessPoolExecutor(
-            max_workers=jobs, initializer=_init_worker,
-            initargs=(blob_path, block_idxs, min_depth),
-        ) as pool:
-            futures = [
-                pool.submit(_process_function, fn_id, target, max_steps, max_states,
-                            fallback_width, stack_lo, stack_hi, seed_global_constants)
-                for fn_id in work
-            ]
-            for future in as_completed(futures):
-                _, out = future.result()
-                all_rows.extend(out)
+        with ProcessPoolExecutor(max_workers=jobs, initializer=_init_worker,
+                                 initargs=(blob_path, block_idxs, min_depth)) as pool:
+            futures = [pool.submit(_process_function_batch, fn_id, max_steps, max_states, seed_global_constants) for fn_id in work]
+            batches = [future.result() for future in as_completed(futures)]
+    for fn_id, function_entry, dm_rows, chosen, stops in sorted(batches):
+        for target, _width in targets:
+            for row in dm_rows:
+                cls, detail, width = classify_row(row, chosen.get(row['pc']), set(stops), target, fallback_width, stack_lo, stack_hi, _width)
+                all_rows.append({'target': target, 'target_width': _width, 'pc': row['pc'], 'form': row['form'], 'function_entry': function_entry, 'function_id': fn_id, 'width': width, 'class': cls, **detail})
 
     for row in orphan:
         if not row['is_dm']:
             continue
         width = row['width'] if row['width'] is not None else fallback_width
-        all_rows.append({
-            'pc': row['pc'], 'form': row['form'], 'function_entry': None,
-            'function_id': None, 'width': width, 'class': 'UNRESOLVED',
-            'reason': 'instruction has no recovered owning function to trace from',
-        })
+        for target, _target_width in targets:
+            all_rows.append({
+                'target': target, 'target_width': _target_width, 'pc': row['pc'], 'form': row['form'], 'function_entry': None,
+                'function_id': None, 'width': width, 'class': 'UNRESOLVED',
+                'reason': 'instruction has no recovered owning function to trace from',
+            })
 
-    all_rows.sort(key=lambda row: row['pc'])
-
-    class_totals = Counter(row['class'] for row in all_rows)
+    all_rows.sort(key=lambda row: (row['target'], row['target_width'], row['pc']))
     census_total = sum(census.values())
-    if sum(class_totals.values()) != census_total:
-        raise RuntimeError(
-            'class totals (%d) do not sum to the census total (%d)'
-            % (sum(class_totals.values()), census_total))
+    results = {}
+    for target, target_width in targets:
+        rows = [dict(row) for row in all_rows if row['target'] == target and row['target_width'] == target_width]
+        totals = Counter(row['class'] for row in rows)
+        if sum(totals.values()) != census_total:
+            raise RuntimeError('class totals do not sum to census total')
+        excluded = [row for row in rows if row['class'] == 'EXCLUDED-STACK']
+        results[(target, target_width)] = {
+            'target': target, 'target_width': target_width, 'width': target_width, 'image_sha256': ctx['sha256'],
+            'stack': [stack_lo, stack_hi] if stack_lo is not None else None,
+            'seed_global_constants': seed_global_constants, 'census': dict(sorted(census.items())),
+            'census_total': census_total, 'class_totals': dict(sorted(totals.items())),
+            'excluded_stack_depends_on_unproven_entry_assumption': len(excluded),
+            'excluded_stack_via_circular_modify': sum(1 for row in excluded if row.get('via_circular_modify')),
+            'stores': rows,
+            'coverage': 'incomplete' if totals.get('UNRESOLVED', 0) else 'complete',
+            'evidence_class': 'strict-trace' if not totals.get('UNRESOLVED', 0) else 'unknown',
+        }
+    return dict(sorted(results.items()))
 
-    excluded_stack_rows = [row for row in all_rows if row['class'] == 'EXCLUDED-STACK']
-    via_circular_modify = sum(
-        1 for row in excluded_stack_rows if row.get('via_circular_modify'))
 
-    return {
-        'target': target,
-        'image_sha256': ctx['sha256'],
-        'stack': [stack_lo, stack_hi] if stack_lo is not None else None,
-        'seed_global_constants': seed_global_constants,
-        'census': dict(sorted(census.items())),
-        'census_total': census_total,
-        'class_totals': dict(sorted(class_totals.items())),
-        # Every EXCLUDED-STACK row carries its own 'assumption' string
-        # (ENTRY_SEED_ASSUMPTION); these two counts are the same fact
-        # rolled up so a reader does not have to scan `stores` to see how
-        # many classifications depend on the unproven entry-seed
-        # assumption (out/sharcwriters/stack-invariant.md, "Item 2") --
-        # entirely, or specifically via this run's circular-MODIFY fix.
-        'excluded_stack_depends_on_unproven_entry_assumption': len(excluded_stack_rows),
-        'excluded_stack_via_circular_modify': via_circular_modify,
-        'stores': all_rows,
-    }
+def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,
+        fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
+    """Backward-compatible single-target façade."""
+    return run_many(blob_path, block_idxs, min_depth, [(target, fallback_width)],
+                    max_steps, max_states, fallback_width, stack_lo, stack_hi,
+                    jobs=jobs, seed_global_constants=seed_global_constants)[(target, fallback_width)]
 
 
 def _parse_stack(text):
@@ -795,9 +828,12 @@ def main(argv=None):
 
     text = json.dumps(result, indent=1, sort_keys=True)
     if args.json:
-        os.makedirs(os.path.dirname(args.json) or '.', exist_ok=True)
-        with open(args.json, 'w') as fh:
-            fh.write(text)
+        try:
+            os.makedirs(os.path.dirname(args.json) or '.', exist_ok=True)
+            with open(args.json, 'w') as fh:
+                fh.write(text)
+        except OSError as error:
+            raise RuntimeError(f"cannot write writer report {args.json}") from error
         print('wrote %s (%d stores, %d hits)' % (
             args.json, result['census_total'], result['class_totals'].get('HIT', 0)))
     else:

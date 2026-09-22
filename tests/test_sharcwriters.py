@@ -180,6 +180,12 @@ class RangesOverlapTest(unittest.TestCase):
     def test_overlap_at_low_edge(self):
         self.assertTrue(W.ranges_overlap(0x100, 0x200, 4, 0x100))
 
+    def test_requested_range_later_bytes_and_adjacent_boundary(self):
+        # A possible store at 0x10c hits only the final four bytes of the
+        # requested [0x100, 0x110) range; 0x110 is exactly adjacent.
+        self.assertTrue(W.ranges_overlap(0x10C, 0x10C, 4, 0x100, 16))
+        self.assertFalse(W.ranges_overlap(0x110, 0x110, 4, 0x100, 16))
+
     def test_overlap_at_high_edge_needs_width(self):
         # target sits just past range_hi, but a `width`-byte store starting
         # at range_hi still reaches it.
@@ -197,6 +203,11 @@ class ClassifyStoreAddressTest(unittest.TestCase):
 
     def test_hit_covers_the_whole_width(self):
         cls, _ = W.classify_store_address(self.TARGET - 2, 4, self.TARGET, 0x26F000, 0x2C0000)
+        self.assertEqual(cls, "HIT")
+
+    def test_requested_range_width_is_used_for_overlap(self):
+        # A store into the later bytes of a requested range is still a hit.
+        cls, _ = W.classify_store_address(self.TARGET + 4, 4, self.TARGET, 0x26F000, 0x2C0000, 16)
         self.assertEqual(cls, "HIT")
 
     def test_excluded_const(self):
@@ -353,8 +364,8 @@ class IntegrationTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import sharcfn
-        import sharcinv
+        sharcfn = import_module("sharcfn")
+        sharcinv = import_module("sharcinv")
 
         cls.target = 0x254D9C
         cls.ctx = sharcfn.load_context(str(BLOB), (93,), 8)

@@ -1,0 +1,274 @@
+{
+  "schema": "sharc-discovery-manifest/v1",
+  "image_sha256": "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2",
+  "code_blocks": [
+    1,
+    56,
+    69,
+    76,
+    78,
+    80,
+    88,
+    91,
+    93
+  ],
+  "min_depth": 8,
+  "dump_address_scale": 2,
+  "limits": {
+    "dispatch_window_sw": 64,
+    "max_pointer_tables": 256,
+    "max_pointer_entries_per_table": 64,
+    "max_trace_cases": 64
+  },
+  "roots": [
+    {
+      "name": "frame-reader",
+      "entry_sw": "0x1c2b24",
+      "role": "ColdFire-frame reader and control-path root hypothesis"
+    },
+    {
+      "name": "large-orchestrator",
+      "entry_sw": "0x1c642a",
+      "role": "large per-frame orchestrator and hook-root hypothesis"
+    },
+    {
+      "name": "wavetable-engine",
+      "entry_sw": "0x1c71ec",
+      "role": "wavetable-engine root hypothesis"
+    },
+    {
+      "name": "dense-interpolator",
+      "entry_sw": "0x1c18a6",
+      "role": "compute-dense interpolation root hypothesis"
+    },
+    {
+      "name": "descriptor-builder",
+      "entry_sw": "0x1c75d8",
+      "role": "audio-output descriptor setup; not the render loop"
+    }
+  ],
+  "trace_probes": [
+    {
+      "name": "orchestrator-natural-frontier",
+      "start_sw": "0x1c642a",
+      "sets": {
+        "R8": "0x2506ec",
+        "R4": "0x2412c8"
+      },
+      "max_steps": 200,
+      "max_states": 32,
+      "concrete_memory": true,
+      "assume_nw32": true,
+      "assumptions": [
+        "R8 and R4 are the statically observed caller arguments",
+        "internal normal words are 32 bits"
+      ]
+    }
+  ],
+  "selector_provenance_probes": [
+    {
+      "name": "r6-to-m4-dispatch-hypotheses",
+      "start_sw": "0x1c6553",
+      "copy_pc_sw": "0x1c6553",
+      "table_load_pc_sw": "0x1c656c",
+      "site_pc_sw": "0x1c6579",
+      "table_byte_address": "0x8055c840",
+      "source_register": "R6",
+      "selector_register": "M4",
+      "sets": {
+        "M13": 0
+      },
+      "seed_values": "all",
+      "max_steps": 32,
+      "max_states": 8,
+      "concrete_memory": true,
+      "assume_nw32": true,
+      "assumptions": [
+        "R6 selector values are manifest hypotheses, not observed runtime values",
+        "M13=0 is the documented startup state",
+        "internal normal words are 32 bits"
+      ],
+      "natural_frontier": {
+        "direct_call": {
+          "caller_entry_sw": "0x1c2b24",
+          "site_pc_sw": "0x1c3083",
+          "callee_entry_sw": "0x1c642a"
+        },
+        "caller_saved_r6_slot": {
+          "pc_sw": "0x1c2b56",
+          "dm_offset": "0x45"
+        },
+        "unresolved_call": {
+          "site_pc_sw": "0x1c305d",
+          "target_entry_sw": "0x1c3504",
+          "tail_jump_sw": "0x1c351a"
+        },
+        "runtime_dependencies": [
+          "DM(0x2560c4)",
+          "DM(0x256c98 + 4*R4)"
+        ],
+        "status": "unresolved; may redefine R6 before the direct call"
+      }
+    }
+  ],
+  "natural_selector_frontiers": [
+    {
+      "name": "natural-r6-before-orchestrator",
+      "tail_jump_sw": "0x1c351a",
+      "tail_decode": {
+        "form": "9b_abs",
+        "raw_hex": "083f283f"
+      },
+      "runtime_cells": [
+        {
+          "dm_byte_address": "0x2560c4",
+          "width": 4
+        },
+        {
+          "dm_byte_address": "0x256c98",
+          "width": 16
+        }
+      ],
+      "table_dm_byte_address": "0x256c98",
+      "loaded_target_candidates": [
+        {
+          "entry_index": 0,
+          "target_sw": "0x1c351c",
+          "callee_entry_sw": "0x1c349b"
+        },
+        {
+          "entry_index": 1,
+          "target_sw": "0x1c352f",
+          "callee_entry_sw": "0x1c347e"
+        },
+        {
+          "entry_index": 2,
+          "target_sw": "0x1c353e",
+          "callee_entry_sw": "0x1c3474"
+        },
+        {
+          "entry_index": 3,
+          "target_sw": "0x1c354d",
+          "callee_entry_sw": "0x1c3464"
+        }
+      ],
+      "range_guard_status": "unproven: bounded R4 target probes do not establish guard condition semantics, upstream bounds, or table mutation",
+      "exhaustiveness": "unproven",
+      "unresolved_reasons": [
+        "the selector cell and table can be mutated after loader initialization",
+        "writer census retains unresolved indexed stores and does not model external writers",
+        "bounded R4 target probes do not prove the range guard condition or an upstream R4 bound",
+        "no runtime occurrence or natural R6 value has been observed"
+      ],
+      "minimal_runtime_capture": {
+        "status": "not-run",
+        "capture": [
+          "DM(0x2560c4)",
+          "DM(0x256c98..0x256ca7)",
+          "R4 and R6 at 0x1c351a",
+          "selected tail target"
+        ]
+      }
+    }
+  ],
+  "dispatch_target_probes": [
+    {
+      "name": "dispatch-table-all-entry-targets",
+      "start_sw": "0x1c6569",
+      "site_pc_sw": "0x1c6579",
+      "table_byte_address": "0x8055c840",
+      "selector_register": "M4",
+      "sets": {
+        "M13": 0
+      },
+      "entry_indices": "all",
+      "max_steps": 16,
+      "max_states": 4,
+      "concrete_memory": true,
+      "assume_nw32": true,
+      "assumptions": [
+        "M4 entry indices are hypotheses, not observed runtime selections",
+        "M13=0 is the documented startup state",
+        "no natural runtime selector value is inferred",
+        "internal normal words are 32 bits"
+      ]
+    }
+  ],
+  "writer_targets": [
+    {
+      "address": "0x2560c4",
+      "width": 4
+    },
+    {
+      "address": "0x256c98",
+      "width": 16
+    }
+  ],
+  "register_effects": [
+    {
+      "entry_sw": "0x1c349b",
+      "register": "R6"
+    },
+    {
+      "entry_sw": "0x1c347e",
+      "register": "R6"
+    },
+    {
+      "entry_sw": "0x1c3474",
+      "register": "R6"
+    },
+    {
+      "entry_sw": "0x1c3464",
+      "register": "R6"
+    }
+  ],
+  "r4_tail_probes": [
+    {
+      "name": "loaded-tail-targets",
+      "start_sw": "0x1c351a",
+      "register": "R4",
+      "values": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "limit": "one expected breakpoint per loaded table target",
+      "status": "hypothesis"
+    }
+  ],
+  "core_vector_scans": [
+    {
+      "name": "block70-core-vector-candidate",
+      "layout": {
+        "instructions_per_entry": 4,
+        "offset_unit": "architectural-instruction",
+        "evidence_class": "public-manual",
+        "instructions_per_entry_evidence": {
+          "title": "ADSP-2136x/2137x/214xx Programming Reference",
+          "revision": "2.4",
+          "page": 145,
+          "section": "Interrupt Vector Table"
+        }
+      },
+      "candidate_region": {
+        "loader_byte_address": "0x28240000",
+        "start_pc_sw": "0x1c2000",
+        "loader_block": 70,
+        "loaded_size": 768,
+        "identity": "unverified-core-ivt-candidate",
+        "evidence_class": "loaded-bytes"
+      },
+      "semantic_targets": [
+        {
+          "name": "frame-reader",
+          "entry_sw": "0x1c2b24"
+        },
+        {
+          "name": "orchestrator",
+          "entry_sw": "0x1c642a"
+        }
+      ]
+    }
+  ]
+}
