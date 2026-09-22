@@ -58,17 +58,31 @@ def frame_on_fraction(buf):
     return len(panel.lit(buf)) / float(panel.W * panel.H)
 
 
-def run(args):
+def setup(snapshot, syx):
+    """Build a Machine the way emucheck and tools/speedab.py both need it:
+    resolve symbols against the current MAIN OS image (`emu.config` reads
+    DT2_SECTIONS lazily -- set it, e.g. via --sections, before calling this),
+    build with the standard full hook set, and hold the intro timers until
+    intro_done fires so a rung taken mid-intro doesn't race the animation.
+
+    -> (m, ev, st, pc, inq, at, pits, profile).
+    """
     profile = symbols.resolve(open(config.main_image(), 'rb').read())
 
     m, ev, st, pc, inq, at = build(
-        args.snapshot, syx=args.syx, unblock=True, softfloat=True,
+        snapshot, syx=syx, unblock=True, softfloat=True,
         bitmap=True, dsp=True, slc=True, sdgate=True, esdhc=True)
 
     intro = intro_running(m, profile.intro_pit3_isr)
     pits = Timers(Pits(m, hold=intro), Dtims(m, channels=(3,), hold=intro))
     if intro and profile.intro_done is not None:
         at(profile.intro_done, lambda uc, a, s, d: pits.release())
+
+    return m, ev, st, pc, inq, at, pits, profile
+
+
+def run(args):
+    m, ev, st, pc, inq, at, pits, profile = setup(args.snapshot, args.syx)
 
     last_frame = {'buf': None}
     if profile.panel_diff is not None and profile.fb_front is not None:

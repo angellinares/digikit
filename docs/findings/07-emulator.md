@@ -1306,3 +1306,85 @@ The lesson matches the earlier `install_mmio` one, and the fictitious 118x
 above, and the "2.90M ceiling" this section replaces: only trust an A/B where
 the two sides do the same work.
 
+
+## Digitakt II 1.16 and Digitone II 1.11 reach the main screen **[D][O]**
+
+Four harness bugs kept 1.16 from getting past boot dialogs. All were in the
+harness, none in the firmware. **[D]**
+
+- `emu.gui` refused the 1.16 `.syx`: `devices/digitakt-ii.toml` listed only
+  the 1.15C sha256. Both 1.16 and Digitone II 1.11 are now listed. The panel
+  code mapping was measured on 1.15C and has not been re-measured on 1.16.
+- `display_frame_post` was `Fixed(0x40125f4e)`, a 1.15C address, so on 1.16 it
+  and `display_sem` resolved to `None`, `unblock` faked the display semaphore,
+  and "INITIALIZING +DRIVE..." never cleared, the stall 1.15C had before
+  `display_sem` was excluded. The display module's PIT3 handler masks to the
+  same bytes as the intro's, so it is now found by position: the new `SigAt`
+  rule matches a masked signature 0x174 bytes before `display_wait`. It
+  resolves on DT2 1.15C (`0x40125f4e`, sem `0x44e2d148`), DT2 1.16
+  (`0x4013352a`, sem `0x44e460d8`), DN2 1.10E and DN2 1.11.
+- `unblock` faked the wait on `worker_done_sem` (`display_sem+8`), which a
+  background worker's teardown posts, releasing its caller about 250M
+  instructions early.
+- `unblock` faked a producer/consumer pair, `bq_free_sem`/`bq_ready_sem`
+  (`0x44e1dc88`/`0x44e1dc90` on 1.16), both posted from task code. With it,
+  "FACTORY PROJECT >> +DRIVE..." froze: the Factory-reset worker disables PIT3
+  itself when done (`FUN_40133626`), then no follow-up job was submitted in
+  2.5B instructions.
+
+`give` (`0x4000148c`) and `give_b` (`0x400014fc`) are byte-identical RTOS
+entry points on all four builds. A scan of every post site with an immediate
+semaphore argument, classified by whether the poster is task code or an ISR
+of a modelled source, gave the semaphores `unblock` now never fakes:
+`display_sem`, `worker_done_sem`, `bq_free_sem`, `bq_ready_sem`, and the
+three eSDHC semaphores, which `emu/esdhc.py` posts from host code. The scan
+was run once (`scratch/semscan.py`, gitignored, from the Ghidra dumps); each
+semaphore resolves per image, but a new firmware's semaphores are not
+discovered automatically. **[D][O]**
+
+On first boot the emulated eMMC is blank. The firmware finds no `0xBEEFBACE`
+header at byte 0 and runs its own "Factory reset" worker: 2,120 erase groups
+(CMD35/36/38), then writes a header sector at 0 and a table at `0x800`. The
+card overlay is saved in snapshots. +Drive holds no samples. **[D]**
+
+From `snapshots/dt2-1.16/boot400M.snap` the main screen is up by about 300M
+instructions, and from `snapshots/dn2-1.11/boot400M.snap` (a new ladder)
+likewise. `tools/emucheck.py` passes both at 700M. The only pends still faked
+are 175 in the intro's exit park (`0x400d1930` on 1.16, `0x400d4038` on
+1.15C). `tests/test_symbol_audit.py` fails if any symbol the harness uses is
+`None` on DT2 1.16 or DN2 1.11; eight trace-only symbols are still fixed 1.15C
+addresses. **[D][O]**
+
+## Speed: measured on 1.16, and QEMU is not worth porting **[V]**
+
+`tools/speedab.py` times a fixed guest window from a snapshot (three fresh
+repeats; exact mode checks that every repeat ends on the same instruction
+count and PC), and has `--crossings` (every Unicorn callback counted by hook)
+and `--profile` (cProfile split into Unicorn, binding, our handlers). Run on
+`snapshots/dt2-1.16/boot400M.snap`, 50M instructions, on a quiet machine:
+
+| | instr/s | vs `INSTR_PER_SEC` (4.68M) |
+|---|---|---|
+| exact mode | 1.19M | 0.25x |
+| fast mode | 2.0M | 0.43x |
+| Unicorn, hook-free two-instruction loop (`tools/qemuceiling`) | 1.09G | 232x |
+| QEMU `mcf5208evb`, same loop | 1.48G | 316x |
+
+Unicorn's ceiling is far above real time and QEMU's is only 1.4x higher, so
+by the handover's rule a port is not worth it. The loss is in Python
+crossings: 43% of time is Unicorn's Python binding (mostly `mem_read`
+buffer allocation and per-call `reg_write`), 14% our handlers, 38% native
+execution. The top crossing sources per 50M instructions: the bitmap HLE
+getPixel/setPixel (2.43M), then softfloat (0.49M). Removing the duplicate
+setPixel counter hook made no measurable difference (within repeat noise);
+it is kept as a cleanup. This corrects the earlier A/B in
+`out/speed-ab/`, whose floor used `count=` and idled.
+
+## Two task counters **[V]**
+
+`emu.dspboot.run` (cold boot, and the checkpoint ladder) counts creates at a
+fixed list of boot sites; `emu.longrun.build` (emucheck, guirun) hooks the
+RTOS `task_create` and counts only creates after the resume point. They are
+different metrics: a stock 1.16 cold boot creates nine boot tasks by
+~291M, and a resumed run from 400M creates six different, dynamic workers.
+Do not compare one against the other.

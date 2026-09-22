@@ -56,7 +56,7 @@ class DigitoneCheckpointTest(unittest.TestCase):
                 if events["switch_seq"]
                 else None,
                 "uart_out": len(events["uart_out"]),
-                "setpixel": events["setpixel"],
+                "setpixel": longrun.setpixel_count(events),
                 "pxcopy": events["pxcopy"],
                 "satisfied": events["satisfied"],
             }
@@ -73,7 +73,7 @@ class DigitoneCheckpointTest(unittest.TestCase):
                 "prints": events["prints"][baseline["prints"] :],
                 "switch_seq": normalized[1:],
                 "uart_out": bytes(events["uart_out"][baseline["uart_out"] :]),
-                "setpixel": events["setpixel"] - baseline["setpixel"],
+                "setpixel": longrun.setpixel_count(events) - baseline["setpixel"],
                 "pxcopy": events["pxcopy"] - baseline["pxcopy"],
                 "satisfied": events["satisfied"] - baseline["satisfied"],
             }
