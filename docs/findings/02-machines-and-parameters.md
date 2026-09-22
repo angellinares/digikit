@@ -736,3 +736,34 @@ crossfade with that value or ignores it the way REPITCH's deliberately disabled
 TUNE is ignored. Recommendation is to do SAMPLE first -- equally cheap, and a
 quieter neighbourhood than MANUAL SLICE, which sits next to the slice-boundary
 sub-block and the type-4/6 direct STRT feed.
+
+## XSLICE: a flashed eighth machine with its own SRC-page control, on Digitakt II 1.16 **[V][O]**
+
+`tools/machinebuild.py --profile dt2-1.16 --machine XSLICE:XSL:6:7 --fields
+0xf8,0xf9,0xfa,0xfb,0xfc,0xfd,0,0xfe,0x0a` builds a flashable 1.16 image
+with an eighth machine: a MANUAL SLICE clone (type 7) whose descriptor field
+2 is `0xfa`, MANUAL SLICE's orphaned CFADE row (owner 6, mirror 27, 0 to
+0x7f00). All nine machinepatch parts go into `flash_cave` (952 of 2108
+bytes); section 3 sha256 `cdbd7726...ecb86a`.
+
+Booted from reset in the emulator (400M rung) and driven from the panel,
+with stock SLICE on the stock image as the control:
+
+- FUNC+SRC lists XSLICE below MIDI (group 1, after the MIDI separators).
+- In `MachineSelectionView::vfunc_2` (`0x40061678`), a YES that changes the
+  selection commits and does not close; a second YES closes. The commit
+  reaches the setter `0x40051712` with type 7 for track 0, permit
+  `0x400da3b0` returns 1, and `move.b D2,(0xa2,A0)` at `0x4005179e` writes 7
+  to the track object (`0x4265338e`), where it stays for 50M instructions.
+  Stock SLICE takes the same path with 6.
+- On the SRC page, XSLICE shows a CFADE knob at slot 2 where SLICE shows an
+  empty box, and encoder C (wire channel 2) moves it; the same input does
+  nothing on SLICE.
+
+Open: the TX frame words (type `0x94+2t`, CFADE `+0xde`) read zero on both
+images, even with the frame-build gate `0x409664f4` open, because nothing in
+the harness raises vector 191 on its own (`tools/sharcframe.py` raises it by
+hand). Whether CFADE is audible is also open. `SoundParameterSet::vfunc_21`
+(`0x4003ae02`) compares a parameter's owner (6) with the track type (7); its
+callers are the modulation-destination views, so XSLICE's parameters may be
+missing from modulation pickers. **[O]**
