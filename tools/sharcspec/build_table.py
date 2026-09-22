@@ -38,6 +38,21 @@ PAIRS = {
 }
 ISA_ONLY = {"Type10a"}  # PRM heading "Type 10a ISA (...)"; every other form is ISA/VISA or VISA
 
+# The PRM heading marks the whole Type10a figure "ISA" (no "VISA" or
+# "ISA/VISA", unlike its siblings 8a/9a "ISA/VISA" and 9b "VISA" -- see
+# docs/sharc/SOURCES.md), so ISA_ONLY above keeps both Type10a_abs and
+# Type10a_rel out of the VISA table by default. Firmware contradicts that
+# for the rel (PC-relative jump) half: `sw 0x1c5030` in blk93@0x1c4f81
+# decodes as Type10a_rel by the classic PGR p.458 "with PC-relative jump"
+# bit layout (fixed 111 at bits 47-45, then D/DMI/DMM/COND/RELADDR/DREG/
+# COMPUTE -- the same split this file already derives from SPLIT_FORMS
+# below), inside code this tool otherwise decodes as VISA and that
+# desyncs immediately without this form. The abs (register-indirect jump)
+# half has no such firmware evidence yet, so it stays ISA-only pending
+# that; see build_table.py's own Type6b_shiftimm/Type2a_short precedent
+# for overriding a PRM ISA/VISA heading on firmware evidence.
+VISA_OVERRIDE = {"Type10a_rel"}
+
 # Forms where the PRM figure's fixed bits are correct and the PGR disagrees.
 # Firmware decoding confirms the PRM value; the earlier "stale template digit"
 # call against the PRM was wrong for these.
@@ -47,7 +62,8 @@ PRM_VALUE_WINS = {"Type2b"}
 # whole word, not a prefix. The classic PGR grid leaves the low bits blank, and
 # the merge rule below treats a blank as "any value" -- which let Type21a match
 # any first word 0x0000-0x007f and swallow the one or two short instructions
-# after it (docs/FINDINGS.md, "Type21a is the all-zero word"). Figure 17-5
+# after it (docs/findings/05-sharc-isa-and-decoding.md, "Type21a was
+# swallowing the two words after it"). Figure 17-5
 # draws Type21a as 48 zero bits and Figure 17-6 draws Type21c as 0x0001.
 # The value is the whole printed word; `free` lists bits the figure draws as a
 # field rather than a digit (Type22a's `emu` selects idle from emuidle).
@@ -185,7 +201,9 @@ UNDOCUMENTED = [
 # merge (see the generic loop below) collapsed both classic tables into a
 # single decode form and lost the addressing-mode distinction: the merged
 # "addr"/pmi+pmm field cannot represent both an absolute address and a
-# signed PC-relative displacement. See FINDINGS.md / task report for the
+# signed PC-relative displacement. See
+# docs/findings/05-sharc-isa-and-decoding.md, "The Type 8a branch forms were
+# taking words that are not branches" / task report for the
 # firmware evidence (branch-target landing rate) that this split is right.
 #
 #   shared_target=<label>  : Type8a only -- the merged figure's own field at
@@ -249,7 +267,7 @@ def fixed_bits_for(width, fields, keys, prm=None, gap_bits=()):
 def make_form(name, width, fields, fixed, source, keys=()):
     mask = sum(1 << b for b in fixed)
     value = sum(v << b for b, v in fixed.items())
-    isa_only = name.split("_")[0] in ISA_ONLY
+    isa_only = name.split("_")[0] in ISA_ONLY and name not in VISA_OVERRIDE
     return {
         "name": name, "width": width, "visa": not isa_only, "isa": width == 48,
         "mask": f"0x{mask:012x}", "value": f"0x{value:012x}", "fixed_bits": len(fixed),
@@ -424,7 +442,8 @@ type12a_ureg["unconfirmed_bits"] = 0
 # 23-bit ShiftImm field renders through the PRM opcode table without any new
 # semantic mapping.  This corrects the old firmware-only interpretation of the
 # first 0x023e parcel as a standalone reserved 16-bit Type 23 instruction.
-# See docs/sharc/SOURCES.md and docs/FINDINGS.md.
+# See docs/sharc/SOURCES.md and docs/findings/06-sharc-engine-and-startup.md,
+# "`0x023e` is the first parcel of a 48-bit immediate shift".
 type6a_nomem = next(f for f in forms if f["name"] == "Type6a (nomem)")
 forms.append({
     **type6a_nomem,

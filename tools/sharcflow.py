@@ -17,13 +17,33 @@ the same push and store. A return is the delayed `9b_abs` jump through I4/M6
 (raw 0x083f343f); its two delay slots hold `25c_rframe` and an epilogue
 instruction, in either order.
 
+A call is also `8a_abs`/`8a_rel` with its `b` bit set: an ordinary,
+optionally-conditional PC-relative or absolute CALL (SHARC+ Core Programming
+Reference, Type 8a, p.357's `b a j ci` table -- `b=1` is CALL, `b=0` is
+JUMP, and `j` is delayed-vs-non-delayed, not a call/jump selector). Unlike
+CJUMP this is a genuine hardware call: the return address goes on the PC
+stack, not through the compiler's push+store idiom, so an 8a call's delay
+slots (when `j=1`) are ordinary instructions, and there is nothing to check
+for "linked". `reladdr` is sign-extended and added to the call's own
+short-word address exactly as CJUMP's is, then wrapped to the 24-bit
+program-memory address space with `& 0xFFFFFF` -- the wrap matters, since a
+legitimate cross-block offset can carry the sum past that range in either
+direction (verified on blk93/blk69: the call at `sw 0x1cb4ee` needs no wrap
+to reach `0x1c06ba`, but blk69's `sw 0xb8031c` needs the wrap the same
+formula gives to reach the same target, and blk88's existing 25a_pcrel call
+at `sw 0x1c0fa5` was silently resolving to a negative target before this
+file applied the mask there too).
+
 Without --program the tool only reports, from REGION.bin (raw code, 16-bit
 little-endian words; --base-sw is the short-word address of its first word),
 over the aligned instructions (on the linear sweep of tools/sharcimm.py, with
 a decoded run of at least --min-depth instructions):
 
-- calls: each CJUMP with its target, the forms in its two delay slots,
-  whether they are the push and store, and the return address;
+- calls: each CJUMP or Type-8a CALL with its target, kind (`25a`/`8a`), the
+  forms in its delay slots (CJUMP always has two; an 8a call has two only
+  when delayed), whether they are the push and store (25a only -- always
+  False for 8a), the condition code and whether it is delayed (8a only), and
+  the return address;
 - indirect_calls: each `9b_abs` jump through M5 (DB) whose delay slots are
   the push and store;
 - returns: each return jump, its delay-slot forms, and the address after them.
@@ -92,6 +112,17 @@ def is_store(insn, sw) -> bool:
             and _field(insn.fields, 'm') == 7 and _value(insn.fields, 'data') == sw + 2)
 
 
+def pcrel_target(sw: int, rel: int) -> int:
+    """24-bit PC-relative target: sign-extend REL (a 24-bit field, CJUMP's
+    `reladdr` or Type 8a's) and add it to SW, then wrap to the 24-bit
+    program-memory address space with `& 0xFFFFFF`. Both forms use the same
+    base (the instruction's own short-word address) and the same scale (1
+    short word); see the module docstring for the cross-block examples that
+    need the wrap."""
+    signed = rel - (1 << 24) if rel & (1 << 23) else rel
+    return (sw + signed) & 0xFFFFFF
+
+
 def aligned(data: bytes, min_depth: int = 8):
     """Aligned instructions in address order: [(offset, Instruction)]."""
     table = sharcimm.decode_all(data)
@@ -132,10 +163,35 @@ def find_sites(data: bytes, base_sw: int, min_depth: int = 8) -> dict:
             if insn.type_name == '25a_direct':
                 target = _value(insn.fields, 'addr')
             else:
-                rel = _value(insn.fields, 'reladdr')
-                target = sw + (rel - (1 << 24) if rel & (1 << 23) else rel)
-            calls.append({'sw': sw, 'target': target, 'slots': forms, 'linked': linked,
-                          'returns_to': after(pair) if pair else None})
+                target = pcrel_target(sw, _value(insn.fields, 'reladdr'))
+            calls.append({'sw': sw, 'target': target, 'kind': '25a', 'slots': forms,
+                          'linked': linked, 'cond': None, 'conditional': False,
+                          'delayed': True, 'returns_to': after(pair) if pair else None})
+        elif insn.type_name in ('8a_abs', '8a_rel') and _field(insn.fields, 'b') == 1:
+            # Type 8a CALL (SHARC+ Core Programming Reference, Type 8a,
+            # p.357): a genuine hardware call, so there is no push+store
+            # idiom to check ('linked' is always False). cond=31 is
+            # unconditional; any other value is a real conditional call and
+            # is still counted, per the module docstring. j=1 is delayed (DB)
+            # -- the same two-instruction delay slot CJUMP has; j=0 is
+            # non-delayed, so the return address is simply the instruction
+            # after the call.
+            f = insn.fields
+            cond = _field(f, 'cond')
+            delayed = bool(_field(f, 'j'))
+            if insn.type_name == '8a_abs':
+                target = _value(f, 'addr')
+            else:
+                target = pcrel_target(sw, _value(f, 'reladdr'))
+            if delayed:
+                returns_to = after(pair) if pair else None
+                call_slots = forms if pair else None
+            else:
+                returns_to = base_sw + (off + insn.length_bytes) // 2
+                call_slots = None
+            calls.append({'sw': sw, 'target': target, 'kind': '8a', 'slots': call_slots,
+                          'linked': False, 'cond': cond, 'conditional': cond != 31,
+                          'delayed': delayed, 'returns_to': returns_to})
         elif insn.type_name == '9b_abs':
             f = insn.fields
             if insn.raw == RETURN_JUMP:
@@ -153,10 +209,16 @@ def summary(sites: dict) -> list:
     def hist(items, key):
         return ', '.join(f'{k}:{v}' for k, v in collections.Counter(key(i) for i in items).most_common(8))
 
+    calls_25a = [c for c in calls if c['kind'] == '25a']
+    calls_8a = [c for c in calls if c['kind'] == '8a']
     return [
-        f"calls {len(calls)} (push and store in the delay slots {sum(c['linked'] for c in calls)}), "
+        f"calls {len(calls)} (25a {len(calls_25a)}, 8a {len(calls_8a)}; "
+        f"push and store in the delay slots {sum(c['linked'] for c in calls_25a)}), "
         f"distinct targets {len({c['target'] for c in calls})}",
         "call delay slots: " + hist(calls, lambda c: '+'.join(c['slots'] or ['?'])),
+        f"8a calls: conditional {sum(c['conditional'] for c in calls_8a)}, "
+        f"delayed {sum(c['delayed'] for c in calls_8a)}, "
+        f"non-delayed {sum(not c['delayed'] for c in calls_8a)}",
         f"indirect calls {len(sites['indirect_calls'])}, returns {len(returns)}",
         "return delay slots: " + hist(returns, lambda r: '+'.join(r['slots'] or ['?'])),
     ]

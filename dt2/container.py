@@ -8,7 +8,7 @@ Layer cake, outermost first:
   3. preamble    -- 8 bytes; bytes 4..8 are the 32-bit content checksum.
   4. ELE3        -- magic, then a section table of 16-byte entries.
 
-Nothing here is encrypted. See docs/FINDINGS.md.
+Nothing here is encrypted. See docs/findings/01-container-and-patching.md.
 """
 import struct
 
@@ -58,7 +58,9 @@ def sections(path):
     """-> (container_bytes, [(id, offset, comp_len, dest), ...])
 
     `dest` is a load address for code sections, but for the bootstrap
-    (section 2) it is a *version* word -- see docs/FINDINGS.md.
+    (section 2) it is a *version* word -- see
+    docs/findings/01-container-and-patching.md, "Scope, and the 2.01
+    firmwares".
     """
     c = container(path)
     n = struct.unpack_from('>I', c, COUNT_OFF)[0]

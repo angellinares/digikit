@@ -127,8 +127,9 @@ def parse_args(argv):
     p.add_argument('--ips', type=parse_when, default=None)
     p.add_argument('--ips-at', action='append', default=[], type=parse_ips_at)
     # Timer rate applied once the intro hands over to the OS. At the default
-    # rate the UI task falls behind the 30 Hz DTIM3 tick (FINDINGS: "MACHINE
-    # SEL closes itself"). 0 keeps the default rate. Ignored when --ips or
+    # rate the UI task falls behind the 30 Hz DTIM3 tick
+    # (docs/findings/03-ui-and-panel.md: "MACHINE SEL closes itself"). 0 keeps
+    # the default rate. Ignored when --ips or
     # --ips-at is given.
     p.add_argument('--post-intro-ips', type=parse_when,
                    default=4 * INSTR_PER_SEC)
@@ -770,10 +771,13 @@ def main():
             rate = ((state['instrs'] - wall_prev[1])
                     / max(1e-6, now - wall_prev[0]))
             wall_prev = (now, state['instrs'])
-            print('[guirun] %dM tasks=%d dtim3=%d mainloop=%d jobs=%d pc=0x%08x'
+            print('[guirun] %dM tasks=%d pit0=%d pit2=%d pit3=%d dtim3=%d'
+                  ' mainloop=%d jobs=%d pc=0x%08x'
                   ' wall=%.1fs rate=%.2fM/s real=%.0f%%'
                   % (state['instrs'] // 1_000_000, len(ev['tasks']),
-                     pits.fired.get('DTIM3', 0), state['mainloop'],
+                     pits.fired.get('PIT0', 0), pits.fired.get('PIT2', 0),
+                     pits.fired.get('PIT3', 0), pits.fired.get('DTIM3', 0),
+                     state['mainloop'],
                      state['jobs'], pc, now - wall_t0, rate / 1e6,
                      100.0 * rate / pits.sources[0].ips))
             if trace is not None:
@@ -795,10 +799,12 @@ def main():
             state['instrs'] += executed
             break
 
-    print('[guirun] end: instrs=%dM terminal=%s tasks=%d dtim3=%d mainloop=%d '
-          'jobs=%d pc=0x%08x'
+    print('[guirun] end: instrs=%dM terminal=%s tasks=%d pit0=%d pit2=%d '
+          'pit3=%d dtim3=%d mainloop=%d jobs=%d pc=0x%08x'
           % (state['instrs'] // 1_000_000, state['terminal'], len(ev['tasks']),
-             pits.fired.get('DTIM3', 0), state['mainloop'], state['jobs'], pc))
+             pits.fired.get('PIT0', 0), pits.fired.get('PIT2', 0),
+             pits.fired.get('PIT3', 0), pits.fired.get('DTIM3', 0),
+             state['mainloop'], state['jobs'], pc))
     wall = time.monotonic() - wall_t0
     print('[guirun] wall: %.1fs, %.2fM instr/s average'
           % (wall, state['instrs'] / max(1e-6, wall) / 1e6))
@@ -812,6 +818,31 @@ def main():
         for ret, n in ev['satisfied_by'].most_common(15):
             print('  ret=0x%08x  %d' % (ret, n))
     print('[guirun] faults: %d distinct pages touched' % len(m.fault_pages))
+    if ev.get('esdhc') is not None:
+        esdhc = ev['esdhc']
+        cmd_counts = collections.Counter(idx for idx, _arg in esdhc.log)
+        overlay = esdhc.card.overlay
+        print('[guirun] esdhc: %d commands (%s), overlay %d bytes'
+              % (len(esdhc.log),
+                 ' '.join('CMD%d=%d' % (c, n)
+                          for c, n in sorted(cmd_counts.items())),
+                 len(overlay)))
+        if overlay:
+            lo, hi = min(overlay), max(overlay)
+            print('[guirun] esdhc overlay byte range: 0x%x-0x%x (sectors %d-%d)'
+                  % (lo, hi, lo // 512, hi // 512))
+            sectors = sorted({off // 512 for off in overlay})
+            runs = []
+            for s in sectors:
+                if runs and s == runs[-1][1] + 1:
+                    runs[-1] = (runs[-1][0], s)
+                else:
+                    runs.append((s, s))
+            print('[guirun] esdhc overlay sector runs: %s'
+                  % ', '.join(('%d' % a) if a == b else ('%d-%d' % (a, b))
+                              for a, b in runs))
+        print('[guirun] esdhc log tail: %s'
+              % ' '.join('CMD%d@%#x' % (c, a) for c, a in esdhc.log[-12:]))
     if args.trace_ui_json:
         with open(args.trace_ui_json, 'w') as f:
             json.dump({

@@ -17,7 +17,8 @@ that search again if the constant ever stops matching. Its output is
 byte-identical to `emu.oracle.depack` -- the device's own section-2 routine --
 for every compressed section of both Digitakt II 1.15C and Digitone II 1.10E,
 and so is dt2/elz.py's. It fails on the 1.16 and 1.11 updaters
-(docs/FINDINGS.md). Section 3 takes about a minute this way.
+(docs/findings/01-container-and-patching.md, "Scope, and the 2.01
+firmwares"). Section 3 takes about a minute this way.
 
 A section's 8-byte header is [u32 compressed_len][u32 sum of those bytes], big
 endian, and the sum is checked here. Two sections opt out of it:

@@ -8,7 +8,8 @@ Implemented (both verified byte-exact against known-good references):
     crc32   0x80001bd0  CRC-32, poly 0xEDB88320, residue 0xDEBB20E3
     depack  0x80000432  aPLib decompressor -- accepts the tool's repack
 
-Not yet implemented (see docs/FINDINGS.md "Next"):
+Not yet implemented (see docs/findings/01-container-and-patching.md,
+"Recovery"):
     content checksum  0x40003ca6  word-sum with each word XORed by its index
     HMAC-SHA256       0x80005e2a  verifies the 32-byte container trailer
 

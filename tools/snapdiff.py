@@ -10,8 +10,8 @@ the SHARC. Changed bytes separated by at most --gap unchanged bytes are
 reported as one run. A run that starts in a known Digitakt II table (the same
 in 1.15C and 1.16, tools/framelink.py) is labelled with the table, the track
 row and the offset in the row (see
-docs/FINDINGS.md, "The ColdFire tells the SHARC through a periodic DSPI2
-frame").
+docs/findings/04-coldfire-dsp-link.md, "The ColdFire tells the SHARC through
+a periodic DSPI2 frame").
 """
 
 import argparse

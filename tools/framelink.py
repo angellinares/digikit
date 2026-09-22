@@ -2,9 +2,9 @@
 
 Tools look a profile up by the SHA-256 of the MAIN OS image, so a snapshot or
 dump of another image stops them instead of using wrong addresses. The
-addresses are in docs/FINDINGS.md: "The ColdFire tells the SHARC through a
-periodic DSPI2 frame", "The frame capture runs; the frame build is switched
-off" and, for 1.16, "The frame link on Digitakt II 1.16".
+addresses are in docs/findings/04-coldfire-dsp-link.md: "The ColdFire tells
+the SHARC through a periodic DSPI2 frame", "The frame capture runs; the frame
+build is switched off" and, for 1.16, "The frame link on Digitakt II 1.16".
 
 Profile keys: name; vector, the frame interrupt; handler, the interrupt
 handler that builds the frame; driver, the DSPI2 driver it calls; counter,

@@ -22,6 +22,11 @@ version = "1.15C"
 sha256 = "62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c"
 filename = "Digitakt_II_OS1.15C.syx"
 
+[[firmware]]
+version = "1.16"
+sha256 = "278541e466edcd77d6b3e018a91fb90185932d3c7de224dd3e68294dddf3a9ec"
+filename = "Digitakt_II_OS1.16.syx"
+
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
 # Channels 0..5 are linear -- code = channel * 8 + bit + 1, codes 1..48 --

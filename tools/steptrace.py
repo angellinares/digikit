@@ -108,7 +108,8 @@ def hookprobe(snapshot, syx, count, weakptr=False, slc=False,
 
     `_FastStepper` calibrates by dividing block bytes by a *requested*
     instruction count, which is only meaningful if the block hook fires once
-    per block in both modes. docs/FINDINGS.md:1401 records that `count=` makes
+    per block in both modes. docs/findings/07-emulator.md, "What actually
+    limits speed: our hook layer, not Unicorn", records that `count=` makes
     Unicorn install an internal per-instruction hook; if that also changes how
     often the block hook fires, the two arms of the calibration are measuring
     different things and the ratio it produces is not bytes per instruction.

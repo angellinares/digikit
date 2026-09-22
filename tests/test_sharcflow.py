@@ -47,6 +47,17 @@ def load(ureg, value):
     return encode('17b', put('17b', ureg=ureg) | (value & 0xFFFF))
 
 
+def call8a_rel(rel, b=1, a=0, cond=31, j=1, ci=0):
+    """Type 8a PC-relative jump/call (SHARC+ Core Programming Reference, Type
+    8a, p.357): b=1 is CALL, b=0 is JUMP; j is delayed (1) vs non-delayed (0),
+    not a call/jump selector; cond=31 is unconditional."""
+    return encode('8a_rel', put('8a_rel', b=b, a=a, cond=cond, j=j, ci=ci) | (rel & 0xFFFFFF))
+
+
+def call8a_abs(addr, b=1, a=0, cond=31, j=1, ci=0):
+    return encode('8a_abs', put('8a_abs', b=b, a=a, cond=cond, j=j, ci=ci) | (addr & 0xFFFFFF))
+
+
 class SitesTest(unittest.TestCase):
     def test_call_with_push_and_store_in_its_delay_slots(self):
         # SW 0x1000 cjump, 0x1003 push, 0x1004 store (0x1006), return to 0x1007
@@ -75,6 +86,75 @@ class SitesTest(unittest.TestCase):
         self.assertEqual(sites['indirect_calls'], [{'sw': 0x1005, 'slots': ['3c', '16a'],
                                                     'returns_to': 0x100B}])
         self.assertEqual(sites['aligned'][:3], [(0x1000, 4), (0x1002, 4), (0x1004, 2)])
+
+
+class Type8aCallTest(unittest.TestCase):
+    """Type 8a (SHARC+ Core Programming Reference, Type 8a, p.357): b=1 is
+    CALL, b=0 is JUMP -- a plain branch, never a call, however its `j` (delay)
+    and `cond` bits are set. Unlike CJUMP, an 8a call is a genuine hardware
+    call (return address on the PC stack): its delay slots are ordinary
+    instructions, not a push+store idiom, so 'linked' is always False."""
+
+    def test_delayed_call_is_recorded_with_its_condition(self):
+        # SW 0x1000 8a_rel call (DB) to 0x1010, delay slots at 0x1003/0x1005,
+        # return address 0x1007 (after both delay slots).
+        data = call8a_rel(0x10) + load(0, 0xAAA) + load(4, 0xBBB)
+        sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
+        self.assertEqual(len(sites['calls']), 1)
+        call = sites['calls'][0]
+        self.assertEqual((call['sw'], call['target'], call['kind'], call['cond'],
+                          call['conditional'], call['delayed'], call['linked'],
+                          call['slots'], call['returns_to']),
+                         (0x1000, 0x1010, '8a', 31, False, True, False,
+                          ['17b', '17b'], 0x1007))
+
+    def test_branch_b0_is_not_a_call(self):
+        data = call8a_rel(0x10, b=0) + load(0, 1) + load(4, 2)
+        sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
+        self.assertEqual(sites['calls'], [])
+
+    def test_conditional_call_is_kept_with_its_condition_recorded(self):
+        data = call8a_rel(0x8, cond=5) + load(0, 1) + load(4, 2)
+        sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
+        self.assertEqual(len(sites['calls']), 1)
+        call = sites['calls'][0]
+        self.assertEqual((call['target'], call['cond'], call['conditional']),
+                         (0x1008, 5, True))
+
+    def test_non_delayed_call_returns_right_after_itself(self):
+        # j=0: no delay slots execute, so the return address is simply the
+        # instruction after the (3-short-word) call itself.
+        data = call8a_abs(0x2000, j=0) + load(0, 1) + load(4, 2)
+        sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
+        self.assertEqual(len(sites['calls']), 1)
+        call = sites['calls'][0]
+        self.assertEqual((call['target'], call['delayed'], call['slots'], call['returns_to']),
+                         (0x2000, False, None, 0x1003))
+
+    def test_absolute_form_target_is_the_addr_field(self):
+        data = call8a_abs(0x1CB4B2) + load(0, 1) + load(4, 2)
+        sites = sharcflow.find_sites(data, 0x1000, min_depth=1)
+        self.assertEqual(sites['calls'][0]['target'], 0x1CB4B2)
+
+
+class PcrelTargetTest(unittest.TestCase):
+    """sharcflow.pcrel_target: CJUMP's and Type 8a's shared reladdr formula
+    (own short-word address + sign-extended reladdr, wrapped to 24 bits)."""
+
+    def test_forward_offset(self):
+        self.assertEqual(sharcflow.pcrel_target(0x1000, 0x10), 0x1010)
+
+    def test_negative_offset_sign_extends(self):
+        self.assertEqual(sharcflow.pcrel_target(0x1010, 0xFFFFF0), 0x1000)  # -16
+
+    def test_wraps_past_the_top_of_the_24bit_space(self):
+        # blk69's real 8a_rel calls to the 0x1c06ba reciprocal primitive: sw
+        # 0xb8031c + reladdr 0x64039e overflows 0xFFFFFF unmasked (0x11c06ba)
+        # and must wrap to land on the real target.
+        self.assertEqual(sharcflow.pcrel_target(0xB8031C, 0x64039E), 0x1C06BA)
+
+    def test_wraps_below_zero(self):
+        self.assertEqual(sharcflow.pcrel_target(0x2, 0xFFFFFA), 0xFFFFFC)  # -6
 
 
 if __name__ == '__main__':

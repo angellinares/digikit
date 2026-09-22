@@ -21,9 +21,26 @@ class GhidraAddressTest(unittest.TestCase):
             I.ghidra_addr(L.L2_BYTE_LIMIT - 1),
             2 * (L.L2_SW_BASE + 0xFFFF) + 1,
         )
-        self.assertEqual(I.ghidra_addr(L.L2_BYTE_LIMIT), L.L2_BYTE_LIMIT - I.SPACE_BASE)
+        # Just past the L2 window, and below the L1 alias window (SPACE_BASE),
+        # a loader byte address is neither alias: it is its own offset.
+        self.assertEqual(I.ghidra_addr(L.L2_BYTE_LIMIT), L.L2_BYTE_LIMIT)
         l1 = L.sw_to_byte(0x1C1338)
         self.assertEqual(I.ghidra_addr(l1), 2 * 0x1C1338)
+
+    def test_l1_alias_window_is_bounded_and_external_is_unchanged(self):
+        # Inside the L1 system-alias window: byte = 2*sw + SPACE_BASE maps
+        # down to Ghidra offset 2*sw.
+        self.assertEqual(I.ghidra_addr(I.SPACE_BASE), 0)
+        self.assertEqual(I.ghidra_addr(I.L1_ALIAS_LIMIT - 1), I.L1_ALIAS_LIMIT - 1 - I.SPACE_BASE)
+        # At and past the L1 alias window's upper bound, an address is no
+        # longer an alias -- it keeps its own value.
+        self.assertEqual(I.ghidra_addr(I.L1_ALIAS_LIMIT), I.L1_ALIAS_LIMIT)
+        # External memory (e.g. 0x80000000..0x82a001c4) is not an alias of
+        # anything and must land at its own address, not SPACE_BASE-shifted
+        # (the old bug put it at 0x58xxxxxx).
+        external = 0x82A00008
+        self.assertEqual(I.ghidra_addr(external), external)
+        self.assertNotEqual(I.ghidra_addr(external), external - I.SPACE_BASE)
 
     def test_ranges_are_split_at_both_l2_mapping_boundaries(self):
         start = L.L2_BYTE_BASE - 2

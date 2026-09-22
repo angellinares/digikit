@@ -612,7 +612,14 @@ def _probe_track(memory: LoadedMemory, track: int) -> dict[str, Any]:
         if event.get("pc_sw") == 0x1C33D2 and event.get("action") == "load"
     }
     expected = f"spi_rx + {MACHINE_OFFSET + 2 * track:#x}"
-    if loads != {expected}:
+    # `sets` only seeds I10's *initial* value; it does not pin it. With
+    # `--follow-loaded-calls`, a state can revisit 0x1c33c4 a second time
+    # after a call chain that recomputes I10 from something the tracer
+    # cannot resolve (e.g. a scaled float convert whose scale register
+    # isn't a known constant at that point), so the calibrated expression
+    # is not always the *only* one observed -- only the presence of the
+    # expected, fully-resolved expression is load-bearing here.
+    if expected not in loads:
         raise ValueError(f"track {track}: expected {expected}, observed {sorted(loads)}")
     pcs = {event.get("pc_sw") for state in states for event in state.trace}
     if not {0x1C33D7, 0x1C33DF}.issubset(pcs):

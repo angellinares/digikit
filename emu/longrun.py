@@ -24,7 +24,7 @@ from unicorn.m68k_const import (UC_M68K_REG_A7, UC_M68K_REG_PC, UC_M68K_REG_SR,
 import emu.dspboot as db
 from emu.harness import Machine
 from emu.snapshot import DeferredComponentRestore, restore_into
-from emu import config, symbols
+from emu import config, symbols, semscan
 
 PRINT              = 0x400054b4
 SWITCH_TO          = 0x4000044a
@@ -54,6 +54,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
           unblock=False, softfloat=False, bitmap=False, on_pixel=None,
           unblock_except=(), edma=True, real_sleep=False, dsp=False,
           srtrap=False, weakptr=False, slc=False, sdgate=True, esdhc=True,
+          modeled_vectors=None,
           trace=None, trace_path=None, trace_ranges=(), trace_registers=None,
           deferred_components=(), idle_yield=20000, ssi0_request_hz=None,
           ssi0_legacy_upgrade=False):
@@ -239,6 +240,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     ev = {'tasks': [], 'prints': [], 'setpixel': 0, 'pxcopy': 0,
           'switch': collections.Counter(), 'switch_seq': [],
           'uart_out': bytearray(), 'satisfied': 0, 'satisfied_by': collections.Counter(),
+          'satisfied_by_sem': collections.Counter(),
           'depack_clamps': 0}
     inq = collections.deque(send)
     with open(config.main_image(), 'rb') as fh:
@@ -364,7 +366,13 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     at(profile.pend_call, lambda uc,a,s,d: uc.mem_write(profile.completion_sem, struct.pack('>I',1)))
     maybe_at(profile.task_create, task_create)
     at(PRINT, do_print)
-    maybe_at(profile.set_pixel, lambda uc,a,s,d: ev.__setitem__('setpixel', ev['setpixel']+1))
+    if not bitmap:
+        # With bitmap=True, emu/hle.py's install_bitmap hooks this same
+        # address itself and counts in ev['bitmap']['setPixel'] (see below);
+        # installing this counter too would be a second Python crossing on
+        # the hottest path in the emulator for a count already available.
+        # See `setpixel_count()` below for the reader-side half of this.
+        maybe_at(profile.set_pixel, lambda uc,a,s,d: ev.__setitem__('setpixel', ev['setpixel']+1))
     maybe_at(profile.px_copy,   lambda uc,a,s,d: ev.__setitem__('pxcopy',  ev['pxcopy']+1))
     at(SWITCH_TO, switch_to)
 
@@ -433,6 +441,13 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
         install_bitmap(at, ev['bitmap'], on_pixel,
                        set_pixel=profile.set_pixel, get_pixel=profile.get_pixel)
 
+    if modeled_vectors is None:
+        # PIT3 (display_sem's poster) only: this reproduces the hand-kept list
+        # exactly. Adding 205/207 and the DTIMs also pulls in the timer-wheel
+        # tick semaphore, which needs an emucheck on both devices first.
+        modeled_vectors = frozenset({208})
+    modeled_vectors = frozenset(modeled_vectors)
+
     if unblock:
         # Both sets are kept mutable and exposed on `ev` so a run can change
         # policy partway through, which the intro needs: its frame semaphore
@@ -441,14 +456,57 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
         # of the system. That handoff is wired up below rather than left to
         # each caller -- getting it wrong is silent, it just looks like a hang.
         skip = set(unblock_except)
-        # The progress screen's frame semaphore is posted by the display
-        # module's own PIT3 ISR at ~7.5 Hz, and PIT3 is modelled, so it must
-        # never be faked. `display_wait` only covers the task's first pend;
-        # its per-frame pend (0x40126132) was being force-satisfied, so the
-        # prio-6 task drew about 40 frames per real one and starved the prio-2
-        # job worker doing +Drive initialization.
-        if profile.display_sem is not None:
-            skip.add(profile.display_sem)
+        # NEVER_FAKE: semaphores emu/semscan.py's image-only scan of every
+        # give/give_b post site shows have a guest poster that CAN run in
+        # the emulator -- either ordinary task code, or an ISR of a vector
+        # this build models (see modeled_vectors below). Those are exactly
+        # the cases `unblock` must not fake: faking a pend whose real
+        # poster would eventually run just races ahead of it instead of
+        # waiting, which is the display_sem/worker_done_sem bug class (see
+        # their own comments in emu/symbols.py) generalised from "found by
+        # chasing one hang" to "found by enumerating every post site". A
+        # semaphore with no guest poster found (or only an ISR of an
+        # unmodelled source, e.g. give_b's vector-134 pair) is not on this
+        # list and keeps being faked -- that is the correct default for
+        # hardware nothing here emulates. See emu/semscan.py's own
+        # docstring for what this scan does and does not find, and this
+        # function's `modeled_vectors` parameter doc for which vectors are
+        # passed in and why.
+        never_fake = set(semscan.never_fake_semaphores(
+            main_img, load_addr=db.MAIN_LOAD, modeled_vectors=modeled_vectors))
+        # frame_sem is also posted from a modelled vector (PIT3, via the
+        # intro's OWN handler, before the display module re-points vector
+        # 208 to its own) but has to start OUT of never_fake: the intro
+        # needs it fakeable while it runs and only becomes never-fake once
+        # intro_done retires that handler, via the dynamic skip.add(...)
+        # below. Leaving it in here would make it permanently never-fake
+        # and reintroduce the very busy-spin bug that dynamic handling
+        # exists to avoid -- see the comment at intro_done's hook.
+        never_fake.discard(profile.frame_sem)
+        # Not found by the scan: neither give's semaphore argument is a
+        # literal (emu/semscan.py's docstring), so this still needs the
+        # existing Sig/Offset resolution in emu/symbols.py, same as before.
+        #
+        # A background worker's completion semaphore (display_sem+8; see
+        # emu/symbols.py:worker_done_sem). Given by plain guest code (a
+        # BgWorker's own teardown), not by any unmodeled hardware, so
+        # force-satisfying it released the caller about 250M instructions
+        # before the worker's real completion.
+        never_fake.add(profile.worker_done_sem)
+        if esdhc:
+            # The eSDHC/eDMA command, data and DMA-completion semaphores.
+            # Their guest ISRs exist in the image but this build's Esdhc
+            # model (emu/esdhc.py) bypasses them and posts these three
+            # directly from host code when a command/transfer actually
+            # completes -- so they DO have a poster that "runs" in the
+            # emulator, just not through any vector/ISR path (esdhc.py
+            # never calls raise_vector) the scan could find. Faking them via
+            # unblock races ahead of the model instead of after it, the
+            # same hazard as display_sem, even though nothing has yet been
+            # observed to depend on the difference.
+            never_fake |= {profile.sd_cmd_sem, profile.sd_data_sem,
+                          profile.sd_dma_sem}
+        skip.update(s for s in never_fake if s is not None)
         ev['unblock_skip'] = skip
         skip_callers = set(recheck)
         if real_sleep:
@@ -465,6 +523,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
                     uc.mem_write(sem, struct.pack('>I', 1))
                     ev['satisfied'] += 1
                     ev['satisfied_by'][ret] += 1
+                    ev['satisfied_by_sem'][sem] += 1
             except Exception:
                 pass
         at(profile.sem_pend, satisfy); maybe_at(profile.pend_b, satisfy)
@@ -585,6 +644,24 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     except Exception:
         m.close()
         raise
+
+
+def setpixel_count(ev):
+    """The setPixel count from an `ev` dict returned by `build()`, whichever
+    hook produced it.
+
+    With bitmap=False, `build()` installs its own plain counter at
+    profile.set_pixel and this is ev['setpixel']. With bitmap=True, that
+    counter is skipped (see the `if not bitmap:` guard above) because
+    emu/hle.py's install_bitmap already hooks the same address and counts
+    every call -- in or out of bounds -- in ev['bitmap']['setPixel']. The two
+    counters are only ever redundant, never complementary: read whichever one
+    exists. ev['setpixel'] itself is always present (initialised to 0) even
+    when bitmap=True and nothing ever increments it, so a caller that forgets
+    to use this helper gets a silent 0 rather than a KeyError.
+    """
+    bitmap = ev.get('bitmap')
+    return bitmap['setPixel'] if bitmap is not None else ev['setpixel']
 
 
 def run_until(m, pc, timeout_ms=250):
@@ -879,7 +956,7 @@ def main(snapshot, instrs, chunk=500_000, send=b'', unblock=False, fast=False):
         if done % 250_000_000 == 0:
             print('  .. %dM instrs, %.1fs, tasks=%d prints=%d setPixel=%d'
                   % (done//1_000_000, time.time()-t0, len(ev['tasks']),
-                     len(ev['prints']), ev['setpixel']), flush=True)
+                     len(ev['prints']), setpixel_count(ev)), flush=True)
 
     pc, done, stop = spin(m, pc, instrs, chunk, on_chunk=note)
     return m, ev, done, time.time()-t0, stop
@@ -894,7 +971,7 @@ if __name__ == '__main__':
     print('\n=== %d instrs in %.0fs (%.2fM/s) stop=%s ===' % (done, dt, done/dt/1e6, stop))
     print('new tasks : %d' % len(ev['tasks']))
     print('prints    : %d' % len(ev['prints']))
-    print('setPixel  : %d   px_copy_to_bitmap: %d' % (ev['setpixel'], ev['pxcopy']))
+    print('setPixel  : %d   px_copy_to_bitmap: %d' % (setpixel_count(ev), ev['pxcopy']))
     print('distinct TCBs scheduled: %d   pends satisfied: %d'
           % (len(ev['switch']), ev['satisfied']))
     print('uart out  : %r' % bytes(ev['uart_out'])[:200])

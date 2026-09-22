@@ -2,7 +2,8 @@
 """Watch for evidence the UI consumed the Milestone B patch's new machine
 string, then optionally try to drive the panel to the machine-select screen.
 
-`docs/FINDINGS.md`'s "The ColdFire machine dispatch" section and
+`docs/findings/02-machines-and-parameters.md`'s "The ColdFire machine
+dispatch" section and
 `tools/machinepatch.py` establish that Milestone B installs an eighth machine
 descriptor in a MAIN OS cave (default base 0x40303e5c) whose two name fields
 are libstdc++ COW string reps ("PLACEHOLDER" / "PLHD"), reached by
@@ -22,7 +23,7 @@ three pixel-free signals and reports whether any of them fire:
      header plus chars) -- does anything read our bytes back;
   3. a code hook on `FUN_401d3aba`, the COW string copy constructor, that
      dereferences A1 (the source std::string's data pointer, per
-     `docs/FINDINGS.md`) and reports a hit whenever it equals one of our two
+     `docs/findings/03-ui-and-panel.md`) and reports a hit whenever it equals one of our two
      cave chars addresses -- does the UI actually clone our string.
 
 A bonus fourth hook on `FUN_400607b2` (`MachineSelectionView`'s constructor)
@@ -80,7 +81,7 @@ from emu.dtim import Dtims, Timers
 from emu.longrun import build, spin
 from emu.pit import Pits, intro_running
 
-MACHINE_LIST_VIEW = 0x4005e022        # FUN_4005e022, never fires idle (FINDINGS)
+MACHINE_LIST_VIEW = 0x4005e022        # FUN_4005e022, never fires idle (docs/findings/02-machines-and-parameters.md)
 MACHINE_SELECTION_VIEW = 0x400607b2   # FUN_400607b2, constructor -- bonus signal
 COW_COPY = 0x401d3aba                 # FUN_401d3aba, the COW string copy ctor
 
@@ -203,7 +204,7 @@ def any_signal_fired(state):
     """True iff one of the THREE REQUIRED signals fired (list_view hits, a
     COW copy sourced from our cave chars, or an mmio read of the cave
     descriptor/rep ranges). `selection_view_hits` is bonus context only --
-    docs/FINDINGS.md already establishes MachineSelectionView's constructor
+    docs/findings/02-machines-and-parameters.md already establishes MachineSelectionView's constructor
     rebuilds the index vectors on every idle post-intro run regardless of
     the patch, so by itself it says nothing about string consumption and
     must not count toward this verdict."""

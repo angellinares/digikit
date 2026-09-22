@@ -39,7 +39,7 @@ Never patch the bootstrap or updater sections. See
 | Tool | Purpose |
 | --- | --- |
 | `tools/ghidradump.py` | Export an analysed Ghidra program into grep-friendly disassembly/decompilation plus SQLite indexes. |
-| `tools/ghidraq.py` | Run read-only PyGhidra queries for functions, callers, references, strings, ranges, and decompilation. Queries can be chained with `--then` so one JVM answers several questions. |
+| `tools/ghidraq.py` | Run read-only PyGhidra queries for functions, callers, references, strings, ranges, decompilation, and bounded HighFunction dataflow. Queries can be chained with `--then` so one JVM answers several questions. |
 | `tools/refscan.py` | Exhaustively scan a raw ColdFire image for direct references into an address range. Use this to check Ghidra's incomplete reference tables. |
 | `tools/codeseeds.py` | Recover likely function entries from vectors, calls, and code pointers. |
 | `tools/ghidraapply.py` | Apply code seeds or RTTI discoveries to a Ghidra project. |
@@ -69,6 +69,60 @@ Typical read-only query:
 uv run python tools/ghidraq.py /section_3_MAIN_OS.bin callers 0xADDRESS \
   --project ~/ghidra-projects/dt2-emac --project-name dt2-emac
 ```
+
+### Raw instruction p-code and bounded HighFunction dataflow
+
+`pcode PC` reports raw `Instruction.getPcode()` at exactly one listed instruction,
+without decompiling, changing references, or inferring SSA. Its JSON includes
+requested, logical, and displayed coordinates, instruction length, ordered p-code
+operations, and address/language metadata. `no-instruction`, empty, and malformed
+p-code are structured statuses. It is a diagnostic, not an SSA slice.
+
+`slice PC SELECTOR` finds the containing function and follows a bounded backward slice;
+selectors include `store:value`, `store:address`, `load:value`, `load:address`,
+`input:N`, `output`, and `reg:NAME`. `stores TARGET [LO HI]` and its symmetric
+`loads TARGET [LO HI]` inspect memory writes and reads globally or for function
+entries in `[LO, HI)`, reporting exact direct addresses separately from computed
+or unresolved candidates. Raw `STORE`/`LOAD` and HighFunction direct-memory
+`COPY` forms are normalized with `STORE`, `LOAD`, `COPY_DIRECT_WRITE`, or
+`COPY_DIRECT_READ` representations. A `COPY` with direct memory on both ends is
+the decompiler's folded memory-to-memory move: it reports as
+`COPY_MEM_TO_MEM_WRITE` for `stores` and `COPY_MEM_TO_MEM_READ` for `loads`, so
+one instruction is visible from both its destination and its source. Both use
+the normal decompile timeout,
+report failures/partial results instead of stopping a `--then` chain, and do
+not save the project.
+
+For the ColdFire program, raw/displayed addresses are unprefixed:
+
+```sh
+uv run python tools/ghidraq.py /section_3_MAIN_OS.bin pcode 0x40008000 \
+  --json --project ~/ghidra-projects/dt2-emac --project-name dt2-emac
+uv run python tools/ghidraq.py /section_3_MAIN_OS.bin slice 0x40008000 store:value \
+  --json --project ~/ghidra-projects/dt2-emac --project-name dt2-emac
+```
+
+For SHARC, replace `SHARC_PROGRAM` and `SHARC_PROJECT` with the program path
+and project containing that program. The program must be imported with
+`SHARC_VISA:LE:32:default`; use `sw:` for a short-word PC target. DM data
+targets (on-chip and external alike) are byte addresses and go unprefixed --
+the generated language translates a DM byte address into the `ram` space's
+unit offset internally (`tools/sharcspec/ghidra/gen_sleigh.py`
+`dm_byte_addr_to_ram_unit`), so the plain literal from the instruction
+stream is also the address to query here:
+
+```sh
+uv run python tools/ghidraq.py SHARC_PROGRAM pcode sw:0x1c1928 \
+  --json --project SHARC_PROJECT --project-name SHARC_PROJECT
+uv run python tools/ghidraq.py SHARC_PROGRAM loads 0x254d98 \
+  --json --project SHARC_PROJECT --project-name SHARC_PROJECT
+uv run python tools/ghidraq.py SHARC_PROGRAM stores 0x8055c874 \
+  --json --project SHARC_PROJECT --project-name SHARC_PROJECT
+```
+
+Results identify p-code by sequence PC/time and structured varnode fields, not
+Java display strings. SHARC_VISA results include byte/short-word metadata and
+the caveat that HighFunction p-code does not model delay-slot execution.
 
 ## Emulator measurement tools
 
@@ -368,6 +422,79 @@ uv run python tools/sharc_trace.py \
 This traces the primary PE through the DAI stores and then stops at the next
 unsupported `9b_abs` form; it is not a general SHARC emulator.
 
+### `tools/sharcemu.py`
+
+A Ghidra p-code emulator harness (`EmulatorHelper`) for the SHARC+ program,
+complementary to `sharc_trace.py`'s abstract interpreter: this one actually
+runs the generated language's p-code, one instruction at a time, against a
+live emulator register/memory state. It fails loudly instead of silently
+no-opping: the generated SLEIGH emits an empty body for any VISA form it has
+not been given semantics for (only ~22% of forms have any), so an
+instruction with zero p-code ops executes as a silent no-op unless caught
+first. Before every step the tool reads the instruction's raw bytes and
+classifies them independently with the repo's own decoder
+(`tools/sharc_disasm.py`, `tools/sharcinv.py`'s `merge_fields`), never
+Ghidra's mnemonic. Only `Type21a` (an architectural NOP with no fields) and
+`Type9a_abs`/`Type9b_abs` with merged field `b==1` (register-indirect call,
+no static target to encode) are legitimately empty; anything else with empty
+p-code is a `no-semantics` fault. A conditional jump's compute-condition is
+an unimplemented CALLOTHER pcodeop in this language, so `step()` returning
+false surfaces as an `emulator-error` fault carrying Ghidra's message.
+
+```sh
+uv run python tools/sharcemu.py dt2-1.16_SHARC --start sw:0x1c18ed --steps 200 \
+    --watch 0x254d9c --set R2=0x1234 \
+    --project ~/ghidra-projects/sharc-batch-dt2-116 \
+    --project-name sharc-batch-dt2-116 --json
+```
+
+`--start` takes `sw:` (short-word) or a displayed coordinate for the program
+counter, same convention as `ghidraq.py`. `--watch` and `--poke` addresses
+are always plain DM byte addresses, unprefixed: `DM(0x254d9c)` is emulated
+at `0x254d9c` directly, matching the loader's placement of on-chip and
+external DM literals at their own byte address. The generated language
+translates a DM byte address into the `ram` space's unit offset internally
+(`tools/sharcspec/ghidra/gen_sleigh.py` `dm_byte_addr_to_ram_unit`), so the
+emulator now sees the image's initialised data at these locations. See
+`docs/findings/05-sharc-isa-and-decoding.md`.
+`--watch ADDR[:LEN]` (repeatable, LEN in bytes, default 4) reports every
+write touching that range: step, PC, address, and old/new bytes. `--set
+REG=VALUE` seeds a register before `--start` runs; `--poke ADDR=VALUE` seeds
+a 32-bit little-endian DM word first, for when the register you want to seed
+gets reloaded from memory before reaching the code you want to watch.
+`--skip-faults N` records up to N faults and advances past them instead of
+stopping at the first one, to harvest a fault table.
+
+Write detection prefers `EmulatorHelper.enableMemoryWriteTracking()` /
+`getTrackedMemoryWriteSet()` (present in Ghidra 12.1.3), which reports an
+address as written regardless of value, catching a write that happens to
+store the same value already there; a before/after `readMemory` diff is the
+fallback only if that API is absent, and cannot see a same-value write.
+`getTrackedMemoryWriteSet()` returns a reference to EmulatorHelper's own
+live, mutating set rather than a snapshot, so the tool copies it into an
+independent `AddressSet` each step before diffing -- aliasing it instead
+silently loses every write after the first step.
+
+### `tools/sharc_worklist.py`
+
+Measures how much of a SHARC+ region the current language gives real p-code.
+It sweeps the aligned instruction stream (`tools/sharcflow.py` `aligned()`),
+lifts each instruction with the in-tree language (`tools/sharcpcode.py`
+`load_context`/`lift_one`), and tabulates, per form and overall, the share
+that lifts to at least one p-code op. Type21a, and Type9a/9b_abs with
+`b == 1`, count as covered because empty is their correct semantics.
+
+```sh
+uv run python tools/sharc_worklist.py --image dt2-1.16 \
+    --function 0x1c18a6:0x1c1f7d \
+    --out-json out/sharc-semantics/worklist.json \
+    --out-md out/sharc-semantics/worklist.md
+```
+
+`--function LO:HI` (short-word addresses, end exclusive) adds the same table
+for one span. The output is a ranked worklist of forms still without
+semantics.
+
 ### `tools/sharc_candidates.py`
 
 Ranks exact Type19a address-adjust hypotheses in a `sharcpcode` SQLite file.
@@ -383,6 +510,94 @@ uv run python tools/sharc_candidates.py \
 
 A candidate is a hypothesis, not a finding. Confirm its base-pointer
 provenance and the consuming memory operation with the tracer and image bytes.
+
+### `tools/sharcwriters.py`
+
+Which SHARC+ instructions can write a given DM byte address -- image-wide,
+over every store form, not just the ones Ghidra's SLEIGH language can see.
+
+Census: decodes every aligned instruction in the code blocks
+(`tools/sharcinv.py` `CODE_BLOCKS`) and finds every DM store from decoded
+fields alone (no SLEIGH, no execution): forms 15a/15b/3a/3b/3c/3d/4a/4b/4d/
+6a_mem/14a/14d store when merged `d==1`/`g==0`; 16a/16b always store, DM
+when `g==0`; dual-memory 1a/1b store on the DM side when `dmd==1`.
+(`sharcinv.py`'s own `MEM_FORMS` omits Type3c even though it has a real `d`
+bit and stores exactly like its siblings -- this tool keeps its own table.)
+
+Resolve: groups the census by owning function (`tools/sharcfn.py`
+`load_context`/`build_inventory`) and runs `tools/sharc_trace.py`'s tracer
+once per function from its entry, with every I/M/B register seeded as its
+own named symbol (so an address survives as `Affine(I6e - 12)` instead of
+collapsing to `Unknown`) and `concrete_memory=True`. L registers are seeded
+concrete zero rather than symbolic -- the one deliberate exception, because
+the tracer's own Type19a_scaled MODIFY handler only takes its cheap linear
+path for a `Const` zero L register; a merely-symbolic L instead poisons
+every later use of that I register with `Unknown`, which was the single
+largest source of lost resolution on a full run.
+
+Classify: `HIT` / `EXCLUDED-CONST` / `EXCLUDED-STACK` / `STACK-RELATIVE` /
+`LOADED-POINTER` (address depends on an unresolved memory load; the load's
+own expression is recorded) / `ENTRY-RELATIVE` (depends on a
+caller-supplied register; every register in the expression is listed,
+including a mixed frame+modifier idiom like `DM(I7,M7)`) / `UNRESOLVED`.
+Every census DM store lands in exactly one class; the class totals always
+sum to the census total (checked at the end of every run).
+
+```sh
+uv run python tools/sharcwriters.py 0x252658 --jobs 16 \
+    --json out/sharcwriters/252658.json
+```
+
+`--stack LO:HI` overrides the default stack bounds (derived from the
+loader's own layout: the untouched gap between two code blocks, DM
+`0x26f000`-`0x2c0000` -- see the module docstring); `--stack none` reports
+every stack-relative store as `STACK-RELATIVE` instead of trying to exclude
+it. `--jobs N` runs one function's trace per worker process. The
+interpreter-independent logic (census rules, width tables, the address
+classifier) is pure and unit-tested in `tests/test_sharcwriters.py` with
+synthetic fields and trace events -- no firmware required.
+
+`out/sharcwriters/stack-invariant.md`/`.json` census every instruction in
+the image that can write I6, I7, B6 or B7 (7764 instances, whole-image,
+function-owned) and argue S = `[0x26f000, 0x2c0000)` (the same
+`DEFAULT_STACK_LO`/`HI`) usually contains them -- **conditionally, not
+proven closed**: the census traces I7 through a genuine multi-context
+stack-switch shape (`blk69@0xb8853a` sw `0xb885f5`, `I7` repointed to a
+runtime-populated context-struct address) that cannot be resolved
+statically to either "still in S" or a specific other region. See the
+proof's "Item 2" for the full writer-by-writer table and verdict. Every
+`EXCLUDED-STACK` result now states this explicitly rather than hiding it:
+an `'assumption'` string (`ENTRY_SEED_ASSUMPTION`) on every row, plus
+`excluded_stack_depends_on_unproven_entry_assumption` (a count -- every
+`EXCLUDED-STACK` row, since the assumption underlies `STACK_SYMBOLS`
+itself) in the JSON's top level.
+
+The proof's one classifier-relevant fix lives mostly in
+`tools/sharc_trace.py`: the Type19a_scaled circular-MODIFY handler
+previously collapsed to `Unknown('scaled circular modify I%d')` whenever
+the pre-modify value, B or L were not all concrete -- true on nearly every
+occurrence, since I6/I7 are seeded as named symbols at each function's own
+entry. PRM p.6-7 guarantees the wrapped result still lands in
+`[B,B+L*scale)` regardless, the *same* window a value already bounded by
+S (an entry-time symbol, or an earlier circular-MODIFY result) already
+denotes -- so `_stack_bounded_symbol()` recognises that shape and the
+handler mints a **fresh**, uniquely-named `circ_<reg>_<pc>` symbol for the
+result. Fresh, not reused: an earlier version of this fix re-used the
+input symbol unchanged, which asserted two different circular MODIFYs of
+I7 (different sites, or the same site with different runtime state) were
+*equal*, letting the Affine algebra cancel their difference to a spurious
+0 and alias two different stack frames -- replaced before it reached any
+other tool (grep the image for `scaled circular modify` if adding a new
+consumer of this reason string). `tools/sharcwriters.py`'s classifier was
+extended to match: `is_circ_symbol()`/`combined_affine_range()` treat a
+`circ_` term as ranging over S widened by `CIRC_WRAP_SLACK` (`L7*4 =
+0x7f4`) on both sides -- not S itself -- and `via_circular_modify` marks
+an `EXCLUDED-STACK` result that used this. Recovers 948 of the ~1045
+stores the stack pointer's circular MODIFY was blocking for target
+`0x252658` (`3441 -> 4389 EXCLUDED-STACK`, `8438 -> 7492 UNRESOLVED`,
+`HIT`/`EXCLUDED-CONST`/`ENTRY-RELATIVE` counts unchanged); the remainder
+needs an offset at or beyond one buffer length, or an unrecognised symbol
+name, which the fix deliberately does not claim bounded (see the proof).
 
 ## Reference manuals
 
@@ -400,6 +615,7 @@ sources.
 | What does this loader offset become in DSP memory? | `sharcldr.py` |
 | Where is a known constant or peripheral address used? | `sharcimm.py`, then SQLite |
 | Which exact offset calculations are plausible readers? | `sharc_candidates.py` |
+| Which instructions can write a given DM address, image-wide? | `sharcwriters.py` |
 | Which non-main instructions disagree with the decoder? | `sharc_seeddecode.py --only-problems` |
 | Does a pointer remain `base + stride*index + offset`? | `sharc_trace.py` |
 | Did Ghidra miss a ColdFire reference? | `refscan.py` |

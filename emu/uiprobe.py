@@ -45,7 +45,7 @@ from unicorn import UC_HOOK_CODE, UcError
 from unicorn.m68k_const import UC_M68K_REG_A7, UC_M68K_REG_D0
 
 from emu.dtim import Dtims, Timers
-from emu.longrun import build, spin
+from emu.longrun import build, spin, setpixel_count
 from emu import panel
 from emu.pit import Pits, intro_running
 
@@ -200,7 +200,7 @@ def sweep(snapshot, instrs):
         h = r['hits']
         print('%-10s %13s %6d %9d %9d %5d %6d %6d %6d  %s'
               % (str(ch), format(r['done'], ','), len(r['ev']['tasks']),
-                 r['ev']['setpixel'], h['main: message-loop head'],
+                 setpixel_count(r['ev']), h['main: message-loop head'],
                  sum(r['msgs'].values()), h['DTIM3 ISR  (-> main-loop queue)'],
                  h['panel flush (double-buffer diff)'], r['panel_lit'],
                  r['stop']))
@@ -214,7 +214,7 @@ def run(snapshot, instrs, channels):
     print('fired  %s' % t.fired)
     print('missed %s' % t.missed)
     print('tasks=%d  setPixel=%d  lit=%d  progress count 0x44e2d5cc=%#010x'
-          % (len(ev['tasks']), ev['setpixel'], r['lit'], r['count']))
+          % (len(ev['tasks']), setpixel_count(ev), r['lit'], r['count']))
     if 'dsp' in ev:
         print('coprocessor port: bursts=%s words=%s'
               % (format(ev['dsp'].bursts, ','), format(ev['dsp'].words, ',')))

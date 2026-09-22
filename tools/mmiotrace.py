@@ -59,7 +59,7 @@ DEFAULT_RANGES = ((0xEC000000, 0xEC0FFFFF), (0xFC000000, 0xFC0FFFFF))
 
 # Bases taken from the models that already own them, not from a datasheet
 # reading: emu/console.py, emu/gpio.py, emu/edma.py, emu/pit.py, emu/dtim.py,
-# emu/esdhc.py, plus docs/FINDINGS.md's peripheral map. An address with no
+# emu/esdhc.py, plus docs/findings/07-emulator.md's peripheral map. An address with no
 # name here is unclaimed by any existing model, which is exactly what a panel
 # controller should look like.
 PERIPHERALS = (

@@ -21,7 +21,7 @@ import argparse, collections, hashlib, json, os, struct, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from emu import config, symbols
-from emu.longrun import build, spin
+from emu.longrun import build, spin, setpixel_count
 from emu.pit import Pits, intro_running, BASES as PIT_BASES
 from emu.dtim import Dtims, Timers, BASES as DTIM_BASES
 
@@ -124,7 +124,7 @@ def run_arm(args, profile, main_img):
         "vec208_is_intro_isr": vec208 == profile.intro_pit3_isr,
         "pit3_pcsr": hx(u16(m, PIT_BASES[3])),
         "dtim3_dtmr": hx(u16(m, DTIM_BASES[3])),
-        "setpixel": ev.get("setpixel", 0),
+        "setpixel": setpixel_count(ev),
         "current_tcb": hx(cur),
         "tasks_created": len(ev["tasks"]),
         "distinct_tasks_scheduled": len(ev["switch"]),

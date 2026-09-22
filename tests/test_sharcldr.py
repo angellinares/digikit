@@ -55,6 +55,22 @@ class LoadedMemoryTest(unittest.TestCase):
         self.assertIsNone(memory.source_block(0x20000000))
         self.assertEqual(memory.ranges(), ((30, 30 + 0x10000000),))
 
+    def test_fill_coverage_is_distinct_from_having_file_bytes(self):
+        fill = 1 << sharcldr.FILL_BIT
+        data = block(fill, 0x1000, 0x400, arg=0) + block(0, 0x2000, 4, payload=b"abcd")
+        blocks = sharcldr.parse_blocks(data)
+        # A FILL block contributes no file offset, but the loader does write
+        # the range, so "no offset" must not be read as "the loader leaves
+        # this address alone".
+        self.assertIsNone(sharcldr.offset_for_address(blocks, 0x1100, space="byte"))
+        covering = sharcldr.fill_block_for_address(blocks, 0x1100, space="byte")
+        self.assertIsNotNone(covering)
+        self.assertEqual(covering["target_address"], 0x1000)
+        self.assertEqual(covering["argument"], 0)
+        # A payload address and an address past the fill are both unfilled.
+        self.assertIsNone(sharcldr.fill_block_for_address(blocks, 0x2000, space="byte"))
+        self.assertIsNone(sharcldr.fill_block_for_address(blocks, 0x1400, space="byte"))
+
     def test_read_sw_ranges_and_immutable_records(self):
         base_sw = 0x123
         base = sharcldr.sw_to_byte(base_sw)

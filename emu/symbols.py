@@ -275,6 +275,36 @@ class SigWhere:
                                      % (load_addr + hits[0], self.equals, self.at))
 
 
+class SigAt:
+    """A masked signature that must match at a fixed distance from an
+    already-resolved symbol.
+
+    For a routine compiled more than once, whose copies mask to the same
+    signature and differ only in an operand we do not yet know, but which
+    sits in the same place relative to a neighbour in every build: the
+    display module's PIT3 handler is the copy that lives 0x174 bytes before
+    `display_wait`. The signature check keeps a layout change from quietly
+    resolving to the wrong bytes."""
+
+    def __init__(self, ref_hex, symbol, delta, lo=0x40000000, hi=0x40400000):
+        self.raw = bytes.fromhex(ref_hex)
+        self.symbol, self.delta = symbol, delta
+        self.regex = re.compile(_mask_pattern(self.raw, lo, hi), re.DOTALL)
+
+    def resolve(self, img, load_addr, got):
+        base = got.get(self.symbol)
+        if base is None:
+            return None, "'%s' unresolved" % self.symbol
+        addr = base + self.delta
+        off = addr - load_addr
+        if not (0 <= off <= len(img) - len(self.raw)):
+            return None, '0x%08x is outside the image' % addr
+        if self.regex.match(img, off) is None:
+            return None, ('masked signature does not match at %s%+d (0x%08x)'
+                          % (self.symbol, self.delta, addr))
+        return addr, 'masked-signature match at %s%+d (0x%08x)' % (self.symbol, self.delta, addr)
+
+
 class OperandGroup:
     """The first `take` DISTINCT big-endian abs32 values in [lo, hi) found by
     scanning `span` bytes starting at `<resolved base symbol>`. Resolves to a
@@ -454,6 +484,24 @@ SYMBOLS = [
     ('sem_pend', Fixed(0x4000141a, verify='226f000440c046fc'), True),
     ('pend_b', Fixed(0x400013a6, verify='226f000440c146fc'), False),
 
+    # The give primitives: RTOS code immediately after sem_pend/pend_b,
+    # same base, same verified-byte-identical-across-builds property (see
+    # the module docstring). `give` increments a counting semaphore and, if
+    # a task is parked on it, wakes it and forces INTC1 bit 0xd -- the
+    # reschedule request the context switch on return picks up; `give_b` is
+    # the mutex-release twin (same wake logic, no reschedule force), exactly
+    # as `pend_b` is `sem_pend` without the busy-flag return. Verified
+    # byte-identical for their first 40 bytes (up to the DAT_..._watermark
+    # operand, which is RAM-layout-specific) on DT2 1.15C, DT2 1.16, DN2
+    # 1.10E and DN2 1.11. Used by the give/give_b post-site scan below to
+    # classify which pends `unblock` may fake -- see longrun.py.
+    ('give', Fixed(0x4000148c,
+                   verify='2f0a226f000840c146fc27002011204052882288206900'
+                          '044a88674e228042a9000422680008b3f9'), False),
+    ('give_b', Fixed(0x400014fc,
+                     verify='2f0a226f000840c146fc27002011204052882288206900'
+                            '044a88673e228042a9000422680008b3f9'), False),
+
     # Every static call site into task_create -- diagnostic (dspboot logs
     # entry/prio/tcb at each), not required for boot.
     ('task_create_sites', Xrefs('task_create'), False),
@@ -589,8 +637,54 @@ SYMBOLS = [
     # screen's frame semaphore here (`pea.l display_sem` before the give);
     # the progress-screen task pends on it once per frame at 0x40126132 as
     # well as at display_wait.
-    ('display_frame_post', Fixed(0x40125f4e, verify='487944e2d1488081'), False),
+    # The same routine as intro_pit3_isr's, so its bytes cannot pick it out;
+    # its place can: 0x174 bytes before display_wait on 1.15C (0x40125f4e)
+    # and on 1.16 (0x4013352a). A fixed 1.15C address left display_sem
+    # unresolved on 1.16, so the display semaphore was faked there and the
+    # "INITIALIZING +DRIVE..." screen starved the job worker.
+    ('display_frame_post', SigAt('487944e2d148808130804eb94000148c4cef0303',
+                                 'display_wait', -0x174, hi=DATA_HI), False),
     ('display_sem', Operand('display_frame_post', at=2), False),
+
+    # A second, plain software semaphore living at display_sem+8 -- confirmed
+    # by scanning both images for the "pea IMM32; jsr sem_pend; addq.l #4,sp;
+    # rts" wrapper shape: it appears exactly twice per image, once at
+    # frame_sem+8 (the intro's own analogous "done" park, see FUN_400d18ae /
+    # its 1.15C equivalent) and once here. A background worker's completion
+    # posts it (e.g. the "Factory reset" BgWorker that formats +Drive), and
+    # the caller that spawned the worker waits on it via this wrapper before
+    # continuing. `unblock` force-satisfying that wait (it is a plain
+    # sem_pend, not on any recheck/skip list) releases the caller ~250M
+    # instructions before the worker's real completion, instead of after it.
+    # When the worker finishes it disables PIT3 itself (FUN_40133626 on
+    # 1.16), so a frozen display after that point is expected.
+    ('worker_done_sem', Offset('display_sem', 8), False),
+
+    # A second semaphore pair, found by the give/give_b post-site audit (see
+    # longrun.py's `unblock` docstring and scratch/semscan.py): two
+    # neighbouring routines near the eSDHC bring-up code implement what
+    # reads like a bounded producer/consumer handshake -- one pends
+    # bq_free_sem, does work, gives bq_ready_sem+8's neighbour; the other
+    # pends the ready one, invokes a stored function pointer, and gives the
+    # free one back. Neither give is inside an ISR (both routines are
+    # reached only through ordinary calls, not a vector_NNN_handler), so
+    # both are guest task code that can run in the emulator -- `unblock`
+    # must not fake either. Not chased further to a name or an owner: this
+    # is flagged as a lead for the open 1.16 "FACTORY PROJECT >> +DRIVE..."
+    # freeze (a worker feeding jobs one at a time is exactly what that
+    # freeze is missing), not confirmed to be it.
+    # bq_free_giver anchors on the tail of the routine that gives the first
+    # semaphore (an 4879+imm32 pea immediately before `jsr give`), masked
+    # against DATA_HI so the call-target and struct-offset literals in the
+    # window (which relocate) do not spoil the match. Verified unique on
+    # all four images; the pair's two addresses are 8 bytes apart on all
+    # four too (0x44e04d08/10 on DT2 1.15C, 0x44e1dc88/90 on DT2 1.16,
+    # 0x44434e1c/24 on DN2 1.10E, 0x445f7474/7c on DN2 1.11).
+    ('bq_free_giver',
+     Sig('02002548002825400024254000202f034eb94019e114487944e1dc884eb9'
+         '4000148c', hi=DATA_HI), False),
+    ('bq_free_sem', Operand('bq_free_giver', at=24), False),
+    ('bq_ready_sem', Offset('bq_free_sem', 8), False),
 
     ('pump_wait', Sig('42002f43002849f94018c0a41f40002c2f034e96'
                       '7001266a002c1f4000304200'), False),

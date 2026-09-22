@@ -3,12 +3,12 @@
 Reverse engineering of the Elektron Digitakt II firmware: a ColdFire MCF5441x
 main CPU and a SHARC+ DSP. The work is moving from OS 1.15C to 1.16; the
 device stays on 1.15C (installing 1.16 upgrades the bootstrap irreversibly). Setup is in README.md, results
-in docs/FINDINGS.md, and current state and next steps in the newest
-`HANDOVER-*.md` in the repo root.
+in docs/findings/ (one file per topic, indexed from docs/FINDINGS.md), and
+current state and next steps in the newest `HANDOVER-*.md` in the repo root.
 
 ## Rules
 
-- Record results in docs/FINDINGS.md, not in handovers. Marks: **[V]**
+- Record results in docs/findings/ (indexed from docs/FINDINGS.md), not in handovers. Marks: **[V]**
   verified here, **[D]** documented or read once but not re-checked, **[O]**
   open, **[C]** corrects an earlier claim. Have a second agent check a
   finding against the image bytes before marking it [V]. An empty Ghidra

@@ -44,7 +44,9 @@ DEFAULT_PROJECT = os.path.expanduser('~/ghidra-projects/dt2')
 DEFAULT_PROJECT_NAME = 'dt2'
 DEFAULT_GHIDRA = '/opt/homebrew/Cellar/ghidra/12.1.3/libexec'
 DECOMPILE_TIMEOUT = 60
-SUBCOMMANDS = ('strings', 'symbols', 'xrefs', 'func', 'callers', 'decompile', 'read', 'range')
+SUBCOMMANDS = ('strings', 'symbols', 'xrefs', 'func', 'callers', 'decompile', 'read', 'range', 'pcode', 'slice', 'stores', 'loads')
+SLICE_SCHEMA_VERSION = 1
+SLICE_NODE_CAP = 2000
 
 
 def _addr(program, value):
@@ -53,7 +55,9 @@ def _addr(program, value):
 
 def q_strings(program, args, out):
     """Defined strings whose value matches any given regex (case-insensitive)."""
-    from ghidra.program.model.data import StringDataType
+    from ghidra.program.model.data import (  # pyright: ignore[reportMissingImports]
+        StringDataType,
+    )
     pats = [re.compile(a, re.I) for a in args]
     listing = program.getListing()
     hits = []
@@ -145,7 +149,10 @@ def q_callers(program, args, out):
 
 def q_decompile(program, args, out):
     """Decompiled C for the function containing each address."""
-    from ghidra.app.decompiler import DecompInterface, DecompileOptions
+    from ghidra.app.decompiler import (  # pyright: ignore[reportMissingImports]
+        DecompileOptions,
+        DecompInterface,
+    )
     fm = program.getFunctionManager()
     ifc = DecompInterface()
     ifc.setOptions(DecompileOptions())
@@ -169,7 +176,7 @@ def q_decompile(program, args, out):
 
 def q_read(program, args, out):
     """Hex + ASCII of bytes at ADDR:LEN (length defaults to 64)."""
-    from jpype import JArray, JByte
+    from jpype import JArray, JByte  # pyright: ignore[reportMissingImports]
     mem = program.getMemory()
     results = []
     for a in args:
@@ -275,14 +282,539 @@ def q_range(program, args, out):
     out('range', results)
 
 
+def _offset(value):
+    return value.getOffset()
+
+
+def _space_name(space):
+    return str(space.getName())
+
+
+def address_space_metadata(space, language=None):
+    """Stable address-space facts; SHARC conversion requires language and word size."""
+    wordsize = space.getAddressableUnitSize()
+    name = _space_name(space)
+    language = None if language is None else str(language)
+    short_words = bool(language and language.startswith('SHARC_VISA') and wordsize == 2)
+    result = {'name': name, 'word_size': wordsize, 'language': language,
+              'short_word_addresses': short_words,
+              'conversion_rule': 'displayed_offset = logical_short_word * 2' if short_words else None}
+    if short_words:
+        result['delay_slot_caveat'] = ('HighFunction p-code does not model SHARC_VISA delay-slot execution.')
+    return result
+
+
+def program_address_metadata(program):
+    return address_space_metadata(program.getAddressFactory().getDefaultAddressSpace(),
+                                  program.getLanguage().getLanguageID())
+
+
+def resolve_coordinate(program, token):
+    """Parse a displayed offset, or explicit SHARC ``sw:`` logical word address."""
+    metadata = program_address_metadata(program)
+    short_word = token.startswith('sw:')
+    number = token[3:] if short_word else token
+    try:
+        value = int(number, 0)
+    except ValueError:
+        raise ValueError('invalid coordinate %r' % token)
+    if value < 0:
+        raise ValueError('coordinate must be non-negative: %r' % token)
+    if short_word and not metadata['short_word_addresses']:
+        raise ValueError('sw: coordinate %r requires SHARC_VISA language with addressable unit size 2' % token)
+    displayed = value * 2 if short_word else value
+    logical = value if short_word else (displayed // 2 if metadata['short_word_addresses'] and displayed % 2 == 0 else None)
+    return displayed, {'requested': token, 'logical': None if logical is None else '0x%x' % logical,
+                       'displayed': '0x%x' % displayed,
+                       'conversion_rule': metadata['conversion_rule']}
+
+
+def q_pcode(program, args, out):
+    """Raw instruction p-code at PC; no decompilation, SSA, or reference changes."""
+    payload = {'schema_version': 1, 'kind': 'raw-instruction-pcode',
+               'requested': {'pc': args[0] if args else None}, 'status': 'error',
+               'errors': [], 'operations': [], 'instruction': None,
+               'program': _program_identity(program),
+               'address_space': program_address_metadata(program)}
+    if len(args) != 1:
+        payload['errors'].append('pcode wants PC')
+        out('pcode', payload)
+        return
+    try:
+        pc, payload['pc'] = resolve_coordinate(program, args[0])
+    except ValueError as exc:
+        payload['errors'].append(str(exc))
+        out('pcode', payload)
+        return
+    try:
+        instruction = program.getListing().getInstructionAt(_addr(program, pc))
+        if instruction is None:
+            payload['status'] = 'no-instruction'
+            out('pcode', payload)
+            return
+        payload['instruction'] = {'mnemonic': str(instruction.getMnemonicString()),
+                                  'length': instruction.getLength()}
+        raw_ops = instruction.getPcode()
+        if raw_ops is None:
+            payload['status'] = 'empty-pcode'
+            out('pcode', payload)
+            return
+        for order, op in enumerate(raw_ops):
+            try:
+                item = serialize_raw_pcode_op(op, order)
+                payload['operations'].append(item)
+            except Exception as exc:
+                payload['errors'].append('operation %d: %s: %s' %
+                                         (order, type(exc).__name__, exc))
+        if payload['errors']:
+            payload['status'] = 'malformed-pcode'
+        elif not payload['operations']:
+            payload['status'] = 'empty-pcode'
+        else:
+            payload['status'] = 'ok'
+    except Exception as exc:
+        payload['errors'].append('%s: %s' % (type(exc).__name__, exc))
+    out('pcode', payload)
+
+
+def serialize_varnode(vn):
+    """A Java-independent, JSON-safe varnode identity (never str(vn))."""
+    result = {'kind': 'constant' if vn.isConstant() else
+              'register' if vn.isRegister() else 'unique' if vn.isUnique() else 'address',
+              'size': vn.getSize()}
+    offset = vn.getOffset()
+    if vn.isConstant():
+        result['value'] = '0x%x' % offset
+        return result
+    address = vn.getAddress()
+    if address is not None:
+        result['space'] = _space_name(address.getAddressSpace())
+    result['offset'] = '0x%x' % offset
+    return result
+
+
+def op_sort_key(op):
+    seq = op.getSeqnum()
+    return (_offset(seq.getTarget()), seq.getTime(), str(op.getMnemonic()),
+            0 if op.getOutput() is None else op.getOutput().getOffset())
+
+
+def sorted_ops(ops):
+    return sorted(ops, key=op_sort_key)
+
+
+def serialize_op(op):
+    seq = op.getSeqnum()
+    return {'seq': {'pc': '0x%x' % _offset(seq.getTarget()), 'time': seq.getTime()},
+            'mnemonic': str(op.getMnemonic()),
+            'inputs': [serialize_varnode(v) for v in op.getInputs()],
+            'output': serialize_varnode(op.getOutput()) if op.getOutput() is not None else None}
+
+
+def serialize_raw_pcode_op(op, order):
+    """Instruction p-code serialization; a sequence number is optional metadata."""
+    result = {'order': order, 'mnemonic': str(op.getMnemonic()),
+              'inputs': [serialize_varnode(v) for v in op.getInputs()],
+              'output': serialize_varnode(op.getOutput()) if op.getOutput() is not None else None}
+    get_seqnum = getattr(op, 'getSeqnum', None)
+    if get_seqnum is not None:
+        seq = get_seqnum()
+        result['seq'] = {'pc': '0x%x' % _offset(seq.getTarget()), 'time': seq.getTime()}
+    return result
+
+
+def serialize_memory_op(op, direction, program=None):
+    """Serialize an access with its normalized representation when applicable."""
+    result = serialize_op(op)
+    access = memory_access_operands(op, direction, program)
+    if access is not None:
+        result['representation'] = access['representation']
+        memory_space = access['memory_space']
+        result['memory_space'] = ({'status': 'resolved', 'name': _space_name(memory_space)}
+                                  if memory_space is not None else
+                                  {'status': 'unresolved', 'space_id':
+                                   None if access['space'] is None else '0x%x' % access['space'].getOffset()})
+    return result
+
+
+def _vn_key(vn):
+    data = serialize_varnode(vn)
+    return tuple(sorted(data.items()))
+
+
+def backward_slice_fallback(seeds, node_cap=SLICE_NODE_CAP):
+    """Bounded def-use fallback; it intentionally does not evaluate expressions."""
+    pending, seen, ops, roots = list(seeds), set(), [], []
+    partial = False
+    while pending:
+        vn = pending.pop()
+        key = _vn_key(vn)
+        if key in seen:
+            continue
+        seen.add(key)
+        if vn.isConstant():
+            continue
+        definition = vn.getDef()
+        if definition is None:
+            roots.append(vn)
+            continue
+        if len(ops) >= node_cap:
+            partial = True
+            break
+        ops.append(definition)
+        pending.extend(definition.getInputs())
+    return {'ops': sorted_ops({op_sort_key(op): op for op in ops}.values()),
+            'roots': sorted({ _vn_key(v): v for v in roots }.values(), key=_vn_key),
+            'partial': partial}
+
+
+def parse_slice_selector(selector):
+    if selector in ('store:value', 'store:address', 'load:value', 'load:address', 'output'):
+        return (selector, None)
+    if selector.startswith('input:'):
+        index = int(selector[6:], 10)
+        if index < 0:
+            raise ValueError('input selector must be non-negative')
+        return ('input', index)
+    if selector.startswith('reg:') and selector[4:]:
+        return ('reg', selector[4:])
+    raise ValueError('unsupported selector %r' % selector)
+
+
+def _is_memory_space(space):
+    """True only for a real Ghidra memory space (or an explicit test double)."""
+    try:
+        return bool(space.isMemorySpace())
+    except AttributeError:
+        return bool(getattr(space, '_test_is_memory_space', False))
+
+
+def _is_direct_memory(vn):
+    if vn is None or vn.isConstant() or vn.isRegister() or vn.isUnique():
+        return False
+    address = vn.getAddress()
+    return address is not None and _is_memory_space(address.getAddressSpace())
+
+
+def _space_identity(space):
+    """An address-space identity that does not conflate equal offsets/names."""
+    try:
+        return ('id', space.getSpaceID())
+    except AttributeError:
+        return ('object', id(space))
+
+
+def _resolve_raw_memory_space(program, space_vn):
+    """Resolve a LOAD/STORE space-id varnode through the program factory."""
+    if program is None or not space_vn.isConstant():
+        return None
+    space_id = space_vn.getOffset()
+    try:
+        space = program.getAddressFactory().getAddressSpace(space_id)
+    except Exception:
+        space = None
+    if space is None or not _is_memory_space(space):
+        return None
+    return space
+
+
+def memory_access_operands(op, direction, program=None):
+    """Normalize raw p-code and HighFunction direct-memory COPY accesses."""
+    inputs, output = list(op.getInputs()), op.getOutput()
+    mnemonic = str(op.getMnemonic())
+    if direction == 'store' and mnemonic == 'STORE' and len(inputs) == 3:
+        return {'space': inputs[0], 'memory_space': _resolve_raw_memory_space(program, inputs[0]),
+                'address': inputs[1], 'value': inputs[2], 'representation': 'STORE',
+                'direct_address': False}
+    if direction == 'load' and mnemonic == 'LOAD' and len(inputs) == 2 and output is not None:
+        return {'space': inputs[0], 'memory_space': _resolve_raw_memory_space(program, inputs[0]),
+                'address': inputs[1], 'value': output, 'representation': 'LOAD',
+                'direct_address': False}
+    if mnemonic != 'COPY' or len(inputs) != 1 or output is None:
+        return None
+    source = inputs[0]
+    source_memory, output_memory = _is_direct_memory(source), _is_direct_memory(output)
+    # A memory-to-memory COPY is how the decompiler folds "load a literal address,
+    # then store that value to another literal address". It is a real store at the
+    # output and a real load at the source, so having direct memory on both ends
+    # must not drop the access.
+    if direction == 'store' and output_memory:
+        return {'space': None, 'memory_space': output.getAddress().getAddressSpace(),
+                'address': output, 'value': source,
+                'representation': 'COPY_MEM_TO_MEM_WRITE' if source_memory else 'COPY_DIRECT_WRITE',
+                'direct_address': True}
+    if direction == 'load' and source_memory:
+        return {'space': None, 'memory_space': source.getAddress().getAddressSpace(),
+                'address': source, 'value': output,
+                'representation': 'COPY_MEM_TO_MEM_READ' if output_memory else 'COPY_DIRECT_READ',
+                'direct_address': True}
+    return None
+
+
+def store_operands(op):
+    access = memory_access_operands(op, 'store')
+    return None if access is None else (access['space'], access['address'], access['value'])
+
+
+def load_operands(op):
+    access = memory_access_operands(op, 'load')
+    return None if access is None else (access['space'], access['address'], access['value'])
+
+
+def slice_seed_specs(ops, selector, register=None, program=None):
+    """Return (varnode, follow-definition) pairs for a slice selector."""
+    kind, value = parse_slice_selector(selector)
+    result = []
+    for op in ops:
+        inputs = list(op.getInputs())
+        direction = 'store' if kind.startswith('store:') else 'load' if kind.startswith('load:') else None
+        access = memory_access_operands(op, direction, program) if direction else None
+        if access is not None and kind.endswith(':value'):
+            result.append((access['value'], True))
+        elif access is not None and kind.endswith(':address'):
+            # A COPY's memory varnode is its own definition output/input; following it
+            # would incorrectly slice through the transferred value.
+            result.append((access['address'], not access['direct_address']))
+        elif kind == 'input' and value is not None and value < len(inputs):
+            result.append((inputs[value], True))
+        elif kind == 'output' and op.getOutput() is not None:
+            result.append((op.getOutput(), True))
+        elif kind == 'reg' and register is not None:
+            for vn in inputs + ([op.getOutput()] if op.getOutput() is not None else []):
+                if (vn.isRegister() and vn.getOffset() == register.getAddress().getOffset()
+                        and vn.getSize() == register.getMinimumByteSize()):
+                    result.append((vn, True))
+    unique = {( _vn_key(vn), follow): (vn, follow) for vn, follow in result}
+    return sorted(unique.values(), key=lambda item: (_vn_key(item[0]), item[1]))
+
+
+def select_slice_seeds(ops, selector, register=None, program=None):
+    """Backward-compatible varnode-only selector helper."""
+    return [vn for vn, _follow in slice_seed_specs(ops, selector, register, program)]
+
+
+def _high_ops(high):
+    ops = []
+    it = high.getPcodeOps()
+    while it.hasNext():
+        ops.append(it.next())
+    return sorted_ops(ops)
+
+
+def _decompiler(program):
+    from ghidra.app.decompiler import (  # pyright: ignore[reportMissingImports]
+        DecompileOptions,
+        DecompInterface,
+    )
+    ifc = DecompInterface()
+    ifc.setOptions(DecompileOptions())
+    ifc.openProgram(program)
+    return ifc
+
+
+def _slice(seeds, root_seeds=()):
+    """Use Ghidra's slice first; retain fallback for bridge overload differences."""
+    fallback = backward_slice_fallback(seeds)
+    fallback['roots'] = sorted({_vn_key(v): v for v in (*fallback['roots'], *root_seeds)}.values(), key=_vn_key)
+    try:
+        from ghidra.app.decompiler.component import (  # pyright: ignore[reportMissingImports]
+            DecompilerUtils,
+        )
+        found = []
+        for seed in seeds:
+            found.extend(DecompilerUtils.getBackwardSliceToPCodeOps(seed))
+        found = sorted_ops({op_sort_key(op): op for op in found}.values())
+        return {'ops': found[:SLICE_NODE_CAP], 'roots': fallback['roots'],
+                'partial': fallback['partial'] or len(found) > SLICE_NODE_CAP,
+                'engine': 'DecompilerUtils'}
+    except Exception as exc:
+        fallback['engine'] = 'def-use-fallback'
+        fallback['error'] = '%s: %s' % (type(exc).__name__, exc)
+        return fallback
+
+
+def _program_identity(program):
+    return {'name': str(program.getName()), 'language': str(program.getLanguage().getLanguageID())}
+
+
+def _function_identity(fn):
+    return {'name': str(fn.getName()), 'entry': '0x%x' % _offset(fn.getEntryPoint())}
+
+
+def q_slice(program, args, out):
+    """Backward p-code slice at PC SELECTOR, without modifying the project."""
+    payload = {'schema_version': SLICE_SCHEMA_VERSION, 'requested': {'pc': args[0] if args else None,
+               'selector': args[1] if len(args) > 1 else None}, 'status': 'error', 'partial': False,
+               'errors': [], 'matching_ops': [], 'selected_seeds': [], 'slice_ops': [], 'roots': []}
+    payload['program'] = _program_identity(program)
+    payload['address_space'] = program_address_metadata(program)
+    if len(args) != 2:
+        payload['errors'].append('slice wants PC SELECTOR')
+        out('slice', payload); return
+    try:
+        pc, payload['pc'] = resolve_coordinate(program, args[0])
+        parse_slice_selector(args[1])
+    except ValueError as exc:
+        payload['errors'].append(str(exc)); out('slice', payload); return
+    fn = program.getFunctionManager().getFunctionContaining(_addr(program, pc))
+    if fn is None:
+        payload['errors'].append('no containing function'); out('slice', payload); return
+    payload['function'] = _function_identity(fn)
+    ifc = _decompiler(program)
+    try:
+        from ghidra.util.task import TaskMonitor  # type: ignore[import-not-found]
+        res = ifc.decompileFunction(fn, DECOMPILE_TIMEOUT, TaskMonitor.DUMMY)
+        if not res.decompileCompleted():
+            payload['errors'].append(str(res.getErrorMessage())); out('slice', payload); return
+        matches = [op for op in _high_ops(res.getHighFunction()) if _offset(op.getSeqnum().getTarget()) == pc]
+        parsed_kind, parsed_value = parse_slice_selector(args[1])
+        register = program.getLanguage().getRegister(parsed_value) if parsed_kind == 'reg' else None
+        if parsed_kind == 'reg' and register is None:
+            payload['errors'].append('unknown register %s' % parsed_value)
+        seed_specs = slice_seed_specs(matches, args[1], register, program)
+        seeds = [vn for vn, follow in seed_specs if follow]
+        roots = [vn for vn, follow in seed_specs if not follow]
+        direction = 'store' if parsed_kind.startswith('store:') else 'load' if parsed_kind.startswith('load:') else None
+        payload['matching_ops'] = [serialize_memory_op(op, direction, program) if direction else serialize_op(op)
+                                   for op in matches]
+        payload['selected_seeds'] = [serialize_varnode(vn) for vn, _follow in seed_specs]
+        sliced = _slice(seeds, roots)
+        payload['slice_ops'] = [serialize_op(op) for op in sliced['ops']]
+        payload['roots'] = [serialize_varnode(v) for v in sliced['roots']]
+        payload['partial'], payload['engine'] = sliced['partial'], sliced['engine']
+        if 'error' in sliced: payload['errors'].append(sliced['error'])
+        payload['status'] = 'ok' if seed_specs else 'no-seeds'
+    except Exception as exc:
+        payload['errors'].append('%s: %s' % (type(exc).__name__, exc))
+    finally:
+        ifc.dispose()
+    out('slice', payload)
+
+
+def _serialize_slice(result):
+    serialized = {'ops': [serialize_op(x) for x in result['ops']],
+                  'roots': [serialize_varnode(x) for x in result['roots']],
+                  'partial': result['partial'], 'engine': result['engine']}
+    if 'error' in result:
+        serialized['error'] = result['error']
+    return serialized
+
+
+def _q_memory_accesses(program, args, out, direction, command):
+    """Find normalized memory accesses, slicing address and value separately."""
+    payload = {'schema_version': SLICE_SCHEMA_VERSION, 'status': 'ok', 'partial': False,
+               'errors': [], 'target': args[0] if args else None, 'functions': []}
+    payload['program'] = _program_identity(program)
+    payload['address_space'] = program_address_metadata(program)
+    if len(args) not in (1, 3):
+        payload['status'] = 'error'; payload['errors'].append('%s wants TARGET [LO HI]' % command); out(command, payload); return
+    try:
+        target, payload['target_coordinate'] = resolve_coordinate(program, args[0])
+        if len(args) == 3:
+            lo, payload_lo = resolve_coordinate(program, args[1])
+            hi, payload_hi = resolve_coordinate(program, args[2])
+            payload['bounds'] = {'lo': payload_lo, 'hi': payload_hi}
+            bounds = (lo, hi)
+        else:
+            bounds = None
+        if bounds is not None and bounds[0] > bounds[1]:
+            raise ValueError('%s range requires LO <= HI' % command)
+    except ValueError as exc:
+        payload['status'] = 'error'; payload['errors'].append(str(exc)); out(command, payload); return
+    functions = sorted(list(program.getFunctionManager().getFunctions(True)), key=lambda f: _offset(f.getEntryPoint()))
+    if not functions:
+        out(command, payload); return
+    ifc = _decompiler(program)
+    try:
+        from ghidra.util.task import TaskMonitor  # type: ignore[import-not-found]
+        for fn in functions:
+            entry = _offset(fn.getEntryPoint())
+            if bounds and not (bounds[0] <= entry < bounds[1]): continue
+            item = _function_identity(fn); item['matches'] = []
+            try:
+                result = ifc.decompileFunction(fn, DECOMPILE_TIMEOUT, TaskMonitor.DUMMY)
+                if not result.decompileCompleted():
+                    item['error'] = str(result.getErrorMessage()); payload['partial'] = True; payload['functions'].append(item); continue
+                for op in _high_ops(result.getHighFunction()):
+                    access = memory_access_operands(op, direction, program)
+                    if access is None: continue
+                    address, value = access['address'], access['value']
+                    static_address = access['direct_address'] or address.isConstant()
+                    memory_space = access['memory_space']
+                    exact = (static_address and memory_space is not None
+                             and address.getOffset() == target
+                             and _space_identity(memory_space) == _space_identity(
+                                 program.getAddressFactory().getDefaultAddressSpace()))
+                    # A resolved static access to another offset or address space cannot
+                    # be the requested default-space target.  An unresolved raw p-code
+                    # space-id is retained as partial evidence rather than guessed.
+                    if static_address and memory_space is not None and not exact:
+                        continue
+                    address_slice = _slice([] if access['direct_address'] else [address],
+                                           [address] if access['direct_address'] else [])
+                    value_slice = _slice([value])
+                    space_metadata = ({'status': 'resolved', 'name': _space_name(memory_space)}
+                                      if memory_space is not None else
+                                      {'status': 'unresolved', 'space_id':
+                                       None if access['space'] is None else '0x%x' % access['space'].getOffset()})
+                    partial = (address_slice['partial'] or value_slice['partial']
+                               or memory_space is None)
+                    item['matches'].append({'op': serialize_op(op),
+                        'representation': access['representation'],
+                        'memory_space': space_metadata,
+                        'classification': 'exact-constant-target' if exact else 'computed-or-unresolved',
+                        'address_slice': _serialize_slice(address_slice),
+                        'value_slice': _serialize_slice(value_slice),
+                        'partial': partial})
+                    payload['partial'] = payload['partial'] or partial
+                item['matches'].sort(key=lambda match: op_sort_key_from_serialized(match['op']))
+                if item['matches']: payload['functions'].append(item)
+            except Exception as exc:
+                item['error'] = '%s: %s' % (type(exc).__name__, exc); payload['partial'] = True; payload['functions'].append(item)
+    finally:
+        ifc.dispose()
+    out(command, payload)
+
+
+def op_sort_key_from_serialized(op):
+    return (int(op['seq']['pc'], 16), op['seq']['time'], op['mnemonic'],
+            0 if op['output'] is None else int(op['output'].get('offset', op['output'].get('value', '0')), 16))
+
+
+def q_stores(program, args, out):
+    """Find memory writes for TARGET, slicing address and value separately."""
+    _q_memory_accesses(program, args, out, 'store', 'stores')
+
+
+def q_loads(program, args, out):
+    """Find memory reads for TARGET, slicing address and value separately."""
+    _q_memory_accesses(program, args, out, 'load', 'loads')
+
+
 HANDLERS = {'strings': q_strings, 'symbols': q_symbols, 'xrefs': q_xrefs,
             'func': q_func, 'callers': q_callers, 'decompile': q_decompile,
-            'read': q_read, 'range': q_range}
+            'read': q_read, 'range': q_range, 'pcode': q_pcode, 'slice': q_slice,
+            'stores': q_stores, 'loads': q_loads}
 
 
 def _print_text(kind, payload):
     print('=' * 72)
     print('## %s' % kind)
+    if kind in ('slice', 'stores', 'loads'):
+        print('%s (partial=%s)' % (payload['status'], payload['partial']))
+        for error in payload['errors']:
+            print('  ERROR: %s' % error)
+        return
+    if kind == 'pcode':
+        print('%s (raw instruction p-code)' % payload['status'])
+        for error in payload['errors']:
+            print('  ERROR: %s' % error)
+        if payload['instruction'] is not None:
+            print('  %s (%d bytes)' % (payload['instruction']['mnemonic'],
+                                       payload['instruction']['length']))
+        for op in payload['operations']:
+            print('  %d  %s' % (op['order'], op['mnemonic']))
+        return
     if kind in ('strings', 'symbols'):
         print('%d hit(s) for %s' % (payload['count'], payload['patterns']))
         for h in payload['hits']:
@@ -366,7 +898,7 @@ def main(argv):
         queries.append((chain[0], chain[1:]))
 
     os.environ.setdefault('GHIDRA_INSTALL_DIR', DEFAULT_GHIDRA)
-    import pyghidra
+    import pyghidra  # pyright: ignore[reportMissingImports]
     pyghidra.start(verbose=False)
 
     program_path = args.program if args.program.startswith('/') else '/' + args.program

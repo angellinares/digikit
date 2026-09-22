@@ -363,6 +363,23 @@ def offset_for_address(blocks, addr, space="sw"):
     return None
 
 
+def fill_block_for_address(blocks, addr, space="sw"):
+    """The FILL block whose constant covers `addr`, or None.
+
+    A FILL block occupies address space without contributing bytes to the
+    file, so offset_for_address() cannot see it. The loader still writes such
+    an address -- with the block's `argument` as the repeating value -- so
+    reporting "no file offset" as "not covered" would wrongly claim the
+    loader leaves the location alone."""
+    byte_addr = sw_to_byte(addr) if space == "sw" else addr
+    for b in blocks:
+        if not b["fill"]:
+            continue
+        if b["target_address"] <= byte_addr < b["target_address"] + b["byte_count"]:
+            return b
+    return None
+
+
 def address_for_offset(blocks, offset, space="sw"):
     """Inverse: the address that file `offset` loads to, or None if the
     offset is a header or lies outside every block payload."""
@@ -759,7 +776,21 @@ def main():
             offset = offset_for_address(blocks, addr, space=args.addr_space)
             print("addr=0x%x (%s)" % (addr, args.addr_space))
             if offset is None:
-                print("  not covered by any loaded block")
+                fill = fill_block_for_address(blocks, addr, space=args.addr_space)
+                if fill is None:
+                    print("  not covered by any loaded block")
+                else:
+                    print(
+                        "  no file bytes: covered by %s blk%02d  fill=0x%08x"
+                        "  range=0x%x..0x%x"
+                        % (
+                            "zero-fill" if fill["argument"] == 0 else "constant-fill",
+                            fill["index"],
+                            fill["argument"],
+                            fill["target_address"],
+                            fill["target_address"] + fill["byte_count"],
+                        )
+                    )
                 continue
             block = None
             for b in blocks:

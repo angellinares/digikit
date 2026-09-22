@@ -1,7 +1,8 @@
 """DSP bring-up experiment: extends flashboot.py with instrumentation for the
 ColdFire<->SHARC transport at 0x40128c7c and task_create/task_start tracking.
 
-Key finding (see docs/FINDINGS.md update): 0x40128c7c is NOT "send arg, wait for
+Key finding (see docs/findings/07-emulator.md, "Blocker 1 (cleared): the
+transport is a mutex+semaphore wrapper, not an RPC"): 0x40128c7c is NOT "send arg, wait for
 reply" in the sense of an RPC round trip with payload -- it is a
 lock-mutex / kick-transfer / wait-on-completion-semaphore / unlock-mutex wrapper,
 and the argument pushed by every one of the 4 call sites (0xF4240, 0x3E8, 0x64,
@@ -63,8 +64,9 @@ HALT = 0x400ceeb6
 # 0x400cf3f4 that ends its main loop. Ticking it changes nothing -- it is a
 # *ready* task at priority 1 and the scheduler correctly keeps picking it. It
 # sits there because everything above it is blocked, which before the
-# raise_vector trap-frame fix meant everything, forever. See docs/FINDINGS.md,
-# "Making the emulator actually run". Scanning for 0x60FE is still the right
+# raise_vector trap-frame fix meant everything, forever. See
+# docs/findings/07-emulator.md, "Making the emulator actually run --
+# session 3". Scanning for 0x60FE is still the right
 # generalisation; the reading of this particular address was wrong.
 # Scanning MAIN OS for every occurrence of this opcode and feeding all of
 # them ticks (not just the one instance anyone happened to trip over first)
@@ -109,7 +111,8 @@ TASK_CREATE_SITES = [
 # loop at 0x4012acb8-0x4012acbe never terminates within any reasonable
 # instruction budget.
 #
-# Verified NOT a Unicorn MVZ/MVS decode bug (see docs/FINDINGS.md and the
+# Verified NOT a Unicorn MVZ/MVS decode bug (see docs/findings/07-emulator.md,
+# "A red herring that turned out to be correct behavior, not a bug", and the
 # session log): tested mvz.b/mvs.b in isolation, register and (a0)/(a0)+
 # addressing, all matched expected 68k semantics exactly. The bad length is
 # either a real bug/edge case in this second depacker's gamma-code decode

@@ -89,7 +89,8 @@ IMAGES = {
         # DM 0x2d7158 is imported at unified-code SW 0x16b8ac.
         'label_tables': ['16b8ac:4'],
         'probes': [
-            # R0 is set in the delay slot of the return (FINDINGS).
+            # R0 is set in the delay slot of the return
+            # (docs/findings/05-sharc-isa-and-decoding.md).
             {'name': 'returns 2748', 'kind': 'decompiles_to', 'sw': [0x1C136A],
              'pattern': r'\b(2748|0xabc)\b'},
             # The dispatcher's first piece ends in the 9b jump at 0x1c3c3c.

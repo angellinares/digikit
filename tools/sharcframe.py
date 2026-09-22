@@ -6,8 +6,8 @@
 
 The vector-191 handler builds the frame and calls the DSPI2 driver with
 (tx_len, tx, rx_len, rx), but the emulator never raises vector 191
-(docs/FINDINGS.md, "The ColdFire tells the SHARC through a periodic DSPI2
-frame"). This tool restores SNAPSHOT, clears the pacing counter, enters the
+(docs/findings/04-coldfire-dsp-link.md, "The ColdFire tells the SHARC through
+a periodic DSPI2 frame"). This tool restores SNAPSHOT, clears the pacing counter, enters the
 handler with Machine.raise_vector(191), and runs until the handler's rte
 returns to the snapshot PC. A code hook at the driver copies tx_len bytes
 from tx and returns to the caller, so DSPI2 and eDMA are never touched. No
@@ -27,8 +27,8 @@ when every pass returned and reached the driver.
 
 --poke writes a big-endian long into guest memory before the first pass.
 --open-gate first writes 0 to the profile's frame-build gate, which opens it
-(docs/FINDINGS.md, "The frame capture runs; the frame build is switched
-off"): on 1.15C that is --poke 0x4094e4f4=0, on 1.16 --poke 0x409664f4=0.
+(docs/findings/04-coldfire-dsp-link.md, "The frame capture runs; the frame
+build is switched off"): on 1.15C that is --poke 0x4094e4f4=0, on 1.16 --poke 0x409664f4=0.
 """
 
 import argparse

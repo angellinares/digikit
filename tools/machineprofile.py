@@ -8,10 +8,10 @@ tool stops on an unknown image instead of writing 1.15C offsets into it. Same
 contract as `tools/framelink.py`.
 
 What the anchors are, and why each one matters to a patch, is in
-docs/FINDINGS.md: "The ColdFire machine dispatch", "The display names are a
-separate table", "Type 7 did not stick: a permission check was the sixth
-bound", "Copying SLICE's behaviour to type 7" and "Digitone II 1.11 has the
-same machine machinery, with five machines".
+docs/findings/02-machines-and-parameters.md: "The ColdFire machine dispatch",
+"The display names are a separate table", "Type 7 did not stick: a
+permission check was the sixth bound", "Copying SLICE's behaviour to type 7"
+and "Digitone II 1.11 has the same machine machinery, with five machines".
 
 Anchor keys:
 
@@ -44,14 +44,20 @@ Anchor keys:
   group_helper      maps a type to a UI group for the list separators.
   pertype_table     a byte per type, read behind a bound at pertype_sites,
                     each `(bound_addr, lea_addr)`.
-  clone_sites       `type == N` tests that a cloned machine must also match,
-                    each `(function, site)`. The replacement byte sequences
-                    stay in `tools/machinepatch.py`; only the addresses are
-                    here.
+  clone_sites       `type == 6` (SLICE) tests that a cloned machine must also
+                    match, each `(function, site)`, the mask test
+                    `(type & ~2) == 4` last. The shim bytes are decoded from
+                    the site by tools/machinepatch.py decode_clone_site; the
+                    order sets the shim layout in the cave.
   cave_a, cave_b    free space. cave_b needs at least 0x400 bytes.
+  flash_cave        (address, size) of cave space that survives a cold boot,
+                    for patches baked into a flashed image. cave_b is cleared
+                    by the reset path, so it only works for live patches on a
+                    resumed snapshot.
 
 `None` means not found, not "absent": see the `missing` tuple on each profile
-for what was searched for and not located, and docs/FINDINGS.md for which of
+for what was searched for and not located, and
+docs/findings/02-machines-and-parameters.md for which of
 those are believed genuinely absent rather than merely unfound.
 
 `checks` are byte preconditions at fixed addresses, in the shape
@@ -127,14 +133,18 @@ DT2_115C = {
 
     # (function, site) of each `type == 6` test a SLICE clone must also match.
     'clone_sites': ((0x4005f0c0, 0x4005f1a0),
-                    (0x4005cb7c, 0x4005d014),
-                    (0x4005be94, 0x4005beea),
+                    (0x4005edd6, 0x4005eeac),
                     (0x4003065a, 0x40030766),
                     (0x40048660, 0x400488ec),
-                    (0x4005edd6, 0x4005eeac)),
+                    (0x4005be94, 0x4005beea),
+                    (0x4005cb7c, 0x4005d014)),
 
     'cave_a': 0x402f9c14,
     'cave_b': 0x40303e5c,
+
+    # Cave space that survives a cold boot: cave_a, which ends at the clear
+    # loop's start (0x402fa000). cave_b is zeroed at reset, as on 1.16.
+    'flash_cave': (0x402f9c14, 1004),
 
     'missing': (),
 
@@ -212,16 +222,22 @@ DT2_116 = {
     'selection_view': 0x400611fe,
 
     'clone_sites': ((0x4005fb0c, 0x4005fbec),
-                    (0x4005d5c8, 0x4005da60),
-                    (0x4005c8e0, 0x4005c936),
+                    (0x4005f822, 0x4005f8f8),
                     (0x40030d12, 0x40030e1e),
                     (0x40048fb2, 0x4004923e),
-                    (0x4005f822, 0x4005f8f8)),
+                    (0x4005c8e0, 0x4005c936),
+                    (0x4005d5c8, 0x4005da60)),
 
     # The whole trailing free region is 1.15C's shifted by +0x18000. cave_b
     # sits in the largest unreferenced gap, 0x4031be59-0x4031ff60.
     'cave_a': 0x40311c14,
     'cave_b': 0x4031be5c,
+
+    # Cave space that survives a cold boot. cave_b does not: the reset path's
+    # FUN_400004b2 zeroes 0x40312000..0x47e28470 (movea.l #0x40312000,a0 at
+    # 0x400004ba), so bytes flashed there are gone before the OS runs. The
+    # zero run below that boundary is 2108 bytes, cave_a being its top 1004.
+    'flash_cave': (0x403117c4, 2108),
 
     'missing': (),
 
@@ -312,6 +328,9 @@ DN2_111 = {
     # and unreferenced, and leave 0x80 bytes of margin before 0x402fc000.
     'cave_a': 0x402fb7a8,
     'cave_b': 0x402fbb80,
+
+    # From tools/cavefind.py: below the reset clear loop's start (0x402fc000).
+    'flash_cave': (0x402fb7a8, 2136),
 
     'missing': (
         'field_accessor: too many generic matches to isolate',

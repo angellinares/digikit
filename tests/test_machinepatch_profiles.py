@@ -146,6 +146,26 @@ class PlanPerImageTest(unittest.TestCase):
                         near, '%#010x is neither in the cave nor near an anchor '
                         'of %s' % (addr, profile['name']))
 
+    def test_clone_plan_matches_1_16_sites(self):
+        for sha, profile, path in AVAILABLE:
+            if profile is not prof.DT2_116:
+                continue
+            with self.subTest(profile['name']):
+                writes = mp.plan_b(prof.image_reader(path), profile['cave_b'],
+                                   parts=('clone',), profile=profile)
+                self.assertEqual(len(writes), 12)
+                cave = profile['cave_b']
+                sites = {addr for addr, old, new in writes
+                         if not cave <= addr < cave + 0x400}
+                expected = {site for _f, site in profile['clone_sites']}
+                self.assertEqual(sites, expected)
+
+    def test_dn2_clone_plan_writes_nothing(self):
+        spec = mp.MachineSpec(clone_of=0, fields=(0,) * 9, position=0)
+        writes = mp.plan_b(lambda addr, n: bytes(n), prof.DN2_111['cave_b'],
+                           parts=('clone',), spec=spec, profile=prof.DN2_111)
+        self.assertEqual(list(writes), [])
+
     def test_the_plan_reads_only_this_image(self):
         """`read` outside the image raises, so a stray 1.15C address on 1.16
         would fault rather than silently produce a plausible plan."""

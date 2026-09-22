@@ -43,7 +43,17 @@ import sharcscan as S                                             # noqa: E402
 sys.path[:] = [p for p in sys.path if os.path.abspath(p or '.') != _here]
 
 LANGUAGE_ID = 'SHARC_VISA:LE:32:default'
-SPACE_BASE = 0x28000000          # byte_address - this == ghidra byte offset
+SPACE_BASE = 0x28000000          # byte_address - this == ghidra byte offset, L1 alias only
+# Upper bound of the loader's L1 system-alias byte window (SPACE_BASE..
+# L1_ALIAS_LIMIT), i.e. byte = 2*sw + SPACE_BASE addresses. The loader's own
+# L1 targets top out at 0x2839c000 (docs/findings/05-sharc-isa-and-decoding.md);
+# 0x28400000 is a round, safely-above-observed limit. Outside this window
+# (notably external memory such as 0x80000000..0x82a001c4) a loader byte
+# address is not an alias of anything, so it is its own Ghidra byte offset --
+# the same rule the DM byte-address translation in
+# tools/sharcspec/ghidra/gen_sleigh.py (dm_byte_addr_to_ram_unit) applies to
+# an external DM literal.
+L1_ALIAS_LIMIT = 0x28400000
 DEFAULT_PROJECT = os.path.expanduser('~/ghidra-projects/elektron-sharc')
 DEFAULT_PROJECT_NAME = 'elektron-sharc'
 DEFAULT_GHIDRA = '/opt/homebrew/Cellar/ghidra/12.1.3/libexec'
@@ -54,22 +64,28 @@ REPLAY_CHUNK = 0x10000
 def ghidra_addr(byte_address):
     """Loader byte address -> Ghidra byte offset at its execution address.
 
-    The L2 translation deliberately applies only to its measured byte window;
-    all other loader addresses retain the established L1 translation.
+    The L2 translation deliberately applies only to its measured byte window.
+    The L1 system alias (SPACE_BASE..L1_ALIAS_LIMIT) is the only other
+    address family that is not already its own Ghidra byte offset: it maps
+    byte = 2*sw + SPACE_BASE down to offset 2*sw. Every other loader
+    address -- notably external memory such as 0x80000000..0x82a001c4 --
+    keeps its own value unchanged.
     """
     if L.L2_BYTE_BASE <= byte_address < L.L2_BYTE_LIMIT:
         return 2 * L.L2_SW_BASE + byte_address - L.L2_BYTE_BASE
-    return byte_address - SPACE_BASE
+    if SPACE_BASE <= byte_address < L1_ALIAS_LIMIT:
+        return byte_address - SPACE_BASE
+    return byte_address
 
 
 def mapped_segments(byte_address, byte_count):
-    """Split a loader range where the bounded L2 address mapping changes.
+    """Split a loader range where the piecewise address mapping changes.
 
     Yields ``(source_offset, ghidra_offset, length)`` tuples.
     """
     end = byte_address + byte_count
     cuts = [byte_address, end]
-    for boundary in (L.L2_BYTE_BASE, L.L2_BYTE_LIMIT):
+    for boundary in (L.L2_BYTE_BASE, L.L2_BYTE_LIMIT, SPACE_BASE, L1_ALIAS_LIMIT):
         if byte_address < boundary < end:
             cuts.append(boundary)
     cuts.sort()

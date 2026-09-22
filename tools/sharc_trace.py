@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
+import struct
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -181,6 +183,11 @@ AF_BIT = 10
 SV_BIT, SZ_BIT, SS_BIT = 11, 12, 13
 BTF_BIT = 18
 ALUSAT_BIT = 13  # MODE1.ALUSAT
+TRUNCATE_BIT = 15  # MODE1.TRUNCATE (PRM Table 28-19, p.28-63): rounding mode
+# select for FIX -- 0 rounds to nearest (ties to even), 1 truncates toward
+# zero. TRUNC always truncates and does not consult this bit (PRM p.24-.. /
+# PGR p.11-37: "The trunc operation always truncates toward 0. The TRUNCATE
+# bit does not influence operation of the trunc instruction.").
 
 # Bits every fixed-point ALU op (add/sub/inc/dec/pass/not/and/or/xor/compare)
 # defines: AZ/AV/AN/AC/AS/AI, plus AF which ch.19's intro says every
@@ -647,6 +654,39 @@ def _terms(value: Const | Affine) -> tuple[int, tuple[tuple[str, int], ...]]:
     )
 
 
+# A symbol name this module recognises as denoting a value some caller has
+# already bounded to a known numeric range: either an entry-time seed in
+# the convention tools/sharcwriters.py's seed_sets()/ENTRY_SEED_NAMES uses
+# ("I6e", "B7e", ...: one or more uppercase letters, one or more digits,
+# then "e"), or one of this module's own CIRC_SYMBOL_PREFIX-tagged symbols
+# (below). This module does not itself know the numeric bound -- that is
+# the caller's fact to state (tools/sharcwriters.py's STACK_SYMBOLS /
+# CIRC_WRAP_SLACK) -- it only recognises the *shape* of a name a caller is
+# likely to have bounded, so it knows when re-deriving a fresh symbol
+# through a circular MODIFY is meaningful rather than fabricating a bound
+# for an arbitrary, unrelated value that merely happens to be a bare named
+# term (e.g. a loop-count symbol).
+_BOUNDED_SYMBOL_RE = re.compile(r"^[A-Z]+\d+e$")
+CIRC_SYMBOL_PREFIX = "circ_"
+
+
+def _stack_bounded_symbol(value: Value) -> Optional[tuple[str, int]]:
+    """-> (name, signed constant offset), if `value` is exactly one named
+    symbol with coefficient 1 (any constant offset) whose name matches
+    _BOUNDED_SYMBOL_RE or starts with CIRC_SYMBOL_PREFIX -- otherwise None.
+    A second term, or a coefficient other than 1, means the value's range
+    is no longer provably tied to the symbol's own bound (e.g. a scaled or
+    summed expression), so the caller falls back to Unknown rather than
+    guess."""
+    if isinstance(value, Affine) and len(value.terms) == 1:
+        name, coefficient = value.terms[0]
+        if coefficient == 1 and (
+            _BOUNDED_SYMBOL_RE.match(name) or name.startswith(CIRC_SYMBOL_PREFIX)
+        ):
+            return name, _signed(value.constant, 32)
+    return None
+
+
 def _add(left: Value, right: Value, expression: str) -> Value:
     if isinstance(left, Unknown) or isinstance(right, Unknown):
         return Unknown(expression)
@@ -790,6 +830,26 @@ def _shift_immediate(
         else:
             value = Const((source.value >> position) & ((1 << min(length, 32)) - 1))
         return rn, value, "field-extract-immediate", _astatx_fext(position + length, value)
+    if opcode == 0x12:
+        # PRM Table 17-9 p.17-10/17-11 (out/refs/sharc-plus-prm/all.txt
+        # lines 22781-22785): shiftimm 010010 is
+        # "RREG = fext RREG by BIT6:LEN6 (se)" -- the sign-extending twin
+        # of the already-implemented opcode 0x10. Field layout (position,
+        # length) is identical to 0x10; NOTE at PRM p.3-17 (all.txt
+        # line 3486) says the (SE) option "sign extends the left bits" of
+        # the extracted field, i.e. bits above the extracted field take the
+        # value of the field's own sign (MSB) instead of being cleared.
+        # CALIBRATION NOTE: added in a scratch copy of sharc_trace.py for
+        # this task only; not part of the tracked tool.
+        position = data8 & 0x3F
+        length = (_field(f, "dataex[3:0]") << 2) | (data8 >> 6)
+        if length == 0:
+            value = Const(0)
+        elif not isinstance(source, Const):
+            value = Unknown("fext R%d by %d:%d (se)" % (rx, position, length))
+        else:
+            value = Const(_signed(source.value >> position, min(length, 32)) & 0xFFFFFFFF)
+        return rn, value, "field-extract-immediate-se", _astatx_fext(position + length, value)
     if opcode in (0x30, 0x31):
         position = data8
         if position > 31:
@@ -847,6 +907,466 @@ def _compare_flags(left: Value, right: Value, signed: bool, label: str) -> Value
         | (0x4 if x < y else 0)
         | (0x80000000 if x > y else 0)
     )
+
+
+# ---------------------------------------------------------------------------
+# Floating-point compute support.
+#
+# The register file (R0-R15/F0-F15) is a flat 32-bit store either way; a
+# float ALU/multiplier op just reinterprets the same bits as IEEE-754 single
+# precision (PRM p.3-4: "floating-point instructions operate on 32-bit ...
+# operands"). The SHARC+ ALU/multiplier additionally support an optional
+# 40-bit extended-precision float format for *intermediate* results (PRM
+# p.3-37, active when MODE1.RND32=0, the reset default: "eight additional
+# LSBs of mantissa"), but that only matters to values forwarded between
+# back-to-back compute ops without ever reaching the register file; this
+# tracer has no pipeline/forwarding model and every UREG it tracks is a
+# plain 32-bit value, so every float result here is computed and stored at
+# IEEE-754 single precision -- the same width a real RN/FN write-back uses
+# regardless of the extended-precision mode. Denormal-flush-to-zero, which
+# several PGR entries below document for their inputs/outputs, is also not
+# modeled (struct's round-trip preserves denormals exactly); this only
+# matters for subnormal magnitudes, which real audio sample/parameter data
+# essentially never produces.
+# ---------------------------------------------------------------------------
+
+
+def _float32(value: Value) -> Optional[float]:
+    """Reinterpret VALUE's 32-bit pattern as IEEE-754 single precision.
+
+    Returns None when VALUE isn't a fully known Const: an Affine (symbolic
+    address arithmetic) or Unknown source is not float data and must not be
+    silently coerced into one.
+    """
+    if not isinstance(value, Const):
+        return None
+    return struct.unpack("<f", struct.pack("<I", value.value))[0]
+
+
+def _float32_bits(value: float) -> tuple[int, bool]:
+    """Round VALUE to IEEE-754 single precision; return (bits, overflowed).
+
+    struct raises OverflowError for a finite double outside the float32
+    range. SHARC+ float overflow rounds to signed infinity in the default
+    round-to-nearest mode (PRM Table 3-3 / PGR p.11-24 AV description:
+    "post-rounded result overflows ... returns +-infinity"); reproduce that
+    by hand when struct refuses, since struct has no float32-infinity
+    fallback of its own.
+    """
+    try:
+        return struct.unpack("<I", struct.pack("<f", value))[0], False
+    except OverflowError:
+        sign = 0x80000000 if math.copysign(1.0, value) < 0 else 0
+        return (0x7F800000 | sign), True
+
+
+_FLOAT_ALL_ONES = Const(0xFFFFFFFF)
+
+
+def _float_binary(
+    left: Value, right: Value, expression: str, operation
+) -> tuple[Value, Optional[bool], Optional[bool]]:
+    """Evaluate a float ALU/multiplier binary OPERATION; return (result,
+    overflowed, invalid).
+
+    Several PGR float-ALU entries (e.g. p.11-24 Fx+Fy, p.11-46 MIN, p.11-48
+    CLIP) document "A NAN input returns an all 1s result" -- a fixed
+    sentinel pattern, not whatever IEEE NaN OPERATION would naturally
+    produce -- so an explicit NaN *input* is special-cased before OPERATION
+    ever runs. A NaN produced by OPERATION itself from two non-NaN inputs
+    (e.g. +infinity + -infinity, PGR p.11-24's "opposite-signed infinities"
+    AI case) is not overridden: it keeps the ordinary computed NaN pattern.
+    Either input not being a known Const makes the whole result unknown.
+    """
+    a, b = _float32(left), _float32(right)
+    if a is None or b is None:
+        return Unknown(expression), None, None
+    if math.isnan(a) or math.isnan(b):
+        return _FLOAT_ALL_ONES, False, True
+    raw = operation(a, b)
+    bits, overflowed = _float32_bits(raw)
+    return Const(bits), overflowed, math.isnan(raw)
+
+
+def _float_unary(
+    value: Value, expression: str, operation
+) -> tuple[Value, Optional[bool], Optional[bool]]:
+    """Unary counterpart of ``_float_binary`` (see its docstring)."""
+    a = _float32(value)
+    if a is None:
+        return Unknown(expression), None, None
+    if math.isnan(a):
+        return _FLOAT_ALL_ONES, False, True
+    raw = operation(a)
+    bits, overflowed = _float32_bits(raw)
+    return Const(bits), overflowed, math.isnan(raw)
+
+
+def _float_min(a: float, b: float) -> float:
+    """PGR p.11-46: smaller operand; min(+0, -0) is documented as -0."""
+    if a == 0.0 and b == 0.0:
+        return -0.0
+    return a if a < b else b
+
+
+def _float_max(a: float, b: float) -> float:
+    """PGR p.11-47: larger operand; max(+0, -0) is documented as +0."""
+    if a == 0.0 and b == 0.0:
+        return 0.0
+    return a if a > b else b
+
+
+def _float_clip(a: float, b: float) -> float:
+    """PGR p.11-48 / PRM p.3-6 CLIP: FX if |FX| < |FY|, else +-|FY| with
+    FX's sign (copysign handles the FX=+-0 boundary the same as the PGR
+    text's "if Fx is positive")."""
+    return a if abs(a) < abs(b) else math.copysign(abs(b), a)
+
+
+def _float_mantissa(
+    value: Value, expression: str
+) -> tuple[Value, Optional[bool], Optional[bool], Optional[bool]]:
+    """RN = mant FX (PRM Table 18-5 opcode 0xAD, p.427; PGR p.11-34/11-35).
+
+    Extracts the hidden bit plus the 23-bit fraction, left-justified as an
+    unsigned-magnitude 1.31 fixed-point word (bit31 the hidden bit, bits
+    30-8 the fraction, bits 7-0 zero-filled); the 24 significant bits
+    always fit exactly, so no rounding is performed (PGR: "no rounding is
+    performed because all results are inherently exact"). Denormal and
+    zero inputs flush to a zero mantissa (PGR: "Denormal inputs are
+    flushed to +-zero"). A NAN *or an infinity* input returns the fixed
+    all-1s sentinel (PGR: "A NAN or an infinity input returns an all 1s
+    result") -- unlike the arithmetic float ALU ops above, which only
+    override NAN, MANT also overrides infinity, since it is not an
+    ordinary IEEE operation. Returns (result, overflow=is-infinity,
+    negative=input-sign, invalid=is-NAN); AN is always cleared for this
+    op (PRM Table 3-3) and is not returned here.
+    """
+    if not isinstance(value, Const):
+        return Unknown(expression), None, None, None
+    bits = value.value
+    sign = bool(bits & 0x80000000)
+    exponent = (bits >> 23) & 0xFF
+    fraction = bits & 0x7FFFFF
+    if exponent == 0xFF:
+        is_nan = fraction != 0
+        return _FLOAT_ALL_ONES, not is_nan, sign, is_nan
+    if exponent == 0:
+        return Const(0), False, sign, False
+    return Const((0x800000 | fraction) << 8), False, sign, False
+
+
+def _float_scalb(
+    value: Value, scale: Value, expression: str
+) -> tuple[Value, Optional[bool], Optional[bool]]:
+    """FN = scalb FX by RY (PRM Table 18-5 opcode 0xBD, p.427; PGR p.11-33).
+
+    Adds the two's-complement fixed-point integer RY to FX's exponent
+    (i.e. FX * 2**RY). Overflow rounds to +-infinity (round-to-nearest,
+    the only rounding mode this tracer models, matching every other float
+    op here); a result whose magnitude underflows below the smallest
+    float32 normal (2**-126) flushes to +-zero rather than becoming a
+    subnormal (PGR: "Denormal returns +-zero" -- an explicit override of
+    struct's ordinary IEEE denormal rounding, the same kind of override
+    ``_float_to_fixed_trunc`` already applies for its own corner cases). A
+    NAN input returns the same all-1s sentinel ``_float_binary`` uses;
+    zero and infinity inputs pass through unchanged (``math.ldexp``
+    preserves both, matching the PRM, which documents no special case for
+    them). Returns (result, overflow, invalid).
+    """
+    a = _float32(value)
+    if a is None or not isinstance(scale, Const):
+        return Unknown(expression), None, None
+    if math.isnan(a):
+        return _FLOAT_ALL_ONES, False, True
+    shift = _signed32(scale.value)
+    try:
+        scaled = math.ldexp(a, shift)
+    except OverflowError:
+        scaled = math.copysign(math.inf, a)
+    if scaled != 0.0 and not math.isinf(scaled) and abs(scaled) < 2.0**-126:
+        return Const(0x80000000 if scaled < 0 else 0), False, False
+    bits, overflowed = _float32_bits(scaled)
+    return Const(bits), overflowed, False
+
+
+def _fixed_to_float(value: Value, expression: str) -> tuple[Value, Optional[bool]]:
+    """FN = float RX (PRM Table 18-5 opcode 0xCA, p.427; PGR p.11-39 "without
+    scaling factor"): numeric int32->float32 conversion, not a bit
+    reinterpretation. PGR documents AV and AI both fixed 0 for the
+    no-scaling form actually used here (RN=FLOAT RX BY RY, which also takes
+    a scale factor, is not implemented). Returns (result, invalid) where
+    invalid is always False when computable, matching that fixed AI=0.
+    """
+    if not isinstance(value, Const):
+        return Unknown(expression), None
+    bits, _ = _float32_bits(float(_signed32(value.value)))
+    return Const(bits), False
+
+
+def _float_to_fixed(
+    value: Value, mode1: Value, always_truncate: bool, expression: str
+) -> tuple[Value, Optional[bool], Optional[bool]]:
+    """RN = FIX FX / RN = TRUNC FX (PRM Table 18-5 opcodes 0xC9/0xCD, p.427;
+    PGR p.11-36..11-38), and their scaled BY RY siblings 0xD9/0xDD (the
+    caller pre-scales VALUE via ``_scale_fixed_input`` -- PGR Table 3-3,
+    p.3-11 marks the BY RY forms with the identical AZ/AV/AN/AC/AS/AI
+    columns as the unscaled ones, so no separate flag rule is needed here).
+
+    TRUNC always truncates toward zero, ignoring MODE1 (ALWAYS_TRUNCATE=True
+    -- PGR p.11-37: "The trunc operation always truncates toward 0. The
+    TRUNCATE bit does not influence operation of the trunc instruction.").
+    FIX instead rounds to nearest, ties to even (Python's ``round()`` on a
+    float already implements this) when MODE1.TRUNCATE=0, or truncates
+    toward zero when MODE1.TRUNCATE=1 (PGR p.11-37 / PRM p.24-..); the whole
+    result is Unknown when TRUNCATE itself is unknown, rather than guessing
+    which rounding applied.
+
+    A result within int32 range needs no saturation. Out-of-range
+    magnitudes and NAN/+-infinity inputs are governed by MODE1.ALUSAT (PGR:
+    "In saturation mode ... positive overflows and +infinity return
+    0x7FFFFFFF, and negative overflows and -infinity return 0x80000000");
+    when ALUSAT is known clear the PGR instead documents a "floating-point
+    all 1s" *Rn* pattern for that corner, an architecturally odd case this
+    tracer does not attempt to reproduce bit-for-bit, so it reports Unknown
+    there and whenever MODE1 itself isn't known, rather than guessing.
+    Returns (result, overflow, invalid).
+    """
+    a = _float32(value)
+    if a is None:
+        return Unknown(expression), None, None
+    saturating = _astatx_known_bit(mode1, ALUSAT_BIT)
+    if math.isnan(a) or math.isinf(a):
+        if saturating:
+            return (
+                Const(0x7FFFFFFF if (math.isnan(a) or a > 0) else 0x80000000),
+                True,
+                True,
+            )
+        if saturating is False:
+            return Unknown(expression + " (unsaturated NAN/infinity fix)"), True, True
+        return Unknown(expression), None, True
+    if always_truncate:
+        rounded = math.trunc(a)
+    else:
+        truncate_mode = _astatx_known_bit(mode1, TRUNCATE_BIT)
+        if truncate_mode is None:
+            return Unknown(expression), None, False
+        rounded = math.trunc(a) if truncate_mode else int(round(a))
+    if -(1 << 31) <= rounded <= (1 << 31) - 1:
+        return Const(rounded & 0xFFFFFFFF), False, False
+    if saturating:
+        return Const(0x7FFFFFFF if rounded > 0 else 0x80000000), True, False
+    if saturating is False:
+        return Unknown(expression + " (unsaturated fix overflow)"), True, False
+    return Unknown(expression), None, False
+
+
+def _float_to_fixed_trunc(
+    value: Value, mode1: Value, expression: str
+) -> tuple[Value, Optional[bool], Optional[bool]]:
+    """RN = TRUNC FX: ``_float_to_fixed`` with ALWAYS_TRUNCATE=True. Kept as
+    a named wrapper since opcode 0xCD's call site predates the shared
+    FIX/TRUNC helper and reads more clearly with its own name."""
+    return _float_to_fixed(value, mode1, True, expression)
+
+
+def _scale_fixed_input(value: Value, scale: Value, expression: str) -> Value:
+    """Fx * 2**Ry (exponent add), the shared first step of RN = FIX/TRUNC FX
+    BY RY (PGR p.11-37: "the fixed-point two's-complement integer in Ry is
+    added to the exponent of the floating-point operand in Fx before the
+    conversion"). Reuses ``_float_scalb``'s ldexp/overflow/denormal-flush
+    rule -- the same exponent-add primitive FN=SCALB uses -- and discards
+    its own (overflow, invalid) pair, since the caller's FIX/TRUNC applies
+    its own overflow/NAN handling to the scaled value afterward.
+    """
+    scaled, _overflow, _invalid = _float_scalb(value, scale, expression)
+    return scaled
+
+
+def _fixed_to_float_scaled(
+    value: Value, scale: Value, expression: str
+) -> tuple[Value, Optional[bool]]:
+    """FN = FLOAT RX BY RY (PRM p.19-.. ; PGR p.11-39 "with scaling factor"):
+    numeric int32->float32 conversion as ``_fixed_to_float``, then the
+    fixed-point two's-complement integer in RY is added to the result's
+    exponent (PGR: "the fixed-point two's-complement integer in Ry is added
+    to the exponent of the floating-point result"). Overflow (unbiased
+    exponent > 127) returns +-infinity; underflow (unbiased exponent <
+    -126) flushes to +-zero (PGR: "Overflow generates a return of
+    +-infinity ...; underflow generates a return of +-zero"). Unlike the
+    unscaled form -- where an int32 input can never land in the subnormal
+    range, so AV is architecturally fixed 0 (PGR Table 3-3) -- AV here is
+    genuinely data-dependent, so this returns (result, overflow) rather
+    than the unscaled helper's implicit always-False.
+    """
+    if not isinstance(value, Const) or not isinstance(scale, Const):
+        return Unknown(expression), None
+    unscaled = float(_signed32(value.value))
+    shift = _signed32(scale.value)
+    try:
+        scaled = math.ldexp(unscaled, shift)
+    except OverflowError:
+        scaled = math.copysign(math.inf, unscaled) if unscaled != 0.0 else 0.0
+    if scaled != 0.0 and not math.isinf(scaled) and abs(scaled) < 2.0**-126:
+        return Const(0x80000000 if scaled < 0 else 0), False
+    bits, overflowed = _float32_bits(scaled)
+    return Const(bits), overflowed
+
+
+def _float_copysign(
+    left: Value, right: Value, expression: str
+) -> tuple[Value, Optional[bool]]:
+    """FN = FX copysign FY (PRM p.19-19, opcode 1110 0000; PGR p.11-45,
+    Table 12-4 opcode 1110 0000): copies FY's sign bit onto FX's exponent
+    and mantissa unchanged. A denormal FX input flushes to zero before the
+    sign copy (PRM/PGR: "A denormal input is flushed to +-zero"). A NAN
+    input -- either operand -- returns the fixed all-1s sentinel
+    (``_float_binary``'s convention). Returns (result, invalid); AC/AS/AV
+    are architecturally fixed for this op (PRM Table 3-3 / PGR Table 3-3)
+    and are not returned here.
+    """
+    a, b = _float32(left), _float32(right)
+    if a is None or b is None:
+        return Unknown(expression), None
+    if math.isnan(a) or math.isnan(b):
+        return _FLOAT_ALL_ONES, True
+    magnitude = abs(a)
+    if 0.0 < magnitude < 2.0**-126:
+        magnitude = 0.0
+    negative = math.copysign(1.0, b) < 0
+    result = -magnitude if negative else magnitude
+    bits, _overflowed = _float32_bits(result)
+    return Const(bits), False
+
+
+def _compare_flags_float(
+    left: Value, right: Value, label: str
+) -> tuple[Value, Optional[bool]]:
+    """comp(FX, FY) (PRM Table 18-5 opcode 0x8A, p.426; PGR p.11-29).
+
+    Same bit-0 (AZ)/bit-2 (AN)/bit-31 (new CACC MSB) value encoding
+    ``_compare_flags`` uses for the fixed-point comp/compu, consumed by
+    ``_astatx_compare``'s CACC shift-register logic. An unordered (NAN)
+    compare sets none of those bits (PGR doesn't document AZ/AN/CACC firing
+    on an unordered compare) and instead reports the invalid flag, which
+    the caller applies on top via ``_astatx_compare``'s AI override.
+    """
+    a, b = _float32(left), _float32(right)
+    if a is None or b is None:
+        return Unknown(label), None
+    if math.isnan(a) or math.isnan(b):
+        return Const(0), True
+    return (
+        Const(
+            (0x1 if a == b else 0)
+            | (0x4 if a < b else 0)
+            | (0x80000000 if a > b else 0)
+        ),
+        False,
+    )
+
+
+def _bits_to_updates(mask: int, bits: Optional[int]) -> Dict[int, Optional[bool]]:
+    """Expand an optional MASK-shaped flag bit pattern into an
+    ``_astatx_apply_bits()`` updates dict; BITS=None forgets every bit in
+    MASK."""
+    updates: Dict[int, Optional[bool]] = {}
+    bit = 0
+    while (1 << bit) <= mask:
+        if mask & (1 << bit):
+            updates[bit] = None if bits is None else bool(bits & (1 << bit))
+        bit += 1
+    return updates
+
+
+def _or_updates(
+    a: Dict[int, Optional[bool]], b: Dict[int, Optional[bool]]
+) -> Dict[int, Optional[bool]]:
+    """Kleene-OR two ASTATX update dicts bit by bit (PRM p.3-21/3-22:
+    "Multifunction Computations ... in the dual add/subtract computation,
+    the ALU flags from the two operations are ORed together"). True beats
+    anything; a bit present in only one dict keeps that dict's own value."""
+    merged = dict(a)
+    for bit, b_value in b.items():
+        a_value = merged.get(bit, False)
+        if a_value is True or b_value is True:
+            merged[bit] = True
+        elif a_value is None or b_value is None:
+            merged[bit] = None
+        else:
+            merged[bit] = False
+    return merged
+
+
+def _alu_arith_updates(a: Value, b: Value, subtract: bool) -> Dict[int, Optional[bool]]:
+    """Dict-returning counterpart of ``_astatx_alu_arith`` (PRM pp.439-440,
+    446-447), for callers -- the fixed-point dual add/subtract -- that need
+    to OR two such results together before applying either to ASTATX."""
+    if isinstance(a, Const) and isinstance(b, Const):
+        return _bits_to_updates(ALU_FLAGS_MASK, _arith_flag_bits(a, b, subtract))
+    return _bits_to_updates(ALU_FLAGS_MASK, None)
+
+
+def _float_alu_updates(
+    result: Value,
+    *,
+    av: Optional[bool] = False,
+    an_zero: bool = False,
+    as_source: Optional[Value] = None,
+    ai: Optional[bool] = None,
+) -> Dict[int, Optional[bool]]:
+    """ASTATX update dict shared by the float ALU ops (PRM Table 3-3,
+    pp.3-8/3-9; per-op PGR pages cited at each call site).
+
+    AC is always 0 and AF is always 1 for a float ALU result. AZ/AN come
+    from RESULT's bit pattern (both +0.0 and -0.0 count as AZ) unless the
+    op's AN column is architecturally fixed to 0 (the abs-family:
+    AN_ZERO=True). AS is 0 unless AS_SOURCE is given (FN=abs FX carries the
+    *input*'s sign, PGR p.11-31). AV/AI are per-op data: pass the
+    (overflowed, invalid) pair ``_float_binary``/``_float_unary`` computed,
+    or an explicit fixed value for an op the table/PGR documents as always
+    0 (e.g. FN=float RX's AV and AI).
+    """
+    updates: Dict[int, Optional[bool]] = {
+        AC_BIT: False,
+        AF_BIT: True,
+        AV_BIT: av,
+        AI_BIT: ai,
+        AS_BIT: False if as_source is None else _astatx_known_bit(as_source, 31),
+    }
+    if isinstance(result, Const):
+        bits = result.value
+        updates[AZ_BIT] = (bits & 0x7FFFFFFF) == 0
+        updates[AN_BIT] = False if an_zero else bool(bits & 0x80000000)
+    else:
+        updates[AZ_BIT] = None
+        updates[AN_BIT] = False if an_zero else None
+    return updates
+
+
+def _astatx_from_updates(updates: Dict[int, Optional[bool]]) -> "Callable[[Value], Value]":
+    """Wrap a pre-built updates dict as an ASTATX updater function, matching
+    the ``Callable[[Value], Value]`` contract every other compute-table
+    branch returns."""
+    return lambda astatx: _astatx_apply_bits(astatx, updates)
+
+
+def _astatx_compare_float(value: Value, invalid: Optional[bool]) -> "Callable[[Value], Value]":
+    """Float comp (PRM Table 3-3 AI='*'; PGR p.11-29 spells it out: "Set if
+    either of the input operands is a NAN"). Identical to
+    ``_astatx_compare``'s AC/AV/AS-clear, AZ/AN/CACC-from-VALUE and
+    CACC-shift behaviour (which needs the *old* ASTATX, so it is reused
+    rather than duplicated); only AI and AF differ from the fixed-point
+    comp/compu version, which the PRM documents as always 0/0 rather than
+    float compare's AI=data-dependent, AF=1.
+    """
+
+    def update(astatx: Value) -> Value:
+        base = _astatx_compare(value)(astatx)
+        return _astatx_apply_bits(base, {AI_BIT: invalid, AF_BIT: True})
+
+    return update
 
 
 def _compute(
@@ -957,6 +1477,45 @@ def _compute(
             # PRM ShortCompute table (p. 17-3): 0011 is the signed comp(RN, RX).
             value = _compare_flags(left, right, True, "comp R%d, R%d" % (rn, rx))
             return rn, value, "compare", _astatx_compare(value)
+        # PRM Table 18-2 (p.423-425)/PGR "Short Compute Opcodes"
+        # (pgr.txt:23108-23120): 1000-1011 and 1111 are the float
+        # ShortCompute rows -- the same ops as the full-compute float table
+        # above, just the compact 16-bit Type 2c encoding where RN doubles
+        # as both the Y input and the result (Table 18-22: "RN = RN op RX").
+        if opcode == 0x8:
+            value, overflow, invalid = _float_binary(
+                left, right, "F%d + F%d" % (rn, rx), lambda a, b: a + b
+            )
+            return rn, value, "float-add", _astatx_from_updates(
+                _float_alu_updates(value, av=overflow, ai=invalid)
+            )
+        if opcode == 0x9:
+            value, overflow, invalid = _float_binary(
+                left, right, "F%d - F%d" % (rn, rx), lambda a, b: a - b
+            )
+            return rn, value, "float-subtract", _astatx_from_updates(
+                _float_alu_updates(value, av=overflow, ai=invalid)
+            )
+        if opcode == 0xA:
+            # FN = float RX: unlike the other short float rows, RN is not
+            # read as an input here (only RX is converted); RN is purely the
+            # destination.
+            value, invalid = _fixed_to_float(right, "float R%d" % rx)
+            return rn, value, "float-convert", _astatx_from_updates(
+                _float_alu_updates(value, av=False, ai=invalid)
+            )
+        if opcode == 0xB:
+            label = "comp F%d, F%d" % (rn, rx)
+            value, invalid = _compare_flags_float(left, right, label)
+            return rn, value, "float-compare", _astatx_compare_float(value, invalid)
+        if opcode == 0xF:
+            a, b = _float32(left), _float32(right)
+            if a is None or b is None:
+                value = Unknown("F%d * F%d" % (rn, rx))
+            else:
+                bits, _overflowed = _float32_bits(a * b)
+                value = Const(bits)
+            return rn, value, "float-multiply", _astatx_mult_forget
         if opcode not in operations:
             raise ValueError("unsupported short compute opcode %#x" % opcode)
         operation, calculate, astatx_kind = operations[opcode]
@@ -969,9 +1528,128 @@ def _compute(
             a, b, subtract = astatx_kind
             astatx_update = _astatx_alu_arith(a, b, subtract)
         return rn, value, operation, astatx_update
+    # PRM Table 18-1/Figure 18-1 (p.423): bit22 is MF, the multifunction
+    # selector. A multifunction op's register sub-fields (PRM Table
+    # 18-15..18-19, p.434-435) do not line up with the SINGLEFN rn/rx/ry
+    # layout computed below, so it is decoded separately and always
+    # returns/raises before falling through to that layout.
+    mf = (field >> 22) & 1
+    if mf:
+        category = (field >> 16) & 0x3F
+        rm, ra = (field >> 12) & 0xF, (field >> 8) & 0xF
+        # PRM Table 18-16/18-17 (p.434): the four multifunction INPUT
+        # operands are 2-bit fields, each selecting within a fixed quad --
+        # Fxm in F0-3, Fym in F4-7, Fxa in F8-11, Fya in F12-15.
+        rxm_reg = (field >> 6) & 0x3
+        rym_reg = 4 + ((field >> 4) & 0x3)
+        rxa_reg = 8 + ((field >> 2) & 0x3)
+        rya_reg = 12 + (field & 0x3)
+        fxm, fym = _ureg(values, rxm_reg), _ureg(values, rym_reg)
+        fxa, fya = _ureg(values, rxa_reg), _ureg(values, rya_reg)
+        # PGR Table 12-12 (pgr.txt:23129-23198), opcode[21:16] 011000/011001:
+        # FM = FXM*FYM, FA = FXA+-FYA -- the only MUL/ALU multifunction rows
+        # this firmware's audio code uses. Flags follow the single-function
+        # rule for each half (PRM p.3-21/3-22: multifunction "handle[s]
+        # flags in the same way as the single function computations" except
+        # for dual add/subtract), so the ALU half reuses
+        # ``_float_alu_updates`` and the multiplier half stays forgotten via
+        # ``_astatx_mult_forget`` exactly as the plain float multiply below.
+        if category in (0x18, 0x19, 0x1A, 0x1E, 0x1F):
+            # The multiplier half uses ordinary IEEE NaN propagation like
+            # the plain float multiply below, not the ALU's NaN-input
+            # all-1s quirk, so it is computed directly rather than through
+            # ``_float_binary``. Shared by every multifunction category
+            # below: only the ALU half's operation differs.
+            fm_a, fm_b = _float32(fxm), _float32(fym)
+            if fm_a is None or fm_b is None:
+                fm_value: Value = Unknown("F%d * F%d" % (rxm_reg, rym_reg))
+            else:
+                fm_bits, _fm_overflowed = _float32_bits(fm_a * fm_b)
+                fm_value = Const(fm_bits)
+
+            def with_mult(fa_updates, operation):
+                def astatx_update(astatx: Value, updates=fa_updates) -> Value:
+                    return _astatx_mult_forget(_astatx_apply_bits(astatx, updates))
+
+                return (rm, ra), (fm_value, fa_value), operation, astatx_update
+
+            if category in (0x18, 0x19):
+                subtract = category == 0x19
+                fa_op = (lambda a, b: a - b) if subtract else (lambda a, b: a + b)
+                fa_value, fa_overflow, fa_invalid = _float_binary(
+                    fxa,
+                    fya,
+                    "F%d %s F%d" % (rxa_reg, "-" if subtract else "+", rya_reg),
+                    fa_op,
+                )
+                return with_mult(
+                    _float_alu_updates(fa_value, av=fa_overflow, ai=fa_invalid),
+                    "float-mulalu-subtract" if subtract else "float-mulalu-add",
+                )
+            # PGR Table 12-12 opcode 011010 (p.587): FM = FXM*FYM,
+            # FA = FLOAT RXA by RYA -- the ALU half is the scaled
+            # fixed->float convert (0xDA above), reading RXA/RYA as fixed
+            # rather than float registers (same physical register file
+            # slots, ``fxa``/``fya`` above are just the raw bit patterns).
+            if category == 0x1A:
+                fa_value, fa_overflow = _fixed_to_float_scaled(
+                    fxa, fya, "float R%d by R%d" % (rxa_reg, rya_reg)
+                )
+                return with_mult(
+                    _float_alu_updates(fa_value, av=fa_overflow, ai=False),
+                    "float-mulalu-convert",
+                )
+            # PGR Table 12-12 opcodes 011110/011111 (p.588): FM = FXM*FYM,
+            # FA = MAX/MIN(FXA, FYA) -- the ALU half is the same
+            # single-function float min/max as 0xE1/0xE2 above (AV fixed 0
+            # there too).
+            if category in (0x1E, 0x1F):
+                minimum = category == 0x1F
+                name = "min" if minimum else "max"
+                combine = _float_min if minimum else _float_max
+                fa_value, fa_overflow, fa_invalid = _float_binary(
+                    fxa, fya, "%s(F%d, F%d)" % (name, rxa_reg, rya_reg), combine
+                )
+                return with_mult(
+                    _float_alu_updates(fa_value, av=False, ai=fa_invalid),
+                    "float-mul" + name,
+                )
+        raise ValueError(
+            "unsupported multifunction category=%#04x rm=%d ra=%d" % (category, rm, ra)
+        )
     cu, opcode = (field >> 20) & 3, (field >> 12) & 0xFF
     rn, rx, ry = (field >> 8) & 0xF, (field >> 4) & 0xF, field & 0xF
     left, right = _ureg(values, rx), _ureg(values, ry)
+    # PRM Table 18-10 (p.433) / Table 18-13 (p.434): Dual Add/Subtract is a
+    # single-function ALU op (mf=0, not multifunction) whose opcode top
+    # nibble (bits 19:16, i.e. this OPCODE's top nibble) is 0111 (fixed) or
+    # 1111 (float); the low nibble (bits 15:12) is not part of the opcode at
+    # all -- it is RS, a second 4-bit result register alongside
+    # RA=RN/FN at bits 11:8 (already read above as RN).
+    if cu == 0 and (opcode >> 4) in (0x7, 0xF):
+        float_form = (opcode >> 4) == 0xF
+        rs = opcode & 0xF
+        if float_form:
+            add_value, add_overflow, add_invalid = _float_binary(
+                left, right, "F%d + F%d" % (rx, ry), lambda a, b: a + b
+            )
+            sub_value, sub_overflow, sub_invalid = _float_binary(
+                left, right, "F%d - F%d" % (rx, ry), lambda a, b: a - b
+            )
+            updates = _or_updates(
+                _float_alu_updates(add_value, av=add_overflow, ai=add_invalid),
+                _float_alu_updates(sub_value, av=sub_overflow, ai=sub_invalid),
+            )
+            operation = "float-dual-add-subtract"
+        else:
+            add_value = _add(left, right, "R%d + R%d" % (rx, ry))
+            sub_value = _subtract(left, right, "R%d - R%d" % (rx, ry))
+            updates = _or_updates(
+                _alu_arith_updates(left, right, False),
+                _alu_arith_updates(left, right, True),
+            )
+            operation = "dual-add-subtract"
+        return (rn, rs), (add_value, sub_value), operation, _astatx_from_updates(updates)
     # PRM Table 17-5: ALUOP 00000001/00000010 are add/subtract.
     if cu == 0 and opcode == 0x01:
         value = _add(left, right, "R%d + R%d" % (rx, ry))
@@ -979,6 +1657,26 @@ def _compute(
     if cu == 0 and opcode == 0x02:
         value = _subtract(left, right, "R%d - R%d" % (rx, ry))
         return rn, value, "subtract", _astatx_alu_arith(left, right, True)
+    # PRM p.438-439 / PGR Table 12-3 (p.573): ALUOP 00000101 is
+    # RN = RX + RY + ci (add with carry) and 00000110 is RN = RX - RY + ci -
+    # 1 (subtract with borrow), both using ASTATX's AC bit as an explicit
+    # carry-in read before this instruction's own flags are written. The
+    # identity RX - RY + ci - 1 = RX + ~RY + ci (see ``_arith_flag_bits_ci``)
+    # lets both share one value formula: add RY (or its one's complement for
+    # subtract) plus a constant offset of ci (add) or ci-1 (subtract).
+    if cu == 0 and opcode in (0x05, 0x06):
+        subtract = opcode == 0x06
+        astatx = _ureg_raw(values, UREG_CODES["ASTATX"])
+        carry_in = _astatx_known_bit(astatx, AC_BIT)
+        label = "R%d %s R%d + ci%s" % (rx, "-" if subtract else "+", ry, " - 1" if subtract else "")
+        if carry_in is None:
+            value = Unknown(label)
+        else:
+            base = _subtract(left, right, label) if subtract else _add(left, right, label)
+            offset = (1 if carry_in else 0) - (1 if subtract else 0)
+            value = _add(base, Const(offset), label)
+        operation = "subtract-with-borrow" if subtract else "add-with-carry"
+        return rn, value, operation, _astatx_alu_arith_ci(left, right, subtract, carry_in)
     # PRM Table 18-5: ALUOP 00001010 is signed comp(RX, RY) and 00001011 is
     # unsigned compu(RX, RY). Both update status only, so the tracer records
     # the comparison without writing RN; the value carries the new flags.
@@ -1016,6 +1714,183 @@ def _compute(
             operation,
         )
         return rn, value, name, _astatx_alu_logical(value)
+    # PRM Table 18-5 (p.425-427), float rows; per-op flags cited at each
+    # branch (PRM Table 3-3, pp.3-8/3-9, cross-checked against the classic
+    # PGR's per-instruction pages, which spell out AZ/AN/AV/AI exactly where
+    # the SHARC+ PRM only marks a column "*"/data-dependent).
+    if cu == 0 and opcode == 0x81:
+        value, overflow, invalid = _float_binary(
+            left, right, "F%d + F%d" % (rx, ry), lambda a, b: a + b
+        )
+        return rn, value, "float-add", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=invalid)
+        )
+    if cu == 0 and opcode == 0x82:
+        value, overflow, invalid = _float_binary(
+            left, right, "F%d - F%d" % (rx, ry), lambda a, b: a - b
+        )
+        return rn, value, "float-subtract", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=invalid)
+        )
+    # PGR p.11-29: comp(Fx, Fy).
+    if cu == 0 and opcode == 0x8A:
+        label = "comp F%d, F%d" % (rx, ry)
+        value, invalid = _compare_flags_float(left, right, label)
+        return rn, value, "float-compare", _astatx_compare_float(value, invalid)
+    # PGR p.11-32: Fn = pass Fx.
+    if cu == 0 and opcode == 0xA1:
+        value, overflow, invalid = _float_unary(left, "pass F%d" % rx, lambda a: a)
+        return rn, value, "float-pass", _astatx_from_updates(
+            _float_alu_updates(value, av=False, ai=invalid)
+        )
+    # PGR p.11-30: Fn = -Fx.
+    if cu == 0 and opcode == 0xA2:
+        value, overflow, invalid = _float_unary(left, "-F%d" % rx, lambda a: -a)
+        return rn, value, "float-negate", _astatx_from_updates(
+            _float_alu_updates(value, av=False, ai=invalid)
+        )
+    # PGR p.11-34/11-35: Rn = mant Fx. Bespoke flag dict, not
+    # ``_float_alu_updates``: the result is an unsigned-magnitude fixed
+    # word (no sign bit of its own to derive AZ/AN from), AN is
+    # architecturally fixed 0 (PRM Table 3-3), and AS/AV/AI come from the
+    # *input*'s sign/infinity/NAN rather than the result.
+    if cu == 0 and opcode == 0xAD:
+        value, overflow, negative, invalid = _float_mantissa(left, "mant F%d" % rx)
+        updates = {
+            AC_BIT: False,
+            AF_BIT: True,
+            AN_BIT: False,
+            AV_BIT: overflow,
+            AS_BIT: negative,
+            AI_BIT: invalid,
+            AZ_BIT: (value.value == 0) if isinstance(value, Const) else None,
+        }
+        return rn, value, "mant", _astatx_from_updates(updates)
+    # PGR p.11-31: Fn = abs Fx. AN fixed 0; AS carries the *input*'s sign.
+    if cu == 0 and opcode == 0xB0:
+        value, overflow, invalid = _float_unary(left, "abs F%d" % rx, abs)
+        return rn, value, "float-abs", _astatx_from_updates(
+            _float_alu_updates(value, av=False, an_zero=True, as_source=left, ai=invalid)
+        )
+    # PGR p.11-33: Fn = scalb Fx by Ry. Unlike abs/pass/etc., AN here
+    # follows the *result*'s sign (PRM Table 3-3 marks AN '*', not 0), so
+    # this reuses ``_float_alu_updates``'s default (as_source=None,
+    # an_zero=False) rather than the abs-style override.
+    if cu == 0 and opcode == 0xBD:
+        value, overflow, invalid = _float_scalb(
+            left, right, "scalb F%d by R%d" % (rx, ry)
+        )
+        return rn, value, "float-scalb", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=invalid)
+        )
+    # PGR p.11-20/11-21: Rn = min/max(Rx, Ry) -- fixed-point, not the
+    # float min/max at 0xE1/0xE2 below. AV/AC/AS/AI/AF are all fixed 0
+    # (PRM Table 3-2, "AF Flag = 0"); only AZ/AN follow the chosen
+    # operand, the same rule ``_astatx_alu_logical`` already implements
+    # for pass/not/and/or/xor.
+    if cu == 0 and opcode in (0x61, 0x62):
+        name = "min" if opcode == 0x61 else "max"
+        if isinstance(left, Const) and isinstance(right, Const):
+            a, b = _signed32(left.value), _signed32(right.value)
+            pick_left = (a <= b) if name == "min" else (a >= b)
+            value = left if pick_left else right
+        else:
+            value = Unknown("%s(R%d, R%d)" % (name, rx, ry))
+        return rn, value, name, _astatx_alu_logical(value)
+    # PRM p.19-19, opcode 1110 0000 / PGR Table 12-4 p.574, same opcode: Fn =
+    # Fx copysign Fy.
+    if cu == 0 and opcode == 0xE0:
+        value, invalid = _float_copysign(left, right, "F%d copysign F%d" % (rx, ry))
+        return rn, value, "float-copysign", _astatx_from_updates(
+            _float_alu_updates(value, av=False, ai=invalid)
+        )
+    # PGR p.11-46/11-47: Fn = min/max(Fx, Fy).
+    if cu == 0 and opcode in (0xE1, 0xE2):
+        name = "min" if opcode == 0xE1 else "max"
+        combine = _float_min if opcode == 0xE1 else _float_max
+        value, overflow, invalid = _float_binary(
+            left, right, "%s(F%d, F%d)" % (name, rx, ry), combine
+        )
+        return rn, value, "float-" + name, _astatx_from_updates(
+            _float_alu_updates(value, av=False, ai=invalid)
+        )
+    # PGR p.11-48 / PRM p.3-6: Fn = clip Fx by Fy.
+    if cu == 0 and opcode == 0xE3:
+        value, overflow, invalid = _float_binary(
+            left, right, "clip F%d by F%d" % (rx, ry), _float_clip
+        )
+        return rn, value, "float-clip", _astatx_from_updates(
+            _float_alu_updates(value, av=False, ai=invalid)
+        )
+    # PRM p.427/PGR p.11-39 "without scaling factor": Fn = float Rx.
+    if cu == 0 and opcode == 0xCA:
+        value, invalid = _fixed_to_float(left, "float R%d" % rx)
+        return rn, value, "float-convert", _astatx_from_updates(
+            _float_alu_updates(value, av=False, ai=invalid)
+        )
+    # PGR p.11-39 "with scaling factor" / PRM p.19-.. : Fn = float Rx by Ry.
+    # AV is data-dependent here (unlike the unscaled form above, where an
+    # int32 input can never overflow float32 range), per PGR Table 3-3.
+    if cu == 0 and opcode == 0xDA:
+        value, overflow = _fixed_to_float_scaled(
+            left, right, "float R%d by R%d" % (rx, ry)
+        )
+        return rn, value, "float-convert-scaled", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=False)
+        )
+    # PRM p.24-.. / PGR p.11-36..11-38, opcode 1100 1001: Rn = fix Fx
+    # (rounds to nearest or truncates per MODE1.TRUNCATE; see
+    # ``_float_to_fixed``).
+    if cu == 0 and opcode == 0xC9:
+        mode1 = _ureg_raw(values, UREG_CODES["MODE1"])
+        value, overflow, invalid = _float_to_fixed(left, mode1, False, "fix F%d" % rx)
+        return rn, value, "fix", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=invalid)
+        )
+    # PRM p.427/PGR p.11-37: Rn = trunc Fx.
+    if cu == 0 and opcode == 0xCD:
+        mode1 = _ureg_raw(values, UREG_CODES["MODE1"])
+        value, overflow, invalid = _float_to_fixed_trunc(left, mode1, "trunc F%d" % rx)
+        return rn, value, "trunc", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=invalid)
+        )
+    # PGR p.11-36..11-38, opcode 1101 1001: Rn = fix Fx by Ry -- Ry's
+    # exponent-add (``_scale_fixed_input``) applied before the same fix
+    # conversion as 0xC9; PGR Table 3-3 gives it the identical flag columns
+    # as the unscaled form.
+    if cu == 0 and opcode == 0xD9:
+        mode1 = _ureg_raw(values, UREG_CODES["MODE1"])
+        scaled = _scale_fixed_input(left, right, "F%d * 2**R%d" % (rx, ry))
+        value, overflow, invalid = _float_to_fixed(
+            scaled, mode1, False, "fix F%d by R%d" % (rx, ry)
+        )
+        return rn, value, "fix-scaled", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=invalid)
+        )
+    # PGR p.11-36..11-38, opcode 1101 1101: Rn = trunc Fx by Ry -- Ry's
+    # exponent-add applied before the same truncation as 0xCD; PGR Table 3-3
+    # again gives it the unscaled form's flag columns.
+    if cu == 0 and opcode == 0xDD:
+        mode1 = _ureg_raw(values, UREG_CODES["MODE1"])
+        scaled = _scale_fixed_input(left, right, "F%d * 2**R%d" % (rx, ry))
+        value, overflow, invalid = _float_to_fixed(
+            scaled, mode1, True, "trunc F%d by R%d" % (rx, ry)
+        )
+        return rn, value, "trunc-scaled", _astatx_from_updates(
+            _float_alu_updates(value, av=overflow, ai=invalid)
+        )
+    # PRM p.427 / PGR p.11-44/11-45: Fn = recips/rsqrts Fx -- iterative
+    # reciprocal/reciprocal-sqrt seed instructions. The seed mantissa comes
+    # from an ROM lookup table the public manuals do not print, so this
+    # tracer decodes the instruction (unblocking whatever reads its flags or
+    # continues past it) without claiming a numeric seed value it cannot
+    # verify; AV/AI are genuinely data-dependent here and left unknown too.
+    if cu == 0 and opcode in (0xC4, 0xC5):
+        name = "recips" if opcode == 0xC4 else "rsqrts"
+        label = "%s F%d (iterative seed, not numerically modeled)" % (name, rx)
+        return rn, Unknown(label), "float-" + name + "-seed", _astatx_from_updates(
+            _float_alu_updates(Unknown(label), av=None, ai=None)
+        )
     # PRM Table 17-7: MULOP 0000 F00x writes a saturated MRF value to RN.
     # The tracer does not model the full-width multiplier accumulator or MOD2
     # format bits, so preserve the documented data dependency conservatively.
@@ -1024,6 +1899,32 @@ def _compute(
     if cu == 1 and opcode == 0x70:
         value = _multiply(left, right, "R%d * R%d" % (rx, ry))
         return rn, value, "multiply", _astatx_mult_forget
+    # PRM Table 18-7 (p.428-429): MULOP 00110000 is Fn = Fx * Fy. Flags are
+    # the multiplier's MN/MV/MU/MI (PGR p.11-57), the same unmodeled-result
+    # group the fixed-point multiply above forgets via
+    # ``_astatx_mult_forget``; unlike the ALU's NaN-input quirk, the PGR
+    # text for this op does not document an all-1s override, so ordinary
+    # IEEE NaN propagation applies.
+    if cu == 1 and opcode == 0x30:
+        a, b = _float32(left), _float32(right)
+        if a is None or b is None:
+            value = Unknown("F%d * F%d" % (rx, ry))
+        else:
+            bits, _overflowed = _float32_bits(a * b)
+            value = Const(bits)
+        return rn, value, "float-multiply", _astatx_mult_forget
+    # Shifter opcode 1011 0000: absent from both public sources' shifter
+    # tables (PRM Table 17-9, p.17-10/17-11, and PGR Table 12-11, p.580-581,
+    # transcribed in full -- neither lists any 0xA0-0xBF row). Seen at
+    # `sw 0x1cd002`. Rather than guess an operation from an undocumented
+    # opcode, decode it (so the walk does not desync) and leave both the
+    # result and its flags Unknown, per this file's existing rule for gaps
+    # the manuals do not cover.
+    if cu == 2 and opcode == 0xB0:
+        label = "shift opcode 0xb0 R%d, R%d (undocumented; no public source)" % (rx, ry)
+        return rn, Unknown(label), "shift-undocumented-b0", lambda astatx: _astatx_forget(
+            astatx, ALU_FLAGS_MASK
+        )
     # PRM Table 17-9: SHIFTOP 00000000 is RN = LSHIFT RX by RY. The signed
     # low byte of RY selects a left (positive) or logical right (negative)
     # shift; magnitudes of 32 or more produce zero.
@@ -1044,6 +1945,38 @@ def _compute(
             else:
                 value = Const(left.value >> -amount)
         return rn, value, "logical-shift", _astatx_shift(amount, value, "clear")
+    # PRM Table 17-9 p.17-10 (out/refs/sharc-plus-prm/all.txt line 22765):
+    # SHIFTOP 00000100 is RN = ASHIFT RX by RY -- the register-operand twin
+    # of the already-implemented ShiftImm opcode 0x01 (arithmetic shift by
+    # an 8-bit immediate). Same signed-low-byte amount, same 32-magnitude
+    # saturation, differing only in that a right shift (negative amount) is
+    # sign-extending, mirroring _shift_immediate's opcode==0x01 branch
+    # exactly.
+    # CALIBRATION NOTE: added in a scratch copy of sharc_trace.py for this
+    # task only; not part of the tracked tool.
+    if cu == 2 and opcode == 0x04:
+        amount = None
+        if not isinstance(right, Const):
+            value = Unknown("ashift R%d by R%d" % (rx, ry))
+        else:
+            amount = _signed(right.value & 0xFF, 8)
+            if amount == 0:
+                value = left
+            elif not isinstance(left, Const):
+                value = Unknown("ashift R%d by %d" % (rx, amount))
+            elif amount >= 32:
+                value = Const(0)
+            elif amount <= -32:
+                value = (
+                    Const(0xFFFFFFFF)
+                    if left.value & 0x80000000
+                    else Const(0)
+                )
+            elif amount > 0:
+                value = Const(left.value << amount)
+            else:
+                value = Const(_signed32(left.value) >> -amount)
+        return rn, value, "arithmetic-shift", _astatx_shift(amount, value, "clear")
     # PRM Table 17-9: SHIFTOP 10001000 is RN = leftz RX.
     if cu == 2 and opcode == 0x88:
         value = (
@@ -1227,6 +2160,57 @@ def _astatx_alu_arith(a: Value, b: Value, subtract: bool) -> "Callable[[Value], 
     return update
 
 
+def _arith_flag_bits_ci(a: Const, b: Const, subtract: bool, carry_in: bool) -> int:
+    """AC/AV/AN/AZ for RN = RX+RY+ci / RN = RX-RY+ci-1 (PRM p.438-439; PGR
+    Table 12-3 opcodes 0000 0101/0000 0110, p.573); AS/AI are always 0,
+    matching plain add/subtract (PRM: "AS Cleared", "AI Cleared" for both).
+
+    Same two's-complement adder model as ``_arith_flag_bits``, with the
+    ASTATX AC bit supplied as an explicit carry-in. The identity RX - RY +
+    ci - 1 = RX + ~RY + ci (two's complement: ~RY = -RY-1) means the
+    subtract-with-borrow row needs no forced +1 of its own -- CI itself
+    supplies the carry that ordinary subtract hard-codes to 1 -- so this
+    reuses the exact same b_eff = ~B one's-complement substitution as
+    ``_arith_flag_bits``, just with CI standing in for the fixed carry_in.
+    """
+    A = a.value & 0xFFFFFFFF
+    b_eff = (~b.value if subtract else b.value) & 0xFFFFFFFF
+    ci = 1 if carry_in else 0
+    low31 = (A & 0x7FFFFFFF) + (b_eff & 0x7FFFFFFF) + ci
+    carry_into_msb = (low31 >> 31) & 1
+    full = A + b_eff + ci
+    carry_out = (full >> 32) & 1
+    result = full & 0xFFFFFFFF
+    bits = 0
+    if carry_out:
+        bits |= 1 << AC_BIT
+    if carry_into_msb ^ carry_out:
+        bits |= 1 << AV_BIT
+    if result & 0x80000000:
+        bits |= 1 << AN_BIT
+    if result == 0:
+        bits |= 1 << AZ_BIT
+    return bits
+
+
+def _astatx_alu_arith_ci(
+    a: Value, b: Value, subtract: bool, carry_in: Optional[bool]
+) -> "Callable[[Value], Value]":
+    """add-with-carry/subtract-with-borrow: AC/AV/AN/AZ from A, B and the
+    ASTATX AC carry-in; AS/AI/AF cleared, same as ``_astatx_alu_arith``.
+    Forgets the flags (rather than defining them) whenever the carry-in
+    itself is unknown, not just when A or B is."""
+
+    def update(astatx: Value) -> Value:
+        if isinstance(a, Const) and isinstance(b, Const) and carry_in is not None:
+            return _astatx_define(
+                astatx, ALU_FLAGS_MASK, _arith_flag_bits_ci(a, b, subtract, carry_in)
+            )
+        return _astatx_forget(astatx, ALU_FLAGS_MASK)
+
+    return update
+
+
 def _astatx_compare(value: Value) -> "Callable[[Value], Value]":
     """PRM comp/compu: AC/AV/AS/AI/AF clear; AZ/AN from VALUE (bits 0, 2);
     CACC (bits 31:24) is an 8-bit shift register, newest bit (VALUE bit 31)
@@ -1379,10 +2363,33 @@ def _apply_compute(
         )
         state.special["MRF"] = value
         return
-    if operation in ("compare", "bit-test"):
+    if isinstance(rn, tuple):
+        # Dual-result compute (dual add/subtract, MUL/ALU multifunction):
+        # two destination registers sharing one ASTATX update, already
+        # combined by the caller (PRM p.3-21/3-22).
+        names = ["R%d" % reg for reg in rn]
+        _event(
+            state,
+            insn,
+            "compute",
+            operation=operation,
+            result_register=names,
+            value=[_json_value(v) for v in value],
+        )
+        for reg, val in zip(rn, value):
+            state.uregs[reg] = val
+        return
+    if operation in ("compare", "bit-test", "float-compare"):
         _event(state, insn, "compute", operation=operation, status_only=True)
     else:
-        _event(state, insn, "compute", operation=operation, result_register="R%d" % rn)
+        _event(
+            state,
+            insn,
+            "compute",
+            operation=operation,
+            result_register="R%d" % rn,
+            value=value,
+        )
         state.uregs[rn] = value
 
 
@@ -2284,12 +3291,17 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         return _advance(state, insn)
     if name == "3a":
         # PRM Type 3a is a conditional compute plus one normal-word DM/PM
-        # transfer.  Long-word pairs remain deliberately unsupported.
+        # transfer. Table 13-1's syntax row is "IF cond compute, DM(Ia,Mb)
+        # = Ureg" -- cond gates the *whole* instruction, not just the
+        # compute half (PRM p.7924: a false condition "generate[s] NOPs
+        # on the processing element"), so a resolved-false predicate skips
+        # both the transfer and the compute, and an unresolved predicate
+        # forks into executed/skipped states exactly like every other
+        # conditional form here (2a, 5a_move, 9a_abs). Long-word pairs
+        # remain deliberately unsupported.
         if _field(f, "l"):
             return [_stop(state, insn, "unsupported Type3a long-word access")]
         cond = _field(f, "cond")
-        if cond != 0x1F:
-            return [_stop(state, insn, "unsupported Type3a predicate")]
         old = dict(state.uregs)
         compute_fields = dict(f)
         compute_field = _field(f, "compute")
@@ -2299,52 +3311,71 @@ def _execute(state: State, insn: Instruction) -> List[State]:
             compute = _compute(compute_fields, False, old, state.special)
         except ValueError as error:
             return [_stop(state, insn, str(error))]
-        bank = 8 if _field(f, "g") else 0
-        index, modifier = _field(f, "i") + bank, _field(f, "m") + bank
-        post_modify = bool(_field(f, "u"))
-        space = "PM" if bank else "DM"
-        iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
-        scale = _access_modifier_scale("normal-word", state.assume_nw32)
-        scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
-        modified = _add(iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale))
-        address = iv if post_modify else modified
-        ureg = _field(f, "ureg")
-        if _field(f, "d"):
-            value = _ureg(old, ureg)
+
+        def run_transfer(target: State) -> None:
+            bank = 8 if _field(f, "g") else 0
+            index, modifier = _field(f, "i") + bank, _field(f, "m") + bank
+            post_modify = bool(_field(f, "u"))
+            space = "PM" if bank else "DM"
+            iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
+            scale = _access_modifier_scale("normal-word", target.assume_nw32)
+            scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
+            modified = _add(iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale))
+            address = iv if post_modify else modified
+            ureg = _field(f, "ureg")
+            if _field(f, "d"):
+                value = _ureg(old, ureg)
+                _event(
+                    target,
+                    insn,
+                    "store",
+                    space=space,
+                    ureg=UREG_NAMES[ureg],
+                    value=value,
+                    address=address,
+                    expression=_render(address),
+                    concrete_write=_dm_write(target, address, 4, value)
+                    if space == "DM"
+                    else False,
+                    addressing_mode="post-modify" if post_modify else "pre-modify",
+                    access_width="normal-word",
+                )
+            else:
+                loaded = _load_normal_ureg(target, space, address, ureg)
+                _event(
+                    target,
+                    insn,
+                    "load",
+                    space=space,
+                    ureg=UREG_NAMES[ureg],
+                    address=address,
+                    expression=_render(address),
+                    concrete_value=loaded,
+                    addressing_mode="post-modify" if post_modify else "pre-modify",
+                    access_width="normal-word",
+                )
+            if post_modify:
+                target.uregs[16 + index] = modified
+            if compute is not None:
+                _apply_compute(target, insn, compute)
+
+        predicate = _predicate(state, cond)
+        if predicate is True:
+            run_transfer(state)
+            state.trace[-1].update(condition=cond, predicate_assumption=True)
+            return _advance(state, insn)
+        if predicate is False:
             _event(
-                state,
-                insn,
-                "store",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                value=value,
-                address=address,
-                expression=_render(address),
-                concrete_write=_dm_write(state, address, 4, value)
-                if space == "DM"
-                else False,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width="normal-word",
+                state, insn, "type3a-skipped", condition=cond, predicate_assumption=False
             )
-        else:
-            loaded = _load_normal_ureg(state, space, address, ureg)
-            _event(
-                state,
-                insn,
-                "load",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                address=address,
-                expression=_render(address),
-                concrete_value=loaded,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width="normal-word",
-            )
-        if post_modify:
-            state.uregs[16 + index] = modified
-        if compute is not None:
-            _apply_compute(state, insn, compute)
-        return _advance(state, insn)
+            return _advance(state, insn)
+        executed, skipped = _copy(state), _copy(state)
+        run_transfer(executed)
+        executed.trace[-1].update(condition=cond, predicate_assumption=True)
+        _event(
+            skipped, insn, "type3a-skipped", condition=cond, predicate_assumption=False
+        )
+        return _advance(executed, insn) + _advance(skipped, insn)
     if name == "14a":
         if _field(f, "l"):
             code = _field(f, "ureg")
@@ -2578,8 +3609,10 @@ def _execute(state: State, insn: Instruction) -> List[State]:
             return [_stop(state, insn, "empty short compute")]
         _apply_compute(state, insn, compute)
         return _advance(state, insn)
-    if name == "2a_short":
-        # The 32-bit 0x01 form has no condition field: always execute.
+    if name in ("2a_short", "2b"):
+        # Both are 32-bit unconditional full-compute forms with no
+        # condition field (Type2b: PRM prefix 0xc0, decode_table.json
+        # "prm figure (overrides PGR; firmware-confirmed)"): always execute.
         try:
             compute = _compute(f, False, dict(state.uregs), state.special)
         except ValueError as error:
@@ -3170,7 +4203,39 @@ def _execute(state: State, insn: Instruction) -> List[State]:
                         wrapped = True
                     result = Const(candidate)
             else:
-                result = Unknown("scaled circular modify I%d" % src)
+                bounded = _stack_bounded_symbol(v)
+                byte_length = length.value * scale if isinstance(length, Const) else None
+                if (
+                    bounded is not None
+                    and byte_length is not None
+                    and abs(bounded[1]) < byte_length
+                ):
+                    # v has no proof yet of its own concrete value, but it
+                    # is a symbol some caller has already bounded (an
+                    # entry-time seed, or an earlier circular-MODIFY-
+                    # derived symbol -- recursively, ultimately grounded in
+                    # an entry-time seed), offset by less than one buffer
+                    # length. PRM p.6-23: "If the index pointer falls
+                    # outside the buffer, the DAG subtracts or adds the
+                    # buffer length to the index value, wrapping the index
+                    # pointer back within the start and end boundaries of
+                    # the buffer" -- one +-byte_length correction. So the
+                    # true (concrete) result is v + delta, corrected by at
+                    # most one +-byte_length: within one buffer length of
+                    # wherever v's own bound places it -- never a claim
+                    # that the result equals v, another modify site's
+                    # result, or the same site's own value on a different
+                    # visit. A FRESH symbol (never v's own name) is minted
+                    # so two circular-MODIFY results are never treated as
+                    # equal or made to cancel by the Affine algebra; this
+                    # module does not itself know or state the numeric
+                    # bound -- that is the caller's fact (tools/
+                    # sharcwriters.py's STACK_SYMBOLS / CIRC_WRAP_SLACK).
+                    fresh = "%s%d_%x" % (CIRC_SYMBOL_PREFIX, src, state.pc_sw)
+                    result = Affine(constant=0, terms=((fresh, 1),))
+                    circular = True
+                else:
+                    result = Unknown("scaled circular modify I%d" % src)
         state.uregs[16 + dst] = result
         _event(
             state,

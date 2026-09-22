@@ -453,6 +453,653 @@ def conditional_semantics(cond_fname, semantic):
     return head + ["if (!holds) goto inst_next;", stmt]
 
 
+def constrained_terms(word_terms, field_info, constraints, tag):
+    """Clone `word_terms` and pin `constraints` using private pattern fields."""
+    result = {word: list(terms) for word, terms in word_terms.items()}
+    for label, value in constraints:
+        _base, _shift, chunks, _hi, _lo = field_info[label]
+        assert len(chunks) == 1
+        word, _fname, clo, nbits = chunks[0]
+        alias = FIELDS.get(word, clo + nbits - 1, clo, tag)
+        result[word].append(f"{alias}=0x{value:x}")
+    return result
+
+
+def dm_byte_addr_to_ram_unit(addr_name="addr", isl2_name="isl2", unit_name="unit"):
+    """SLEIGH lines translating a SHARC DM BYTE address (already in local
+    `addr_name`) into a unit offset in the `ram` space (local `unit_name`),
+    for use as `*[ram]:4 {unit_name}`.
+
+    The generated `ram` space has wordsize=2 (so short-word CODE addresses
+    land on their own bytes: unit n -> Ghidra byte offset 2n), but DM
+    literals in the instruction stream are byte addresses, not short-word
+    ones. Ghidra always scales a LOAD/STORE offset by the space's wordsize,
+    so using the byte address directly as the offset would access byte
+    2*addr instead of addr. Dividing by 2 here (`addr >> 1`) undoes that
+    scaling for the ordinary case, so Ghidra byte offset = addr, matching
+    the importer's placement of on-chip and external DM literals at their
+    own byte address (tools/sharc_import.py `ghidra_addr`).
+
+    The one exception is the loader's bounded L2 byte window
+    (0x20000000..0x20020000 exclusive), which is NOT identity-mapped: it
+    aliases short-word range 0x00B80000.. (tools/sharcldr.py L2_BYTE_BASE/
+    L2_BYTE_LIMIT/L2_SW_BASE). For an address in that window the unit is
+    L2_SW_BASE + (addr - L2_BYTE_BASE)/2, which equals (addr >> 1) +
+    (L2_SW_BASE - L2_BYTE_BASE/2) = (addr >> 1) + 0xF0B80000 (32-bit
+    two's-complement: 0x00B80000 - 0x10000000 mod 2**32). `isl2` is that
+    window's indicator (1 inside, 0 outside), so the same expression covers
+    both cases without a conditional branch in the semantics.
+
+    DM only (g==0): PM data addresses are 48-bit-word block addresses, not
+    byte addresses, and are not translated by this helper. Both call sites
+    below (type14a_scalar_constructors, type3b_exact_constructors) already
+    pin g=0.
+
+    Odd DM literals lose their low bit here (`>> 1` truncates); every
+    Type14a DM literal actually present in the DT2 1.16 main program is
+    even (verified by tools/sharcinv.py; see docs/findings/
+    05-sharc-isa-and-decoding.md), so this is a noted limitation rather
+    than an observed bug.
+    """
+    return [
+        f"local {isl2_name}:4 = zext(({addr_name} >= 0x20000000) "
+        f"&& ({addr_name} < 0x20020000));",
+        f"local {unit_name}:4 = ({addr_name} >> 1) + {isl2_name} * 0xF0B80000;",
+    ]
+
+
+# ----------------------------------------------------------------------
+# Indexed DM memory forms (Type15b, Type4a, Type3a): shared p-code builders.
+#
+# All three address DM through a DAG1 (g==0) index register I[i]. Type4a
+# and Type3a additionally support post-modify addressing (u==1), which can
+# update I[i] by a signed offset -- but only when the paired L register is
+# zero; when L[i] != 0 circular buffering is active for that index and the
+# wrap is not modelled (see circular_guard). The public PRM confirms
+# circular addressing applies only to post-modify updates, never pre-modify
+# (out/refs/sc58x-2158x-prm/all.txt, "Circular Buffering Mode": "Circular
+# buffering starting at any address may only use post-modify addressing.")
+# ----------------------------------------------------------------------
+
+# tag -> SLEIGH field name of a private, register-bank-attached alias over
+# an `i`/`m` field's bits (see bank_field()). Populated while generating
+# Type15b/4a/3a's constructors; emitted as `attach variables` lines in
+# main() once every form has been processed.
+BANK_ALIASES = {}
+BANK_REGISTER_LISTS = {
+    "ibank": [f"I{i}" for i in range(8)],
+    "lbank": [f"L{i}" for i in range(8)],
+    "mbank": [f"M{i}" for i in range(8)],
+}
+
+
+def field_fname(field_info, label):
+    """-> the SLEIGH field name of a label already registered as exactly one
+    (word, hi, lo) chunk (not split across words)."""
+    _base, _shift, chunks, _hi, _lo = field_info[label]
+    assert len(chunks) == 1, f"{label}: expected a single-word field"
+    _word, fname, _clo, _nbits = chunks[0]
+    return fname
+
+
+def field_word(field_info, label):
+    """-> the token word of a label already registered as a single chunk."""
+    _base, _shift, chunks, _hi, _lo = field_info[label]
+    assert len(chunks) == 1, f"{label}: expected a single-word field"
+    return chunks[0][0]
+
+
+def index_alias(field_info, label, tag):
+    """-> a NEW, unconstrained SLEIGH field over the same bits as
+    field_info[label], registered under `tag` so it is a distinct token
+    field from the original (bare, displayed) one -- lets the same raw code
+    be read once as a plain integer and again as a register-bank selector
+    (see bank_field), the same trick constrained_terms uses for pinned
+    values, just left bare here instead of constrained."""
+    _base, _shift, chunks, _hi, _lo = field_info[label]
+    assert len(chunks) == 1, f"{label}: expected a single-word field"
+    word, _fname, clo, nbits = chunks[0]
+    return FIELDS.get(word, clo + nbits - 1, clo, tag)
+
+
+def bank_field(field_info, label, tag):
+    """Register (once; FIELDS.get dedups by bit position) the `tag`-named
+    alias of field_info[label] and remember it in BANK_ALIASES so main()
+    attaches it to the right register bank. `i` sits at the same frame
+    position in every indexed memory form, so repeated calls across
+    Type15b/4a/3a resolve to the same physical field and a single attach."""
+    name = index_alias(field_info, label, tag)
+    BANK_ALIASES[tag] = name
+    return name
+
+
+def with_bare(word_terms, *additions):
+    """Clone `word_terms` and add each (word, fname) as an extra
+    unconstrained pattern term -- for a private alias field (e.g. a
+    register-bank selector from bank_field) that isn't already present in
+    the generic pattern built by build_field_terms."""
+    result = {word: list(terms) for word, terms in word_terms.items()}
+    for word, fname in additions:
+        result.setdefault(word, []).append(fname)
+    return result
+
+
+def split_sign_magnitude(field_info, label, sign_tag, mag_tag):
+    """-> (word, sign_fname, mag_fname, mag_bits) for a field whose top bit
+    is a sign and the remaining low bits are an unsigned magnitude (SHARC+'s
+    usual small-signed-immediate encoding, e.g. Type15b's 7-bit `data`).
+    Registers two NEW fields over the SAME bits as field_info[label] (see
+    index_alias) so both are available as bare operands alongside the
+    original combined field."""
+    _base, _shift, chunks, _hi, _lo = field_info[label]
+    assert len(chunks) == 1, f"{label}: expected a single-word field"
+    word, _fname, clo, nbits = chunks[0]
+    mag_bits = nbits - 1
+    sign_fname = FIELDS.get(word, clo + nbits - 1, clo + mag_bits, sign_tag)
+    mag_fname = FIELDS.get(word, clo + mag_bits - 1, clo, mag_tag)
+    return word, sign_fname, mag_fname, mag_bits
+
+
+def sign_magnitude_offset(name, sign_fname, mag_fname, mag_bits, scale):
+    """P-code lines computing `name`:4 = ((magnitude) - 2**mag_bits *
+    (sign bit)) * scale -- the exact two's-complement value of a
+    [1 sign bit, mag_bits-bit magnitude] split immediate, pre-multiplied by
+    the DM access scale (normal words are 4 bytes here; see module
+    docstring). This identity holds because an n-bit two's-complement value
+    is -2**(n-1)*sign + (the low n-1 bits read as unsigned).
+
+    A bare token field has no inherent byte size when it isn't a whole
+    number of bytes wide, so `zext()` can't take one as its input directly
+    (sleigh: "Could not resolve at least 1 variable size") -- first copy it
+    into an explicitly-sized local (same idiom as Type17a/b's high16/low16),
+    then zext that."""
+    return [
+        f"local {name}_signraw:1 = {sign_fname};",
+        f"local {name}_magraw:1 = {mag_fname};",
+        f"local {name}_sign:4 = zext({name}_signraw);",
+        f"local {name}_mag:4 = zext({name}_magraw);",
+        f"local {name}:4 = ({name}_mag - ({name}_sign << {mag_bits})) * {scale};",
+    ]
+
+
+def compute_marker_lines(hi_fname, lo_fname, local="cmp", skip_label="nocompute"):
+    """Combine a 23-bit `compute` field's word1 (bits 22:16, 7 bits) and
+    word2 (bits 15:0, 16 bits) chunks into one 4-byte local and call the
+    opaque `compute` marker when it is nonzero, skipping it otherwise.
+    SHARC runs compute in parallel with the surrounding transfer, reading
+    the pre-transfer register values; since `compute` models no effect at
+    all, running this check after the transfer in the emitted p-code changes
+    nothing observable."""
+    return [
+        f"local {local}hi:1 = {hi_fname};",
+        f"local {local}lo:2 = {lo_fname};",
+        f"local {local}:4 = (zext({local}hi) << 16) | zext({local}lo);",
+        f"if ({local} == 0) goto <{skip_label}>;",
+        f"compute({local});",
+        f"<{skip_label}>",
+    ]
+
+
+def circular_guard(ibank_fname, lbank_fname, i_index_local, off_local,
+                    plain_label="pmplain", done_label="pmdone"):
+    """P-code lines for a post-modify (u==1) index-register update. When the
+    paired L register is nonzero, circular buffering is active for this
+    index and the wrap is not modelled here, so the update is deferred
+    entirely to the opaque `circular` marker (argument: `i_index_local`, an
+    ALREADY-sized local holding the raw index register number, not its
+    content -- see sized_bit) and the plain update is skipped. Otherwise
+    this is an ordinary linear post-modify: I = I + offset."""
+    return [
+        f"if ({lbank_fname} == 0) goto <{plain_label}>;",
+        f"circular({i_index_local});",
+        f"goto <{done_label}>;",
+        f"<{plain_label}>",
+        f"{ibank_fname} = {ibank_fname} + {off_local};",
+        f"<{done_label}>",
+    ]
+
+
+def sized_bit(local_name, fname, size=1):
+    """P-code line copying a bare (possibly sub-byte) token field into an
+    explicitly-sized local. A bare field has no inherent byte size when its
+    width isn't a whole number of bytes, so it can't be handed directly to
+    `zext()` or to a pcodeop as an argument (sleigh: "Could not resolve at
+    least 1 variable size") -- this is the same "materialize, then use"
+    step sign_magnitude_offset already needs for the same reason."""
+    return [f"local {local_name}:{size} = {fname};"]
+
+
+def direction_branch(d_fname, load_stmt, store_stmt,
+                      load_label="isload", done_label="iodone"):
+    """P-code lines selecting a LOAD or STORE at runtime from the bare `d`
+    field's raw value (0 = load, 1 = store), instead of a second SLEIGH
+    constructor per direction. Type3a/4a keep exactly two constructors each
+    (cond TRUE / not) so cond, u and d together don't multiply into extra
+    constructors that would each separately cross Type3b/3d or Type4b/4d
+    (see the module note above type15b_indexed_constructors)."""
+    return sized_bit("draw", d_fname) + [
+        "local dmod:4 = zext(draw);",
+        f"if (dmod == 0) goto <{load_label}>;",
+        store_stmt,
+        f"goto <{done_label}>;",
+        f"<{load_label}>",
+        load_stmt,
+        f"<{done_label}>",
+    ]
+
+
+def premodify_or_post(ibank_fname, off_local, u_fname, u_local="umod"):
+    """P-code lines computing `addr`:4 = I[i], pre-modified by `off_local`
+    when u==0 and left unchanged when u==1 -- purely arithmetically
+    (multiplying the offset by 0 or 1, read from the bare `u` field's raw
+    value), so there is exactly one `local addr` declaration regardless of
+    u. `u_local` (0 or 1) is left available for the caller's post-modify
+    update gate (see postmodify_update) instead of re-deriving it."""
+    return sized_bit("uraw", u_fname) + [
+        f"local {u_local}:4 = zext(uraw);",
+        f"local unot:4 = 1 - {u_local};",
+        f"local addr:4 = {ibank_fname} + {off_local} * unot;",
+    ]
+
+
+def postmodify_update(ibank_fname, lbank_fname, i_raw_fname, off_local,
+                       u_local="umod", skip_label="noupdate"):
+    """P-code lines performing the post-modify (u==1) index-register update
+    -- circular-guarded -- gated by `u_local` (already computed by
+    premodify_or_post: 0 when u==0, 1 when u==1), so the update is skipped
+    entirely, not just made a no-op, when u==0 (pre-modify forms never
+    update I)."""
+    return (
+        sized_bit("pmidx", i_raw_fname)
+        + [f"if ({u_local} == 0) goto <{skip_label}>;"]
+        + circular_guard(ibank_fname, lbank_fname, "pmidx", off_local)
+        + [f"<{skip_label}>"]
+    )
+
+
+def whole_instruction_cond_gate(cond_fname):
+    """P-code lines gating an ENTIRE instruction body behind `condition()`.
+    Unlike conditional_semantics (a single flow statement for a branch
+    form), a memory form's condition covers address computation, the
+    transfer, the compute marker and any post-modify update -- so the whole
+    body is skipped by falling through to inst_next when it does not hold."""
+    return [
+        f"local code:4 = {cond_fname};",
+        "local holds:1 = condition(code);",
+        "if (!holds) goto inst_next;",
+    ]
+
+
+def type15b_indexed_constructors(
+    mnem, disp_ops, word_terms, nwords, active_words, field_info
+):
+    """Type15b indexed DM load/store: addr = I[i] + sext7(data)*4. Pre-modify
+    only -- I is never updated. g=0, l=0 only (PM and long-word variants keep
+    the generic empty body from gen_constructor's own fallback Constructor)."""
+    ibank = bank_field(field_info, "i[2:0]", "ibank")
+    ibank_word = field_word(field_info, "i[2:0]")
+    data_word, sign_fname, mag_fname, mag_bits = split_sign_magnitude(
+        field_info, "data[6:0]", "data15b_sign", "data15b_mag"
+    )
+    ureg = field_fname(field_info, "ureg[6:0]")
+    offset = sign_magnitude_offset("off", sign_fname, mag_fname, mag_bits, 4)
+    address = [f"local addr:4 = {ibank} + off;"]
+
+    ctors = []
+    for direction, transfer in (
+        (0, [f"{ureg} = *[ram]:4 unit;"]),
+        (1, [f"*[ram]:4 unit = {ureg};"]),
+    ):
+        wt = constrained_terms(
+            word_terms,
+            field_info,
+            (("g", 0), ("l", 0), ("d", direction)),
+            "type15b_indexed",
+        )
+        wt = with_bare(
+            wt, (ibank_word, ibank), (data_word, sign_fname), (data_word, mag_fname)
+        )
+        ctors.append(
+            Constructor(
+                mnem,
+                disp_ops,
+                wt,
+                nwords,
+                semantic_lines=offset
+                + address
+                + dm_byte_addr_to_ram_unit()
+                + transfer,
+                active_words=active_words,
+            )
+        )
+    return ctors
+
+
+# Type3a/Type4a share their top bits with a MORE SPECIFIC sibling form each
+# (Type3b/Type3d pin part of Type3a's free `compute` field; Type4b/Type4d
+# pin part of Type4a's) that leaves g/d/u/l/cond completely free. Pinning
+# g (and l, for Type3a) the way type14a_scalar_constructors pins g/d/l would
+# make our pattern genuinely CROSS each sibling's (sec 7.8.1: neither
+# contains the other -- ours is free on compute, the sibling's is free on
+# g/d/u/l/cond), which sleigh rejects outright without a third, more
+# specific "intersection" constructor per crossing pair (see
+# gen_memory_crossing_resolvers). Splitting further on d and u as separate
+# SLEIGH constructors (as type14a_scalar does for d) would multiply that
+# crossing count for no benefit, since d/u don't need pattern-level
+# specialization -- their bare bit values are perfectly usable at p-code
+# RUNTIME (direction_branch, premodify_or_post/postmodify_update). Only
+# `cond` keeps its own two-constructor TRUE/non-TRUE split (condtrue), since
+# that one has a real runtime cost: the common TRUE case must avoid the
+# unimplemented `condition()` CALLOTHER entirely, or EmulatorHelper would
+# fault on every Type3a/Type4a instruction instead of just the rare
+# conditional ones.
+# Type3b and Type4b are NOT 48-bit siblings sharing Type3a/4a's frame the
+# way Type3d/Type4d are -- decode_table.json gives them width 32 (2 words):
+# a real Type3b/4b instruction is only 4 bytes, immediately followed by an
+# unrelated next instruction, not a 6-byte Type3a/4a with extra `compute`
+# bits pinned. So popcount is not a meaningful tie-break against them: a
+# genuine 4-byte Type3b/4b match must ALWAYS win over any 6-byte Type3a/4a
+# reading (confirmed against the firmware -- tools/sharc_disasm.py
+# independently gives sw 0x1c1494 length 4 as Type3b -- see task report), or
+# our resolver would silently swallow the next instruction's first word as
+# a bogus `compute[15:0]`. Type3d/Type4d genuinely are same-length (48-bit)
+# siblings, so the oracle's real tie-break (longest leading run, then most
+# fixed bits; see module docstring) applies to them as intended.
+MEMORY_CROSSING_RESOLVERS = [
+    # (base form, base ctor index in its own ctors_by_form list -- 0 is the
+    #  non-TRUE/gated variant, 1 is the cond==TRUE variant; see
+    #  type3a_indexed_constructors/type4a_indexed_constructors), sibling
+    # form, which side's semantics the resolver keeps.
+    #
+    # Type3b/Type4b (32-bit): sibling always wins, for both our variants.
+    # `extra` replicates ALL of that base variant's own extra fixed bits
+    # (g/l, plus cond=TRUE for index 1) on top of the sibling's own pattern,
+    # since those pins come from our constrained_terms() calls, not from a
+    # mask diff (g/l/cond are plain FIELDS in decode_table.json, not part
+    # of Type3a/4a's own mask).
+    dict(base="Type3a", index=0, sibling="Type3b", prefer="sibling",
+         extra=[(32, 32, 0), (30, 30, 0)]),
+    dict(base="Type3a", index=1, sibling="Type3b", prefer="sibling",
+         extra=[(32, 32, 0), (30, 30, 0), (37, 33, COND_TRUE)]),
+    dict(base="Type4a", index=0, sibling="Type4b", prefer="sibling",
+         extra=[(40, 40, 0)]),
+    dict(base="Type4a", index=1, sibling="Type4b", prefer="sibling",
+         extra=[(40, 40, 0), (37, 33, COND_TRUE)]),
+    # Type3d/Type4d (48-bit, genuine siblings): the oracle's real tie-break
+    # applies. Both sides tie the leading run at the base form's own run
+    # length (the sibling's extra fixed bits sit well below it, inside
+    # `compute`), so total popcount decides. Computed once from
+    # decode_table.json's masks: Type3a-gated=5 pop < Type3d=7 (sibling
+    # wins); Type3a-condtrue=10 pop > 7 (base wins). Type4a-gated=5 pop <
+    # Type4d=8 (sibling wins); Type4a-condtrue=10 pop > 8 (base wins). A
+    # "base"-preferred entry derives its extra bits automatically from the
+    # sibling's mask diff (extra_fixed_runs), since those genuinely are the
+    # sibling's distinguishing mask bits.
+    dict(base="Type3a", index=0, sibling="Type3d", prefer="sibling",
+         extra=[(32, 32, 0), (30, 30, 0)]),
+    dict(base="Type3a", index=1, sibling="Type3d", prefer="base"),
+    dict(base="Type4a", index=0, sibling="Type4d", prefer="sibling",
+         extra=[(40, 40, 0)]),
+    dict(base="Type4a", index=1, sibling="Type4d", prefer="base"),
+]
+
+
+def type4a_indexed_constructors(
+    mnem, disp_ops, word_terms, nwords, active_words, field_info
+):
+    """Type4a indexed DM load/store: offset = sext6(data)*4 from an I
+    register. u=0: addr = I + offset, no update. u=1: addr = I, then
+    (circular-guarded) I += offset -- both via runtime branching on the bare
+    `u`/`d` fields, not separate constructors (see MEMORY_CROSSING_RESOLVERS
+    above). g=0 only. Two constructors: cond==TRUE (no runtime gate) and
+    everything else (whole_instruction_cond_gate)."""
+    ibank = bank_field(field_info, "i[2:0]", "ibank")
+    ibank_word = field_word(field_info, "i[2:0]")
+    lbank = bank_field(field_info, "i[2:0]", "lbank")
+    i_raw = field_fname(field_info, "i[2:0]")
+    u_fname = field_fname(field_info, "u")
+    d_fname = field_fname(field_info, "d")
+    sign_fname = field_fname(field_info, "data[5:5]")
+    mag_fname = field_fname(field_info, "data[4:0]")
+    dreg = field_fname(field_info, "dreg[3:0]")
+    cond_fname = field_fname(field_info, "cond[4:0]")
+    comp_hi = field_fname(field_info, "compute[22:16]")
+    comp_lo = field_fname(field_info, "compute[15:0]")
+
+    body = (
+        sign_magnitude_offset("off", sign_fname, mag_fname, 5, 4)
+        + premodify_or_post(ibank, "off", u_fname)
+        + dm_byte_addr_to_ram_unit()
+        + direction_branch(
+            d_fname, f"{dreg} = *[ram]:4 unit;", f"*[ram]:4 unit = {dreg};"
+        )
+        + compute_marker_lines(comp_hi, comp_lo)
+        + postmodify_update(ibank, lbank, i_raw, "off")
+    )
+
+    ctors = []
+    for cond_true in (False, True):
+        wt = constrained_terms(word_terms, field_info, (("g", 0),), "type4a_indexed")
+        wt = with_bare(wt, (ibank_word, ibank), (ibank_word, lbank))
+        if cond_true:
+            wt = constrained_terms(
+                wt, field_info, (("cond[4:0]", COND_TRUE),), "condtrue"
+            )
+            semantic = list(body)
+        else:
+            semantic = whole_instruction_cond_gate(cond_fname) + body
+        ctors.append(
+            Constructor(
+                mnem, disp_ops, wt, nwords, semantic_lines=semantic,
+                active_words=active_words,
+            )
+        )
+    return ctors
+
+
+def type3a_indexed_constructors(
+    mnem, disp_ops, word_terms, nwords, active_words, field_info
+):
+    """Type3a indexed DM load/store: offset = M[m]*4 (a full 32-bit register
+    value, already effectively signed -- no sign-extension needed). u=0:
+    addr = I + offset, no update. u=1: addr = I, then (circular-guarded)
+    I += offset -- both via runtime branching on the bare `u`/`d` fields,
+    not separate constructors (see MEMORY_CROSSING_RESOLVERS above). g=0,
+    l=0 only. Two constructors: cond==TRUE (no runtime gate) and everything
+    else (whole_instruction_cond_gate)."""
+    ibank = bank_field(field_info, "i", "ibank")
+    ibank_word = field_word(field_info, "i")
+    lbank = bank_field(field_info, "i", "lbank")
+    i_raw = field_fname(field_info, "i")
+    mbank = bank_field(field_info, "m", "mbank")
+    mbank_word = field_word(field_info, "m")
+    u_fname = field_fname(field_info, "u")
+    d_fname = field_fname(field_info, "d")
+    ureg = field_fname(field_info, "ureg")
+    cond_fname = field_fname(field_info, "cond")
+    (_w0, comp_hi, _c0, _n0), (_w1, comp_lo, _c1, _n1) = field_info["compute"][2]
+
+    body = (
+        [f"local sm:4 = {mbank} * 4;"]
+        + premodify_or_post(ibank, "sm", u_fname)
+        + dm_byte_addr_to_ram_unit()
+        + direction_branch(
+            d_fname, f"{ureg} = *[ram]:4 unit;", f"*[ram]:4 unit = {ureg};"
+        )
+        + compute_marker_lines(comp_hi, comp_lo)
+        + postmodify_update(ibank, lbank, i_raw, "sm")
+    )
+
+    ctors = []
+    for cond_true in (False, True):
+        wt = constrained_terms(
+            word_terms, field_info, (("g", 0), ("l", 0)), "type3a_indexed"
+        )
+        wt = with_bare(wt, (ibank_word, ibank), (mbank_word, mbank), (ibank_word, lbank))
+        if cond_true:
+            wt = constrained_terms(
+                wt, field_info, (("cond", COND_TRUE),), "condtrue"
+            )
+            semantic = list(body)
+        else:
+            semantic = whole_instruction_cond_gate(cond_fname) + body
+        ctors.append(
+            Constructor(
+                mnem, disp_ops, wt, nwords, semantic_lines=semantic,
+                active_words=active_words,
+            )
+        )
+    return ctors
+
+
+def extra_fixed_runs(mask, value, exclude_mask):
+    """-> [(frame_hi, frame_lo, value), ...] for the contiguous runs of
+    MASK's fixed bits that EXCLUDE_MASK does not already fix -- the extra
+    constraint a sibling form (e.g. Type3b) adds on top of a base form's own
+    mask (e.g. Type3a's). Same shape as CROSSING_RESOLVERS' `extra` list, so
+    it can be applied to a Constructor's word_terms the same way
+    gen_crossing_resolvers does."""
+    extra_mask = mask & ~exclude_mask
+    runs = []
+    b = 47
+    while b >= 0:
+        if (extra_mask >> b) & 1:
+            hi = b
+            while b - 1 >= 0 and (extra_mask >> (b - 1)) & 1:
+                b -= 1
+            lo = b
+            runs.append((hi, lo, (value >> lo) & ((1 << (hi - lo + 1)) - 1)))
+        b -= 1
+    return runs
+
+
+def gen_memory_crossing_resolvers(ctors_by_form, forms_by_name):
+    """Build the intersection constructors MEMORY_CROSSING_RESOLVERS lists:
+    one per (Type3a/4a variant, sibling) crossing pair, cloning whichever
+    side's pattern+semantics the oracle's tie-break prefers and additionally
+    pinning the OTHER side's extra fixed bits -- see sec 7.8.1's documented
+    resolution technique (also used by gen_crossing_resolvers above, for an
+    unrelated pair of forms)."""
+    resolvers = []
+    for spec in MEMORY_CROSSING_RESOLVERS:
+        base_ctor = ctors_by_form[spec["base"]][spec["index"]]
+        # The sibling's own generic constructor is always LAST in its list
+        # (gen_constructor appends it after any of the sibling's own
+        # specializations, e.g. Type3b's type3b_exact_constructors).
+        sibling_ctor = ctors_by_form[spec["sibling"]][-1]
+        winner = base_ctor if spec["prefer"] == "base" else sibling_ctor
+
+        # The resolver's pattern must be built from the WINNER's own
+        # word_terms: its mnemonic/display_ops/semantics all reference
+        # field names that only exist in ITS pattern (e.g. Type3b's `w`/`x`
+        # aren't in Type3a's word_terms at all, and vice versa for our
+        # ibank/lbank/mbank aliases) -- cloning the other side's word_terms
+        # would leave the winner's own operands "undefined" to sleigh.
+        if spec["prefer"] == "base":
+            # Sibling's own extra fixed bits, genuinely derivable from its
+            # mask diff against the base form's mask.
+            sibling_mask = int(forms_by_name[spec["sibling"]]["mask"], 16)
+            sibling_value = int(forms_by_name[spec["sibling"]]["value"], 16)
+            base_mask = int(forms_by_name[spec["base"]]["mask"], 16)
+            extra = extra_fixed_runs(sibling_mask, sibling_value, base_mask)
+        else:
+            extra = spec["extra"]
+
+        wt = {w: list(terms) for w, terms in winner.word_terms.items()}
+        for hi, lo, val in extra:
+            chunks = split_by_word(hi, lo)
+            assert len(chunks) == 1, "extra bits spanning >1 word not supported"
+            w, chi, clo = chunks[0]
+            fname = FIELDS.get(w, chi, clo, "memresolve")
+            wt.setdefault(w, []).append(f"{fname}=0x{val:x}")
+
+        resolvers.append(
+            Constructor(
+                winner.mnemonic,
+                list(winner.display_ops),
+                wt,
+                winner.nwords,
+                semantic_lines=list(winner.semantic_lines),
+                active_words=list(winner.active_words),
+            )
+        )
+    return resolvers
+
+
+def type14a_scalar_constructors(
+    mnem, disp_ops, word_terms, nwords, active_words, field_info
+):
+    """Scalar direct-DM Type14a load/store constructors, separate from Type3b."""
+    _base, _shift, high_chunks, _hi, _lo = field_info["addr[31:16]"]
+    _base, _shift, low_chunks, _hi, _lo = field_info["addr[15:0]"]
+    _base, _shift, ureg_chunks, _hi, _lo = field_info["ureg[6:0]"]
+    assert len(high_chunks) == len(low_chunks) == len(ureg_chunks) == 1
+    _word, high, _clo, _nbits = high_chunks[0]
+    _word, low, _clo, _nbits = low_chunks[0]
+    _word, ureg, _clo, _nbits = ureg_chunks[0]
+    address = [
+        f"local high16:2 = {high};",
+        f"local low16:2 = {low};",
+        "local addr:4 = (zext(high16) << 16) | zext(low16);",
+    ] + dm_byte_addr_to_ram_unit()
+    constructors = []
+    for direction, transfer in (
+        (0, [f"{ureg} = *[ram]:4 unit;"]),
+        (1, [f"*[ram]:4 unit = {ureg};"]),
+    ):
+        constructors.append(
+            Constructor(
+                mnem,
+                disp_ops,
+                constrained_terms(
+                    word_terms,
+                    field_info,
+                    (("g", 0), ("d", direction), ("l", 0)),
+                    "type14a_scalar",
+                ),
+                nwords,
+                semantic_lines=address + transfer,
+                active_words=active_words,
+            )
+        )
+    return constructors
+
+
+def type3b_exact_constructors(
+    mnem, disp_ops, word_terms, nwords, active_words, field_info
+):
+    """The traced scalar Type3b reader; its specialization is independent of Type14a."""
+    terms = constrained_terms(
+        word_terms,
+        field_info,
+        (
+            ("u", 0),
+            ("i[2:0]", 4),
+            ("m[2:0]", 4),
+            ("cond[4:0]", COND_TRUE),
+            ("g", 0),
+            ("d", 0),
+            ("l", 0),
+            ("ureg[6:0]", 28),
+            ("w", 1),
+            ("x", 1),
+        ),
+        "type3b_exact",
+    )
+    return [
+        Constructor(
+            mnem,
+            disp_ops,
+            terms,
+            nwords,
+            semantic_lines=["local addr:4 = I4 + M4;"]
+            + dm_byte_addr_to_ram_unit()
+            + ["I12 = *[ram]:4 unit;"],
+            active_words=active_words,
+        )
+    ]
+
+
 # Shared branch-target subtables, keyed by (mode, bit-shape) -- NOT by mode
 # alone, because "pcrel" now covers two unrelated field shapes: Type25a_pcrel/
 # Type8a_rel's 24-bit reladdr (words 1-2) and Type9a_rel/Type9b_rel's 6-bit
@@ -829,6 +1476,39 @@ def gen_constructor(form):
 
             if cond_true is False:
                 semantic = conditional_semantics(cond[1], semantic)  # pyright: ignore[reportOptionalSubscript]
+
+            # Keep each form's specializations in its own helper: adding one
+            # cannot replace the other's constructors or its generic fallback.
+            if name == "Type14a":
+                ctors.extend(
+                    type14a_scalar_constructors(
+                        mnem, disp_ops, wt, nwords, active_words, field_info
+                    )
+                )
+            if name == "Type3b":
+                ctors.extend(
+                    type3b_exact_constructors(
+                        mnem, disp_ops, wt, nwords, active_words, field_info
+                    )
+                )
+            if name == "Type15b":
+                ctors.extend(
+                    type15b_indexed_constructors(
+                        mnem, disp_ops, wt, nwords, active_words, field_info
+                    )
+                )
+            if name == "Type4a":
+                ctors.extend(
+                    type4a_indexed_constructors(
+                        mnem, disp_ops, wt, nwords, active_words, field_info
+                    )
+                )
+            if name == "Type3a":
+                ctors.extend(
+                    type3a_indexed_constructors(
+                        mnem, disp_ops, wt, nwords, active_words, field_info
+                    )
+                )
             ctors.append(
                 Constructor(
                     mnem,
@@ -894,13 +1574,15 @@ def gen_crossing_resolvers(ctors_by_form):
             # Remove the bare field reference this resolver's extra
             # constraint subsumes (can't be both bare and value-constrained).
             drop_names = {
-                n for n in FIELDS.used_names if n.startswith(spec["drop_label"] + "_")
+                n
+                for n in FIELDS.used_names
+                if n.startswith(spec["drop_label"] + "_")  # pyright: ignore[reportOperatorIssue]
             }
             for w in wt:
                 wt[w] = [t for t in wt[w] if t not in drop_names]
             disp_ops = [o for o in disp_ops if o not in drop_names]
 
-        for hi, lo, val in spec["extra"]:
+        for hi, lo, val in spec["extra"]:  # pyright: ignore[reportOptionalIterable]
             chunks = split_by_word(hi, lo)
             # Both current cases (compute[22:16]; a single status bit) fit in
             # one word; `val` is taken as already being that whole field's
@@ -963,6 +1645,8 @@ def main():
         ctors_by_form[form["name"]] = ctors
 
     all_ctors.extend(gen_crossing_resolvers(ctors_by_form))
+    forms_by_name = {form["name"]: form for form in visa_forms}
+    all_ctors.extend(gen_memory_crossing_resolvers(ctors_by_form, forms_by_name))
 
     # find dreg/cdreg 4-bit fields for register attachment (after all forms
     # processed, so FIELDS registry is fully populated)
@@ -1116,6 +1800,12 @@ def main():
     lines.append(
         "define pcodeop condition;   # cond code (PGR Table 10-4) holds; flags not modelled yet"
     )
+    lines.append(
+        "define pcodeop compute;   # 23-bit parallel compute field; not decoded"
+    )
+    lines.append(
+        "define pcodeop circular;   # post-modify index update when L[i] != 0; wrap not modelled"
+    )
     lines.append("")
 
     for w in range(3):
@@ -1140,6 +1830,24 @@ def main():
             + " ];"
         )
         lines.append("")
+
+    # DAG1 bank (g==0) index-register aliases for the indexed DM forms
+    # (Type15b/4a/3a): the SAME 3-bit `i`/`m` code is read once bare (the
+    # raw index, e.g. for the `circular` marker) and again through one or
+    # two of these private, register-attached aliases (I[i] as the address
+    # base, L[i] to guard post-modify circular buffering, M[m] as a modify
+    # register) -- see bank_field()/BANK_ALIASES below. Each field is only
+    # 3 bits (8 codes), matching I0-I7/L0-L7/M0-M7 exactly.
+    for tag, regs in BANK_REGISTER_LISTS.items():
+        if tag in BANK_ALIASES:
+            lines.append(
+                "attach variables [ "
+                + BANK_ALIASES[tag]
+                + " ] [ "
+                + " ".join(regs)
+                + " ];"
+            )
+            lines.append("")
 
     # get_target_subtable() registers the plain, no-extra-bits variant for a
     # branch form before it is known whether that form's constructors will end

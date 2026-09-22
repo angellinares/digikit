@@ -80,6 +80,37 @@ None of the three is a proof, and a clean result from all three is a lower
 bound on safety. Run all three before relying on any region, and re-run them
 per image — this map is for Digitakt II 1.15C only.
 
+### Digitakt II 1.16 **[D]**
+
+The 1.16 MAIN OS (`section_3_MAIN_OS.bin`, 3,275,616 bytes, sha
+`57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d`) ends at
+`0x4031ff60`. Its trailing zero run is `0x403117c4`-`0x4031ff60`, 59,292
+bytes, 1,104 bytes longer than 1.15C's. The layout is close to 1.15C's
+shifted by `0x18000`, but the middle differs:
+
+| range | bytes | status |
+|---|---|---|
+| `0x403117c4`-`0x40311c14` | 1,104 | free — 0 references by either static method |
+| `0x40311c14`-`0x40312000` | 1,004 | free — `cave_a` |
+| `0x40312000`-`0x4031be58` | ~48,729 | **mixed** — 117 immediate and 93 Ghidra references (two Ghidra-only, computed: `0x40314cb0`, `0x40318e84`), with free gaps between live clusters |
+| `0x4031be59`-`0x4031ff60` | 16,647 | free — `cave_b`, 0 references by either method |
+
+The runtime leg is weaker than 1.15C's. A dump from
+`snapshots/dt2-1.16/boot400M.snap` reads all 59,292 bytes as zero, but the
+boot never reached the post-intro handover, even 400M instructions later
+(800M from cold boot). Both static methods agree on `cave_a` and `cave_b`.
+
+The eighth-machine clone on 1.16 (`machinepatch.plan_b` against
+`machineprofile.DT2_116`, no image written): the parts list, dispatch, group,
+name, rank, permit, hint and pertype need 39 writes and 484 bytes, 407 of
+them in `cave_b` and 77 in 25 in-place site edits. The `clone` part does not
+run on 1.16: `CLONE_EQ_SITES` and `CLONE_MASK_SITE` hold 1.15C addresses and
+ignore `profile['clone_sites']`, although the six 1.16 sites in the profile
+are byte-identical to 1.15C's. Sized from 1.15C it adds 230 bytes, a
+184-byte shim and 46 bytes over six sites, for about 714 bytes in all, 952 of
+`cave_b`'s 16,647. Cloning a machine other than SLICE also needs that
+machine's own `type == N` sites found; `clone` only knows SLICE's.
+
 ## Injecting code: the trampoline recipe
 
 Redirect an existing call site into the cave, do the new work there, then

@@ -206,7 +206,7 @@ def resume_trace(syx_path, snapshot_path, main_img, targets, watches=(),
                   step=10_000_000, want_faults=False, want_digest=False):
     """targets: dict {addr: [name, ...]}. Returns a plain JSON-serialisable
     result dict, same shape as cold_trace's."""
-    from emu.longrun import build, spin
+    from emu.longrun import build, spin, setpixel_count
     from emu.pit import Pits, intro_running, BASES as PIT_BASES
     from emu.dtim import Dtims, Timers, BASES as DTIM_BASES
 
@@ -298,7 +298,7 @@ def resume_trace(syx_path, snapshot_path, main_img, targets, watches=(),
         'vec208_is_intro_isr': vec208 == profile.intro_pit3_isr,
         'tasks_created': len(ev["tasks"]),
         'distinct_tasks_scheduled': len(ev["switch"]),
-        'setpixel': ev.get("setpixel", 0),
+        'setpixel': setpixel_count(ev),
         'sdgate': sdgate,
         'esdhc': esdhc,
     }

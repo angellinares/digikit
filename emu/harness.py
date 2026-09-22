@@ -13,7 +13,7 @@ Unicorn's m68k core has gaps that matter here. All are handled below:
   * `rte` is surfaced as intr number 0x100 (QEMU's EXCP_RTE) and must be
     implemented by hand.
 
-See docs/FINDINGS.md for how each was found.
+See docs/findings/07-emulator.md for how each was found.
 """
 import struct
 from typing import Any
