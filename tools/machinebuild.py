@@ -45,6 +45,7 @@ import hashlib
 import os
 import struct
 import sys
+from dataclasses import replace
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
@@ -273,6 +274,10 @@ def main(argv=None):
     ap.add_argument('--clone-of', type=lambda s: int(s, 0), default=6,
                      help='stock machine type whose descriptor fields the new '
                           'machine clones (default: 6)')
+    ap.add_argument('--machine', default=None,
+                     help='NAME:SHORT[:CLONE_OF[:POSITION]] for the new '
+                          'machine (default: Placeholder/PLC, cloned from '
+                          'type 6, position 7). Overrides --clone-of.')
     ap.add_argument('--parts', default=None,
                      help='comma-separated subset of machinepatch.PARTS '
                           '(default: all nine)')
@@ -305,7 +310,10 @@ def main(argv=None):
                          'profile/--clone-of combination (the descriptor array '
                          'is bss and cannot be read from the static image)')
 
-    spec = mp.MachineSpec(clone_of=args.clone_of, fields=fields)
+    if args.machine:
+        spec = replace(mp.spec_from_arg(args.machine), fields=fields)
+    else:
+        spec = mp.MachineSpec(clone_of=args.clone_of, fields=fields)
 
     if args.section3:
         section3_path = args.section3

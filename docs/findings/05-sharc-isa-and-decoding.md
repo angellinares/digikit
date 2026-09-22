@@ -643,6 +643,20 @@ Verdict: usable as a cross-check and as a base for eventual code emission,
 **provided the parcel byte-order fix is applied**. This does not address the
 Tier-2 injection-seam problem, which remains the hard part.
 
+Round trip re-run on 2026-09-22 with parcels swapped: a `selas` snippet
+(16-bit computes, compressed DM store/load, a 48-bit immediate load, a
+fused compute+DM form, a delayed jump) decodes in `tools/sharc_disasm.py`
+to the same eleven instruction boundaries, and runs in
+`tools/sharc_trace.py` with all seven expected results (the jump target was
+patched by hand, as `selas` leaves relocations unresolved).
+`tools/selasm.py` assembles a file, swaps parcels and prints both listings.
+Two more Selache decode bugs, both checked against the bits of code we
+assembled: `decode_32_group4()` merges two adjacent 16-bit Type3c
+instructions (`90 34 90 15`) into one bogus 32-bit instruction and drops
+the store; `decode_type3()` reads the fused form's M register as
+`bits(39,38)+4`, where the field is bits 40:38 with no offset, so it
+reports M5 for M1. **[V]**
+
 ## Only 22% of the image has semantics, and the emulator runs the rest as no-ops **[D][O]**
 
 The generated SLEIGH emits an empty `{}` body, never `unimpl;`, for every

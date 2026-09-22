@@ -1091,6 +1091,8 @@ contradiction.
 
 ## `FUN_1c24e9` is the filter/amp/FX converter, and it does not read the SRC page **[V]**
 
+> Corrected below: `FUN_1c24e9` does read five SRC-page words; see "`FUN_1c24e9` reads the SRC page" at the end of this file. **[C]**
+
 Mapping every `I2`-relative read through the scaling rules above:
 
 | site | form | block byte | mirror | page |
@@ -2720,3 +2722,55 @@ The whole six-stage wavetable pipeline is 662 instructions and 2,956 bytes,
 so the L2 candidate could hold a new DSP feature of that size several hundred
 times over. Space is not the constraint for new DSP code; the hook into the
 render path is. **[D]**
+
+## `FUN_1c24e9` reads the SRC page, and the machine type is only a change detector **[C][V]**
+
+Corrects "`FUN_1c24e9` ... does not read the SRC page" above. That table
+assumed 32-bit loads at x4 scale and so missed five Type4b loads whose
+access width is short-word sign-extended (x2). With `I2 = 0x2559b6 +
+track*0x60` (Type19a at `0x1c2537`, destination I2 from `is XOR idis`), per
+track `t` the function reads frame offsets `t*0x60 +`:
+
+| PC | form | frame offset | mirror |
+|---|---|---|---|
+| `0x1c265f` | 4b `DM(I2+2)` | `+0xde` | 27 (CFADE, slot 2) |
+| `0x1c265b` | 4b `DM(I2+6)` | `+0xe6` | 31 |
+| `0x1c25e5` | 4b `DM(I2+7)` | `+0xe8` | 32 |
+| `0x1c264a` | 4b `DM(I2+8)` | `+0xea` | 33 (slot 6) |
+| `0x1c264e` | 4b `DM(I2+9)` | `+0xec` | 34 (LEV) |
+
+All five are unconditional and run before the type byte is loaded
+(`0x1c26d4`), so they are the same for every machine. Two agents decoded
+them independently from `section_7_BLOB.bin`, and a concrete
+`tools/sharc_trace.py` run of `FUN_1c24e9` on a captured frame read the
+poked values back. The M-indexed reads `DM(I2,M5)` at `0x1c2648` and
+`DM(I2,M6)` at `0x1c2594` land on `+0xda`/`+0xdc` only if M5=0 and M6=1 at
+that point, which is still unproven. **[O]**
+
+A slot-6 value poked into the frame reaches a float-converted store at
+`0x1c2737` (`DM(I5-96)=R1`, `0x38888889` for raw 2), the same unpack and
+scale path the filter/amp/FX fields take; `I5` there did not resolve to a
+concrete buffer, so its reader is not yet named. CFADE's value past its
+first shift is not established: the tracer logs compute events without
+values. **[O]**
+
+The machine type word (frame `0x94+2t`) is used only as a change detector
+in `FUN_001c2b24`: `R1 = DM(I4,M0)` (cache at `0x255970`), `R0 =
+DM(I0,M0)` (live), `R1 = comp(R1,R0)` at `0x1c33d7`, then `IF EQ JUMP
+0x1c33e9 (DB)` at `0x1c33df` (`0007 0004 0a00`, j=1). The two delay-slot
+instructions `0x1c33e2` (ASHIFT R2 by -8) and `0x1c33e5`
+(`DM(I5+0xc4)=R2`) always run (two instructions after a (DB) branch, SHARC+
+PRM p.4-18); on a change the fallthrough `0x1c33e7` then stores M14, which
+nothing in the function writes, so the reset seed 1 survives. Changes also
+write M14/M13 into per-track arrays at `0x24f0ac`/`0x24f0ec` and call
+`FUN_001c60a2`, which sets a per-track flag at `0x2412c8+4+t*0x1d8+0x1b9`.
+Nothing traced indexes a table by the type value. Checked by a second agent
+against the bytes, the manual and a seeded trace run.
+
+`tools/sharcfn.py`'s `render_modify()` prints the MODIFY destination as the
+`is` register; the real destination is `is XOR idis` (plus bank), as
+`tools/sharc_trace.py` executes it. Do not trust `sharcfn.py --listing`
+destinations for 19a/16a/16b forms. **[V]**
+
+`tools/sharc_trace.py` now implements FEXT (se) (shift-immediate opcode
+0x12, PRM Table 17-9) and register-operand ASHIFT (cu=2 opcode 0x04).

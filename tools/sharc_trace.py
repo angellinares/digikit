@@ -830,6 +830,26 @@ def _shift_immediate(
         else:
             value = Const((source.value >> position) & ((1 << min(length, 32)) - 1))
         return rn, value, "field-extract-immediate", _astatx_fext(position + length, value)
+    if opcode == 0x12:
+        # PRM Table 17-9 p.17-10/17-11 (out/refs/sharc-plus-prm/all.txt
+        # lines 22781-22785): shiftimm 010010 is
+        # "RREG = fext RREG by BIT6:LEN6 (se)" -- the sign-extending twin
+        # of the already-implemented opcode 0x10. Field layout (position,
+        # length) is identical to 0x10; NOTE at PRM p.3-17 (all.txt
+        # line 3486) says the (SE) option "sign extends the left bits" of
+        # the extracted field, i.e. bits above the extracted field take the
+        # value of the field's own sign (MSB) instead of being cleared.
+        # CALIBRATION NOTE: added in a scratch copy of sharc_trace.py for
+        # this task only; not part of the tracked tool.
+        position = data8 & 0x3F
+        length = (_field(f, "dataex[3:0]") << 2) | (data8 >> 6)
+        if length == 0:
+            value = Const(0)
+        elif not isinstance(source, Const):
+            value = Unknown("fext R%d by %d:%d (se)" % (rx, position, length))
+        else:
+            value = Const(_signed(source.value >> position, min(length, 32)) & 0xFFFFFFFF)
+        return rn, value, "field-extract-immediate-se", _astatx_fext(position + length, value)
     if opcode in (0x30, 0x31):
         position = data8
         if position > 31:
@@ -1925,6 +1945,38 @@ def _compute(
             else:
                 value = Const(left.value >> -amount)
         return rn, value, "logical-shift", _astatx_shift(amount, value, "clear")
+    # PRM Table 17-9 p.17-10 (out/refs/sharc-plus-prm/all.txt line 22765):
+    # SHIFTOP 00000100 is RN = ASHIFT RX by RY -- the register-operand twin
+    # of the already-implemented ShiftImm opcode 0x01 (arithmetic shift by
+    # an 8-bit immediate). Same signed-low-byte amount, same 32-magnitude
+    # saturation, differing only in that a right shift (negative amount) is
+    # sign-extending, mirroring _shift_immediate's opcode==0x01 branch
+    # exactly.
+    # CALIBRATION NOTE: added in a scratch copy of sharc_trace.py for this
+    # task only; not part of the tracked tool.
+    if cu == 2 and opcode == 0x04:
+        amount = None
+        if not isinstance(right, Const):
+            value = Unknown("ashift R%d by R%d" % (rx, ry))
+        else:
+            amount = _signed(right.value & 0xFF, 8)
+            if amount == 0:
+                value = left
+            elif not isinstance(left, Const):
+                value = Unknown("ashift R%d by %d" % (rx, amount))
+            elif amount >= 32:
+                value = Const(0)
+            elif amount <= -32:
+                value = (
+                    Const(0xFFFFFFFF)
+                    if left.value & 0x80000000
+                    else Const(0)
+                )
+            elif amount > 0:
+                value = Const(left.value << amount)
+            else:
+                value = Const(_signed32(left.value) >> -amount)
+        return rn, value, "arithmetic-shift", _astatx_shift(amount, value, "clear")
     # PRM Table 17-9: SHIFTOP 10001000 is RN = leftz RX.
     if cu == 2 and opcode == 0x88:
         value = (

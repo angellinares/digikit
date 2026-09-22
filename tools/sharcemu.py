@@ -62,6 +62,7 @@ if _here not in sys.path:
 
 from sharc_disasm import Instruction, disassemble  # noqa: E402
 from sharcinv import merge_fields  # noqa: E402
+import sharc_trace as _sharc_trace  # noqa: E402  (PypcodeConcreteBackend's CALLOTHER bridge)
 
 # tools/ghidraq.py's guard, copied exactly: tools/ghidra/ is a plain
 # directory of Java scripts that shadows the real `ghidra` Java-bridge
@@ -342,6 +343,336 @@ def run_emulation(backend, start_sw: int, max_steps: int, skip_faults: int = 0,
     if stop_reason is None:
         stop_reason = 'max-steps'
     return RunOutcome(steps_executed, stop_reason, faults, writes)
+
+
+# --- Ghidra-free concrete p-code interpreter ---------------------------------
+#
+# GhidraBackend (below) drives Ghidra's own EmulatorHelper over a live
+# pyghidra project. This second backend needs neither: it lifts each
+# instruction directly with pypcode.Context.translate() against the in-tree
+# generated SHARC_VISA language and interprets the p-code itself -- a small
+# generic VM for arithmetic/logic/branch ops, plus a CALLOTHER bridge for
+# the three opaque pcodeops the generator emits instead of real semantics
+# (tools/sharcspec/ghidra/gen_sleigh.py):
+#
+#   condition(code)  PGR Table 10-4 predicate; reimplemented here as a
+#                     concrete lookup against a plain-int ASTATX register
+#                     (tools/sharc_trace.py's _predicate()/_lt_ge_le_gt(),
+#                     minus its Value/Const/Unknown symbolic machinery,
+#                     which this always-concrete backend does not need).
+#   compute(raw)      the 23-bit parallel-compute field. SLEIGH gives it NO
+#                     effect ("compute models no effect at all" --
+#                     gen_sleigh.py's compute_marker_lines docstring): the
+#                     generated language only ever gets an instruction's
+#                     ADDRESSING/control-flow right, never its ALU result.
+#                     Bridged here to tools/sharc_trace.py's own _compute(),
+#                     which already decodes this exact field against public
+#                     PRM/PGR tables, instead of re-deriving ALU semantics a
+#                     second time.
+#   circular(index)   post-modify index-register update when L[i] != 0; not
+#                     modelled (matches the generator's own disclaimer).
+#                     This backend requires L[i] == 0 for every post-modify
+#                     access it executes and raises Fault otherwise, rather
+#                     than silently computing a wrong wrapped address.
+#
+# Coverage note (docs/findings/06, "semantics coverage"): a non-empty pypcode
+# lift means an instruction's addressing/control-flow is modelled -- NOT
+# that its arithmetic effect is, because `compute` is exactly such an opaque
+# marker. This backend is the first thing that actually *executes* SHARC+
+# ALU results through pypcode-lifted code, by piping that one marker to
+# already-validated Python semantics instead of pretending SLEIGH has them.
+#
+# The DM/PM `ram` space is wordsize=2 (tools/sharcspec/ghidra/gen_sleigh.py
+# dm_byte_addr_to_ram_unit(): "Ghidra always scales a LOAD/STORE offset by
+# the space's wordsize"), so a LOAD/STORE's address operand is in that
+# space's own units, not raw bytes; recovered here by multiplying back by 2,
+# matching what a real p-code executor does internally.
+
+# CALLOTHER user-op indices, assigned by SLEIGH in the `define pcodeop ...;`
+# declaration order in gen_sleigh.py (condition, compute, circular) --
+# confirmed empirically against a live translate() (see tests), not merely
+# assumed.
+PYCODE_USEROP_CONDITION = 0
+PYCODE_USEROP_COMPUTE = 1
+PYCODE_USEROP_CIRCULAR = 2
+
+# ASTATX bit positions (PRM ch.4), duplicated from tools/sharc_trace.py as
+# plain ints since this interpreter's ASTATX is a concrete 32-bit register,
+# not a sharc_trace.py Value.
+PYCODE_AZ_BIT, PYCODE_AN_BIT, PYCODE_AV_BIT, PYCODE_AF_BIT = 0, 2, 1, 6
+
+
+def _pypcode_register_offsets():
+    """-> {ureg code: register-space byte offset}, replicating
+    gen_sleigh.py's `define register offset=... [...]` emission order so
+    ureg codes resolve to the exact same offsets the generated language
+    uses. One literal table (instead of re-deriving it) so a change to that
+    emission is a visible diff here too, not a silent mismatch."""
+    st = _sharc_trace
+    offsets = {}
+
+    def block(names, base):
+        for i, name in enumerate(names):
+            offsets[st.UREG_CODES[name]] = base + 4 * i
+
+    block(['R%d' % i for i in range(16)], 0x000)
+    block(['I%d' % i for i in range(16)], 0x080)
+    block(['M%d' % i for i in range(16)], 0x0C0)
+    block(['L%d' % i for i in range(16)], 0x100)
+    block(['B%d' % i for i in range(16)], 0x140)
+    offsets[st.UREG_CODES['PC']] = 0x180
+    block(['S%d' % i for i in range(16)], 0x1C0)
+    ureg_registers = list(st.UREG_NAMES)
+    for i, name in enumerate(ureg_registers[96:99] + ureg_registers[100:112]):
+        offsets[st.UREG_CODES[name]] = 0x200 + 4 * i
+    for i, name in enumerate(ureg_registers[112:]):
+        offsets[st.UREG_CODES[name]] = 0x240 + 4 * i
+    return offsets
+
+
+class PypcodeFault(Exception):
+    """A pypcode-native step could not be executed: no semantics (empty
+    lift), or an opcode/CALLOTHER this draft interpreter does not model."""
+
+
+class PypcodeConcreteBackend:
+    """Concrete p-code interpreter over a flat SHARC+ image, no Ghidra.
+
+    `code`: bytes of the region to execute; `code_base`: the DISPLAYED
+    (byte) address code[0] sits at (the same convention as --start below,
+    and as tools/sharcpcode.py's `2 * sw`).
+    """
+
+    def __init__(self, code, code_base):
+        import pypcode  # local: keep this module importable without pypcode
+        self._pypcode = pypcode
+        arch = pypcode.Arch('SHARC_VISA', os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'sharcspec/ghidra/SHARC_VISA/data/languages/sharc_visa.ldefs'))
+        self.ctx = pypcode.Context(arch.languages[0])
+        self.code = code
+        self.code_base = code_base
+        self.mem = {}    # ram-space byte address -> byte
+        self.regs = {}   # register-space offset -> 4-byte value
+        self.pc = code_base
+        self.trace = []
+        self.max_bytes = 32
+        self._offsets = _pypcode_register_offsets()
+
+    def poke(self, address, value, width=4):
+        for i in range(width):
+            self.mem[address + i] = (value >> (8 * i)) & 0xFF
+
+    def peek(self, address, width):
+        out = 0
+        for i in range(width):
+            b = self.mem.get(address + i)
+            if b is None:
+                off = (address + i) - self.code_base
+                b = self.code[off] if 0 <= off < len(self.code) else 0
+            out |= b << (8 * i)
+        return out
+
+    def set_ureg(self, name, value):
+        st = _sharc_trace
+        self.regs[self._offsets[st.UREG_CODES[name]]] = value & 0xFFFFFFFF
+
+    def get_ureg(self, name):
+        st = _sharc_trace
+        return self.regs.get(self._offsets[st.UREG_CODES[name]], 0)
+
+    def _space_name(self, space):
+        return str(space.name)
+
+    def read_vn(self, vn, unique):
+        name = self._space_name(vn.space)
+        if name == 'const':
+            return vn.offset
+        if name == 'unique':
+            return unique.get(vn.offset, 0) & ((1 << (8 * vn.size)) - 1)
+        if name == 'register':
+            return self.regs.get(vn.offset & ~3, 0) & ((1 << (8 * vn.size)) - 1)
+        if name == 'ram':
+            return self.peek(vn.offset, vn.size)
+        raise PypcodeFault('unhandled read space %r' % name)
+
+    def write_vn(self, vn, value, unique):
+        name = self._space_name(vn.space)
+        value &= (1 << (8 * vn.size)) - 1
+        if name == 'unique':
+            unique[vn.offset] = value
+        elif name == 'register':
+            self.regs[vn.offset & ~3] = value
+        elif name == 'ram':
+            self.poke(vn.offset, value, vn.size)
+        else:
+            raise PypcodeFault('unhandled write space %r' % name)
+
+    def _predicate(self, code):
+        astatx = self.get_ureg('ASTATX')
+
+        def bit(n):
+            return bool((astatx >> n) & 1)
+
+        if code == 0x1F:
+            return True
+        if code in (0x00, 0x10):
+            return bit(PYCODE_AZ_BIT) if code == 0x00 else not bit(PYCODE_AZ_BIT)
+        if code in (0x01, 0x02, 0x11, 0x12):
+            af, an, az = bit(PYCODE_AF_BIT), bit(PYCODE_AN_BIT), bit(PYCODE_AZ_BIT)
+            if af:
+                x, y = (an or az), (an and not az)
+            else:
+                av = bit(PYCODE_AV_BIT)
+                term = an if not av else not an  # ALUSAT (MODE1) not tracked here
+                x, y = (term or az), term
+            if code in (0x02, 0x12):
+                return x if code == 0x02 else not x
+            return y if code == 0x01 else not y
+        raise PypcodeFault('condition() code %#x not modelled by this draft' % code)
+
+    def _compute_bridge(self, raw):
+        st = _sharc_trace
+        f = {'compute[22:16]': (raw >> 16) & 0x7F, 'compute[15:0]': raw & 0xFFFF}
+        values = {code: st.Const(self.regs.get(off, 0)) for code, off in self._offsets.items()}
+        result = st._compute(f, short=False, values=values)
+        if result is None:
+            return
+        rn, value, operation, astatx_update = result
+        old = st.Const(self.get_ureg('ASTATX'))
+        new_astatx = astatx_update(old)
+        if isinstance(new_astatx, st.Const):
+            self.set_ureg('ASTATX', new_astatx.value)
+        if isinstance(rn, tuple):
+            for reg, val in zip(rn, value):
+                if isinstance(val, st.Const):
+                    self.regs[self._offsets[reg]] = val.value & 0xFFFFFFFF
+        elif isinstance(rn, int) and operation not in ('compare', 'bit-test', 'float-compare'):
+            if isinstance(value, st.Const):
+                self.regs[self._offsets[rn]] = value.value & 0xFFFFFFFF
+        self.trace.append({'action': 'compute', 'operation': operation})
+
+    def lift(self, pc):
+        off = pc - self.code_base
+        chunk = self.code[off: off + self.max_bytes]
+        tr = self.ctx.translate(chunk, base_address=pc, max_instructions=1)
+        length, ops = None, []
+        for op in tr.ops:
+            if op.opcode == self._pypcode.OpCode.IMARK:
+                if length is None:
+                    length = op.inputs[0].size
+            else:
+                ops.append(op)
+        if length is None:
+            raise PypcodeFault('pypcode did not decode anything at %#x' % pc)
+        return length, ops
+
+    def step(self):
+        """Execute one instruction. Returns False on RETURN (stop)."""
+        length, ops = self.lift(self.pc)
+        if not ops:
+            raise PypcodeFault('no-semantics at %#x (empty p-code)' % self.pc)
+        unique = {}
+        i = 0
+        next_pc = self.pc + length
+        while i < len(ops):
+            op = ops[i]
+            name = op.opcode.name
+            ins = op.inputs
+            if name == 'COPY':
+                self.write_vn(op.output, self.read_vn(ins[0], unique), unique)
+            elif name in ('INT_ADD', 'INT_SUB', 'INT_MULT', 'INT_AND', 'INT_OR', 'INT_XOR',
+                          'INT_LEFT', 'INT_RIGHT', 'INT_SRIGHT'):
+                a, b = self.read_vn(ins[0], unique), self.read_vn(ins[1], unique)
+                mask = (1 << (8 * op.output.size)) - 1
+                r = {'INT_ADD': a + b, 'INT_SUB': a - b, 'INT_MULT': a * b,
+                     'INT_AND': a & b, 'INT_OR': a | b, 'INT_XOR': a ^ b,
+                     'INT_LEFT': a << b, 'INT_RIGHT': a >> b, 'INT_SRIGHT': a >> b}[name]
+                self.write_vn(op.output, r & mask, unique)
+            elif name in ('INT_EQUAL', 'INT_NOTEQUAL', 'INT_LESS', 'INT_LESSEQUAL',
+                          'INT_SLESS', 'INT_SLESSEQUAL'):
+                a, b = self.read_vn(ins[0], unique), self.read_vn(ins[1], unique)
+                r = {'INT_EQUAL': a == b, 'INT_NOTEQUAL': a != b,
+                     'INT_LESS': a < b, 'INT_LESSEQUAL': a <= b,
+                     'INT_SLESS': a < b, 'INT_SLESSEQUAL': a <= b}[name]
+                self.write_vn(op.output, int(r), unique)
+            elif name in ('BOOL_AND', 'BOOL_OR', 'BOOL_XOR'):
+                a, b = self.read_vn(ins[0], unique), self.read_vn(ins[1], unique)
+                r = {'BOOL_AND': a and b, 'BOOL_OR': a or b, 'BOOL_XOR': bool(a) != bool(b)}[name]
+                self.write_vn(op.output, int(bool(r)), unique)
+            elif name == 'BOOL_NEGATE':
+                self.write_vn(op.output, int(not self.read_vn(ins[0], unique)), unique)
+            elif name == 'INT_NEGATE':
+                self.write_vn(op.output, (~self.read_vn(ins[0], unique)) & ((1 << (8 * op.output.size)) - 1), unique)
+            elif name == 'INT_2COMP':
+                self.write_vn(op.output, (-self.read_vn(ins[0], unique)) & ((1 << (8 * op.output.size)) - 1), unique)
+            elif name in ('INT_ZEXT', 'INT_SEXT'):
+                v = self.read_vn(ins[0], unique)
+                if name == 'INT_SEXT':
+                    bits = 8 * ins[0].size
+                    if v & (1 << (bits - 1)):
+                        v -= 1 << bits
+                self.write_vn(op.output, v & ((1 << (8 * op.output.size)) - 1), unique)
+            elif name == 'SUBPIECE':
+                v = self.read_vn(ins[0], unique)
+                shift = 8 * ins[1].offset if self._space_name(ins[1].space) == 'const' else 0
+                self.write_vn(op.output, (v >> shift) & ((1 << (8 * op.output.size)) - 1), unique)
+            elif name == 'PIECE':
+                hi, lo = self.read_vn(ins[0], unique), self.read_vn(ins[1], unique)
+                self.write_vn(op.output, (hi << (8 * ins[1].size)) | lo, unique)
+            elif name == 'LOAD':
+                unit = self.read_vn(ins[1], unique)
+                byte_addr = unit * 2
+                v = self.peek(byte_addr, op.output.size)
+                self.write_vn(op.output, v, unique)
+                self.trace.append({'action': 'load', 'address': byte_addr, 'value': v})
+            elif name == 'STORE':
+                unit = self.read_vn(ins[1], unique)
+                byte_addr = unit * 2
+                value = self.read_vn(ins[2], unique)
+                self.poke(byte_addr, value, ins[2].size)
+                self.trace.append({'action': 'store', 'address': byte_addr, 'value': value})
+            elif name == 'CALLOTHER':
+                index = ins[0].offset
+                if index == PYCODE_USEROP_CONDITION:
+                    code = self.read_vn(ins[1], unique)
+                    self.write_vn(op.output, int(self._predicate(code)), unique)
+                elif index == PYCODE_USEROP_COMPUTE:
+                    self._compute_bridge(self.read_vn(ins[1], unique))
+                elif index == PYCODE_USEROP_CIRCULAR:
+                    raise PypcodeFault('circular() at %#x: post-modify with L[i]!=0 is not modelled' % self.pc)
+                else:
+                    raise PypcodeFault('unknown CALLOTHER index %d at %#x' % (index, self.pc))
+            elif name == 'CBRANCH':
+                taken = bool(self.read_vn(ins[1], unique))
+                target = ins[0]
+                if taken:
+                    if self._space_name(target.space) == 'const':
+                        i += target.offset
+                        continue
+                    next_pc = target.offset
+                    break
+            elif name == 'BRANCH':
+                target = ins[0]
+                if self._space_name(target.space) == 'const':
+                    i += target.offset
+                    continue
+                next_pc = target.offset
+                break
+            elif name == 'CALL':
+                self.trace.append({'action': 'call', 'target': ins[0].offset})
+                next_pc = ins[0].offset
+                break
+            elif name == 'RETURN':
+                self.trace.append({'action': 'return'})
+                return False
+            elif name == 'BRANCHIND':
+                raise PypcodeFault('BRANCHIND at %#x not modelled by this draft' % self.pc)
+            else:
+                raise PypcodeFault('unhandled opcode %s at %#x' % (name, self.pc))
+            i += 1
+        self.pc = next_pc
+        return True
 
 
 # --- live Ghidra backend ------------------------------------------------------
