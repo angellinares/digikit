@@ -312,3 +312,51 @@ and filters are labels and parameter IDs on the ColdFire; audio runs on the DSP.
   hardware. A machine that reuses an existing DSP mode with different
   parameters avoids that entirely. **[V]/[O]**
 
+## Digitakt II 1.16: rebuild, and cave space that survives a cold boot **[V]**
+
+`dt2/build.py` rebuilds 1.16 after two changes: packed sections are
+decompressed with `dt2.elz.depack_section` (the oracle depacker's entry
+point moved on 1.16), and section 8 is stored like 2/3/7. A rebuild with no
+replacements re-extracts to six sections byte-identical to the stock
+extraction, and `tools/roundtrip.py`'s `check_authenticity()` passes
+(preamble checksum, HMAC trailer, framing count, 42508/42508 packet
+checksums). A one-byte replacement in section 3 survives the round trip as
+exactly that byte.
+
+The reset path zeroes most of the tail of the MAIN OS image, so a cave that
+reads as zero in the image is not necessarily free. From the reset entry
+`0x400004e8`, two unconditional calls run before the OS:
+
+- `jsr FUN_4000045c` at `0x4000053e` copies `[0x40312000,0x40318e80)` and
+  `[0x40318e80,0x4031ff60)` to the SRAM window at `0x80000000`.
+- `jsr FUN_400004b2` at `0x40000542` zeroes `0x40312000..0x47e28470`:
+  `207c 40312000` (`movea.l #0x40312000,a0` at `0x400004ba`),
+  `223c 47e28470`, then `clr.l d4-d7; movem.l d4-d7,(a0); lea 16(a0),a0;
+  subq.l #1,d1; bne`.
+
+1.15C has the same code with start `0x402fa000`, end `0x47e0f2c0`.
+`cave_b` (1.16 `0x4031be5c`, 1.15C `0x40303e5c`) lies inside the cleared
+range on both, so bytes flashed there are gone before the OS runs; it only
+worked for live patches of a resumed snapshot. `cave_a` ends exactly at the
+clear start. Checked by a second agent against the image bytes, and at
+runtime: a patched 1.16 image lost its `cave_b` bytes by the 60M rung of a
+fresh boot and kept its `0x403117c4` bytes.
+
+`tools/cavefind.py` finds caves that survive boot: it reads the copy and
+clear ranges from the reset code by signature, takes runs of 0x00/0xFF below
+the clear start, rejects any run with a pointer literal into it (or a table
+starting just before it), rejects runs whose bytes differ in any saved
+snapshot rung, and `--confirm SYX` boots a canary-filled image to 60M.
+Results, as `machineprofile` `flash_cave`: DT2 1.16 `0x403117c4`, 2108 B;
+DT2 1.15C `0x402f9c14`, 1004 B; DN2 1.11 `0x402fb7a8`, 2136 B. On 1.16 all
+1306 canary words across the seven surviving candidates were intact at 60M.
+The rejected runs include `0x4031041c` (3045 B, referenced by
+`lea $40311000` and `move.l #0x4031041c,d3`) and eight 0xFF runs of
+1024-1376 B, each a live buffer with one reference.
+
+From the MCF5441x reference manual: CACR is written once, `0xa50ce100`
+(caches enabled and invalidated in the same write), and ACR0 once,
+`0x4007e020` (`0x40000000-0x47ffffff`, copyback cacheable, not
+write-protected); there is no ACR1-3 write. Flashed cave code is in SDRAM
+before the caches are enabled, so it needs no cache maintenance.
+

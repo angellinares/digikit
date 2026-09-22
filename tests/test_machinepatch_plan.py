@@ -15,6 +15,7 @@ from emu import config
 # tools/machinepatch.py inserts these same two paths itself, but they need
 # to be present before the import statement below runs.
 import machinepatch as mp
+import machineprofile
 
 MAIN_IMAGE_BASE = 0x40000400
 
@@ -198,6 +199,19 @@ class PlanBTest(unittest.TestCase):
             0x4005d014, bytes.fromhex('72fdc0817204b28067000098'),
             bytes.fromhex('4ef9') + struct.pack('>I', cave_b + 0x396)
             + bytes.fromhex('4e71') * 3))
+
+    def test_clone_sites_decode_to_the_measured_1_15c_tuples(self):
+        eq, mask = mp.clone_sites(self.img.read,
+                                  machineprofile.DT2_115C['clone_sites'])
+        self.assertEqual(eq, [
+            (0x4005f1a0, '7206b280670000e2', '7206b280', 0, 0x4005f288, 0x4005f1a8),
+            (0x4005eeac, '7206b2806622', '7206b280', 0, 0x4005eeb2, 0x4005eed4),
+            (0x40030766, '7206b2806600016c', '7206b280', 0, 0x4003076e, 0x400308d8),
+            (0x400488ec, '588fbc806622', '588fbc80', 0, 0x400488f2, 0x40048914),
+            (0x4005beea, '7006b0826614', '7006b082', 2, 0x4005bef0, 0x4005bf04),
+        ])
+        self.assertEqual(mask, (0x4005d014, '72fdc0817204b28067000098',
+                                0x4005d0b6, 0x4005d020))
 
     def test_clone_without_known_sites_writes_nothing(self):
         cave_b = 0x40303e5c

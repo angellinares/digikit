@@ -206,21 +206,66 @@ PERTYPE_SITES = (   # (moveq #6,Dn bound, lea (0x401d9f30).l,An) in each reader
     (0x40016628, 0x40016648),   # FUN_40016624
 )
 
-# 'clone': code that tests `type == clone_of`, keyed by clone_of. Each site is
-# (addr, original bytes, compare replayed in the shim, type register, match
-# address, no-match address). Only SLICE's (6) are known so far.
+# 'clone': the profile's `clone_sites` are the `type == 6` tests (SLICE) a
+# clone must also match. Only the site address is per image; the replayed
+# compare, the type register and both branch targets are read from the bytes
+# at the site by decode_clone_site.
 CLONE_SHIM_OFF = 0x300
-CLONE_EQ_SITES = {
-    6: (
-        (0x4005f1a0, '7206b280670000e2', '7206b280', 0, 0x4005f288, 0x4005f1a8),  # FUN_4005f0c0: Slice menu
-        (0x4005eeac, '7206b2806622', '7206b280', 0, 0x4005eeb2, 0x4005eed4),      # FUN_4005edd6: per-track loop
-        (0x40030766, '7206b2806600016c', '7206b280', 0, 0x4003076e, 0x400308d8),  # FUN_4003065a: param 0xfc
-        (0x400488ec, '588fbc806622', '588fbc80', 0, 0x400488f2, 0x40048914),      # FUN_40048660: param 0xfc
-        (0x4005beea, '7006b0826614', '7006b082', 2, 0x4005bef0, 0x4005bf04),      # FUN_4005be94: step count
-    ),
-}
-# FUN_4005cb7c: `(type & ~2) == 4` matches types 4 and 6. (addr, original, match, no-match)
-CLONE_MASK_SITE = (0x4005d014, '72fdc0817204b28067000098', 0x4005d0b6, 0x4005d020)
+CLONE_SITES_OF = 6
+# FUN_4005cb7c (1.15C): `(type & ~2) == 4` matches types 4 and 6.
+CLONE_MASK_HEAD = bytes.fromhex('72fdc0817204b280')
+
+
+def _decode_bcc(read, at):
+    """beq/bne at `at`, .b or .w -> (opcode byte, length, target)."""
+    op, d8 = read(at, 2)
+    if op not in (0x66, 0x67) or d8 == 0xff:
+        raise SystemExit('machinepatch: %#010x is not beq/bne.b/.w (%02x%02x)'
+                         % (at, op, d8))
+    if d8 == 0:
+        disp, = struct.unpack('>h', read(at + 2, 2))
+        return op, 4, at + 2 + disp
+    return op, 2, at + 2 + (d8 - 256 if d8 >= 0x80 else d8)
+
+
+def decode_clone_site(read, site):
+    """-> ('eq', (addr, original, prefix, type register, match, no-match))
+    for `<4-byte prefix ending in cmp.l Dy,Dx>; beq/bne`, or
+    ('mask', (addr, original, match, no-match)) for the mask test."""
+    head = read(site, 8)
+    if head == CLONE_MASK_HEAD:
+        kind, plen = 'mask', 8
+    else:
+        cmp, = struct.unpack('>H', head[2:4])
+        if cmp & 0xf1f8 != 0xb080:                      # cmp.l Dy,Dx
+            raise SystemExit('machinepatch: %#010x is not a cmp.l Dy,Dx test (%s)'
+                             % (site, head.hex()))
+        kind, plen = 'eq', 4
+    op, size, target = _decode_bcc(read, site + plen)
+    end = site + plen + size
+    match, nomatch = (target, end) if op == 0x67 else (end, target)
+    want = read(site, plen + size).hex()
+    if plen + size < 6:
+        raise SystemExit('machinepatch: %#010x: %d bytes cannot hold a jmp.l'
+                         % (site, plen + size))
+    if kind == 'mask':
+        return kind, (site, want, match, nomatch)
+    return kind, (site, want, head[:4].hex(), cmp & 7, match, nomatch)
+
+
+def clone_sites(read, sites):
+    """The profile's (function, site) pairs -> (eq tuples, mask tuple or None)."""
+    eq, mask = [], None
+    for _function, site in sites:
+        kind, t = decode_clone_site(read, site)
+        if kind == 'eq':
+            eq.append(t)
+        elif mask is not None:
+            raise SystemExit('machinepatch: two mask sites, %#010x and %#010x'
+                             % (mask[0], site))
+        else:
+            mask = t
+    return eq, mask
 
 PARTS = ('list', 'dispatch', 'group', 'name', 'rank', 'permit', 'hint', 'pertype', 'clone')
 
@@ -466,19 +511,22 @@ def build_rank_table(order):
     return b''.join(struct.pack('>II', t, i) for i, t in enumerate(order))
 
 
-def build_rank_shim(cave_b, table_len):
+def build_rank_shim(cave_b, table_len, rank_insert=RANK_INSERT):
     """Replace the insert's [begin, end) stack arguments, then tail-jump to it.
 
     Entered by the repointed jsr at RANK_CALL, so 4(a7) is the map, 8(a7)
     begin and 0xc(a7) end; the caller's `lea $20(a7), a7` discards both
     afterwards, so overwriting them is safe.
+
+    `rank_insert` is the image's range insert (`a.RANK_INSERT`); the 1.15C
+    default is only for callers without a profile.
     """
     table = cave_b + RANK_TABLE_OFF
     return (
         bytes.fromhex('2f7c') + struct.pack('>I', table) + bytes.fromhex('0008')
         + bytes.fromhex('2f7c') + struct.pack('>I', table + table_len)
         + bytes.fromhex('000c')
-        + bytes.fromhex('4ef9') + struct.pack('>I', RANK_INSERT)
+        + bytes.fromhex('4ef9') + struct.pack('>I', rank_insert)
     )
 
 
@@ -531,6 +579,7 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC,
     than 1.15C.
     """
     a = anchors_for(profile)
+    prof = profile if profile is not None else machineprofile.DT2_115C
     check_parts(parts)
     validate_spec(spec, a.count)
     if eighth is None:
@@ -647,7 +696,7 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC,
         table = build_rank_table(order)
         add(cave_b + RANK_TABLE_OFF, table)
 
-        shim = build_rank_shim(cave_b, len(table))
+        shim = build_rank_shim(cave_b, len(table), a.RANK_INSERT)
         add(cave_b + RANK_SHIM_OFF, shim)
 
         # The jsr's operand only, not its opcode.
@@ -712,13 +761,14 @@ def plan_b(read, cave_b, parts=PARTS, eighth=None, spec=DEFAULT_SPEC,
             add(lea + 2, struct.pack('>I', slot))
 
     if 'clone' in parts:
+        eq, mask = clone_sites(read, prof['clone_sites']
+                               if spec.clone_of == CLONE_SITES_OF else ())
         sites = [(addr, bytes.fromhex(want),
                   build_eq_shim(bytes.fromhex(prefix), reg, match, nomatch,
                                 a.NEW_TYPE))
-                 for addr, want, prefix, reg, match, nomatch
-                 in CLONE_EQ_SITES.get(spec.clone_of, ())]
-        if spec.clone_of in CLONE_EQ_SITES:
-            addr, want, match, nomatch = CLONE_MASK_SITE
+                 for addr, want, prefix, reg, match, nomatch in eq]
+        if mask is not None:
+            addr, want, match, nomatch = mask
             sites.append((addr, bytes.fromhex(want),
                           build_mask_shim(spec.clone_of, match, nomatch,
                                           a.NEW_TYPE)))

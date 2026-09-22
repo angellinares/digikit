@@ -16,8 +16,8 @@ Layer cake, innermost first (mirrors dt2/container.py, in reverse):
 
   1. ELE3        -- magic, then a section table of 16-byte entries, built
                     by build_container(). Per-section storage quirks
-                    (aPLib for 2/3/7, raw-with-header for 4, bare for 5)
-                    are applied by store_for_section().
+                    (aPLib for 2/3/7/8 (8 is 1.16 and later), raw-with-header
+                    for 4, bare for 5) are applied by store_for_section().
   2. preamble    -- 8 bytes ahead of the magic; computed by rebuild() from
                     the total length and content_checksum(), not carried
                     from the source.
@@ -95,7 +95,7 @@ def store_for_section(section_id, data):
     """Decompressed section bytes -> stored bytes, applying the per-section
     storage rule dt2/container.py and emu/extract.py already document.
     Raises on an unknown section id rather than guessing its rule."""
-    if section_id in (2, 3, 7):
+    if section_id in (2, 3, 7, 8):    # 8 is 1.16 and later
         return aplib.pack_section(data)
     if section_id == 4:
         # 8-byte header present, but byte_sum is 0 and the payload is raw.
@@ -252,7 +252,8 @@ def rebuild(syx_path, replacements=None, checksum=None):
     import os
     import sys
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from emu.extract import classify, updater_image, depack
+    from emu.extract import classify
+    from dt2.elz import depack_section
     from dt2.authcode import seal, DEVICE_BY_ID
 
     replacements = replacements or {}
@@ -272,7 +273,6 @@ def rebuild(syx_path, replacements=None, checksum=None):
     device = DEVICE_BY_ID[device_id]
 
     c, secs = sections(syx_path)
-    img = updater_image(c, secs)
 
     entries = []
     for sid, s_off, clen, dest in secs:
@@ -281,7 +281,7 @@ def rebuild(syx_path, replacements=None, checksum=None):
             decompressed = replacements[sid]
         else:
             kind, payload = classify(raw)
-            decompressed = depack(img, payload) if kind == 'packed' else payload
+            decompressed = depack_section(payload) if kind == 'packed' else payload
         entries.append((sid, dest, store_for_section(sid, decompressed)))
 
     new_container = build_container(header, entries)
