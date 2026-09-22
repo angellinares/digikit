@@ -59,11 +59,11 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk
+from typing import cast
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from unicorn import UcError
+from unicorn.unicorn import UcError
 from unicorn.m68k_const import UC_M68K_REG_A7, UC_M68K_REG_PC, UC_M68K_REG_SR
 from emu.longrun import build, spin
 from emu.dtim import Dtims, Timers
@@ -96,8 +96,8 @@ W, H = 128, 64
 # toolbar, three status lines, and the control surface, which is several rows
 # of buttons deep. Without this the auto-zoom happily fills the screen with a
 # 128x64 framebuffer and clips the controls off the bottom.
-RESERVE_H = 520
-MAX_SCALE = 6
+RESERVE_H = 460
+MAX_SCALE = 3
 
 # Panel palette: an OLED is emissive, so the lit pixel is the bright thing and
 # the ground is genuinely black rather than dark grey.
@@ -140,7 +140,8 @@ class Emulator(threading.Thread):
     daemon = True
 
     def __init__(self, snapshot, weakptr=False, slc=False, syx=None,
-                 fast=True, realtime=True, patch_machine=False,
+                 fast=True, realtime=True,
+                 patch_machine: bool | tuple[str, ...] = False,
                  patch_eighth=7, patch_machine_spec=None,
                  panel_dwell=PANEL_DWELL_CHUNKS, ips_at=(),
                  post_intro_ips=4 * INSTR_PER_SEC):
@@ -266,6 +267,7 @@ class Emulator(threading.Thread):
         while self.inbox:
             kind, code, arg = self.inbox.popleft()
             if kind == 'encoder':
+                assert self.device is not None
                 channel = self.device.encoder_channel(code)
                 if channel is not None:
                     out += panelin.encode_encoder(channel, arg)
@@ -352,8 +354,8 @@ class Emulator(threading.Thread):
             if self.patch_machine:
                 sys.path.insert(0, os.path.join(os.path.dirname(
                     os.path.dirname(os.path.abspath(__file__))), 'tools'))
-                from machinepatch import (patch_b, DEFAULT_CAVE_B,
-                                          spec_from_arg, DEFAULT_SPEC)
+                from machinepatch import (  # type: ignore[reportMissingImports]
+                    patch_b, DEFAULT_CAVE_B, spec_from_arg, DEFAULT_SPEC)
                 # patch_b (and spec_from_arg) report a failed precondition
                 # with SystemExit, which derives from BaseException and so
                 # would slip past the handler below -- and a SystemExit on a
@@ -366,7 +368,8 @@ class Emulator(threading.Thread):
                             eighth=self.patch_eighth, spec=spec)
                 except SystemExit as exc:
                     raise RuntimeError('machine patch refused: %s' % exc) from exc
-                self.stats['status'] = ('patched: ' + '+'.join(self.patch_machine)
+                parts = cast(tuple[str, ...], self.patch_machine)
+                self.stats['status'] = ('patched: ' + '+'.join(parts)
                                         + ' (8th=%d)' % self.patch_eighth)
             # build() already resolved (and required) this same profile
             # internally -- see emu/symbols.py -- so re-resolving here is a
@@ -592,6 +595,7 @@ class Emulator(threading.Thread):
             return
         buf = self._panel_latch
         if buf is None:
+            assert self.fb_front is not None
             buf = panel.read(m, self.fb_front)
         if buf is None or buf == self._last_panel:
             return
@@ -680,6 +684,7 @@ class Emulator(threading.Thread):
             if not self._backtrace_printed:
                 self._backtrace_printed = True
                 try:
+                    assert self._uc is not None
                     a7 = self._uc.reg_read(UC_M68K_REG_A7)
                     frames = self._stack_backtrace(self._m)[:24]
                     print('[gui] stack at terminal loop (A7=0x%08x, '
@@ -701,196 +706,352 @@ class Emulator(threading.Thread):
                  note), flush=True)
 
 
+def encoder_drag_steps(pixels, threshold=8):
+    """Return signed relative encoder detents for a vertical drag distance."""
+    # pi-lens-ignore: ast-grep:unchecked-throwing-call-python
+    return int(pixels / threshold)
+
+
+def trigger_position(index):
+    """Return the fixed 2x8 physical-grid position for a trigger index."""
+    return index // 8, index % 8
+
+
+class CanvasKey(tk.Canvas):
+    """A compact, platform-neutral raised key with button semantics."""
+
+    def __init__(self, master, text, on_press=None, on_release=None,
+                 command=None, accent='#dcae45', width=48, height=32,
+                 bg='#15181d'):
+        super().__init__(master, width=width, height=height, bg=bg,
+                         highlightthickness=0, bd=0, cursor='hand2')
+        self.text = text
+        self.on_press = on_press
+        self.on_release = on_release
+        self.command = command
+        self.accent = accent
+        self.pressed = False
+        self.latched = False
+        self._draw()
+        self.bind('<ButtonPress-1>', self._press)
+        self.bind('<ButtonRelease-1>', self._release)
+
+    def set_text(self, text):
+        self.text = text
+        self._draw()
+
+    def set_latched(self, latched):
+        self.latched = latched
+        self._draw()
+
+    def _draw(self):
+        self.delete('all')
+        # pi-lens-ignore: ast-grep:unchecked-throwing-call-python
+        width = int(self.cget('width'))
+        # pi-lens-ignore: ast-grep:unchecked-throwing-call-python
+        height = int(self.cget('height'))
+        inset = 3 if self.pressed else 1
+        face = '#403a30' if self.latched else '#242a31'
+        self.create_rectangle(2, 3, width - 2, height - 1, fill='#0b0d10', outline='')
+        self.create_rectangle(inset, inset, width - 3, height - 4,
+                              fill=face, outline=self.accent, width=1)
+        self.create_line(inset + 2, inset + 2, width - 5, inset + 2,
+                         fill='#59626d')
+        self.create_text(width // 2, height // 2 - (1 if self.pressed else 2),
+                         text=self.text, fill='#edf0e8' if self.latched else '#c5ccd4',
+                         font=('TkFixedFont', 7), width=width - 8)
+
+    def _press(self, _event):
+        self.pressed = True
+        self._draw()
+        if self.on_press:
+            self.on_press()
+
+    def _release(self, _event):
+        was_pressed = self.pressed
+        self.pressed = False
+        self._draw()
+        if was_pressed and self.on_release:
+            self.on_release()
+        if was_pressed and self.command:
+            self.command()
+
+
+
+class Rotary(tk.Canvas):
+    """A relative encoder drawn with Tk primitives, including its push switch."""
+
+    SIZE = 54
+
+    def __init__(self, master, label, turn=None, press=None, release=None,
+                 accent='#dcae45'):
+        super().__init__(master, width=self.SIZE, height=self.SIZE + 16,
+                         bg=Controls.BG, highlightthickness=0, bd=0,
+                         cursor='hand2')
+        self.label = label
+        self.turn = turn
+        self.press = press
+        self.release = release
+        self.accent = accent
+        self.angle = 0
+        self._drag_y = 0
+        self._remainder = 0
+        self._draw()
+        self.bind('<ButtonPress-1>', self._press)
+        self.bind('<B1-Motion>', self._drag)
+        self.bind('<ButtonRelease-1>', self._release)
+        self.bind('<MouseWheel>', self._wheel)
+        self.bind('<Button-4>', lambda _event: self._turn(1))
+        self.bind('<Button-5>', lambda _event: self._turn(-1))
+
+    def _draw(self):
+        self.delete('all')
+        self.create_oval(4, 4, 50, 50, fill='#101419', outline='#434c57', width=2)
+        self.create_oval(9, 9, 45, 45, fill='#2a3037', outline='#080a0c')
+        import math
+        radians = math.radians(self.angle - 90)
+        self.create_line(27, 27, 27 + 13 * math.cos(radians),
+                         27 + 13 * math.sin(radians), fill=self.accent,
+                         width=3, capstyle='round')
+        self.create_text(27, 60, text=self.label, fill='#bdc7d2',
+                         font=('TkFixedFont', 7))
+
+    def _turn(self, step):
+        if not step:
+            return
+        self.angle = (self.angle + step * 12) % 360
+        self._draw()
+        if self.turn:
+            self.turn(step)
+
+    def _press(self, event):
+        self._drag_y = event.y
+        self._remainder = 0
+        if self.press:
+            self.press()
+
+    def _drag(self, event):
+        self._remainder += self._drag_y - event.y
+        step = encoder_drag_steps(self._remainder)
+        if step:
+            self._remainder -= step * 8
+            self._turn(step)
+        self._drag_y = event.y
+
+    def _release(self, _event):
+        if self.release:
+            self.release()
+
+    def _wheel(self, event):
+        step = 1 if event.delta > 0 else -1
+        if event.state & 0x0001:
+            step *= 10
+        self._turn(step)
+
+
 class Controls(tk.Frame):
-    """The front panel: click a button, scroll an encoder.
-
-    Laid out from the device file's groups and labelled with the firmware's
-    own control names, so the same code draws both products and neither the
-    arrangement nor the labels are written down here.
-
-    Every interaction goes onto the emulator's queue rather than touching
-    guest memory, because the worker is inside Unicorn for a whole BUDGET at
-    a time. A mouse cannot hold one button down while clicking another, so
-    buttons in a LATCHING_GROUPS group (e.g. FUNC) toggle instead of being
-    momentary: a click asserts the modifier and it STAYS asserted -- through
-    as many other button clicks and encoder turns as needed -- until it is
-    clicked again or explicitly cleared with the "clear" button. Chords are
-    formed by latching the modifier, then clicking as many other buttons as
-    needed, which is what lets a click on FUNC followed by a click on SRC
-    reach SRC's secondary function. An earlier version
-    auto-released the modifier after the next non-modifier button's release,
-    but that put the modifier's release in the same input-drain window as
-    the chorded button's, and the firmware appeared to react to both going
-    up together; clearing is explicit now instead.
-    """
+    """A bounded hardware-style panel built after device identification."""
 
     BG = '#15181d'
-    FACE = '#222831'
-    TEXT = '#cdd6e3'
+    FACE = '#242a31'
+    TEXT = '#d5dbe3'
+    AMBER = '#dcae45'
+    ROSE = '#d66578'
+    LIME = '#b8cf79'
 
-    def __init__(self, master, device, button_names, encoder_names, send):
-        super().__init__(master, bg=self.BG)
+    def __init__(self, master, device, button_names, encoder_names, send, scale):
+        super().__init__(master, bg=self.BG, highlightthickness=1,
+                         highlightbackground='#343b44')
         self.device = device
         self.button_names = button_names
         self.encoder_names = encoder_names
         self.send = send
-        self._latching = frozenset(
-            c for g in device.groups if g.name in LATCHING_GROUPS
-            for c in g.codes)
-        self._latched = {}          # code -> widget, currently latched
+        self.scale = scale
+        self.panel = None
+        self._latching = frozenset(c for g in device.groups
+                                   if g.name in LATCHING_GROUPS for c in g.codes)
+        self._latched = {}
         self._build()
-
-    # Character cells across before wrapping to a new row. Measured, not
-    # guessed: on a 14" display 104 packs into 3 rows but 1414px wide, which
-    # crowds the window edge, while 60 wraps to 7 rows and makes the surface
-    # taller than the screen it saved. Anything from 84 to 92 lands on the
-    # same 4-row, 1028x261 layout; 88 sits in the middle of that plateau.
-    ROW_BUDGET = 88
 
     def _label(self, code, kind):
         names = self.button_names if kind == 'button' else self.encoder_names
         return names.get(code) or '#%d' % code
 
     def _group_labels(self, group):
-        """-> {code: text}, with a prefix the whole group shares dropped.
-
-        `TRIG 1`..`TRIG 16`, inside a box already titled `trigs`, spends most
-        of its width repeating the word TRIG. Only a prefix ending in a space
-        is cut, so PLAY and PLUS are never mangled into Y and S. A lone
-        control keeps whatever follows its last space for the same reason:
-        `ENCODER LEVEL` becomes `LEVEL`, while `SAMPLING` is left alone.
-        """
         labels = {c: self._label(c, group.kind) for c in group.codes}
         if len(labels) < 2:
             return {c: t.rsplit(' ', 1)[-1] for c, t in labels.items()}
         cut = os.path.commonprefix(list(labels.values())).rfind(' ') + 1
-        if cut <= 0:
-            return labels
-        return {c: (t[cut:] or t) for c, t in labels.items()}
+        return labels if cut <= 0 else {c: (t[cut:] or t) for c, t in labels.items()}
 
-    def _group_width(self, group, labels):
-        """-> roughly how many character cells wide this group will render."""
-        cells = group.columns or len(group.codes)
-        widest = max((len(t) for t in labels.values()), default=2)
-        return cells * (widest + (4 if group.kind == 'encoder' else 2))
+    def _groups(self):
+        return {group.name: group for group in self.device.groups}
 
     def _build(self):
-        # Pack groups into rows greedily rather than on a fixed column count.
-        # They differ enormously in width -- sixteen trig keys against a lone
-        # LEVEL -- so a rigid grid sizes every column to its widest member,
-        # leaving most of the window empty while still clipping the rest off
-        # the bottom.
-        row = column = used = 0
-        for group in self.device.groups:
-            labels = self._group_labels(group)
-            width = self._group_width(group, labels)
-            if column and used + width > self.ROW_BUDGET:
-                row, column, used = row + 1, 0, 0
-            box = tk.LabelFrame(self, text=group.name, bg=self.BG,
-                                fg='#5d6a7c', bd=1, labelanchor='nw',
-                                font=('SF Mono', 8))
-            box.grid(row=row, column=column, sticky='nw', padx=4, pady=3)
-            if group.kind == 'encoder':
-                self._encoders(box, group, labels)
-            elif group.layout == 'dpad':
-                self._dpad(box, group, labels)
-            else:
-                self._buttons(box, group, labels)
-            column += 1
-            used += width
-        if column and used + 2 > self.ROW_BUDGET:
-            row, column = row + 1, 0
-        box = tk.LabelFrame(self, text='latch', bg=self.BG, fg='#5d6a7c',
-                            bd=1, labelanchor='nw', font=('SF Mono', 8))
-        box.grid(row=row, column=column, sticky='nw', padx=4, pady=3)
-        tk.Button(box, text='clear', bg=self.FACE, fg=self.TEXT,
-                  activebackground='#3a4654', activeforeground='#ffffff',
-                  relief='raised', bd=1, highlightthickness=0,
-                  font=('SF Mono', 8), padx=0, pady=0,
-                  command=self._consume_latched).pack(padx=1, pady=1)
+        groups = self._groups()
+        upper = tk.Frame(self, bg=self.BG)
+        upper.grid(row=0, column=0, padx=10, pady=(9, 3), sticky='n')
+        rotary = tk.Frame(upper, bg=self.BG)
+        rotary.grid(row=0, column=0, padx=(0, 8), sticky='n')
+        # MONITOR is local-only: the mapped device has no second rotary channel.
+        Rotary(rotary, 'MONITOR', accent='#77818d').pack(pady=(0, 5))
+        level = groups.get('level')
+        if level:
+            code = level.codes[0]
+            Rotary(rotary, 'LEVEL / DATA',
+                   turn=lambda step, c=code: self._encoder_turn(c, step),
+                   press=lambda: self.send('press', 49, 0),
+                   release=lambda: self.send('release', 49, 0)).pack()
 
-    def _buttons(self, box, group, labels):
-        columns = group.columns or len(group.codes)
-        for i, code in enumerate(group.codes):
-            self._button(box, code, labels[code]).grid(
-                row=i // columns, column=i % columns, padx=1, pady=1)
+        self.panel = Panel(upper, scale=self.scale)
+        self.panel.grid(row=0, column=1, padx=5, sticky='n')
 
-    def _dpad(self, box, group, labels):
-        # The arrows group is UP, LEFT, DOWN, RIGHT in code order, which is
-        # the order the firmware's own name table lists them in.
-        places = ((0, 1), (1, 0), (1, 1), (1, 2))
-        for code, (row, column) in zip(group.codes, places):
-            self._button(box, code, labels[code]).grid(
-                row=row, column=column, padx=1, pady=1)
+        encoders = tk.Frame(upper, bg=self.BG)
+        encoders.grid(row=0, column=2, padx=(8, 0), sticky='n')
+        encoder_group = groups.get('encoders')
+        if encoder_group:
+            labels = self._group_labels(encoder_group)
+            for index, code in enumerate(encoder_group.codes):
+                push_code = 41 + index
+                Rotary(encoders, labels[code],
+                       turn=lambda step, c=code: self._encoder_turn(c, step),
+                       press=lambda c=push_code: self.send('press', c, 0),
+                       release=lambda c=push_code: self.send('release', c, 0)).grid(
+                           row=index // 4, column=index % 4, padx=2, pady=2)
+        # The six page keys are intentionally tied to the encoder bank, not
+        # the display: this matches their physical row directly below A--H.
+        pages = groups.get('pages')
+        if pages:
+            page_row = self._keys_row(encoders, pages, self._group_labels(pages),
+                                      width=36, height=30)
+            page_row.grid(row=2, column=0, columnspan=4, pady=(4, 0))
 
-    def _button(self, box, code, text):
-        widget = tk.Button(box, text=text, bg=self.FACE, fg=self.TEXT,
-                           activebackground='#3a4654',
-                           activeforeground='#ffffff', relief='raised', bd=1,
-                           highlightthickness=0, font=('SF Mono', 8),
-                           width=max(2, len(text)), padx=0, pady=0)
-        # Bound rather than given a `command`, which fires only on release:
-        # the wire carries button STATE, so a held button must stay held.
-        if code in self._latching:
-            widget.bind('<ButtonPress-1>',
-                        lambda _e, c=code, w=widget: self._toggle_latch(c, w))
+        lower = tk.Frame(self, bg=self.BG)
+        lower.grid(row=1, column=0, padx=10, pady=(2, 9), sticky='n')
+        modifiers = groups.get('modifiers')
+        select = groups.get('select')
+        modifier_labels = self._group_labels(modifiers) if modifiers else {}
+        select_labels = self._group_labels(select) if select else {}
+
+        left_stack = tk.Frame(lower, bg=self.BG)
+        left_stack.grid(row=0, column=0, rowspan=2, padx=(0, 7), sticky='n')
+        # The firmware names identify these controls; arrange their physical
+        # stack independently of their numerical wire order.
+        modifier_by_name = {label.upper(): code for code, label in modifier_labels.items()}
+        stacked_modifiers = set()
+        for row, name in enumerate(('FUNC', 'TRK')):
+            code = modifier_by_name.get(name)
+            if code is not None:
+                stacked_modifiers.add(code)
+                self._button(left_stack, code, modifier_labels[code]).grid(
+                    row=row, column=0, pady=2)
+        if select:
+            for row, code in enumerate(select.codes[1:], start=2):
+                self._button(left_stack, code, select_labels[code]).grid(
+                    row=row, column=0, pady=2)
+
+        middle = tk.Frame(lower, bg=self.BG)
+        middle.grid(row=0, column=1, padx=4, sticky='nw')
+        modes = groups.get('modes')
+        if modes:
+            self._keys_row(middle, modes, self._group_labels(modes)).grid(
+                row=0, column=0, padx=2, pady=2, sticky='w')
+        # Keep the third modifier (normally keyboard setup) with the other
+        # mode tools after FUNC and TRK have moved into the physical stack.
+        remaining_modifiers = [code for code in (modifiers.codes if modifiers else ())
+                               if code not in stacked_modifiers]
+        if remaining_modifiers and modifiers:
+            self._keys_row(middle, modifiers, modifier_labels,
+                           codes=remaining_modifiers).grid(row=0, column=1, padx=2, pady=2)
+        transport = groups.get('transport')
+        if transport:
+            self._keys_row(middle, transport, self._group_labels(transport)).grid(
+                row=1, column=0, padx=2, pady=2, sticky='w')
+        product = groups.get('product')
+        if product:
+            self._keys_row(middle, product, self._group_labels(product)).grid(
+                row=1, column=1, padx=2, pady=2, sticky='w')
+
+        right = tk.Frame(lower, bg=self.BG)
+        right.grid(row=0, column=2, padx=(8, 0), sticky='ne')
+        confirm = groups.get('confirm')
+        if confirm:
+            confirm_box = tk.Frame(right, bg=self.BG)
+            confirm_box.grid(row=0, column=0, padx=2, sticky='n')
+            for row, code in enumerate(confirm.codes):
+                self._button(confirm_box, code, self._group_labels(confirm)[code],
+                             width=42, height=28).grid(row=row, column=0, pady=1)
+        arrows = groups.get('arrows')
+        if arrows:
+            self._button_group(right, arrows).grid(row=0, column=1, padx=2, sticky='n')
+        if select and select.codes:
+            self._button(right, select.codes[0], select_labels[select.codes[0]],
+                         width=52, height=32).grid(row=0, column=2, padx=2, sticky='n')
+
+        trigs = groups.get('trigs')
+        if trigs:
+            trig_box = tk.Frame(lower, bg='#1b2026', highlightthickness=1,
+                                highlightbackground='#38414b')
+            trig_box.grid(row=1, column=1, columnspan=2, padx=(4, 0), pady=(5, 0))
+            labels = self._group_labels(trigs)
+            for index, code in enumerate(trigs.codes):
+                accent = self.ROSE if index < 8 else self.LIME
+                row, column = trigger_position(index)
+                self._button(trig_box, code, labels[code], accent=accent,
+                             width=72, height=40).grid(row=row, column=column,
+                                                       padx=2, pady=3)
+
+    def _keys_row(self, parent, group, labels, codes=None, width=48, height=32):
+        box = tk.Frame(parent, bg=self.BG)
+        for column, code in enumerate(codes if codes is not None else group.codes):
+            self._button(box, code, labels[code], width=width, height=height).grid(
+                row=0, column=column, padx=1, pady=1)
+        return box
+
+    def _button_group(self, parent, group):
+        box = tk.Frame(parent, bg=self.BG)
+        labels = self._group_labels(group)
+        if group.layout == 'dpad':
+            places = ((0, 1), (1, 0), (1, 1), (1, 2))
+            for code, (row, column) in zip(group.codes, places):
+                self._button(box, code, labels[code], width=34, height=28).grid(
+                    row=row, column=column, padx=1, pady=1)
         else:
-            widget.bind('<ButtonPress-1>',
-                        lambda _e, c=code: self.send('press', c, 0))
-            widget.bind('<ButtonRelease-1>',
-                        lambda _e, c=code: self.send('release', c, 0))
+            columns = group.columns or len(group.codes)
+            for index, code in enumerate(group.codes):
+                self._button(box, code, labels[code]).grid(
+                    row=index // columns, column=index % columns, padx=1, pady=1)
+        return box
+
+    def _button(self, box, code, text, accent=None, width=48, height=32):
+        accent = accent or self.AMBER
+        if code in self._latching:
+            widget = CanvasKey(box, text, accent=accent, width=width, height=height,
+                               on_press=lambda c=code: self._toggle_latch(c, widget))
+        else:
+            widget = CanvasKey(box, text, accent=accent, width=width, height=height,
+                               on_press=lambda c=code: self.send('press', c, 0),
+                               on_release=lambda c=code: self.send('release', c, 0))
         return widget
 
     def _toggle_latch(self, code, widget):
         if code in self._latched:
             self.send('release', code, 0)
             del self._latched[code]
-            widget.configure(relief='raised', bg=self.FACE)
+            widget.set_latched(False)
         else:
             self.send('press', code, 0)
             self._latched[code] = widget
-            widget.configure(relief='sunken', bg='#3a4654')
+            widget.set_latched(True)
 
     def _consume_latched(self):
         for code, widget in self._latched.items():
             self.send('release', code, 0)
-            widget.configure(relief='raised', bg=self.FACE)
+            widget.set_latched(False)
         self._latched.clear()
-
-    def _encoders(self, box, group, labels):
-        columns = group.columns or len(group.codes)
-        for i, code in enumerate(group.codes):
-            cell = tk.Frame(box, bg=self.BG)
-            cell.grid(row=i // columns, column=i % columns, padx=2, pady=1)
-            face = tk.Label(cell, text=labels[code], bg=self.FACE,
-                            fg=self.TEXT, font=('SF Mono', 9), width=5, pady=2)
-            face.pack()
-            strip = tk.Frame(cell, bg=self.BG)
-            strip.pack()
-            for text, step in (('-', -1), ('+', 1)):
-                tk.Button(strip, text=text, bg=self.FACE, fg=self.TEXT, bd=1,
-                          font=('SF Mono', 8), width=2, padx=0, pady=0,
-                          command=lambda c=code, s=step:
-                          self._encoder_turn(c, s)).pack(side='left')
-            # Wheel over an encoder turns it. Tk reports the wheel differently
-            # per platform -- a signed delta on macOS and Windows, buttons 4
-            # and 5 on X11 -- so all three are bound.
-            for widget in (cell, face):
-                widget.bind('<MouseWheel>',
-                            lambda e, c=code: self._wheel(e, c))
-                widget.bind('<Button-4>',
-                            lambda _e, c=code: self._encoder_turn(c, 1))
-                widget.bind('<Button-5>',
-                            lambda _e, c=code: self._encoder_turn(c, -1))
 
     def _encoder_turn(self, code, step):
         self.send('encoder', code, step)
-
-    def _wheel(self, event, code):
-        step = 1 if event.delta > 0 else -1
-        if event.state & 0x0001:            # shift held: coarse
-            step *= 10
-        self._encoder_turn(code, step)
 
 
 class Panel(tk.Frame):
@@ -917,50 +1078,49 @@ class Panel(tk.Frame):
 
 class App(tk.Tk):
     def __init__(self, snapshot, weakptr=False, slc=False, scale=None,
-                 syx=None, fast=True, realtime=True, patch_machine=False,
+                 syx=None, fast=True, realtime=True,
+                 patch_machine: bool | tuple[str, ...] = False,
                  patch_eighth=7, patch_machine_spec=None,
                  panel_dwell=PANEL_DWELL_CHUNKS, ips_at=(),
                  post_intro_ips=4 * INSTR_PER_SEC):
         super().__init__()
-        self.title('Digi emulator')
+        self.title('Hardware-style emulator')
         self.configure(bg='#15181d')
         self.snapshot = snapshot
-        # 128x64 is unreadable at 1:1, but the panel is not the point of the
-        # window any more -- the control surface below it is, and it needs
-        # real estate. RESERVE_H is what the buttons, the toolbar and the
-        # status lines want; the zoom is whatever integer fits in the rest.
-        # Capped well below what a large display would allow, because a panel
-        # scaled edge to edge pushes the controls off the bottom. Integer
-        # only: a fractional zoom would resample and invent pixels the
-        # firmware never drew. Override with --scale.
+        # Keep the complete front panel bounded even on large Retina displays.
+        # Integer scaling preserves the guest's native pixels; three fits the
+        # OLED into the center of an approximately 980x740-point instrument.
         if scale is None:
-            avail_w = max(1, self.winfo_screenwidth() - 160)
+            avail_w = max(1, self.winfo_screenwidth() - 460)
             avail_h = max(1, self.winfo_screenheight() - RESERVE_H)
             scale = max(1, min(MAX_SCALE, avail_w // W, avail_h // H))
         self.scale = scale
+        self.geometry('%dx%d' % (min(980, self.winfo_screenwidth() - 80),
+                                  min(740, self.winfo_screenheight() - 120)))
 
-        self.panel = Panel(self, scale=scale)
-        self.panel.pack(padx=14, pady=(14, 6))
-        self.controls = None        # built once the worker knows the device
+        self.surface = tk.Frame(self, bg='#15181d')
+        self.surface.pack(padx=12, pady=(10, 4))
+        self.panel: Panel | None = None  # constructed after identification
+        self.controls = None
 
+        # Emulator tools stay in a narrow service footer below the instrument.
         bar = tk.Frame(self, bg='#15181d')
-        bar.pack(fill='x', padx=20, pady=(0, 6))
-        self.btn = ttk.Button(bar, text='Pause', width=9, command=self.toggle)
+        bar.pack(fill='x', padx=16, pady=(0, 3))
+        self.btn = CanvasKey(bar, 'PAUSE', command=self.toggle, width=58, height=27)
         self.btn.pack(side='left')
-        ttk.Button(bar, text='Restart', width=9,
-                   command=self.restart).pack(side='left', padx=6)
-        ttk.Button(bar, text='Save PNG', width=9,
-                   command=self.save).pack(side='left')
-        self.replay_btn = ttk.Button(bar, text='Replay 15fps', width=12,
-                                     command=self.toggle_replay)
-        self.replay_btn.pack(side='left', padx=6)
+        CanvasKey(bar, 'RESTART', command=self.restart, width=62, height=27).pack(
+            side='left', padx=3)
+        CanvasKey(bar, 'SAVE', command=self.save, width=52, height=27).pack(side='left')
+        self.replay_btn = CanvasKey(bar, 'REPLAY', command=self.toggle_replay,
+                                    width=62, height=27)
+        self.replay_btn.pack(side='left', padx=3)
         self.frames_lbl = tk.Label(bar, text='', bg='#15181d', fg='#7f8b9c',
-                                   font=('SF Mono', 11))
+                                   font=('TkFixedFont', 8))
         self.frames_lbl.pack(side='right')
 
-        self.status = tk.Label(self, text='', bg='#15181d', fg='#9aa7b8',
-                               font=('SF Mono', 11), anchor='w', justify='left')
-        self.status.pack(fill='x', padx=20, pady=(0, 14))
+        self.status = tk.Label(self, text='', bg='#15181d', fg='#8793a1',
+                               font=('TkFixedFont', 8), anchor='w', justify='left')
+        self.status.pack(fill='x', padx=16, pady=(0, 7))
 
         self.emu = None
         self.weakptr = weakptr
@@ -1001,24 +1161,26 @@ class App(tk.Tk):
         """Build the control surface once the worker has identified the device."""
         if self.controls is not None or not self.emu or not self.emu.device:
             return
-        self.controls = Controls(self, self.emu.device, self.emu.button_names,
-                                 self.emu.encoder_names, self.send_input)
-        self.controls.pack(padx=14, pady=(0, 10))
+        self.controls = Controls(self.surface, self.emu.device,
+                                 self.emu.button_names, self.emu.encoder_names,
+                                 self.send_input, self.scale)
+        self.controls.pack()
+        self.panel = self.controls.panel
 
     def restart(self):
         if self.controls is not None:
             self.controls.destroy()
             self.controls = None
+            self.panel = None
         if self.emu:
             self.emu.stop_flag.set()
             self.emu.pause.clear()
             self.emu.join(timeout=3)
-        self.panel._blank()
         self.shown = -1
         self.replay = None
-        self.replay_btn.configure(text='Replay 15fps')
+        self.replay_btn.set_text('REPLAY')
         self.start()
-        self.btn.configure(text='Pause')
+        self.btn.set_text('PAUSE')
 
     def toggle_replay(self):
         """Play the captured frames back at the rate the firmware asks for.
@@ -1029,7 +1191,7 @@ class App(tk.Tk):
         """
         if self.replay is not None:
             self.replay = None
-            self.replay_btn.configure(text='Replay 15fps')
+            self.replay_btn.set_text('REPLAY')
             return
         frames = list(self.emu.captured) if self.emu else []
         if not frames:
@@ -1037,21 +1199,23 @@ class App(tk.Tk):
             return
         if self.emu:
             self.emu.pause.set()
-            self.btn.configure(text='Resume')
+            self.btn.set_text('RESUME')
         self.replay = [frames, 0, time.time()]
-        self.replay_btn.configure(text='Stop replay')
+        self.replay_btn.set_text('STOP REPLAY')
 
     def toggle(self):
         if not self.emu:
             return
         if self.emu.pause.is_set():
             self.emu.pause.clear()
-            self.btn.configure(text='Pause')
+            self.btn.set_text('PAUSE')
         else:
             self.emu.pause.set()
-            self.btn.configure(text='Resume')
+            self.btn.set_text('RESUME')
 
     def save(self):
+        if not self.emu:
+            return
         os.makedirs('out', exist_ok=True)
         s = 6
         px = bytearray(W * s * H * s)
@@ -1070,7 +1234,8 @@ class App(tk.Tk):
             frames, i, due = self.replay
             now = time.time()
             if now >= due:
-                self.panel.draw(frames[i])
+                if self.panel is not None:
+                    self.panel.draw(frames[i])
                 i = (i + 1) % len(frames)
                 self.replay = [frames, i, max(now, due + 1.0 / FRAME_HZ)]
                 self.frames_lbl.configure(
@@ -1088,7 +1253,7 @@ class App(tk.Tk):
                 self.status.configure(text=e.error, fg='#ff8f8f')
             else:
                 self._ensure_controls()
-                if e.version != self.shown:
+                if self.panel is not None and e.version != self.shown:
                     self.panel.draw(e.fb)      # skip if nothing was drawn
                     self.shown = e.version
                 s = e.stats
