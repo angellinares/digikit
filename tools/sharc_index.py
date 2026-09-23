@@ -23,6 +23,9 @@ WRITER_POLICY = {"max_steps": 4000, "max_states": 128, "fallback_width": 4,
                  "seed_global_constants": True}
 REGISTER_POLICY = {"concrete_memory": True, "follow_loaded_calls": True,
                    "continue_external_calls": False}
+# This is deliberately a register-effect query rule, not a tracer stop-rule
+# change: the trace began at a recovered architectural function entry.
+REGISTER_EFFECT_VERIFIED_RETURNS = frozenset(("return", "returned", "return without followed call"))
 
 
 def _canonical(value: Any) -> str:
@@ -240,9 +243,9 @@ class AnalysisIndex:
         return {"contract": "writer-target/v1", "target": {"address": target.address, "width": target.width}, "policy": WRITER_POLICY}
 
     def _request_register(self, query: RegisterEffectQuery) -> dict[str, Any]:
-        return {"contract": "register-effect/v1", "entry_sw": query.entry_sw, "register": query.register,
+        return {"contract": "register-effect/v2", "entry_sw": query.entry_sw, "register": query.register,
                 "max_steps": query.max_steps, "max_states": query.max_states, "max_call_depth": query.max_call_depth,
-                "policy": REGISTER_POLICY, "reducer": "conservative-register-paths/v1"}
+                "policy": REGISTER_POLICY, "reducer": "conservative-register-paths/v2"}
 
     def _query_key(self, request: Mapping[str, Any]) -> str:
         return hashlib.sha256(_canonical_bytes({"static_key": self._static_key, "request": request})).hexdigest()
@@ -319,8 +322,8 @@ class AnalysisIndex:
                             result = event.get("result_register"); destination = event.get("destination", event.get("ureg"))
                             if destination == item.register or result == item.register or isinstance(result, list) and item.register in result: writers.append(event.get("pc_sw", item.entry_sw))
                             if event.get("action") in ("opaque-external-call", "unsupported", "indirect-call"): uncertainty.append(event["action"])
-                        if state.stopped not in ("return", "returned"): uncertainty.append("trace stop: " + str(state.stopped))
-                        paths.append({"verified_return": state.stopped in ("return", "returned"), "writer_pcs": writers, "uncertainty": uncertainty})
+                        if state.stopped not in REGISTER_EFFECT_VERIFIED_RETURNS: uncertainty.append("trace stop: " + str(state.stopped))
+                        paths.append({"verified_return": state.stopped in REGISTER_EFFECT_VERIFIED_RETURNS, "writer_pcs": writers, "uncertainty": uncertainty})
                     effect = classify_register_paths(paths)
                 register_values[ident] = self._publish("register_results", key, request, {"entry_sw": item.entry_sw, "register": item.register, **effect})
         return {"writer_targets": [writer_values[(i.address, i.width)] for i in writer_items], "register_effects": [register_values[(i.entry_sw, i.register, i.max_steps, i.max_states, i.max_call_depth)] for i in register_items]}

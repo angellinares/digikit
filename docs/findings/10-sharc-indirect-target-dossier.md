@@ -177,8 +177,19 @@ table mutation remain unproven. The writer census has no exact hit but retains
 7,456 unresolved stores and does not model external writers; the `0x1c306f`
 bulk-copy range is also not yet bounded. **[D][O]**
 
+The generated register-effect audit now accepts the exact terminal
+`return without followed call` only for a trace started at a recovered function
+entry, as that terminal has reached the entry's top-level architectural return.
+With all retained paths supported and uncertainty-free, the audit reports
+`R6` preserved for direct entries `0x1c3464`, `0x1c3474`, `0x1c347e`, and
+`0x1c349b`, and for table-entered wrappers `0x1c352f`, `0x1c353e`, and
+`0x1c354d`. `0x1c3504` remains unknown: its retained trace stops at
+`uncertain or undecodable form: source: prm`. These are bounded static
+trace results, not a natural selector or calling-convention observation.
+**[D][O]**
+
 The loaded tail is no longer an unknown *loader initialization* boundary, but
-its runtime target set and `R6` effect remain unproven. No natural selector
-value or runtime occurrence is observed. A minimal future capture would record
-`DM(0x2560c4)`, `DM(0x256c98..0x256ca7)`, `R4`/`R6` at `0x1c351a`, and the
-selected tail target. **[O]**
+its runtime target set remains unproven. No natural selector value or runtime
+occurrence is observed. A minimal future capture would record `DM(0x2560c4)`,
+`DM(0x256c98..0x256ca7)`, `R4`/`R6` at `0x1c351a`, and the selected tail
+target. **[O]**

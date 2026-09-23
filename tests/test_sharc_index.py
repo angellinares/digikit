@@ -65,6 +65,52 @@ class IndexContractTest(unittest.TestCase):
             self.assertGreater(index._path.stat().st_size, 0)
             self.assertEqual([x["target_width"] for x in warm["writer_targets"]], [4, 16])
 
+    def test_register_return_without_followed_call_is_verified_at_function_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            context = {"mem": object(), "functions": [{"entry": 0x20}]}
+
+            class State:
+                trace = []
+                stopped = "return without followed call"
+
+            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", return_value=[State()]):
+                effect = index.query(register_effects=[I.RegisterEffectQuery(0x20, "R6")])["register_effects"][0]
+            self.assertEqual(effect["status"], "preserved")
+            self.assertEqual(effect["reasons"], [])
+
+    def test_register_effect_rejects_non_return_stops_and_event_uncertainty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            class State:
+                def __init__(self, stopped, trace=()):
+                    self.stopped = stopped
+                    self.trace = list(trace)
+
+            stops = ("unsupported 7b", "unknown indirect target", "opaque external call",
+                     "max steps", "max states", "max call depth", "arbitrary stop")
+            states = [State(stop) for stop in stops]
+            states.append(State("return without followed call", [{"action": "unsupported"}]))
+            context = {"mem": object(), "functions": [{"entry": 0x20 + number} for number in range(len(states))]}
+            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", side_effect=[[state] for state in states]):
+                effects = index.query(register_effects=[I.RegisterEffectQuery(0x20 + number, "R6") for number in range(len(states))])["register_effects"]
+            self.assertTrue(all(effect["status"] == "unknown" for effect in effects))
+            self.assertTrue(any("unsupported" in effect["reasons"] for effect in effects))
+
+    def test_register_effect_writer_beats_verified_return(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+
+            class State:
+                stopped = "return without followed call"
+                trace = [{"pc_sw": 0x24, "action": "ureg-write", "destination": "R6"}]
+
+            context = {"mem": object(), "functions": [{"entry": 0x20}]}
+            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", return_value=[State()]):
+                effect = index.query(register_effects=[I.RegisterEffectQuery(0x20, "R6")])["register_effects"][0]
+            self.assertEqual(effect["status"], "written")
+            self.assertEqual(effect["writer_pcs"], [0x24])
+
     def test_register_cache_deduplicates_and_is_deterministic(self):
         with tempfile.TemporaryDirectory() as directory:
             index = self.make_index(directory)
@@ -88,6 +134,35 @@ class IndexContractTest(unittest.TestCase):
                 warm = I.AnalysisIndex.open_or_build(index._metadata["blob_path"], path=index._path, config=I.IndexConfig((1,), 8))
             self.assertEqual(build.call_count, 0)
             self.assertEqual(warm._static_key, index._static_key)
+
+    def test_register_effect_contract_invalidates_old_reducer_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            item = I.RegisterEffectQuery(0x20, "R6")
+            old_request = {"contract": "register-effect/v1", "entry_sw": item.entry_sw,
+                           "register": item.register, "max_steps": item.max_steps,
+                           "max_states": item.max_states, "max_call_depth": item.max_call_depth,
+                           "policy": I.REGISTER_POLICY,
+                           "reducer": "conservative-register-paths/v1"}
+            old_key = index._query_key(old_request)
+            old_value = {"entry_sw": item.entry_sw, "register": item.register,
+                         "status": "unknown", "quantifier": "not established",
+                         "writer_pcs": [], "reasons": ["trace stop: return without followed call"]}
+            with sqlite3.connect(index._path) as con:
+                con.execute("INSERT INTO register_results VALUES (?,?,?,?,?,?,1)",
+                            (old_key, index._static_key, I._payload(old_request),
+                             I._payload(old_value), hashlib.sha256(I._payload(old_value)).hexdigest(),
+                             len(I._payload(old_value))))
+
+            class State:
+                trace = []
+                stopped = "return without followed call"
+
+            context = {"mem": object(), "functions": [{"entry": item.entry_sw}]}
+            with patch("sharcfn.load_context", return_value=context), patch("sharc_trace.trace", return_value=[State()]) as trace:
+                effect = index.query(register_effects=[item])["register_effects"][0]
+            self.assertEqual(trace.call_count, 1)
+            self.assertEqual(effect["status"], "preserved")
 
     def test_query_keys_include_semantics_not_jobs(self):
         with tempfile.TemporaryDirectory() as directory:
