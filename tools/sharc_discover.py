@@ -48,6 +48,7 @@ import sharcflow  # noqa: E402
 from sharc_disasm import decode_loaded_at  # noqa: E402
 import sharcldr  # noqa: E402
 sharc_index = import_module("sharc_index")  # noqa: E402
+from sharc_static import _compact_functions, build_static_context, find_pointer_runs  # noqa: E402
 
 
 SCHEMA = "sharc-discovery/v1"
@@ -160,183 +161,12 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return document
 
 
-def _owner_indexes(functions: Sequence[Mapping[str, Any]]) -> dict[int, list[Mapping[str, Any]]]:
-    result: dict[int, list[Mapping[str, Any]]] = defaultdict(list)
-    for function in functions:
-        result[function["block"]].append(function)
-    for items in result.values():
-        items.sort(key=lambda item: (item["entry"], item["exit"], item["id"]))
-    return result
 
 
-def _owner_of(
-    owners: Mapping[int, Sequence[Mapping[str, Any]]], block: int, pc_sw: int
-) -> str | None:
-    matches = [
-        item
-        for item in owners.get(block, ())
-        if item["entry"] <= pc_sw < item["exit"]
-    ]
-    if not matches:
-        return None
-    return min(matches, key=lambda item: (item["exit"] - item["entry"], item["entry"]))[
-        "id"
-    ]
 
 
-def build_static_context(ctx: Mapping[str, Any]) -> dict[str, Any]:
-    """Return stable instruction, literal and indirect-transfer indexes."""
-    owners = _owner_indexes(ctx["functions"])
-    instructions: dict[int, dict[str, Any]] = {}
-    literals = []
-    indirect_sites = []
-    for block, analyzed in sorted(ctx["analyzed"].items()):
-        base_sw = analyzed["base_sw"]
-        for offset, instruction in analyzed["insns"]:
-            pc_sw = base_sw + offset // 2
-            owner = _owner_of(owners, block, pc_sw)
-            instructions[pc_sw] = {
-                "block": block,
-                "owner": owner,
-                "form": instruction.type_name,
-                "raw_hex": f"{instruction.raw:0{instruction.length_bytes * 2}x}",
-            }
-            fields = sharcinv.merge_fields(instruction.fields)
-            literal_form = sharcinv.LITERAL_FORMS.get(instruction.type_name)
-            if literal_form is not None:
-                field, bits, _ = literal_form
-                value = fields.get(field)
-                if value is not None:
-                    literals.append(
-                        {
-                            "pc_sw": pc_sw,
-                            "block": block,
-                            "owner": owner,
-                            "form": instruction.type_name,
-                            "value": value & ((1 << bits) - 1),
-                        }
-                    )
-            if instruction.type_name not in ("9a_abs", "9b_abs"):
-                continue
-            pmi = fields.get("pmi")
-            pmm = fields.get("pmm")
-            if pmi is None or pmm is None:
-                continue
-            known_return = (
-                fields.get("b", 0) == 0
-                and fields.get("cond") == 0x1F
-                and pmi == 4
-                and pmm == 6
-                and fields.get("j") == 1
-            )
-            indirect_sites.append(
-                {
-                    "pc_sw": pc_sw,
-                    "block": block,
-                    "owner": owner,
-                    "form": instruction.type_name,
-                    "kind": "return"
-                    if known_return
-                    else ("call" if fields.get("b", 0) else "jump"),
-                    "index_register": f"I{8 + pmi}",
-                    "modifier_register": f"M{8 + pmm}",
-                    "condition": fields.get("cond"),
-                    "delayed": bool(fields.get("j")),
-                    "raw": instruction.raw,
-                    "evidence_class": "static-decode",
-                }
-            )
-    return {
-        "instructions": instructions,
-        "literals": sorted(literals, key=lambda item: (item["pc_sw"], item["value"])),
-        "indirect_sites": sorted(indirect_sites, key=lambda item: item["pc_sw"]),
-    }
 
 
-def find_pointer_runs(
-    ctx: Mapping[str, Any],
-    instructions: Mapping[int, Mapping[str, Any]],
-    code_blocks: Sequence[int],
-    *,
-    minimum_run: int = 2,
-) -> tuple[list[dict[str, Any]], int]:
-    """Find final-memory normal-word runs that point at decoded PCs.
-
-    Addresses are enumerated only from non-fill payload blocks, then read via
-    LoadedMemory so later overlapping blocks and fills retain last-write-wins
-    semantics.
-    """
-    candidates: set[int] = set()
-    for block in ctx["blocks"]:
-        if block["fill"] or not block["payload_len"] or block["index"] in code_blocks:
-            continue
-        start = block["target_address"]
-        end = start + block["payload_len"]
-        first = start + (-start % 4)
-        candidates.update(range(first, end - 3, 4))
-    hits = []
-    memory: sharcldr.LoadedMemory = ctx["mem"]
-    blocks_by_index = {block["index"]: block for block in ctx["blocks"]}
-    for address in sorted(candidates):
-        # A normal word can straddle later overlapping writes.  Retain every
-        # byte's final source rather than attributing the slot to its first
-        # byte, and reject a word if any final byte comes from a FILL block.
-        source_byte_blocks: list[int] = []
-        for offset in range(4):
-            source = memory.source_block(address + offset)
-            if not isinstance(source, int) or source not in blocks_by_index:
-                break
-            source_byte_blocks.append(source)
-        if len(source_byte_blocks) != 4 or any(
-            blocks_by_index[source]["fill"] for source in source_byte_blocks
-        ):
-            continue
-        raw = memory.read(address, 4)
-        if raw is None:
-            continue
-        target = int.from_bytes(raw, "little")
-        decoded = instructions.get(target)
-        if decoded is None:
-            continue
-        hits.append(
-            {
-                "source_byte_address": address,
-                "source_byte_blocks": source_byte_blocks,
-                "source_blocks": sorted(set(source_byte_blocks)),
-                "target_sw": target,
-                "target_block": decoded["block"],
-                "target_owner": decoded["owner"],
-            }
-        )
-    runs = []
-    current = []
-    for hit in hits:
-        if current and hit["source_byte_address"] != current[-1]["source_byte_address"] + 4:
-            if len(current) >= minimum_run:
-                runs.append(current)
-            current = []
-        current.append(hit)
-    if len(current) >= minimum_run:
-        runs.append(current)
-    result = []
-    for run in runs:
-        result.append(
-            {
-                "source_byte_address": run[0]["source_byte_address"],
-                "source_blocks": sorted(
-                    {source for item in run for source in item["source_byte_blocks"]}
-                ),
-                "entry_count": len(run),
-                "entries": run,
-                "target_owners": sorted(
-                    {item["target_owner"] for item in run if item["target_owner"]}
-                ),
-                "evidence_class": "loaded-bytes",
-                "semantic_status": "not-proven",
-            }
-        )
-    result.sort(key=lambda item: (-item["entry_count"], item["source_byte_address"]))
-    return result, len(hits)
 
 
 def canonical_loader_dm_address(address: int) -> int:
@@ -866,40 +696,6 @@ def read_ghidradump_evidence_ro(
     }
 
 
-def _compact_functions(functions: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    result = []
-    for function in functions:
-        vector = function["vector"]
-        result.append(
-            {
-                "id": function["id"],
-                "block": function["block"],
-                "entry_sw": function["entry"],
-                "exit_sw": function["exit"],
-                "n_insns": function["n_insns"],
-                "label": function["label"],
-                "confidence": function["confidence"],
-                "callers": function["callers"],
-                "callees": function["callees"],
-                "unresolved_callees": function["unresolved_callees"],
-                "has_no_static_caller": function["has_no_static_caller"],
-                "features": {
-                    key: vector[key]
-                    for key in (
-                        "compute_total",
-                        "float_alu",
-                        "float_mul",
-                        "mac",
-                        "mem_load",
-                        "mem_store",
-                        "calls",
-                        "indirect_calls",
-                        "named_tables_touched",
-                    )
-                },
-            }
-        )
-    return sorted(result, key=lambda item: (item["block"], item["entry_sw"]))
 
 
 def _root_hypotheses(
@@ -1248,18 +1044,38 @@ def resolve_r4_frontier_probes(declarations: Sequence[Mapping[str, Any]],
         if frontier is None:
             raise ValueError(f"r4_tail_probes[{number}] has no matching frontier")
         targets = {item["entry_index"]: item["target_sw"] for item in frontier["loaded_target_candidates"]}
+        register = _register_name(declaration.get("register", "R4"), f"r4_tail_probes[{number}].register")
+        if register != "R4":
+            raise ValueError(f"r4_tail_probes[{number}].register must be R4")
+        seeds = declaration.get("sets", {})
+        if not isinstance(seeds, Mapping):
+            raise ValueError(f"r4_tail_probes[{number}].sets must be an object")
+        base_sets = {_register_name(key, f"r4_tail_probes[{number}].sets key"):
+                     _seed_value(seed, f"r4_tail_probes[{number}].sets.{key}")
+                     for key, seed in seeds.items()}
+        if "I12" in base_sets:
+            raise ValueError(f"r4_tail_probes[{number}].sets must not seed I12")
+        assumptions = declaration.get("assumptions", [])
+        if not isinstance(assumptions, list) or not all(isinstance(item, str) for item in assumptions):
+            raise ValueError(f"r4_tail_probes[{number}].assumptions must be an array of strings")
         cases = []
         for value in sorted(_integer(item, f"r4_tail_probes[{number}].values") for item in values):
             if value not in targets:
                 raise ValueError(f"r4_tail_probes[{number}] value has no declared loaded target")
-            cases.append({"sets": {"R4": value}, "breakpoints": [targets[value]],
+            case_sets = dict(base_sets)
+            # The value sweep intentionally overrides a declaration-level R4
+            # seed; no case seeds I12 directly.
+            case_sets[register] = value
+            cases.append({"sets": dict(sorted(case_sets.items())), "breakpoints": [targets[value]],
                           "r4_value": value, "expected_target_sw": targets[value]})
         plans.append({"name": name, "start_sw": _integer(declaration.get("start_sw"), f"r4_tail_probes[{number}].start_sw"),
                       "max_steps": _positive(declaration.get("max_steps", 16), "r4_tail_probes.max_steps", TRACE_MAX_STEPS),
                       "max_states": _positive(declaration.get("max_states", 4), "r4_tail_probes.max_states", TRACE_MAX_STATES),
                       "concrete_memory": bool(declaration.get("concrete_memory", True)), "assume_nw32": bool(declaration.get("assume_nw32", True)),
                       "follow_loaded_calls": False, "continue_external_calls": False, "core_reset_state": False,
-                      "max_call_depth": 1, "assumptions": ["R4 values are manifest hypotheses, not observed runtime values", "one breakpoint per loader table target"], "cases": cases})
+                      "max_call_depth": 1,
+                      "assumptions": list(dict.fromkeys([*assumptions, "R4 values are manifest hypotheses, not observed runtime values", "M13 values are manifest hypotheses, not observed runtime values", "one breakpoint per loader table target"])),
+                      "cases": cases})
     return plans
 
 
@@ -1468,11 +1284,11 @@ def discover(
             "tools": {
                 path.name: _sha256(path.read_bytes())
                 for path in sorted(
-                    (_HERE / "sharc_discover.py", _HERE / "sharc_trace.py", _HERE / "sharcinv.py", _HERE / "sharcfn.py")
+                    (_HERE / "sharc_discover.py", _HERE / "sharc_static.py", _HERE / "sharc_trace.py", _HERE / "sharcinv.py", _HERE / "sharcfn.py")
                 )
             },
             "dump": dump,
-            "index": {"used": index is not None, "fingerprint": index._metadata.get("blob_sha256") if index else None},
+            "index": {"used": index is not None, "fingerprint": index._metadata["blob"]["sha256"] if index else None},
         },
         "limits": limits,
         "evidence_classes": list(EVIDENCE_CLASSES),

@@ -128,6 +128,17 @@ In particular, values 15--19 are only counterfactual-reachable (targets
 `0x1c7395`, `0x1c73b0`, `0x1c73cb`, `0x1c73e3`, and `0x1c742a` respectively);
 they are not demonstrated live-audio selections. **[D][O]**
 
+## Candidate IVT region
+
+Loader block 70 begins at loader byte address `0x28240000`. Applying the
+`sharcldr.sw_to_byte` inverse maps that address to short-word PC `0x120000`,
+not `0x1c2000`; the manifest candidate scan now starts at `0x120000` and
+validates that its declared start maps to block 70's loader-final bytes. With
+no processor-specific entry count, it does not decode candidate slots. This
+only corrects the address-space conversion. The candidate base, vector identities, core
+semantics, SPORT semantics, and audio semantics remain unverified or unknown;
+it is not an active-IVT claim. **[D][O]**
+
 ## Natural-selector frontier at `0x1c351a`
 
 **[C]** The prior statement that the two tail dependencies were not
@@ -153,11 +164,18 @@ calling-convention claim.
 
 The deterministic discovery report records this frontier with both DM
 spellings, source loader blocks, the exact tail decode, candidate legs, and
-incomplete writer coverage. Its bounded `R4` target probes do not establish a
-seeded-selector or guarded-return claim. The range guard condition,
-an upstream `R4` bound, and table mutation remain unproven. The writer census
-has no exact hit but retains 7,456 unresolved stores and does not model external
-writers; the `0x1c306f` bulk-copy range is also not yet bounded. **[D][O]**
+incomplete writer coverage. Its bounded `R4` target probes start at the loaded
+setup boundary `0x1c3507`, seed counterfactual `M13=0`, then sweep `R4=0..3`
+without seeding `I12`. Under the manifest's 64-step/16-state bounds, each case
+retains a return-without-followed-call terminal and an existential breakpoint
+terminal at its corresponding loaded target (`0x1c351c`, `0x1c352f`,
+`0x1c353e`, or `0x1c354d`); the forced traces include the `R4` copy at
+`0x1c3507`, table load at `0x1c3518`, and branch at `0x1c351a`. These are
+counterfactual reachability facts, not seeded-selector, guarded-return, or
+natural-runtime claims. The range guard condition, an upstream `R4` bound, and
+table mutation remain unproven. The writer census has no exact hit but retains
+7,456 unresolved stores and does not model external writers; the `0x1c306f`
+bulk-copy range is also not yet bounded. **[D][O]**
 
 The loaded tail is no longer an unknown *loader initialization* boundary, but
 its runtime target set and `R6` effect remain unproven. No natural selector

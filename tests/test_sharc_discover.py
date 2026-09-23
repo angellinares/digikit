@@ -286,9 +286,15 @@ class ParallelTraceCaseTest(unittest.TestCase):
         frontier = {"name": "frontier", "loaded_target_candidates": [
             {"entry_index": 0, "target_sw": 0x100}, {"entry_index": 1, "target_sw": 0x120}
         ]}
-        plans = D.resolve_r4_frontier_probes([{"name": "r4", "start_sw": 0x80, "frontier": "frontier", "values": [1, 0]}], [frontier])
-        self.assertEqual([case["sets"] for case in plans[0]["cases"]], [{"R4": 0}, {"R4": 1}])
+        plans = D.resolve_r4_frontier_probes([{"name": "r4", "start_sw": 0x80, "frontier": "frontier", "values": [1, 0], "sets": {"M13": 0, "R4": 99}, "assumptions": ["counterfactual"]}], [frontier])
+        self.assertEqual([case["sets"] for case in plans[0]["cases"]], [{"M13": 0, "R4": 0}, {"M13": 0, "R4": 1}])
         self.assertEqual([case["breakpoints"] for case in plans[0]["cases"]], [[0x100], [0x120]])
+        self.assertNotIn("I12", plans[0]["cases"][0]["sets"])
+        self.assertIn("counterfactual", plans[0]["assumptions"])
+        with self.assertRaisesRegex(ValueError, "sets must be an object"):
+            D.resolve_r4_frontier_probes([{"name": "bad", "start_sw": 0x80, "frontier": "frontier", "values": [0], "sets": []}], [frontier])
+        with self.assertRaisesRegex(ValueError, "must not seed I12"):
+            D.resolve_r4_frontier_probes([{"name": "bad", "start_sw": 0x80, "frontier": "frontier", "values": [0], "sets": {"I12": 0}}], [frontier])
 
     def test_parallel_requires_blob_and_keeps_global_cap(self):
         probes = [{"name": "a", "start_sw": 1, "_cases": [{}, {}]}]
@@ -501,6 +507,8 @@ class FirmwareIntegrationTest(unittest.TestCase):
             first, second = first_path.read_bytes(), second_path.read_bytes()
         self.assertEqual(first, second)
         report = json.loads(first)
+        self.assertEqual(report["provenance"]["index"]["fingerprint"], report["provenance"]["blob"]["sha256"])
+        self.assertEqual(report["provenance"]["tools"]["sharc_static.py"], D._sha256((D._HERE / "sharc_static.py").read_bytes()))
         self.assertTrue(report["ivt_audio_root_scan"]["candidate_scans"])
         self.assertTrue(any(item["pc_sw"] == 0x1C6579 for item in report["indirect_sites"]))
         self.assertEqual(report["natural_selector_frontiers"][0]["tail_jump"]["pc_sw"], 0x1C351A)
@@ -510,10 +518,27 @@ class FirmwareIntegrationTest(unittest.TestCase):
         report = D.discover(BLOB, manifest)
         scan = report["ivt_audio_root_scan"]["candidate_scans"][0]
         self.assertEqual(scan["identity"], "unverified-core-ivt-candidate")
+        self.assertEqual(scan["candidate_region"]["start_pc_sw"], 0x120000)
+        self.assertEqual(scan["candidate_region"]["loader_block"], 70)
         self.assertEqual(scan["layout"]["offset_unit"], "architectural-instruction")
         self.assertFalse(scan["layout_match"])
-        self.assertIn("maps to loader block", scan["failure"]["reason"])
+        self.assertEqual(scan["failure"], "entry_count and processor-specific vector mapping are unverified")
         self.assertEqual((scan["core_semantics"], scan["sport_semantics"], scan["audio_semantics"]), ("unknown", "unknown", "unknown"))
+
+    def test_r4_counterfactual_tail_cases_retain_return_and_breakpoint_paths(self):
+        memory = sharcldr.LoadedMemory.from_stream(BLOB.read_bytes(), sharcldr.parse_blocks(BLOB.read_bytes()))
+        for value, target in enumerate((0x1C351C, 0x1C352F, 0x1C353E, 0x1C354D)):
+            states = D.trace.trace(memory, None, 0x1C3507, sets={"M13": 0, "R4": value},
+                                   max_steps=64, max_states=16, concrete_memory=True,
+                                   assume_nw32=True, breakpoints=(target,))
+            self.assertEqual([state.stopped for state in states].count("return without followed call"), 1)
+            breakpoint = [state for state in states if state.stopped == "breakpoint"]
+            self.assertEqual(len(breakpoint), 1)
+            self.assertEqual(breakpoint[0].pc_sw, target)
+            events = breakpoint[0].trace
+            self.assertTrue(any(event.get("action") == "ureg-copy" and event.get("pc_sw") == 0x1C3507 and event.get("source") == "R4" and event.get("destination") == "M4" for event in events))
+            self.assertTrue(any(event.get("action") == "load" and event.get("pc_sw") == 0x1C3518 and event.get("ureg") == "I12" for event in events))
+            self.assertTrue(any(event.get("action") == "branch" and event.get("pc_sw") == 0x1C351A and event.get("target_sw") == target for event in events))
 
     def test_wrong_declared_table_load_cannot_reach_selector_provenance(self):
         manifest = D.load_manifest(MANIFEST)

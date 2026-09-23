@@ -225,7 +225,7 @@
   "r4_tail_probes": [
     {
       "name": "loaded-tail-targets",
-      "start_sw": "0x1c351a",
+      "start_sw": "0x1c3507",
       "register": "R4",
       "values": [
         0,
@@ -234,7 +234,17 @@
         3
       ],
       "limit": "one expected breakpoint per loaded table target",
-      "status": "hypothesis"
+      "status": "hypothesis",
+      "sets": {
+        "M13": 0
+      },
+      "max_steps": 64,
+      "max_states": 16,
+      "assumptions": [
+        "R4 values are manifest hypotheses, not observed runtime values",
+        "M13=0 is a manifest counterfactual hypothesis, not a natural runtime observation",
+        "internal normal words are 32 bits"
+      ]
     }
   ],
   "core_vector_scans": [
@@ -253,7 +263,7 @@
       },
       "candidate_region": {
         "loader_byte_address": "0x28240000",
-        "start_pc_sw": "0x1c2000",
+        "start_pc_sw": "0x120000",
         "loader_block": 70,
         "loaded_size": 768,
         "identity": "unverified-core-ivt-candidate",
