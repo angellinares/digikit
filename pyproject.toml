@@ -10,6 +10,7 @@ dependencies = [
     "unicorn==2.1.4",
     "capstone==5.0.7",
     "pypcode==4.0.0",
+    "networkx==3.4.2",
 ]
 
 # Pinned to 3.12 deliberately. On 3.14 (the Homebrew default here) binary

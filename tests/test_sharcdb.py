@@ -24,6 +24,7 @@ sys.path.insert(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"),
 )
 
+import sharc  # noqa: E402
 import sharc_disasm  # noqa: E402
 import sharcdb  # noqa: E402
 import sharcfn  # noqa: E402
@@ -811,6 +812,53 @@ class CrossImageMatchTest(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(row, "one or both stage-6 entries are missing from func_hash")
         self.assertEqual(row[0], 1)
+
+
+@pytest.mark.slow
+@unittest.skipUnless(DT2_116_BLOB.exists() and DN2_111_BLOB.exists(),
+                      "DT2 1.16 and DN2 1.11 SHARC blobs are not both available")
+class SharcApiGoldenFactsTest(unittest.TestCase):
+    """The tools/sharc.py analyze-pass golden facts, through the API rather
+    than raw SQL: reachability from an RTOS root, a natural loop, a
+    generically-detected code-pointer array, last_def and a cross-image
+    func_hash match."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dt2 = sharc.load("dt2-1.16", db_dir="out/sharcdb")
+        cls.dn2 = sharc.load("dn2-1.11", db_dir="out/sharcdb")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.dt2.close()
+        cls.dn2.close()
+
+    def test_per_frame_chain_reachable_from_rtos_root(self):
+        reached = {r[0] for r in self.dt2.sql(
+            "SELECT function_sw FROM reach WHERE image='dt2-1.16' AND root_sw=0x1c7749"
+        )}
+        for fn in (0x1C2B24, 0x1C642A, 0x1C71EC, 0x1CBF07):
+            self.assertIn(fn, reached, "0x1c7749 does not reach 0x%x" % fn)
+
+    def test_1c642a_loop_at_1c6530(self):
+        rows = self.dt2.sql(
+            "SELECT header_block FROM loops WHERE image='dt2-1.16' AND function_sw=0x1c642a AND header_block=0x1c6530"
+        )
+        self.assertTrue(rows)
+
+    def test_8055c840_has_fifteen_code_pointer_array_roots(self):
+        rows = self.dt2.sql(
+            "SELECT count(*) FROM roots WHERE image='dt2-1.16' AND kind='code_pointer_array' "
+            "AND note LIKE 'table=0x8055c840%'"
+        )
+        self.assertEqual(rows[0][0], 15)
+
+    def test_last_def_r6_before_1c6553(self):
+        self.assertEqual(self.dt2.last_def("R6", 0x1C6553), 0x1C653B)
+
+    def test_dn2_stage6_matches_dt2(self):
+        matches = self.dt2.match(self.dn2, 0x1CBF07)
+        self.assertIn(0xB806F5, {int(m["entry_sw"], 16) for m in matches})
 
 
 if __name__ == "__main__":

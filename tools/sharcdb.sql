@@ -155,3 +155,30 @@ SELECT DISTINCT writer_sw FROM (
 -- (abs_load/abs_store), or the same for the SAME base+offset resolved from
 -- a nearby literal I-register load (resolved_offset).
 SELECT printf('%x', sw) sw, form, role FROM dataref WHERE value = 0x8055c840 ORDER BY sw;
+
+-- --- roots / reach / callgraph / idom / loops / unentered (DB_VERSION 3) --
+--
+-- `sharcdb analyze` (folded into `build`) fills these from edges/succ/
+-- dataref/literals with networkx; see tools/sharcdb.py's analyze_image()
+-- docstring for the detection heuristics. tools/sharc.py's API is the
+-- preferred way to query them from Python; these are for ad hoc sqlite3 use.
+
+-- Every root, grouped by kind.
+SELECT kind, count(*) n FROM roots GROUP BY kind ORDER BY n DESC;
+
+-- Functions reachable from a given root (function-level, call+jump/
+-- cond_jump edges, shortest CALL depth) -- substitute the 0x... literal.
+SELECT printf('%x', function_sw) function_sw, depth FROM reach
+WHERE root_sw = 0x1c7749 ORDER BY depth, function_sw;
+
+-- The whole image's deepest call chains and their transitive callee counts.
+SELECT printf('%x', function_sw) function_sw, max_depth, n_transitive_callees, is_recursive
+FROM callgraph ORDER BY max_depth DESC LIMIT 10;
+
+-- A function's natural loops (hw_do: hardware DO..UNTIL; branch_back: an
+-- ordinary conditional/unconditional back edge).
+SELECT printf('%x', header_block) header_block, n_blocks, kind, depth
+FROM loops WHERE function_sw = 0x1c642a ORDER BY header_block;
+
+-- The largest "no static entry" clusters and their likely dispatcher.
+SELECT cluster, count(*) n FROM unentered GROUP BY cluster ORDER BY n DESC LIMIT 10;
