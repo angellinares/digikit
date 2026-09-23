@@ -2155,12 +2155,33 @@ Stage callers (`edges`, `to_sw` = stage entry):
 `0x8055c858` and `0x8055c874` are its entries 6 and 13. Entries 0-14 point into
 `FUN_1c642a`. Tracing from `0x1c6553` with `R6 = 0..3` loads exactly `0x1c65bd`,
 `0x1c6715`, `0x1c6782`, `0x1c686e` into `I12` at `0x1c6579`; `0x1c6553` first
-checks `R6` against 6 (`compu(R6, R2)`, `R2 = 6`). **[V]** The selector is still
-open: `R6` is not written between `FUN_1c642a`'s entry and `0x1c6553`, and at
-the only call site the last write to `R6` is `R6 = 0x3c088889` (a float, about
-1/120) at `0x1c2f75` in `FUN_1c2b24`. `R6` is not an argument register in this
-calling convention, so either `FUN_1c642a` has further entries or the
-dispatch is reached with a different `R6`. **[O]**
+checks `R6` against 6 (`compu(R6, R2)`, `R2 = 6`). **[V]**
+
+**[C] The selector is a per-track field, loaded once per track.**
+`0x1c6530`..`0x1c6acc` is a per-track loop (`I4 += 0xdc` at `0x1c6532`;
+`JUMP IF SZ (DB)` at `0x1c6acc` back to `0x1c6530`). In the delay slot of the
+branch at `0x1c6538`, `0x1c653b` loads `R6 = DM(I4, M5)` (Type3c, `d = 0`;
+older `tools/sharcfn.py` listings printed it as a store) from
+`track_base + 0x4c`, where `track_base = 0x2506ec + track * 0xdc` is built
+from the `R8` argument (`0x1c6491`, `0x1c64a8`, `0x1c64d5`, `0x1c6532`). The
+caller's `R6 = 0x3c088889` is only spilled, at `0x1c646d`. The `out/sharcdb`
+`regdef` table gives `0x1c653b` as the only last writer of `R6` before
+`0x1c6553`. A trace from `0x1c642a` with the call-site arguments reaches
+`0x1c6579` in 149 steps; with the unwritten field reading 0 it selects entry
+0, `0x1c65bd`. **[V]**
+
+The field is probably the machine type. The ColdFire machine dispatch at
+`0x400caf48` indexes types 0-5 and sends 6 and above to a fallback, the same
+bound as `0x1c6553` (`docs/findings/02`: 0 SAMPLE, 1 WERP, 2 STRETCH,
+3 REPITCH, 4 SLICED SMP, 5 MIDI, 6 MANUAL SLICE). Case 1 (`0x1c6715`) is the
+only case using bit-reversed addressing; cases 4 (`0x1c692f`) and 5
+(`0x1c6992`) share a tail. The writer of `track_base + 0x4c` has not been
+found: `FUN_1c24e9`'s fixed-offset stores do not reach it, and the tracer
+stops at a Type14d at `0x1c257d` before its three M-indexed stores. **[O]**
+
+Array entries 0-14 at `0x8055c840`: `0x1c65bd`, `0x1c6715`, `0x1c6782`,
+`0x1c686e`, `0x1c692f`, `0x1c6992`, `0x1c69ed`, `0x1c69c6`, `0x1c6d1e`,
+`0x1c6d51`, `0x1c6d7a`, `0x1c6dd6`, `0x1c6e4e`, `0x1c6eb7`, `0x1c6ea9`.
 
 50 of those 51 target one address: **`0x1c06ba`**, a heavily shared primitive
 reached from all over the engine, including from stage 3's envelope routine
