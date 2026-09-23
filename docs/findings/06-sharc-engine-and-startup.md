@@ -1619,8 +1619,12 @@ headers. About twenty small callees were not opened, so that is bounded.
 unrelated `19a_scaled` push.
 
 Two oddities worth recording. The function has **no static caller** anywhere in
-blk93's 664 resolved calls, like `FUN_1c71ec` and `FUN_1c2b24` before it -- all
-three are reached only through runtime paths, and blk93 has 12 unresolved
+blk93's 664 resolved calls, matching `FUN_1c71ec`, which likewise has no
+static `CALL` caller (it is reached only by the `cond_jump` at `0x1c7053`,
+see below). **[C]** `FUN_1c2b24` is not a third example: it does have a
+static caller, this same function's `call 0x1c771e`
+(`out/sharcdb/dt2-1.16.sqlite`, `edges`: the only edge into `0x1c2b24`).
+blk93 has 12 unresolved
 indirect calls (`sw 0x1c8530, 0x1c86b0, 0x1c8847, 0x1c9ae7, 0x1c9df7, 0x1c9f29,
 0x1c9f8b, 0x1ca216, 0x1caf50, 0x1caf67, 0x1cb095, 0x1cb1b8`). And a **conditional
 RTI** sits mid-body at `0x1c7641` (`Type11a`, `x=1`, `cond=NE`) while the
@@ -2106,6 +2110,57 @@ unsafe** -- including the ones about `FUN_1c71ec`, `FUN_1c2b24`, the
 ring-construction function and `0x1cb4b2`. They may well have had callers all
 along. The 12-indirect-calls-are-returns correction still stands (that was about
 Type 9b), but "callerless, therefore reached at runtime only" does not.
+
+**[V]** Resolved against `out/sharcdb/dt2-1.16.sqlite`'s `edges` table (second
+check, cross-read against the raw bytes): `FUN_1c2b24` has a static caller,
+`call 0x1c771e` inside `FUN_1c75d8`. `FUN_1c71ec` has no static `CALL` caller
+but has exactly one edge of any kind, `cond_jump 0x1c7053` (`JUMP IF SV`,
+non-delayed, cond 7) inside `FUN_1c642a`. `FUN_1c75d8` has no edge of any kind
+pointing to it; it is entered through the RTOS task-creation call recorded
+above.
+
+## The per-frame static chain **[V]**
+
+```
+RTOS task: call 0xb8615d at sw 0x1c7775, entry argument R4 = 0x1c7749
+           (inside FUN_1c75d8's body, not its first instruction)
+  -> FUN_1c75d8 (0x1c75d8-0x1c7bd3, no static entry)
+       call 0x1c771e
+  -> FUN_1c2b24 (per-frame render, 16-track counted loop)
+       call 0x1c3083
+  -> FUN_1c642a (1458 instructions, calls stages 1/2/3 at 0x1c6c2f/0x1c6c44/0x1c6c59)
+       cond_jump 0x1c7053, JUMP IF SV, inside DO 0x1c717f UNTIL LCE
+       (trip count 16, body [0x1c7043, 0x1c717f))
+  -> FUN_1c71ec (wavetable orchestrator: stages 1/2/4/5/6, stage 6 twice)
+```
+
+**[C]** `0x1c207b` is not a second call site of `FUN_1c642a`: it is the entry
+of `FUN_1c207b` (303 instructions), which calls stage 3 at `0x1c2307` and
+`0x1c231f` and never calls `FUN_1c642a`. `FUN_1c642a` has exactly one caller,
+`call 0x1c3083`.
+
+Stage callers (`edges`, `to_sw` = stage entry):
+
+| stage | sw | called from |
+| --- | --- | --- |
+| 1 | `0x1ccbd8` | `FUN_b80fd0`, `FUN_b820b1` (x2), `FUN_1c642a`, `FUN_1c71ec` |
+| 2 | `0x1cdecb` | `FUN_1c642a`, `FUN_1c71ec` |
+| 3 | `0x1cb3d8` | `FUN_1c207b` (x2), `FUN_1c642a`, `FUN_1c71ec` |
+| 4 | `0x1cd286` | `FUN_1c71ec` only |
+| 5 | `0x1cc79e` | `FUN_1c71ec` only |
+| 6 | `0x1cbf07` | `FUN_1c71ec` (x2) |
+
+**The `0x1c6579` table is one 15-entry array.** The three indirect jumps in
+`FUN_1c642a` read overlapping windows of the array at `0x8055c840`: the bases
+`0x8055c858` and `0x8055c874` are its entries 6 and 13. Entries 0-14 point into
+`FUN_1c642a`. Tracing from `0x1c6553` with `R6 = 0..3` loads exactly `0x1c65bd`,
+`0x1c6715`, `0x1c6782`, `0x1c686e` into `I12` at `0x1c6579`; `0x1c6553` first
+checks `R6` against 6 (`compu(R6, R2)`, `R2 = 6`). **[V]** The selector is still
+open: `R6` is not written between `FUN_1c642a`'s entry and `0x1c6553`, and at
+the only call site the last write to `R6` is `R6 = 0x3c088889` (a float, about
+1/120) at `0x1c2f75` in `FUN_1c2b24`. `R6` is not an argument register in this
+calling convention, so either `FUN_1c642a` has further entries or the
+dispatch is reached with a different `R6`. **[O]**
 
 50 of those 51 target one address: **`0x1c06ba`**, a heavily shared primitive
 reached from all over the engine, including from stage 3's envelope routine

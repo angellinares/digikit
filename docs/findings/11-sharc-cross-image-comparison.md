@@ -101,9 +101,23 @@ its first 160 bytes (the `RECIPS` and Newton-Raphson body) and differs in 58
 of the last 62, its compiled epilogue (return-address load, conditional
 branch, `RFRAME`/return from `sw 0x1c070a`).
 
-No DN2 counterpart of the orchestrator `FUN_1c71ec` was found by byte
-search, but that alone does not prove there is none; the call-graph method
-above would settle it. **[O]**
+**[C]** The call graph settles it. `out/sharcdb/dn2-1.11.sqlite` has a function
+`sw 0x1c9b73`-`0x1c9c9d` (126 instructions, no static `CALL` caller) reached by
+exactly one edge, `cond_jump 0x1c99a8` (`JUMP IF SZ`, cond 8) from inside a
+larger function. It calls stages 1 (`0xb81368`), 2 (`0xb8265b`), 4
+(`0xb81a16`), 5 (`0xb80f2e`) and 6 (`0xb806f5`, twice): the same stage set as
+`FUN_1c71ec`. **[V]**
+
+The larger function, `sw 0x1c8ef1`-`0x1c9b73` (1352 instructions, called from
+`0x1c3044` inside `sw 0x1c2712`), calls stages 1, 2 and 3 (`0x1cdb56`, twice)
+from around `sw 0x1c959f`. Together they mirror DT2's
+`FUN_1c642a`/`FUN_1c71ec` pair, joined by a conditional jump rather than a
+call. `sw 0x1c2712` has a 16-iteration `DO...UNTIL LCE` loop at `sw 0x1c2937`,
+like `FUN_1c2b24`, and is called from `sw 0x1c9fbc` inside `sw 0x1c9e76` (159
+instructions, no static caller). **[V]** `func_hash` matches `sw 0x1c9e76` to
+DT2's `FUN_1c75d8` by relocation-tolerant hash, and it calls `0xb891fa` where
+DT2 calls `0xb8615d`, but its arguments are computed from `DM(0x268a38)`
+rather than immediates, so that correspondence is **[O]**.
 
 ## Next boundary
 
