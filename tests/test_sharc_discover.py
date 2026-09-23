@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+import pytest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from unittest.mock import patch
@@ -510,6 +512,7 @@ class ManifestAndDumpTest(unittest.TestCase):
             self.assertEqual(evidence["roots"][0]["outgoing_direct_edges"], 1)
 
 
+@pytest.mark.slow
 @unittest.skipUnless(BLOB.exists(), "DT2 1.16 SHARC loader is not available")
 class FirmwareIntegrationTest(unittest.TestCase):
     @classmethod

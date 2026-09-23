@@ -65,7 +65,9 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
 
 ## Shell and tests
 
-- Tests: `uv run --with pytest python -m pytest tests -q`.
+- Tests: `uv run --with pytest python -m pytest tests -q`. It skips tests
+  marked `slow` (long firmware integration runs); add `--slow` before a
+  commit. While working, run only the test files for the code you changed.
 - The shell is zsh: an unquoted `$VAR` is one word, not split. There is no
   `timeout` binary.
 - The rtk hook shortens some output: use `rtk proxy git log` for the full log.

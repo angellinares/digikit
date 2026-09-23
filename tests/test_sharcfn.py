@@ -579,62 +579,49 @@ class CondPrefixRenderingTest(unittest.TestCase):
         self.assertEqual(mnemonic, "IF SV R3 = ashift(R4, 8)")
 
 
+_DT2_116_BLOB = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "out",
+    "sections",
+    "dt2-1.16",
+    "section_7_BLOB.bin",
+)
+
+
+@unittest.skipUnless(
+    os.path.exists(_DT2_116_BLOB),
+    "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+)
 class RealBlobType19AndType6aRenderingTest(unittest.TestCase):
-    """Same fixes, against the real DT2 1.16 SHARC blob: skips cleanly when
-    the firmware isn't present, per CLAUDE.md ("Firmware ... is Elektron's
-    copyright: never commit it") and this repo's skip-not-fail convention
-    for optional fixtures (see e.g. tests/test_sharc_interface_probe.py)."""
+    """Listing fixes checked against the real DT2 1.16 SHARC blob. Skips when
+    the firmware is not present (firmware is never committed)."""
 
-    BLOB = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "out",
-        "sections",
-        "dt2-1.16",
-        "section_7_BLOB.bin",
-    )
+    @classmethod
+    def setUpClass(cls):
+        # Loading and decoding the blob takes seconds, so build the 0x1cbf07
+        # dossier once for every check below.
+        ctx = sharcfn.load_context(_DT2_116_BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
+        cls.dossier = sharcfn.build_dossier(ctx, 0x1CBF07, want_listing=True)
+        cls.rows = {
+            row["sw"]: row["mnemonic"] for row in cls.dossier.get("listing", [])
+        }
 
-    @unittest.skipUnless(
-        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
-    )
-    def test_function_at_0x1cbf07_listing(self):
-        ctx = sharcfn.load_context(self.BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
-        d = sharcfn.build_dossier(ctx, 0x1CBF07, want_listing=True)
-        self.assertNotIn("error", d)
-        rows = {row["sw"]: row["mnemonic"] for row in d["listing"]}
-        self.assertIn("0x1cbf95", rows)
-        self.assertIn("I2 = modify(I4, 0x44)", rows["0x1cbf95"])
-        self.assertIn("0x1cbf84", rows)
-        self.assertIn("R0 = DM(I4, M5)", rows["0x1cbf84"])
+    def test_dossier_builds_without_error(self):
+        self.assertNotIn("error", self.dossier)
 
-    @unittest.skipUnless(
-        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
-    )
+    def test_type19_modify_and_type6a_destinations(self):
+        self.assertIn("I2 = modify(I4, 0x44)", self.rows["0x1cbf95"])
+        self.assertIn("R0 = DM(I4, M5)", self.rows["0x1cbf84"])
+
     def test_type15b_immediate_offset_beyond_63_is_signed(self):
-        # 0x1cbf0c's raw data[6:0] field is 115 (0x73); read unsigned that
-        # is "DM(I6 + 115)", but tools/sharc_trace.py's "15b" branch
-        # already executes it as _signed(115, 7) == -13, so the listing
-        # should read "DM(I6 - 13)" instead.
-        ctx = sharcfn.load_context(self.BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
-        d = sharcfn.build_dossier(ctx, 0x1CBF07, want_listing=True)
-        self.assertNotIn("error", d)
-        rows = {row["sw"]: row["mnemonic"] for row in d["listing"]}
-        self.assertIn("0x1cbf0c", rows)
-        self.assertIn("DM(I6 - 13) = R2", rows["0x1cbf0c"])
-        self.assertNotIn("+ 115", rows["0x1cbf0c"])
+        # 0x1cbf0c's raw data[6:0] is 115; tools/sharc_trace.py executes it
+        # as _signed(115, 7) == -13, so the listing must agree.
+        self.assertIn("DM(I6 - 13) = R2", self.rows["0x1cbf0c"])
+        self.assertNotIn("+ 115", self.rows["0x1cbf0c"])
 
-    @unittest.skipUnless(
-        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
-    )
     def test_type2a_conditional_compute_renders_if_cond(self):
-        # 0x1cbf47 is a Type2a with cond field == 1 ("LT", PGR Table
-        # 10-4), predicating F8 = fadd(F8, F2); it used to render
-        # identically to an unconditional fadd.
-        ctx = sharcfn.load_context(self.BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
-        d = sharcfn.build_dossier(ctx, 0x1CBF07, want_listing=True)
-        self.assertNotIn("error", d)
-        rows = {row["sw"]: row["mnemonic"] for row in d["listing"]}
-        self.assertIn("0x1cbf47", rows)
-        self.assertEqual("IF LT F8 = fadd(F8, F2)", rows["0x1cbf47"])
+        # 0x1cbf47 is a Type2a with cond 1 (LT, PGR Table 10-4).
+        self.assertEqual("IF LT F8 = fadd(F8, F2)", self.rows["0x1cbf47"])
 
 
 def sharcfnCounterLike():
