@@ -77,7 +77,7 @@ import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
 
-DB_VERSION = 1
+DB_VERSION = 2
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
@@ -146,6 +146,66 @@ CREATE TABLE func_hash (
     image TEXT, entry_sw INTEGER, exact_hash TEXT, reloc_hash TEXT, n_insns INTEGER, byte_len INTEGER,
     PRIMARY KEY (image, entry_sw));
 
+-- Basic blocks: a maximal straight-line run of aligned instructions, ended
+-- by any branch/call/return/indirect site (after its delay slots, when
+-- delayed -- see _gather_terminators) or by a hardware DO..UNTIL loop's
+-- last body instruction (a terminator despite not being a branch itself),
+-- and started by a function entry, any edge's target, or the instruction
+-- after such a terminator. end_sw is exclusive (one past the last member
+-- instruction), the same convention functions.end_sw already uses. block is
+-- the loader/vendor-memory block index (blocks.idx) it was found scanning
+-- -- unrelated to "basic block".
+CREATE TABLE bblocks (
+    image TEXT, start_sw INTEGER, end_sw INTEGER, function_sw INTEGER, n_insns INTEGER,
+    block INTEGER,
+    PRIMARY KEY (image, start_sw));
+
+-- Basic-block control-flow successors. kind: fallthrough (plain, non-branch
+-- block-to-block continuation -- present so a recursive CTE can walk
+-- straight-line code, not just branch sites), jump, cond_taken,
+-- cond_not_taken, call_return (the block after a call's delay slots --
+-- the call edge itself, into the callee, stays in `edges`), loop_back (a
+-- hardware DO..UNTIL's body-end -> body-start back edge), loop_exit,
+-- return, indirect. to_block is NULL for return/indirect (no static
+-- target) and for any edge whose target this pass never turned into a
+-- bblocks row (a cross-image or unscanned-region jump); such a row is
+-- still recorded so a "does every block exit account for its kind" audit
+-- doesn't have to fall back to `edges`.
+CREATE TABLE succ (
+    image TEXT, from_block INTEGER, to_block INTEGER, kind TEXT);
+
+-- Every constant an instruction materialises as an address: a 17a/17b/16a/
+-- 16b/18a/19a*/15a/14a literal (tools/sharcdb.py's own `literals` table,
+-- given a role here) plus any 15a/14a/14d absolute mem_access address (kept
+-- separate from `literals` since 14d isn't a LITERAL_FORMS entry). role:
+-- i_reg_base (a literal loaded directly into an I register -- a PM/DM table
+-- base), abs_load/abs_store (a direct absolute address, from mem_access's
+-- own direction so this never inherits a mnemonic-only bug -- see
+-- tools/sharcfn.py's Type3c note), literal (any other literal-carrying
+-- form: 16a/16b, 18a, 17a/17b into a non-I register, 19a* -- a modify
+-- delta, not an address), resolved_offset (an IMMOFF form's I+immediate
+-- address, resolved when the I register was just given a literal by a
+-- 17a/17b in the SAME basic block -- see bblocks/succ above).
+CREATE TABLE dataref (
+    image TEXT, value INTEGER, sw INTEGER, form TEXT, role TEXT);
+
+-- Register definitions and uses, from the typed decode fields (not from
+-- mnemonic text -- see tools/sharcfn.py's Type3c direction bug in the task
+-- report). kind: compute (an ALU/MULT/SHIFT/MULTIFN/short-compute result),
+-- mem_load (a data register loaded from memory), literal (a ureg set
+-- directly from an immediate, or a hardware-loop LCNTR literal), move (a
+-- 5a/5b_move ureg-to-ureg transfer, or a 12a_ureg loop count source), swap
+-- (5a/5b_swap), dag_modify (an I register written by address-modify
+-- semantics: 19a*'s Is XOR Idis dest, 16a/16b's mandatory I+=M, or a
+-- 3a/3b/3d/4a/4b/4d access with u=1), unknown (a register-touching form
+-- family this pass could not fully resolve -- see the build report's
+-- per-form unknown counts; never silently omitted).
+CREATE TABLE regdef (
+    image TEXT, sw INTEGER, reg TEXT, kind TEXT);
+
+CREATE TABLE reguse (
+    image TEXT, sw INTEGER, reg TEXT);
+
 CREATE INDEX insn_function ON insn(image, function_sw);
 CREATE INDEX insn_form ON insn(image, form);
 CREATE INDEX edges_to ON edges(image, to_sw);
@@ -158,6 +218,16 @@ CREATE INDEX mem_access_abs ON mem_access(image, abs_address);
 CREATE INDEX func_hash_exact ON func_hash(exact_hash);
 CREATE INDEX func_hash_reloc ON func_hash(reloc_hash);
 CREATE INDEX functions_block ON functions(image, block);
+CREATE INDEX bblocks_function ON bblocks(image, function_sw);
+CREATE INDEX bblocks_end ON bblocks(image, end_sw);
+CREATE INDEX succ_from ON succ(image, from_block);
+CREATE INDEX succ_to ON succ(image, to_block);
+CREATE INDEX dataref_value ON dataref(image, value);
+CREATE INDEX dataref_sw ON dataref(image, sw);
+CREATE INDEX regdef_reg ON regdef(image, reg);
+CREATE INDEX regdef_sw ON regdef(image, sw);
+CREATE INDEX reguse_reg ON reguse(image, reg);
+CREATE INDEX reguse_sw ON reguse(image, sw);
 """
 
 # Field-label stems masked to build a relocation-tolerant function hash: a
@@ -289,6 +359,511 @@ def _after_sw(base_sw, pair):
     return base_sw + (off + insn.length_bytes) // 2
 
 
+# --- basic blocks and their control-flow successors -------------------------
+#
+# Two-phase build across every scanned loader code block: _gather_terminators
+# finds, per block, every site that ends a basic block (a branch/call/return/
+# indirect, after its delay slots when delayed, or a hardware DO..UNTIL
+# loop's last body instruction) and the successor edges it implies; then
+# _build_blocks_and_succ collects every terminator's target and "after"
+# address into one global leader set (so a target in a DIFFERENT loader code
+# block still gets a leader there) before splitting each block's aligned
+# instructions into basic blocks against that set. See the module's SCHEMA
+# comment on `bblocks`/`succ` for the kind vocabulary.
+
+def _gather_terminators(base_sw, aligned_insns, sites):
+    """(seq, sw_index, terminators, extra_leaders) for one loader code
+    block's aligned instructions.
+
+    seq: [(sw, off, insn), ...] in address order.
+    sw_index: {sw: position in seq}.
+    terminators: {sw: {'end_after': Optional[int], 'succs': [(kind, to_sw), ...]}}
+    for every site that ends a basic block there.
+    extra_leaders: a DO/DO-UNTIL loop's own body-start sw, added even when
+    the loop's end address does not resolve to an aligned instruction here
+    (e.g. the loop body is scanned but its last instruction fell just short
+    of --min-depth)."""
+    seq = [(base_sw + off // 2, off, insn) for off, insn in aligned_insns]
+    sw_index = {sw: i for i, (sw, _off, _insn) in enumerate(seq)}
+    terminators = {}
+    extra_leaders = set()
+
+    def add(sw, end_after, succs):
+        entry = terminators.setdefault(sw, {"end_after": None, "succs": []})
+        entry["succs"].extend(succs)
+        if end_after is not None:
+            entry["end_after"] = end_after
+
+    return_sws = {r["sw"] for r in sites["returns"]}
+    linked_indirect_sws = {c["sw"] for c in sites["indirect_calls"]}
+
+    # Calls and returns already carry their post-delay-slot address
+    # (tools/sharcflow.py's find_sites 'returns_to'/'after'); the call
+    # target itself is a `edges` table concern (kind='call'), not `succ` --
+    # here a call only contributes the call_return edge back into its own
+    # function.
+    for c in sites["calls"]:
+        add(c["sw"], c.get("returns_to"), [("call_return", c.get("returns_to"))])
+    for ic in sites["indirect_calls"]:
+        add(ic["sw"], ic.get("returns_to"), [("call_return", ic.get("returns_to"))])
+    for r in sites["returns"]:
+        add(r["sw"], r.get("after"), [("return", None)])
+
+    for n, (off, insn) in enumerate(aligned_insns):
+        t = insn.type_name
+        f = sharcinv.merge_fields(insn.fields)
+        sw = base_sw + off // 2
+
+        if t in ("8a_abs", "8a_rel", "9a_rel", "9b_rel") and f.get("b") == 0:
+            cond = f.get("cond")
+            target = f.get("addr") if t == "8a_abs" else \
+                sharcflow.pcrel_target(sw, f.get("reladdr", 0))
+            delayed = f.get("j")
+            conditional = cond is not None and cond != sharcfn.ALWAYS_TRUE_COND
+            if delayed:
+                pair = _slots(aligned_insns, n)
+                end_after = _after_sw(base_sw, pair) if pair else None
+            else:
+                end_after = base_sw + (off + insn.length_bytes) // 2
+            succs = [(("cond_taken" if conditional else "jump"), target)]
+            if conditional and end_after is not None:
+                succs.append(("cond_not_taken", end_after))
+            add(sw, end_after, succs)
+
+        elif t in ("9a_abs", "9b_abs") and sw not in return_sws and sw not in linked_indirect_sws:
+            # A generic indirect jump (not the fixed return word, not an
+            # indirect call's push+store idiom): both forms carry their own
+            # 'j' bit (decode_table.json), so -- unlike the fixed-pattern
+            # return word and the indirect-call idiom, which are only ever
+            # matched delayed -- a plain indirect JUMP can be non-delayed
+            # too (confirmed on dt2-1.16 at sw 0x1c6579, rendered "JUMP
+            # non-delayed target=indirect PM(I4, M5)"); trusting a blanket
+            # "always 2 slots" here silently swallowed the following
+            # instructions into the wrong basic block.
+            delayed = f.get("j")
+            if delayed:
+                pair = _slots(aligned_insns, n)
+                end_after = _after_sw(base_sw, pair) if pair else None
+            else:
+                end_after = base_sw + (off + insn.length_bytes) // 2
+            add(sw, end_after, [("indirect", None)])
+
+        elif t in ("12a_imm", "12a_ureg"):
+            # DO addr UNTIL LCE: no delay slots of its own (the hardware
+            # loop mechanism, not an instruction-level delayed branch) --
+            # the terminator is the loop's LAST body instruction, at
+            # end_sw, not this DO instruction. Same end_sw formula as
+            # tools/sharcfn.py's render_loop / tools/sharc_trace.py's
+            # _start_counted_loop.
+            reladdr = f.get("reladdr")
+            if reladdr is not None:
+                start_sw = sw + (insn.length_bytes or 6) // 2
+                extra_leaders.add(start_sw)
+                end_sw = sw + sharcfn.sign_extend(reladdr, 23)
+                pos = sw_index.get(end_sw)
+                if pos is not None:
+                    end_insn = seq[pos][2]
+                    end_after = end_sw + (end_insn.length_bytes or 0) // 2
+                    add(end_sw, end_after, [("loop_back", start_sw), ("loop_exit", end_after)])
+
+    return seq, sw_index, terminators, extra_leaders
+
+
+def _build_blocks_and_succ(name, code_blocks, analyzed, functions, owner_of):
+    """(bblock_rows, succ_rows, leaders_by_idx) for every scanned loader code
+    block. leaders_by_idx (idx -> set of basic-block-start sw's in that
+    block) is returned for reuse by the dataref pass below, which resets its
+    "last literal loaded into I register" tracking at each basic-block
+    boundary.
+
+    Only intra-loader-code-block successors are resolved into a to_block: a
+    branch whose target this build never disassembled (a different image,
+    an unscanned region, or -- rare -- a different loader code block this
+    pass has not looked at yet) gets a succ row with a to_block that matches
+    no bblocks row, the same "unresolved" shape the existing edges/
+    to_function pair already uses; the interprocedural call graph itself
+    stays in `edges`, as call_return already only crosses back into the
+    caller."""
+    per_idx = {}
+    global_leaders = set()
+
+    fn_entries_by_idx = collections.defaultdict(set)
+    for fn in functions:
+        fn_entries_by_idx[fn["block"]].add(fn["entry"])
+
+    for idx in code_blocks:
+        block = analyzed.get(idx)
+        if block is None:
+            continue
+        base_sw = block["base_sw"]
+        seq, sw_index, terminators, extra_leaders = _gather_terminators(
+            base_sw, block["insns"], block["sites"])
+        per_idx[idx] = (seq, sw_index, terminators)
+        if seq:
+            global_leaders.add(seq[0][0])
+        global_leaders |= extra_leaders
+        global_leaders |= fn_entries_by_idx.get(idx, set())
+        for term in terminators.values():
+            if term["end_after"] is not None:
+                global_leaders.add(term["end_after"])
+            for _kind, to_sw in term["succs"]:
+                if to_sw is not None:
+                    global_leaders.add(to_sw)
+
+    bblock_rows, succ_rows, leaders_by_idx = [], [], {}
+
+    for idx, (seq, sw_index, terminators) in per_idx.items():
+        local_leaders = {sw for sw in global_leaders if sw in sw_index}
+        if seq:
+            local_leaders.add(seq[0][0])
+        for i in range(1, len(seq)):
+            prev_sw, _prev_off, prev_insn = seq[i - 1]
+            cur_sw, _cur_off, _cur_insn = seq[i]
+            if prev_sw + (prev_insn.length_bytes or 0) // 2 != cur_sw:
+                # A decode gap: force a split so the CFG never silently
+                # bridges it.
+                local_leaders.add(cur_sw)
+        leaders_by_idx[idx] = local_leaders
+
+        blocks, cur_members = [], []
+        for item in seq:
+            sw = item[0]
+            if cur_members and sw in local_leaders:
+                blocks.append(cur_members)
+                cur_members = []
+            cur_members.append(item)
+        if cur_members:
+            blocks.append(cur_members)
+
+        for members in blocks:
+            start_sw = members[0][0]
+            last_sw, _last_off, last_insn = members[-1]
+            end_sw_excl = last_sw + (last_insn.length_bytes or 0) // 2
+            fn_sw = owner_of(idx, start_sw)
+            bblock_rows.append((name, start_sw, end_sw_excl, fn_sw, len(members), idx))
+
+            # The block's terminator may not be its LAST member: a delayed
+            # branch/call/indirect's own sw is followed by its own delay
+            # slots, which stay in this same block (see the module
+            # docstring). Search every member, not just the last one --
+            # keying off last_sw alone silently relabelled every delayed
+            # terminator's real edge (cond_taken/call_return/loop_back/...)
+            # as a plain 'fallthrough' to the same (coincidentally correct)
+            # address, and dropped it entirely on the rare block whose
+            # delay slots pushed end_sw_excl to an address this pass also
+            # split on for an unrelated reason.
+            term = None
+            for member_sw, _off, _insn in members:
+                candidate = terminators.get(member_sw)
+                if candidate is not None:
+                    term = candidate
+                    break
+            if term is None:
+                if end_sw_excl in local_leaders:
+                    succ_rows.append((name, start_sw, end_sw_excl, "fallthrough"))
+            else:
+                for kind, to_sw in term["succs"]:
+                    succ_rows.append((name, start_sw, to_sw, kind))
+
+    return bblock_rows, succ_rows, leaders_by_idx
+
+
+# --- register def/use -------------------------------------------------------
+#
+# Mirrors tools/sharcfn.py's register-operand bit layouts (Figure 18-1/18-2/
+# 18-3, Table 18-11/13/18/19/21) directly from the typed decode fields --
+# never from mnemonic text, per the Type3c direction bug in the build
+# report -- so the register identity always agrees with what that file's
+# renderer would print for the same instruction. unmodelled sub-cases return
+# an 'unknown' tag instead of a guessed def/use, per instruction, so the
+# build report can count them per form.
+
+def _compute_regdef_reguse(field23):
+    """Register defs/uses for a 23-bit parallel compute field (1a/2a/
+    2a_short/2b/3a/4a/5a_move/5a_swap/7a/9a_abs/9a_rel/11a). -> (defs:
+    [(reg, 'compute')], uses: [reg], unknown: [tag])."""
+    defs, uses, unknown = [], [], []
+    cu, d = sharcinv.classify_compute(field23)
+    if cu is None:
+        return defs, uses, unknown
+    opcode = d.get("opcode", 0)
+    if cu == "ALU":
+        is_float = d.get("is_float", False)
+        if d.get("is_dual_addsub"):
+            rs, ra, rx, ry = ((field23 >> sh) & 0xF for sh in (12, 8, 4, 0))
+            Rs, Ra, Rx, Ry = (sharcfn.reg_name(r, is_float) for r in (rs, ra, rx, ry))
+            defs += [(Rs, "compute"), (Ra, "compute")]
+            uses += [Rx, Ry]
+        else:
+            name = sharcinv.ALU_OPS.get(opcode)
+            rn, rx, ry = ((field23 >> sh) & 0xF for sh in (8, 4, 0))
+            Rn, Rx, Ry = (sharcfn.reg_name(r, is_float) for r in (rn, rx, ry))
+            defs.append((Rn, "compute"))
+            if name in sharcfn.UNARY_ALU_OPS:
+                uses.append(Rx)
+            else:
+                # Binary, or an opcode ALU_OPS doesn't name: Table 18-11's
+                # register positions are fixed regardless of which named op
+                # this is, so Rn/Rx/Ry are certain even when the opcode
+                # isn't; default to binary (both operands used) rather than
+                # guess unary.
+                uses += [Rx, Ry]
+    elif cu == "MULT":
+        is_float = d.get("is_float", False)
+        rn, rx, ry = ((field23 >> sh) & 0xF for sh in (8, 4, 0))
+        Rn, Rx, Ry = (sharcfn.reg_name(r, is_float) for r in (rn, rx, ry))
+        if d.get("housekeeping"):
+            unknown.append("mult_housekeeping")
+        elif d.get("is_plain_mul"):
+            defs.append((Rn, "compute"))
+            uses += [Rx, Ry]
+        elif d.get("is_mac"):
+            defs.append((Rn, "compute"))
+            uses += [Rx, Ry, "MR"]
+        else:
+            unknown.append("mult_other")
+    elif cu == "SHIFT":
+        rn, rx, ry = ((field23 >> sh) & 0xF for sh in (8, 4, 0))
+        defs.append(("R%d" % rn, "compute"))
+        uses += ["R%d" % rx, "R%d" % ry]
+    elif cu == "MULTIFN":
+        top3 = (field23 >> 20) & 7
+        is_float = bool(top3 & 1)
+        if d.get("is_dual_addsub"):
+            # Table 18-18/19: fixed layout, no opcode sub-table -- same
+            # register math as tools/sharcfn.py's decode_multifn dual branch.
+            rya = (field23 & 3) + 12
+            rxa = ((field23 >> 2) & 3) + 8
+            rym = ((field23 >> 4) & 3) + 4
+            rxm = ((field23 >> 6) & 3) + 0
+            ra = (field23 >> 8) & 0xF
+            rm = (field23 >> 12) & 0xF
+            rs = (field23 >> 16) & 0xF
+            Rm, Ra, Rs, Rxm, Rym, Rxa, Rya = (
+                sharcfn.reg_name(v, is_float) for v in (rm, ra, rs, rxm, rym, rxa, rya)
+            )
+            defs += [(Rm, "compute"), (Ra, "compute"), (Rs, "compute")]
+            uses += [Rxm, Rym, Rxa, Rya]
+        else:
+            # The regular MUL+ALU multifunction op's ALU sub-operation is a
+            # table lookup (tools/sharcfn.py's MULTIFN_ALU_SYNTAX, PGR Table
+            # 12-12) whose operand count varies by row; left unmodelled here
+            # rather than guessed.
+            unknown.append("multifn_alu_compute")
+    else:
+        unknown.append("compute_cu_%r" % cu)
+    return defs, uses, unknown
+
+
+def _shortcompute_regdef_reguse(field12):
+    """Type 2c (PRM Table 18-21): RN 7:4 is both an input and the result for
+    the two "operate on RN itself" opcodes (inc/dec); the unary-Rx opcodes
+    (pass/not/float) read only Rx; every other opcode reads both RN and RX
+    (PRM/tools/sharcfn.py's render_shortcompute: "RN = op(RN, RX)")."""
+    opcode = (field12 >> 8) & 0xF
+    rn, rx = (field12 >> 4) & 0xF, field12 & 0xF
+    is_float = opcode in sharcfn.FLOAT_SHORT_OPS
+    Rn, Rx = sharcfn.reg_name(rn, is_float), sharcfn.reg_name(rx, is_float)
+    defs = [(Rn, "compute")]
+    if opcode in sharcfn._UNARY_RN_SHORT_OPS:
+        uses = [Rn]
+    elif opcode in sharcfn._UNARY_RX_SHORT_OPS:
+        uses = [Rx]
+    else:
+        uses = [Rn, Rx]
+    return defs, uses
+
+
+def _shiftimm_regdef_reguse(f):
+    """6a_mem's parallel ShiftImm sub-instruction (tools/sharcfn.py's
+    render_shiftimm): RN 7:4 is the result for every opcode this repo
+    models, RX 3:0 is always read; the "or-" variants also read RN as the
+    other OR operand; an opcode outside _SHIFTIMM_MNEMONICS (including
+    btst, which that table names but whose own branch there is status-only)
+    is left unmodelled."""
+    defs, uses, unknown = [], [], []
+    field = f.get("shiftimm", 0) & 0x7FFFFF
+    opcode = (field >> 16) & 0x3F
+    rn, rx = (field >> 4) & 0xF, field & 0xF
+    Rn, Rx = "R%d" % rn, "R%d" % rx
+    if opcode not in sharcfn._SHIFTIMM_MNEMONICS:
+        unknown.append("shiftimm_unknown_opcode")
+        return defs, uses, unknown
+    if opcode in (0x08, 0x09):
+        defs.append((Rn, "compute"))
+        uses += [Rn, Rx]
+    elif opcode in (0x00, 0x01, 0x10, 0x12, 0x30, 0x31, 0x32):
+        defs.append((Rn, "compute"))
+        uses.append(Rx)
+    else:
+        # btst (0x33): "[status only]" in render_shiftimm -- no Rn write.
+        uses.append(Rx)
+    return defs, uses, unknown
+
+
+def _mem_regdef_reguse(t, f):
+    """Direct (15a/14a/14d), indexed (3a/3b/3d/6a_mem), immediate-offset
+    (4a/4b/4d/15b) and Type3c memory forms. Direction always comes from the
+    form's own `d` field (sharcfn._space_dir, or Type3c's own `d`), never
+    from mnemonic text -- see the module docstring's Type3c note."""
+    defs, uses = [], []
+    if t == "3c":
+        # Not in tools/sharcfn.py's DIRECT/INDEXED_MEM_FORMS (that module's
+        # render_instruction special-cases Type3c as the R2 push idiom
+        # unconditionally instead); decoded directly here from its own
+        # dmi/dmm/d/dreg fields (see the module docstring's Type3c note).
+        i, m, d, dreg = f.get("dmi", 0), f.get("dmm", 0), f.get("d"), f.get("dreg")
+        uses += ["I%d" % i, "M%d" % m]
+        if dreg is not None:
+            reg = "R%d" % dreg
+            if d:
+                uses.append(reg)
+            else:
+                defs.append((reg, "mem_load"))
+        return defs, uses
+
+    space, direction = sharcfn._space_dir(f)
+    dreg, ureg = f.get("dreg"), f.get("ureg")
+    reg = "R%d" % dreg if dreg is not None else \
+        (sharcfn.ureg_name(ureg) if ureg is not None else None)
+    if t in sharcfn.INDEXED_MEM_FORMS:
+        uses += ["I%d" % f.get("i", 0), "M%d" % f.get("m", 0)]
+    elif t in sharcfn.IMMOFF_MEM_FORMS:
+        uses.append("I%d" % f.get("i", 0))
+    if reg is not None:
+        if direction == "store":
+            uses.append(reg)
+        else:
+            defs.append((reg, "mem_load"))
+    return defs, uses
+
+
+def _dual_mem_regdef_reguse(f):
+    """1a/1b: simultaneous DM(dmi,dmm)/PM(pmi,pmm) reference; dmd/pmd follow
+    the same 1=store/0=load convention as sharcfn._space_dir's `d`."""
+    defs, uses = [], []
+    dmi, dmm, dmdreg = f.get("dmi", 0), f.get("dmm", 0), f.get("dmdreg")
+    pmi, pmm, pmdreg = f.get("pmi", 0), f.get("pmm", 0), f.get("pmdreg")
+    uses += ["I%d" % dmi, "M%d" % dmm, "I%d" % pmi, "M%d" % pmm]
+    if dmdreg is not None:
+        reg = "R%d" % dmdreg
+        if f.get("dmd"):
+            uses.append(reg)
+        else:
+            defs.append((reg, "mem_load"))
+    if pmdreg is not None:
+        reg = "R%d" % pmdreg
+        if f.get("pmd"):
+            uses.append(reg)
+        else:
+            defs.append((reg, "mem_load"))
+    return defs, uses
+
+
+def register_effects(insn_type: str, f: dict):
+    """-> (defs: [(reg, kind)], uses: [reg], unknown: [tag]) for every
+    register a decoded instruction defines or uses, deduplicated, from its
+    typed fields (see the per-helper docstrings above and the module's
+    SCHEMA comment on `regdef`/`reguse` for the kind vocabulary). Returns
+    ([], [], []) for a form with no modelled register effect at all (a
+    branch/call/return/NOP/EMU/etc. -- these are not "unknown", they are
+    simply out of this table's scope: they define/use no general register
+    tools/sharc_trace.py's State.uregs models the same way this file's other
+    tables do)."""
+    defs, uses, unknown = [], [], []
+    t = insn_type
+
+    if t in sharcinv.COMPUTE_FORMS:
+        field23 = f.get("compute")
+        if field23:
+            d2, u2, unk2 = _compute_regdef_reguse(field23)
+            defs += d2
+            uses += u2
+            unknown += unk2
+    elif t == "2c":
+        field12 = f.get("compute")
+        if field12 is not None:
+            d2, u2 = _shortcompute_regdef_reguse(field12)
+            defs += d2
+            uses += u2
+
+    if t in sharcfn.DIRECT_MEM_FORMS or t in sharcfn.INDEXED_MEM_FORMS or \
+            t in sharcfn.IMMOFF_MEM_FORMS or t == "3c":
+        d2, u2 = _mem_regdef_reguse(t, f)
+        defs += d2
+        uses += u2
+    elif t in sharcfn.DUAL_MEM_FORMS:
+        d2, u2 = _dual_mem_regdef_reguse(f)
+        defs += d2
+        uses += u2
+
+    if t == "6a_mem":
+        d3, u3, unk3 = _shiftimm_regdef_reguse(f)
+        defs += d3
+        uses += u3
+        unknown += unk3
+
+    if f.get("u") and f.get("i") is not None:
+        # DAG post-modify: the memory forms above already record I%d as
+        # used (the pre-modify base for the access); u=1 also writes it.
+        i_reg = "I%d" % f["i"]
+        defs.append((i_reg, "dag_modify"))
+        uses.append(i_reg)
+
+    if t in ("5a_move", "5b_move"):
+        dst = f.get("dstureg")
+        src_hi, src_lo = f.get("srcureghigh", 0), f.get("srcureglow", 0) & 3
+        src = (src_hi << 2) | src_lo
+        if dst is not None:
+            defs.append((sharcfn.ureg_name(dst), "move"))
+        uses.append(sharcfn.ureg_name(src))
+    elif t in ("5a_swap", "5b_swap"):
+        c, d = f.get("cdreg"), f.get("dreg")
+        if c is not None and d is not None:
+            rc, rd = "R%d" % c, "R%d" % d
+            defs += [(rc, "swap"), (rd, "swap")]
+            uses += [rc, rd]
+    elif t in ("17a", "17b"):
+        ureg = f.get("ureg")
+        if ureg is not None:
+            defs.append((sharcfn.ureg_name(ureg), "literal"))
+    elif t == "18a":
+        sreg = f.get("sreg", 0)
+        code = sharcfn.UREG_CODES.get("USTAT1", 0) + sreg
+        reg = sharcfn.ureg_name(code)
+        bop = f.get("bop", 0)
+        uses.append(reg)
+        if bop not in (4, 5):
+            # set/clear/toggle (and the unnamed bop=3) read-modify-write;
+            # bit-test/xor-test (4/5) only read the register into BTF.
+            defs.append((reg, "literal"))
+    elif t in ("19a", "19a_scaled", "19a_bitrev"):
+        bank = 8 if f.get("g") else 0
+        src_low, dis_low = f.get("is", 0), f.get("idis", 0)
+        src, dst = bank + src_low, bank + (src_low ^ dis_low)
+        defs.append(("I%d" % dst, "dag_modify"))
+        uses.append("I%d" % src)
+    elif t in ("16a", "16b"):
+        i, m = f.get("i", 0), f.get("m", 0)
+        defs.append(("I%d" % i, "dag_modify"))
+        uses += ["I%d" % i, "M%d" % m]
+    elif t == "12a_imm":
+        defs.append(("LCNTR", "literal"))
+    elif t == "12a_ureg":
+        ureg = f.get("ureg")
+        defs.append(("LCNTR", "move"))
+        if ureg is not None:
+            uses.append(sharcfn.ureg_name(ureg))
+
+    seen_def, uniq_defs = set(), []
+    for reg, kind in defs:
+        if (reg, kind) not in seen_def:
+            seen_def.add((reg, kind))
+            uniq_defs.append((reg, kind))
+    uniq_uses = list(dict.fromkeys(uses))
+    return uniq_defs, uniq_uses, unknown
+
+
 def git_commit():
     try:
         return subprocess.check_output(
@@ -407,7 +982,12 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
         for i in code_blocks
     ]
 
+    bblock_rows, succ_rows, leaders_by_idx = _build_blocks_and_succ(
+        name, code_blocks, analyzed, functions, owner_of)
+
     insn_rows, edge_rows, literal_rows, mem_rows, hash_rows = [], [], [], [], []
+    dataref_rows, regdef_rows, reguse_rows = [], [], []
+    unknown_form_counts = collections.Counter()
 
     for idx in code_blocks:
         block = analyzed.get(idx)
@@ -442,6 +1022,8 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
         aligned_insns = block["insns"]
         return_sws = {r["sw"] for r in sites["returns"]}
         linked_indirect_sws = {c["sw"] for c in sites["indirect_calls"]}
+        local_leaders = leaders_by_idx.get(idx, set())
+        last_i_literal = {}
 
         for c in sites["calls"]:
             edge_rows.append((
@@ -459,6 +1041,12 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
             t = insn.type_name
             f = sharcinv.merge_fields(insn.fields)
             sw = base_sw + off // 2
+
+            if sw in local_leaders:
+                # A new basic block starts here: dataref's 'resolved_offset'
+                # only fires for an I-register literal load in the SAME
+                # basic block as its use (see the module's SCHEMA comment).
+                last_i_literal = {}
 
             if t in ("8a_abs", "8a_rel", "9a_rel", "9b_rel") and f.get("b") == 0:
                 # Type9a_abs/9b_abs have no 'addr' field at all (only
@@ -511,8 +1099,56 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
                 in_code, in_data = classify_literal_range(value, code_spans_sw, code_spans_byte, mem)
                 literal_rows.append((name, sw, value, t, dest, int(in_code), int(in_data)))
 
-            for row in extract_mem_access(t, f):
+                if t in ("15a", "14a"):
+                    # The literal IS the memory address here; use the same
+                    # d-field direction extract_mem_access does, not a
+                    # separate guess, so this never disagrees with
+                    # mem_access's own abs_load/abs_store rows for the
+                    # same instruction.
+                    _space, direction = sharcfn._space_dir(f)
+                    role = "abs_store" if direction == "store" else "abs_load"
+                elif t in ("17a", "17b") and dest is not None and dest.startswith("I") \
+                        and dest[1:].isdigit():
+                    # A direct register load (ureg = literal); a 19a* dest is
+                    # also an "I%d" string but is a modify DELTA, not the
+                    # register's new value, so it stays 'literal' below.
+                    role = "i_reg_base"
+                    last_i_literal[int(dest[1:])] = value & 0xFFFFFFFF
+                else:
+                    role = "literal"
+                # dataref is address-shaped values: store the unsigned 32-bit
+                # pattern (0x8055c840), not extract_literal's sign-extended
+                # int (literals.value is signed on purpose, for an ordinary
+                # arithmetic immediate like -1; an address materialised from
+                # the same bit pattern should read as the address).
+                dataref_rows.append((name, value & 0xFFFFFFFF, sw, t, role))
+
+            mem_access_rows = extract_mem_access(t, f)
+            for row in mem_access_rows:
                 mem_rows.append((name, sw) + row)
+                abs_address = row[7]
+                if abs_address is not None and t not in ("15a", "14a"):
+                    # 14d: a direct absolute address that extract_literal
+                    # doesn't cover (not a LITERAL_FORMS entry).
+                    direction = row[1]
+                    role = "abs_store" if direction == "store" else "abs_load"
+                    dataref_rows.append((name, abs_address, sw, t, role))
+
+            if t in sharcfn.IMMOFF_MEM_FORMS:
+                i_reg = f.get("i", 0)
+                base = last_i_literal.get(i_reg)
+                if base is not None:
+                    bits = sharcfn._IMMOFF_DATA_BITS.get(t, 6)
+                    off_val = sharcfn.sign_extend(f.get("data", 0), bits)
+                    dataref_rows.append((name, (base + off_val) & 0xFFFFFFFF, sw, t, "resolved_offset"))
+
+            defs, uses, unknown = register_effects(t, f)
+            for reg, kind in defs:
+                regdef_rows.append((name, sw, reg, kind))
+            for reg in uses:
+                reguse_rows.append((name, sw, reg))
+            for tag in unknown:
+                unknown_form_counts[tag] += 1
 
         for fn in functions:
             if fn["block"] != idx:
@@ -535,10 +1171,21 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
     db.executemany("INSERT INTO literals VALUES (?,?,?,?,?,?,?)", literal_rows)
     db.executemany("INSERT INTO mem_access VALUES (?,?,?,?,?,?,?,?,?,?)", mem_rows)
     db.executemany("INSERT INTO func_hash VALUES (?,?,?,?,?,?)", hash_rows)
+    db.executemany("INSERT INTO bblocks VALUES (?,?,?,?,?,?)", bblock_rows)
+    db.executemany("INSERT INTO succ VALUES (?,?,?,?)", succ_rows)
+    db.executemany("INSERT INTO dataref VALUES (?,?,?,?,?)", dataref_rows)
+    db.executemany("INSERT INTO regdef VALUES (?,?,?,?)", regdef_rows)
+    db.executemany("INSERT INTO reguse VALUES (?,?,?)", reguse_rows)
+    for tag, count in unknown_form_counts.items():
+        meta_rows_extra = [(name, "unknown_regdef_" + tag, str(count))]
+        db.executemany("INSERT INTO meta VALUES (?,?,?)", meta_rows_extra)
 
     return {
         "n_insn": len(insn_rows), "n_functions": len(func_rows), "n_edges": len(edge_rows),
         "n_literals": len(literal_rows), "n_mem_access": len(mem_rows), "n_func_hash": len(hash_rows),
+        "n_bblocks": len(bblock_rows), "n_succ": len(succ_rows), "n_dataref": len(dataref_rows),
+        "n_regdef": len(regdef_rows), "n_reguse": len(reguse_rows),
+        "unknown_form_counts": dict(unknown_form_counts),
     }
 
 
@@ -565,12 +1212,29 @@ def build_database(blob_path, out_path, name=None, min_depth=8, blocks=None, for
             }
 
     ctx = sharcfn.load_context(blob_path, code_blocks, min_depth)
-    db = open_db(out_path)
+
+    # Build into a temp file in the same directory and os.replace() it into
+    # place at the very end, so a concurrent reader of out_path (e.g. an
+    # agent running sharcdb.sql queries against out/sharcdb/*.sqlite while
+    # this build is in flight) never sees a half-written database -- either
+    # the old file (still fully valid) or the new one, never a torn one.
+    out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    tmp_path = os.path.join(
+        out_dir, ".%s.tmp-%d-%d" % (os.path.basename(out_path), os.getpid(), int(time.time() * 1e6))
+    )
     try:
-        counts = _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx)
-        db.commit()
-    finally:
-        db.close()
+        db = open_db(tmp_path)
+        try:
+            counts = _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx)
+            db.commit()
+        finally:
+            db.close()
+        os.replace(tmp_path, out_path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
     return {
         "name": name, "path": out_path, "skipped": False,
         "seconds": time.time() - t0, "size": os.path.getsize(out_path), **counts,
@@ -623,11 +1287,15 @@ def cmd_build(args):
         else:
             print(
                 "%-16s built  %s  %.1fs  %.1f KB  insn=%d functions=%d edges=%d literals=%d "
-                "mem_access=%d func_hash=%d"
+                "mem_access=%d func_hash=%d bblocks=%d succ=%d dataref=%d regdef=%d reguse=%d"
                 % (r["name"], r["path"], r["seconds"], r["size"] / 1024, r.get("n_insn", 0),
                    r.get("n_functions", 0), r.get("n_edges", 0), r.get("n_literals", 0),
-                   r.get("n_mem_access", 0), r.get("n_func_hash", 0))
+                   r.get("n_mem_access", 0), r.get("n_func_hash", 0), r.get("n_bblocks", 0),
+                   r.get("n_succ", 0), r.get("n_dataref", 0), r.get("n_regdef", 0), r.get("n_reguse", 0))
             )
+            if r.get("unknown_form_counts"):
+                print("    unknown regdef/reguse forms: " +
+                      ", ".join("%s=%d" % kv for kv in sorted(r["unknown_form_counts"].items())))
     return 0 if ok else 1
 
 
