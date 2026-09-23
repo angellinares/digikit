@@ -267,6 +267,24 @@ class IndexContractTest(unittest.TestCase):
             self.assertNotEqual(index._query_key(index._request_writer(I.WriterTarget(1, 4))), index._query_key(index._request_writer(I.WriterTarget(1, 8))))
             self.assertNotEqual(index._query_key(index._request_register(I.RegisterEffectQuery(1, "R6", max_steps=1))), index._query_key(index._request_register(I.RegisterEffectQuery(1, "R6", max_steps=2))))
 
+    def test_writer_cache_key_separates_versioned_trace_policies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            request = index._request_writer(I.WriterTarget(1, 4))
+            strict_request = {
+                **request,
+                "policy": {**request["policy"], "trace_policy": "strict/v1"},
+            }
+            self.assertEqual(
+                request["policy"]["trace_policy"], "type14d-continuation/v1"
+            )
+            self.assertNotEqual(
+                index._query_key(request), index._query_key(strict_request)
+            )
+            self.assertEqual(
+                index._request_writer_facts()["contract"], "writer-trace-facts/v2"
+            )
+
     def test_malformed_rows_are_misses_and_writable_cache_repairs_them(self):
         with tempfile.TemporaryDirectory() as directory:
             index = self.make_index(directory); item = I.WriterTarget(1); request = index._request_writer(item); key = index._query_key(request)

@@ -117,6 +117,24 @@ DUAL_STORE_FORMS = ('1a', '1b')
 
 ALL_STORE_FORMS = SIMPLE_STORE_FORMS + IMMEDIATE_STORE_FORMS + DUAL_STORE_FORMS
 
+# Strict tracing remains the default.  The named continuation policy is
+# intentionally narrow: Type14d's decoder semantics are useful for reaching
+# later stores, but its unconfirmed encoding is not evidence for an address
+# claim.  Facts and cache requests carry this versioned name.
+STRICT_TRACE_POLICY = 'strict/v1'
+TYPE14D_CONTINUATION_POLICY = 'type14d-continuation/v1'
+WRITER_TRACE_POLICIES = {
+    STRICT_TRACE_POLICY: (),
+    TYPE14D_CONTINUATION_POLICY: ('14d',),
+}
+
+
+def provisional_forms_for_policy(policy: str) -> tuple[str, ...]:
+    try:
+        return WRITER_TRACE_POLICIES[policy]
+    except KeyError as error:
+        raise ValueError('unknown writer trace policy: %r' % (policy,)) from error
+
 
 def store_space_and_direction(form: str, fields: dict) -> tuple[bool, bool]:
     """-> (is_store, is_dm_store) for one decoded, merged-field instruction,
@@ -616,32 +634,46 @@ def full_project_census(ctx):
     return by_function, orphan
 
 
-def resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_constants=True):
+def resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_constants=True,
+                     provisional_forms=()):
     """Run tools/sharc_trace.py's trace() once from `fn`'s entry, seeded
     per seed_sets(seed_global_constants), and pull the resolved 'store'
-    event at each of `dm_rows`' PCs. -> ({pc: event_or_None},
-    stop_reasons: set)."""
+    event at each of `dm_rows`' PCs.  A selected provisional form permits
+    continuation only; every store at or after it records that dependency.
+    -> ({pc: event_or_None}, stop_reasons: set, retained_path_forms)."""
     if not dm_rows:
-        return {}, set()
+        return {}, set(), ()
     wanted = {row['pc'] for row in dm_rows}
     states = trace_mod.trace(
         ctx['mem'], None, fn['entry'], sets=seed_sets(seed_global_constants),
         max_steps=max_steps, max_states=max_states,
         concrete_memory=True, assume_nw32=True,
         follow_loaded_calls=True, continue_external_calls=True,
+        provisional_forms=tuple(provisional_forms),
     )
     events_by_pc = {pc: [] for pc in wanted}
     stop_reasons = set()
+    retained_path_forms = set()
+    provisional_form_set = set(provisional_forms)
     for state in states:
+        retained_path_forms.add(tuple(getattr(state, 'provisional_used', ())))
         if state.trace:
             last = state.trace[-1]
             if last.get('action') == 'stop':
                 stop_reasons.add(last.get('reason') or 'stopped')
+        used_before_event = set()
         for event in state.trace:
+            # _execute records a provisional form's event after admitting it,
+            # so include that form in the event's own dependency.
+            if event.get('form') in provisional_form_set:
+                used_before_event.add(event['form'])
             if event.get('action') == 'store' and event.get('pc_sw') in wanted:
-                events_by_pc[event['pc_sw']].append(event)
+                annotated = dict(event)
+                if used_before_event:
+                    annotated['provisional_forms_used'] = sorted(used_before_event)
+                events_by_pc[event['pc_sw']].append(annotated)
     chosen = {pc: choose_store_event(events) for pc, events in events_by_pc.items()}
-    return chosen, stop_reasons
+    return chosen, stop_reasons, tuple(sorted(retained_path_forms))
 
 
 def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_lo, stack_hi, target_width=1):
@@ -650,6 +682,12 @@ def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_
         reasons = sorted(reason for reason in stop_reasons if reason)
         reason = ('not reached: ' + '; '.join(reasons)) if reasons else 'not reached by the tracer'
         return 'UNRESOLVED', {'reason': reason}, width
+    provisional_forms_used = chosen_event.get('provisional_forms_used', ())
+    if provisional_forms_used:
+        return 'UNRESOLVED', {
+            'reason': 'store trace depends on provisional form(s)',
+            'provisional_forms_used': list(provisional_forms_used),
+        }, width
     event_width = event_store_width(row['form'], chosen_event)
     if event_width is not None:
         width = event_width
@@ -664,25 +702,29 @@ def _init_worker(blob_path, block_idxs, min_depth):
     _WORKER['ctx'] = sharcfn.load_context(blob_path, block_idxs, min_depth)
 
 
-def _process_function_batch(fn_id, max_steps, max_states, seed_global_constants=True):
+def _process_function_batch(fn_id, max_steps, max_states, seed_global_constants=True,
+                            provisional_forms=()):
     """Spawn-safe unit: trace one function once and return plain records."""
     ctx = _WORKER['ctx']
     fn = ctx['by_id'][fn_id]
     block = ctx['analyzed'][fn['block']]
     dm_rows = [row for row in census_instructions(sharcinv.instructions_in(block, fn['entry'], fn['exit'])) if row['is_dm']]
-    chosen, stop_reasons = resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_constants)
-    return fn_id, fn['entry'], dm_rows, chosen, sorted(stop_reasons)
+    chosen, stop_reasons, retained_path_forms = resolve_function(
+        ctx, fn, dm_rows, max_steps, max_states, seed_global_constants,
+        provisional_forms)
+    return fn_id, fn['entry'], dm_rows, chosen, sorted(stop_reasons), retained_path_forms
 
 
 def _process_function(fn_id, target, max_steps, max_states, fallback_width, stack_lo, stack_hi,
-                       seed_global_constants=True):
+                       seed_global_constants=True, provisional_forms=()):
     ctx = _WORKER['ctx']
     fn = ctx['by_id'][fn_id]
     block = ctx['analyzed'][fn['block']]
     sw_insns = sharcinv.instructions_in(block, fn['entry'], fn['exit'])
     dm_rows = [row for row in census_instructions(sw_insns) if row['is_dm']]
-    chosen, stop_reasons = resolve_function(
-        ctx, fn, dm_rows, max_steps, max_states, seed_global_constants)
+    chosen, stop_reasons, _retained_path_forms = resolve_function(
+        ctx, fn, dm_rows, max_steps, max_states, seed_global_constants,
+        provisional_forms)
     out = []
     for row in dm_rows:
         cls, detail, width = classify_row(
@@ -695,8 +737,15 @@ def _process_function(fn_id, target, max_steps, max_states, fallback_width, stac
 
 
 def collect_trace_facts(blob_path, block_idxs, min_depth, max_steps, max_states,
-                        jobs=1, seed_global_constants=True):
-    """Trace each owning function once and return target-independent facts."""
+                        jobs=1, seed_global_constants=True,
+                        trace_policy=STRICT_TRACE_POLICY):
+    """Trace each owning function once and return target-independent facts.
+
+    ``trace_policy`` is an explicit, versioned continuation allowance.  It
+    never upgrades evidence: stores after an admitted provisional form are
+    retained solely as UNRESOLVED facts during classification.
+    """
+    provisional_forms = provisional_forms_for_policy(trace_policy)
     if jobs <= 0:
         raise ValueError('jobs must be positive')
     try:
@@ -714,27 +763,34 @@ def collect_trace_facts(blob_path, block_idxs, min_depth, max_steps, max_states,
 
     if jobs <= 1:
         _init_worker(blob_path, block_idxs, min_depth)
-        batches = [_process_function_batch(fn_id, max_steps, max_states, seed_global_constants) for fn_id in work]
+        batches = [_process_function_batch(
+            fn_id, max_steps, max_states, seed_global_constants, provisional_forms)
+            for fn_id in work]
     else:
         with ProcessPoolExecutor(max_workers=jobs, initializer=_init_worker,
                                  initargs=(blob_path, block_idxs, min_depth)) as pool:
-            futures = [pool.submit(_process_function_batch, fn_id, max_steps, max_states, seed_global_constants) for fn_id in work]
+            futures = [pool.submit(
+                _process_function_batch, fn_id, max_steps, max_states,
+                seed_global_constants, provisional_forms) for fn_id in work]
             batches = [future.result() for future in as_completed(futures)]
     functions = []
-    for fn_id, function_entry, dm_rows, chosen, stops in sorted(batches):
+    for fn_id, function_entry, dm_rows, chosen, stops, retained_path_forms in sorted(batches):
         functions.append({
             'function_id': fn_id,
             'function_entry': function_entry,
             'stop_reasons': sorted(stops),
+            'retained_path_provisional_forms': [list(forms) for forms in retained_path_forms],
             'stores': [
                 {'row': row, 'event': chosen.get(row['pc'])}
                 for row in dm_rows
             ],
         })
     return {
-        'contract': 'sharc-writer-trace-facts/v1',
+        'contract': 'sharc-writer-trace-facts/v2',
         'image_sha256': ctx['sha256'],
         'seed_global_constants': seed_global_constants,
+        'trace_policy': trace_policy,
+        'provisional_forms': list(provisional_forms),
         'census': dict(sorted(census.items())),
         'census_total': sum(census.values()),
         'functions': functions,
@@ -751,7 +807,7 @@ def classify_trace_facts(facts, targets, fallback_width, stack_lo, stack_hi):
     targets = tuple(sorted(normalized_targets))
     if not targets:
         return {}
-    if facts.get('contract') != 'sharc-writer-trace-facts/v1':
+    if facts.get('contract') != 'sharc-writer-trace-facts/v2':
         raise ValueError('incompatible writer trace facts')
 
     all_rows = []
@@ -794,7 +850,9 @@ def classify_trace_facts(facts, targets, fallback_width, stack_lo, stack_hi):
         results[(target, target_width)] = {
             'target': target, 'target_width': target_width, 'width': target_width, 'image_sha256': facts['image_sha256'],
             'stack': [stack_lo, stack_hi] if stack_lo is not None else None,
-            'seed_global_constants': facts['seed_global_constants'], 'census': facts['census'],
+            'seed_global_constants': facts['seed_global_constants'],
+            'trace_policy': facts['trace_policy'],
+            'provisional_forms': facts['provisional_forms'], 'census': facts['census'],
             'census_total': census_total, 'class_totals': dict(sorted(totals.items())),
             'excluded_stack_depends_on_unproven_entry_assumption': len(excluded),
             'excluded_stack_via_circular_modify': sum(1 for row in excluded if row.get('via_circular_modify')),
@@ -806,7 +864,8 @@ def classify_trace_facts(facts, targets, fallback_width, stack_lo, stack_hi):
 
 
 def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
-             fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
+             fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True,
+             trace_policy=STRICT_TRACE_POLICY):
     """Classify targets from one target-independent trace-fact collection."""
     targets = tuple(targets)
     if not targets:
@@ -814,6 +873,7 @@ def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
     facts = collect_trace_facts(
         blob_path, block_idxs, min_depth, max_steps, max_states,
         jobs=jobs, seed_global_constants=seed_global_constants,
+        trace_policy=trace_policy,
     )
     return classify_trace_facts(
         facts, targets, fallback_width, stack_lo, stack_hi
@@ -821,11 +881,13 @@ def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
 
 
 def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,
-        fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
+        fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True,
+        trace_policy=STRICT_TRACE_POLICY):
     """Backward-compatible single-target façade."""
     return run_many(blob_path, block_idxs, min_depth, [(target, fallback_width)],
                     max_steps, max_states, fallback_width, stack_lo, stack_hi,
-                    jobs=jobs, seed_global_constants=seed_global_constants)[(target, fallback_width)]
+                    jobs=jobs, seed_global_constants=seed_global_constants,
+                    trace_policy=trace_policy)[(target, fallback_width)]
 
 
 def _parse_stack(text):

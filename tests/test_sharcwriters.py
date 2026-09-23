@@ -8,6 +8,7 @@ import pathlib
 import sys
 import unittest
 from importlib import import_module
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
 
@@ -354,9 +355,11 @@ class SeedSetsTest(unittest.TestCase):
 class TraceFactClassificationTest(unittest.TestCase):
     def test_target_independent_facts_can_classify_multiple_targets(self):
         facts = {
-            "contract": "sharc-writer-trace-facts/v1",
+            "contract": "sharc-writer-trace-facts/v2",
             "image_sha256": "0" * 64,
             "seed_global_constants": True,
+            "trace_policy": W.STRICT_TRACE_POLICY,
+            "provisional_forms": [],
             "census": {"14a": 1},
             "census_total": 1,
             "functions": [{
@@ -404,7 +407,7 @@ class IntegrationTest(unittest.TestCase):
         sw_insns = sharcinv.instructions_in(block, cls.fn["entry"], cls.fn["exit"])
         cls.rows = W.census_instructions(sw_insns)
         dm_rows = [row for row in cls.rows if row["is_dm"]]
-        chosen, stop_reasons = W.resolve_function(
+        chosen, stop_reasons, _retained_path_forms = W.resolve_function(
             cls.ctx, cls.fn, dm_rows, max_steps=4000, max_states=128)
         cls.classified = []
         for row in dm_rows:
@@ -426,6 +429,47 @@ class IntegrationTest(unittest.TestCase):
     def test_census_form_set_matches_the_documented_forms(self):
         forms = {row["form"] for row in self.rows if row["is_dm"]}
         self.assertTrue(forms <= set(W.ALL_STORE_FORMS))
+
+
+class ProvisionalWriterTraceTest(unittest.TestCase):
+    def test_type14d_continuation_marks_only_dependent_stores_unresolved(self):
+        class State:
+            stopped = "return"
+            provisional_used = ("14d",)
+            trace = [
+                {"pc_sw": 0x10, "form": "14a", "action": "store", "address": 0x100},
+                {"pc_sw": 0x11, "form": "14d", "action": "load"},
+                {"pc_sw": 0x12, "form": "14a", "action": "store", "address": 0x100},
+            ]
+
+        ctx, fn = {"mem": object()}, {"entry": 0}
+        rows = [{"pc": 0x10}, {"pc": 0x12}]
+        with patch.object(trace_mod, "trace", return_value=[State()]) as trace:
+            events, stops, paths = W.resolve_function(
+                ctx, fn, rows, 10, 2, provisional_forms=("14d",))
+        self.assertEqual(trace.call_args.kwargs["provisional_forms"], ("14d",))
+        self.assertEqual(events[0x10]["address"], 0x100)
+        self.assertNotIn("provisional_forms_used", events[0x10])
+        self.assertEqual(events[0x12]["provisional_forms_used"], ["14d"])
+        self.assertEqual(paths, (("14d",),))
+        ordinary, _, _ = W.classify_row(
+            {"width": 4, "form": "14a"}, events[0x10], stops,
+            0x100, 4, None, None)
+        provisional, detail, _ = W.classify_row(
+            {"width": 4, "form": "14a"}, events[0x12], stops,
+            0x100, 4, None, None)
+        self.assertEqual(ordinary, "HIT")
+        self.assertEqual(provisional, "UNRESOLVED")
+        self.assertEqual(detail["provisional_forms_used"], ["14d"])
+
+    def test_strict_policy_remains_empty_and_type14d_policy_is_versioned(self):
+        self.assertEqual(W.provisional_forms_for_policy(W.STRICT_TRACE_POLICY), ())
+        self.assertEqual(
+            W.provisional_forms_for_policy(W.TYPE14D_CONTINUATION_POLICY),
+            ("14d",),
+        )
+        with self.assertRaisesRegex(ValueError, "unknown writer trace policy"):
+            W.provisional_forms_for_policy("unversioned")
 
 
 class CircularModifyEndToEndTest(unittest.TestCase):

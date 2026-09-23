@@ -29,4 +29,5 @@ re-checked · **[O]** open / nobody has established this.
 | [`08-hardware-and-ghidra.md`](findings/08-hardware-and-ghidra.md) | The MCF5441x identification, eDMA, the MMIO hook, Ghidra tooling, RTTI/code seeds, Version Tracking, functions Ghidra misses |
 | [`09-runtime-state.md`](findings/09-runtime-state.md) | Live musical state in RAM: the pattern and kit working-set tables |
 | [`10-sharc-indirect-target-dossier.md`](findings/10-sharc-indirect-target-dossier.md) | Static dossier for the `FUN_1c642a` Type9b indirect target and provisional hook ranking |
+| [`11-sharc-cross-image-comparison.md`](findings/11-sharc-cross-image-comparison.md) | Bounded structural comparison of the DT2 1.16, DN2 1.11, and DN2 1.10E SHARC images |
 | [`functions/README.md`](findings/functions/README.md) | Per-function SHARC notes, including Phase B wrapper and conditional-resampling-path entries |

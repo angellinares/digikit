@@ -213,6 +213,20 @@ existential writer result. These are bounded static trace results, not a
 qualification of Type14d, a natural selector observation, or a calling-
 convention claim. **[D][O]**
 
+The writer-trace cache now applies the same narrow, versioned Type14d
+continuation policy as the register-effect query. It records
+`type14d-continuation/v1`, the admitted form, and every store whose path has
+crossed that provisional decode. Such a store remains `UNRESOLVED`; it cannot
+become a hit or exclusion merely because the tracer continued. On the full
+DT2 census, the immediate `source: prm` stop count falls from 627 to 189
+stores. Of the continued results, 171 store sites are explicitly retained as
+Type14d-dependent and therefore unresolved; other paths proceed to later
+limits or unsupported forms. The census totals do not change: each of the two
+current target classifications still has 7,456 unresolved stores. This moves
+the analysis frontier without qualifying Type14d or strengthening writer
+evidence. Jobs=1 and jobs=8 reports are byte-identical, and a warm read leaves
+the index mtime unchanged. **[D][O]**
+
 The loaded tail is no longer an unknown *loader initialization* boundary, but
 its runtime target set remains unproven. No natural selector value or runtime
 occurrence is observed. A minimal future capture would record `DM(0x2560c4)`,

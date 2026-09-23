@@ -20,8 +20,12 @@ from typing import Any, Mapping, Sequence
 HERE = Path(__file__).resolve().parent
 DB_SCHEMA_VERSION = 4
 CACHE_CONTRACT = "sharc-analysis-index/v4"
+# This continuation policy is intentionally versioned and carried in both
+# writer-result and trace-fact requests.  It permits Type14d to reach later
+# stores, while sharcwriters keeps every calibration-dependent store unknown.
 WRITER_TRACE_POLICY = {"max_steps": 4000, "max_states": 128,
-                       "seed_global_constants": True}
+                       "seed_global_constants": True,
+                       "trace_policy": "type14d-continuation/v1"}
 WRITER_CLASSIFY_POLICY = {"fallback_width": 4, "stack_lo": 0x26F000,
                           "stack_hi": 0x2C0000}
 WRITER_POLICY = {**WRITER_TRACE_POLICY, **WRITER_CLASSIFY_POLICY}
@@ -511,7 +515,7 @@ class AnalysisIndex:
         return {"contract": "writer-target/v1", "target": {"address": target.address, "width": target.width}, "policy": WRITER_POLICY}
 
     def _request_writer_facts(self) -> dict[str, Any]:
-        return {"contract": "writer-trace-facts/v1", "policy": WRITER_TRACE_POLICY}
+        return {"contract": "writer-trace-facts/v2", "policy": WRITER_TRACE_POLICY}
 
     def _request_register(self, query: RegisterEffectQuery) -> dict[str, Any]:
         calibration_forms = self._calibration_forms(query.calibration_forms)
