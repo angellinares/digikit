@@ -131,7 +131,12 @@ WRITER_TRACE_POLICIES = {
 }
 # Individual handler changes can bump only their form's revision.  The index
 # compares this metadata against each fact's executed/stopped form set.
-TRACE_HANDLER_REVISIONS = {'default': 'trace-handler/v1'}
+TRACE_HANDLER_REVISIONS = {
+    'default': 'trace-handler/v1',
+    # Type7d now carries opaque symbolic ACONV results through writer traces.
+    # Facts that executed or stopped on it must be recomputed.
+    '7d': 'trace-handler/7d-v2',
+}
 
 
 def handler_revision(form: str) -> str:
@@ -757,7 +762,12 @@ def _function_fact(fn_id, function_entry, function_ordinal, dm_rows, chosen, sto
             forms.add(event['form'])
     blockers = set()
     for reason in stops:
-        blockers.update(re.findall(r'(?:unsupported|unknown)\s+([0-9]+[a-z_]*)', str(reason)))
+        text = str(reason)
+        blockers.update(re.findall(r'(?:unsupported|unknown)\s+([0-9]+[a-z_]*)', text))
+        # Some conservative semantic stops name their typed form first (for
+        # example ``Type7d B2W(B7) source is not concrete``).  They are just
+        # as revision-dependent as an ``unsupported 11a`` stop.
+        blockers.update(re.findall(r'\bType([0-9]+[a-z_]*)\b', text))
     shape = sha256(_canonical_json(dm_rows)).hexdigest()
     return {
         'function_id': fn_id,

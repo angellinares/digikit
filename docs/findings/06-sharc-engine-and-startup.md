@@ -731,6 +731,36 @@ convert I7, B7, I6 and B6 to word addresses and back again:
 The round trip is exact, and the tracer's own return check agrees: every
 `JUMP (M14, I12)` return in the run matches the call it came from. **[V]**
 
+### Type7d keeps symbolic conversion provenance bounded **[D][O]**
+
+The native tracer now continues a Type7d whose source is an `Affine` value,
+but does not claim an architectural address-map result.  W2B multiplies an
+affine expression by four; B2W divides only when every known affine
+coefficient and constant is four-aligned.  For B2W with unknown low bits it
+uses a stable, source-derived opaque `aconv_b2w_...` symbol instead of treating
+right shift as affine.  An `Unknown` source still stops the state.  The
+existing `aconv` event and its `semantics="prm-likely"` tag remain the boundary
+between this tracer approximation and hardware behavior. **[D][O]**
+
+This follows the public SHARC+ PRM Rev. 1.5 Figure 14-21 / Table 14-22
+(PDF pp.352–355, Type7d form and register-bank/class rows) and Table 6-4
+(PDF p.201 / printed p.6-16): B2W/W2B are documented as likely `>> 2`/`<< 2`,
+but a missing equivalent address retains the input and raises ILAD.  The
+tracer does not model that map or trap.  The PRM also lists Type7d rows with
+an optional condition and parallel compute; this phase intentionally admits
+only the pure ACONV selector (`cond=11111`, both compute fields zero) pinned
+by `tools/sharcspec/build_table.py`.  Compute-bearing/conditional rows do not
+enter this handler and remain outside this phase. **[D][O]**
+
+The hand-built byte fixtures exercise that pure selector only.  A reproducible
+local byte check is available from the ignored DT2 loader stream:
+`shasum -a 256 out/sections/dt2-1.16/section_7_BLOB.bin` gives
+`0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`,
+and `LoadedMemory.from_stream(...).read(sw_to_byte(0x1c1460), 6)` gives
+`bf0480c00000` (raw `0x04bfc0800000`).  An independent check reproduced the
+hash, bytes, decode, and cited public-manual form.  This exact occurrence is
+**[V]**; no firmware behavior or ILAD-free execution is claimed. **[O]**
+
 ### Type14d and Type15a **[V][O]**
 
 Both gain handlers from their PRM pages. Type15a is already confident, with

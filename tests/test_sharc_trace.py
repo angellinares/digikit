@@ -640,28 +640,66 @@ class TraceTest(unittest.TestCase):
         self.assertEqual(w2b.trace[0]["source"], "B1")
         self.assertEqual(w2b.trace[0]["destination"], "B4")
 
+    def test_type7d_exact_bytes_propagate_symbolic_addresses_conservatively(self):
+        # Hand-built pure-ACONV byte fixtures. The first is I7 = B2W(I7);
+        # the second exercises g=1, B class, source B9 and XOR destination
+        # B12: B12 = W2B(B9). They are decoder fixtures, not firmware claims.
+        b2w = T.decode_at(bytes.fromhex("bf0480c00000"), 0, 0)
+        w2b = T.decode_at(bytes.fromhex("fe04805d0000"), 0, 0)
+        compute_bearing = T.decode_at(bytes.fromhex("bf0480c00100"), 0, 0)
+        self.assertEqual(
+            (b2w.raw, b2w.type_name, b2w.fields),
+            (0x04BFC0800000, "7d", {
+                "g": 0, "is[2:2]": 1, "is[1:0]": 3, "breg": 0,
+                "toby": 0, "idis[2:0]": 0,
+            }),
+        )
+        self.assertEqual(
+            (w2b.raw, w2b.type_name, w2b.fields),
+            (0x04FE5D800000, "7d", {
+                "g": 1, "is[2:2]": 0, "is[1:0]": 1, "breg": 1,
+                "toby": 1, "idis[2:0]": 5,
+            }),
+        )
+        # PIN_FIELDS admits only pure ACONV here; PRM optional-compute Type7d
+        # rows must not silently execute through this bounded handler.
+        self.assertNotEqual(compute_bearing.type_name, "7d")
+
+        # A divisible affine B2W has an exact affine result.  An unaligned
+        # affine source instead becomes an opaque symbol: B2W is not linear
+        # over unknown low bits and the address map may raise ILAD.
+        exact = self.run_one(
+            T.State(1, {T.UREG_CODES["I7"]: T.Affine(0x20, (("byte_base", 4),))}),
+            b2w,
+        )
+        self.assertEqual(
+            exact.uregs[T.UREG_CODES["I7"]], T.Affine(8, (("byte_base", 1),)))
+        symbolic = self.run_one(
+            T.State(1, {T.UREG_CODES["I7"]: T.symbol("B7e")}), b2w
+        )
+        self.assertEqual(
+            symbolic.uregs[T.UREG_CODES["I7"]],
+            T.symbol("aconv_b2w_23_1_0_B7e_1"),
+        )
+        self.assertEqual(symbolic.trace[0]["semantics"], "prm-likely")
+
+        banked = self.run_one(
+            T.State(1, {T.UREG_CODES["B9"]: T.Affine(3, (("word_base", 1),))}),
+            w2b,
+        )
+        self.assertEqual(
+            banked.uregs[T.UREG_CODES["B12"]], T.Affine(12, (("word_base", 4),)))
+        self.assertEqual(banked.trace[0]["direction"], "w2b")
+
     def test_type7d_firmware_instance_stops_without_a_concrete_source(self):
-        # Strict-run cluster boundary at 0x1c1460
-        # (docs/findings/06-sharc-engine-and-startup.md "Current
-        # boundaries"): raw 0x04bfc0800000 decodes g=0, is=7 (is[2:2]=1,
-        # is[1:0]=3), breg=0, toby=0, idis=0, i.e. "I7 = B2W(I7)".
+        # Unknown remains a hard stop: neither address-map conversion nor its
+        # ILAD outcome is modeled by the bounded tracer.
         fields = {
-            "g": 0,
-            "is[2:2]": 1,
-            "is[1:0]": 3,
-            "breg": 0,
-            "toby": 0,
-            "idis[2:0]": 0,
+            "g": 0, "is[2:2]": 1, "is[1:0]": 3, "breg": 0,
+            "toby": 0, "idis[2:0]": 0,
         }
         stopped = self.run_one(T.State(1), insn("7d", fields, 6))
         self.assertEqual(stopped.stopped, "Type7d B2W(I7) source is not concrete")
-
-        concrete = self.run_one(
-            T.State(1, {T.UREG_CODES["I7"]: T.Const(0x1000)}),
-            insn("7d", fields, 6),
-        )
-        self.assertEqual(concrete.uregs[T.UREG_CODES["I7"]], T.Const(0x400))
-        self.assertEqual(concrete.trace[0]["semantics"], "prm-likely")
 
     def test_type14d_short_word_store_and_zero_extended_load(self):
         # out/refs/sharc-plus-prm pp.384-386: w=0,ex=0,l=1 is (sw)/(sw) BH

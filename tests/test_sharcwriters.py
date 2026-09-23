@@ -359,6 +359,15 @@ class TraceFactClassificationTest(unittest.TestCase):
         self.assertEqual(fact["function_ordinal"], 3)
         self.assertEqual(fact["dependencies"]["blockers"], ["11a"])
         self.assertEqual(fact["dependencies"]["handler_revisions"]["11a"], "trace-handler/v1")
+        type7d = W._function_fact(
+            "aconv", 0x20, 4, rows, {},
+            {"Type7d B2W(B7) source is not concrete"}, (), W.STRICT_TRACE_POLICY,
+        )
+        self.assertEqual(type7d["dependencies"]["blockers"], ["7d"])
+        self.assertEqual(
+            type7d["dependencies"]["handler_revisions"]["7d"],
+            "trace-handler/7d-v2",
+        )
         self.assertEqual(len(fact["store_shape_sha256"]), 64)
 
     def test_target_independent_facts_can_classify_multiple_targets(self):

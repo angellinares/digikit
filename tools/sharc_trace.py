@@ -728,6 +728,35 @@ def _multiply(left: Value, right: Value, expression: str) -> Value:
     return Unknown(expression + " (non-affine multiplication)")
 
 
+def _aconv_symbol(value: Affine, direction: str, source_code: int, pc_sw: int) -> Affine:
+    """Return an opaque, stable symbolic result for map-dependent ACONV.
+
+    B2W is not affine when the source's low two bits are unknown.  The PRM's
+    address-map/ILAD exception also prevents treating a symbolic source as an
+    unconditional shift.  Retaining a source-derived opaque symbol lets the
+    bounded writer tracer continue without asserting a false linear relation.
+    """
+    pieces = [direction, str(source_code), "%x" % pc_sw, "%x" % value.constant]
+    pieces.extend("%s_%x" % (name, coefficient) for name, coefficient in value.terms)
+    return symbol("aconv_" + "_".join(pieces))
+
+
+def _aconv(value: Value, w2b: bool, source_code: int, pc_sw: int) -> Value:
+    """Apply the PRM-likely ACONV arithmetic without inventing ILAD behavior."""
+    if isinstance(value, Const):
+        return Const(value.value << 2 if w2b else value.value >> 2)
+    if not isinstance(value, Affine):
+        return Unknown("ACONV source is not symbolic")
+    if w2b:
+        return _multiply(value, Const(4), "ACONV W2B")
+    if value.constant % 4 == 0 and all(coefficient % 4 == 0 for _, coefficient in value.terms):
+        return _affine(
+            value.constant // 4,
+            tuple((name, coefficient // 4) for name, coefficient in value.terms),
+        )
+    return _aconv_symbol(value, "b2w", source_code, pc_sw)
+
+
 def _access_modifier_scale(access_width: str, assume_nw32: bool) -> int:
     """Return SHARC+ byte-space scaled-address arithmetic width."""
     if access_width.startswith("short-word"):
@@ -3232,9 +3261,12 @@ def _execute(state: State, insn: Instruction) -> List[State]:
     if name == "7d":
         # SHARC+ Core Programming Reference (out/refs/sharc-plus-prm), ACONV
         # (Type 7d), Figure 13-21 p.352 and its Encode Table (same page):
-        # this is the Type7a word with cond=11111 and an empty compute
-        # (Table 13-22, p.350), which decode_table.json now pins into the
-        # mask/value, so cond/compute are not free fields here. g selects
+        # this handler is deliberately only the pure ACONV row: cond=11111
+        # and an empty compute (Table 13-22, p.350). decode_table.json pins
+        # those fields into the mask/value, so cond/compute are not free here.
+        # The PRM also describes conditional/compute-parallel Type7d rows;
+        # they are outside this bounded decoder contract and must not silently
+        # enter this handler as pure ACONV. g selects
         # DAG1/DAG2 (add 8, as for Type7a/Type19a); breg selects the I or B
         # register class; toby selects W2B (1) vs B2W (0); the destination
         # register is the source XOR idis, the same trick as Type7a/Type19a.
@@ -3266,7 +3298,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         value = _ureg(state.uregs, src_code)
         w2b = bool(_field(f, "toby"))
         direction = "w2b" if w2b else "b2w"
-        if not isinstance(value, Const):
+        if isinstance(value, Unknown) or isinstance(value, PartialConst):
             return [
                 _stop(
                     state,
@@ -3275,8 +3307,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
                     % (direction.upper(), reg_class, source),
                 )
             ]
-        shifted = value.value << 2 if w2b else value.value >> 2
-        result = Const(shifted)
+        result = _aconv(value, w2b, src_code, state.pc_sw)
         state.uregs[dst_code] = result
         _event(
             state,
