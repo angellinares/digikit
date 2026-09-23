@@ -647,12 +647,30 @@ def render_mem_immoff(sw, f, insn_type):
 
 
 def render_dual_mem(f):
-    """1a/1b: simultaneous DM(dmi,dmm) and PM(pmi,pmm) reference."""
+    """1a/1b: simultaneous DM(dmi,dmm) and PM(pmi,pmm) reference. PGR Table
+    10-1 ("Opcode Acronyms (ISA/VISA)", p.443-444): DMD "DAG1 access
+    direction" and PMD "DAG2 access direction" are each 0 = Read, 1 = Write
+    -- the same direction the Type 3/4/6/14/15 "D" field encodes (see
+    _space_dir()). The manual's own Type 1a/1b Syntax (p.375) prints
+    "DM(Ia,Mb) = dreg" for a write and "dreg = DM(Ia,Mb)" for a read: the
+    register moves to whichever side receives the value, same as every
+    other memory-form renderer here. A previous version instead always put
+    the memory term first and only flipped "=" to "<-" for a read, which
+    reads backwards ("DM(...) <- Rd" naturally parses as memory receiving
+    from the register, i.e. a write, even when dmd/pmd said read)."""
     dmi, dmm = f.get("dmi", 0), f.get("dmm", 0)
     pmi, pmm = f.get("pmi", 0), f.get("pmm", 0)
     dmdreg, pmdreg = f.get("dmdreg", 0), f.get("pmdreg", 0)
-    dm = "DM(I%d, M%d) %s R%d" % (dmi, dmm, "=" if f.get("dmd") else "<-", dmdreg)
-    pm = "PM(I%d, M%d) %s R%d" % (pmi, pmm, "=" if f.get("pmd") else "<-", pmdreg)
+    dm = (
+        "DM(I%d, M%d) = R%d" % (dmi, dmm, dmdreg)
+        if f.get("dmd")
+        else "R%d = DM(I%d, M%d)" % (dmdreg, dmi, dmm)
+    )
+    pm = (
+        "PM(I%d, M%d) = R%d" % (pmi, pmm, pmdreg)
+        if f.get("pmd")
+        else "R%d = PM(I%d, M%d)" % (pmdreg, pmi, pmm)
+    )
     return dm + " ; " + pm
 
 
@@ -984,11 +1002,21 @@ def render_instruction(
         return cond_prefix(f) + text, notes, gap
 
     if t == "3c":
-        text = "DM(I%d, M%d) = R%d" % (
-            f.get("dmi", 7),
-            f.get("dmm", 7),
-            f.get("dreg", 2),
-        )
+        # decode_table.json's Type3c has its own "d" field (bit 37, PGR
+        # p.449's opcode figure), the same Data-direction bit Table 10-1
+        # (p.443) defines for every other Type 3/4/6/14/15 memory form (0 =
+        # read, 1 = write) and that tools/sharc_trace.py's "3c" _execute
+        # branch checks the same way (store when d, else load). A previous
+        # version of this branch never read "d" at all and always rendered
+        # a store, which disagreed with the tracer for every d=0 (load)
+        # encoding -- e.g. DT2 1.16 sw 0x1c653b (dmi=4, dmm=5, d=0, dreg=6)
+        # is a load, "R6 = DM(I4, M5)", not "DM(I4, M5) = R6".
+        dmi, dmm, dreg = f.get("dmi", 7), f.get("dmm", 7), f.get("dreg", 2)
+        _, direction = _space_dir(f)
+        if direction == "store":
+            text = "DM(I%d, M%d) = R%d" % (dmi, dmm, dreg)
+        else:
+            text = "R%d = DM(I%d, M%d)" % (dreg, dmi, dmm)
         return text, notes, gap
 
     if t == "18a":  # pragma: no cover -- handled above; kept for clarity

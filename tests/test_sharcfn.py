@@ -579,6 +579,85 @@ class CondPrefixRenderingTest(unittest.TestCase):
         self.assertEqual(mnemonic, "IF SV R3 = ashift(R4, 8)")
 
 
+class Type3cDirectionRenderingTest(unittest.TestCase):
+    """Type3c's "d" field (decode_table.json bit 37; PGR Table 10-1 p.443,
+    "D  Data direction  0 = Memory read  1 = Memory write") picks a load or
+    a store, exactly like tools/sharc_trace.py's "3c" _execute branch
+    (store when d, else load). A previous version of render_instruction()'s
+    "3c" branch never read "d" at all and always rendered a store."""
+
+    def setUp(self):
+        self.mem = sharcldr.LoadedMemory.from_stream(b"")
+
+    def render(self, **fields):
+        data = field_insn("3c", **fields)
+        insn = insn_at(data)
+        self.assertEqual(insn.type_name, "3c")
+        mnemonic, notes, gap = sharcfn.render_instruction(
+            0x1000, insn, self.mem, *empty_ctx()
+        )
+        return mnemonic
+
+    def test_d0_is_a_load(self):
+        # DT2 1.16 sw 0x1c653b: dmi=4, dmm=5, d=0, dreg=6.
+        mnemonic = self.render(dmi=4, dmm=5, d=0, dreg=6)
+        self.assertEqual(mnemonic, "R6 = DM(I4, M5)")
+
+    def test_d1_is_a_store(self):
+        mnemonic = self.render(dmi=4, dmm=5, d=1, dreg=6)
+        self.assertEqual(mnemonic, "DM(I4, M5) = R6")
+
+
+class DualMemDirectionRenderingTest(unittest.TestCase):
+    """Type1a/1b's "dmd"/"pmd" fields (PGR Table 10-1 p.444: DMD "DAG1
+    access direction", PMD "DAG2 access direction", each 0 = Read, 1 =
+    Write -- the manual's own Type 1a Syntax on p.375 prints "DM(Ia,Mb) =
+    dreg" for a write and "dreg = DM(Ia,Mb)" for a read). tools/sharc_trace.py
+    has no "1a"/"1b" _execute branch (an unimplemented form there), so
+    this form is checked against the manual only, not against the tracer.
+    A previous version of render_dual_mem() always put the memory term on
+    the left and only swapped "=" for "<-" on a read, which reads backwards
+    for the read case."""
+
+    def setUp(self):
+        self.mem = sharcldr.LoadedMemory.from_stream(b"")
+
+    def render(self, **fields):
+        data = field_insn("1a", **fields)
+        insn = insn_at(data)
+        self.assertEqual(insn.type_name, "1a")
+        mnemonic, notes, gap = sharcfn.render_instruction(
+            0x1000, insn, self.mem, *empty_ctx()
+        )
+        return mnemonic
+
+    def test_dm_read_puts_register_on_the_left(self):
+        mnemonic = self.render(
+            dmd=0, dmi=7, dmm=0, dmdreg=12, pmd=1, pmi=2, pmm=3, pmdreg=12
+        )
+        self.assertIn("R12 = DM(I7, M0)", mnemonic)
+        self.assertNotIn("DM(I7, M0) <-", mnemonic)
+
+    def test_dm_write_puts_register_on_the_right(self):
+        mnemonic = self.render(
+            dmd=1, dmi=7, dmm=0, dmdreg=12, pmd=1, pmi=2, pmm=3, pmdreg=12
+        )
+        self.assertIn("DM(I7, M0) = R12", mnemonic)
+
+    def test_pm_read_puts_register_on_the_left(self):
+        mnemonic = self.render(
+            dmd=1, dmi=0, dmm=1, dmdreg=2, pmd=0, pmi=4, pmm=7, pmdreg=10
+        )
+        self.assertIn("R10 = PM(I4, M7)", mnemonic)
+        self.assertNotIn("PM(I4, M7) <-", mnemonic)
+
+    def test_pm_write_puts_register_on_the_right(self):
+        mnemonic = self.render(
+            dmd=1, dmi=0, dmm=1, dmdreg=2, pmd=1, pmi=4, pmm=7, pmdreg=10
+        )
+        self.assertIn("PM(I4, M7) = R10", mnemonic)
+
+
 _DT2_116_BLOB = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "out",
@@ -622,6 +701,31 @@ class RealBlobType19AndType6aRenderingTest(unittest.TestCase):
     def test_type2a_conditional_compute_renders_if_cond(self):
         # 0x1cbf47 is a Type2a with cond 1 (LT, PGR Table 10-4).
         self.assertEqual("IF LT F8 = fadd(F8, F2)", self.rows["0x1cbf47"])
+
+
+@unittest.skipUnless(
+    os.path.exists(_DT2_116_BLOB),
+    "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+)
+class RealBlobType3cRenderingTest(unittest.TestCase):
+    """DT2 1.16 sw 0x1c653b (dmi=4, dmm=5, d=0, dreg=6): a Type3c load that
+    a previous version of render_instruction()'s "3c" branch rendered as a
+    store, "DM(I4, M5) = R6", disagreeing with tools/sharc_trace.py's "3c"
+    _execute branch, which executes d=0 as a LOAD R6 = DM(0x250738)."""
+
+    @classmethod
+    def setUpClass(cls):
+        ctx = sharcfn.load_context(_DT2_116_BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
+        cls.dossier = sharcfn.build_dossier(ctx, 0x1C642A, want_listing=True)
+        cls.rows = {
+            row["sw"]: row["mnemonic"] for row in cls.dossier.get("listing", [])
+        }
+
+    def test_dossier_builds_without_error(self):
+        self.assertNotIn("error", self.dossier)
+
+    def test_type3c_load_not_rendered_as_a_store(self):
+        self.assertEqual("R6 = DM(I4, M5)", self.rows["0x1c653b"])
 
 
 def sharcfnCounterLike():
