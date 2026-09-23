@@ -179,6 +179,21 @@ def canonical_loader_dm_address(address: int) -> int:
     return 0x28000000 + address if 0 <= address < 0x08000000 else address
 
 
+def _register_effect_query(
+    declaration: Mapping[str, Any], prefix: str
+) -> Any:
+    calibration = declaration.get("calibration_forms", [])
+    if not isinstance(calibration, list) or any(
+        not isinstance(item, str) or not item for item in calibration
+    ):
+        raise ValueError(f"{prefix}.calibration_forms must be an array of strings")
+    return sharc_index.RegisterEffectQuery(
+        _integer(declaration.get("entry_sw"), f"{prefix}.entry_sw"),
+        str(declaration.get("register", "R6")),
+        calibration_forms=tuple(calibration),
+    )
+
+
 def join_dispatch_candidates(
     indirect_sites: Sequence[Mapping[str, Any]],
     literals: Sequence[Mapping[str, Any]],
@@ -1142,8 +1157,11 @@ def discover(
     )
     writer_targets = [sharc_index.WriterTarget(_integer(item.get("address"), "writer_targets.address"), _positive(item.get("width", 4), "writer_targets.width"))
                       for item in manifest.get("writer_targets", []) if isinstance(item, Mapping)]
-    register_effects = [sharc_index.RegisterEffectQuery(_integer(item.get("entry_sw"), "register_effects.entry_sw"), str(item.get("register", "R6")))
-                        for item in manifest.get("register_effects", []) if isinstance(item, Mapping)]
+    register_effects = [
+        _register_effect_query(item, f"register_effects[{number}]")
+        for number, item in enumerate(manifest.get("register_effects", []))
+        if isinstance(item, Mapping)
+    ]
     # Query both table-entered wrappers and their declared direct callees.
     # A callee-only result is never promoted to a wrapper disposition.
     known_effects = {(item.entry_sw, item.register) for item in register_effects}

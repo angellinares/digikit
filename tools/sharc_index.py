@@ -93,6 +93,7 @@ class RegisterEffectQuery:
     max_steps: int = 1000
     max_states: int = 64
     max_call_depth: int = 8
+    calibration_forms: tuple[str, ...] = ()
 
 
 def classify_register_paths(paths: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -260,9 +261,41 @@ class AnalysisIndex:
         return {"contract": "writer-target/v1", "target": {"address": target.address, "width": target.width}, "policy": WRITER_POLICY}
 
     def _request_register(self, query: RegisterEffectQuery) -> dict[str, Any]:
-        return {"contract": "register-effect/v2", "entry_sw": query.entry_sw, "register": query.register,
+        calibration_forms = self._calibration_forms(query.calibration_forms)
+        return {"contract": "register-effect/v3", "entry_sw": query.entry_sw, "register": query.register,
                 "max_steps": query.max_steps, "max_states": query.max_states, "max_call_depth": query.max_call_depth,
-                "policy": REGISTER_POLICY, "reducer": "conservative-register-paths/v2"}
+                "calibration_forms": calibration_forms,
+                "policy": REGISTER_POLICY, "reducer": "conservative-register-paths/v3"}
+
+    @staticmethod
+    def _calibration_forms(names: Sequence[str]) -> list[dict[str, Any]]:
+        """Resolve explicit non-authoritative trace allowances through the ISA model."""
+        if not names:
+            return []
+        import sharc_isa
+
+        instruction_set = sharc_isa.load_instruction_set()
+        forms = []
+        for name in sorted(set(names)):
+            try:
+                form = instruction_set.form(name)
+            except KeyError as error:
+                raise ValueError(f"unknown SHARC calibration form {name!r}") from error
+            evidence = [
+                {
+                    "claim_id": item.claim_id,
+                    "status": item.status.value,
+                    "source": item.source,
+                }
+                for item in form.evidence
+            ]
+            if evidence and all(
+                item["status"] == sharc_isa.EvidenceStatus.DOCUMENTED.value
+                for item in evidence
+            ):
+                raise ValueError(f"SHARC form {name!r} does not require calibration")
+            forms.append({"form": name, "evidence": evidence})
+        return forms
 
     def _query_key(self, request: Mapping[str, Any]) -> str:
         return hashlib.sha256(_canonical_bytes({"static_key": self._static_key, "request": request})).hexdigest()
@@ -294,7 +327,7 @@ class AnalysisIndex:
         # Checking up front also makes an empty query reject an incompatible replacement.
         with self._checked_connection(): pass
         writer_items = sorted({(item.address, item.width): item for item in writer_targets}.values(), key=lambda item: (item.address, item.width))
-        register_items = sorted({(item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth): item for item in register_effects}.values(), key=lambda item: (item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth))
+        register_items = sorted({(item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth, tuple(sorted(set(item.calibration_forms)))): item for item in register_effects}.values(), key=lambda item: (item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth, tuple(sorted(set(item.calibration_forms)))))
         writer_values: dict[tuple[int, int], Mapping[str, Any]] = {}
         missing_writers = []
         for item in writer_items:
@@ -317,7 +350,7 @@ class AnalysisIndex:
         for item in register_items:
             request, key = self._request_register(item), self._query_key(self._request_register(item))
             value = self._lookup("register_results", key, request)
-            ident = (item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth)
+            ident = (item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth, tuple(sorted(set(item.calibration_forms))))
             if value is None: missing_registers.append((item, request, key, ident))
             else: register_values[ident] = value
         if missing_registers:
@@ -332,7 +365,7 @@ class AnalysisIndex:
                 if item.entry_sw not in entries:
                     effect = classify_register_paths([{"verified_return": False, "uncertainty": ["entry is not a recovered function"]}])
                 else:
-                    try: states = sharc_trace.trace(context["mem"], None, item.entry_sw, max_steps=item.max_steps, max_states=item.max_states, max_call_depth=item.max_call_depth, concrete_memory=True, follow_loaded_calls=True, continue_external_calls=False)
+                    try: states = sharc_trace.trace(context["mem"], None, item.entry_sw, max_steps=item.max_steps, max_states=item.max_states, max_call_depth=item.max_call_depth, concrete_memory=True, follow_loaded_calls=True, continue_external_calls=False, provisional_forms=tuple(sorted(set(item.calibration_forms))))
                     except Exception as error: raise RuntimeError(f"register-effect trace failed at 0x{item.entry_sw:x}") from error
                     paths = []
                     for state in states:
@@ -341,11 +374,19 @@ class AnalysisIndex:
                             result = event.get("result_register"); destination = event.get("destination", event.get("ureg"))
                             if destination == item.register or result == item.register or isinstance(result, list) and item.register in result: writers.append(event.get("pc_sw", item.entry_sw))
                             if event.get("action") in ("opaque-external-call", "unsupported", "indirect-call"): uncertainty.append(event["action"])
+                        calibration_used = tuple(getattr(state, "provisional_used", ()))
+                        for form in calibration_used:
+                            uncertainty.append("calibration form used: " + str(form))
+                        # A path admitted through an unconfirmed encoding cannot
+                        # establish even an existential writer claim.  Retain the
+                        # calibration reason, but never strengthen its evidence.
+                        if calibration_used:
+                            writers = []
                         if state.stopped not in REGISTER_EFFECT_VERIFIED_RETURNS: uncertainty.append("trace stop: " + str(state.stopped))
                         paths.append({"verified_return": state.stopped in REGISTER_EFFECT_VERIFIED_RETURNS, "writer_pcs": writers, "uncertainty": uncertainty})
                     effect = classify_register_paths(paths)
-                register_values[ident] = self._publish("register_results", key, request, {"entry_sw": item.entry_sw, "register": item.register, **effect})
-        return {"writer_targets": [writer_values[(i.address, i.width)] for i in writer_items], "register_effects": [register_values[(i.entry_sw, i.register, i.max_steps, i.max_states, i.max_call_depth)] for i in register_items]}
+                register_values[ident] = self._publish("register_results", key, request, {"entry_sw": item.entry_sw, "register": item.register, "calibration_forms": request["calibration_forms"], **effect})
+        return {"writer_targets": [writer_values[(i.address, i.width)] for i in writer_items], "register_effects": [register_values[(i.entry_sw, i.register, i.max_steps, i.max_states, i.max_call_depth, tuple(sorted(set(i.calibration_forms))))] for i in register_items]}
 
     def trace(self, probes: Sequence[Mapping[str, Any]], *, jobs: int = 1) -> Mapping[str, Any]:
         try: canonical_probes = [json.loads(_canonical(probe)) for probe in sorted(probes, key=_canonical)]

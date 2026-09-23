@@ -79,6 +79,31 @@ class InstructionSetTest(unittest.TestCase):
         result = self.isa.decode_bytes(struct.pack("<HHH", 0x023E, 0x3810, 0x8022))
         self.assertEqual(result.instruction.form.id, "6b_shiftimm")  # type: ignore[union-attr]
 
+    def test_prm_blocker_bytes_retain_unconfirmed_type14d_evidence(self):
+        result = self.isa.decode_bytes(bytes.fromhex("421a2500486a"))
+        self.assertIsNotNone(result.instruction)
+        insn = result.instruction
+        assert insn is not None
+        self.assertEqual(insn.form.id, "14d")
+        self.assertEqual(insn.extent_bytes, 6)
+        self.assertEqual(
+            insn.field_dict(),
+            {
+                "d": 0,
+                "ex": 0,
+                "l": 1,
+                "w": 0,
+                "x": 0,
+                "dreg[3:0]": 2,
+                "addr[31:16]": 0x25,
+                "addr[15:0]": 0x6A48,
+            },
+        )
+        self.assertEqual(
+            insn.form.evidence[0].status,
+            sharc_isa.EvidenceStatus.UNCONFIRMED,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

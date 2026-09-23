@@ -206,6 +206,13 @@
   ],
   "register_effects": [
     {
+      "entry_sw": "0x1c3504",
+      "register": "R6",
+      "calibration_forms": [
+        "14d"
+      ]
+    },
+    {
       "entry_sw": "0x1c349b",
       "register": "R6"
     },

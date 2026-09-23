@@ -80,6 +80,50 @@ class IndexContractTest(unittest.TestCase):
             self.assertEqual(effect["status"], "preserved")
             self.assertEqual(effect["reasons"], [])
 
+    def test_register_calibration_uses_typed_evidence_without_strengthening_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            context = {"mem": object(), "functions": [{"entry": 0x20}]}
+
+            class State:
+                trace = [
+                    {"pc_sw": 0x21, "action": "ureg-write", "destination": "R6"}
+                ]
+                stopped = "return without followed call"
+                provisional_used = ("14d",)
+
+            query = I.RegisterEffectQuery(0x20, "R6", calibration_forms=("14d",))
+            with patch("sharcfn.load_context", return_value=context), patch(
+                "sharc_trace.trace", return_value=[State()]
+            ) as trace:
+                effect = index.query(register_effects=[query])["register_effects"][0]
+
+            self.assertEqual(trace.call_args.kwargs["provisional_forms"], ("14d",))
+            self.assertEqual(effect["status"], "unknown")
+            self.assertEqual(effect["writer_pcs"], [])
+            self.assertIn("calibration form used: 14d", effect["reasons"])
+            self.assertEqual(
+                effect["calibration_forms"],
+                [{
+                    "form": "14d",
+                    "evidence": [{
+                        "claim_id": "isa.form.14d.encoding",
+                        "source": "prm",
+                        "status": "unconfirmed",
+                    }],
+                }],
+            )
+
+    def test_register_calibration_rejects_a_documented_form(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            with self.assertRaisesRegex(ValueError, "does not require calibration"):
+                index.query(
+                    register_effects=[
+                        I.RegisterEffectQuery(0x20, "R6", calibration_forms=("14a",))
+                    ]
+                )
+
     def test_register_effect_rejects_non_return_stops_and_event_uncertainty(self):
         with tempfile.TemporaryDirectory() as directory:
             index = self.make_index(directory)

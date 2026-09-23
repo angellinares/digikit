@@ -183,10 +183,18 @@ entry, as that terminal has reached the entry's top-level architectural return.
 With all retained paths supported and uncertainty-free, the audit reports
 `R6` preserved for direct entries `0x1c3464`, `0x1c3474`, `0x1c347e`, and
 `0x1c349b`, and for table-entered wrappers `0x1c352f`, `0x1c353e`, and
-`0x1c354d`. `0x1c3504` remains unknown: its retained trace stops at
-`uncertain or undecodable form: source: prm`. These are bounded static
-trace results, not a natural selector or calling-convention observation.
-**[D][O]**
+`0x1c354d`. `0x1c3504` remains unknown, but the immediate `source: prm`
+stop is now traversed as an explicit calibration rather than silently
+qualified. Its manifest query names `14d`; the typed ISA seam resolves that
+name to `isa.form.14d.encoding`, status `unconfirmed`, source `prm`, and the
+index includes that evidence in both the cache request and report. The trace
+executes the decoded short-word load from `DM(0x256a48)` and finds no `R6`
+writer, but one retained path then stops at the unresolved `I12/M13` tail.
+The generated result therefore stays `unknown`, with both
+`calibration form used: 14d` and the indirect-target stop recorded as reasons.
+A calibration path cannot establish even an existential writer result. These
+are bounded static trace results, not a qualification of Type14d, a natural
+selector observation, or a calling-convention claim. **[D][O]**
 
 The loaded tail is no longer an unknown *loader initialization* boundary, but
 its runtime target set remains unproven. No natural selector value or runtime

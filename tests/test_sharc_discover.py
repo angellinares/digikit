@@ -50,6 +50,23 @@ def instruction(name, **fields):
 
 
 class StaticContextTest(unittest.TestCase):
+    def test_register_effect_calibration_is_explicit_manifest_input(self):
+        query = D._register_effect_query(
+            {
+                "entry_sw": "0x1c3504",
+                "register": "R6",
+                "calibration_forms": ["14d"],
+            },
+            "register_effects[0]",
+        )
+        self.assertEqual(query.entry_sw, 0x1C3504)
+        self.assertEqual(query.calibration_forms, ("14d",))
+        with self.assertRaisesRegex(ValueError, "array of strings"):
+            D._register_effect_query(
+                {"entry_sw": 1, "calibration_forms": "14d"},
+                "register_effects[0]",
+            )
+
     def test_enumerates_type9_variants_and_normalizes_dag2_registers(self):
         insns = [
             instruction(
