@@ -54,8 +54,10 @@ committed (see CLAUDE.md).
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 import os
+import re
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -127,6 +129,13 @@ WRITER_TRACE_POLICIES = {
     STRICT_TRACE_POLICY: (),
     TYPE14D_CONTINUATION_POLICY: ('14d',),
 }
+# Individual handler changes can bump only their form's revision.  The index
+# compares this metadata against each fact's executed/stopped form set.
+TRACE_HANDLER_REVISIONS = {'default': 'trace-handler/v1'}
+
+
+def handler_revision(form: str) -> str:
+    return TRACE_HANDLER_REVISIONS.get(form, TRACE_HANDLER_REVISIONS['default'])
 
 
 def provisional_forms_for_policy(policy: str) -> tuple[str, ...]:
@@ -736,9 +745,45 @@ def _process_function(fn_id, target, max_steps, max_states, fallback_width, stac
     return fn_id, out
 
 
+def _function_fact(fn_id, function_entry, function_ordinal, dm_rows, chosen, stops,
+                   retained_path_forms, trace_policy):
+    """Canonical, independently cacheable result of one recovered function."""
+    stores = [{'row': row, 'event': chosen.get(row['pc'])} for row in dm_rows]
+    # Store forms are deliberately included as a conservative dependency: a
+    # semantic change to a form at a retained store must never reuse its trace.
+    forms = {str(row['form']) for row in dm_rows}
+    for event in chosen.values():
+        if isinstance(event, dict) and isinstance(event.get('form'), str):
+            forms.add(event['form'])
+    blockers = set()
+    for reason in stops:
+        blockers.update(re.findall(r'(?:unsupported|unknown)\s+([0-9]+[a-z_]*)', str(reason)))
+    shape = sha256(_canonical_json(dm_rows)).hexdigest()
+    return {
+        'function_id': fn_id,
+        'function_entry': function_entry,
+        'function_ordinal': function_ordinal,
+        'store_shape_sha256': shape,
+        'complete': True,
+        'trace_policy': trace_policy,
+        'dependencies': {
+            'forms': sorted(forms),
+            'blockers': sorted(blockers),
+            'handler_revisions': {form: handler_revision(form) for form in sorted(forms | blockers)},
+        },
+        'stop_reasons': sorted(stops),
+        'retained_path_provisional_forms': [list(forms) for forms in retained_path_forms],
+        'stores': stores,
+    }
+
+
+def _canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('ascii')
+
+
 def collect_trace_facts(blob_path, block_idxs, min_depth, max_steps, max_states,
                         jobs=1, seed_global_constants=True,
-                        trace_policy=STRICT_TRACE_POLICY):
+                        trace_policy=STRICT_TRACE_POLICY, cached_functions=None):
     """Trace each owning function once and return target-independent facts.
 
     ``trace_policy`` is an explicit, versioned continuation allowance.  It
@@ -759,7 +804,26 @@ def collect_trace_facts(blob_path, block_idxs, min_depth, max_steps, max_states,
         census.update(row['form'] for row in rows if row['is_dm'])
     census.update(row['form'] for row in orphan if row['is_dm'])
 
-    work = [fn_id for fn_id, rows in by_function.items() if any(row['is_dm'] for row in rows)]
+    ordered_work = sorted(
+        (fn_id for fn_id, rows in by_function.items() if any(row['is_dm'] for row in rows))
+    )
+    ordinals = {fn_id: ordinal for ordinal, fn_id in enumerate(ordered_work)}
+    cached_functions = cached_functions or {}
+    reusable = {}
+    for fn_id in ordered_work:
+        cached = cached_functions.get(fn_id)
+        rows = [row for row in by_function[fn_id] if row['is_dm']]
+        expected_shape = sha256(_canonical_json(rows)).hexdigest()
+        # Shape and ordinal bind a recovered ID to this exact static census,
+        # so a rebuilt inventory cannot silently inherit a fact.
+        if (isinstance(cached, dict)
+                and isinstance(cached.get('complete'), bool) and cached['complete']
+                and cached.get('function_entry') == ctx['by_id'][fn_id]['entry']
+                and cached.get('function_ordinal') == ordinals[fn_id]
+                and isinstance(cached.get('store_shape_sha256'), str)
+                and cached.get('store_shape_sha256') == expected_shape):
+            reusable[fn_id] = cached
+    work = [fn_id for fn_id in ordered_work if fn_id not in reusable]
 
     if jobs <= 1:
         _init_worker(blob_path, block_idxs, min_depth)
@@ -773,18 +837,13 @@ def collect_trace_facts(blob_path, block_idxs, min_depth, max_steps, max_states,
                 _process_function_batch, fn_id, max_steps, max_states,
                 seed_global_constants, provisional_forms) for fn_id in work]
             batches = [future.result() for future in as_completed(futures)]
-    functions = []
-    for fn_id, function_entry, dm_rows, chosen, stops, retained_path_forms in sorted(batches):
-        functions.append({
-            'function_id': fn_id,
-            'function_entry': function_entry,
-            'stop_reasons': sorted(stops),
-            'retained_path_provisional_forms': [list(forms) for forms in retained_path_forms],
-            'stores': [
-                {'row': row, 'event': chosen.get(row['pc'])}
-                for row in dm_rows
-            ],
-        })
+    functions_by_id = dict(reusable)
+    for fn_id, function_entry, dm_rows, chosen, stops, retained_path_forms in batches:
+        functions_by_id[fn_id] = _function_fact(
+            fn_id, function_entry, ordinals[fn_id], dm_rows, chosen, stops,
+            retained_path_forms, trace_policy,
+        )
+    functions = [functions_by_id[fn_id] for fn_id in ordered_work]
     return {
         'contract': 'sharc-writer-trace-facts/v2',
         'image_sha256': ctx['sha256'],

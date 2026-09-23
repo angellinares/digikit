@@ -69,7 +69,7 @@ class IndexContractTest(unittest.TestCase):
     def test_writer_cache_batches_misses_and_is_jobs_independent(self):
         with tempfile.TemporaryDirectory() as directory:
             index = self.make_index(directory); calls = []
-            facts = {"contract": "test-writer-trace-facts/v1"}
+            facts = {"contract": "test-writer-trace-facts/v1", "functions": []}
             def classify(_facts, targets, **kwargs):
                 calls.append((tuple(targets), kwargs)); return {target: {"target": target[0], "target_width": target[1], "coverage": "incomplete"} for target in targets}
             a, b = I.WriterTarget(0x100, 4), I.WriterTarget(0x100, 16)
@@ -77,10 +77,12 @@ class IndexContractTest(unittest.TestCase):
                 "sharcwriters.classify_trace_facts", side_effect=classify
             ):
                 cold = index.query(writer_targets=[b, a, a], jobs=1)
+                mtime_ns = index._path.stat().st_mtime_ns
                 warm = index.query(writer_targets=[a, b], jobs=9)
+                self.assertEqual(index._path.stat().st_mtime_ns, mtime_ns)
                 index.query(writer_targets=[a, I.WriterTarget(0x104, 4)], jobs=2)
-            self.assertEqual(collect.call_count, 1)
-            self.assertEqual(collect.call_args.kwargs["jobs"], 1)
+            self.assertEqual(collect.call_count, 2)
+            self.assertEqual(collect.call_args.kwargs["jobs"], 2)
             self.assertEqual(calls[0][0], ((0x100, 4), (0x100, 16)))
             self.assertEqual(calls[1][0], ((0x104, 4),))
             self.assertEqual(cold, warm)
@@ -282,7 +284,7 @@ class IndexContractTest(unittest.TestCase):
                 index._query_key(request), index._query_key(strict_request)
             )
             self.assertEqual(
-                index._request_writer_facts()["contract"], "writer-trace-facts/v2"
+                index._request_writer_facts()["contract"], "writer-function-trace-fact/v1"
             )
 
     def test_malformed_rows_are_misses_and_writable_cache_repairs_them(self):
@@ -291,7 +293,7 @@ class IndexContractTest(unittest.TestCase):
             with sqlite3.connect(index._path) as con:
                 con.execute("INSERT INTO writer_results VALUES (?,?,?,?,?,?,1)", (key, index._static_key, I._payload(request), b"{bad", "0" * 64, 4))
             with patch(
-                "sharcwriters.collect_trace_facts", return_value={"contract": "test"}
+                "sharcwriters.collect_trace_facts", return_value={"contract": "test", "functions": []}
             ) as collect, patch(
                 "sharcwriters.classify_trace_facts", return_value={(1, 4): {"target": 1}}
             ):
@@ -301,6 +303,52 @@ class IndexContractTest(unittest.TestCase):
             self.assertEqual(readonly.query(writer_targets=[item])["writer_targets"], [{"target": 1}])
             with self.assertRaisesRegex(ValueError, "readonly"):
                 readonly.query(writer_targets=[I.WriterTarget(2)])
+
+    def test_function_fact_policy_invalidation_is_selective_and_repairs_corruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            request = index._request_writer_facts()
+            def fact(fn_id, form, policy="strict/v1"):
+                return {
+                    "function_id": fn_id, "function_entry": 0x10 if fn_id == "a" else 0x20,
+                    "function_ordinal": 0 if fn_id == "a" else 1,
+                    "store_shape_sha256": "0" * 64, "complete": True,
+                    "trace_policy": policy,
+                    "dependencies": {"forms": [form], "blockers": [form],
+                                     "handler_revisions": {form: "trace-handler/v1"}},
+                    "stop_reasons": ["unsupported " + form],
+                    "retained_path_provisional_forms": [], "stores": [],
+                }
+            blocked, unrelated = fact("a", "14d"), fact("b", "11a")
+            index._publish_writer_function_facts(request, [blocked, unrelated])
+            with patch.object(I, "WRITER_TRACE_POLICY", {**I.WRITER_TRACE_POLICY, "trace_policy": "type14d-continuation/v1"}):
+                reused = index._writer_function_facts(request)
+            self.assertNotIn("a", reused)
+            self.assertEqual(reused["b"], unrelated)
+            # A handler revision invalidates only facts that used or stopped on
+            # that form; this models a future Type11a semantic implementation.
+            with patch.object(I, "WRITER_TRACE_POLICY", {**I.WRITER_TRACE_POLICY, "trace_policy": "strict/v1"}), patch(
+                "sharcwriters.TRACE_HANDLER_REVISIONS", {"default": "trace-handler/v1", "11a": "trace-handler/v2"}
+            ):
+                semantic = index._writer_function_facts(request)
+            self.assertIn("a", semantic)
+            self.assertNotIn("b", semantic)
+            # A truncated payload is a miss rather than trusted cache material.
+            with sqlite3.connect(index._path) as con:
+                con.execute("UPDATE writer_function_facts SET payload=? WHERE function_id='b'", (b"{",))
+            self.assertEqual(index._writer_function_facts(request), {})
+
+    def test_core_revision_invalidates_all_function_facts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            request = index._request_writer_facts()
+            fact = {"function_id": "a", "function_entry": 1, "function_ordinal": 0,
+                    "store_shape_sha256": "0" * 64, "complete": True, "trace_policy": I.WRITER_TRACE_POLICY["trace_policy"],
+                    "dependencies": {"forms": [], "blockers": [], "handler_revisions": {}},
+                    "stop_reasons": [], "retained_path_provisional_forms": [], "stores": []}
+            index._publish_writer_function_facts(request, [fact])
+            with patch.object(I, "WRITER_TRACE_CORE_REVISION", "writer-trace-core/v2"):
+                self.assertEqual(index._writer_function_facts(index._request_writer_facts()), {})
 
     def test_old_object_rejects_replaced_static_key(self):
         with tempfile.TemporaryDirectory() as directory:

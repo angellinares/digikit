@@ -18,8 +18,11 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 HERE = Path(__file__).resolve().parent
-DB_SCHEMA_VERSION = 4
-CACHE_CONTRACT = "sharc-analysis-index/v4"
+DB_SCHEMA_VERSION = 5
+CACHE_CONTRACT = "sharc-analysis-index/v5"
+# Bump only for tracing changes which cannot be selectively attributed to a
+# decoded form.  Per-function rows record form dependencies for policy changes.
+WRITER_TRACE_CORE_REVISION = "writer-trace-core/v1"
 # This continuation policy is intentionally versioned and carried in both
 # writer-result and trace-fact requests.  It permits Type14d to reach later
 # stores, while sharcwriters keeps every calibration-dependent store unknown.
@@ -409,15 +412,19 @@ class AnalysisIndex:
               query_key TEXT PRIMARY KEY, static_key TEXT NOT NULL, request BLOB NOT NULL, payload BLOB NOT NULL,
               payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64), payload_size INTEGER NOT NULL CHECK(payload_size>=0),
               complete INTEGER NOT NULL CHECK(complete=1), FOREIGN KEY(static_key) REFERENCES static_snapshot(static_key)) WITHOUT ROWID;
-            CREATE TABLE writer_trace_facts (
-              query_key TEXT PRIMARY KEY, static_key TEXT NOT NULL, request BLOB NOT NULL, payload BLOB NOT NULL,
-              payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64), payload_size INTEGER NOT NULL CHECK(payload_size>=0),
-              complete INTEGER NOT NULL CHECK(complete=1), FOREIGN KEY(static_key) REFERENCES static_snapshot(static_key)) WITHOUT ROWID;
+            CREATE TABLE writer_function_facts (
+              static_key TEXT NOT NULL, function_id TEXT NOT NULL, function_entry INTEGER NOT NULL,
+              request BLOB NOT NULL, payload BLOB NOT NULL,
+              payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64),
+              payload_size INTEGER NOT NULL CHECK(payload_size>=0),
+              complete INTEGER NOT NULL CHECK(complete=1),
+              PRIMARY KEY(static_key, function_id),
+              FOREIGN KEY(static_key) REFERENCES static_snapshot(static_key)) WITHOUT ROWID;
             CREATE TABLE register_results (
               query_key TEXT PRIMARY KEY, static_key TEXT NOT NULL, request BLOB NOT NULL, payload BLOB NOT NULL,
               payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64), payload_size INTEGER NOT NULL CHECK(payload_size>=0),
               complete INTEGER NOT NULL CHECK(complete=1), FOREIGN KEY(static_key) REFERENCES static_snapshot(static_key)) WITHOUT ROWID;
-            PRAGMA user_version=4;
+            PRAGMA user_version=5;
         """)
 
     @classmethod
@@ -515,7 +522,17 @@ class AnalysisIndex:
         return {"contract": "writer-target/v1", "target": {"address": target.address, "width": target.width}, "policy": WRITER_POLICY}
 
     def _request_writer_facts(self) -> dict[str, Any]:
-        return {"contract": "writer-trace-facts/v2", "policy": WRITER_TRACE_POLICY}
+        """Request shared by independently persisted function trace facts.
+
+        The policy deliberately is not part of this key: a row records the
+        forms it executed/stopped on, allowing a policy change to retain facts
+        that cannot have observed the changed admission rule.
+        """
+        return {"contract": "writer-function-trace-fact/v1",
+                "core_revision": WRITER_TRACE_CORE_REVISION,
+                "max_steps": WRITER_TRACE_POLICY["max_steps"],
+                "max_states": WRITER_TRACE_POLICY["max_states"],
+                "seed_global_constants": WRITER_TRACE_POLICY["seed_global_constants"]}
 
     def _request_register(self, query: RegisterEffectQuery) -> dict[str, Any]:
         calibration_forms = self._calibration_forms(query.calibration_forms)
@@ -589,6 +606,87 @@ class AnalysisIndex:
             con.commit()
         return valid
 
+    @staticmethod
+    def _fact_reusable(value: Mapping[str, Any]) -> bool:
+        """Reject incomplete dependency records before handing them to a tracer."""
+        dependencies = value.get("dependencies")
+        if not isinstance(dependencies, dict):
+            return False
+        forms = dependencies.get("forms")
+        blockers = dependencies.get("blockers")
+        if not isinstance(forms, list) or not isinstance(blockers, list):
+            return False
+        if not all(isinstance(item, str) for item in [*forms, *blockers]):
+            return False
+        revisions = dependencies.get("handler_revisions")
+        if not isinstance(revisions, dict) or set(revisions) != set(forms) | set(blockers):
+            return False
+        try:
+            import sharcwriters
+            if any(revisions.get(form) != sharcwriters.handler_revision(form)
+                   for form in set(forms) | set(blockers)):
+                return False
+        except (ImportError, KeyError, TypeError):
+            return False
+        policy = value.get("trace_policy")
+        if not isinstance(policy, str):
+            return False
+        if policy == WRITER_TRACE_POLICY["trace_policy"]:
+            return True
+        try:
+            changed = set(sharcwriters.provisional_forms_for_policy(policy)) ^ set(
+                sharcwriters.provisional_forms_for_policy(WRITER_TRACE_POLICY["trace_policy"])
+            )
+        except (ImportError, ValueError):
+            return False
+        return not bool(changed & (set(forms) | set(blockers)))
+
+    def _writer_function_facts(self, request: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+        raw_request = _payload(request)
+        with self._checked_connection() as con:
+            rows = con.execute(
+                "SELECT function_id,function_entry,request,payload,payload_sha256,payload_size,complete "
+                "FROM writer_function_facts WHERE static_key=? ORDER BY function_id",
+                (self._static_key,),
+            ).fetchall()
+        facts = {}
+        for fn_id, entry, stored_request, raw, digest, size, complete in rows:
+            value = _valid_json_payload(raw, digest, size)
+            if (complete != 1 or stored_request != raw_request or value is None
+                    or value.get("function_id") != fn_id
+                    or value.get("function_entry") != entry
+                    or not self._fact_reusable(value)):
+                continue
+            facts[fn_id] = value
+        return facts
+
+    def _publish_writer_function_facts(self, request: Mapping[str, Any], functions: Sequence[Mapping[str, Any]]) -> None:
+        raw_request = _payload(request)
+        rows = []
+        for value in functions:
+            fn_id, entry = value.get("function_id"), value.get("function_entry")
+            raw = _payload(value)
+            if not isinstance(fn_id, str) or isinstance(entry, bool) or not isinstance(entry, int):
+                raise ValueError("writer function fact lacks stable identity")
+            rows.append((fn_id, entry, raw, hashlib.sha256(raw).hexdigest(), len(raw)))
+        # Parent-only all-or-nothing repair/publication. Identical rows are not
+        # written, preserving warm-cache mtime and avoiding needless churn.
+        with self._checked_connection(write=True) as con:
+            con.execute("BEGIN IMMEDIATE")
+            for fn_id, entry, raw, digest, size in rows:
+                old = con.execute(
+                    "SELECT function_entry,request,payload,payload_sha256,payload_size,complete "
+                    "FROM writer_function_facts WHERE static_key=? AND function_id=?",
+                    (self._static_key, fn_id),
+                ).fetchone()
+                if old == (entry, raw_request, raw, digest, size, 1):
+                    continue
+                con.execute("DELETE FROM writer_function_facts WHERE static_key=? AND function_id=?",
+                            (self._static_key, fn_id))
+                con.execute("INSERT INTO writer_function_facts VALUES (?,?,?,?,?,?,?,1)",
+                            (self._static_key, fn_id, entry, raw_request, raw, digest, size))
+            con.commit()
+
     def query(self, *, writer_targets: Sequence[WriterTarget] = (), register_effects: Sequence[RegisterEffectQuery] = (), jobs: int = 1) -> Mapping[str, Any]:
         # Checking up front also makes an empty query reject an incompatible replacement.
         with self._checked_connection(): pass
@@ -610,22 +708,19 @@ class AnalysisIndex:
             config, blob = self._metadata["config"], self._metadata.get("blob_path")
             if not blob: raise ValueError("writer queries require an index opened in this process")
             facts_request = self._request_writer_facts()
-            facts_key = self._query_key(facts_request)
-            facts = self._lookup("writer_trace_facts", facts_key, facts_request)
-            if facts is None:
-                try:
-                    facts = getattr(sharcwriters, "collect_trace_facts")(
-                        blob,
-                        tuple(config["code_blocks"]),
-                        config["min_depth"],
-                        **WRITER_TRACE_POLICY,
-                        jobs=jobs,
-                    )
-                except Exception as error:
-                    raise RuntimeError("writer trace-fact batch failed") from error
-                facts = self._publish(
-                    "writer_trace_facts", facts_key, facts_request, facts
+            cached_functions = self._writer_function_facts(facts_request)
+            try:
+                facts = getattr(sharcwriters, "collect_trace_facts")(
+                    blob,
+                    tuple(config["code_blocks"]),
+                    config["min_depth"],
+                    **WRITER_TRACE_POLICY,
+                    jobs=jobs,
+                    cached_functions=cached_functions,
                 )
+            except Exception as error:
+                raise RuntimeError("writer trace-fact batch failed") from error
+            self._publish_writer_function_facts(facts_request, facts["functions"])
             try:
                 out = getattr(sharcwriters, "classify_trace_facts")(
                     facts,

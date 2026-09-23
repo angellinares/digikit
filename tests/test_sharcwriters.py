@@ -353,6 +353,14 @@ class SeedSetsTest(unittest.TestCase):
 
 
 class TraceFactClassificationTest(unittest.TestCase):
+    def test_function_fact_records_stable_identity_and_blocker_dependency(self):
+        rows = [{"pc": 0x12, "form": "14a", "fields": {}, "width": 4, "is_dm": True}]
+        fact = W._function_fact("fixture", 0x10, 3, rows, {}, {"unsupported 11a"}, (), W.STRICT_TRACE_POLICY)
+        self.assertEqual(fact["function_ordinal"], 3)
+        self.assertEqual(fact["dependencies"]["blockers"], ["11a"])
+        self.assertEqual(fact["dependencies"]["handler_revisions"]["11a"], "trace-handler/v1")
+        self.assertEqual(len(fact["store_shape_sha256"]), 64)
+
     def test_target_independent_facts_can_classify_multiple_targets(self):
         facts = {
             "contract": "sharc-writer-trace-facts/v2",
