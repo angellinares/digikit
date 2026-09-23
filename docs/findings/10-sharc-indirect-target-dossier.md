@@ -69,6 +69,19 @@ trace terminal state at that entry's expected target. This is not an
 observation of a natural runtime selector: the natural `M4` value and dispatch
 choice remain **[O]**; the all-entry structural result is **[D]**.
 
+The index's v4 query layer now persists target-independent per-function writer
+trace facts, so a new writer target reclassifies the same raw events rather
+than tracing all recovered functions again. Indexed discovery also rebuilds
+only loader-final memory around the stored function inventory instead of
+re-running the decoder/inventory analysis. An opt-in `--profile` side channel
+writes phase timings to stderr and never enters report bytes. On this machine,
+the same jobs=8 cold run fell from 97.84 s to 68.67 s, while a warm run fell
+from 5.01 s to 1.25 s; a new writer target reused the 3.34 MB trace-fact row in
+0.40 s without changing it. Reusing the integration test's baseline report and
+filling its temporary index in parallel reduced the full local suite from
+242.12 s to 80.23 s. These are local engineering measurements, not firmware
+evidence. **[D]**
+
 At `0x1c65bd`, the selected code begins `R12=pass(R9)`, then establishes
 `R11=0x38aec33e` and `R14=0x463b8000`; the transfer itself does not establish
 live `R9`/`R11` values. The earlier `R4` and overwritten `R8` are live
@@ -189,12 +202,16 @@ qualified. Its manifest query names `14d`; the typed ISA seam resolves that
 name to `isa.form.14d.encoding`, status `unconfirmed`, source `prm`, and the
 index includes that evidence in both the cache request and report. The trace
 executes the decoded short-word load from `DM(0x256a48)` and finds no `R6`
-writer, but one retained path then stops at the unresolved `I12/M13` tail.
-The generated result therefore stays `unknown`, with both
-`calibration form used: 14d` and the indirect-target stop recorded as reasons.
-A calibration path cannot establish even an existential writer result. These
-are bounded static trace results, not a qualification of Type14d, a natural
-selector observation, or a calling-convention claim. **[D][O]**
+writer. The next frontier is now traversed too: the exact adjacent
+`LSHIFT R4 BY -2` at `0x1c350f` and non-delayed `NOT SZ` branch at `0x1c3512`
+derive the complete fallthrough domain `R4=0..3`. The index reruns those four
+cases with the separately evidenced global-constant seeds (including `M13=0`);
+all retained cases reach a top-level return and the former `I12/M13` stop is
+gone. The generated result still stays `unknown`, now solely because
+`calibration form used: 14d`: a calibration path cannot establish even an
+existential writer result. These are bounded static trace results, not a
+qualification of Type14d, a natural selector observation, or a calling-
+convention claim. **[D][O]**
 
 The loaded tail is no longer an unknown *loader initialization* boundary, but
 its runtime target set remains unproven. No natural selector value or runtime

@@ -195,7 +195,11 @@ def build_snapshot(blob_path: str, code_blocks: Sequence[int], min_depth: int) -
     memory_sites = [{"function_id": fn_id, **row}
                     for fn_id, rows in census.items() for row in rows if row["is_dm"]]
     memory_sites.extend({"function_id": None, **row} for row in orphan if row["is_dm"])
+    inventory = sorted(ctx["functions"], key=lambda fn: (fn["block"], fn["entry"]))
+    engine_candidates = sharcfn.engine_candidates(inventory)
     return {"functions": _compact_functions(ctx["functions"]),
+            "function_inventory": inventory,
+            "engine_target_opcode_coverage": sharcfn.target_opcode_coverage(ctx, engine_candidates),
             "instructions": [{"pc_sw": pc, **record} for pc, record in sorted(static["instructions"].items())],
             "instruction_pcs": sorted(static["instructions"]), "literals": static["literals"],
             "indirect_sites": static["indirect_sites"], "pointer_runs": tables,

@@ -351,6 +351,36 @@ class SeedSetsTest(unittest.TestCase):
             self.assertEqual(with_consts[reg], 0x1FD)
 
 
+class TraceFactClassificationTest(unittest.TestCase):
+    def test_target_independent_facts_can_classify_multiple_targets(self):
+        facts = {
+            "contract": "sharc-writer-trace-facts/v1",
+            "image_sha256": "0" * 64,
+            "seed_global_constants": True,
+            "census": {"14a": 1},
+            "census_total": 1,
+            "functions": [{
+                "function_id": "fixture",
+                "function_entry": 0x10,
+                "stop_reasons": [],
+                "stores": [{
+                    "row": {"pc": 0x12, "form": "14a", "fields": {},
+                            "width": 4, "is_dm": True},
+                    "event": {"address": 0x100},
+                }],
+            }],
+            "orphan_stores": [],
+        }
+        results = W.classify_trace_facts(
+            facts, [(0x100, 4), (0x200, 4)],
+            fallback_width=4, stack_lo=None, stack_hi=None,
+        )
+        self.assertEqual(results[(0x100, 4)]["class_totals"], {"HIT": 1})
+        self.assertEqual(
+            results[(0x200, 4)]["class_totals"], {"EXCLUDED-CONST": 1}
+        )
+
+
 @unittest.skipUnless(BLOB.exists(), "DT2 1.16 SHARC loader is not available")
 class IntegrationTest(unittest.TestCase):
     """The tool end-to-end against the real image, bounded to the single

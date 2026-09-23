@@ -1505,7 +1505,7 @@ def target_opcode_coverage(ctx, candidates):
     }
 
 
-def build_engine_queue(ctx, notes_dir, sqlite_path=None):
+def build_engine_queue(ctx, notes_dir, sqlite_path=None, target_coverage=None):
     inventory = sorted(ctx["functions"], key=lambda fn: (fn["block"], fn["entry"]))
     candidates = engine_candidates(inventory)
     documented, rejected_notes = documented_function_entries(notes_dir)
@@ -1562,7 +1562,11 @@ def build_engine_queue(ctx, notes_dir, sqlite_path=None):
             "documented": sum(r["documented"] for r in rows),
             "undocumented": sum(not r["documented"] for r in rows),
         },
-        "target_opcode_coverage": target_opcode_coverage(ctx, candidates),
+        "target_opcode_coverage": (
+            target_coverage
+            if target_coverage is not None
+            else target_opcode_coverage(ctx, candidates)
+        ),
         "candidates": rows,
     }
 

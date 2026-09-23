@@ -11,23 +11,33 @@ import json
 import os
 import sqlite3
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 HERE = Path(__file__).resolve().parent
-DB_SCHEMA_VERSION = 3
-CACHE_CONTRACT = "sharc-analysis-index/v3"
-WRITER_POLICY = {"max_steps": 4000, "max_states": 128, "fallback_width": 4,
-                 "stack_lo": 0x26F000, "stack_hi": 0x2C0000,
-                 "seed_global_constants": True}
+DB_SCHEMA_VERSION = 4
+CACHE_CONTRACT = "sharc-analysis-index/v4"
+WRITER_TRACE_POLICY = {"max_steps": 4000, "max_states": 128,
+                       "seed_global_constants": True}
+WRITER_CLASSIFY_POLICY = {"fallback_width": 4, "stack_lo": 0x26F000,
+                          "stack_hi": 0x2C0000}
+WRITER_POLICY = {**WRITER_TRACE_POLICY, **WRITER_CLASSIFY_POLICY}
 REGISTER_POLICY = {"concrete_memory": True, "follow_loaded_calls": True,
-                   "continue_external_calls": False}
+                   "continue_external_calls": False, "assume_nw32": True}
 # This is deliberately a register-effect query rule, not a tracer stop-rule
 # change: the trace began at a recovered architectural function entry.
 REGISTER_EFFECT_VERIFIED_RETURNS = frozenset(("return", "returned", "return without followed call"))
 
 _QUERY_SQL = {
+    "writer_trace_facts": {
+        "select": "SELECT request,payload,payload_sha256,payload_size,complete,static_key FROM writer_trace_facts WHERE query_key=?",
+        "insert_ignore": "INSERT OR IGNORE INTO writer_trace_facts VALUES (?,?,?,?,?,?,1)",
+        "delete": "DELETE FROM writer_trace_facts WHERE query_key=?",
+        "insert": "INSERT INTO writer_trace_facts VALUES (?,?,?,?,?,?,1)",
+    },
     "writer_results": {
         "select": "SELECT request,payload,payload_sha256,payload_size,complete,static_key FROM writer_results WHERE query_key=?",
         "insert_ignore": "INSERT OR IGNORE INTO writer_results VALUES (?,?,?,?,?,?,1)",
@@ -87,6 +97,14 @@ class WriterTarget:
 
 
 @dataclass(frozen=True)
+class FiniteDomainGuard:
+    register: str
+    shift_pc_sw: int
+    branch_pc_sw: int
+    frontier_pc_sw: int
+
+
+@dataclass(frozen=True)
 class RegisterEffectQuery:
     entry_sw: int
     register: str
@@ -94,6 +112,33 @@ class RegisterEffectQuery:
     max_states: int = 64
     max_call_depth: int = 8
     calibration_forms: tuple[str, ...] = ()
+    seed_global_constants: bool = False
+    finite_domain_guard: FiniteDomainGuard | None = None
+
+
+def _register_ident(item: RegisterEffectQuery) -> tuple[Any, ...]:
+    guard = item.finite_domain_guard
+    return (
+        item.entry_sw,
+        item.register,
+        item.max_steps,
+        item.max_states,
+        item.max_call_depth,
+        tuple(sorted(set(item.calibration_forms))),
+        item.seed_global_constants,
+        () if guard is None else (
+            guard.register,
+            guard.shift_pc_sw,
+            guard.branch_pc_sw,
+            guard.frontier_pc_sw,
+        ),
+    )
+
+
+def _is_register_trace_failure(error: Exception) -> bool:
+    return isinstance(error, RuntimeError) and str(error).startswith(
+        "register-effect trace failed"
+    )
 
 
 def classify_register_paths(paths: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -115,6 +160,207 @@ def classify_register_paths(paths: Sequence[Mapping[str, Any]]) -> dict[str, Any
     if any(not path.get("verified_return") for path in paths):
         bad.append("path does not reach verified return")
     return {"status": "unknown", "quantifier": "not established", "writer_pcs": [], "reasons": sorted(set(bad))}
+
+
+def _audit_finite_domain_guard(memory: Any, guard: FiniteDomainGuard) -> dict[str, Any]:
+    """Derive a bounded source domain from LSHIFT/SZ fallthrough semantics."""
+    import sharcinv
+    from sharc_disasm import decode_loaded_at
+
+    shift = decode_loaded_at(memory, guard.shift_pc_sw)
+    branch = decode_loaded_at(memory, guard.branch_pc_sw)
+    if shift is None or shift.type_name != "6b_shiftimm" or shift.length_bytes != 6:
+        raise ValueError("finite-domain guard shift is not Type6b_shiftimm")
+    if branch is None or branch.type_name != "8a_rel" or branch.length_bytes != 6:
+        raise ValueError("finite-domain guard branch is not Type8a_rel")
+    if guard.branch_pc_sw != guard.shift_pc_sw + 3:
+        raise ValueError("finite-domain guard shift and branch are not adjacent")
+    shift_fields = sharcinv.merge_fields(shift.fields)
+    branch_fields = sharcinv.merge_fields(branch.fields)
+    field = shift_fields["shiftimm"]
+    opcode = (field >> 16) & 0x3F
+    amount = (field >> 8) & 0xFF
+    amount = amount - 0x100 if amount & 0x80 else amount
+    source = "R%d" % (field & 0xF)
+    if opcode != 0 or amount >= 0 or source != guard.register:
+        raise ValueError("finite-domain guard is not a logical right shift of its register")
+    if -amount > 4:
+        raise ValueError("finite-domain guard exceeds the 16-value bound")
+    if branch_fields.get("cond") != 0x18 or branch_fields.get("j") != 0:
+        raise ValueError("finite-domain guard branch is not non-delayed NOT SZ")
+    values = list(range(1 << -amount))
+    return {
+        "register": guard.register,
+        "values": values,
+        "shift_pc_sw": guard.shift_pc_sw,
+        "branch_pc_sw": guard.branch_pc_sw,
+        "frontier_pc_sw": guard.frontier_pc_sw,
+        "derivation": "NOT SZ branch fallthrough requires logical-right-shift result zero",
+        "evidence_class": "strict-trace-derived-domain",
+    }
+
+
+def _register_effect(
+    context: Mapping[str, Any], entries: set[int], item: RegisterEffectQuery
+) -> dict[str, Any]:
+    """Compute one uncached effect without touching SQLite."""
+    if item.entry_sw not in entries:
+        effect = classify_register_paths(
+            [{"verified_return": False, "uncertainty": ["entry is not a recovered function"]}]
+        )
+        return {"entry_sw": item.entry_sw, "register": item.register, **effect}
+
+    import sharc_trace
+
+    sets = None
+    if item.seed_global_constants:
+        import sharcwriters
+
+        sets = dict(sharcwriters.GLOBAL_CONSTANT_SEEDS)
+
+    def run(case_sets: Mapping[str, int] | None = None) -> list[Any]:
+        merged_sets: dict[str | int, Any] = {}
+        merged_sets.update(sets or {})
+        merged_sets.update(case_sets or {})
+        return sharc_trace.trace(
+            context["mem"], None, item.entry_sw,
+            sets=merged_sets or None,
+            max_steps=item.max_steps, max_states=item.max_states,
+            max_call_depth=item.max_call_depth, concrete_memory=True,
+            follow_loaded_calls=True, continue_external_calls=False,
+            assume_nw32=True,
+            provisional_forms=tuple(sorted(set(item.calibration_forms))),
+        )
+
+    states = run()
+    domain_audit = None
+    if item.finite_domain_guard is not None:
+        domain_audit = _audit_finite_domain_guard(
+            context["mem"], item.finite_domain_guard
+        )
+        frontier = item.finite_domain_guard.frontier_pc_sw
+        unresolved = [
+            state for state in states
+            if state.pc_sw == frontier
+            and str(state.stopped).startswith("unknown 9b_abs indirect target")
+        ]
+        if unresolved:
+            retained = [state for state in states if state not in unresolved]
+            case_outcomes = []
+            replacement = []
+            for value in domain_audit["values"]:
+                case_states = run({item.finite_domain_guard.register: value})
+                replacement.extend(case_states)
+                case_outcomes.append({
+                    "value": value,
+                    "stops": sorted({str(state.stopped) for state in case_states}),
+                })
+            if any(
+                state.pc_sw == frontier
+                and str(state.stopped).startswith("unknown 9b_abs indirect target")
+                for state in replacement
+            ):
+                domain_audit["status"] = "incomplete"
+            else:
+                states = retained + replacement
+                domain_audit["status"] = "resolved-frontier"
+            domain_audit["case_outcomes"] = case_outcomes
+        else:
+            domain_audit["status"] = "frontier-not-retained"
+    paths = []
+    for state in states:
+        writers, uncertainty = [], []
+        for event in state.trace:
+            result = event.get("result_register")
+            destination = event.get("destination", event.get("ureg"))
+            if (
+                destination == item.register
+                or result == item.register
+                or isinstance(result, list) and item.register in result
+            ):
+                writers.append(event.get("pc_sw", item.entry_sw))
+            if event.get("action") in (
+                "opaque-external-call", "unsupported", "indirect-call"
+            ):
+                uncertainty.append(event["action"])
+        calibration_used = tuple(getattr(state, "provisional_used", ()))
+        for form in calibration_used:
+            uncertainty.append("calibration form used: " + str(form))
+        # A path admitted through an unconfirmed encoding cannot establish
+        # even an existential writer claim.
+        if calibration_used:
+            writers = []
+        if state.stopped not in REGISTER_EFFECT_VERIFIED_RETURNS:
+            uncertainty.append("trace stop: " + str(state.stopped))
+        paths.append({
+            "verified_return": state.stopped in REGISTER_EFFECT_VERIFIED_RETURNS,
+            "writer_pcs": writers,
+            "uncertainty": uncertainty,
+        })
+    effect = classify_register_paths(paths)
+    result = {"entry_sw": item.entry_sw, "register": item.register, **effect}
+    if item.seed_global_constants:
+        result["global_constant_seeds"] = sorted(sets or {})
+    if domain_audit is not None:
+        result["finite_domain_guard"] = domain_audit
+    return result
+
+
+_REGISTER_WORKER: dict[str, Any] = {}
+
+
+def _init_register_worker(blob: str, code_blocks: tuple[int, ...], min_depth: int) -> None:
+    import sharcfn
+
+    context = sharcfn.load_context(blob, code_blocks, min_depth)
+    _REGISTER_WORKER["context"] = context
+    _REGISTER_WORKER["entries"] = {fn["entry"] for fn in context["functions"]}
+
+
+def _register_worker(ordinal: int, item: RegisterEffectQuery) -> tuple[int, dict[str, Any]]:
+    try:
+        return ordinal, _register_effect(
+            _REGISTER_WORKER["context"], _REGISTER_WORKER["entries"], item
+        )
+    except Exception as error:
+        raise RuntimeError(
+            f"register-effect trace failed at 0x{item.entry_sw:x}"
+        ) from error
+
+
+def _run_register_effect_queries(
+    blob: str,
+    config: IndexConfig,
+    items: Sequence[RegisterEffectQuery],
+    *,
+    jobs: int,
+) -> list[tuple[RegisterEffectQuery, dict[str, Any]]]:
+    """Run independent queries in parallel and return stable input order."""
+    if jobs <= 0:
+        raise ValueError("jobs must be positive")
+    if not items:
+        return []
+    if jobs == 1 or len(items) == 1:
+        _init_register_worker(blob, config.code_blocks, config.min_depth)
+        return [
+            (item, _register_worker(ordinal, item)[1])
+            for ordinal, item in enumerate(items)
+        ]
+    with ProcessPoolExecutor(
+        max_workers=min(jobs, len(items)),
+        mp_context=get_context("spawn"),
+        initializer=_init_register_worker,
+        initargs=(blob, config.code_blocks, config.min_depth),
+    ) as pool:
+        futures = [
+            pool.submit(_register_worker, ordinal, item)
+            for ordinal, item in enumerate(items)
+        ]
+        # Observe in stable request order so simultaneous failures and result
+        # publication cannot depend on completion scheduling.
+        rows = [future.result() for future in futures]
+    by_ordinal = {ordinal: effect for ordinal, effect in rows}
+    return [(item, by_ordinal[ordinal]) for ordinal, item in enumerate(items)]
 
 
 class AnalysisIndex:
@@ -159,11 +405,15 @@ class AnalysisIndex:
               query_key TEXT PRIMARY KEY, static_key TEXT NOT NULL, request BLOB NOT NULL, payload BLOB NOT NULL,
               payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64), payload_size INTEGER NOT NULL CHECK(payload_size>=0),
               complete INTEGER NOT NULL CHECK(complete=1), FOREIGN KEY(static_key) REFERENCES static_snapshot(static_key)) WITHOUT ROWID;
+            CREATE TABLE writer_trace_facts (
+              query_key TEXT PRIMARY KEY, static_key TEXT NOT NULL, request BLOB NOT NULL, payload BLOB NOT NULL,
+              payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64), payload_size INTEGER NOT NULL CHECK(payload_size>=0),
+              complete INTEGER NOT NULL CHECK(complete=1), FOREIGN KEY(static_key) REFERENCES static_snapshot(static_key)) WITHOUT ROWID;
             CREATE TABLE register_results (
               query_key TEXT PRIMARY KEY, static_key TEXT NOT NULL, request BLOB NOT NULL, payload BLOB NOT NULL,
               payload_sha256 TEXT NOT NULL CHECK(length(payload_sha256)=64), payload_size INTEGER NOT NULL CHECK(payload_size>=0),
               complete INTEGER NOT NULL CHECK(complete=1), FOREIGN KEY(static_key) REFERENCES static_snapshot(static_key)) WITHOUT ROWID;
-            PRAGMA user_version=3;
+            PRAGMA user_version=4;
         """)
 
     @classmethod
@@ -260,12 +510,24 @@ class AnalysisIndex:
     def _request_writer(self, target: WriterTarget) -> dict[str, Any]:
         return {"contract": "writer-target/v1", "target": {"address": target.address, "width": target.width}, "policy": WRITER_POLICY}
 
+    def _request_writer_facts(self) -> dict[str, Any]:
+        return {"contract": "writer-trace-facts/v1", "policy": WRITER_TRACE_POLICY}
+
     def _request_register(self, query: RegisterEffectQuery) -> dict[str, Any]:
         calibration_forms = self._calibration_forms(query.calibration_forms)
-        return {"contract": "register-effect/v3", "entry_sw": query.entry_sw, "register": query.register,
+        guard = query.finite_domain_guard
+        guard_payload = None if guard is None else {
+            "register": guard.register,
+            "shift_pc_sw": guard.shift_pc_sw,
+            "branch_pc_sw": guard.branch_pc_sw,
+            "frontier_pc_sw": guard.frontier_pc_sw,
+        }
+        return {"contract": "register-effect/v4", "entry_sw": query.entry_sw, "register": query.register,
                 "max_steps": query.max_steps, "max_states": query.max_states, "max_call_depth": query.max_call_depth,
                 "calibration_forms": calibration_forms,
-                "policy": REGISTER_POLICY, "reducer": "conservative-register-paths/v3"}
+                "seed_global_constants": query.seed_global_constants,
+                "finite_domain_guard": guard_payload,
+                "policy": REGISTER_POLICY, "reducer": "conservative-register-paths/v4"}
 
     @staticmethod
     def _calibration_forms(names: Sequence[str]) -> list[dict[str, Any]]:
@@ -327,7 +589,10 @@ class AnalysisIndex:
         # Checking up front also makes an empty query reject an incompatible replacement.
         with self._checked_connection(): pass
         writer_items = sorted({(item.address, item.width): item for item in writer_targets}.values(), key=lambda item: (item.address, item.width))
-        register_items = sorted({(item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth, tuple(sorted(set(item.calibration_forms)))): item for item in register_effects}.values(), key=lambda item: (item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth, tuple(sorted(set(item.calibration_forms)))))
+        register_items = sorted(
+            {_register_ident(item): item for item in register_effects}.values(),
+            key=_register_ident,
+        )
         writer_values: dict[tuple[int, int], Mapping[str, Any]] = {}
         missing_writers = []
         for item in writer_items:
@@ -340,8 +605,29 @@ class AnalysisIndex:
             import sharcwriters
             config, blob = self._metadata["config"], self._metadata.get("blob_path")
             if not blob: raise ValueError("writer queries require an index opened in this process")
+            facts_request = self._request_writer_facts()
+            facts_key = self._query_key(facts_request)
+            facts = self._lookup("writer_trace_facts", facts_key, facts_request)
+            if facts is None:
+                try:
+                    facts = getattr(sharcwriters, "collect_trace_facts")(
+                        blob,
+                        tuple(config["code_blocks"]),
+                        config["min_depth"],
+                        **WRITER_TRACE_POLICY,
+                        jobs=jobs,
+                    )
+                except Exception as error:
+                    raise RuntimeError("writer trace-fact batch failed") from error
+                facts = self._publish(
+                    "writer_trace_facts", facts_key, facts_request, facts
+                )
             try:
-                out = sharcwriters.run_many(blob, tuple(config["code_blocks"]), config["min_depth"], [(i.address, i.width) for i, _, _ in missing_writers], **WRITER_POLICY, jobs=jobs)
+                out = getattr(sharcwriters, "classify_trace_facts")(
+                    facts,
+                    [(i.address, i.width) for i, _, _ in missing_writers],
+                    **WRITER_CLASSIFY_POLICY,
+                )
             except Exception as error: raise RuntimeError("writer query batch failed") from error
             for item, request, key in missing_writers:
                 writer_values[(item.address, item.width)] = self._publish("writer_results", key, request, out[(item.address, item.width)])
@@ -350,43 +636,31 @@ class AnalysisIndex:
         for item in register_items:
             request, key = self._request_register(item), self._query_key(self._request_register(item))
             value = self._lookup("register_results", key, request)
-            ident = (item.entry_sw, item.register, item.max_steps, item.max_states, item.max_call_depth, tuple(sorted(set(item.calibration_forms))))
+            ident = _register_ident(item)
             if value is None: missing_registers.append((item, request, key, ident))
             else: register_values[ident] = value
         if missing_registers:
             if self._readonly: raise ValueError("readonly SHARC index has no cached query result")
-            import sharcfn
-            import sharc_trace
             blob, config = self._metadata.get("blob_path"), self._metadata["config"]
             if not blob: raise ValueError("register-effect queries require an index opened in this process")
-            context = sharcfn.load_context(blob, tuple(config["code_blocks"]), config["min_depth"])
-            entries = {fn["entry"] for fn in context["functions"]}
+            index_config = IndexConfig(tuple(config["code_blocks"]), config["min_depth"])
+            try:
+                computed = dict(_run_register_effect_queries(
+                    blob,
+                    index_config,
+                    [item for item, _, _, _ in missing_registers],
+                    jobs=jobs,
+                ))
+            except Exception as error:
+                if _is_register_trace_failure(error):
+                    raise
+                raise RuntimeError("register-effect query batch failed") from error
             for item, request, key, ident in missing_registers:
-                if item.entry_sw not in entries:
-                    effect = classify_register_paths([{"verified_return": False, "uncertainty": ["entry is not a recovered function"]}])
-                else:
-                    try: states = sharc_trace.trace(context["mem"], None, item.entry_sw, max_steps=item.max_steps, max_states=item.max_states, max_call_depth=item.max_call_depth, concrete_memory=True, follow_loaded_calls=True, continue_external_calls=False, provisional_forms=tuple(sorted(set(item.calibration_forms))))
-                    except Exception as error: raise RuntimeError(f"register-effect trace failed at 0x{item.entry_sw:x}") from error
-                    paths = []
-                    for state in states:
-                        writers, uncertainty = [], []
-                        for event in state.trace:
-                            result = event.get("result_register"); destination = event.get("destination", event.get("ureg"))
-                            if destination == item.register or result == item.register or isinstance(result, list) and item.register in result: writers.append(event.get("pc_sw", item.entry_sw))
-                            if event.get("action") in ("opaque-external-call", "unsupported", "indirect-call"): uncertainty.append(event["action"])
-                        calibration_used = tuple(getattr(state, "provisional_used", ()))
-                        for form in calibration_used:
-                            uncertainty.append("calibration form used: " + str(form))
-                        # A path admitted through an unconfirmed encoding cannot
-                        # establish even an existential writer claim.  Retain the
-                        # calibration reason, but never strengthen its evidence.
-                        if calibration_used:
-                            writers = []
-                        if state.stopped not in REGISTER_EFFECT_VERIFIED_RETURNS: uncertainty.append("trace stop: " + str(state.stopped))
-                        paths.append({"verified_return": state.stopped in REGISTER_EFFECT_VERIFIED_RETURNS, "writer_pcs": writers, "uncertainty": uncertainty})
-                    effect = classify_register_paths(paths)
-                register_values[ident] = self._publish("register_results", key, request, {"entry_sw": item.entry_sw, "register": item.register, "calibration_forms": request["calibration_forms"], **effect})
-        return {"writer_targets": [writer_values[(i.address, i.width)] for i in writer_items], "register_effects": [register_values[(i.entry_sw, i.register, i.max_steps, i.max_states, i.max_call_depth, tuple(sorted(set(i.calibration_forms))))] for i in register_items]}
+                value = {**computed[item], "calibration_forms": request["calibration_forms"]}
+                register_values[ident] = self._publish(
+                    "register_results", key, request, value
+                )
+        return {"writer_targets": [writer_values[(i.address, i.width)] for i in writer_items], "register_effects": [register_values[_register_ident(i)] for i in register_items]}
 
     def trace(self, probes: Sequence[Mapping[str, Any]], *, jobs: int = 1) -> Mapping[str, Any]:
         try: canonical_probes = [json.loads(_canonical(probe)) for probe in sorted(probes, key=_canonical)]

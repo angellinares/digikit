@@ -10,9 +10,26 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "tools"))
 I = import_module("sharc_index")
+Instruction = import_module("sharc_disasm").Instruction
 
 
 class IndexContractTest(unittest.TestCase):
+    def test_finite_domain_guard_derives_values_from_loaded_shift_and_branch(self):
+        shift = Instruction(
+            0, 6, "6b_shiftimm",
+            {"shiftimm[22:16]": 0, "shiftimm[15:0]": 0xFE04},
+        )
+        branch = Instruction(
+            0, 6, "8a_rel",
+            {"cond[4:0]": 0x18, "j": 0, "reladdr[23:16]": 0,
+             "reladdr[15:0]": 0x11},
+        )
+        guard = I.FiniteDomainGuard("R4", 0x100, 0x103, 0x109)
+        with patch("sharc_disasm.decode_loaded_at", side_effect=[shift, branch]):
+            audit = I._audit_finite_domain_guard(object(), guard)
+        self.assertEqual(audit["values"], [0, 1, 2, 3])
+        self.assertEqual(audit["evidence_class"], "strict-trace-derived-domain")
+
     def make_index(self, directory, *, readonly=False):
         blob = pathlib.Path(directory) / "blob"
         blob.write_bytes(b"synthetic")
@@ -52,13 +69,18 @@ class IndexContractTest(unittest.TestCase):
     def test_writer_cache_batches_misses_and_is_jobs_independent(self):
         with tempfile.TemporaryDirectory() as directory:
             index = self.make_index(directory); calls = []
-            def run_many(blob, blocks, depth, targets, **kwargs):
+            facts = {"contract": "test-writer-trace-facts/v1"}
+            def classify(_facts, targets, **kwargs):
                 calls.append((tuple(targets), kwargs)); return {target: {"target": target[0], "target_width": target[1], "coverage": "incomplete"} for target in targets}
             a, b = I.WriterTarget(0x100, 4), I.WriterTarget(0x100, 16)
-            with patch("sharcwriters.run_many", side_effect=run_many):
+            with patch("sharcwriters.collect_trace_facts", return_value=facts) as collect, patch(
+                "sharcwriters.classify_trace_facts", side_effect=classify
+            ):
                 cold = index.query(writer_targets=[b, a, a], jobs=1)
                 warm = index.query(writer_targets=[a, b], jobs=9)
                 index.query(writer_targets=[a, I.WriterTarget(0x104, 4)], jobs=2)
+            self.assertEqual(collect.call_count, 1)
+            self.assertEqual(collect.call_args.kwargs["jobs"], 1)
             self.assertEqual(calls[0][0], ((0x100, 4), (0x100, 16)))
             self.assertEqual(calls[1][0], ((0x104, 4),))
             self.assertEqual(cold, warm)
@@ -169,6 +191,36 @@ class IndexContractTest(unittest.TestCase):
             self.assertEqual(result, again)
             self.assertEqual([x["entry_sw"] for x in result["register_effects"]], [1, 2])
 
+    def test_register_misses_use_bounded_batch_and_parent_orders_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            first = I.RegisterEffectQuery(1, "R6")
+            second = I.RegisterEffectQuery(2, "R7")
+
+            def effect(item):
+                return {
+                    "entry_sw": item.entry_sw,
+                    "register": item.register,
+                    "status": "preserved",
+                    "quantifier": "all retained paths",
+                    "writer_pcs": [],
+                    "reasons": [],
+                }
+
+            with patch.object(
+                I,
+                "_run_register_effect_queries",
+                return_value=[(second, effect(second)), (first, effect(first))],
+            ) as run:
+                result = index.query(
+                    register_effects=[second, first],
+                    jobs=4,
+                )["register_effects"]
+
+            self.assertEqual(run.call_args.kwargs["jobs"], 4)
+            self.assertEqual([item["entry_sw"] for item in result], [1, 2])
+            self.assertTrue(all(item["status"] == "preserved" for item in result))
+
     def test_report_only_dependency_change_keeps_static_cache_warm(self):
         with tempfile.TemporaryDirectory() as directory:
             index = self.make_index(directory)
@@ -220,9 +272,13 @@ class IndexContractTest(unittest.TestCase):
             index = self.make_index(directory); item = I.WriterTarget(1); request = index._request_writer(item); key = index._query_key(request)
             with sqlite3.connect(index._path) as con:
                 con.execute("INSERT INTO writer_results VALUES (?,?,?,?,?,?,1)", (key, index._static_key, I._payload(request), b"{bad", "0" * 64, 4))
-            with patch("sharcwriters.run_many", return_value={(1, 4): {"target": 1}}) as run:
+            with patch(
+                "sharcwriters.collect_trace_facts", return_value={"contract": "test"}
+            ) as collect, patch(
+                "sharcwriters.classify_trace_facts", return_value={(1, 4): {"target": 1}}
+            ):
                 self.assertEqual(index.query(writer_targets=[item])["writer_targets"], [{"target": 1}])
-            self.assertEqual(run.call_count, 1)
+            self.assertEqual(collect.call_count, 1)
             readonly = I.AnalysisIndex(index._path, index._metadata, readonly=True)
             self.assertEqual(readonly.query(writer_targets=[item])["writer_targets"], [{"target": 1}])
             with self.assertRaisesRegex(ValueError, "readonly"):

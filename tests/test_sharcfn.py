@@ -465,6 +465,22 @@ class EngineQueueTest(unittest.TestCase):
             )
             self.assertEqual(json.loads(sharcfn.canonical_json_bytes(queue)), queue)
 
+    def test_queue_accepts_indexed_target_opcode_coverage(self):
+        ctx = {
+            "sha256": "image",
+            "functions": [self.fn(93, 0x30, 60, 8, 2)],
+        }
+        coverage = {
+            "derived_counts": {"fixture": 7},
+            "unsupported_or_ambiguous": [],
+            "word_address_units": "fixture",
+        }
+        with tempfile.TemporaryDirectory() as notes:
+            queue = sharcfn.build_engine_queue(
+                ctx, notes, target_coverage=coverage
+            )
+        self.assertEqual(queue["target_opcode_coverage"], coverage)
+
     def test_target_opcode_coverage_has_stable_keys_when_absent_or_present(self):
         fn = self.fn(93, 0x1000, 60, 10, 0)
         empty_block = {"base_sw": 0x1000, "insns": [], "_insn_sw": []}

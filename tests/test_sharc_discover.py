@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "tools"))
@@ -50,17 +52,64 @@ def instruction(name, **fields):
 
 
 class StaticContextTest(unittest.TestCase):
+    def test_indexed_context_reuses_inventory_and_rebuilds_only_loader_memory(self):
+        blob = loader_block(1, 0x100, 4, payload=b"abcd")
+        function = {"id": "blk1@0x80", "entry": 0x80, "exit": 0x82}
+        context = D._indexed_context(
+            blob,
+            {"function_inventory": [function]},
+            "f" * 64,
+        )
+        self.assertEqual(context["functions"], [function])
+        self.assertIs(context["by_id"][function["id"]], function)
+        self.assertEqual(context["sha256"], "f" * 64)
+        self.assertEqual(context["mem"].read(0x100, 4), b"abcd")
+        self.assertNotIn("analyzed", context)
+
+    def test_cli_profile_is_stderr_only_and_never_enters_report(self):
+        report = {"coverage": {"functions": 1, "indirect_sites": 2,
+                               "pointer_table_runs": 3}}
+
+        def discover(*args, **kwargs):
+            kwargs["profile"]("work")
+            return report
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "report.json"
+            stderr, stdout = StringIO(), StringIO()
+            with patch.object(D, "load_manifest", return_value={}), patch.object(
+                D, "discover", side_effect=discover
+            ), redirect_stderr(stderr), redirect_stdout(stdout):
+                self.assertEqual(
+                    D.main(["blob", "manifest", "--profile", "-o", str(output)]),
+                    0,
+                )
+            self.assertEqual(json.loads(output.read_text()), report)
+            self.assertNotIn("profile", output.read_text())
+            self.assertIn("profile phase=manifest", stderr.getvalue())
+            self.assertIn("profile phase=work", stderr.getvalue())
+            self.assertIn("profile phase=serialize", stderr.getvalue())
+
     def test_register_effect_calibration_is_explicit_manifest_input(self):
         query = D._register_effect_query(
             {
                 "entry_sw": "0x1c3504",
                 "register": "R6",
                 "calibration_forms": ["14d"],
+                "seed_global_constants": True,
+                "finite_domain_guard": {
+                    "register": "R4",
+                    "shift_pc_sw": "0x1c350f",
+                    "branch_pc_sw": "0x1c3512",
+                    "frontier_pc_sw": "0x1c351a",
+                },
             },
             "register_effects[0]",
         )
         self.assertEqual(query.entry_sw, 0x1C3504)
         self.assertEqual(query.calibration_forms, ("14d",))
+        self.assertTrue(query.seed_global_constants)
+        self.assertEqual(query.finite_domain_guard.register, "R4")
         with self.assertRaisesRegex(ValueError, "array of strings"):
             D._register_effect_query(
                 {"entry_sw": 1, "calibration_forms": "14d"},
@@ -463,9 +512,14 @@ class ManifestAndDumpTest(unittest.TestCase):
 
 @unittest.skipUnless(BLOB.exists(), "DT2 1.16 SHARC loader is not available")
 class FirmwareIntegrationTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # The baseline report is immutable test input.  Counterfactual tests
+        # below build their own manifest/report and cannot mutate this object.
+        cls.baseline_report = D.discover(BLOB, D.load_manifest(MANIFEST))
+
     def test_finds_known_dispatch_and_pointer_run(self):
-        manifest = D.load_manifest(MANIFEST)
-        report = D.discover(BLOB, manifest)
+        report = self.baseline_report
         dispatch = next(
             item for item in report["dispatch_candidates"] if item["site_pc_sw"] == 0x1C6579
         )
@@ -517,9 +571,13 @@ class FirmwareIntegrationTest(unittest.TestCase):
             index, first_path, second_path = directory / "index.sqlite", directory / "one.json", directory / "two.json"
             base = [sys.executable, "tools/sharc_discover.py", str(BLOB), str(MANIFEST), "--index", str(index)]
             first_env, second_env = dict(os.environ, PYTHONHASHSEED="1"), dict(os.environ, PYTHONHASHSEED="999")
-            subprocess.run([*base, "--jobs", "1", "-o", str(first_path)], check=True, cwd=pathlib.Path(__file__).parents[1], env=first_env)
+            # Fill the temporary cache in parallel; jobs=1 then exercises the
+            # same canonical report and read-only warm path without making the
+            # suite pay for a serial whole-image writer census.
+            cold_jobs = min(8, os.cpu_count() or 1)
+            subprocess.run([*base, "--jobs", str(cold_jobs), "-o", str(first_path)], check=True, cwd=pathlib.Path(__file__).parents[1], env=first_env)
             mtime = index.stat().st_mtime_ns
-            subprocess.run([*base, "--jobs", "2", "-o", str(second_path)], check=True, cwd=pathlib.Path(__file__).parents[1], env=second_env)
+            subprocess.run([*base, "--jobs", "1", "-o", str(second_path)], check=True, cwd=pathlib.Path(__file__).parents[1], env=second_env)
             self.assertEqual(mtime, index.stat().st_mtime_ns)
             first, second = first_path.read_bytes(), second_path.read_bytes()
         self.assertEqual(first, second)
@@ -531,8 +589,7 @@ class FirmwareIntegrationTest(unittest.TestCase):
         self.assertEqual(report["natural_selector_frontiers"][0]["tail_jump"]["pc_sw"], 0x1C351A)
 
     def test_candidate_vector_scan_keeps_block70_identity_unverified(self):
-        manifest = D.load_manifest(MANIFEST)
-        report = D.discover(BLOB, manifest)
+        report = self.baseline_report
         scan = report["ivt_audio_root_scan"]["candidate_scans"][0]
         self.assertEqual(scan["identity"], "unverified-core-ivt-candidate")
         self.assertEqual(scan["candidate_region"]["start_pc_sw"], 0x120000)

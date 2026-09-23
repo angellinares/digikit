@@ -694,21 +694,9 @@ def _process_function(fn_id, target, max_steps, max_states, fallback_width, stac
     return fn_id, out
 
 
-def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
-             fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
-    """Classify all *targets* from one census and one trace per function.
-
-    Targets are ``(byte_address, width)`` pairs.  The trace is independent of
-    a target, so doing this here prevents a caller from accidentally paying a
-    full project scan for every byte in a range.
-    """
-    try:
-        normalized_targets = {(int(address), int(width)) for address, width in targets}
-    except (TypeError, ValueError, OverflowError) as error:
-        raise ValueError("writer targets must be (integer address, integer width) pairs") from error
-    targets = tuple(sorted(normalized_targets))
-    if not targets:
-        return {}
+def collect_trace_facts(blob_path, block_idxs, min_depth, max_steps, max_states,
+                        jobs=1, seed_global_constants=True):
+    """Trace each owning function once and return target-independent facts."""
     if jobs <= 0:
         raise ValueError('jobs must be positive')
     try:
@@ -724,7 +712,6 @@ def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
 
     work = [fn_id for fn_id, rows in by_function.items() if any(row['is_dm'] for row in rows)]
 
-    all_rows = []
     if jobs <= 1:
         _init_worker(blob_path, block_idxs, min_depth)
         batches = [_process_function_batch(fn_id, max_steps, max_states, seed_global_constants) for fn_id in work]
@@ -733,15 +720,60 @@ def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
                                  initargs=(blob_path, block_idxs, min_depth)) as pool:
             futures = [pool.submit(_process_function_batch, fn_id, max_steps, max_states, seed_global_constants) for fn_id in work]
             batches = [future.result() for future in as_completed(futures)]
+    functions = []
     for fn_id, function_entry, dm_rows, chosen, stops in sorted(batches):
-        for target, _width in targets:
-            for row in dm_rows:
-                cls, detail, width = classify_row(row, chosen.get(row['pc']), set(stops), target, fallback_width, stack_lo, stack_hi, _width)
-                all_rows.append({'target': target, 'target_width': _width, 'pc': row['pc'], 'form': row['form'], 'function_entry': function_entry, 'function_id': fn_id, 'width': width, 'class': cls, **detail})
+        functions.append({
+            'function_id': fn_id,
+            'function_entry': function_entry,
+            'stop_reasons': sorted(stops),
+            'stores': [
+                {'row': row, 'event': chosen.get(row['pc'])}
+                for row in dm_rows
+            ],
+        })
+    return {
+        'contract': 'sharc-writer-trace-facts/v1',
+        'image_sha256': ctx['sha256'],
+        'seed_global_constants': seed_global_constants,
+        'census': dict(sorted(census.items())),
+        'census_total': sum(census.values()),
+        'functions': functions,
+        'orphan_stores': [row for row in orphan if row['is_dm']],
+    }
 
-    for row in orphan:
-        if not row['is_dm']:
-            continue
+
+def classify_trace_facts(facts, targets, fallback_width, stack_lo, stack_hi):
+    """Classify cached raw facts for targets without executing firmware code."""
+    try:
+        normalized_targets = {(int(address), int(width)) for address, width in targets}
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("writer targets must be (integer address, integer width) pairs") from error
+    targets = tuple(sorted(normalized_targets))
+    if not targets:
+        return {}
+    if facts.get('contract') != 'sharc-writer-trace-facts/v1':
+        raise ValueError('incompatible writer trace facts')
+
+    all_rows = []
+    for function in facts['functions']:
+        fn_id = function['function_id']
+        function_entry = function['function_entry']
+        stops = set(function['stop_reasons'])
+        for target, target_width in targets:
+            for store in function['stores']:
+                row, event = store['row'], store['event']
+                cls, detail, width = classify_row(
+                    row, event, stops, target, fallback_width,
+                    stack_lo, stack_hi, target_width,
+                )
+                all_rows.append({
+                    'target': target, 'target_width': target_width,
+                    'pc': row['pc'], 'form': row['form'],
+                    'function_entry': function_entry, 'function_id': fn_id,
+                    'width': width, 'class': cls, **detail,
+                })
+
+    for row in facts['orphan_stores']:
         width = row['width'] if row['width'] is not None else fallback_width
         for target, _target_width in targets:
             all_rows.append({
@@ -751,7 +783,7 @@ def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
             })
 
     all_rows.sort(key=lambda row: (row['target'], row['target_width'], row['pc']))
-    census_total = sum(census.values())
+    census_total = facts['census_total']
     results = {}
     for target, target_width in targets:
         rows = [dict(row) for row in all_rows if row['target'] == target and row['target_width'] == target_width]
@@ -760,9 +792,9 @@ def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
             raise RuntimeError('class totals do not sum to census total')
         excluded = [row for row in rows if row['class'] == 'EXCLUDED-STACK']
         results[(target, target_width)] = {
-            'target': target, 'target_width': target_width, 'width': target_width, 'image_sha256': ctx['sha256'],
+            'target': target, 'target_width': target_width, 'width': target_width, 'image_sha256': facts['image_sha256'],
             'stack': [stack_lo, stack_hi] if stack_lo is not None else None,
-            'seed_global_constants': seed_global_constants, 'census': dict(sorted(census.items())),
+            'seed_global_constants': facts['seed_global_constants'], 'census': facts['census'],
             'census_total': census_total, 'class_totals': dict(sorted(totals.items())),
             'excluded_stack_depends_on_unproven_entry_assumption': len(excluded),
             'excluded_stack_via_circular_modify': sum(1 for row in excluded if row.get('via_circular_modify')),
@@ -771,6 +803,21 @@ def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
             'evidence_class': 'strict-trace' if not totals.get('UNRESOLVED', 0) else 'unknown',
         }
     return dict(sorted(results.items()))
+
+
+def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
+             fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
+    """Classify targets from one target-independent trace-fact collection."""
+    targets = tuple(targets)
+    if not targets:
+        return {}
+    facts = collect_trace_facts(
+        blob_path, block_idxs, min_depth, max_steps, max_states,
+        jobs=jobs, seed_global_constants=seed_global_constants,
+    )
+    return classify_trace_facts(
+        facts, targets, fallback_width, stack_lo, stack_hi
+    )
 
 
 def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,

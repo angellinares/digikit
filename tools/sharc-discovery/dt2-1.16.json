@@ -210,7 +210,14 @@
       "register": "R6",
       "calibration_forms": [
         "14d"
-      ]
+      ],
+      "seed_global_constants": true,
+      "finite_domain_guard": {
+        "register": "R4",
+        "shift_pc_sw": "0x1c350f",
+        "branch_pc_sw": "0x1c3512",
+        "frontier_pc_sw": "0x1c351a"
+      }
     },
     {
       "entry_sw": "0x1c349b",

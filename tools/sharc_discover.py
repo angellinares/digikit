@@ -30,13 +30,14 @@ import hashlib
 import itertools
 import json
 import sqlite3
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import get_context
 from importlib import import_module
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Mapping, Sequence, cast
+from typing import Any, Callable, Mapping, Sequence, cast
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
@@ -69,6 +70,23 @@ DEFAULT_LIMITS = {
 TRACE_MAX_STEPS = 1_000
 TRACE_MAX_STATES = 64
 TRACE_WORK_CAP = 200_000
+
+
+class _PhaseProfile:
+    """Nondeterministic timing side channel; never part of report data."""
+
+    def __init__(self) -> None:
+        self._last = time.perf_counter()
+        self.rows: list[tuple[str, float]] = []
+
+    def mark(self, phase: str) -> None:
+        now = time.perf_counter()
+        self.rows.append((phase, now - self._last))
+        self._last = now
+
+    def write(self) -> None:
+        for phase, seconds in self.rows:
+            print(f"profile phase={phase} seconds={seconds:.6f}", file=sys.stderr)
 
 
 def _sha256(data: bytes) -> str:
@@ -179,6 +197,23 @@ def canonical_loader_dm_address(address: int) -> int:
     return 0x28000000 + address if 0 <= address < 0x08000000 else address
 
 
+def _indexed_context(
+    blob: bytes, snapshot: Mapping[str, Any], blob_sha: str
+) -> dict[str, Any]:
+    """Rebuild cheap loader state around the index's immutable inventory."""
+    blocks = sharcldr.parse_blocks(blob)
+    functions = list(snapshot["function_inventory"])
+    return {
+        "data": blob,
+        "blocks": blocks,
+        "blocks_by_idx": {block["index"]: block for block in blocks},
+        "mem": sharcldr.LoadedMemory.from_stream(blob, blocks),
+        "functions": functions,
+        "by_id": {function["id"]: function for function in functions},
+        "sha256": blob_sha,
+    }
+
+
 def _register_effect_query(
     declaration: Mapping[str, Any], prefix: str
 ) -> Any:
@@ -187,10 +222,29 @@ def _register_effect_query(
         not isinstance(item, str) or not item for item in calibration
     ):
         raise ValueError(f"{prefix}.calibration_forms must be an array of strings")
+    seed_globals = declaration.get("seed_global_constants", False)
+    if not isinstance(seed_globals, bool):
+        raise ValueError(f"{prefix}.seed_global_constants must be boolean")
+    guard_declaration = declaration.get("finite_domain_guard")
+    guard = None
+    if guard_declaration is not None:
+        if not isinstance(guard_declaration, Mapping):
+            raise ValueError(f"{prefix}.finite_domain_guard must be an object")
+        register = guard_declaration.get("register")
+        if not isinstance(register, str) or not register:
+            raise ValueError(f"{prefix}.finite_domain_guard.register must be a string")
+        guard = sharc_index.FiniteDomainGuard(
+            register,
+            _integer(guard_declaration.get("shift_pc_sw"), f"{prefix}.finite_domain_guard.shift_pc_sw"),
+            _integer(guard_declaration.get("branch_pc_sw"), f"{prefix}.finite_domain_guard.branch_pc_sw"),
+            _integer(guard_declaration.get("frontier_pc_sw"), f"{prefix}.finite_domain_guard.frontier_pc_sw"),
+        )
     return sharc_index.RegisterEffectQuery(
         _integer(declaration.get("entry_sw"), f"{prefix}.entry_sw"),
         str(declaration.get("register", "R6")),
         calibration_forms=tuple(calibration),
+        seed_global_constants=seed_globals,
+        finite_domain_guard=guard,
     )
 
 
@@ -1101,7 +1155,9 @@ def discover(
     *,
     index_path: Path | None = None,
     jobs: int = 1,
+    profile: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
+    mark = profile or (lambda _phase: None)
     blob = blob_path.read_bytes()
     blob_sha = _sha256(blob)
     if blob_sha != manifest["image_sha256"]:
@@ -1110,23 +1166,30 @@ def discover(
         )
     if jobs <= 0:
         raise ValueError("jobs must be positive")
+    mark("input")
     index = None
     if index_path is not None:
         index = sharc_index.AnalysisIndex.open_or_build(
             blob_path, path=index_path,
             config=sharc_index.IndexConfig(tuple(manifest["code_blocks"]), manifest["min_depth"]),
         )
-    ctx = sharcfn.load_context(
-        str(blob_path), manifest["code_blocks"], manifest["min_depth"]
+    mark("index")
+    snapshot = index.snapshot() if index is not None else None
+    ctx = (
+        _indexed_context(blob, snapshot, blob_sha)
+        if snapshot is not None
+        else sharcfn.load_context(
+            str(blob_path), manifest["code_blocks"], manifest["min_depth"]
+        )
     )
     if not isinstance(ctx["mem"], sharcldr.LoadedMemory):
         raise ValueError("sharcfn context did not provide loader-final memory")
     final_marker = ctx["mem"].has_final_marker()
     if not final_marker:
         raise ValueError("loader stream has no final marker")
+    mark("context")
     indexed_functions = None
-    if index is not None:
-        snapshot = index.snapshot()
+    if snapshot is not None:
         indexed_functions = snapshot["functions"]
         static = {
             "instructions": {item["pc_sw"]: {key: value for key, value in item.items() if key != "pc_sw"}
@@ -1139,6 +1202,7 @@ def discover(
         pointer_tables, pointer_hits = find_pointer_runs(
             ctx, static["instructions"], manifest["code_blocks"]
         )
+    mark("static")
     limits = manifest["limits"]
     pointer_table_count = len(pointer_tables)
     pointer_tables = pointer_tables[: limits["max_pointer_tables"]]
@@ -1155,6 +1219,7 @@ def discover(
     natural_selector_frontiers = build_natural_selector_frontiers(
         ctx, static, pointer_tables, manifest["natural_selector_frontiers"]
     )
+    mark("joins")
     writer_targets = [sharc_index.WriterTarget(_integer(item.get("address"), "writer_targets.address"), _positive(item.get("width", 4), "writer_targets.width"))
                       for item in manifest.get("writer_targets", []) if isinstance(item, Mapping)]
     register_effects = [
@@ -1175,6 +1240,7 @@ def discover(
         "writer_targets": [{"target": item.address, "width": item.width, "status": "unknown", "reason": "no index requested"} for item in writer_targets],
         "register_effects": [{"entry_sw": item.entry_sw, "register": item.register, "status": "unknown", "reasons": ["no index requested"]} for item in register_effects],
     }
+    mark("generated-queries")
     attach_generated_frontier_evidence(natural_selector_frontiers, generated_queries)
     vector_scans = scan_core_vector_candidates(
         ctx["mem"], blob, manifest.get("core_vector_scans", []),
@@ -1207,6 +1273,7 @@ def discover(
         limits["max_trace_cases"], indirect_pcs, set(static["instructions"]),
         blob_path=blob_path, jobs=jobs,
     )
+    mark("trace-probes")
     plan_by_name = {plan["name"]: plan for plan in derived_plans}
     provenance_by_name = {plan["name"]: plan for plan in provenance_plans}
     r4_by_name = {plan["name"]: plan for plan in r4_plans}
@@ -1321,7 +1388,14 @@ def discover(
             "warning": "no-static-caller is a structural signal, not dead-code evidence",
         },
         "engine_queue": sharcfn.build_engine_queue(
-            ctx, str(_HERE.parent / "docs" / "findings" / "functions")
+            ctx,
+            str(_HERE.parent / "docs" / "findings" / "functions"),
+            None,
+            (
+                snapshot["engine_target_opcode_coverage"]
+                if snapshot is not None
+                else None
+            ),
         ),
         "root_hypotheses": roots,
         "indirect_sites": static["indirect_sites"],
@@ -1364,6 +1438,7 @@ def discover(
             "warning": "rank is structural and does not establish audio semantics or hook safety",
         },
     }
+    mark("report")
     return report
 
 
@@ -1374,11 +1449,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dump-db", type=Path, help="existing ghidradump xrefs.sqlite")
     parser.add_argument("--index", type=Path, help="persistent static index cache")
     parser.add_argument("--jobs", type=int, default=1, help="bounded trace worker count")
+    parser.add_argument("--profile", action="store_true", help="write phase timings to stderr")
     parser.add_argument("-o", "--output", type=Path, help="write canonical JSON here")
     args = parser.parse_args(argv)
+    profiler = _PhaseProfile() if args.profile else None
     try:
         manifest = load_manifest(args.manifest)
-        report = discover(args.blob, manifest, args.dump_db, index_path=args.index, jobs=args.jobs)
+        if profiler is not None:
+            profiler.mark("manifest")
+        report = discover(
+            args.blob, manifest, args.dump_db,
+            index_path=args.index, jobs=args.jobs,
+            profile=profiler.mark if profiler is not None else None,
+        )
     except (OSError, ValueError, sqlite3.Error) as error:
         parser.error(str(error))
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
@@ -1392,6 +1475,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     else:
         print(encoded, end="")
+    if profiler is not None:
+        profiler.mark("serialize")
+        profiler.write()
     return 0
 
 
