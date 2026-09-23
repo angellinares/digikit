@@ -471,6 +471,19 @@ regression now checks this convention. No loaded firmware Type25 negative
 target was found, so this closes a test gap rather than authorizing a new
 loaded-call edge. **[D][O]**
 
+## Type12a concrete-count tracer boundary **[D][O]**
+
+The tracer admits Type12a counted loops only when the instruction supplies a
+16-bit immediate or its UREG count is a concrete value. It records the
+23-bit signed PC-relative end, loop count, and mode, then follows the loop
+until the concrete counter expires. A zero count and `Unknown`, `Affine`, or
+partially known UREG counts remain conservative stops; they are not converted
+into bounded symbolic iterations. The public SHARC+ Core Programming Reference
+pp. 14-23--14-25 documents the immediate/UREG forms, counter-stack setup, and
+E2-active (mode 0)/F1-active (mode 1) distinction. This trace abstraction
+preserves the mode but does not claim pipeline-precise E2/F1 timing or
+zero-count behavior.
+
 ## PASS/EQ removes the low-PM false path, and Type25 wraps at 24 bits **[C][V][O]**
 
 The preceding PM-address-zero blocker and ASTAT deferral are retracted. At

@@ -437,6 +437,43 @@ class TraceTest(unittest.TestCase):
         unknown = self.run_one(T.State(0x10), insn("12a_ureg", ureg_fields, length=6))
         self.assertEqual(unknown.stopped, "nonconcrete Type12a UREG loop count")
 
+    def test_type12a_concrete_ureg_one_and_maximum_immediate(self):
+        fields = {
+            "ureg[6:0]": 4,
+            "mode": 0,
+            "reladdr[22:16]": 0,
+            "reladdr[15:0]": 3,
+        }
+        state = self.run_one(
+            T.State(0x10, {T.UREG_CODES["STKYX"]: T.Const(0), 4: T.Const(1)}),
+            insn("12a_ureg", fields, length=6),
+        )
+        self.assertEqual(state.loops, [T.Loop(0x13, 0x13, 1, 0)])
+        self.assertEqual(state.uregs[T.UREG_CODES["LCNTR"]], T.Const(1))
+        self.assertEqual(state.uregs[T.UREG_CODES["CURLCNTR"]], T.Const(1))
+        state = self.run_one(state, insn("21a", {}, length=6))
+        self.assertEqual(state.pc_sw, 0x16)
+        self.assertEqual(state.loops, [])
+        self.assertEqual(state.trace[-1]["action"], "loop-exit")
+
+        maximum = self.run_one(
+            T.State(0x10),
+            insn(
+                "12a_imm",
+                {
+                    "data[15:8]": 0xFF,
+                    "data[7:0]": 0xFF,
+                    "mode": 1,
+                    "reladdr[22:16]": 0,
+                    "reladdr[15:0]": 3,
+                },
+                length=6,
+            ),
+        )
+        self.assertEqual(maximum.loops, [T.Loop(0x13, 0x13, 0xFFFF, 1)])
+        self.assertEqual(maximum.uregs[T.UREG_CODES["LCNTR"]], T.Const(0xFFFF))
+        self.assertEqual(maximum.uregs[T.UREG_CODES["CURLCNTR"]], T.Const(0xFFFF))
+
     def test_17_signed_and_assembled(self):
         s = self.run_one(
             T.State(10), insn("17b", {"ureg[6:0]": 2, "data[15:0]": 0xFFFF})
