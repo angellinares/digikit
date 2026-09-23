@@ -127,6 +127,22 @@ def type4a(**values):
     )
 
 
+def type7d(**values):
+    """Encode the pure Type7d ACONV selector (no condition or compute)."""
+    defaults = {
+        "g": 0,
+        "is[2:2]": 1,
+        "is[1:0]": 3,
+        "breg": 0,
+        "toby": 0,
+        "idis[2:0]": 0,
+    }
+    defaults.update(values)
+    return encode(
+        "7d", sum(field("7d", name, value) for name, value in defaults.items())
+    )
+
+
 def type3a(**values):
     """Encode a Type3a indexed DM instruction, defaulting to a TRUE-cond,
     pre-modify (u=0) load: I2+M3*4 -> R5, no compute."""
@@ -418,6 +434,9 @@ class GeneratorSource(unittest.TestCase):
         self.assertIn("I12 = *[ram]:4 unit;", generated)
         self.assertGreaterEqual(generated.count(":Type14a "), 3)
         self.assertGreaterEqual(generated.count(":Type3b "), 2)
+        self.assertEqual(generated.count(":Type7d "), 512)
+        self.assertIn("I7 = I7 >> 2;", generated)
+        self.assertIn("B15 = B8 << 2;", generated)
 
 
 @unittest.skipUnless(have_pypcode(), "needs pypcode (pyproject.toml)")
@@ -560,6 +579,51 @@ class GeneratedLanguage(unittest.TestCase):
                 self.artifact_diagnostics["in_tree_sla_sha256"],
                 self.artifact_diagnostics,
             )
+
+    def test_type7d_pure_aconv_selectors_lift_to_register_shifts(self):
+        """Pure ACONV is explicit p-code only; address-map/ILAD stays absent."""
+        self.assertEqual(type7d(), bytes.fromhex("bf0480c00000"))
+        cases = (
+            # label, g, class, direction, source low selector, idis, source, destination
+            ("DAG1 I B2W", 0, 0, 0, 2, 5, "I2", "I7"),
+            ("DAG2 I W2B", 1, 0, 1, 1, 3, "I9", "I10"),
+            ("DAG1 B W2B", 0, 1, 1, 1, 5, "B1", "B4"),
+            ("DAG2 B B2W", 1, 1, 0, 6, 3, "B14", "B13"),
+        )
+        for label, g, breg, toby, source_low, idis, source, destination in cases:
+            with self.subTest(selector=label):
+                buf = type7d(
+                    g=g,
+                    breg=breg,
+                    toby=toby,
+                    **{
+                        "is[2:2]": source_low >> 2,
+                        "is[1:0]": source_low & 3,
+                        "idis[2:0]": idis,
+                    },
+                )
+                names, ops = self.lift(buf)
+                self.assertEqual(names, ["INT_LEFT" if toby else "INT_RIGHT"])
+                self.assertEqual(ops[0].inputs[0].getRegisterName(), source)
+                self.assertEqual(ops[0].inputs[1].offset, 2)
+                self.assertEqual(ops[0].output.getRegisterName(), destination)
+                seed = 0x09BE7C if toby else 0x26F7F0
+                result = run_pcode(ops, registers={source: seed})
+                self.assertEqual(
+                    result["registers"][destination], seed << 2 if toby else seed >> 2
+                )
+
+    def test_type7d_compute_bearing_byte_does_not_use_pure_aconv_pcode(self):
+        pure = type7d()
+        compute_bearing = bytearray(pure)
+        compute_bearing[4] |= 1  # frame bit 0, inside Type7d's pinned compute.
+        self.assertEqual(next(sharc_disasm.disassemble(pure)).type_name, "7d")
+        self.assertNotEqual(
+            next(sharc_disasm.disassemble(compute_bearing)).type_name, "7d"
+        )
+        names, _ops = self.lift(bytes(compute_bearing))
+        self.assertNotIn("INT_LEFT", names)
+        self.assertNotIn("INT_RIGHT", names)
 
     def test_type14a_scalar_direct_dm_load_and_store(self):
         # Capture words are big-endian; pypcode receives little-endian words.

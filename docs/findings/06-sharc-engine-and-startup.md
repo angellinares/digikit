@@ -752,6 +752,27 @@ only the pure ACONV selector (`cond=11111`, both compute fields zero) pinned
 by `tools/sharcspec/build_table.py`.  Compute-bearing/conditional rows do not
 enter this handler and remain outside this phase. **[D][O]**
 
+### Type7d pure-selector SLEIGH p-code is a bounded approximation **[V][O]**
+
+The generated SHARC VISA language enumerates only the table's pure Type7d
+selector (`cond=11111`, empty compute): `g` chooses I0–I7/I8–I15 or
+B0–B7/B8–B15 with `breg`, and `idis` maps the destination as source-selector
+XOR `idis`.  Its p-code writes the selected destination from the selected
+source with the PRM-likely B2W `>> 2` or W2B `<< 2`; this makes the previously
+empty lift for `bf0480c00000` nonempty.  Independent manual/byte and p-code
+reviews checked the selector, mapping, byte, generated constructors, and
+focused tests, which cover both register classes, both DAG banks, XOR
+destinations, both directions, and reject a compute-bearing byte from this
+pure constructor. **[V]**
+
+The generated p-code deliberately omits the PRM's address-map lookup,
+retain-input-on-no-equivalent behavior, and ILAD. Conditional and
+compute-bearing Type7d forms remain outside this constructor family, and
+Type11a is untouched.  Consequently, the concrete backend's likely-shift
+result for `0x26f7f0` is `0x09bdfc`, not the observed mapped hardware result
+`0x09be7c` recorded above.  Hardware equivalence beyond the represented shifts
+is not claimed; reproducing the address-map conversion remains open. **[V][O]**
+
 The hand-built byte fixtures exercise that pure selector only.  A reproducible
 local byte check is available from the ignored DT2 loader stream:
 `shasum -a 256 out/sections/dt2-1.16/section_7_BLOB.bin` gives

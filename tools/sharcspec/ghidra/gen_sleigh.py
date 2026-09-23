@@ -1100,6 +1100,55 @@ def type3b_exact_constructors(
     ]
 
 
+def type7d_aconv_constructors(mnem, word_terms, nwords, active_words, field_info, form):
+    """Pure Type7d ACONV selectors, limited to the PRM's likely shifts.
+
+    The table pins TRUE condition and an empty compute field.  Enumerating
+    the selectors makes both DAG banks and the Id = Is XOR idis relation
+    explicit register operands; address-map lookup, retain-on-miss, and ILAD
+    are deliberately not represented by this p-code approximation.
+    """
+    mask = int(form["mask"], 16)
+    value = int(form["value"], 16)
+    cond_mask = 0x1F << 33
+    compute_mask = (1 << 23) - 1
+    assert (mask & cond_mask) == cond_mask and (value & cond_mask) == cond_mask
+    assert (mask & compute_mask) == compute_mask and (value & compute_mask) == 0
+
+    ctors = []
+    for g in range(2):
+        for breg, register_class in ((0, "I"), (1, "B")):
+            for toby, operator in ((0, ">>"), (1, "<<")):
+                for source_low in range(8):
+                    source = f"{register_class}{8 * g + source_low}"
+                    for idis in range(8):
+                        destination = f"{register_class}{8 * g + (source_low ^ idis)}"
+                        terms = constrained_terms(
+                            word_terms,
+                            field_info,
+                            (
+                                ("g", g),
+                                ("breg", breg),
+                                ("toby", toby),
+                                ("is[2:2]", source_low >> 2),
+                                ("is[1:0]", source_low & 3),
+                                ("idis[2:0]", idis),
+                            ),
+                            "type7d_aconv",
+                        )
+                        ctors.append(
+                            Constructor(
+                                mnem,
+                                [],
+                                terms,
+                                nwords,
+                                semantic_lines=[f"{destination} = {source} {operator} 2;"],
+                                active_words=active_words,
+                            )
+                        )
+    return ctors
+
+
 # Shared branch-target subtables, keyed by (mode, bit-shape) -- NOT by mode
 # alone, because "pcrel" now covers two unrelated field shapes: Type25a_pcrel/
 # Type8a_rel's 24-bit reladdr (words 1-2) and Type9a_rel/Type9b_rel's 6-bit
@@ -1479,6 +1528,15 @@ def gen_constructor(form):
 
             # Keep each form's specializations in its own helper: adding one
             # cannot replace the other's constructors or its generic fallback.
+            # Type7d is the exception: its pure selector needs complete,
+            # register-specific constructors so Id = Is XOR idis is resolved.
+            if name == "Type7d":
+                ctors.extend(
+                    type7d_aconv_constructors(
+                        mnem, wt, nwords, active_words, field_info, form
+                    )
+                )
+                continue
             if name == "Type14a":
                 ctors.extend(
                     type14a_scalar_constructors(

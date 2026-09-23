@@ -67,6 +67,21 @@ def test_pypcode_backend_compute_bridge_multiplies():
     assert be.get_ureg("R2") == 42
 
 
+def test_pypcode_backend_executes_real_type7d_aconv():
+    """0x1c1460: pure Type7d ``I7 = B2W(I7)`` from the DT2 image.
+
+    This checks the generated semantics through the concrete backend rather
+    than only inspecting the lifted p-code operations.
+    """
+    be = _backend_at(0x1C1460)
+    be.set_ureg("I7", 0x26F7F0)
+    assert be.step() is True
+    # The bounded p-code represents the PRM's likely shift only.  Its
+    # 0x09BDFC result intentionally differs from the observed mapped hardware
+    # result 0x09BE7C until address-map/ILAD semantics are implemented.
+    assert be.get_ureg("I7") == 0x09BDFC
+
+
 def test_pypcode_backend_faults_on_known_gap():
     """0x1c33c4: 5a_move (register copy). gen_sleigh.py has no constructor
     for this form at all (see docs/findings entry this task added): the
