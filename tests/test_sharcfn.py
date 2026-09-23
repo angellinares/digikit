@@ -291,7 +291,10 @@ class PerInstructionRenderingTest(unittest.TestCase):
             0x1000, insn, self.mem, *empty_ctx()
         )
         self.assertIn("JUMP", mnemonic)
-        self.assertIn("cond=5", mnemonic)
+        # cond=5 is PGR Table 10-4's "MV" -- named, not the bare number a
+        # reader could confuse with an address or register.
+        self.assertIn("IF MV", mnemonic)
+        self.assertNotIn("cond=5", mnemonic)
         self.assertIn("delayed", mnemonic)
 
     def test_loop_literal_trip_count_and_body(self):
@@ -344,6 +347,294 @@ class PerInstructionRenderingTest(unittest.TestCase):
             0x1000, insn, self.mem, *empty_ctx()
         )
         self.assertTrue(mnemonic)  # never empty/None
+
+
+class Type19ModifyRenderingTest(unittest.TestCase):
+    """render_modify()'s destination for the Type19 MODIFY family: PGR
+    Table/Figure for Type 19 encodes it as Is XOR Idis, not as Is directly
+    (tools/sharc_trace.py's "19a"/"19a_scaled" _compute branch already does
+    this, citing the same figure)."""
+
+    def setUp(self):
+        self.mem = sharcldr.LoadedMemory.from_stream(b"")
+
+    def render(self, form, **fields):
+        data = field_insn(form, **fields)
+        insn = insn_at(data)
+        mnemonic, notes, gap = sharcfn.render_instruction(
+            0x1000, insn, self.mem, *empty_ctx()
+        )
+        return mnemonic
+
+    def test_dag1_destination_is_is_xor_idis_not_is(self):
+        # is=4, idis=6, g=0 (DAG1, I0-I7): dest = 4^6 = 2, not 4.
+        mnemonic = self.render("19a", **{"g": 0, "idis": 6, "is": 4, "data": 0x44})
+        self.assertIn("I2 = modify(I4, 0x44)", mnemonic)
+        self.assertNotIn("I4 = modify(I4,", mnemonic)
+
+    def test_dag2_bank_offset_applies_to_both_registers(self):
+        # Same is/idis but g=1 (DAG2, I8-I15): both registers shift by +8.
+        mnemonic = self.render("19a", **{"g": 1, "idis": 6, "is": 4, "data": 0x44})
+        self.assertIn("I10 = modify(I12, 0x44)", mnemonic)
+
+    def test_19a_scaled_destination_also_uses_xor(self):
+        mnemonic = self.render(
+            "19a_scaled", **{"g": 0, "idis": 3, "is": 5, "data": 0x10}
+        )
+        self.assertIn("I6 = modify(I5, 0x10)", mnemonic)
+
+    def test_19a_bitrev_destination_also_uses_xor(self):
+        mnemonic = self.render(
+            "19a_bitrev", **{"g": 0, "idis": 1, "is": 2, "data": 0x8}
+        )
+        self.assertIn("I3 = modify(I2, 0x8)", mnemonic)
+
+
+class Type6aRenderingTest(unittest.TestCase):
+    """render_mem_indexed()'s destination register for 6a_mem (a plain
+    "dreg" field, unlike 3a/3b/3d's wide "ureg"), and render_shiftimm()'s
+    readable decode of the parallel ShiftImm sub-instruction PRM Type 6a/6b
+    share (PRM Table 18-9 pp.431-433; tools/sharc_trace.py's
+    _shift_immediate())."""
+
+    def setUp(self):
+        self.mem = sharcldr.LoadedMemory.from_stream(b"")
+
+    def render(self, form, **fields):
+        data = field_insn(form, **fields)
+        insn = insn_at(data)
+        mnemonic, notes, gap = sharcfn.render_instruction(
+            0x1000, insn, self.mem, *empty_ctx()
+        )
+        return mnemonic
+
+    def test_6a_mem_destination_is_dreg_not_placeholder(self):
+        # opcode 0x00 (lshift) with rn=rx=0, amount=0 -> a no-op shiftimm,
+        # so the mnemonic below is driven entirely by the mem-transfer half.
+        mnemonic = self.render(
+            "6a_mem",
+            **{"i": 4, "m": 5, "cond": 0x1F, "g": 0, "d": 0, "dreg": 0},
+        )
+        self.assertIn("R0 = DM(I4, M5)", mnemonic)
+        self.assertNotIn("? =", mnemonic)
+
+    def test_6a_mem_renders_parallel_shiftimm_field_extract(self):
+        # opcode 0x10 (fext), rn=12, rx=10, dataex=3, data8=5 ->
+        # position=5, length=(3<<2)|0=12.
+        shiftimm = (0x10 << 16) | (5 << 8) | (12 << 4) | 10
+        mnemonic = self.render(
+            "6a_mem",
+            **{
+                "i": 4,
+                "m": 5,
+                "cond": 0x1F,
+                "g": 0,
+                "d": 0,
+                "dreg": 0,
+                "dataex": 3,
+                "shiftimm": shiftimm,
+            },
+        )
+        self.assertIn("R0 = DM(I4, M5)", mnemonic)
+        self.assertIn("R12 = fext(R10, pos=5, len=12)", mnemonic)
+
+    def test_render_shiftimm_shift_immediate(self):
+        # opcode 0x01 (ashift), rn=3, rx=4, data8=8 (amount=8).
+        shiftimm = (0x01 << 16) | (8 << 8) | (3 << 4) | 4
+        mnemonic = self.render(
+            "6b_shiftimm", **{"cond": 0x1F, "dataex": 0, "shiftimm": shiftimm}
+        )
+        self.assertEqual(mnemonic, "R3 = ashift(R4, 8)")
+
+    def test_render_shiftimm_unmodelled_opcode_falls_back_to_raw_dump(self):
+        # opcode 0x02 ("rot") is in PRM's table but not implemented by
+        # tools/sharc_trace.py's _shift_immediate(); stays a raw dump
+        # rather than guessing at its field widths.
+        shiftimm = (0x02 << 16) | (8 << 8) | (3 << 4) | 4
+        mnemonic = self.render(
+            "6b_shiftimm", **{"cond": 0x1F, "dataex": 0, "shiftimm": shiftimm}
+        )
+        self.assertIn("shiftimm(dataex=0x0, shiftimm=0x%x)" % shiftimm, mnemonic)
+
+
+class ImmediateOffsetSignednessTest(unittest.TestCase):
+    """render_mem_immoff()'s "data" displacement: Type15b's decode_table.json
+    field is data[6:0] (7 bits), Type4a/4b/4d's is data[5:5]+data[4:0] (6
+    bits); merge_fields() only concatenates the split pieces, it never
+    sign-extends. tools/sharc_trace.py's "15b"/"4a"/"4b" _execute branches
+    already treat the merged value as a signed twos-complement index
+    modifier (_signed(..., 7) / _signed(..., 6)) before using it as an
+    address delta -- this class checks the listing renderer agrees."""
+
+    def setUp(self):
+        self.mem = sharcldr.LoadedMemory.from_stream(b"")
+
+    def render(self, form, **fields):
+        data = field_insn(form, **fields)
+        insn = insn_at(data)
+        mnemonic, notes, gap = sharcfn.render_instruction(
+            0x1000, insn, self.mem, *empty_ctx()
+        )
+        return mnemonic
+
+    def test_15b_seven_bit_offset_above_63_is_negative(self):
+        # data=115 (7-bit raw): sign_extend(115, 7) == 115 - 128 == -13.
+        mnemonic = self.render("15b", i=6, d=1, l=0, g=0, ureg=2, data=115)
+        self.assertIn("DM(I6 - 13) = R2", mnemonic)
+        self.assertNotIn("+ 115", mnemonic)
+
+    def test_15b_seven_bit_offset_below_64_stays_positive(self):
+        mnemonic = self.render("15b", i=6, d=1, l=0, g=0, ureg=2, data=14)
+        self.assertIn("DM(I6 + 14) = R2", mnemonic)
+
+    def test_4a_six_bit_offset_above_31_is_negative(self):
+        # data=0x3F (6-bit raw, all ones): sign_extend(0x3F, 6) == -1.
+        # compute=0 -- no parallel compute -- isolates the mem-access half.
+        mnemonic = self.render(
+            "4a", i=6, g=0, d=1, u=0, cond=0x1F, data=0x3F, dreg=2, compute=0
+        )
+        self.assertIn("DM(I6 - 1) = R2", mnemonic)
+
+    def test_4b_six_bit_offset_above_31_is_negative(self):
+        mnemonic = self.render(
+            "4b", i=6, g=0, d=0, u=0, cond=0x1F, data=0x3F, dreg=3, l=1, w=1, x=1
+        )
+        self.assertIn("R3 = DM(I6 - 1)", mnemonic)
+
+
+class CondPrefixRenderingTest(unittest.TestCase):
+    """render_instruction()'s IF-condition rendering: PGR Table 10-4
+    (p.10-33) names the 5-bit COND field's 32 codes. Type2a, 3a/3b/3d,
+    4a/4b/4d, 5a/5b (move+swap) and 6b_shiftimm all carry a real "cond"
+    field that gated the whole instruction (PRM p.7924's Type3a note,
+    cited in tools/sharc_trace.py) but that render_instruction() dropped
+    on the floor entirely -- a predicated instruction looked identical to
+    an unconditional one. Type2a_short/2c/2b are checked too, to confirm
+    they are correctly left alone: decode_table.json gives them no COND
+    bits at all (a structurally different, always-unconditional 32-bit
+    encoding), not merely an always-true instance of Type2a."""
+
+    def setUp(self):
+        self.mem = sharcldr.LoadedMemory.from_stream(b"")
+
+    def render(self, form, **fields):
+        data = field_insn(form, **fields)
+        insn = insn_at(data)
+        mnemonic, notes, gap = sharcfn.render_instruction(
+            0x1000, insn, self.mem, *empty_ctx()
+        )
+        return mnemonic
+
+    # Table 18-11 ALU register fields (RN 11:8, RX 7:4, RY 3:0) on top of
+    # ALU_OPS[0x81] == 'fadd': F8 = fadd(F8, F2), the same encoding as the
+    # real DT2 1.16 blob's 0x1cbf47 (independently derived here from the
+    # public bit layout, not copied from the firmware).
+    FADD_F8_F8_F2 = (0x81 << 12) | (8 << 8) | (8 << 4) | 2
+
+    def test_2a_nontrue_cond_renders_if_prefix(self):
+        mnemonic = self.render("2a", cond=1, compute=self.FADD_F8_F8_F2)
+        self.assertEqual(mnemonic, "IF LT F8 = fadd(F8, F2)")
+
+    def test_2a_always_true_cond_has_no_prefix(self):
+        mnemonic = self.render("2a", cond=0x1F, compute=self.FADD_F8_F8_F2)
+        self.assertEqual(mnemonic, "F8 = fadd(F8, F2)")
+        self.assertNotIn("IF", mnemonic)
+
+    def test_2a_short_has_no_cond_field_to_render(self):
+        # Type2a_short has no COND bits at all -- unlike Type2a, there is
+        # no encoding of this instruction that is conditional.
+        mnemonic = self.render("2a_short", compute=self.FADD_F8_F8_F2)
+        self.assertEqual(mnemonic, "F8 = fadd(F8, F2)")
+        self.assertNotIn("IF", mnemonic)
+
+    def test_3a_nontrue_cond_renders_if_prefix(self):
+        mnemonic = self.render(
+            "3a", u=0, i=1, m=4, cond=3, g=0, d=1, l=0, ureg=12, compute=0
+        )
+        self.assertIn("IF AC", mnemonic)
+        self.assertIn("DM(I1, M4)", mnemonic)
+
+    def test_4a_nontrue_cond_renders_if_prefix(self):
+        mnemonic = self.render(
+            "4a", i=6, g=0, d=1, u=0, cond=4, data=1, dreg=2, compute=0
+        )
+        self.assertTrue(mnemonic.startswith("IF AV "))
+
+    def test_5a_move_nontrue_cond_renders_if_prefix(self):
+        # dstureg picks a UREG_NAMES entry; srcureghigh/srcureglow=0 -> R0.
+        mnemonic = self.render(
+            "5a_move", cond=6, srcureghigh=0, srcureglow=0, dstureg=32, compute=0
+        )
+        self.assertTrue(mnemonic.startswith("IF MS "))
+
+    def test_5a_swap_nontrue_cond_renders_if_prefix(self):
+        mnemonic = self.render("5a_swap", cond=8, cdreg=3, dreg=5, compute=0)
+        self.assertEqual(mnemonic, "IF SZ R3 <-> R5")
+
+    def test_6b_shiftimm_nontrue_cond_renders_if_prefix(self):
+        shiftimm = (0x01 << 16) | (8 << 8) | (3 << 4) | 4  # ashift, amount=8
+        mnemonic = self.render(
+            "6b_shiftimm", cond=7, dataex=0, shiftimm=shiftimm
+        )
+        self.assertEqual(mnemonic, "IF SV R3 = ashift(R4, 8)")
+
+
+class RealBlobType19AndType6aRenderingTest(unittest.TestCase):
+    """Same fixes, against the real DT2 1.16 SHARC blob: skips cleanly when
+    the firmware isn't present, per CLAUDE.md ("Firmware ... is Elektron's
+    copyright: never commit it") and this repo's skip-not-fail convention
+    for optional fixtures (see e.g. tests/test_sharc_interface_probe.py)."""
+
+    BLOB = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "out",
+        "sections",
+        "dt2-1.16",
+        "section_7_BLOB.bin",
+    )
+
+    @unittest.skipUnless(
+        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
+    )
+    def test_function_at_0x1cbf07_listing(self):
+        ctx = sharcfn.load_context(self.BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
+        d = sharcfn.build_dossier(ctx, 0x1CBF07, want_listing=True)
+        self.assertNotIn("error", d)
+        rows = {row["sw"]: row["mnemonic"] for row in d["listing"]}
+        self.assertIn("0x1cbf95", rows)
+        self.assertIn("I2 = modify(I4, 0x44)", rows["0x1cbf95"])
+        self.assertIn("0x1cbf84", rows)
+        self.assertIn("R0 = DM(I4, M5)", rows["0x1cbf84"])
+
+    @unittest.skipUnless(
+        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
+    )
+    def test_type15b_immediate_offset_beyond_63_is_signed(self):
+        # 0x1cbf0c's raw data[6:0] field is 115 (0x73); read unsigned that
+        # is "DM(I6 + 115)", but tools/sharc_trace.py's "15b" branch
+        # already executes it as _signed(115, 7) == -13, so the listing
+        # should read "DM(I6 - 13)" instead.
+        ctx = sharcfn.load_context(self.BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
+        d = sharcfn.build_dossier(ctx, 0x1CBF07, want_listing=True)
+        self.assertNotIn("error", d)
+        rows = {row["sw"]: row["mnemonic"] for row in d["listing"]}
+        self.assertIn("0x1cbf0c", rows)
+        self.assertIn("DM(I6 - 13) = R2", rows["0x1cbf0c"])
+        self.assertNotIn("+ 115", rows["0x1cbf0c"])
+
+    @unittest.skipUnless(
+        os.path.exists(BLOB), "out/sections/dt2-1.16/section_7_BLOB.bin is not available"
+    )
+    def test_type2a_conditional_compute_renders_if_cond(self):
+        # 0x1cbf47 is a Type2a with cond field == 1 ("LT", PGR Table
+        # 10-4), predicating F8 = fadd(F8, F2); it used to render
+        # identically to an unconditional fadd.
+        ctx = sharcfn.load_context(self.BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
+        d = sharcfn.build_dossier(ctx, 0x1CBF07, want_listing=True)
+        self.assertNotIn("error", d)
+        rows = {row["sw"]: row["mnemonic"] for row in d["listing"]}
+        self.assertIn("0x1cbf47", rows)
+        self.assertEqual("IF LT F8 = fadd(F8, F2)", rows["0x1cbf47"])
 
 
 def sharcfnCounterLike():

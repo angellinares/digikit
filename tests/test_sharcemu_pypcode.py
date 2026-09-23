@@ -93,6 +93,26 @@ def test_pypcode_backend_faults_on_known_gap():
         be.step()
 
 
+def test_predicate_code_0x7_reads_sv_astatx_bit():
+    """PGR Table 10-4 code 0x07 (tools/sharc_trace.py's SIMPLE_COND_BITS):
+    ASTATX bit SV (shifter overflow) directly; 0x17 is its complement. SV
+    is a modelled flag in this backend's ASTATX register -- written by
+    _compute_bridge()'s astatx_update callback (tools/sharc_trace.py's
+    _compute() lshift/ashift branches via _astatx_shift()) through the
+    COMPUTE CALLOTHER -- so _predicate() can read it the same way it
+    already reads AZ/AN/AV/AF for the other simple condition codes, rather
+    than raising 'not modelled by this draft'."""
+    import sharcemu  # pyright: ignore[reportMissingImports]
+
+    be = sharcemu.PypcodeConcreteBackend(b"\x00\x00", 0)
+    be.set_ureg("ASTATX", 1 << 11)
+    assert be._predicate(0x07) is True
+    assert be._predicate(0x17) is False
+    be.set_ureg("ASTATX", 0)
+    assert be._predicate(0x07) is False
+    assert be._predicate(0x17) is True
+
+
 def test_fun_001c2b24_type_cache_via_sharc_trace():
     """Concrete run of FUN_001c2b24's type-cache compare/store
     (sw 0x1c33bc..0x1c33e9) via tools/sharc_trace.py directly (this form's
