@@ -62,6 +62,13 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
   `tools/sharcpcode.sql` instead of writing another pyghidra script. One JVM
   holds one version of a language, so reading an old project after installing
   a new one gives wrong numbers; measure each language in its own run.
+- SHARC facts come from the program database first:
+  `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin`
+  (seconds; skipped when current) writes `out/sharcdb/<image>.sqlite` with
+  instructions, functions, call/jump/indirect edges, literals, memory
+  accesses and cross-image function hashes. Query it with `sqlite3` and
+  `tools/sharcdb.sql` before running `tools/sharcfn.py` or writing a script.
+  A new kind of fact goes into `tools/sharcdb.py`, not a scratch script.
 
 ## Shell and tests
 

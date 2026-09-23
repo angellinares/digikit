@@ -884,11 +884,12 @@ def render_instruction(
 
     if t in CALL_JUMP_FORMS:
         head = render_call_or_jump(sw, t, f)
-        if t in ("25a_direct", "9a_abs", "8a_abs"):
+        if t in ("25a_direct", "8a_abs"):
             target = f.get("addr")
-        elif t in ("25a_pcrel", "9a_rel", "8a_rel") or t == "9b_rel":
+        elif t in ("25a_pcrel", "9a_rel", "8a_rel", "9b_rel"):
             target = sharcflow.pcrel_target(sw, f.get("reladdr", 0))
-        elif t == "9b_abs":
+        elif t in ("9a_abs", "9b_abs"):
+            # 9a_abs has no addr field: like 9b_abs it jumps through PM(I, M).
             target = None
             head += "  target=indirect PM(I%s, M%s)" % (f.get("pmi"), f.get("pmm"))
         else:
