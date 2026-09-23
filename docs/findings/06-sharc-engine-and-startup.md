@@ -716,6 +716,37 @@ documented normal-word scaling. Before this, every Type 7a modify lost its
 index register: `MODIFY(I7, M7)` at `0xb8946a` made the stack pointer unknown,
 and the frame stayed unknown for the rest of the run. **[C][V]**
 
+### A conditional Type7a frontier has exact stop PCs **[D][O]**
+
+The DT2 1.16 section-7 blob with SHA-256
+`0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`
+and its v5 writer-fact cache contain 22 functions with an `unsupported Type7a
+predicate` stop. These are *function facts*, not 22 instructions, and the
+cache retains the stop reason but not its PC. Bounded static traces using
+`sharcwriters.seed_sets(True)`, loader-final memory, concrete memory, 32-bit
+normal words, followed calls, and the v5 Type14d continuation policy
+(`max_steps=300`, `max_states=32`) locate three example stops:
+
+| traced entry | stop SW PC | loader-order bytes |
+| --- | --- | --- |
+| `0xb896de` | `0xb896e4` | `af0480410000` |
+| `0xb897c3` | `0xb897c9` | `ef0480000000` |
+| `0x1c0891` | `0x1c08b5` | `ef0480080000` |
+
+Traces from `0x1ca9d9` and `0x1ca94e` also stop at `0x1c08b5` on retained
+paths. All three words decode as Type7a with condition `0x17` (`NOT SV`) and
+empty compute. The public SHARC+ Core Programming Reference Rev. 1.5,
+printed pp. 14-46--14-47 (extracted `out/refs/sc58x-2158x-prm/pages/p0349.txt`
+and `p0350.txt`), says the condition gates the whole instruction and SIMD
+index modification uses the OR of the two processing elements' tests; the
+classic programming reference's condition table maps `10111` to `NOT SV`.
+At the sampled stops, the tracer's PEx predicate is unknown, and MODE1 is
+unknown or absent. A conditional index update is therefore a possible
+*bounded static-analysis* next step, not permission to always execute or
+skip it, nor a claim that all 22 functions would become resolved. The raw
+words and proposed semantics still need an independent byte/manual review
+before promotion to **[V]**. **[D][O]**
+
 ### Type7d is ACONV, and the strict run executes it **[C][V]**
 
 PRM Table 14-22 gives Type 7d as the Type 7a word whose condition is 11111 and

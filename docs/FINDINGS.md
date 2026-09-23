@@ -31,4 +31,5 @@ re-checked · **[O]** open / nobody has established this.
 | [`10-sharc-indirect-target-dossier.md`](findings/10-sharc-indirect-target-dossier.md) | Static dossier for the `FUN_1c642a` Type9b indirect target and provisional hook ranking |
 | [`11-sharc-cross-image-comparison.md`](findings/11-sharc-cross-image-comparison.md) | Bounded structural comparison of the DT2 1.16, DN2 1.11, and DN2 1.10E SHARC images |
 | [`12-sharc-writer-function-cache.md`](findings/12-sharc-writer-function-cache.md) | Per-function target-independent SHARC writer-fact cache seam |
+| [`13-sharc-public-tooling-options.md`](findings/13-sharc-public-tooling-options.md) | Public SHARC+ tooling alternatives, existing adapters, and a bounded frontier-report proposal |
 | [`functions/README.md`](findings/functions/README.md) | Per-function SHARC notes, including Phase B wrapper and conditional-resampling-path entries |
