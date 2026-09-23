@@ -361,6 +361,10 @@ Not ARM. Two processors:
 There is **no SHARC execution in the emulator** — nothing here emulates the
 ADSP-21569 core itself. Instead:
 
+- `tools/sharc_isa.py` is the typed encoding seam over the public-manual-derived
+  `decode_table.json`: it owns deterministic form selection, normalized operands,
+  and claim-level evidence references. The legacy and sharcspec decoders are
+  compatibility adapters over this one model.
 - `tools/sharc_trace.py` is a concrete tracer over the loaded SHARC image: it
   implements only instruction semantics taken from the public SHARC+ and
   classic SHARC programming references, refuses anything undocumented rather
@@ -369,11 +373,11 @@ ADSP-21569 core itself. Instead:
 - `tools/sharcemu.py` adds a Ghidra-free `pypcode` backend for the same
   generated language, for faster iteration than a live Ghidra JVM.
 - **Selache** ([js216/selache](https://github.com/js216/selache)), a public
-  third-party VISA assembler, is used read-only as a cross-check —
-  `tools/selasm.py` assembles a VISA snippet with it, byte-swaps the parcels
-  to the boot-stream's byte order, and prints Selache's disassembly next to
-  our own decoder's so a disagreement is visible immediately. The round trip
-  through Selache has already found real bugs in our own decoder.
+  third-party VISA assembler, is used read-only as a cross-check. The optional
+  `tools/sharc_selache.py` adapter requires the documented pinned revision,
+  byte-swaps its parcels to boot-stream order, and returns a structured extent
+  and decode comparison; `tools/selasm.py` is its command-line front end. The
+  round trip through Selache has already found real bugs in our own decoder.
 - The SHARC program is imported into Ghidra with the generated
   `SHARC_VISA:LE:32:default` language and dumped grep-friendly with
   `tools/ghidradump.py`; the current 1.16 dump lives at

@@ -24,117 +24,51 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
-import struct
-import subprocess
 import sys
-import tempfile
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-REPO_TOOLS = "/Users/em/src/digi/digitakt2/tools"
-for path in (HERE, REPO_TOOLS):
-    if path not in sys.path:
-        sys.path.insert(0, path)
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 
-from sharc_disasm import disassemble  # noqa: E402
+from sharc_selache import (  # noqa: E402
+    DEFAULT_PROCESSOR,
+    DEFAULT_SECTION,
+    SelacheError,
+    SelacheOracle,
+)
 
 DEFAULT_SELACHE_DIR = "/private/tmp/selache-public"
-DEFAULT_PROC = "ADSP-21569"
-
-
-def swap_parcels(data: bytes) -> bytes:
-    """Byte-swap every 16-bit parcel (a trailing odd byte is left alone)."""
-    out = bytearray(data)
-    for i in range(0, len(out) - 1, 2):
-        out[i], out[i + 1] = out[i + 1], out[i]
-    return bytes(out)
-
-
-def assemble(selas: str, proc: str, src_path: str, doj_path: str) -> None:
-    result = subprocess.run(
-        [selas, "-proc", proc, "-o", doj_path, src_path],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise SystemExit(f"selas failed:\n{result.stdout}{result.stderr}")
-
-
-def find_section(doj_path: str, name: str) -> tuple[int, int]:
-    """-> (file_offset, size) of section NAME, read straight from the ELF
-    section header table (avoids depending on seldump's text output)."""
-    with open(doj_path, "rb") as f:
-        data = f.read()
-    # ELF32 header: e_shoff at 0x20, e_shentsize at 0x2e, e_shnum at 0x30,
-    # e_shstrndx at 0x32 (all little-endian on this target's object files;
-    # seldump's own hex dump of a known section matches file bytes 1:1, so
-    # this reads the same way).
-    endian = "<" if data[5] == 1 else ">"
-    e_shoff, = struct.unpack_from(endian + "I", data, 0x20)
-    e_shentsize, e_shnum, e_shstrndx = struct.unpack_from(endian + "HHH", data, 0x2E)
-    shstrtab_hdr = e_shoff + e_shstrndx * e_shentsize
-    shstr_off, = struct.unpack_from(endian + "I", data, shstrtab_hdr + 0x10)
-    shstr_size, = struct.unpack_from(endian + "I", data, shstrtab_hdr + 0x14)
-    strtab = data[shstr_off:shstr_off + shstr_size]
-
-    def sh_name(idx: int) -> str:
-        start = idx
-        end = strtab.index(b"\0", start)
-        return strtab[start:end].decode()
-
-    for i in range(e_shnum):
-        base = e_shoff + i * e_shentsize
-        name_off, = struct.unpack_from(endian + "I", data, base + 0x00)
-        sh_offset, = struct.unpack_from(endian + "I", data, base + 0x10)
-        sh_size, = struct.unpack_from(endian + "I", data, base + 0x14)
-        if sh_name(name_off) == name:
-            return sh_offset, sh_size
-    raise SystemExit(f"section {name!r} not found in {doj_path}")
-
-
-def selache_disasm(seldump: str, doj_path: str, section: str) -> str:
-    result = subprocess.run(
-        [seldump, "-ns", section, doj_path], capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise SystemExit(f"seldump failed:\n{result.stdout}{result.stderr}")
-    return result.stdout
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("source", help="VISA .s file to assemble")
     parser.add_argument("--selache-dir", default=DEFAULT_SELACHE_DIR,
                         help=f"Selache checkout with target/release built (default: {DEFAULT_SELACHE_DIR})")
-    parser.add_argument("--proc", default=DEFAULT_PROC, help=f"selas -proc target (default: {DEFAULT_PROC})")
-    parser.add_argument("--section", default="seg_pmco", help="ELF section to compare (default: seg_pmco)")
+    parser.add_argument("--proc", default=DEFAULT_PROCESSOR,
+                        help=f"selas -proc target (default: {DEFAULT_PROCESSOR})")
+    parser.add_argument("--section", default=DEFAULT_SECTION,
+                        help=f"ELF section to compare (default: {DEFAULT_SECTION})")
     args = parser.parse_args()
 
-    release = os.path.join(args.selache_dir, "target", "release")
-    selas = os.path.join(release, "selas")
-    seldump = os.path.join(release, "seldump")
-    for exe in (selas, seldump):
-        if not os.path.isfile(exe):
-            raise SystemExit(f"missing {exe} -- build selache with `cargo build --release` first")
+    try:
+        oracle = SelacheOracle.open(args.selache_dir)
+        source = Path(args.source).read_text()
+        run = oracle.assemble_text(source, processor=args.proc, section=args.section)
+    except (OSError, SelacheError) as exc:
+        raise SystemExit(str(exc)) from exc
 
-    with tempfile.TemporaryDirectory() as tmp:
-        doj_path = os.path.join(tmp, "snippet.doj")
-        assemble(selas, args.proc, args.source, doj_path)
-
-        offset, size = find_section(doj_path, args.section)
-        with open(doj_path, "rb") as f:
-            f.seek(offset)
-            raw = f.read(size)
-
-        print(f"== Selache's own disassembly ({args.section}, {size} bytes) ==")
-        print(selache_disasm(seldump, doj_path, args.section))
-
-        swapped = swap_parcels(raw)
-        print("== our decoder (tools/sharc_disasm.py), after the parcel-order swap ==")
-        for insn in disassemble(swapped, on_unknown="yield"):
-            if insn.kind == "unknown":
-                print(f"  {insn.offset:#06x}  <{insn.note}>")
-                break
-            print(f"  {insn.offset:#06x}  {insn.type_name:<12s} {insn.kind:<10s} {insn.fields}")
+    print(f"== Selache's own disassembly ({args.section}, {len(run.external_bytes)} bytes) ==")
+    print(run.listing)
+    print("== our decoder, after the parcel-order swap ==")
+    for item in run.comparison.instructions:
+        status = "extent-ok" if item.extent_agrees else "EXTENT-DIFF"
+        forms = item.native_form_id or "/".join(item.native_candidates) or "unknown"
+        print(
+            f"  {item.external.parcel_address:#010x}  {forms:<16s} {status:<11s} "
+            f"{dict(item.native_fields)}"
+        )
 
 
 if __name__ == "__main__":

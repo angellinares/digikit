@@ -21,73 +21,53 @@ bits from the top of the frame), fixed_bits, uncertain (the table marks some
 fixed bits unconfirmed) and source.
 """
 
-import json
 import os
-import re
+
+from collections.abc import Iterable, Sequence
+
+from sharc_isa import LegacyForm, frame_of as _frame_of, form_id, load_instruction_set
 
 TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sharcspec', 'decode_table.json')
 
 
 def form_name(name):
     """'Type5b (move)' -> '5b_move'; 'Type8a_abs' -> '8a_abs'."""
-    name = re.sub(r'^Type', '', name)
-    return re.sub(r'\s*\((\w+)\)', r'_\1', name)
+    return form_id(name)
 
 
-def _lead(mask):
-    lead = 0
-    for bit in range(47, -1, -1):
-        if not (mask >> bit) & 1:
-            break
-        lead += 1
-    return lead
-
-
-def load(path=TABLE, mode='visa'):
+def load(path: str = TABLE, mode: str = 'visa') -> list[LegacyForm]:
     """-> TYPES for the VISA forms (mode 'visa') or the 48-bit ISA forms ('isa')."""
-    with open(path) as f:
-        forms = json.load(f)['forms']
-    types = []
-    for f in forms:
-        if (mode == 'visa' and not f['visa']) or (mode == 'isa' and f['width'] != 48):
-            continue
-        shift = 48 - f['width']
-        mask, value = int(f['mask'], 16), int(f['value'], 16)
-        types.append({
-            'name': form_name(f['name']), 'bits': f['width'],
-            'opcode_mask': mask >> shift, 'opcode_value': value >> shift,
-            'frame_mask': mask, 'frame_value': value,
-            'fields': {fl['label']: (fl['hi'] - shift, fl['lo'] - shift) for fl in f['fields']},
-            'lead': _lead(mask), 'fixed_bits': f['fixed_bits'],
-            'uncertain': bool(f.get('unconfirmed_bits')), 'source': f.get('source'),
-        })
-    return types
+    return [form.legacy_dict() for form in load_instruction_set(path, mode).forms]
 
 
-TYPES = load()
+TYPES: list[LegacyForm] = load()
 _BY_NAME = {t['name']: t for t in TYPES}
+_ISA = load_instruction_set(TABLE, 'visa')
 
 
-def get_type(name):
+def get_type(name: str) -> LegacyForm | None:
     """-> the TYPES entry of that name, or None."""
     return _BY_NAME.get(name)
 
 
-def frame_of(words):
+def frame_of(words: Iterable[int]) -> int:
     """-> the 48-bit frame of up to three words, most significant first, zero-padded."""
-    frame = 0
-    for i, word in enumerate(list(words)[:3]):
-        frame |= (word & 0xFFFF) << (32 - 16 * i)
-    return frame
+    return _frame_of(words)
 
 
-def decode(words, types=None):
+def decode(
+    words: Iterable[int], types: Sequence[LegacyForm] | None = None
+) -> tuple[LegacyForm | None, list[str]]:
     """-> (entry or None, [candidate names]) for the instruction starting at words[0].
 
     The candidates are the forms that tie for the best match; the entry is None
     when no form matches or several tie."""
     frame = frame_of(words)
-    hits = [t for t in (TYPES if types is None else types)
+    if types is None:
+        selection = _ISA.select_frame(frame)
+        selected = None if selection.form is None else _BY_NAME[selection.form.id]
+        return selected, [form.id for form in selection.candidates]
+    hits = [t for t in types
             if frame & t['frame_mask'] == t['frame_value']]
     if not hits:
         return None, []

@@ -42,9 +42,10 @@ class IndexContractTest(unittest.TestCase):
             first = I.AnalysisIndex._fingerprint(blob, I.IndexConfig((1,), 8))
             self.assertEqual(first["contract"], I.CACHE_CONTRACT)
             paths = {item["path"] for item in first["dependencies"]}
-            self.assertTrue({"tools/sharc_visa_tables.py", "tools/sharcimm.py", "tools/sharcspec/compute_table.json", "tools/sharc_static.py"} <= paths)
+            self.assertTrue({"tools/sharc_isa.py", "tools/sharc_visa_tables.py", "tools/sharcimm.py", "tools/sharcspec/compute_table.json", "tools/sharc_static.py"} <= paths)
             self.assertNotIn("tools/sharc_discover.py", paths)
             self.assertNotIn("tools/sharc_index.py", paths)
+            self.assertNotIn("tools/sharc_selache.py", paths)
             with patch.object(I, "_digest_file", return_value="0" * 64):
                 self.assertNotEqual(first, I.AnalysisIndex._fingerprint(blob, I.IndexConfig((1,), 8)))
 

@@ -27,6 +27,21 @@ REGISTER_POLICY = {"concrete_memory": True, "follow_loaded_calls": True,
 # change: the trace began at a recovered architectural function entry.
 REGISTER_EFFECT_VERIFIED_RETURNS = frozenset(("return", "returned", "return without followed call"))
 
+_QUERY_SQL = {
+    "writer_results": {
+        "select": "SELECT request,payload,payload_sha256,payload_size,complete,static_key FROM writer_results WHERE query_key=?",
+        "insert_ignore": "INSERT OR IGNORE INTO writer_results VALUES (?,?,?,?,?,?,1)",
+        "delete": "DELETE FROM writer_results WHERE query_key=?",
+        "insert": "INSERT INTO writer_results VALUES (?,?,?,?,?,?,1)",
+    },
+    "register_results": {
+        "select": "SELECT request,payload,payload_sha256,payload_size,complete,static_key FROM register_results WHERE query_key=?",
+        "insert_ignore": "INSERT OR IGNORE INTO register_results VALUES (?,?,?,?,?,?,1)",
+        "delete": "DELETE FROM register_results WHERE query_key=?",
+        "insert": "INSERT INTO register_results VALUES (?,?,?,?,?,?,1)",
+    },
+}
+
 
 def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -117,7 +132,9 @@ class AnalysisIndex:
         # report-only or result-cache changes; sharc_static owns the extracted
         # static builders.
         static_sources = [path for path in HERE.glob("sharc*.py")
-                          if path.name not in {"sharc_discover.py", "sharc_index.py"}]
+                          if path.name not in {
+                              "sharc_discover.py", "sharc_index.py", "sharc_selache.py"
+                          }]
         for path in sorted([*static_sources, *HERE.joinpath("sharcspec").glob("*.json")],
                            key=lambda item: item.relative_to(HERE).as_posix()):
             if path.is_file():
@@ -251,22 +268,24 @@ class AnalysisIndex:
         return hashlib.sha256(_canonical_bytes({"static_key": self._static_key, "request": request})).hexdigest()
 
     def _lookup(self, table: str, key: str, request: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        sql = _QUERY_SQL[table]
         with self._checked_connection() as con:
-            row = con.execute(f"SELECT request,payload,payload_sha256,payload_size,complete,static_key FROM {table} WHERE query_key=?", (key,)).fetchone()
+            row = con.execute(sql["select"], (key,)).fetchone()
         if not row or row[4] != 1 or row[5] != self._static_key or row[0] != _payload(request): return None
         return _valid_json_payload(*row[1:4])
 
     def _publish(self, table: str, key: str, request: Mapping[str, Any], value: Mapping[str, Any]) -> Mapping[str, Any]:
+        sql = _QUERY_SQL[table]
         raw_request, raw = _payload(request), _payload(value)
         digest = hashlib.sha256(raw).hexdigest()
         with self._checked_connection(write=True) as con:
             con.execute("BEGIN IMMEDIATE")
-            con.execute(f"INSERT OR IGNORE INTO {table} VALUES (?,?,?,?,?,?,1)", (key, self._static_key, raw_request, raw, digest, len(raw)))
-            row = con.execute(f"SELECT request,payload,payload_sha256,payload_size,complete,static_key FROM {table} WHERE query_key=?", (key,)).fetchone()
+            con.execute(sql["insert_ignore"], (key, self._static_key, raw_request, raw, digest, len(raw)))
+            row = con.execute(sql["select"], (key,)).fetchone()
             valid = row and row[4] == 1 and row[5] == self._static_key and row[0] == raw_request and _valid_json_payload(*row[1:4])
             if not valid:
-                con.execute(f"DELETE FROM {table} WHERE query_key=?", (key,))
-                con.execute(f"INSERT INTO {table} VALUES (?,?,?,?,?,?,1)", (key, self._static_key, raw_request, raw, digest, len(raw)))
+                con.execute(sql["delete"], (key,))
+                con.execute(sql["insert"], (key, self._static_key, raw_request, raw, digest, len(raw)))
                 valid = value
             con.commit()
         return valid

@@ -15,6 +15,11 @@ The manuals are not committed. Put `sc58x-2158x-prm.pdf` and
 | **PGR:** SHARC Processor Programming Reference Rev 2.4 (classic core), `adsp-2136x_2137x_214xx_pgr_rev2.4.pdf` | Cross-check. Chapter 10 grid tables with binary constants. SHARC+ is documented as instruction-set compatible. |
 | **Selache:** public SHARC+ encoder/decoder at `js216/selache` | Independent cross-check for selected SHARC+-only field layouts; never replaces the primary manuals. |
 
+`tools/sharc_isa.py` is the repository's typed interface over the generated
+`decode_table.json`. Both Python decoder entry points delegate form selection
+to it; the generated table remains the encoding input, and SLEIGH remains a
+generated Ghidra adapter rather than the source of truth.
+
 ## Scripts
 
 ```sh
