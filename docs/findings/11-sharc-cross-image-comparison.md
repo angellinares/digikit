@@ -67,6 +67,44 @@ times respectively. Cross-image recurrence supplies useful fixtures and
 context, but it is not independent encoding authority because the products
 may share compiler and firmware ancestry. **[D][O]**
 
+## Byte-identical wavetable stages across DT2 1.16 and DN2 1.11 **[V]**
+
+An exact-byte check of the six wavetable stages in
+`docs/findings/06-sharc-engine-and-startup.md` ("Reading the DSP"), separate
+from the signature-bucket method above. Both blobs were read with
+`tools/sharcldr.LoadedMemory`:
+
+| stage | DT2 1.16 `sw` (bytes) | DN2 1.11 address | match |
+| --- | --- | --- | --- |
+| 1 | `0x1ccbd8` (256) | L2 byte `0x200026d0` | 256/256 |
+| 2 | `0x1cdecb` (218) | L2 byte `0x20004cb6` | 218/218 |
+| 3 | `0x1cb3d8` (436) | L1 `sw 0x1cdb56` | 434/436 |
+| 4 | `0x1cd286` (606) | L2 byte `0x2000342c` | 606/606 |
+| 5 | `0x1cc79e` (814) | L2 byte `0x20001e5c` | 809/814 |
+| 6 | `0x1cbf07` (626) | L2 byte `0x20000dea` | 623/626 |
+
+Stages 1, 2 and 4 are byte-identical. Every differing byte in stages 3, 5
+and 6 has one of two causes:
+
+- A `Type8a` delayed `CALL` whose PC-relative offset differs only because
+  the instruction sits at a different address. `tools/sharcflow.pcrel_target`
+  resolves all of them (stage 3 at DT2 `sw 0x1cb3ff` / DN2 `sw 0x1cdb7d`;
+  stage 5 at DT2 `sw 0x1cc7f5` / DN2 `sw 0xb80f85`; stage 6 at DT2
+  `sw 0x1cbf4d` / DN2 `sw 0xb8073b`) to the same target, `sw 0x1c06ba`, the
+  shared reciprocal helper.
+- One `17a` table-pointer literal in stage 5 (destination `I2`): `0x26bb68`
+  in DT2 (`sw 0x1cc85d`), `0x26b3a8` in DN2. The table itself differs; the
+  code that reads it does not.
+
+The helper at `sw 0x1c06ba` (`0x1c06ba`-`0x1c0729`, 222 bytes) matches for
+its first 160 bytes (the `RECIPS` and Newton-Raphson body) and differs in 58
+of the last 62, its compiled epilogue (return-address load, conditional
+branch, `RFRAME`/return from `sw 0x1c070a`).
+
+No DN2 counterpart of the orchestrator `FUN_1c71ec` was found by byte
+search, but that alone does not prove there is none; the call-graph method
+above would settle it. **[O]**
+
 ## Next boundary
 
 The generated comparison now retains the addresses and heuristic labels of

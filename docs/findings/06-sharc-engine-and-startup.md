@@ -1670,6 +1670,15 @@ and stage 4's per-item accumulation over a runtime count, the whole reads as a
 **bank of interpolating oscillators with per-partial state** -- additive or
 granular resynthesis -- rather than a spectral transform.
 
+**[C] Stage 6's index gather is four reads, not two.** `sw 0x1cbf9f-0x1cbfa5`
+sets `M3=R10`, `M2=R3`, `M4=R5`, `M1=R9` (`R9=inc(R3)` at `sw 0x1cbf7b`, so
+`M1=R3+1`); the loop body then reads `DM(I1,M3)`, `DM(I1,M2)`, `DM(I1,M4)`,
+`DM(I1,M1)` at `sw 0x1cbfad, 0x1cbfb0, 0x1cbfb6, 0x1cbfb9`. All four are
+pre-modify reads without update (`u=0`, SHARC+ PRM Figure 6-5: address
+I+M, I unchanged) off the one base `I1`. Only `M2`/`M1` (`R3`/`R3+1`) is
+an adjacent-index pair; `M3` (`R10`) and `M4` (`R5`) index the same table
+at two further offsets not shown to relate to `R3`. **[V]**
+
 **These are shared utilities, not machine-specific code.** Stage 3 is called
 from **four** sites: `0x1c7387` (the orchestrator) plus `0x1c2307`, `0x1c231f`,
 `0x1c6c59`, all unrelated. Stage 2 has a second caller at `0x1c6c44`. So the
@@ -1679,10 +1688,22 @@ run and with what arguments, not in a switch.
 
 **[C] The orchestrator makes nine calls, not six.** After the six there is a 7th
 to `0x1ccd96` (argument `r12 = 0x8045c3c0`, the 32-float table), an 8th that
-**re-calls stage 6** `0x1cbf07` with a different argument shape, and a 9th to
+**re-calls stage 6** `0x1cbf07`, and a 9th to
 `0x1c4e70`. Its true bounds are `0x1c71ec`-`0x1c7461`, 251 instructions. A
 conditional `rts` at `0x1c7292` means the chain is not even unconditionally
 reached from entry.
+
+**[C] The two stage-6 calls have byte-identical setup, not "a different
+argument shape."** The four instructions immediately before each
+`CALL 0x1cbf07` are the same words at both sites -- `R12=I3`
+(`0x1c73ce`/`0x1c742d`), `R4=I10` (`0x1c73d0`/`0x1c742f`),
+`R8=pass(R12), DM(I7,M7) u=1=R15` (`0x1c73d2`/`0x1c7431`),
+`CALL (DB) 0x1cbf07` (`0x1c73d5`/`0x1c7434`). What differs is I3's runtime
+value: between the two calls, a post-modify (`u=1`) read through I3 at
+`0x1c7411` (`R3=DM(I3,M6) u=1`, skipped when the branch at `0x1c740e` is
+taken) and again, `R4` times inside the register-counted `DO..UNTIL LCE`
+at `0x1c7415`, at `0x1c7418` (`R4=DM(I3,M6) u=1`), each advance I3 by M6
+(the constant 1, one normal word). **[V]**
 
 **Dataflow.** Calls 1-3 pass a single value in R8/R12, with 2 and 3 re-reading
 through an `(i3,m5)` cursor. Calls 4-6 pass **two**: a shared base pointer in
@@ -1710,6 +1731,47 @@ every one of these functions. One agent extended a scratchpad copy using
 and got a full symbolic walk of stage 5. **Folding float compute into the real
 tool would unblock every further read** -- stage 4's loop body is undecoded for
 exactly this reason.
+
+### Stage 6 receives a caller-supplied block length through the CJUMP frame **[V]**
+
+All eight of `FUN_1c71ec`'s call sites push `R15` the same way immediately
+before the `CALL (DB)`: `DM(I7,M7) u=1 = R15` at `sw 0x1c735a, 0x1c736f,
+0x1c7384, 0x1c739f, 0x1c73ba, 0x1c73d2, 0x1c73ea, 0x1c7431`. `R15` is never
+written in the orchestrator; it is only read elsewhere (`leftz(R15,R0)` at
+`0x1c72ec`/`0x1c73fc`, `dec(R15)` at `0x1c740b`). So it is a value supplied
+to the orchestrator by its (unknown) caller.
+
+The public PGR documents the call idiom
+(`out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4/all.txt`, line ~10011):
+`CJUMP (_SUB1) (DB); /* executes R2 = I6, I6 = I7 */`, followed by two
+delay-slot pushes of the old `I6` and the return address -- the
+`DM(I7,M7)=R2` / `DM(I7,M7)=<ret>` pair after every `CALL` in the
+orchestrator. The `R15` push writes at `I7` and then decrements `I7`
+(`M7 = -1`), and the call sets `I6` to the decremented `I7`, so the pushed
+`R15` sits at `I6+1`. `0x1cbf07` reads `DM(I6,M6) u=0` (`M6 = 1`, address
+`I6+1`, no update) three times, at `sw 0x1cbf3f`, `0x1cbf81` and
+`0x1cbf98`; all three read that slot. The last becomes the trip count of
+the `DO 0x1cc00c UNTIL LCE` at `sw 0x1cbf9c`. Stage 6 therefore runs a
+caller-chosen number of iterations, most likely the block length in
+samples.
+
+Inside `0x1cbf07`: `I4=R4` (`0x1cbf20`) is a context struct, `I5=R8`
+(`0x1cbf3d`), `I3=R12` (`0x1cbf53`). `I1=DM(I4+16)` (`0x1cbf93`) loads a
+table pointer. `I2=modify(I4,0x44)` (`0x1cbf95`, Type19a) has fields
+`is=4, idis=6`, so its destination is `is XOR idis = 2` (`I2`), not `I4` as
+older `tools/sharcfn.py` listings printed. `DM(I5,M6) u=1`, read into `R12`
+at `sw 0x1cbfc7`, is written back to `DM(I3,M6) u=1` from `R12` at `sw
+0x1cbfe9`: one buffer, two cursors, since the orchestrator passes the same
+pointer in `R8` and `R12`. `DM(I4+13)`/`DM(I4+14)` are written at `sw
+0x1cc019`/`0x1cc017`, just before the register restore and return. `sw
+0x1cbfdc` loads the `0x1fff` mask.
+
+The reciprocal helper `0x1c06ba` that stage 6 calls at `sw 0x1cbf4d` takes
+its argument in `F8` and returns `F0`: a `RECIPS` seed followed by three
+Newton-Raphson iterations. Its delayed branches have two delay slots; the
+second slot at `sw 0x1c06c9` (`R8 = 0x40000000`, 2.0) always executes and
+supplies the constant for the iteration. Traced with an approximate seed,
+it returns 1/x within one float32 ULP for every input tried. **[V]**
 
 ## A function inventory: 1228 functions, and we have read ten **[V]**
 
@@ -2247,7 +2309,32 @@ M6 is a runtime constant. The startup routine `blk88@0x1c0f24` sets
 (`M6 = 1` at `sw 0x1c0f40`, bytes `a6 0f 01 00`). Across all nine code
 blocks the only other writer of each is a PM load in blk69 paired with a
 PM store of the same register at the same offset, an interrupt save and
-restore. The same routine sets `B7 = 0x26f000`, `I7 = 0x26f7f0` and
+restore.
+
+All six immediates execute inside one `DO 0x1c0f7c UNTIL LCE` loop (trip
+count 2, `sw 0x1c0f37`, body `[0x1c0f3a, 0x1c0f7c)`), which also covers the
+L-register zeroing and the B7/I7/L7 setup below; both loop passes write
+the same literal, so the repeat has no effect on the final value. The six
+sites: `0x1c0f3a M15=0xffff`, `0x1c0f3c M7=0xffff`, `0x1c0f3e M14=1`,
+`0x1c0f40 M6=1`, `0x1c0f42 M13=0`, `0x1c0f44 M5=0` (all `17b`, 16-bit
+immediate sign-extended, so `0xffff` is -1). The blk69 mirror
+(`blk69@0xb8853a`, the interrupt-restore function discussed under "A
+bounded set contains I6/I7/B6/B7" below) is not uniformly PM: M7/M6/M5
+restore via `PM(I3+74)`/`PM(I3+73)`/`PM(I3+72)` at `sw
+0xb885e7`/`0xb885ea`/`0xb885ed`, matching `PM(I4+74/73/72)` saves at `sw
+0xb8835c-0xb88362` in `blk69@0xb88200`; M15/M14/M13 instead restore via
+`DM(I3+82)`/`DM(I3+81)`/`DM(I3+80)` at `sw
+0xb88582`/`0xb88585`/`0xb88588`, matching `DM(I7+80/81/82)` saves at `sw
+0xb88304-0xb8830a` -- a second, DM-space save/restore pair. An independent
+aligned/depth>=8 whole-image scan (all nine `tools/sharcinv.CODE_BLOCKS`
+blocks, 50,976 confidently decoded instructions -- the same count
+`docs/findings/11-sharc-cross-image-comparison.md` reports for this image
+-- checked every `17a`/`17b`/`5a_move`/`5b_move`/`3a`/`3b`/`3d`/`14a`/
+`15a`/`15b` instruction for a write to ureg codes 37/38/39/45/46/47) finds
+exactly these twelve sites and no others for M5/M6/M7/M13/M14/M15,
+matching `tools/sharcwriters.py`'s `GLOBAL_CONSTANT_SEEDS` comment. **[V]**
+
+The same routine sets `B7 = 0x26f000`, `I7 = 0x26f7f0` and
 `L7 = 0x1fd` at `sw 0x1c0f64..0x1c0f6a`, mirrors them into B6, I6 and L6,
 and sets MODE1.CBUFEN (bit 24) at `sw 0x1c0f82`, bytes
 `14 02 01 01 18 00`, `MODE1 = set(MODE1, 0x1011800)`. No BIT CLR anywhere
@@ -2843,6 +2930,18 @@ weaker evidence than the ColdFire cave map. The external-DDR FILL spans
 sampled, one of them read by the render orchestrator `FUN_001c642a`; treat
 them as occupied. The L2 code block's short-word base is `0xb80000`,
 confirmed by byte comparison. **[D][O]**
+
+**DN2 1.11 has less free L2, and its loader never touches the DT2 DDR
+command block.** The L2 is 1 MB at `0x20000000` (ADSP-2156x HWR, chapter 8,
+`out/refs/adsp-2156x-hwr/pages/p0243.txt`). `LoadedMemory.ranges()` puts
+DN2 1.11's last L2 write at `0x2008823c` (with an 8-byte unwritten gap at
+`0x2001e880..0x2001e888`), leaving 490,948 free bytes past its loader; DT2's
+939,140 above reproduces with the same method. A raw 32-bit literal scan of
+`0x82a00000..0x82a00200` (the candidate DDR command block in
+`docs/sharc/structure-1.16.md` §4a) finds every field address that document
+cites in DT2 1.16 and none in DN2 1.11, and DN2's loader writes nothing in
+`0x82000000..0x83000000`. The `0x82a00000` structure is DT2-specific, or
+DN2 keeps equivalent state elsewhere. **[V]**
 
 The context-switch pointer `DM(0x2ca3e0)` is zero in the loader image, so
 its structures are built at run time. Its two writers, `FUN_00b85af7` and
