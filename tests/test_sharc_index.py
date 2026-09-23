@@ -338,6 +338,37 @@ class IndexContractTest(unittest.TestCase):
                 con.execute("UPDATE writer_function_facts SET payload=? WHERE function_id='b'", (b"{",))
             self.assertEqual(index._writer_function_facts(request), {})
 
+    def test_type7a_handler_revision_invalidates_only_type7a_facts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = self.make_index(directory)
+            request = index._request_writer_facts()
+
+            def fact(fn_id, form):
+                return {
+                    "function_id": fn_id,
+                    "function_entry": 0x10 if fn_id == "type7a" else 0x20,
+                    "function_ordinal": 0 if fn_id == "type7a" else 1,
+                    "store_shape_sha256": "0" * 64,
+                    "complete": True,
+                    "trace_policy": "strict/v1",
+                    "dependencies": {
+                        "forms": [form],
+                        "blockers": [form],
+                        "handler_revisions": {form: "trace-handler/v1"},
+                    },
+                    "stop_reasons": ["unsupported " + form],
+                    "retained_path_provisional_forms": [],
+                    "stores": [],
+                }
+
+            old_type7a = fact("type7a", "7a")
+            unrelated_11a = fact("unrelated", "11a")
+            index._publish_writer_function_facts(request, [old_type7a, unrelated_11a])
+
+            reused = index._writer_function_facts(request)
+            self.assertNotIn("type7a", reused)
+            self.assertEqual(reused["unrelated"], unrelated_11a)
+
     def test_core_revision_invalidates_all_function_facts(self):
         with tempfile.TemporaryDirectory() as directory:
             index = self.make_index(directory)

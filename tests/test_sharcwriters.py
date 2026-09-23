@@ -149,6 +149,21 @@ class ChooseStoreEventTest(unittest.TestCase):
         self.assertIs(W.choose_store_event([a, b]), b)
         self.assertIs(W.choose_store_event([b, a]), b)
 
+    def test_conditional_type7a_path_cannot_make_mixed_store_definite(self):
+        row = {"form": "14a", "width": 4}
+        definite = {"address": 0x100}
+        uncertain = {
+            "address": {"unknown": "conditional Type7a modify outcome"},
+            "conditional_type7a_uncertain": True,
+        }
+        for events in ([definite, uncertain], [uncertain, definite]):
+            chosen = W.choose_store_event(events)
+            for target in (0x100, 0x200):
+                classification, _detail, _width = W.classify_row(
+                    row, chosen, set(), target, 4, None, None
+                )
+                self.assertEqual(classification, "UNRESOLVED")
+
 
 class AffineRangeTest(unittest.TestCase):
     def test_single_positive_term(self):

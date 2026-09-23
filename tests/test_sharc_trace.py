@@ -546,6 +546,105 @@ class TraceTest(unittest.TestCase):
         self.assertEqual(T._dm_read(moved, 0x80, 4), T.Const(0xAABBCCDD))
         self.assertEqual(moved.uregs[16], T.Const(0x84))
 
+    def test_type7a_not_sv_pex_true_modifies_even_in_simd(self):
+        state = self.run_one(
+            T.State(
+                0x10,
+                {
+                    T.UREG_CODES["I12"]: T.Const(0x100),
+                    T.UREG_CODES["M9"]: T.Const(1),
+                    T.UREG_CODES["L12"]: T.Const(0),
+                    T.UREG_CODES["ASTATX"]: T.Const(0),  # SV clear: NOT SV is true.
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+                },
+                assume_nw32=True,
+            ),
+            insn(
+                "7a",
+                {
+                    "g": 1,
+                    "cond[4:0]": 0x17,
+                    "is[2:2]": 1,
+                    "is[1:0]": 0,
+                    "m[2:0]": 1,
+                    "idis[2:0]": 0,
+                    "compute[22:16]": 0,
+                    "compute[15:0]": 0,
+                },
+                6,
+            ),
+        )
+        self.assertEqual(state.uregs[T.UREG_CODES["I12"]], T.Const(0x104))
+        self.assertEqual(state.pc_sw, 0x13)
+        self.assertEqual(state.steps, 1)
+        self.assertEqual(state.trace[0]["action"], "i-modify")
+
+    def test_type7a_not_sv_false_skips_only_in_known_sisd(self):
+        state = self.run_one(
+            T.State(
+                0x10,
+                {
+                    T.UREG_CODES["I12"]: T.Const(0x100),
+                    T.UREG_CODES["M9"]: T.Const(1),
+                    T.UREG_CODES["L12"]: T.Const(0),
+                    T.UREG_CODES["ASTATX"]: T.Const(1 << T.SV_BIT),
+                    T.UREG_CODES["MODE1"]: T.Const(0),
+                },
+                assume_nw32=True,
+            ),
+            insn("7a", {"g": 1, "cond[4:0]": 0x17, "is[2:2]": 1,
+                        "is[1:0]": 0, "m[2:0]": 1, "idis[2:0]": 0,
+                        "compute[22:16]": 0, "compute[15:0]": 0}, 6),
+        )
+        self.assertEqual(state.uregs[T.UREG_CODES["I12"]], T.Const(0x100))
+        self.assertEqual(state.trace[0]["action"], "i-modify-skipped")
+        self.assertEqual((state.pc_sw, state.steps), (0x13, 1))
+
+    def test_type7a_not_sv_uncertain_outcomes_taint_destination_and_store(self):
+        fields = {"g": 1, "cond[4:0]": 0x17, "is[2:2]": 1,
+                  "is[1:0]": 0, "m[2:0]": 1, "idis[2:0]": 0,
+                  "compute[22:16]": 0, "compute[15:0]": 0}
+        base = {
+            T.UREG_CODES["I12"]: T.Const(0x100),
+            T.UREG_CODES["M9"]: T.Const(1),
+            T.UREG_CODES["L12"]: T.Const(0),
+        }
+        for label, registers in (
+            ("PEx false SIMD", {**base, T.UREG_CODES["ASTATX"]: T.Const(1 << T.SV_BIT),
+                                 T.UREG_CODES["MODE1"]: T.Const(1 << 21)}),
+            ("PEx false unknown MODE1", {**base, T.UREG_CODES["ASTATX"]: T.Const(1 << T.SV_BIT)}),
+            ("unknown ASTATX", {**base, T.UREG_CODES["MODE1"]: T.Const(0)}),
+        ):
+            with self.subTest(label=label):
+                state = self.run_one(T.State(0x10, registers, assume_nw32=True), insn("7a", fields, 6))
+                self.assertEqual(
+                    state.uregs[T.UREG_CODES["I12"]],
+                    T.Unknown("conditional Type7a modify outcome"),
+                )
+                self.assertEqual((state.pc_sw, state.steps), (0x13, 1))
+                self.assertEqual(state.trace[0]["action"], "i-modify-uncertain")
+                # A downstream DM store through the conditional I12 is not definite.
+                address = T._json_value(state.uregs[T.UREG_CODES["I12"]])
+                W = import_module("sharcwriters")
+                classification, _ = W.classify_store_address(address, 4, 0x100, None, None)
+                self.assertEqual(classification, "UNRESOLVED")
+
+    def test_type7a_not_sv_fails_closed_for_circular_or_compute_forms(self):
+        fields = {"g": 1, "cond[4:0]": 0x17, "is[2:2]": 1,
+                  "is[1:0]": 0, "m[2:0]": 1, "idis[2:0]": 0,
+                  "compute[22:16]": 0, "compute[15:0]": 0}
+        base = {T.UREG_CODES["I12"]: T.Const(0x100), T.UREG_CODES["M9"]: T.Const(1),
+                T.UREG_CODES["ASTATX"]: T.Const(0), T.UREG_CODES["MODE1"]: T.Const(0)}
+        for label, registers, altered, reason in (
+            ("nonzero L", {**base, T.UREG_CODES["L12"]: T.Const(1)}, {}, "unsupported Type7a circular modify"),
+            ("missing L", base, {}, "unsupported Type7a circular modify"),
+            ("nonzero compute", {**base, T.UREG_CODES["L12"]: T.Const(0)}, {"compute[15:0]": 1}, "unsupported Type7a conditional compute"),
+            ("other condition", {**base, T.UREG_CODES["L12"]: T.Const(0)}, {"cond[4:0]": 0x07}, "unsupported Type7a predicate"),
+        ):
+            with self.subTest(label=label):
+                state = self.run_one(T.State(0x10, registers, assume_nw32=True), insn("7a", {**fields, **altered}, 6))
+                self.assertEqual(state.stopped, reason)
+
     def test_type14a_direct_load_and_store(self):
         fields = {
             "addr[31:16]": 0x310C,

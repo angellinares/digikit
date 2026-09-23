@@ -716,7 +716,7 @@ documented normal-word scaling. Before this, every Type 7a modify lost its
 index register: `MODIFY(I7, M7)` at `0xb8946a` made the stack pointer unknown,
 and the frame stayed unknown for the rest of the run. **[C][V]**
 
-### A conditional Type7a frontier has exact stop PCs **[D][O]**
+### A conditional Type7a frontier has exact stop PCs **[D][V][O]**
 
 The DT2 1.16 section-7 blob with SHA-256
 `0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`
@@ -741,11 +741,64 @@ and `p0350.txt`), says the condition gates the whole instruction and SIMD
 index modification uses the OR of the two processing elements' tests; the
 classic programming reference's condition table maps `10111` to `NOT SV`.
 At the sampled stops, the tracer's PEx predicate is unknown, and MODE1 is
-unknown or absent. A conditional index update is therefore a possible
-*bounded static-analysis* next step, not permission to always execute or
-skip it, nor a claim that all 22 functions would become resolved. The raw
-words and proposed semantics still need an independent byte/manual review
-before promotion to **[V]**. **[D][O]**
+unknown or absent. A conditional index update was a candidate for bounded
+static continuation, not permission to always execute or skip it, nor a
+claim that all 22 functions would become resolved. **[D][O]**
+
+An independent reader rehashed the blob, read all three loader-final SW PCs
+with `LoadedMemory.read_sw`, decoded each as Type7a with `cond=0x17` and an
+empty compute, and checked the public manual's SIMD OR rule and `NOT SV`
+condition table. This verifies the *three bytes/fields and documented rule*,
+not trace reachability or runtime execution. **[V]**
+
+A cold, single-worker run of `tools/sharc_discover.py` against the checked-in
+DT2 1.16 manifest, without the unbound Ghidra dump, wrote
+`out/sharc-index/type7a-before-06adc1b.sqlite` (v5, 1,059 function facts;
+22 containing the exact Type7a stop reason) and
+`out/sharc-discovery/type7a-before-06adc1b.json` (blob hash matches above).
+These ignored artifacts are the pre-change measurement, not a post-change
+improvement. The tracer's generic predicate helper may consume PEx `NOT SV`
+without knowing whether MODE1 enables SIMD; it must not treat PEx-false as
+skip when PEy could be true. The writer-fact chooser also prefers a concrete
+store address from one of several paths without tracking whether its predicate
+was assumed. Any conditional Type7a continuation needs a fail-closed writer
+classification test before its result counts as a definite hit or exclusion.
+**[D][O]**
+
+### Bounded Type7a continuation changes stop reasons, not writer proof **[D][O]**
+
+The tracer now admits only empty-compute `IF NOT SV` Type7a with concrete
+linear `L=0`. PEx true modifies the I register (including in SIMD); PEx false
+skips only with known SISD MODE1. Otherwise a single continued state makes
+the destination I unknown; it does not guess PEy or fork a concrete writer
+path. Other conditions, conditional computes, and unknown/nonzero circular
+lengths still stop. The existing unconditional compute behavior is retained.
+Writer-fact collection marks stores after an uncertain Type7a modify; if any
+retained path to the same store PC carries this mark, target classification is
+`UNRESOLVED` rather than choosing a definite address from another path.
+This protection is specific to Type7a; the older general preference for
+concrete store events across other divergent paths remains open. **[D][O]**
+
+A fresh DT2 1.16 v5 index under
+`out/sharc-index/type7a-after-local-06adc1b.sqlite` has the same 1,059
+function IDs as the pre-change index. The exact `unsupported Type7a predicate`
+stop reason appears in 22 function facts before and 2 after; 20 old owners
+changed stop-reason sets, not necessarily to a completed trace. Other stops
+include five additional `max-states` function facts. Only four selected store
+events changed; for each of the two cached writer targets, two prior
+`EXCLUDED-STACK` rows became `UNRESOLVED`, with no new `HIT` rows. These are
+static cache units, not unique instruction sites or runtime behavior. The
+cold `--jobs 8` and subsequent warm `--jobs 1` canonical discovery reports
+are byte-identical (SHA-256
+`3b61267c8c09f0044935d7002aef1a34e75d0157e1df0b2f5f6a0a6114a3ada7`);
+this does not compare two cold scheduling orders. **[D]**
+
+The two remaining owners, `blk93@0x1cbb57` and `blk93@0x1cbc44`, reach a
+different Type7a stop at SW PC `0x1cbc93` on retained paths under bounded
+400-step/128-state and 300-step/32-state traces respectively. Its loader-final
+bytes `810400200000` decode as empty-compute `IF EQ`, not the admitted
+`IF NOT SV` subset. This is a separate predicate/mode question, not evidence
+that broad conditional execution should be enabled. **[D][O]**
 
 ### Type7d is ACONV, and the strict run executes it **[C][V]**
 

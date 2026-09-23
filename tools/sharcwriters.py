@@ -136,6 +136,8 @@ TRACE_HANDLER_REVISIONS = {
     # Type7d now carries opaque symbolic ACONV results through writer traces.
     # Facts that executed or stopped on it must be recomputed.
     '7d': 'trace-handler/7d-v2',
+    # facts that executed or stopped on Type7a must be recomputed.
+    '7a': 'trace-handler/7a-v2',
 }
 
 
@@ -434,7 +436,9 @@ def choose_store_event(events: list):
     fully-Const address (most informative), then Affine, then an
     unresolved-but-load-derived Unknown, then anything else; ties broken by
     a stable JSON ordering so the result never depends on state discovery
-    order. -> the chosen event dict, or None for an empty list."""
+    order. A Type7a-uncertain path taints the selected event even if another
+    path has a more concrete address. -> the chosen event dict, or None for
+    an empty list."""
     if not events:
         return None
 
@@ -453,7 +457,10 @@ def choose_store_event(events: list):
             kind = 3
         return (kind, json.dumps(addr, sort_keys=True))
 
-    return sorted(events, key=rank)[0]
+    chosen = sorted(events, key=rank)[0]
+    if any(event.get('conditional_type7a_uncertain') for event in events):
+        return {**chosen, 'conditional_type7a_uncertain': True}
+    return chosen
 
 
 # --- classify ----------------------------------------------------------------
@@ -676,15 +683,20 @@ def resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_consta
             if last.get('action') == 'stop':
                 stop_reasons.add(last.get('reason') or 'stopped')
         used_before_event = set()
+        conditional_type7a_uncertain = False
         for event in state.trace:
             # _execute records a provisional form's event after admitting it,
             # so include that form in the event's own dependency.
             if event.get('form') in provisional_form_set:
                 used_before_event.add(event['form'])
+            if event.get('action') == 'i-modify-uncertain':
+                conditional_type7a_uncertain = True
             if event.get('action') == 'store' and event.get('pc_sw') in wanted:
                 annotated = dict(event)
                 if used_before_event:
                     annotated['provisional_forms_used'] = sorted(used_before_event)
+                if conditional_type7a_uncertain:
+                    annotated['conditional_type7a_uncertain'] = True
                 events_by_pc[event['pc_sw']].append(annotated)
     chosen = {pc: choose_store_event(events) for pc, events in events_by_pc.items()}
     return chosen, stop_reasons, tuple(sorted(retained_path_forms))
@@ -696,6 +708,10 @@ def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_
         reasons = sorted(reason for reason in stop_reasons if reason)
         reason = ('not reached: ' + '; '.join(reasons)) if reasons else 'not reached by the tracer'
         return 'UNRESOLVED', {'reason': reason}, width
+    if chosen_event.get('conditional_type7a_uncertain'):
+        return 'UNRESOLVED', {
+            'reason': 'store may depend on conditional Type7a modify',
+        }, width
     provisional_forms_used = chosen_event.get('provisional_forms_used', ())
     if provisional_forms_used:
         return 'UNRESOLVED', {

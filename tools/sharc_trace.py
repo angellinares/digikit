@@ -3225,13 +3225,49 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         # Type 7a is MODIFY: the manual guarantees an index-register update in
         # parallel with its optional compute.  The table now carries the M
         # register selector at bits 29-27, the same field Type7b uses.
-        if _field(f, "cond") != 0x1F:
+        cond = _field(f, "cond")
+        if cond not in (0x1F, 0x17):
             return [_stop(state, insn, "unsupported Type7a predicate")]
         bank = 8 if _field(f, "g") else 0
         source_low = _field(f, "is[2:2]") << 2 | _field(f, "is[1:0]")
         destination_low = source_low ^ _field(f, "idis")
         source, destination = source_low + bank, destination_low + bank
         modifier = _field(f, "m") + bank
+        conditional = cond == 0x17
+        if conditional:
+            if _field(f, "compute[22:16]") or _field(f, "compute[15:0]"):
+                return [_stop(state, insn, "unsupported Type7a conditional compute")]
+            length = _ureg(state.uregs, UREG_CODES["L%d" % source])
+            if not isinstance(length, Const) or length.value != 0:
+                return [_stop(state, insn, "unsupported Type7a circular modify")]
+            predicate = _predicate(state, cond)
+            mode1 = _ureg(state.uregs, UREG_CODES["MODE1"])
+            if predicate is False and isinstance(mode1, Const) and not (
+                mode1.value & (1 << 21)
+            ):
+                _event(
+                    state,
+                    insn,
+                    "i-modify-skipped",
+                    source="I%d" % source,
+                    destination="I%d" % destination,
+                    predicate="PEx false, SISD",
+                )
+                return _advance(state, insn)
+            if predicate is not True:
+                state.uregs[16 + destination] = Unknown(
+                    "conditional Type7a modify outcome"
+                )
+                _event(
+                    state,
+                    insn,
+                    "i-modify-uncertain",
+                    source="I%d" % source,
+                    destination="I%d" % destination,
+                    predicate="PEx unknown" if predicate is None else "PEx false, SIMD unknown",
+                    scale_assumption="assume_nw32" if state.assume_nw32 else "unscaled normal-word",
+                )
+                return _advance(state, insn)
         try:
             compute = _compute(f, False, dict(state.uregs), state.special)
         except ValueError as error:
@@ -3254,6 +3290,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
             source="I%d" % source,
             destination="I%d" % destination,
             modifier="M%d" % modifier,
+            **({"scale_assumption": "assume_nw32"} if conditional and state.assume_nw32 else {}),
         )
         if compute is not None:
             _apply_compute(state, insn, compute)
