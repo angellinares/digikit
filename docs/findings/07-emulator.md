@@ -1388,3 +1388,45 @@ RTOS `task_create` and counts only creates after the resume point. They are
 different metrics: a stock 1.16 cold boot creates nine boot tasks by
 ~291M, and a resumed run from 400M creates six different, dynamic workers.
 Do not compare one against the other.
+
+## Bounded 1.16 boot-window speed recheck; parameter-traffic fixture remains open **[D][O]**
+
+The local `Digitakt_II_OS1.16.syx` SHA-256
+`278541e466edcd77d6b3e018a91fb90185932d3c7de224dd3e68294dddf3a9ec`
+matched `out/sections/dt2-1.16/.source-sha256`. From
+`snapshots/dt2-1.16/boot400M.snap`, `tools/speedab.py` with
+`--sections out/sections/dt2-1.16 --syx Digitakt_II_OS1.16.syx
+--snapshot snapshots/dt2-1.16/boot400M.snap --instrs 10000000`
+ran three fresh repeats per mode on this machine:
+
+| mode | median wall time | reported guest instructions | median reported rate | final PC |
+| --- | ---: | ---: | ---: | --- |
+| `--mode exact` | 7.334 s | 10,000,000 each | 1.364M/s | `0x4018446a` each |
+| `--mode fast` | 4.449 s | 10,999,956 estimated each | 2.473M/s estimated | `0x400d1690` each |
+
+Exact repetitions agreed on count, PC, and `limit` stop. Fast mode has a
+different stream, an estimated count, and a different endpoint: its rate is
+an approximate interactive-mode ceiling, **not** an A/B speedup on identical
+work. Separate untimed `--crossings --mode exact` and
+`--profile --mode exact` over the 10M window recorded 717,756 scoped code
+callback firings (459,008 Bitmap get/set callbacks), 836 other memory hooks,
+and 418 interrupt hooks. The *instrumented* cProfile tottime split was
+45.0% Unicorn Python binding, 35.2% native `emu_start`, 14.2% project
+handlers, 5.6% other. Its percentages cannot be directly applied to the
+uninstrumented 7.334-s median. Records: ignored
+`out/speedab/dt2-116-{exact10m,fast10m,crossings10m,profile10m}.json`.
+**[D]**
+
+An attempted more relevant event fixture reached the main screen after
+360,662,834 bounded instructions, sent 16 stock machine-selection messages,
+and saved a post-selection state. But forced vector-191 TX-frame capture did
+not return cleanly (one driver call, zero frame words). From that checkpoint,
+encoder channel 2 `+30` produced no observed mirror/panel change; `-30`
+produced a panel-only difference at 2M that disappeared by 5M, and neither
+case changed any of the 16 raw track-mirror rows inspected. The fixture does
+**not** establish parameter traffic, so none of the speed numbers above is
+labelled a machine-selection/parameter-throughput result. Ignored diagnostic
+scripts and snapshot are under `out/speedab/`; do not treat them as a
+validated fixture or commit them. A future benchmark must first demonstrate
+a persistent ColdFire parameter or DSP-frame difference against an
+uninjected control, then time that same bounded path. **[D][O]**

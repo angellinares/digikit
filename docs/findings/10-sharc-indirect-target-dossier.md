@@ -232,3 +232,61 @@ its runtime target set remains unproven. No natural selector value or runtime
 occurrence is observed. A minimal future capture would record `DM(0x2560c4)`,
 `DM(0x256c98..0x256ca7)`, `R4`/`R6` at `0x1c351a`, and the selected tail
 target. **[O]**
+
+## Type9b stop attribution and a shared indirect helper **[C][D][V][O]**
+
+The post-Type7a DT2 1.16 v5 index
+`out/sharc-index/type7a-after-local-06adc1b.sqlite` has 1,059 function
+facts. Exactly **65 distinct functions** have at least one `unknown 9b_abs`
+indirect-target stop: 37 with `I12/M13`, 31 with `I13/M13`, and 1 with
+`I12/M14`, with overlap between groups. These are stopped *function facts*,
+not 65 instruction sites. The handover's earlier 63 was from a different
+pre-Type7a cache; the continuation exposed additional stops rather than
+changing the meaning of Type9b. A substring query for `I12/M13` also matches
+one `9a_abs` reason, so it must not be counted as a Type9b stop. **[C][D]**
+
+Hash-checked loader-final bounded traces (`max_steps=400`, `max_states=32`,
+global constant seeds, concrete memory, NW32 assumption, followed calls,
+external-call continuation, and provisional Type14d) attribute three
+distinct Type9b sites in six sampled entries:
+
+| SW PC | decoded operands | source of unknown target | context |
+| --- | --- | --- | --- |
+| `0x1c351a` | `JUMP(I12+M13)`, non-delayed | I12 load at `0x1c3518` from a symbolic table address | natural-selector tail |
+| `0x1c6579` | `JUMP(I12+M13)`, non-delayed | I12 load at `0x1c656c` from the documented M4-selected table | per-frame orchestrator |
+| `0xb891b4` | `JUMP(I13+M13)`, delayed | preceding `I13=R1` at `0xb891b2` | followed callee in several samples |
+
+This reproduces the known `0x1c6579` frontier but does not show that all 65
+function facts stop at these three PCs. Type9b already models the documented
+indirect target when both operands are known; these stops are missing *value*
+provenance, not an unimplemented target arithmetic rule. The Type9b `b=0`
+field selects JUMP rather than CALL; `j=1` selects the delayed transfer at
+`0xb891b4` (see the Type9b return-idiom field correction in finding 06).
+**[D][O]**
+
+An independent second reader rehashed the same section-7 blob (SHA-256
+`0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`)
+and confirmed loader-final bytes `3e70bf8e` at `0xb891b2` (Type5b,
+unconditional UREG copy from code 1 = R1 to code 29 = I13) followed by
+`3f083f6c` at `0xb891b4` (Type9b, `pmi=5`, `pmm=5`, `j=1`, `b=0`, `cond=31`).
+The public SHARC+ Core Programming Reference Rev. 1.5 describes Type5b's
+UREG copy on printed pp. 13-38--13-39 and Type9b's pre-modified I+M
+transfer on pp. 14-8--14-9. This verifies the *words and decoded local
+transfer*, not their runtime occurrence. **[V][O]**
+
+Four sampled entry traces reach the shared helper through a represented call
+at `0xb88da2` and stop at `0xb891b4` with both R1 and I13 unknown as
+`R2 + R1`; no sampled state there supplied a concrete target. Missing a
+represented R1 writer in those paths is **not** proof that none exists.
+Neither the natural R6/M4 value for `0x1c6579` nor the runtime R1 argument
+for this helper is established, and the helper's role as machine, voice, or
+audio code is unknown. Do not promote either to a safe hook on this evidence.
+The next discriminating observation would capture R6/M4/table word/target in
+a natural frame at `0x1c6579`, or the call-site R1 and selected target at
+`0xb891b4`, with machine/track context. These are **1.16 image addresses**:
+the physical OS is currently contradictory in the repo (`CLAUDE.md` says
+1.15C remains installed; `README.md` says Em upgraded to 1.16 on 2026-09-20).
+Before any hardware capture, confirm the installed version with Em and
+byte-check either its identity with the analyzed 1.16 image or a mapping to
+the 1.15C equivalent. Do not install firmware to obtain this capture.
+**[C][D][O]**
