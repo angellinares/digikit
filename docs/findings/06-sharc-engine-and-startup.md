@@ -2210,14 +2210,57 @@ Array entries 0-14 at `0x8055c840`: `0x1c65bd`, `0x1c6715`, `0x1c6782`,
 **[V]** for entries, jumps and callees (byte listing, and traces from
 `0x1c654c` with `R6 = 0..7`); machine names follow the remap above **[D]**.
 Cases only set up a few per-track values: none writes a register that
-`0x1c65fe` reads; the callees leave results in the frame (`DM(I6 - 4)`,
-`DM(I6 - 2)` and nearby) **[D]**. The per-track loop is a branch loop, not a
+`0x1c65fe` reads **[V]**. **[C]** The case helpers do not leave results in
+the frame: none writes `I6`, and their `DM(I6 - 2)` to `DM(I6 - 11)`
+accesses save and restore `I5`, `I3`, `R15`, `R14`, `R13`, `R11`, `R10`,
+`R9`, `R7` and (in `0x1c4bf9`) `R6` around the body (`0x1c4afe`,
+`0x1c4bf9`, `0x1c4a31`, `0x1c4d88`) **[V]**.
+
+**The helpers write a second per-track array.** A case's `R4` argument
+comes from `I15`, which starts at `0x2412c8 + 0xd604` for track 0
+(`0x1c64e0`) and advances `0x1d8` per track (`0x1c6a82`, reloaded at
+`0x1c6acf`); each case subtracts `0x188` before the call (`0x1c65ee`).
+`0x1c4d88` writes `DM(I5 + 0x1b9)` and `DM(0x72)`; `0x1c4bf9` writes
+`DM(I5 + 0x1ba)`; `0x1c4a31` writes `DM(I5 + 0x1bb)` and nearby;
+`0x1c4afe` writes `DM(I5 + 0x1ba)` and branches on `DM(I5 + 0x1bb)` at
+`0x1c4bbe`. Helper roles: `0x1c0d68` looks up a curve table
+(`0x2411c8`, `0x241210`); `0xb88f06` converts a float to a 64-bit fixed
+value; `0xb88f70` computes the bit length of a 64-bit value; `0x1c06ba`
+is `RECIPS` plus three Newton-Raphson steps, then a word copy of `R12`
+words when `R12` is not 0. Only case 5 reads `I0`-relative fields
+(`DM(I0 - 19)`, `DM(I0 - 27)`, `DM(I0 - 20)`) **[V]**. What each field
+means is **[D]**/**[O]**.
+
+The per-track loop is a branch loop, not a
 `DO` loop, and `I0`, `I1`, `I6` and `M5`-`M7`/`M13`-`M15` are not written in
 any case body **[V]**. After `0x1c65fe`, stage B (`0x1c66ec`, base
 `0x8055c858` = entry 6, bound 7, same `M4`) runs for every selector; stage C
 (`0x1c6c25`, base `0x8055c874` = entry 13, bound 7) is selected by
-`R2 = DM(I1, M6)` at `0x1c6c0f`, a different field that is not yet
-identified **[O]**. Entries 2-6 of the stage C table point into
+`R2 = DM(I1, M6)` at `0x1c6c0f`. That field is one word of the per-frame
+workspace passed as `R4`: `FUN_1c642a` spills `R4` (`0x2412c8`) to
+`DM(I6 - 4)` at `0x1c6479`, reloads it at `0x1c6ad3` after the per-track
+loop, and forms `I5 = I4 + 0xdc64` (`0x1c6add`) and `I1 = I5 - 0x80`
+(`0x1c6bfe`), so the selector is `DM(0x2412c8 + 0xdbe4)`, read once per
+frame **[V]**; its writer and meaning are **[O]**. The stage C table at
+`0x8055c874` holds `0x1c6eb7`, `0x1c6ea9` (in `FUN_1c642a`), then
+`0x1c7395`, `0x1c73b0`, `0x1c73cb`, `0x1c73e3`, `0x1c742a`, each in
+`FUN_1c71ec` just before the stage 4, stage 5, stage 6, `0x1ccd96` and
+stage-6 re-call setups. So `FUN_1c71ec` is also entered by the indirect
+jump at `0x1c6c25`, not only by the `JUMP IF SV` at `0x1c7053` **[V]**.
+
+**Boot fills the pointer table the mix reads.** `FUN_1c15e3`
+(`0x1c15e3`-`0x1c18a6`) copies 32 words from `0x24ef2c`
+(`0x2412c8 + 0xdc64`, `I15` at `0x1c1670`) to `0x252d78` (`I10` at
+`0x1c1668`) in a branch loop (`JUMP IF LT` at `0x1c16e5`), and fills a
+second table at `0x253df8` with `0x252df8 + k * 0x80`. It is reached only
+from boot: loader entry `0x1c1338` → `FUN_1c13e6` → jump at `0x1c147e` →
+`FUN_1c7ff9` → call at `0x1c8092`. `FUN_1c14e7`, the last per-frame call
+in `FUN_1c2b24` (`0x1c30a0`, after `0x1c3083`, `0x1c3090`, `0x1c3099`),
+reads `0x252d78`, `0x252df8` and nearby tables and references no
+address in the output rings **[V]**. Who writes the 32 source words at
+`0x24ef2c` is **[O]**.
+
+Entries 2-6 of the stage C table point into
 `FUN_1c71ec`. DN2 1.11's matching function checks its stage A selector
 against 5 (`R15 = 5` at `0x1c905b`, `compu(R2, R15)` at `0x1c905d`) **[V]**.
 
