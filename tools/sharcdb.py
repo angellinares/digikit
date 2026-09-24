@@ -81,11 +81,24 @@ import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
 from sharc_trace import ACCESS_WIDTHS  # noqa: E402
 
-DB_VERSION = 10
+DB_VERSION = 11
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
 # the right thing on the next run.
+#
+# --- v11: Type14d/3b/3d/3d(ptr) mem_access/ptr width -------------------------
+#
+# The same class of bug v10 fixed for Type4b/4d: extract_mem_access()'s
+# DIRECT_MEM_FORMS branch still used the generic "long if l else word"
+# fallback for Type14d (wrong -- its l/x bits pick byte/short(-sign-
+# extended), see _type14d_width()); its INDEXED_MEM_FORMS branch always
+# recorded width=None for Type3b/3d instead of decoding their l/x/w (3b)
+# or w/ex/l/x (3d) bits (see _type3d_width()); and _ptr_mem_form()'s own
+# IMMOFF_MEM_FORMS branch had the same "long if l else word" mislabeling
+# of Type4b/4d bug v10 fixed in extract_mem_access, now fixed by reusing
+# _immoff_width() there too (width is descriptive only in `ptr` rows --
+# address arithmetic is untouched).
 #
 # --- v10: MULT regdef/reguse naming, Type4b/4d mem_access width ------------
 #
@@ -550,6 +563,46 @@ def _immoff_width(insn_type: str, f: dict):
     return "long" if f.get("l") else "word"
 
 
+def _type14d_width(f: dict):
+    """Type14d access width from its w/ex/d/l/x bits (sharc-plus-prm
+    pp.384-387, Figure 15-2), mirroring tools/sharc_trace.py's "14d"
+    _execute branch: it only computes a width for the w=0,ex=0 rows it
+    actually runs -- BH for a store (l picks byte/short) and BHSE for a
+    load (l picks byte/short, x additionally picks zero-/sign-extend) --
+    which is exactly sharc_trace.ACCESS_WIDTHS' w=0 slice. w=1 (EX/LWEX)
+    and a store with x=1 are cases the tracer stops on rather than
+    executing, so they get the same "unknown(...)" fallback _immoff_width
+    uses for an unrepresented combination."""
+    w, ex, l, x = f.get("w", 0), f.get("ex", 0), f.get("l", 0), f.get("x", 0)
+    if w or ex or (f.get("d") and x):
+        return "unknown(w=%d,ex=%d,l=%d,x=%d)" % (w, ex, l, x)
+    return ACCESS_WIDTHS[(l, x, 0)]
+
+
+def _type3d_width(f: dict):
+    """Type3d access width from its w/ex/l/x bits (sharc-plus-prm pp.322-
+    325, Figure 13-9's opcode fields and the w/cond opcode-field table plus
+    the ACCESS/BH/BHSE/EX/LWEX encode tables that follow it). w=0 selects
+    the ACCESS group: ex=0 is the plain 48-bit re-encoding of Type3a
+    (normal-word, l/x not used by that table); ex=1 is BH/BHSE, whose l/x
+    rows are byte/short(-sign-extended) exactly like sharc_trace.
+    ACCESS_WIDTHS' w=0 slice. w=1 selects WACCESS, which the opcode table
+    only gives a row for ex=1 (EX at l=0: plain word exclusive; LWEX at
+    l=1: long-word exclusive) -- w=1,ex=0 has no row, the same undocumented
+    gap tools/sharc_trace.py's "14d" branch calls out for that combination.
+    tools/sharc_trace.py has no "3d" _execute branch to cross-check
+    against (decode_table.json also flags Type3d with unconfirmed_bits=7),
+    so this is derived from the manual alone."""
+    w, ex, l, x = f.get("w", 0), f.get("ex", 0), f.get("l", 0), f.get("x", 0)
+    if w:
+        if not ex:
+            return "unknown(w=1,ex=0,l=%d,x=%d)" % (l, x)
+        return "long-word" if l else "normal-word"
+    if not ex:
+        return "normal-word"
+    return ACCESS_WIDTHS[(l, x, 0)]
+
+
 def extract_mem_access(insn_type: str, f: dict):
     """-> [(space, direction, base_reg, modifier, u, form, width, abs_address), ...]
     for a memory-referencing form; [] for any other form. form is
@@ -559,13 +612,24 @@ def extract_mem_access(insn_type: str, f: dict):
     rows = []
     if insn_type in sharcfn.DIRECT_MEM_FORMS:
         space, direction = sharcfn._space_dir(f)
+        width = (
+            _type14d_width(f) if insn_type == "14d"
+            else ("long" if f.get("l") else "word")
+        )
         rows.append((space, direction, None, None, None,
                      sharcinv.MEM_FORMS.get(insn_type, insn_type),
-                     "long" if f.get("l") else "word", f.get("addr")))
+                     width, f.get("addr")))
     elif insn_type in sharcfn.INDEXED_MEM_FORMS:
         space, direction = sharcfn._space_dir(f)
+        if insn_type == "3b":
+            width = ACCESS_WIDTHS.get(
+                (f.get("l", 0), f.get("x", 0), f.get("w", 0)))
+        elif insn_type == "3d":
+            width = _type3d_width(f)
+        else:
+            width = None
         rows.append((space, direction, "I%d" % f.get("i", 0), "M%d" % f.get("m", 0),
-                     f.get("u"), sharcinv.MEM_FORMS.get(insn_type, insn_type), None, None))
+                     f.get("u"), sharcinv.MEM_FORMS.get(insn_type, insn_type), width, None))
     elif insn_type in sharcfn.IMMOFF_MEM_FORMS:
         space, direction = sharcfn._space_dir(f)
         bits = sharcfn._IMMOFF_DATA_BITS.get(insn_type, 6)
@@ -2210,7 +2274,11 @@ def _ptr_mem_form(t, f, state, frame):
         off = (sharcfn.sign_extend(f.get("data", 0), bits) * scale) & 0xFFFFFFFF
         u = bool(f.get("u")) if t != "15b" else False
         _space, direction = sharcfn._space_dir(f)
-        width = "long" if f.get("l") else "word"
+        # width is descriptive only here (address arithmetic above uses
+        # `scale`/`off`, not width): use the same l/x/w -> label mapping as
+        # extract_mem_access so 4b/4d aren't mislabeled "word"/"long" (see
+        # _immoff_width).
+        width = _immoff_width(t, f)
         if base_reg == "I6":
             reg = _ptr_access_reg(f)
             value = _ptr_frame_access(frame, off, direction, reg, state)

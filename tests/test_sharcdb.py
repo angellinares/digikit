@@ -175,6 +175,43 @@ class ExtractMemAccessTest(unittest.TestCase):
     def test_non_memory_form_yields_nothing(self):
         self.assertEqual(sharcdb.extract_mem_access("9b_abs", {}), [])
 
+    def test_direct_14d_short_word_load_is_labeled_not_long(self):
+        # Type14d w=0,ex=0,l=1,x=0 is a BHSE short-word load (sharc-plus-prm
+        # pp.384-386), not the "long if l else word" fallback's "long".
+        insn = insn_at(field_insn("14d", addr=0x300000, dreg=2, d=0, l=1, x=0, w=0, ex=0))
+        f = sharcinv.merge_fields(insn.fields)
+        rows = sharcdb.extract_mem_access("14d", f)
+        self.assertEqual(rows[0][6], "short-word")
+
+    def test_indexed_3b_and_3d_widths_are_decoded_not_none(self):
+        # Type3b (l=1,x=0,w=0 -> short-word, PRM pp.13-16--13-19) and
+        # Type3d (w=0,ex=0 -> normal-word, its base ACCESS form, PRM
+        # pp.322-325) previously always recorded width=None here.
+        insn_3b = insn_at(field_insn(
+            "3b", u=0, i=0, m=0, cond=31, g=0, d=0, l=1, ureg=0, w=0, x=0))
+        f_3b = sharcinv.merge_fields(insn_3b.fields)
+        self.assertEqual(sharcdb.extract_mem_access("3b", f_3b)[0][6], "short-word")
+
+        insn_3d = insn_at(field_insn(
+            "3d", u=0, i=0, m=0, cond=31, g=0, d=0, l=0, ureg=0, ex=0, w=0, x=0))
+        f_3d = sharcinv.merge_fields(insn_3d.fields)
+        self.assertEqual(sharcdb.extract_mem_access("3d", f_3d)[0][6], "normal-word")
+
+
+class PtrMemFormTest(unittest.TestCase):
+    def test_immoff_4b_byte_access_is_labeled_byte_not_word(self):
+        # _ptr_mem_form()'s IMMOFF_MEM_FORMS branch had the same "long if l
+        # else word" mislabeling extract_mem_access's did for Type4b/4d
+        # before it started reusing _immoff_width(); address arithmetic
+        # (base_value/off) must stay the same either way.
+        insn = insn_at(field_insn("4b", i=4, data=0, dreg=2, g=0, d=1, l=0, w=0, x=0))
+        f = sharcinv.merge_fields(insn.fields)
+        new_values, ptr_row = sharcdb._ptr_mem_form("4b", f, {"I4": 0x2000}, {})
+        base_reg, base_value, address, direction, width = ptr_row
+        self.assertEqual((base_reg, address, direction), ("I4", 0x2000, "store"))
+        self.assertEqual(width, "byte")
+        self.assertEqual(new_values, {})
+
 
 class ClassifyLiteralRangeTest(unittest.TestCase):
     def setUp(self):
