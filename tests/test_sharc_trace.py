@@ -4120,6 +4120,36 @@ class AstatxFlagsTest(unittest.TestCase):
             astatx, T.PartialConst(T.ALU_FLAGS_MASK, (1 << T.AZ_BIT) | (1 << T.AC_BIT))
         )
 
+    def test_subtract_same_register_folds_to_zero_even_when_unknown(self):
+        # PRM Table 17-5 (p.425) ALUOP 00000010 = RN = RX - RY: RX - RY is
+        # architecturally exactly 0 whenever RX and RY are the same register
+        # read at the same instant (e.g. the SHARC+ "Rn = Rn - Rn" self-clear
+        # idiom), no matter what value that register held -- even one this
+        # tracer cannot otherwise pin down. Before the fix, subtracting an
+        # Unknown from itself stayed Unknown, which let an uninitialized
+        # register poison every later comparison against it.
+        _, value, op, astatx = self.astatx_after(
+            full_compute(0, 0x02, 0, 15, 15),
+            False,
+            {15: T.Unknown("uninitialized R15")},
+            T.Unknown("start"),
+        )
+        self.assertEqual(op, "subtract")
+        self.assertEqual(value, T.Const(0))
+        self.assertEqual(
+            astatx, T.PartialConst(T.ALU_FLAGS_MASK, (1 << T.AZ_BIT) | (1 << T.AC_BIT))
+        )
+
+    def test_short_subtract_same_register_folds_to_zero_even_when_unknown(self):
+        # Same self-clear idiom through the short-compute table (opcode 1 =
+        # subtract, RN and RX both encoding register 3 here).
+        rn, value, op, _ = T._compute(
+            short_compute(1, 3, 3), True, {3: T.Unknown("uninitialized R3")}
+        )
+        self.assertEqual(rn, 3)
+        self.assertEqual(op, "subtract")
+        self.assertEqual(value, T.Const(0))
+
     def test_increment_matches_add_by_one_flags(self):
         _, value, op, astatx = self.astatx_after(
             full_compute(0, 0x29, 0, 1, 0),

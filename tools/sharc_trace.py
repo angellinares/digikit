@@ -711,7 +711,22 @@ def _negate(value: Value, expression: str) -> Value:
     )
 
 
-def _subtract(left: Value, right: Value, expression: str) -> Value:
+def _subtract(
+    left: Value, right: Value, expression: str, *, same_source: bool = False
+) -> Value:
+    """LEFT - RIGHT, with an explicit fold for the self-subtract idiom.
+
+    SAME_SOURCE=True is the caller's promise that LEFT and RIGHT are two
+    reads of the exact same register/operand at this instant (e.g. the
+    SHARC+ "Rn = Rn - Rn" self-clear idiom, PRM Table 17-5 / 18-10 ALUOP
+    add/subtract with RX=RY): whatever that shared value is -- even an
+    Unknown/symbolic one -- X - X is exactly 0 in 32-bit modular
+    arithmetic, so fold to Const(0) directly rather than letting an
+    Unknown operand swallow the whole expression (Unknown - Unknown would
+    otherwise stay Unknown forever, e.g. a subsequent DO-loop compare
+    against it never resolving concretely and forking every iteration)."""
+    if same_source:
+        return Const(0)
     return _add(left, _negate(right, expression), expression)
 
 
@@ -1376,10 +1391,18 @@ def _or_updates(
     return merged
 
 
-def _alu_arith_updates(a: Value, b: Value, subtract: bool) -> Dict[int, Optional[bool]]:
+def _alu_arith_updates(
+    a: Value, b: Value, subtract: bool, *, same_source: bool = False
+) -> Dict[int, Optional[bool]]:
     """Dict-returning counterpart of ``_astatx_alu_arith`` (PRM pp.439-440,
     446-447), for callers -- the fixed-point dual add/subtract -- that need
-    to OR two such results together before applying either to ASTATX."""
+    to OR two such results together before applying either to ASTATX.
+
+    SAME_SOURCE mirrors ``_subtract``'s: with SUBTRACT=True it means A and B
+    are the same operand read twice, so the flags are those of 0-0 (AZ/AC
+    set, AN/AV clear) regardless of what value that operand held."""
+    if same_source and subtract:
+        return _bits_to_updates(ALU_FLAGS_MASK, _arith_flag_bits(Const(0), Const(0), True))
     if isinstance(a, Const) and isinstance(b, Const):
         return _bits_to_updates(ALU_FLAGS_MASK, _arith_flag_bits(a, b, subtract))
     return _bits_to_updates(ALU_FLAGS_MASK, None)
@@ -1574,8 +1597,10 @@ def _compute(
             0: ("add", lambda: _add(left, right, "R%d + R%d" % (rn, rx)), (left, right, False)),
             1: (
                 "subtract",
-                lambda: _subtract(left, right, "R%d - R%d" % (rn, rx)),
-                (left, right, True),
+                lambda: _subtract(
+                    left, right, "R%d - R%d" % (rn, rx), same_source=rn == rx
+                ),
+                (left, right, True, rn == rx),
             ),
             2: ("pass", lambda: right, None),
             4: (
@@ -1664,8 +1689,10 @@ def _compute(
         elif astatx_kind == "mult":
             astatx_update = _astatx_mult_forget
         else:
-            a, b, subtract = astatx_kind
-            astatx_update = _astatx_alu_arith(a, b, subtract)
+            a, b, subtract, *rest = astatx_kind
+            astatx_update = _astatx_alu_arith(
+                a, b, subtract, same_source=rest[0] if rest else False
+            )
         return rn, value, operation, astatx_update
     # PRM Table 18-1/Figure 18-1 (p.423): bit22 is MF, the multifunction
     # selector. A multifunction op's register sub-fields (PRM Table
@@ -1782,10 +1809,12 @@ def _compute(
             operation = "float-dual-add-subtract"
         else:
             add_value = _add(left, right, "R%d + R%d" % (rx, ry))
-            sub_value = _subtract(left, right, "R%d - R%d" % (rx, ry))
+            sub_value = _subtract(
+                left, right, "R%d - R%d" % (rx, ry), same_source=rx == ry
+            )
             updates = _or_updates(
                 _alu_arith_updates(left, right, False),
-                _alu_arith_updates(left, right, True),
+                _alu_arith_updates(left, right, True, same_source=rx == ry),
             )
             operation = "dual-add-subtract"
         return (rn, rs), (add_value, sub_value), operation, _astatx_from_updates(updates)
@@ -1794,8 +1823,16 @@ def _compute(
         value = _add(left, right, "R%d + R%d" % (rx, ry))
         return rn, value, "add", _astatx_alu_arith(left, right, False)
     if cu == 0 and opcode == 0x02:
-        value = _subtract(left, right, "R%d - R%d" % (rx, ry))
-        return rn, value, "subtract", _astatx_alu_arith(left, right, True)
+        same_source = rx == ry
+        value = _subtract(
+            left, right, "R%d - R%d" % (rx, ry), same_source=same_source
+        )
+        return (
+            rn,
+            value,
+            "subtract",
+            _astatx_alu_arith(left, right, True, same_source=same_source),
+        )
     # PRM p.438-439 / PGR Table 12-3 (p.573): ALUOP 00000101 is
     # RN = RX + RY + ci (add with carry) and 00000110 is RN = RX - RY + ci -
     # 1 (subtract with borrow), both using ASTATX's AC bit as an explicit
@@ -1811,7 +1848,11 @@ def _compute(
         if carry_in is None:
             value = Unknown(label)
         else:
-            base = _subtract(left, right, label) if subtract else _add(left, right, label)
+            base = (
+                _subtract(left, right, label, same_source=rx == ry)
+                if subtract
+                else _add(left, right, label)
+            )
             offset = (1 if carry_in else 0) - (1 if subtract else 0)
             value = _add(base, Const(offset), label)
         operation = "subtract-with-borrow" if subtract else "add-with-carry"
@@ -2301,11 +2342,22 @@ def _astatx_alu_logical(value: Value) -> "Callable[[Value], Value]":
     return update
 
 
-def _astatx_alu_arith(a: Value, b: Value, subtract: bool) -> "Callable[[Value], Value]":
+def _astatx_alu_arith(
+    a: Value, b: Value, subtract: bool, *, same_source: bool = False
+) -> "Callable[[Value], Value]":
     """add/subtract/increment/decrement: AC/AV/AN/AZ from A and B; AS/AI/AF
-    cleared."""
+    cleared.
+
+    SAME_SOURCE mirrors ``_subtract``'s: with SUBTRACT=True it means A and B
+    are the same operand read twice (the "Rn = Rn - Rn" self-clear idiom),
+    so the flags are those of 0-0 (AZ/AC set, AN/AV clear) regardless of
+    what value that operand held, even an Unknown one."""
 
     def update(astatx: Value) -> Value:
+        if same_source and subtract:
+            return _astatx_define(
+                astatx, ALU_FLAGS_MASK, _arith_flag_bits(Const(0), Const(0), True)
+            )
         if isinstance(a, Const) and isinstance(b, Const):
             return _astatx_define(astatx, ALU_FLAGS_MASK, _arith_flag_bits(a, b, subtract))
         return _astatx_forget(astatx, ALU_FLAGS_MASK)
