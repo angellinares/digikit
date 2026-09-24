@@ -2170,18 +2170,56 @@ caller's `R6 = 0x3c088889` is only spilled, at `0x1c646d`. The `out/sharcdb`
 `0x1c6579` in 149 steps; with the unwritten field reading 0 it selects entry
 0, `0x1c65bd`. **[V]**
 
-The field is probably the machine type. The ColdFire machine dispatch at
-`0x400caf48` indexes types 0-5 and sends 6 and above to a fallback, the same
-bound as `0x1c6553` (`docs/findings/02`: 0 SAMPLE, 1 WERP, 2 STRETCH,
-3 REPITCH, 4 SLICED SMP, 5 MIDI, 6 MANUAL SLICE). Case 1 (`0x1c6715`) is the
-only case using bit-reversed addressing; cases 4 (`0x1c692f`) and 5
-(`0x1c6992`) share a tail. The writer of `track_base + 0x4c` has not been
-found: `FUN_1c24e9`'s fixed-offset stores do not reach it, and the tracer
-stops at a Type14d at `0x1c257d` before its three M-indexed stores. **[O]**
+**The field is the machine type, remapped.** `FUN_1c24e9` writes it. It is
+called only from `FUN_1c2b24`'s 16-track loop, twice per track (`0x1c2c9a`,
+`0x1c2ca9`; `R12` = track 0-15, `R8` = `2*track` then `2*track + 1`); the RPC
+task root `0x1c3bf0` does not reach it. With the Type14d at `0x1c257d`
+admitted as provisional, the tracer runs to the return: `0x1c26ce` loads
+`I4 = 0x255970` (the per-track machine-type cache that `0x1c33c1` also
+reads), `0x1c26d4` reads the short word `M2 = DM(I4, M4)` with `M4 = R12`
+(set at `0x1c250e`), `0x1c2731` loads `I3 = 0x2567c0`, `0x1c273c` reads
+`S2 = DM(I3, M2)`, and `0x1c2751` stores `DM(I5 - 8) = S2` on every path.
+`I5 = 0x2506ec + R8 * 0xdc`, so the store lands on `track_base + 0x4c`; traces
+with `R8 = 0, 1, 2, 3, 30, 31` store to `0x250738`, `0x250814`, `0x2508f0`,
+`0x2509cc`, `0x252100`, `0x2521dc`. **[V]**
+
+`0x2567c0` is loader data (block 19, not a fill), referenced only at
+`0x1c2731`: words 0-6 are `0, 1, 2, 3, 4, 0, 5`. With the ColdFire machine
+types from `docs/findings/02` (0 SAMPLE, 1 WERP, 2 STRETCH, 3 REPITCH,
+4 SLICED SMP, 5 MIDI, 6 MANUAL SLICE), MIDI shares selector 0 with SAMPLE and
+MANUAL SLICE gets selector 5. No machine type maps to 6 or above, so the
+`>= 6` path at `0x1c6561` is unused by the current types. **[V]** for the
+table bytes and the load; **[D]** for the type names. The cache at
+`0x255970` sits in a fill block and has no literal store anywhere; how it is
+refreshed from the ColdFire frame is **[O]**.
 
 Array entries 0-14 at `0x8055c840`: `0x1c65bd`, `0x1c6715`, `0x1c6782`,
 `0x1c686e`, `0x1c692f`, `0x1c6992`, `0x1c69ed`, `0x1c69c6`, `0x1c6d1e`,
 `0x1c6d51`, `0x1c6d7a`, `0x1c6dd6`, `0x1c6e4e`, `0x1c6eb7`, `0x1c6ea9`.
+
+| selector | machine types | entry | back to `0x1c65fe` | callees |
+| ---: | --- | --- | --- | --- |
+| 0 | SAMPLE, MIDI | `0x1c65bd` | falls through | `0x1c4afe` |
+| 1 | WERP | `0x1c6715` | `JUMP` at `0x1c677b` | `0x1c06ba`, `0x1c4afe` |
+| 2 | STRETCH | `0x1c6782` | `JUMP` at `0x1c6865` | `0xb88f70` x2, `0xb88f06` x2, `0x1c0d68`, `0x1c06ba`, `0x1c4d88` |
+| 3 | REPITCH | `0x1c686e` | `JUMP` at `0x1c6926` | `0xb88f70` x2, `0xb88f06` x2, `0x1c06ba`, `0x1c4a31` |
+| 4 | SLICED SMP | `0x1c692f` | `JUMP` at `0x1c6989` | `0x1c06ba`, `0x1c4afe` |
+| 5 | MANUAL SLICE | `0x1c6992` | `JUMP` at `0x1c69bd` | `0x1c4bf9` |
+| >= 6 | none | -- | `JUMP` at `0x1c6561` | -- |
+
+**[V]** for entries, jumps and callees (byte listing, and traces from
+`0x1c654c` with `R6 = 0..7`); machine names follow the remap above **[D]**.
+Cases only set up a few per-track values: none writes a register that
+`0x1c65fe` reads; the callees leave results in the frame (`DM(I6 - 4)`,
+`DM(I6 - 2)` and nearby) **[D]**. The per-track loop is a branch loop, not a
+`DO` loop, and `I0`, `I1`, `I6` and `M5`-`M7`/`M13`-`M15` are not written in
+any case body **[V]**. After `0x1c65fe`, stage B (`0x1c66ec`, base
+`0x8055c858` = entry 6, bound 7, same `M4`) runs for every selector; stage C
+(`0x1c6c25`, base `0x8055c874` = entry 13, bound 7) is selected by
+`R2 = DM(I1, M6)` at `0x1c6c0f`, a different field that is not yet
+identified **[O]**. Entries 2-6 of the stage C table point into
+`FUN_1c71ec`. DN2 1.11's matching function checks its stage A selector
+against 5 (`R15 = 5` at `0x1c905b`, `compu(R2, R15)` at `0x1c905d`) **[V]**.
 
 50 of those 51 target one address: **`0x1c06ba`**, a heavily shared primitive
 reached from all over the engine, including from stage 3's envelope routine
