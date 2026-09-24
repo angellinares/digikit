@@ -8,11 +8,20 @@ import unittest
 sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools'))
 
+import sharc_disasm  # noqa: E402
 import sharc_visa_tables as T  # noqa: E402
 import sharcldr  # noqa: E402
 import sharcimm  # noqa: E402
 from test_sharc_disasm import encode  # noqa: E402
 from test_sharcldr import block  # noqa: E402
+
+
+def pack48(value):
+    """Little-endian bytes of a raw 48-bit word, bypassing sharc_visa_tables
+    (used for Type10a_rel/10a_abs below, which -- per tools/sharcfn.py's
+    module docstring -- are absent from that table's VISA form set)."""
+    words = [(value >> (48 - 16 * (i + 1))) & 0xFFFF for i in range(3)]
+    return struct.pack('<3H', *words)
 
 
 def put(name, **values):
@@ -74,6 +83,37 @@ class ScanTest(unittest.TestCase):
                           for h in hits],
                          [(1, 0x28269254, 0x269254, 0x31030000, 'SPI2+0x0'),
                           (1, 0x28269258, 0x269258, 0xABC, None)])
+
+
+class NeverAlignedFormsTest(unittest.TestCase):
+    """decode_all() must never treat Type10a_rel/10a_abs as a real decoded
+    instruction (tools/sharcimm.py's _NEVER_ALIGNED_FORMS comment):
+    tools/sharcfn.py's module docstring says both are absent from the real
+    VISA form set entirely, so any bit-pattern match is a disassembler
+    desync, not a genuine instruction. Before this fix, decode_all() fed
+    such a match straight into the depth/sweep alignment sweep, which is
+    exactly what corrupted DT2 1.16's real disassembly around sw 0x1c4b99
+    -0x1c4bb5 (a Type10a_rel "hit" at sw 0x1c4b9b hid the real 64-bit
+    voice-record store at sw 0x1c4ba0)."""
+
+    def test_pure_type10a_rel_pattern_is_excluded(self):
+        insn = next(sharc_disasm.disassemble(pack48(0xE00000000000), 0, count=1))
+        self.assertEqual(insn.type_name, '10a_rel')  # sanity: it does decode
+        table = sharcimm.decode_all(pack48(0xE00000000000))
+        self.assertEqual(table, {})
+
+    def test_10a_abs_is_also_in_the_never_aligned_set(self):
+        # Type10a_abs never occurs for real in DT2 1.16 (0 raw matches across
+        # the whole image, vs Type10a_rel's 4808) so there is no all-zero
+        # byte pattern that decodes uniquely to it rather than a more
+        # specific competing form; check the exclusion set directly instead.
+        self.assertIn('10a_abs', sharcimm._NEVER_ALIGNED_FORMS)
+
+    def test_a_real_instruction_right_after_is_unaffected(self):
+        data = pack48(0xE00000000000) + insn17a(4, 0x1234)
+        table = sharcimm.decode_all(data)
+        self.assertNotIn(0, table)
+        self.assertEqual(table[6].type_name, '17a')
 
 
 if __name__ == '__main__':

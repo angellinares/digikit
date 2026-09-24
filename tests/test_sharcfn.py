@@ -254,9 +254,13 @@ class ShortComputeTest(unittest.TestCase):
         field12 = (0x2 << 8) | (3 << 4) | 4  # 'pass'
         self.assertEqual(sharcfn.render_shortcompute(field12), "R3 = pass(R4)")
 
-    def test_unary_rn_op(self):
-        field12 = (0x6 << 8) | (3 << 4) | 4  # 'dec'
-        self.assertEqual(sharcfn.render_shortcompute(field12), "R3 = dec(R3)")
+    def test_inc_dec_read_rx_not_rn(self):
+        # PRM Table 17-2 (p.17-3): opcode 0101/0110's "Instruction" column
+        # is "RN = RX + 1" / "RN = RX - 1" -- RX is the only source read;
+        # RN is write-only, unlike the earlier ("operate on RN itself")
+        # belief this test used to encode.
+        field12 = (0x6 << 8) | (3 << 4) | 4  # 'dec', rn=3, rx=4
+        self.assertEqual(sharcfn.render_shortcompute(field12), "R3 = dec(R4)")
 
     def test_float_op_uses_f_registers(self):
         field12 = (0x8 << 8) | (3 << 4) | 4  # 'fadd'
@@ -388,6 +392,45 @@ class Type19ModifyRenderingTest(unittest.TestCase):
             "19a_bitrev", **{"g": 0, "idis": 1, "is": 2, "data": 0x8}
         )
         self.assertIn("I3 = modify(I2, 0x8)", mnemonic)
+
+
+class Type7aModifyRenderingTest(unittest.TestCase):
+    """render_instruction() had no branch for Type7a MODIFY at all (SHARC+
+    Core Programming Reference pp.13-46/13-48, "Ia = MODIFY(Ia,Mb)"): a
+    pure-MODIFY (compute=0) instance fell through to the raw "[7a] ..."
+    field dump, and a compute!=0 instance rendered only its compute half,
+    silently dropping the MODIFY. Dest is Is XOR Idis, the same trick
+    Type19a already uses (see Type19ModifyRenderingTest above) -- idis=0
+    leaves dest equal to source, matching the PRM's own worked example
+    "I3 = MODIFY(I3,M5); /* Semantically same as MODIFY(I3,M5) */"."""
+
+    def setUp(self):
+        self.mem = sharcldr.LoadedMemory.from_stream(b"")
+
+    def render(self, **fields):
+        data = field_insn("7a", **fields)
+        insn = insn_at(data)
+        mnemonic, _notes, _gap = sharcfn.render_instruction(
+            0x1000, insn, self.mem, *empty_ctx()
+        )
+        return mnemonic
+
+    def test_pure_modify_same_register_has_no_dest_assignment(self):
+        mnemonic = self.render(
+            **{"g": 0, "cond": 0x1F, "is": 7, "idis": 0, "m": 7, "compute": 0}
+        )
+        self.assertEqual(mnemonic, "modify(I7, M7)")
+
+    def test_compute_and_modify_to_a_different_register_both_render(self):
+        # is=4, idis=6, g=0 -> dest = 4^6 = 2 (a different I register); a
+        # nonzero compute (cu=0 opcode=0x01 'add', rn=3,rx=4,ry=5 -- see
+        # ComputeRenderingTest.test_alu_binary) must still show, not
+        # silently replace the MODIFY.
+        mnemonic = self.render(
+            **{"g": 0, "cond": 0x1F, "is": 4, "idis": 6, "m": 3, "compute": 0x1345}
+        )
+        self.assertEqual(mnemonic, "R3 = add(R4, R5); I2 = modify(I4, M3)")
+        self.assertNotIn("[7a]", mnemonic)
 
 
 class Type6aRenderingTest(unittest.TestCase):

@@ -480,21 +480,29 @@ def render_compute(field23: int):
 
 
 _BINARY_SHORT_OPS = {0x0, 0x1, 0x3, 0x7, 0x8, 0x9, 0xB, 0xC, 0xD, 0xE, 0xF}
-_UNARY_RX_SHORT_OPS = {0x2, 0x4, 0xA}  # pass, not, float
-_UNARY_RN_SHORT_OPS = {0x5, 0x6}  # inc, dec (operate on RN itself)
+# PRM Table 17-2/18-21 (p.17-3, ShortCompute Opcode table): opcode 0101 is
+# "RN = RN + 1 -> RN = RX + 1" and 0110 is "RN = RN - 1 -> RN = RX - 1" --
+# the leading "RN = RN +/- 1" is the *destination* column's generic
+# 2-operand form, folded to its concrete instruction in the same row's
+# right-hand "Instruction" column, which reads RX (not RN) and adds/
+# subtracts the literal 1. inc/dec never read RN at all; they are unary-RX
+# opcodes like pass/not/float, not "operate on RN itself" -- matching
+# tools/sharc_trace.py's short=True "increment"/"decrement" rows, which
+# already compute from `right` (the RX value), not `left` (RN).
+_UNARY_RX_SHORT_OPS = {0x2, 0x4, 0x5, 0x6, 0xA}  # pass, not, inc, dec, float
 
 
 def render_shortcompute(field12: int):
-    """Type 2c: Figure 18-2, opcode 11:8, RN 7:4, RX 3:0 (RN is both the
-    Y input and the result -- PRM Table 18-21's note)."""
+    """Type 2c: Figure 18-2, opcode 11:8, RN 7:4, RX 3:0 (RN is the result
+    for every opcode; PRM Table 17-2 gives inc/dec (opcode 5/6) as
+    "RN = RX + 1" / "RN = RX - 1" -- RX is the only source read, RN is
+    write-only, same as the pass/not/float unary-RX opcodes)."""
     opcode = (field12 >> 8) & 0xF
     rn = (field12 >> 4) & 0xF
     rx = field12 & 0xF
     is_float = opcode in FLOAT_SHORT_OPS
     name = SHORT_OPS.get(opcode, "short?0x%x" % opcode)
     Rn, Rx = reg_name(rn, is_float), reg_name(rx, is_float)
-    if opcode in _UNARY_RN_SHORT_OPS:
-        return "%s = %s(%s)" % (Rn, name, Rn)
     if opcode in _UNARY_RX_SHORT_OPS:
         return "%s = %s(%s)" % (Rn, name, Rx)
     return "%s = %s(%s, %s)" % (Rn, name, Rn, Rx)
@@ -715,7 +723,15 @@ def _fmt_index_offset_hex(i: int, off: int) -> str:
 
 
 def render_mem_immoff(sw, f, insn_type):
-    """4a/4b/4d/15b: I-register + immediate-offset addressing."""
+    """4a/4b/4d/15b: I-register + immediate-offset addressing. PRM
+    Type4a/4b/4d pp.13-26/13-30/13-34 ("u"): u=0 pre-modifies I for the
+    address (I keeps its old value afterwards); u=1 accesses the CURRENT
+    (unmodified) I and only writes I+offset back afterwards (post-modify)
+    -- so the address this instruction actually touches is I alone when
+    u=1, not I+offset (matching tools/sharc_trace.py's "4a"/"4b" handlers
+    and tools/sharcdb.py's `ptr` table, both of which already draw this
+    distinction). Type15b has no u bit and is always pre-modify (PRM
+    p.15-11)."""
     i = f.get("i", 0)
     bits = _IMMOFF_DATA_BITS.get(insn_type, 6)
     off = sign_extend(f.get("data", 0), bits)
@@ -728,10 +744,16 @@ def render_mem_immoff(sw, f, insn_type):
     )
     space, direction = _space_dir(f)
     long_ = ", long" if f.get("l") else ""
-    addr = _fmt_index_offset(i, off)
+    post_modify = insn_type != "15b" and bool(f.get("u"))
+    if post_modify:
+        addr = "I%d" % i
+        note = (", post-modify %s %d" % ("-" if off < 0 else "+", abs(off))) if off else ""
+    else:
+        addr = _fmt_index_offset(i, off)
+        note = ""
     if direction == "store":
-        return "%s(%s) = %s%s" % (space, addr, reg, long_)
-    return "%s = %s(%s)%s" % (reg, space, addr, long_)
+        return "%s(%s) = %s%s%s" % (space, addr, reg, long_, note)
+    return "%s = %s(%s)%s%s" % (reg, space, addr, long_, note)
 
 
 def render_dual_mem(f):
@@ -1147,6 +1169,31 @@ def render_instruction(
 
     if t in ("6b_shiftimm",):
         text = render_shiftimm(f)
+        return cond_prefix(f) + text, notes, gap
+
+    if t == "7a":
+        # PRM Type7a MODIFY (SHARC+ Core Programming Reference pp.13-46/
+        # 13-48): "Ia = MODIFY(Ia,Mb)" / "Ic = MODIFY(Ic,Md)" -- an I
+        # register update by the M register, done in parallel with an
+        # optional compute (COMPUTE_FORMS already renders that half into
+        # compute_text above). tools/sharc_trace.py's own "7a" handler
+        # already computes dest = source XOR idis (an idis=0 modify leaves
+        # source and dest the same register, matching the PRM's own worked
+        # example "I3 = MODIFY(I3,M5); /* Semantically same as
+        # MODIFY(I3,M5) */") -- this renderer had no branch for Type7a at
+        # all, so a compute=0 (pure-MODIFY) instance fell straight through
+        # to the raw field dump below, and a compute!=0 instance rendered
+        # only its compute half, silently dropping the MODIFY.
+        bank = 8 if f.get("g") else 0
+        source = f.get("is", 0) + bank
+        dest = (f.get("is", 0) ^ f.get("idis", 0)) + bank
+        modifier = f.get("m", 0) + bank
+        modify_text = (
+            "modify(I%d, M%d)" % (source, modifier)
+            if dest == source
+            else "I%d = modify(I%d, M%d)" % (dest, source, modifier)
+        )
+        text = compute_text + "; " + modify_text if compute_text else modify_text
         return cond_prefix(f) + text, notes, gap
 
     if compute_text:

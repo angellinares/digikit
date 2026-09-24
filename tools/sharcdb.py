@@ -80,7 +80,7 @@ import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
 
-DB_VERSION = 7
+DB_VERSION = 8
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
@@ -328,8 +328,9 @@ CREATE TABLE dataref (
 -- directly from an immediate, or a hardware-loop LCNTR literal), move (a
 -- 5a/5b_move ureg-to-ureg transfer, or a 12a_ureg loop count source), swap
 -- (5a/5b_swap), dag_modify (an I register written by address-modify
--- semantics: 19a*'s Is XOR Idis dest, 16a/16b's mandatory I+=M, or a
--- 3a/3b/3d/4a/4b/4d access with u=1), unknown (a register-touching form
+-- semantics: 19a*'s Is XOR Idis dest, 7a's Is XOR Idis dest with an
+-- M-register delta, 16a/16b's mandatory I+=M, or a 3a/3b/3d/4a/4b/4d
+-- access with u=1), unknown (a register-touching form
 -- family this pass could not fully resolve -- see the build report's
 -- per-form unknown counts; never silently omitted).
 CREATE TABLE regdef (
@@ -866,18 +867,17 @@ def _compute_regdef_reguse(field23):
 
 
 def _shortcompute_regdef_reguse(field12):
-    """Type 2c (PRM Table 18-21): RN 7:4 is both an input and the result for
-    the two "operate on RN itself" opcodes (inc/dec); the unary-Rx opcodes
-    (pass/not/float) read only Rx; every other opcode reads both RN and RX
-    (PRM/tools/sharcfn.py's render_shortcompute: "RN = op(RN, RX)")."""
+    """Type 2c (PRM Table 17-2/18-21): RN 7:4 is always the result; the
+    unary-Rx opcodes (pass/not/float, and inc/dec -- PRM's "RN = RX +/- 1"
+    reads only RX, never RN; see tools/sharcfn.py's render_shortcompute)
+    read only RX; every other opcode reads both RN and RX (PRM/
+    tools/sharcfn.py's render_shortcompute: "RN = op(RN, RX)")."""
     opcode = (field12 >> 8) & 0xF
     rn, rx = (field12 >> 4) & 0xF, field12 & 0xF
     is_float = opcode in sharcfn.FLOAT_SHORT_OPS
     Rn, Rx = sharcfn.reg_name(rn, is_float), sharcfn.reg_name(rx, is_float)
     defs = [(Rn, "compute")]
-    if opcode in sharcfn._UNARY_RN_SHORT_OPS:
-        uses = [Rn]
-    elif opcode in sharcfn._UNARY_RX_SHORT_OPS:
+    if opcode in sharcfn._UNARY_RX_SHORT_OPS:
         uses = [Rx]
     else:
         uses = [Rn, Rx]
@@ -1053,6 +1053,20 @@ def register_effects(insn_type: str, f: dict):
         src, dst = bank + src_low, bank + (src_low ^ dis_low)
         defs.append(("I%d" % dst, "dag_modify"))
         uses.append("I%d" % src)
+    elif t == "7a":
+        # PRM Type7a MODIFY (pp.13-46/13-48): "Ia = MODIFY(Ia,Mb)" -- the
+        # same source-XOR-idis destination trick as Type19a above, but the
+        # modify delta is an M register (not a literal), so it is also a
+        # use, like 16a/16b's mandatory I+=M below. Previously unmodelled
+        # entirely: Type7a's compute half (COMPUTE_FORMS, above) recorded
+        # register effects, but this instruction's own I-register write
+        # never did, at any decode_table.json field, so the DAG modify a
+        # Type7a always performs was invisible to `regdef`/`reguse`.
+        bank = 8 if f.get("g") else 0
+        src_low, dis_low = f.get("is", 0), f.get("idis", 0)
+        src, dst = bank + src_low, bank + (src_low ^ dis_low)
+        defs.append(("I%d" % dst, "dag_modify"))
+        uses += ["I%d" % src, "M%d" % (bank + f.get("m", 0))]
     elif t in ("16a", "16b"):
         i, m = f.get("i", 0), f.get("m", 0)
         defs.append(("I%d" % i, "dag_modify"))
@@ -1351,7 +1365,27 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
                 if base is not None:
                     bits = sharcfn._IMMOFF_DATA_BITS.get(t, 6)
                     off_val = sharcfn.sign_extend(f.get("data", 0), bits)
-                    dataref_rows.append((name, (base + off_val) & 0xFFFFFFFF, sw, t, "resolved_offset"))
+                    modified = (base + off_val) & 0xFFFFFFFF
+                    # PRM Type4a/4b/4d pp.13-26/13-30/13-34 ("u"): u=0
+                    # pre-modifies I for the address (I keeps its old value
+                    # afterwards); u=1 accesses the CURRENT (unmodified) I
+                    # and only writes I+offset back afterwards
+                    # (post-modify) -- so THIS access is at `base`, not
+                    # `base + off_val`, when u=1. Type15b has no u bit and
+                    # is always pre-modify (PRM p.15-11). This matches
+                    # tools/sharcdb.py's own `ptr` table (_ptr_mem_form)
+                    # and tools/sharc_trace.py's "4a"/"4b" handlers, which
+                    # already draw this same distinction -- this
+                    # `resolved_offset` role had not been updated to match.
+                    post_modify = t != "15b" and bool(f.get("u"))
+                    address = base if post_modify else modified
+                    dataref_rows.append((name, address, sw, t, "resolved_offset"))
+                    if post_modify:
+                        # I is permanently updated to the modified value
+                        # now, so a later same-block IMMOFF access to the
+                        # same I register must resolve against the new
+                        # value, not the stale literal.
+                        last_i_literal[i_reg] = modified
 
             defs, uses, unknown = register_effects(t, f)
             for reg, kind in defs:

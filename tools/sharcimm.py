@@ -210,12 +210,37 @@ def values_of(fields: dict) -> list[tuple[str, int, int]]:
     return out
 
 
+# tools/sharcfn.py's module docstring: "Type10a_rel (and, as measured
+# there, Type10a_abs too) is absent from tools/sharc_visa_tables.py's VISA
+# form set entirely, so any real occurrence surfaces as a disassembler
+# desync -- resynced and reported ..., not silently skipped." decode_table.
+# json's Type10a_rel/10a_abs entries match real VISA bit patterns by
+# coincidence, not because either is an instruction the assembler ever
+# emits; decode_all() previously trusted any offset that decoded, so a
+# desync landing on one of these patterns fed a real "instruction" into the
+# depth/sweep alignment sweep below, instead of the "cannot decode, step
+# 2 bytes and keep going" treatment desync recovery needs. Confirmed
+# against DT2 1.16 sw 0x1c1338-based sharcdb: only 4 of 4808 raw Type10a_rel
+# matches in the whole image ever reached "aligned" status, all four raw
+# field dumps (tools/sharcfn.py has no renderer for the form, again because
+# it is not real); excluding both from this table lets the sweep resync
+# through sw 0x1c4b99-0x1c4bb5 onto the real 64-bit voice-record store at sw
+# 0x1c4ba0 (Type3b, l=1, i=I4, d=store) that a Type10a_rel "hit" at sw
+# 0x1c4b9b had been corrupting.
+_NEVER_ALIGNED_FORMS = {"10a_rel", "10a_abs"}
+
+
 def decode_all(data: bytes) -> dict:
-    """offset -> Instruction for every even offset that decodes."""
+    """offset -> Instruction for every even offset that decodes, excluding
+    the decode-trap forms in _NEVER_ALIGNED_FORMS (see the comment above)."""
     table = {}
     for offset in range(0, len(data) - 1, 2):
         insn = next(disassemble(data, offset, count=1), None)
-        if insn is not None and insn.kind != "unknown":
+        if (
+            insn is not None
+            and insn.kind != "unknown"
+            and insn.type_name not in _NEVER_ALIGNED_FORMS
+        ):
             table[offset] = insn
     return table
 

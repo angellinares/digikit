@@ -292,6 +292,61 @@ class SyntheticBuildTest(unittest.TestCase):
                 sharcdb.build_database(stream_path, out_path, name="synthetic", min_depth=1)
 
 
+class SyntheticDatarefResolvedOffsetTest(unittest.TestCase):
+    """dataref's 'resolved_offset' role for an IMMOFF form (4a/4b/4d) with
+    u=1 (SHARC+ Core Programming Reference pp.13-26/13-30/13-34): u=0
+    pre-modifies I for the address (I keeps its old value afterwards); u=1
+    accesses the CURRENT (unmodified) I and only writes I+offset back
+    afterwards (post-modify). So a same-block "I2 = <lit>" literal load
+    followed by a u=1 Type4a access must resolve to the literal itself, not
+    literal+offset -- the bug this test's build found (tools/sharcdb.py's
+    IMMOFF resolved_offset arm ignored `u` and always added the offset,
+    unlike tools/sharc_trace.py's own "4a"/"4b" handlers and the `ptr`
+    table's _ptr_mem_form(), which already drew this distinction)."""
+
+    def _stream(self, base_sw, u, i2_literal=0x3000, off=8):
+        target = sharcldr.sw_to_byte(base_sw)
+        i2_ureg = UREG_CODES["I2"]
+        access = field_insn(
+            "4a", i=2, g=0, d=0, u=u, cond=0x1F, data=off, dreg=5, compute=0)
+        code = (
+            cjump(base_sw + 0x10)
+            + push3c()
+            + store(base_sw + 3 + 2)
+            + ret()
+            + load(0, 0)
+            + rframe()
+            + load(i2_ureg, i2_literal)
+            + access
+        )
+        return boot_block(0, target, len(code), payload=code)
+
+    def _resolved_offset(self, tmp_path, u):
+        stream_path = os.path.join(tmp_path, "stream.bin")
+        with open(stream_path, "wb") as fh:
+            fh.write(self._stream(0x1C1338, u))
+        out_path = os.path.join(tmp_path, "out.sqlite")
+        sharcdb.build_database(
+            stream_path, out_path, name="synthetic", min_depth=1, blocks=(0,), force=True)
+        db = sqlite3.connect(out_path)
+        rows = db.execute(
+            "SELECT value FROM dataref WHERE role = 'resolved_offset'").fetchall()
+        db.close()
+        return [r[0] for r in rows]
+
+    def test_postmodify_resolves_to_the_unmodified_literal(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._resolved_offset(tmp, u=1), [0x3000])
+
+    def test_premodify_still_resolves_to_literal_plus_offset(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self._resolved_offset(tmp, u=0), [0x3008])
+
+
 class SyntheticJumpEdgeTest(unittest.TestCase):
     """A single conditional Type8a JUMP (b=0): the edges table must record
     both the taken cond_jump and the not-taken fallthrough path."""
@@ -488,10 +543,13 @@ class RegisterEffectsTest(unittest.TestCase):
         self.assertEqual(defs, [("R3", "compute")])
         self.assertEqual(uses, ["R3", "R4"])
 
-    def test_shortcompute_unary_rn_uses_only_rn(self):
-        field12 = (0x5 << 8) | (3 << 4) | 4  # inc
+    def test_shortcompute_inc_uses_only_rx_not_rn(self):
+        # PRM Table 17-2 (p.17-3): opcode 0101 ('inc') is "RN = RX + 1" --
+        # RX is the only register read; RN (the destination) is not.
+        field12 = (0x5 << 8) | (3 << 4) | 4  # inc, rn=3, rx=4
         defs, uses = sharcdb._shortcompute_regdef_reguse(field12)
-        self.assertEqual(uses, ["R3"])
+        self.assertEqual(defs, [("R3", "compute")])
+        self.assertEqual(uses, ["R4"])
 
     def test_3c_load_defines_dreg_from_d_field_not_mnemonic(self):
         # The exact shape of the task's Type3c bug: d=0 is a LOAD (R6
@@ -530,6 +588,17 @@ class RegisterEffectsTest(unittest.TestCase):
         defs, uses, _unknown = sharcdb.register_effects("19a", f)
         self.assertEqual(defs, [("I2", "dag_modify")])
         self.assertEqual(uses, ["I4"])
+
+    def test_7a_modify_dest_is_xor_idis_and_uses_m(self):
+        # PRM Type7a MODIFY (pp.13-46/13-48): "Ia = MODIFY(Ia,Mb)" -- the
+        # same Is-XOR-Idis destination trick as Type19a above, but the
+        # modify delta is register M3 (a use), not a literal. Previously
+        # register_effects() had no branch for "7a" at all -- its own
+        # I-register write, unlike its compute half, was invisible.
+        f = {"g": 0, "idis": 6, "is": 4, "m": 3, "compute": 0}
+        defs, uses, _unknown = sharcdb.register_effects("7a", f)
+        self.assertEqual(defs, [("I2", "dag_modify")])
+        self.assertEqual(sorted(uses), ["I4", "M3"])
 
     def test_16a_always_modifies_i_by_m(self):
         f = {"g": 0, "i": 4, "m": 5, "data": 0x1234}
