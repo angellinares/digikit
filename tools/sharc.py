@@ -241,6 +241,45 @@ class Image:
         ).fetchall()
         return [{"sw": _hex(sw), "form": form, "role": role} for sw, form, role in rows]
 
+    def _ptr_hits(self, addr, size, direction):
+        """Every tools/sharcdb.py `ptr` row for `direction` whose resolved
+        [address, address+width) range overlaps [addr, addr+size) ('kind':
+        'resolved'), plus every row whose base is known but whose address
+        isn't (an indexed I,M form with an untracked modifier) and whose
+        base sits within 0x10000 bytes below addr ('kind': 'base_only') --
+        a plausible hit for a runtime-indexed struct/array write this static
+        pass can't fully resolve, not a proof. See tools/sharcdb.py's
+        _build_ptr_rows module note for what the `ptr` table does and does
+        not cover."""
+        hi = addr + size
+        rows = self.db.execute(
+            "SELECT sw, base_reg, base_value, address, width, "
+            "  CASE WHEN address IS NOT NULL THEN 'resolved' ELSE 'base_only' END kind "
+            "FROM ptr WHERE image=? AND direction=? AND ("
+            "  (address IS NOT NULL AND address < ? AND address + (CASE width WHEN 'long' THEN 8 ELSE 4 END) > ?)"
+            "  OR (address IS NULL AND base_value IS NOT NULL AND base_value <= ? AND ? - base_value < 0x10000)"
+            ") ORDER BY sw",
+            (self.name, direction, hi, addr, addr, addr),
+        ).fetchall()
+        return [
+            {
+                "sw": _hex(sw), "base_reg": base_reg,
+                "base_value": _hex(base_value) if base_value is not None else None,
+                "address": _hex(address) if address is not None else None,
+                "width": width, "kind": kind,
+            }
+            for sw, base_reg, base_value, address, width, kind in rows
+        ]
+
+    def writers(self, addr, size=4):
+        """Every store tools/sharcdb.py's constant-pointer propagation (the
+        `ptr` table) can place at or partly inside [addr, addr+size)."""
+        return self._ptr_hits(addr, size, "store")
+
+    def readers(self, addr, size=4):
+        """The same, for a load."""
+        return self._ptr_hits(addr, size, "load")
+
     def xref_table(self, addr, n):
         """Read n consecutive 32-bit little-endian loader words from addr as
         code pointers (the pattern behind roots.kind='code_pointer_array'),

@@ -871,6 +871,26 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
         matches = self.dt2.match(self.dn2, 0x1CBF07)
         self.assertIn(0xB806F5, {int(m["entry_sw"], 16) for m in matches})
 
+    def test_ptr_resolves_1c15e3_loop_store_base(self):
+        # FUN_1c15e3's workspace-copy loop stores through I4 (itself copied
+        # from I10, literal-loaded at 0x1c1668 -- docs/findings/06's "Boot
+        # fills the pointer table the mix reads"): the constant-pointer pass
+        # should resolve the loop's own store site, 0x1c16cc, to that base.
+        hits = {h["sw"]: h for h in self.dt2.writers(0x252D78)}
+        self.assertIn("0x1c16cc", hits)
+        self.assertEqual(hits["0x1c16cc"]["kind"], "resolved")
+        self.assertEqual(hits["0x1c16cc"]["base_reg"], "I4")
+
+    def test_ptr_resolves_1c642a_stage_c_selector_read(self):
+        # docs/findings/06: FUN_1c642a spills its R4 workspace argument
+        # (0x2412c8, from the single call at 0x1c3083) to DM(I6-4), reloads
+        # it, and forms I1 = I4 + 0xdc64 - 0x80 before reading the stage C
+        # selector at 0x1c6c0f -- DM(0x2412c8 + 0xdbe4) = 0x24eeac.
+        hits = {h["sw"]: h for h in self.dt2.readers(0x24EEAC)}
+        self.assertIn("0x1c6c0f", hits)
+        self.assertEqual(hits["0x1c6c0f"]["kind"], "resolved")
+        self.assertEqual(hits["0x1c6c0f"]["address"], "0x24eeac")
+
 
 @pytest.mark.slow
 @unittest.skipUnless(DT2_116_GHIDRA_DUMP.exists(), "DT2 1.16 ColdFire Ghidra dump is not available")

@@ -182,3 +182,31 @@ FROM loops WHERE function_sw = 0x1c642a ORDER BY header_block;
 
 -- The largest "no static entry" clusters and their likely dispatcher.
 SELECT cluster, count(*) n FROM unentered GROUP BY cluster ORDER BY n DESC LIMIT 10;
+
+-- --- ptr (constant-pointer propagation, DB_VERSION 6) -----------------------
+--
+-- _build_ptr_rows() (called from analyze_image(), so `sharcdb analyze` alone
+-- backfills this on an older database) fills this from a per-function
+-- forward constant-propagation pass -- see tools/sharcdb.py's own long
+-- module note just above that function for what is and is not modelled.
+-- tools/sharc.py's Image.writers()/readers() are the preferred way to query
+-- this (they add the "base known, address not" fallback below); these are
+-- for ad hoc sqlite3 use.
+
+-- Every access whose EFFECTIVE ADDRESS resolves to a given constant --
+-- substitute the 0x... literal.
+SELECT printf('%x', sw) sw, base_reg, printf('%x', base_value) base_value, direction, width
+FROM ptr WHERE address = 0x24eeac ORDER BY sw;
+
+-- The same, plus "base known, address not" hits within 0x10000 bytes below
+-- it (an indexed I,M access whose M modifier isn't a tracked constant --
+-- Image.writers()/readers()'s own 'base_only' fallback, since a register-
+-- relative access with an unknown index can't be pinned to one address).
+SELECT printf('%x', sw) sw, base_reg, printf('%x', base_value) base_value,
+       CASE WHEN address IS NOT NULL THEN 'resolved' ELSE 'base_only' END kind
+FROM ptr
+WHERE direction = 'store' AND (
+  (address IS NOT NULL AND address < 0x24eeb0 AND address + 4 > 0x24eeac)
+  OR (address IS NULL AND base_value IS NOT NULL AND base_value <= 0x24eeac AND 0x24eeac - base_value < 0x10000)
+)
+ORDER BY sw;
