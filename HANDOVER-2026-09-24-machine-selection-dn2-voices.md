@@ -126,6 +126,57 @@ Candidate first sounds, simplest first:
 All three keep the rest of the chain: the amplitude envelope, the per-track
 filter and effects, the sends and the master.
 
+## Next 4: run the SHARC in an emulator
+
+Goal: execute the SHARC program concretely, first to render audio offline,
+later coupled to the ColdFire emulator. Step 1 can run in parallel with
+Next 1. It also gives the offline test bench for Next 3.
+
+Why the ColdFire emulator was quick: Unicorn (QEMU's m68k translator with a
+JIT) gave a complete CPU core. We only patched ColdFire gaps and wrote the
+peripheral models. No such core exists for the SHARC+: there is no QEMU or
+Unicorn target, the vendor simulator cannot be used, and Selache has no
+simulator. We must supply the CPU core.
+
+What we already have for the core:
+
+- The decoder (trusted after the 2026-09-24 fixes).
+- `tools/sharc_trace.py`: manual-backed semantics for most forms the audio
+  path uses (ALU, multiplier, shifter, multifunction, delayed branches,
+  hardware loops, DAG addressing, Type11a returns). It is built for proof,
+  not speed: symbolic values, forking, fail-closed.
+- `tools/sharcemu.py`: a pypcode backend over the generated language (about
+  half of the instructions have p-code today).
+- The map: memory layout, interrupt vector table, SECI dispatch, rings, and
+  the audio task's command protocol (finding 06).
+
+Steps and estimates (at the 2026-09-24 pace, with parallel agents):
+
+1. A concrete fast mode for the tracer: plain numbers, no forking, stop only
+   on unknown instructions. Run one voice render (`0x1c4ecf` -> `0x1c4f81`)
+   with a real sample loaded, write the block to a WAV, and count
+   instructions per block. About a day. This measures the real speed.
+2. Boot to FreeRTOS idle with interrupts: IVT, SECI dispatch, core timer and
+   SEC registers as simple models; a stub for the boot-source probe at
+   `DM(0x10000000)`. A few days.
+3. SPORT4 and its DMA descriptors: feed the audio task commands the way the
+   ColdFire does, and capture ring A to a WAV. A few days.
+4. Couple to the ColdFire emulator in lockstep (not real time): the ColdFire's
+   DSPI2 frames drive the SHARC. A few days.
+
+Total: about one to two weeks of sessions for a first sound from an emulated
+SHARC. Real-time playback would need a compiled core (C or Rust, about
+100-300 million instructions per second); that is a separate project.
+
+Limits that remain:
+
+- The RECIPS/RSQRTS seed tables are not published. The tracer's
+  `--approx-recips` seed can differ in the last bit or so. This is acceptable
+  for audio.
+- SHARC 40-bit float precision will be modelled as 32-bit.
+- Some peripheral behaviour will be guessed, then checked against how the
+  firmware reacts.
+
 ## Open items
 
 - `0x1c4a31`'s caller: does it cancel the factor of 2 in the step?
