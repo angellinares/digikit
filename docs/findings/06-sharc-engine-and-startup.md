@@ -237,6 +237,50 @@ above crosses an explicit unsupported-instruction restart seam. Therefore it
 does not establish marker production, DMA10 descriptors, SSI cadence or final
 A2 qualification. **[O]**
 
+## The interrupt vector table and SEC dispatch **[V]**
+
+`CMMR_SYSCTL` (`0x30024`) bit 2 is `IIVT`: set, it maps the core's interrupt
+vector table to internal memory ("the CMMR_SYSCTL.IIVT bit when set maps the
+IVT to the internal memory Address 0x900000. On reset, this bit is cleared
+and the IVT is mapped to L2CTL ROM1 boot memory address 0x500000" -- Table
+30-8, `out/refs/sharc-plus-prm` and `out/refs/sc58x-2158x-prm`). Boot function
+`FUN_1c0f24` reads `CMMR_SYSCTL` at `0x1c0f88`, sets bit 2 at `0x1c0f8b`, and
+writes it back at `0x1c0f8e`. The only other writers found (`0x1c097c`,
+`0x1c0999`, inside `FUN_1c0891`) read-modify-write bit 16 (`PFB_INVAL`) and
+never touch bit 2. **[V]**
+
+Loader block 70 targets byte address `0x28240000`, i.e. sw `0x120000`,
+normal-word `0x90000` -- the manual's own worked example calls `0x90000`
+"the block 0 starting point of a normal word and 48-bit address"
+(`sc58x-2158x-prm` pp.230-231). This is the L1-mapped IVT `FUN_1c0f24`
+selects. Its 768 bytes are 32 slots of 24 bytes (four 48-bit words each).
+Seven slots hold only the filler `00 00 00 00 3e 0b` x4 -- slots 2, 9, 10,
+16-19 -- exactly the interrupt numbers Table 4-46 marks "Reserved" for the
+ADSP-2156x/SC57x/SC58x family. **[V]**
+
+Each populated slot's jump target is not what `tools/sharc_isa.py` decodes:
+its matched form (`Type14a`, `Type11a` or `8a_abs`, depending on slot)
+assembles an address from the standard word-swapped 48-bit frame and gets it
+wrong (e.g. `0x1c063e` for the reset slot, not the code it actually runs).
+The real target is the instruction's first three stored bytes read as a
+plain little-endian 24-bit integer, no word-swap: RSTI (1) -> `0x1c1338`
+(loader entry), EMUI (0) -> `0xb89010`, PARI (3) -> `0xb89046`, ILOPI (4) ->
+`0xb8902a` (all in `FUN_b89002`), 20 slots (5-8, 11-14, 20-31) -> `0x1c0b1e`,
+SECI (15) -> `0x1c0b7b` (both in `FUN_1c0b1d`) -- six of nine distinct
+targets checked directly against the bytes, all exact. Real decoder gap, not
+a firmware oddity: Types 11a/14a/16a's `addr`/`compute` fields are correctly
+placed for ordinary 48-bit instructions but wrong for this table's flat
+byte-address encoding. **[C][V]**
+
+`FUN_1c0b1d` dispatches by reading the interrupt number from `ASTATX` (`fext`
+pos 0 len 12), scaling by 8, adding `0x240ad8`, and jumping through `I12`
+(`0x1c0b1e`-`0x1c0b75`). The `SECI` entry instead reads
+`R4 = DM(0x300eb)` -- `SHDBG_SECI_ID`, which "holds the SID of the current
+SEC interrupt" (same PRM, Table 31-34) -- writes it back unchanged, scales
+by 2, adds `0x240948`, and jumps (`0x1c0b7b`-`0x1c0bdc`): a second-level
+dispatch into the System Event Controller's own handler table by SID,
+separate from the core interrupt-number table at `0x240ad8`. **[V]**
+
 ## The capped SHARC frontier sprint found no supported route to the SSI peer **[V][O]**
 
 A final bounded public-source search found no semantics for aligned parcel
@@ -1635,6 +1679,20 @@ compiler-generated C, and circumstantial evidence this code is interrupt-adjacen
 No per-machine dispatch here: none of the 12 indirect-call sites falls inside the
 body, and every conditional branch tests a shifter or ALU flag around lock and
 retry sequences, never a small-integer compare or table load.
+
+**Ring C and D's handlers are registered, not built inline.** `0x1c7a3b` (an
+entry point inside this function with its own static caller) starts ring C
+and D's setup: `R12=0`/`call 0x1ca58a` for ring C, `R12=2`/`call 0x1ca58a`
+for ring D, each eventually reaching `call 0x1ca7e4` with the descriptor
+head in `R8`, as above. `FUN_1ca58a` registers three handlers through
+`FUN_b8afa2(id=R4, handler=R8, ctx=R12, flag=stack arg)`: `0x1ca1bd` with
+`id=DM(I4+4)`, `0x1caebc` (in `FUN_1cae8f`) with `id=DM(I4+2)`, `0x1cb15f`
+(in `FUN_1cb14f`) with `id=DM(I4+3)`. None of the three handler bodies
+writes any ring buffer, descriptor address, `0x252d78` or `0x24ef2c` as a
+literal; `0x1ca1bd` instead ends in the unresolved indirect jump `PM(I4,M5)`
+already listed among blk93's 12 unresolved indirect calls. Bases `I4`/`I5`
+in all three come from the caller's context argument, so an indirect hit on
+those addresses at runtime is not excluded. **[V][O]**
 
 ## Reading the DSP: the `FUN_1c71ec` pipeline is a wavetable engine, not an FFT **[C][D]**
 
