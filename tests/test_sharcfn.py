@@ -728,6 +728,35 @@ class RealBlobType3cRenderingTest(unittest.TestCase):
         self.assertEqual("R6 = DM(I4, M5)", self.rows["0x1c653b"])
 
 
+@unittest.skipUnless(
+    os.path.exists(_DT2_116_BLOB),
+    "out/sections/dt2-1.16/section_7_BLOB.bin is not available",
+)
+class RealBlobType14dRenderingTest(unittest.TestCase):
+    """DT2 1.16 sw 0x1c257d (d=0, l=1, w=0, ex=0, x=0, dreg=11): a Type14d
+    load that a previous version of render_mem_direct() rendered as
+    "R11 = DM(0x255906), long" by reusing Type14a/15a's "l" == "(LW) 32-bit
+    register-pair" rule. Per the PRM (out/refs/sharc-plus-prm pp.384-387,
+    Figure 15-2's BHSE Encode Table), Type14d's "l" instead picks a
+    sub-word width (byte/short), so l=1,x=0 is a short-word, zero-extended
+    load -- "(sw)" -- the same width tools/sharc_trace.py's "14d" _execute
+    branch actually reads, not a 32-bit long."""
+
+    @classmethod
+    def setUpClass(cls):
+        ctx = sharcfn.load_context(_DT2_116_BLOB, sharcinv.CODE_BLOCKS, min_depth=8)
+        cls.dossier = sharcfn.build_dossier(ctx, 0x1C24E9, want_listing=True)
+        cls.rows = {
+            row["sw"]: row["mnemonic"] for row in cls.dossier.get("listing", [])
+        }
+
+    def test_dossier_builds_without_error(self):
+        self.assertNotIn("error", self.dossier)
+
+    def test_type14d_load_renders_as_short_word_not_long(self):
+        self.assertEqual("R11 = DM(0x255906) (sw)", self.rows["0x1c257d"])
+
+
 def sharcfnCounterLike():
     from collections import Counter
 

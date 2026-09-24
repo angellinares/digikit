@@ -567,8 +567,46 @@ def _space_dir(f: dict) -> str:
     return space, direction
 
 
+def _type14d_suffix(f, direction):
+    """Type14d width/sign suffix (PRM out/refs/sharc-plus-prm pp.384-387,
+    Figure 15-2: the w, ex, d, l, x fields; BH/BHEX/BHSE/BHSEEX/EX/LWEX
+    encode tables on pp.386-387). Mirrors tools/sharc_trace.py's "14d"
+    _execute branch field-to-width mapping bit for bit for the w=0,ex=0
+    rows it actually runs (BH for a store, BHSE for a load: l picks
+    byte/short, and for a load x additionally picks zero- vs
+    sign-extend). sharc_trace refuses to *execute* ex=1 (exclusive access)
+    and stops there without computing a width, but the PRM still gives
+    those rows an unambiguous syntax (BHEX/BHSEEX for w=0, EX/LWEX for
+    w=1), so this disassembler -- which only has to name the encoding, not
+    run it -- renders those too. w=1,ex=0 has no row in the PRM opcode
+    table at all (the same combination sharc_trace calls out as
+    undocumented), and a store (d=1) with x=1 is off the BH/BHEX tables
+    (they have no x column): both are flagged inline rather than guessed
+    at, since the manual does not name them.
+    """
+    store = direction == "store"
+    w, ex, l, x = f.get("w"), f.get("ex"), f.get("l"), f.get("x")
+    if w:
+        if not ex:
+            return " (undocumented: w=1,ex=0)"
+        return " (lw,ex)" if l else " (ex)"
+    base = "sw" if l else "bw"
+    if store:
+        tag = "%s,ex" % base if ex else base
+        if x:
+            tag += ", undocumented x=1"
+        return " (%s)" % tag
+    if x:
+        base += "se"
+    return " (%s,ex)" % base if ex else " (%s)" % base
+
+
 def render_mem_direct(sw, f, kind):
-    """15a/14a/14d: direct DM/PM addressing."""
+    """15a/14a/14d: direct DM/PM addressing. 14a/15a's "l" is the PRM's
+    (LW) "long word" modifier (a Ureg-pair access, PRM pp.382-383); 14d's
+    "l" is instead one of the BW/SW/BWSE/SWSE sub-word-width selectors
+    (see _type14d_suffix), so 14d needs its own rendering, not the plain
+    ", long" suffix."""
     addr = f.get("addr", 0)
     ureg = f.get("ureg")
     dreg = f.get("dreg")
@@ -578,10 +616,13 @@ def render_mem_direct(sw, f, kind):
         else ("R%d" % dreg if dreg is not None else "?")
     )
     space, direction = _space_dir(f)
-    long_ = ", long" if f.get("l") else ""
+    if kind == "14d":
+        suffix = _type14d_suffix(f, direction)
+    else:
+        suffix = ", long" if f.get("l") else ""
     if direction == "store":
-        return "%s(0x%x) = %s%s" % (space, addr, reg, long_), addr, False
-    return "%s = %s(0x%x)%s" % (reg, space, addr, long_), addr, False
+        return "%s(0x%x) = %s%s" % (space, addr, reg, suffix), addr, False
+    return "%s = %s(0x%x)%s" % (reg, space, addr, suffix), addr, False
 
 
 def render_mem_indexed(sw, f):
