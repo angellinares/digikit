@@ -2297,7 +2297,13 @@ comes from `I15`, which starts at `0x2412c8 + 0xd604` for track 0
 `0x1c4d88` writes `DM(I5 + 0x1b9)` and `DM(0x72)`; `0x1c4bf9` writes
 `DM(I5 + 0x1ba)`; `0x1c4a31` writes `DM(I5 + 0x1bb)` and nearby;
 `0x1c4afe` writes `DM(I5 + 0x1ba)` and branches on `DM(I5 + 0x1bb)` at
-`0x1c4bbe`. Helper roles: `0x1c0d68` looks up a curve table
+`0x1c4bbe`. **[C][V]** These are I-register bases in bytes: all four
+helpers store one `(sw)` flag short at bytes +0x1bb/+0x1bc, and +0x1ba is a
+seed flag they test and clear (see "The voice record contract"). **[O]**
+Base of `I15`, two single readings: (a) `I15 = I4 + 0x18c` bytes
+(`0x1c64d2`/`0x1c64e0`), minus 0x188 gives record base `0x2412cc`;
+(b) `ws + 0xd604` (`0x24e8cc`) is the envelope array base `DM(I6-25)`
+(`0x1c648a`/`0x1c649d`), not the voice records. Helper roles: `0x1c0d68` looks up a curve table
 (`0x2411c8`, `0x241210`); `0xb88f06` converts a float to a 64-bit fixed
 value; `0xb88f70` computes the bit length of a 64-bit value; `0x1c06ba`
 is `RECIPS` plus three Newton-Raphson steps, then a word copy of `R12`
@@ -3339,7 +3345,8 @@ byte flags. **[C]** Earlier word offsets +0x1ab/+0x1ac (`0x1c4a31`) are bytes
 `0x1c4bf9` call `0x1c0d68` with `F4 = 2.0`, `F8 = clip((F8-60)+(F12-64),
 64)/12` and scale by `float(DM(I5+0x61)) / 96000`; `0x1c4d88` and `0x1c4a31`
 do not call it. Only `0x1c4bf9` skips `0x1c4914`. Step format and store
-offsets of the other three: **[O]**.
+offsets of the other three: **[O]**. **[C][V]** Resolved in "The voice
+record contract": all four store a Q31 step at words 0x6a/0x6b.
 
 **`FUN_1c71ec` [C][V].** Out-of-line blocks of `FUN_1c642a`, entered by jumps
 at `0x1c7053`, `0x1c6f07`, `0x1c6eef`, `0x1c6ed9` and table `0x8055c874`;
@@ -3354,3 +3361,81 @@ off `I1 = DM(I4+16)` and each sample writes `DM(I1+M4) = fclip(x + g*taps,
 (`0x1cbfd9` is `R2 = R13 + 1`). `2^32` fixes the unsigned count before `1/N`;
 `8192.0` wraps the read position. An 8192-word feedback comb or delay **[D]**,
 not a wavetable read.
+
+## The voice record contract **[C][V][D][O]**
+
+Two agents checked six claims on the 1.16 bytes; **[V]** is what both
+confirmed. `DM(Ix + imm)` offsets are words, I-register modifies are bytes,
+M modifiers scale by access size (word x4, `(sw)` x2, `(bw)` x1).
+
+| field (record `0x2412cc + k*0x1d8`) | offset (unit) | format | written by | read by |
+| --- | --- | --- | --- | --- |
+| work buffer | bytes +0x4..+0x103 | 64 float | `0x1c4f81` | `0xb80000`, declick |
+| decimator state | byte +0x104 (pointer) | float words | `0xb80000` | `0xb80000` |
+| previous sample | word 0x60 (byte +0x180) | float | `0x1c4f81` | `0x1c4f81` |
+| rate | word 0x61 | u32 | not checked | `0x1c4afe`, `0x1c4bf9`, `0x1c4d88` |
+| loop start / start / end | words 0x64-65 / 0x66-67 / 0x68-69 | Q31 int64, low first | `0x1c4914`, `0x1c4bf9` | `0x1c4f81`, seed |
+| step | words 0x6a-6b | signed Q31 int64 | the four setters | `0x1c4f81`, `0x1c53c5` |
+| phase | words 0x6c-6d | Q31 int64 | setters (seed), `0x1c4f81` | `0x1c4f81`, `0x1c53c5` |
+| fade-in / zero-cross mute / reseed | bytes +0x17c / +0x17d / +0x17e | u8 one-shot | not checked | `0x1c4f81` |
+| active | byte +0x1b8 | u8 | `0x1c4eaf`, `0x1c4f81` | `0x1c4ecf`, `0x1c5576`, `0x1c4f81` |
+| seed pending | byte +0x1ba | u8 | `0x1c4eaf` (1), setters (0) | setters |
+| reverse / loop | bytes +0x1bb / +0x1bc | u8 pair, one `(sw)` store | setters | setters, `0x1c4f81` |
+
+**Step [C][V].** `0x1c4afe`, `0x1c4bf9`, `0x1c4d88`: step = ratio * rate /
+96000 * 2^31 (float, `scalb` 30, int64 via `0xb88f06`, `<< 3`; low 3 bits
+0). Rate is word 0x61 as unsigned (+2^32 if negative); /96000 is a multiply
+by `0x372ec33e` plus one correction step. `0x1c4afe`/`0x1c4bf9`: ratio =
+`powf(2, clip((F8-60) + (F12-64), 64)/12)` (`0x1c0d68`); **[C]** the +-64
+clip (`0x1c4b1d`, `0x1c4c18`) was missing. `0x1c4d88` takes the ratio in
+`F8`; its caller `0x1c685e` builds it the same way **[D]**. Stack arg1 !=
+0 negates the step (`0x1c4b79`/`0x1c4b7c`). Low word to 0x6a, high to 0x6b
+(`0x1c4b9d`/`0x1c4ba2`, `0x1c4e18`/`0x1c4e17`, `0x1c4c98`/`0x1c4c9b`).
+F8 = note, F12 = tune: **[D]**.
+
+**`0x1c4a31` (selector 3, caller `0x1c691f`) [V][O].** Step = +-F8 * 2^32
+(`F8 * 0.5`, `scalb` 30, `<< 3`), negated when `R12` != 0; no `0x1c0d68`, no
+word 0x61, no /96000; same words (`0x1c4a92`, `0x1c4a95`). Readers index
+with `pos >> 31`, so it is Q31 like the others: 2*F8 samples per output
+sample. **[O]** Whether the caller cancels the 2: its divide (`0x1c690a`)
+has `F2 = F2 + F2` at `0x1c68fd`. REPITCH: **[D]**.
+
+**Positions [C][V].** `0x1c4914` is called only at `0x1c4a98`, `0x1c4ba3`,
+`0x1c4e1a`. `0x1c4bf9` sets start = min(arg3, len-141) << 31; with arg2 = 0,
+0x64 = start and 0x68 = min(arg4, len) << 31, else `0x1c4d58` stores the
+min/max of min(arg4, len) and min(arg5, len) in 0x64/0x68; `0x1c4914` does
+the same when `R8` != 0 (`0x1c49de`). **[C]** The sorted pair is loop start
+and end, not start (0x66). `0x1c4914` input meanings: **[D]**.
+
+**Flags and seed [C][V].** All four setters store `(arg1 & 0xff) | (arg2 <<
+8)` as one `(sw)` short at bytes +0x1bb/+0x1bc (`DM(M6, I5 + 0x1b9)` at
+`0x1c4ba0`, `0x1c4de0`, `0x1c4c93`; `DM(M5, I5 + 0x1bb)` at `0x1c4a96`).
+**[C]** `0x1c4afe` and `0x1c4d88` do not write +0x1ba. Arg1 also negates
+the step. Each setter then tests +0x1ba (`0x1c4aa2`, `0x1c4bad`, `0x1c4d0d`,
+`0x1c4e24`); if set, it clears it and sets the phase to end - 1.0 sample
+(`+ 0xffffffff_80000000`) when +0x1bb is set, else to start. `0x1c4eaf`
+sets +0x1ba = 1 and the short 1 at +0x1b8 (`0x1c4eb9`, `0x1c4ebb`).
+`0x1c4f81` never reads +0x1ba; +0x1bb != 0 selects the descending loop
+`0x1c52ab` (`0x1c507f`); past the limit with +0x1bc = 0 it clears +0x1b8
+(`0x1c5008`, `0x1c5048`); a wrap copies +0x1bc to +0x1b8 (`0x1c50fe`,
+`0x1c530a`, `0x1c5325`). It tests +0x1b9 (`0x1c526d`); fade-out: **[D]**.
+
+**Render and declick [C][V].** `DO 64`; six `(swse)` int16 taps, 6
+coefficient words at `0x25d940 + idx*24` bytes, `float_by -15`. `0xb80000`
+reads 64, writes 32, x0.5. +0x17d zeroes samples until a sign change
+against word 0x60 or |x| <= 0.001, then clears; +0x17e reseeds word 0x60;
++0x17c runs one linear fade-in, then clears. **[C]** Declick flags, not
+envelope state. **[O]** Decimator state: (a) bytes +0x104..+0x14b; (b) only
++0x114..+0x14b used.
+
+**Envelope [V][O].** `0x1cbb57` runs after the render loop (`0x1c6f1c`), 32
+times, on 11-word records stepped 0x2c bytes, in place on `ws + 0xdc64`[k].
+**[O]** Record base: (a) not traced; (b) `ws + 0xd604` = `0x24e8cc`, outside
+the voice records.
+
+**Dispatch [C][V].** Selector word at slot +0x4c bytes (stride 0xdc bytes).
+`0x1c6ae8 R2 = btgl R2 by 1` and `0x1c6aeb JUMP IF NOT SZ`: selector 2 calls
+`0x1c5576` (`0x1c6af1`), any other `0x1c4ecf` (`0x1c6b00`). **[C]** Both
+zero-fill unless word +0 and byte +0x1b8 are non-zero. Trigger: `0x1c6553
+compu(R6, 6)`, `0x1c6561 JUMP IF GE 0x1c65fe` (unsigned), `0x1c6579 JUMP
+(M13, I12)` through `0x8055c840`. STRETCH: **[D]**.
