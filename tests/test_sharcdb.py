@@ -841,6 +841,16 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
         for fn in (0x1C2B24, 0x1C642A, 0x1C71EC, 0x1CBF07):
             self.assertIn(fn, reached, "0x1c7749 does not reach 0x%x" % fn)
 
+    def test_loader_entry_reaches_boot_chain(self):
+        # 0x1c1338 sits in a data/fill gap no function's span covers, so
+        # reach must fall back to the next function by address (see
+        # _detect_reach's docstring) to find this chain at all.
+        reached = {r[0] for r in self.dt2.sql(
+            "SELECT function_sw FROM reach WHERE image='dt2-1.16' AND root_sw=0x1c1338"
+        )}
+        for fn in (0x1C13E6, 0x1C7FF9, 0x1C15E3):
+            self.assertIn(fn, reached, "loader entry 0x1c1338 does not reach 0x%x" % fn)
+
     def test_1c642a_loop_at_1c6530(self):
         rows = self.dt2.sql(
             "SELECT header_block FROM loops WHERE image='dt2-1.16' AND function_sw=0x1c642a AND header_block=0x1c6530"

@@ -80,11 +80,22 @@ import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
 
-DB_VERSION = 4
+DB_VERSION = 5
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
 # the right thing on the next run.
+#
+# --- v5: reach now seeds from every root, not just function entries --------
+#
+# _detect_reach() used to drop a root whose address wasn't inside any
+# function's [entry_sw, end_sw) span. The only root kind that can happen to
+# (loader_entry -- see _detect_roots) was therefore silently missing from
+# `reach` on every image: DT2 1.16 and DN2 1.11 both put their loader entry
+# inside a `data` block immediately followed by `fill` padding, with no
+# bblock/succ path bridging that padding into the first application
+# function (checked directly against both images' bblocks/succ rows). See
+# _detect_reach()'s own docstring for the fallback this version adds.
 #
 # --- ColdFire images (import_ghidra) -----------------------------------------
 #
@@ -1507,18 +1518,41 @@ def _function_call_jump_graph(db, name, function_entries):
 
 def _detect_reach(db, name, roots, function_entries):
     """[(root_sw, function_sw, depth), ...]: every function reachable from
-    each distinct root address's containing function, by shortest CALL
-    depth (0-weighted jump/cond_jump edges included in the walk, per
-    _function_call_jump_graph)."""
+    each distinct root address, by shortest CALL depth (0-weighted
+    jump/cond_jump edges included in the walk, per
+    _function_call_jump_graph).
+
+    Every root normally maps to the function whose [entry_sw, end_sw) span
+    contains it (owner(), below). loader_entry is the exception: it's the
+    scanned region's raw BFLAG_FIRST target (see _detect_roots), which can
+    land outside every function's span. Checked directly against both DT2
+    1.16 and DN2 1.11: in both, the loader entry sits at the start of a
+    `data` block immediately followed by `fill` padding, and the last
+    bblock the scanner finds before that padding has no succ row at all --
+    there is no live bblock/succ path from the root into the next
+    function, so walking that CFG would find nothing to seed with. The
+    fallback below is the next function by address instead: the gap is
+    either unscanned or alignment padding, i.e. a straight-line
+    continuation rather than a call, so it is seeded at depth 0 -- the
+    same effect as giving the loader entry a synthetic function span up to
+    that next entry, without adding a fake row to `functions` and
+    skewing its count. This fallback is general (any owner-less root
+    would take it), but today only loader_entry roots ever do -- every
+    other root kind is only added when it already resolves to a function
+    (see _detect_roots)."""
     owner = _owner_factory(db.execute(
         "SELECT entry_sw, end_sw FROM functions WHERE image=?", (name,)
     ).fetchall())
+    starts = sorted(function_entries)
     G = _function_call_jump_graph(db, name, function_entries)
     rows = []
     for sw in sorted({r[0] for r in roots}):
         fn = owner(sw)
         if fn is None:
-            continue
+            i = bisect.bisect_right(starts, sw)
+            if i >= len(starts):
+                continue
+            fn = starts[i]
         for target_fn, dist in nx.single_source_dijkstra_path_length(G, fn, weight="weight").items():
             rows.append((sw, target_fn, int(round(dist))))
     return rows
@@ -2065,6 +2099,10 @@ def cmd_analyze(args):
             db = sqlite3.connect(tmp_path)
             try:
                 stats = analyze_image(db, name, mem=mem, blocks=blocks)
+                # Keep meta.db_version current so a later `build` (without
+                # --force) doesn't see a stale version and redo the whole
+                # decode just to re-stamp it.
+                db.execute("INSERT OR REPLACE INTO meta VALUES (?,?,?)", (name, "db_version", str(DB_VERSION)))
                 db.commit()
             finally:
                 db.close()
