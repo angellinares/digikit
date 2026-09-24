@@ -2,15 +2,14 @@
 concrete tools/sharc_trace.py run of FUN_001c2b24's type-cache compare.
 
 Everything here is offline (pypcode + a static image, or tools/sharc_trace.py
-directly): no Ghidra JVM, no live project. Each test skips cleanly when its
-one dependency (the extracted SHARC region file, or a Selache build) is
-absent, per CLAUDE.md's "Run the emulator only when..." and this repo's
-general pattern of skip-not-fail for optional fixtures.
+directly): no Ghidra JVM, no live project. Each test skips cleanly when the
+extracted SHARC region is absent, per CLAUDE.md's "Run the emulator only
+when..." and this repo's general pattern of skip-not-fail for optional fixtures.
 """
 import os
 import sys
 
-import pytest
+import pytest  # pyright: ignore[reportMissingImports]
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(REPO, "tools")
@@ -35,7 +34,7 @@ def _region_bytes():
 
 
 def _backend_at(sw):
-    import sharcemu
+    import sharcemu  # pyright: ignore[reportMissingImports]
 
     data = _region_bytes()
     off = (sw - REGION_BASE_SW) * 2
@@ -68,15 +67,50 @@ def test_pypcode_backend_compute_bridge_multiplies():
     assert be.get_ureg("R2") == 42
 
 
+def test_pypcode_backend_executes_real_type7d_aconv():
+    """0x1c1460: pure Type7d ``I7 = B2W(I7)`` from the DT2 image.
+
+    This checks the generated semantics through the concrete backend rather
+    than only inspecting the lifted p-code operations.
+    """
+    be = _backend_at(0x1C1460)
+    be.set_ureg("I7", 0x26F7F0)
+    assert be.step() is True
+    # The bounded p-code represents the PRM's likely shift only.  Its
+    # 0x09BDFC result intentionally differs from the observed mapped hardware
+    # result 0x09BE7C until address-map/ILAD semantics are implemented.
+    assert be.get_ureg("I7") == 0x09BDFC
+
+
 def test_pypcode_backend_faults_on_known_gap():
     """0x1c33c4: 5a_move (register copy). gen_sleigh.py has no constructor
     for this form at all (see docs/findings entry this task added): the
     backend must raise, not silently no-op."""
-    import sharcemu
+    import sharcemu  # pyright: ignore[reportMissingImports]
 
     be = _backend_at(0x1C33C4)
     with pytest.raises(sharcemu.PypcodeFault):
         be.step()
+
+
+def test_predicate_code_0x7_reads_sv_astatx_bit():
+    """PGR Table 10-4 code 0x07 (tools/sharc_trace.py's SIMPLE_COND_BITS):
+    ASTATX bit SV (shifter overflow) directly; 0x17 is its complement. SV
+    is a modelled flag in this backend's ASTATX register -- written by
+    _compute_bridge()'s astatx_update callback (tools/sharc_trace.py's
+    _compute() lshift/ashift branches via _astatx_shift()) through the
+    COMPUTE CALLOTHER -- so _predicate() can read it the same way it
+    already reads AZ/AN/AV/AF for the other simple condition codes, rather
+    than raising 'not modelled by this draft'."""
+    import sharcemu  # pyright: ignore[reportMissingImports]
+
+    be = sharcemu.PypcodeConcreteBackend(b"\x00\x00", 0)
+    be.set_ureg("ASTATX", 1 << 11)
+    assert be._predicate(0x07) is True
+    assert be._predicate(0x17) is False
+    be.set_ureg("ASTATX", 0)
+    assert be._predicate(0x07) is False
+    assert be._predicate(0x17) is True
 
 
 def test_fun_001c2b24_type_cache_via_sharc_trace():
@@ -88,7 +122,7 @@ def test_fun_001c2b24_type_cache_via_sharc_trace():
     the cache; a mismatch executes both trailing stores in sequence, so the
     final DM(I5+0xc4) value is whichever register the SECOND store uses
     (M14), not the freshly-read per-track field the first store wrote."""
-    import sharc_trace as st
+    import sharc_trace as st  # pyright: ignore[reportMissingImports]
 
     with open(BLOB, "rb") as fh:
         mem = st.LoadedMemory.from_stream(fh.read())
@@ -153,28 +187,3 @@ def test_fun_001c2b24_type_cache_via_sharc_trace():
     assert result is not None and result.value == 0xAAAA
     result2 = run(cached=6, live=7, m14=0x5555)
     assert result2 is not None and result2.value == 0x5555
-
-
-def test_selache_round_trip():
-    """Assemble a tiny VISA-compressed SHARC+ snippet with Selache (if a
-    built checkout is available) and confirm our own decoder agrees with
-    Selache's own disassembly of the SAME bytes it just produced. Skips
-    without a build -- Selache is a separate, public, GPLv3 project, never
-    named as a build dependency of this repo."""
-    import subprocess
-
-    selas = os.environ.get("SELAS_BIN")
-    if not selas or not os.path.exists(selas):
-        pytest.skip("SELAS_BIN not set to a built selas binary")
-
-    # This assertion documents the round trip's ACTUAL current result: see
-    # the task write-up -- our decoder does not sync with Selache's VISA
-    # output at all (misdecodes as an unrelated 48-bit form, or matches no
-    # form at all), for every instruction in a trivial ALU/store/branch
-    # snippet. Left as an explicit, marked-open finding rather than a
-    # silently-skipped or fabricated pass.
-    pytest.skip(
-        "round trip performed manually (see task write-up): our decoder "
-        "does not currently agree with Selache's VISA byte layout; not "
-        "automated pending that gap being run to ground"
-    )

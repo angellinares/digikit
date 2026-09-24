@@ -316,6 +316,23 @@ def decode_alu(opcode: int, field23: int, is_dual: bool, is_float: bool):
     return text + _gap_mark(gap), gap
 
 
+def _mod1_label(opcode: int) -> str:
+    """PRM Table 18-7 / 'MOD1 Encode Table' (p.428-430;
+    tools/sharcspec/compute_table.json's mulop_32_40bit/mod1_table): for a
+    fixed-point RN=RX*RY or MAC, opcode bit 4 is the X operand's sign
+    (1=signed, 0=unsigned), bit 5 is Y's, bit 3 selects an Integer (0) or
+    Fraction (1) result, and bit 0 selects Rounded (only meaningful when
+    bit 3 is set) -- e.g. 0x48 (y=0,x=0,frac=1,rnd=0) is "UUF". The
+    non-rounded Fraction forms return the high word of the double-length
+    product; Integer forms do not."""
+    x_sign = "S" if (opcode >> 4) & 1 else "U"
+    y_sign = "S" if (opcode >> 5) & 1 else "U"
+    fraction = bool((opcode >> 3) & 1)
+    fmt = "F" if fraction else "I"
+    rounded = "R" if fraction and (opcode & 1) else ""
+    return x_sign + y_sign + fmt + rounded
+
+
 def decode_mult(
     opcode: int,
     field23: int,
@@ -329,16 +346,31 @@ def decode_mult(
     # opcode==0x30 "FN = FX*FY" special case) comes from
     # tools/sharcinv.py's classify_compute() -- PRM Table 18-7 -- not
     # recomputed here, so this always agrees with the feature-vector counts.
+    #
+    # classify_compute()'s is_float is wrong for every MULT opcode except
+    # 0x30: bit 3 of the mulop opcode (the "01yx f00r"/"10yx.../11yx..."
+    # families) is MOD1's Integer(0)/Fraction(1) result-format bit for a
+    # fixed-point multiply or MAC, not a float/fixed switch -- opcode 0x30
+    # ("FN = FX*FY") is the only real floating-point row in this space
+    # (mulop_32_40bit in tools/sharcspec/compute_table.json). Recompute it
+    # here rather than trust the passed-in flag.
+    is_float = opcode == 0x30
     rn, rx, ry = ((field23 >> sh) & 0xF for sh in (8, 4, 0))
     Rn, Rx, Ry = (reg_name(r, is_float) for r in (rn, rx, ry))
     if housekeeping:
         return "MR housekeeping (opcode 0x%02x)" % opcode, False
     if is_plain_mul:
-        return "%s = %s * %s" % (Rn, Rx, Ry), False
+        if opcode == 0x30:
+            return "%s = %s * %s" % (Rn, Rx, Ry), False
+        mod1 = _mod1_label(opcode)
+        hw = ", high word" if "F" in mod1 else ""
+        return "%s = %s * %s  (MOD1 %s%s)" % (Rn, Rx, Ry, mod1, hw), False
     if is_mac:
         top2 = (opcode >> 6) & 3
         op = "MR + %s * %s  (MAC add)" if top2 == 2 else "MR - %s * %s  (MAC sub)"
-        return ("%s = " + op) % (Rn, Rx, Ry), False
+        mod1 = _mod1_label(opcode)
+        hw = ", high word" if "F" in mod1 else ""
+        return ("%s = " + op + "  (MOD1 %s%s)") % (Rn, Rx, Ry, mod1, hw), False
     return "mult?0x%02x(%s, %s) -> %s  !!GAP!!" % (opcode, Rx, Ry, Rn), True
 
 
@@ -480,21 +512,29 @@ def render_compute(field23: int):
 
 
 _BINARY_SHORT_OPS = {0x0, 0x1, 0x3, 0x7, 0x8, 0x9, 0xB, 0xC, 0xD, 0xE, 0xF}
-_UNARY_RX_SHORT_OPS = {0x2, 0x4, 0xA}  # pass, not, float
-_UNARY_RN_SHORT_OPS = {0x5, 0x6}  # inc, dec (operate on RN itself)
+# PRM Table 17-2/18-21 (p.17-3, ShortCompute Opcode table): opcode 0101 is
+# "RN = RN + 1 -> RN = RX + 1" and 0110 is "RN = RN - 1 -> RN = RX - 1" --
+# the leading "RN = RN +/- 1" is the *destination* column's generic
+# 2-operand form, folded to its concrete instruction in the same row's
+# right-hand "Instruction" column, which reads RX (not RN) and adds/
+# subtracts the literal 1. inc/dec never read RN at all; they are unary-RX
+# opcodes like pass/not/float, not "operate on RN itself" -- matching
+# tools/sharc_trace.py's short=True "increment"/"decrement" rows, which
+# already compute from `right` (the RX value), not `left` (RN).
+_UNARY_RX_SHORT_OPS = {0x2, 0x4, 0x5, 0x6, 0xA}  # pass, not, inc, dec, float
 
 
 def render_shortcompute(field12: int):
-    """Type 2c: Figure 18-2, opcode 11:8, RN 7:4, RX 3:0 (RN is both the
-    Y input and the result -- PRM Table 18-21's note)."""
+    """Type 2c: Figure 18-2, opcode 11:8, RN 7:4, RX 3:0 (RN is the result
+    for every opcode; PRM Table 17-2 gives inc/dec (opcode 5/6) as
+    "RN = RX + 1" / "RN = RX - 1" -- RX is the only source read, RN is
+    write-only, same as the pass/not/float unary-RX opcodes)."""
     opcode = (field12 >> 8) & 0xF
     rn = (field12 >> 4) & 0xF
     rx = field12 & 0xF
     is_float = opcode in FLOAT_SHORT_OPS
     name = SHORT_OPS.get(opcode, "short?0x%x" % opcode)
     Rn, Rx = reg_name(rn, is_float), reg_name(rx, is_float)
-    if opcode in _UNARY_RN_SHORT_OPS:
-        return "%s = %s(%s)" % (Rn, name, Rn)
     if opcode in _UNARY_RX_SHORT_OPS:
         return "%s = %s(%s)" % (Rn, name, Rx)
     return "%s = %s(%s, %s)" % (Rn, name, Rn, Rx)
@@ -507,14 +547,146 @@ def sign_extend(value: int, bits: int) -> int:
     return sharcinv.sign_extend(value, bits)
 
 
+# PGR Table 10-4 (p.10-33, "Condition and Termination Opcodes"): the 5-bit
+# COND field's 32 codes, shared by every IF-conditional compute/branch/
+# memory form (Type 2a, 3a/3b/3d, 4a/4b/4d, 5a/5b move+swap, 6a_mem/
+# 6a_nomem/6b_shiftimm, 7a/7b, 8a, 9a/9b, 10a_rel, 11a/11c). This is a
+# display-only name table -- tools/sharc_trace.py's SIMPLE_COND_BITS and
+# _predicate() separately implement the ASTATX-bit semantics for the
+# subset of codes it can resolve statically; the two are not meant to be
+# merged; this one only has to spell the code the manual gives it. Code
+# 0x1F is "TRUE/FOREVER": the PGR footnote says an unspecified COND is
+# this value and the compute/branch always executes, so callers never
+# print an "IF" for it. 0x0F ("LCE/NOT LCE") is documented only as a
+# DO-UNTIL termination test, not a valid IF condition; it is listed here
+# only so an occurrence still gets a manual-traceable name instead of a
+# bare number.
+COND_NAMES = {
+    0x00: "EQ", 0x10: "NE",
+    0x01: "LT", 0x11: "GE",
+    0x02: "LE", 0x12: "GT",
+    0x03: "AC", 0x13: "NOT AC",
+    0x04: "AV", 0x14: "NOT AV",
+    0x05: "MV", 0x15: "NOT MV",
+    0x06: "MS", 0x16: "NOT MS",
+    0x07: "SV", 0x17: "NOT SV",
+    0x08: "SZ", 0x18: "NOT SZ",
+    0x09: "FLAG0", 0x19: "NOT FLAG0",
+    0x0A: "FLAG1", 0x1A: "NOT FLAG1",
+    0x0B: "FLAG2", 0x1B: "NOT FLAG2",
+    0x0C: "FLAG3", 0x1C: "NOT FLAG3",
+    0x0D: "TF", 0x1D: "NOT TF",
+    0x0E: "BM/SF1", 0x1E: "NOT BM/SF1",
+    0x0F: "LCE",  # DO-UNTIL termination code only, not a real IF condition
+    0x1F: "TRUE",
+}
+ALWAYS_TRUE_COND = 0x1F
+
+
+def cond_name(cond: int) -> str:
+    return COND_NAMES.get(cond, "cond%d" % cond)
+
+
+def cond_prefix(f: dict) -> str:
+    """'IF <name> ' for a form whose merged fields carry a real, non-
+    always-true condition; '' when the form has no "cond" field at all
+    (e.g. Type2a_short/2c/2b: PRM/decode_table.json give these no COND
+    bits whatsoever -- they are a structurally different, unconditional
+    encoding, not just an always-true instance of Type2a) or when the
+    condition is 0x1F (already always true, so printing it would only add
+    noise to every unconditional listing line)."""
+    cond = f.get("cond")
+    if cond is None or cond == ALWAYS_TRUE_COND:
+        return ""
+    return "IF %s " % cond_name(cond)
+
+
 def _space_dir(f: dict) -> str:
     space = "PM" if f.get("g") else "DM"
     direction = "store" if f.get("d") else "load"
     return space, direction
 
 
+def _type14d_suffix(f, direction):
+    """Type14d width/sign suffix (PRM out/refs/sharc-plus-prm pp.384-387,
+    Figure 15-2: the w, ex, d, l, x fields; BH/BHEX/BHSE/BHSEEX/EX/LWEX
+    encode tables on pp.386-387). Mirrors tools/sharc_trace.py's "14d"
+    _execute branch field-to-width mapping bit for bit for the w=0,ex=0
+    rows it actually runs (BH for a store, BHSE for a load: l picks
+    byte/short, and for a load x additionally picks zero- vs
+    sign-extend). sharc_trace refuses to *execute* ex=1 (exclusive access)
+    and stops there without computing a width, but the PRM still gives
+    those rows an unambiguous syntax (BHEX/BHSEEX for w=0, EX/LWEX for
+    w=1), so this disassembler -- which only has to name the encoding, not
+    run it -- renders those too. w=1,ex=0 has no row in the PRM opcode
+    table at all (the same combination sharc_trace calls out as
+    undocumented), and a store (d=1) with x=1 is off the BH/BHEX tables
+    (they have no x column): both are flagged inline rather than guessed
+    at, since the manual does not name them.
+    """
+    store = direction == "store"
+    w, ex, l, x = f.get("w"), f.get("ex"), f.get("l"), f.get("x")
+    if w:
+        if not ex:
+            return " (undocumented: w=1,ex=0)"
+        return " (lw,ex)" if l else " (ex)"
+    base = "sw" if l else "bw"
+    if store:
+        tag = "%s,ex" % base if ex else base
+        if x:
+            tag += ", undocumented x=1"
+        return " (%s)" % tag
+    if x:
+        base += "se"
+    return " (%s,ex)" % base if ex else " (%s)" % base
+
+
 def render_mem_direct(sw, f, kind):
-    """15a/14a/14d: direct DM/PM addressing."""
+    """14a/14d: direct (pure-absolute) DM/PM addressing. 14a's "l" is the
+    PRM's (LW) "long word" modifier (a Ureg-pair access, PRM pp.382-383);
+    14d's "l" is instead one of the BW/SW/BWSE/SWSE sub-word-width
+    selectors (see _type14d_suffix), so 14d needs its own rendering, not
+    the plain ", long" suffix.
+
+    Type15a is NOT another absolute form despite sharing this function's
+    DIRECT_MEM_FORMS grouping: SHARC+ Core Programming Reference
+    (out/refs/sharc-plus-prm) pp.387-390, Figure 15-3 "Type15a Instruction
+    Opcode" and its Syntax Summary (p.387) give "DM(<data32>,Ia) = Ureg" /
+    "PM(<data32>,Ic) = Ureg" (and the load-direction reverse) -- an
+    I-register-relative access, not an absolute one; the Description
+    (p.388) is explicit: "The I register is pre-modified with an immediate
+    value specified in the instruction. The I register is not updated."
+    The worked example (p.389), "DM(24,I5)=TCOUNT;", shows that <data32>
+    raw and unscaled, the same convention this file's 4a/15b renderer
+    already uses for its own (much narrower) immediate field -- see
+    _fmt_index_offset(); tools/sharc_trace.py's own "15a" handler applies a
+    x4 byte-space scale to this same field only for its internal 32-bit-
+    normal-word address *arithmetic*, not for display, and its module
+    comment gives the identical frame slot rendered by a Type4a as
+    "DM(I6-4)" (raw, unscaled) alongside the Type15a re-read of the same
+    slot as data32 0xfffffffc (also -4, raw, unscaled) -- so a matching
+    disassembler rendering keeps the raw signed value too. Bank selection
+    (g=1 -> DAG2/PM, I8-I15) is computed exactly as that same tracer
+    handler does: index = i[2:0] + (8 if g else 0) (PRM opcode table
+    p.387: g=0 -> dm/I1REG i.e. DAG1, g=1 -> pm/I2REG i.e. DAG2)."""
+    if kind == "15a":
+        bank = 8 if f.get("g") else 0
+        index = (f.get("i", 0) & 0x7) + bank
+        off = sign_extend(f.get("addr", 0) & 0xFFFFFFFF, 32)
+        ureg = f.get("ureg")
+        dreg = f.get("dreg")
+        reg = (
+            ureg_name(ureg)
+            if ureg is not None
+            else ("R%d" % dreg if dreg is not None else "?")
+        )
+        space, direction = _space_dir(f)
+        suffix = ", long" if f.get("l") else ""
+        addr = _fmt_index_offset_hex(index, off)
+        if direction == "store":
+            return "%s(%s) = %s%s" % (space, addr, reg, suffix), None, False
+        return "%s = %s(%s)%s" % (reg, space, addr, suffix), None, False
+
     addr = f.get("addr", 0)
     ureg = f.get("ureg")
     dreg = f.get("dreg")
@@ -524,20 +696,32 @@ def render_mem_direct(sw, f, kind):
         else ("R%d" % dreg if dreg is not None else "?")
     )
     space, direction = _space_dir(f)
-    long_ = ", long" if f.get("l") else ""
+    if kind == "14d":
+        suffix = _type14d_suffix(f, direction)
+    else:
+        suffix = ", long" if f.get("l") else ""
     if direction == "store":
-        return "%s(0x%x) = %s%s" % (space, addr, reg, long_), addr, False
-    return "%s = %s(0x%x)%s" % (reg, space, addr, long_), addr, False
+        return "%s(0x%x) = %s%s" % (space, addr, reg, suffix), addr, False
+    return "%s = %s(0x%x)%s" % (reg, space, addr, suffix), addr, False
 
 
 def render_mem_indexed(sw, f):
     """3a/3b/3d/6a_mem/1b-style i,m-mod addressing: DM/PM(Ii, Mj), post-
     modified by Mj; u distinguishes the addressing variant (not resolved
-    further here -- printed as-is)."""
+    further here -- printed as-is).
+
+    3a/3b/3d name their register with the wide "ureg" field; 6a_mem instead
+    has a plain 4-bit "dreg" (R0-R15) -- same fallback tools/sharcfn.py's
+    render_mem_immoff() already uses for 4a/4b/4d/15b."""
     i = f.get("i", 0)
     m = f.get("m", 0)
+    dreg = f.get("dreg")
     ureg = f.get("ureg")
-    reg = ureg_name(ureg) if ureg is not None else "?"
+    reg = (
+        "R%d" % dreg
+        if dreg is not None
+        else (ureg_name(ureg) if ureg is not None else "?")
+    )
     space, direction = _space_dir(f)
     u = f.get("u")
     u_note = " u=%d" % u if u is not None else ""
@@ -546,10 +730,43 @@ def render_mem_indexed(sw, f):
     return "%s = %s(I%d, M%d)%s" % (reg, space, i, m, u_note)
 
 
-def render_mem_immoff(sw, f):
-    """4a/4b/4d/15b: I-register + immediate-offset addressing."""
+# Bit width of the merged "data" immediate-offset field, by form (PRM Type
+# 4a/4b ACCESS opcode tables p.13-29/13-32 and decode_table.json: data[5:5]
+# + data[4:0], 6 bits; PGR Figure 15-3/PRM Type15b p.15-11: data[6:0], 7
+# bits). merge_fields() only concatenates the split data[hi:lo] pieces raw
+# -- it does not sign-extend -- so the renderer has to know each form's
+# width itself. tools/sharc_trace.py's "4a"/"4b"/"15b" _execute branches
+# already treat this field as a signed twos-complement displacement (an
+# index modifier, like the Mj registers, not an unsigned byte count);
+# printing it unsigned here disagreed with what actually executes.
+_IMMOFF_DATA_BITS = {"4a": 6, "4b": 6, "4d": 6, "15b": 7}
+
+
+def _fmt_index_offset(i: int, off: int) -> str:
+    """'I%d + %d' / 'I%d - %d' for a signed I-register displacement."""
+    return "I%d %s %d" % (i, "-" if off < 0 else "+", abs(off))
+
+
+def _fmt_index_offset_hex(i: int, off: int) -> str:
+    """'I%d + 0x%x' / 'I%d - 0x%x': same shape as _fmt_index_offset() for a
+    wide (32-bit) signed I-register displacement (Type15a's <data32>), where
+    hex reads better than decimal."""
+    return "I%d %s 0x%x" % (i, "-" if off < 0 else "+", abs(off))
+
+
+def render_mem_immoff(sw, f, insn_type):
+    """4a/4b/4d/15b: I-register + immediate-offset addressing. PRM
+    Type4a/4b/4d pp.13-26/13-30/13-34 ("u"): u=0 pre-modifies I for the
+    address (I keeps its old value afterwards); u=1 accesses the CURRENT
+    (unmodified) I and only writes I+offset back afterwards (post-modify)
+    -- so the address this instruction actually touches is I alone when
+    u=1, not I+offset (matching tools/sharc_trace.py's "4a"/"4b" handlers
+    and tools/sharcdb.py's `ptr` table, both of which already draw this
+    distinction). Type15b has no u bit and is always pre-modify (PRM
+    p.15-11)."""
     i = f.get("i", 0)
-    off = f.get("data", 0)
+    bits = _IMMOFF_DATA_BITS.get(insn_type, 6)
+    off = sign_extend(f.get("data", 0), bits)
     dreg = f.get("dreg")
     ureg = f.get("ureg")
     reg = (
@@ -559,18 +776,43 @@ def render_mem_immoff(sw, f):
     )
     space, direction = _space_dir(f)
     long_ = ", long" if f.get("l") else ""
+    post_modify = insn_type != "15b" and bool(f.get("u"))
+    if post_modify:
+        addr = "I%d" % i
+        note = (", post-modify %s %d" % ("-" if off < 0 else "+", abs(off))) if off else ""
+    else:
+        addr = _fmt_index_offset(i, off)
+        note = ""
     if direction == "store":
-        return "%s(I%d + %d) = %s%s" % (space, i, off, reg, long_)
-    return "%s = %s(I%d + %d)%s" % (reg, space, i, off, long_)
+        return "%s(%s) = %s%s%s" % (space, addr, reg, long_, note)
+    return "%s = %s(%s)%s%s" % (reg, space, addr, long_, note)
 
 
 def render_dual_mem(f):
-    """1a/1b: simultaneous DM(dmi,dmm) and PM(pmi,pmm) reference."""
+    """1a/1b: simultaneous DM(dmi,dmm) and PM(pmi,pmm) reference. PGR Table
+    10-1 ("Opcode Acronyms (ISA/VISA)", p.443-444): DMD "DAG1 access
+    direction" and PMD "DAG2 access direction" are each 0 = Read, 1 = Write
+    -- the same direction the Type 3/4/6/14/15 "D" field encodes (see
+    _space_dir()). The manual's own Type 1a/1b Syntax (p.375) prints
+    "DM(Ia,Mb) = dreg" for a write and "dreg = DM(Ia,Mb)" for a read: the
+    register moves to whichever side receives the value, same as every
+    other memory-form renderer here. A previous version instead always put
+    the memory term first and only flipped "=" to "<-" for a read, which
+    reads backwards ("DM(...) <- Rd" naturally parses as memory receiving
+    from the register, i.e. a write, even when dmd/pmd said read)."""
     dmi, dmm = f.get("dmi", 0), f.get("dmm", 0)
     pmi, pmm = f.get("pmi", 0), f.get("pmm", 0)
     dmdreg, pmdreg = f.get("dmdreg", 0), f.get("pmdreg", 0)
-    dm = "DM(I%d, M%d) %s R%d" % (dmi, dmm, "=" if f.get("dmd") else "<-", dmdreg)
-    pm = "PM(I%d, M%d) %s R%d" % (pmi, pmm, "=" if f.get("pmd") else "<-", pmdreg)
+    dm = (
+        "DM(I%d, M%d) = R%d" % (dmi, dmm, dmdreg)
+        if f.get("dmd")
+        else "R%d = DM(I%d, M%d)" % (dmdreg, dmi, dmm)
+    )
+    pm = (
+        "PM(I%d, M%d) = R%d" % (pmi, pmm, pmdreg)
+        if f.get("pmd")
+        else "R%d = PM(I%d, M%d)" % (pmdreg, pmi, pmm)
+    )
     return dm + " ; " + pm
 
 
@@ -578,9 +820,14 @@ def render_modify(sw, insn_type, f):
     """19a/19a_scaled/19a_bitrev/16a/16b: I-register modify, by raw bytes,
     scaled by normal-word, bit-reversed, or storing a literal while
     modifying (16a/16b)."""
-    is_field = f.get("is", f.get("idis"))
     if insn_type.startswith("19a"):
-        idx = f.get("is", 0)
+        # PGR Type 19 encodes the destination as Is XOR Idis, not as a
+        # direct register number (see tools/sharc_trace.py's _compute,
+        # "19a"/"19a_scaled", citing PGR Table/Figure for Type 19); g
+        # selects DAG1 (I0-I7) vs DAG2 (I8-I15) for both registers.
+        bank = 8 if f.get("g") else 0
+        src_low, dis_low = f.get("is", 0), f.get("idis", 0)
+        src, dst = bank + src_low, bank + (src_low ^ dis_low)
         space = "PM" if f.get("g") else "DM"
         val = f.get("data", 0)
         note = {
@@ -589,8 +836,8 @@ def render_modify(sw, insn_type, f):
             "19a_bitrev": "bit-reversed addressing",
         }[insn_type]
         return "I%d = modify(I%d, %s)  [%s space=%s]" % (
-            idx,
-            idx,
+            dst,
+            src,
             hex(val),
             note,
             space,
@@ -635,6 +882,66 @@ def render_18a(f):
     return "%s = %s(%s, 0x%x)" % (reg, op, reg, mask)
 
 
+# Opcode -> mnemonic for render_shiftimm(), restricted to the ShiftImm
+# opcodes tools/sharc_trace.py's _shift_immediate() actually implements and
+# cites (PRM Table 17-9 pp.17-10/17-11; PRM p.3-17 for the (SE) note). The
+# other rows in tools/sharcspec/compute_table.json's shiftop_shiftimm table
+# (rot, fdep, fdep (se), bitext, bffwrp, exp, leftz, lefto, fpack, funpack)
+# are left out: that table's own cross_check note says the PRM's OCR'd
+# DATA8/BIT6:LEN6/BITLEN12/DATA7 immediate-column split is ambiguous for
+# them, and _shift_immediate() itself does not model them (it raises on
+# any opcode not listed here), so a generic per-row template would risk
+# printing a wrong immediate field width.
+_SHIFTIMM_MNEMONICS = {
+    0x00: "lshift",
+    0x01: "ashift",
+    0x08: "or-lshift",
+    0x09: "or-ashift",
+    0x10: "fext",
+    0x12: "fext-se",
+    0x30: "bset",
+    0x31: "bclr",
+    0x32: "btgl",
+    0x33: "btst",
+}
+
+
+def render_shiftimm(f):
+    """6a_mem/6b_shiftimm's parallel ShiftImm sub-instruction: a 23-bit
+    field (PRM Table 18-9 pp.431-433, cross-checked against PGR Table
+    12-11; tools/sharcspec/compute_table.json's shiftop_shiftimm) packing a
+    6-bit opcode, an 8-bit immediate, and RN/RX register numbers -- the
+    same layout tools/sharc_trace.py's _shift_immediate() executes. Opcodes
+    outside _SHIFTIMM_MNEMONICS fall back to the raw field dump (see that
+    dict's comment for why)."""
+    field = f.get("shiftimm", 0) & 0x7FFFFF
+    opcode = (field >> 16) & 0x3F
+    data8 = (field >> 8) & 0xFF
+    rn, rx = (field >> 4) & 0xF, field & 0xF
+    dataex = f.get("dataex", 0)
+    name = _SHIFTIMM_MNEMONICS.get(opcode)
+    if name is None:
+        return "shiftimm(dataex=0x%x, shiftimm=0x%x)" % (dataex, field)
+    if opcode in (0x00, 0x01, 0x08, 0x09):
+        amount = sign_extend(data8, 8)
+        if opcode in (0x08, 0x09):
+            return "R%d = R%d or %s(R%d, %d)" % (
+                rn,
+                rn,
+                name.split("-")[1],
+                rx,
+                amount,
+            )
+        return "R%d = %s(R%d, %d)" % (rn, name, rx, amount)
+    if opcode in (0x10, 0x12):
+        position = data8 & 0x3F
+        length = (dataex << 2) | (data8 >> 6)
+        return "R%d = %s(R%d, pos=%d, len=%d)" % (rn, name, rx, position, length)
+    if opcode in (0x30, 0x31, 0x32):
+        return "R%d = %s(R%d, bit=%d)" % (rn, name, rx, data8)
+    return "%s(R%d, bit=%d)  [status only]" % (name, rx, data8)
+
+
 def render_loop(sw, f, insn_length_bytes, insn_type):
     reladdr = f.get("reladdr")
     start_sw = sw + (insn_length_bytes or 6) // 2
@@ -656,9 +963,9 @@ def render_call_or_jump(sw, insn_type, f):
     b = f.get("b")
     cond = f.get("cond")
     j = f.get("j")
-    conditional = cond is not None and cond != 31
+    conditional = cond is not None and cond != ALWAYS_TRUE_COND
     delayed_note = "" if j is None else (" delayed" if j else " non-delayed")
-    cond_note = "" if not conditional else (" IF cond=%d" % cond)
+    cond_note = "" if not conditional else (" IF %s" % cond_name(cond))
     if insn_type.startswith("25a"):
         return "CALL" + cond_note + " (linked, delayed)"
     kind = "CALL" if b else "JUMP"
@@ -737,11 +1044,12 @@ def render_instruction(
 
     if t in CALL_JUMP_FORMS:
         head = render_call_or_jump(sw, t, f)
-        if t in ("25a_direct", "9a_abs", "8a_abs"):
+        if t in ("25a_direct", "8a_abs"):
             target = f.get("addr")
-        elif t in ("25a_pcrel", "9a_rel", "8a_rel") or t == "9b_rel":
+        elif t in ("25a_pcrel", "9a_rel", "8a_rel", "9b_rel"):
             target = sharcflow.pcrel_target(sw, f.get("reladdr", 0))
-        elif t == "9b_abs":
+        elif t in ("9a_abs", "9b_abs"):
+            # 9a_abs has no addr field: like 9b_abs it jumps through PM(I, M).
             target = None
             head += "  target=indirect PM(I%s, M%s)" % (f.get("pmi"), f.get("pmm"))
         else:
@@ -764,22 +1072,37 @@ def render_instruction(
 
     if t in DIRECT_MEM_FORMS:
         text, addr, _ = render_mem_direct(sw, f, t)
-        literal_note(addr, False)
+        # Type15a's "addr" is an I-register-relative displacement (see
+        # render_mem_direct's docstring), not an absolute address -- unlike
+        # 14a/14d, it has nothing for literal_note's absolute-address
+        # annotation (named-region lookup, float-literal check) to key on.
+        if t != "15a":
+            literal_note(addr, False)
         if compute_text:
             text = compute_text + "; " + text
         return text, notes, gap
 
     if t in INDEXED_MEM_FORMS:
         text = render_mem_indexed(sw, f)
+        if t == "6a_mem":
+            # PRM Type 6a performs the ShiftImm sub-op in parallel with the
+            # memory transfer (tools/sharc_trace.py's "6a_mem" _execute
+            # branch); 6a_mem has no "compute" field, so this is the only
+            # place its ShiftImm half gets rendered.
+            text += "  [parallel %s]" % render_shiftimm(f)
         if compute_text:
             text = compute_text + "; " + text
-        return text, notes, gap
+        # 3a/3b/3d/6a_mem all carry a "cond" field (decode_table.json) that
+        # gates the whole instruction, not just a compute half (PRM p.7924,
+        # cited in tools/sharc_trace.py's Type3a handling).
+        return cond_prefix(f) + text, notes, gap
 
     if t in IMMOFF_MEM_FORMS:
-        text = render_mem_immoff(sw, f)
+        text = render_mem_immoff(sw, f, t)
         if compute_text:
             text = compute_text + "; " + text
-        return text, notes, gap
+        # 4a/4b/4d carry "cond"; 15b does not (cond_prefix(f) is "" then).
+        return cond_prefix(f) + text, notes, gap
 
     if t in MODIFY_FORMS:
         text = render_modify(sw, t, f)
@@ -802,7 +1125,11 @@ def render_instruction(
         return text, notes, gap
 
     if t in ("2a", "2a_short", "2b") and compute_text:
-        return compute_text, notes, gap
+        # Only Type2a (48-bit) actually carries a "cond" field; Type2a_short
+        # and Type2b are a structurally different 32-bit encoding with no
+        # COND bits at all (decode_table.json), not merely an always-true
+        # instance of Type2a, so cond_prefix(f) is always "" for them.
+        return cond_prefix(f) + compute_text, notes, gap
 
     if t in ("5a_move", "5b_move"):
         src_hi = f.get("srcureghigh", 0)
@@ -812,21 +1139,31 @@ def render_instruction(
         text = "%s = %s" % (ureg_name(dst) if dst is not None else "?", ureg_name(src))
         if compute_text:
             text = compute_text + "; " + text
-        return text, notes, gap
+        return cond_prefix(f) + text, notes, gap
 
     if t in ("5a_swap", "5b_swap"):
         c, d = f.get("cdreg"), f.get("dreg")
         text = "R%s <-> R%s" % (c, d)
         if compute_text:
             text = compute_text + "; " + text
-        return text, notes, gap
+        return cond_prefix(f) + text, notes, gap
 
     if t == "3c":
-        text = "DM(I%d, M%d) = R%d" % (
-            f.get("dmi", 7),
-            f.get("dmm", 7),
-            f.get("dreg", 2),
-        )
+        # decode_table.json's Type3c has its own "d" field (bit 37, PGR
+        # p.449's opcode figure), the same Data-direction bit Table 10-1
+        # (p.443) defines for every other Type 3/4/6/14/15 memory form (0 =
+        # read, 1 = write) and that tools/sharc_trace.py's "3c" _execute
+        # branch checks the same way (store when d, else load). A previous
+        # version of this branch never read "d" at all and always rendered
+        # a store, which disagreed with the tracer for every d=0 (load)
+        # encoding -- e.g. DT2 1.16 sw 0x1c653b (dmi=4, dmm=5, d=0, dreg=6)
+        # is a load, "R6 = DM(I4, M5)", not "DM(I4, M5) = R6".
+        dmi, dmm, dreg = f.get("dmi", 7), f.get("dmm", 7), f.get("dreg", 2)
+        _, direction = _space_dir(f)
+        if direction == "store":
+            text = "DM(I%d, M%d) = R%d" % (dmi, dmm, dreg)
+        else:
+            text = "R%d = DM(I%d, M%d)" % (dreg, dmi, dmm)
         return text, notes, gap
 
     if t == "18a":  # pragma: no cover -- handled above; kept for clarity
@@ -863,13 +1200,40 @@ def render_instruction(
         )
 
     if t in ("6b_shiftimm",):
-        dataex = f.get("dataex", 0)
-        shiftimm = f.get("shiftimm", 0)
-        text = "shiftimm(dataex=0x%x, shiftimm=0x%x)" % (dataex, shiftimm)
-        return text, notes, gap
+        text = render_shiftimm(f)
+        return cond_prefix(f) + text, notes, gap
+
+    if t == "7a":
+        # PRM Type7a MODIFY (SHARC+ Core Programming Reference pp.13-46/
+        # 13-48): "Ia = MODIFY(Ia,Mb)" / "Ic = MODIFY(Ic,Md)" -- an I
+        # register update by the M register, done in parallel with an
+        # optional compute (COMPUTE_FORMS already renders that half into
+        # compute_text above). tools/sharc_trace.py's own "7a" handler
+        # already computes dest = source XOR idis (an idis=0 modify leaves
+        # source and dest the same register, matching the PRM's own worked
+        # example "I3 = MODIFY(I3,M5); /* Semantically same as
+        # MODIFY(I3,M5) */") -- this renderer had no branch for Type7a at
+        # all, so a compute=0 (pure-MODIFY) instance fell straight through
+        # to the raw field dump below, and a compute!=0 instance rendered
+        # only its compute half, silently dropping the MODIFY.
+        bank = 8 if f.get("g") else 0
+        source = f.get("is", 0) + bank
+        dest = (f.get("is", 0) ^ f.get("idis", 0)) + bank
+        modifier = f.get("m", 0) + bank
+        modify_text = (
+            "modify(I%d, M%d)" % (source, modifier)
+            if dest == source
+            else "I%d = modify(I%d, M%d)" % (dest, source, modifier)
+        )
+        text = compute_text + "; " + modify_text if compute_text else modify_text
+        return cond_prefix(f) + text, notes, gap
 
     if compute_text:
-        return compute_text, notes, gap
+        # Reaches here for 7a and 11a (both carry "cond" but have no more
+        # specific branch above); 1a/9a_abs/9a_rel/3a/4a/2a/2a_short/2b/
+        # 5a_move/5a_swap already returned earlier, each with its own
+        # cond_prefix() call above.
+        return cond_prefix(f) + compute_text, notes, gap
 
     # Generic fallback -- never skip an instruction.
     fields_text = " ".join("%s=0x%x" % (k, v) for k, v in sorted(f.items()))
@@ -1505,7 +1869,7 @@ def target_opcode_coverage(ctx, candidates):
     }
 
 
-def build_engine_queue(ctx, notes_dir, sqlite_path=None):
+def build_engine_queue(ctx, notes_dir, sqlite_path=None, target_coverage=None):
     inventory = sorted(ctx["functions"], key=lambda fn: (fn["block"], fn["entry"]))
     candidates = engine_candidates(inventory)
     documented, rejected_notes = documented_function_entries(notes_dir)
@@ -1562,7 +1926,11 @@ def build_engine_queue(ctx, notes_dir, sqlite_path=None):
             "documented": sum(r["documented"] for r in rows),
             "undocumented": sum(not r["documented"] for r in rows),
         },
-        "target_opcode_coverage": target_opcode_coverage(ctx, candidates),
+        "target_opcode_coverage": (
+            target_coverage
+            if target_coverage is not None
+            else target_opcode_coverage(ctx, candidates)
+        ),
         "candidates": rows,
     }
 

@@ -1,8 +1,8 @@
 # digitakt2
 
 Reverse engineering of the Elektron Digitakt II firmware: a ColdFire MCF5441x
-main CPU and a SHARC+ DSP. The work is moving from OS 1.15C to 1.16; the
-device stays on 1.15C (installing 1.16 upgrades the bootstrap irreversibly). Setup is in README.md, results
+main CPU and a SHARC+ DSP. Targets are Digitakt II OS 1.16 and Digitone II
+OS 1.11; the device runs 1.16. Setup is in README.md, results
 in docs/findings/ (one file per topic, indexed from docs/FINDINGS.md), and
 current state and next steps in the newest `HANDOVER-*.md` in the repo root.
 
@@ -62,10 +62,24 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
   `tools/sharcpcode.sql` instead of writing another pyghidra script. One JVM
   holds one version of a language, so reading an old project after installing
   a new one gives wrong numbers; measure each language in its own run.
+- SHARC facts come from the program database first:
+  `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin`
+  (seconds; skipped when current) writes `out/sharcdb/<image>.sqlite`:
+  instructions, functions, edges, basic blocks, literals, memory accesses,
+  data references, register def/use, cross-image function hashes, and a
+  whole-image analysis (roots, reach, call graph, dominators, loops,
+  unentered functions). Use it through `tools/sharc.py`: in one script,
+  `img = sharc.load("dt2-1.16")` then `img.func`, `callers`, `callees`,
+  `reach`, `roots`, `last_def`, `uses`, `refs`, `xref_table`, `match`,
+  `trace`, or `img.sql(...)`; `uv run python tools/sharc.py IMAGE "SQL"` for
+  one query. Do this before running `tools/sharcfn.py` or writing a script.
+  A new kind of fact goes into `tools/sharcdb.py`, not a scratch script.
 
 ## Shell and tests
 
-- Tests: `uv run --with pytest python -m pytest tests -q`.
+- Tests: `uv run --with pytest python -m pytest tests -q`. It skips tests
+  marked `slow` (long firmware integration runs); add `--slow` before a
+  commit. While working, run only the test files for the code you changed.
 - The shell is zsh: an unquoted `$VAR` is one word, not split. There is no
   `timeout` binary.
 - The rtk hook shortens some output: use `rtk proxy git log` for the full log.

@@ -237,6 +237,50 @@ above crosses an explicit unsupported-instruction restart seam. Therefore it
 does not establish marker production, DMA10 descriptors, SSI cadence or final
 A2 qualification. **[O]**
 
+## The interrupt vector table and SEC dispatch **[V]**
+
+`CMMR_SYSCTL` (`0x30024`) bit 2 is `IIVT`: set, it maps the core's interrupt
+vector table to internal memory ("the CMMR_SYSCTL.IIVT bit when set maps the
+IVT to the internal memory Address 0x900000. On reset, this bit is cleared
+and the IVT is mapped to L2CTL ROM1 boot memory address 0x500000" -- Table
+30-8, `out/refs/sharc-plus-prm` and `out/refs/sc58x-2158x-prm`). Boot function
+`FUN_1c0f24` reads `CMMR_SYSCTL` at `0x1c0f88`, sets bit 2 at `0x1c0f8b`, and
+writes it back at `0x1c0f8e`. The only other writers found (`0x1c097c`,
+`0x1c0999`, inside `FUN_1c0891`) read-modify-write bit 16 (`PFB_INVAL`) and
+never touch bit 2. **[V]**
+
+Loader block 70 targets byte address `0x28240000`, i.e. sw `0x120000`,
+normal-word `0x90000` -- the manual's own worked example calls `0x90000`
+"the block 0 starting point of a normal word and 48-bit address"
+(`sc58x-2158x-prm` pp.230-231). This is the L1-mapped IVT `FUN_1c0f24`
+selects. Its 768 bytes are 32 slots of 24 bytes (four 48-bit words each).
+Seven slots hold only the filler `00 00 00 00 3e 0b` x4 -- slots 2, 9, 10,
+16-19 -- exactly the interrupt numbers Table 4-46 marks "Reserved" for the
+ADSP-2156x/SC57x/SC58x family. **[V]**
+
+Each populated slot's jump target is not what `tools/sharc_isa.py` decodes:
+its matched form (`Type14a`, `Type11a` or `8a_abs`, depending on slot)
+assembles an address from the standard word-swapped 48-bit frame and gets it
+wrong (e.g. `0x1c063e` for the reset slot, not the code it actually runs).
+The real target is the instruction's first three stored bytes read as a
+plain little-endian 24-bit integer, no word-swap: RSTI (1) -> `0x1c1338`
+(loader entry), EMUI (0) -> `0xb89010`, PARI (3) -> `0xb89046`, ILOPI (4) ->
+`0xb8902a` (all in `FUN_b89002`), 20 slots (5-8, 11-14, 20-31) -> `0x1c0b1e`,
+SECI (15) -> `0x1c0b7b` (both in `FUN_1c0b1d`) -- six of nine distinct
+targets checked directly against the bytes, all exact. Real decoder gap, not
+a firmware oddity: Types 11a/14a/16a's `addr`/`compute` fields are correctly
+placed for ordinary 48-bit instructions but wrong for this table's flat
+byte-address encoding. **[C][V]**
+
+`FUN_1c0b1d` dispatches by reading the interrupt number from `ASTATX` (`fext`
+pos 0 len 12), scaling by 8, adding `0x240ad8`, and jumping through `I12`
+(`0x1c0b1e`-`0x1c0b75`). The `SECI` entry instead reads
+`R4 = DM(0x300eb)` -- `SHDBG_SECI_ID`, which "holds the SID of the current
+SEC interrupt" (same PRM, Table 31-34) -- writes it back unchanged, scales
+by 2, adds `0x240948`, and jumps (`0x1c0b7b`-`0x1c0bdc`): a second-level
+dispatch into the System Event Controller's own handler table by SID,
+separate from the core interrupt-number table at `0x240ad8`. **[V]**
+
 ## The capped SHARC frontier sprint found no supported route to the SSI peer **[V][O]**
 
 A final bounded public-source search found no semantics for aligned parcel
@@ -471,6 +515,19 @@ regression now checks this convention. No loaded firmware Type25 negative
 target was found, so this closes a test gap rather than authorizing a new
 loaded-call edge. **[D][O]**
 
+## Type12a concrete-count tracer boundary **[D][O]**
+
+The tracer admits Type12a counted loops only when the instruction supplies a
+16-bit immediate or its UREG count is a concrete value. It records the
+23-bit signed PC-relative end, loop count, and mode, then follows the loop
+until the concrete counter expires. A zero count and `Unknown`, `Affine`, or
+partially known UREG counts remain conservative stops; they are not converted
+into bounded symbolic iterations. The public SHARC+ Core Programming Reference
+pp. 14-23--14-25 documents the immediate/UREG forms, counter-stack setup, and
+E2-active (mode 0)/F1-active (mode 1) distinction. This trace abstraction
+preserves the mode but does not claim pipeline-precise E2/F1 timing or
+zero-count behavior.
+
 ## PASS/EQ removes the low-PM false path, and Type25 wraps at 24 bits **[C][V][O]**
 
 The preceding PM-address-zero blocker and ASTAT deferral are retracted. At
@@ -703,6 +760,90 @@ documented normal-word scaling. Before this, every Type 7a modify lost its
 index register: `MODIFY(I7, M7)` at `0xb8946a` made the stack pointer unknown,
 and the frame stayed unknown for the rest of the run. **[C][V]**
 
+### A conditional Type7a frontier has exact stop PCs **[D][V][O]**
+
+The DT2 1.16 section-7 blob with SHA-256
+`0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`
+and its v5 writer-fact cache contain 22 functions with an `unsupported Type7a
+predicate` stop. These are *function facts*, not 22 instructions, and the
+cache retains the stop reason but not its PC. Bounded static traces using
+`sharcwriters.seed_sets(True)`, loader-final memory, concrete memory, 32-bit
+normal words, followed calls, and the v5 Type14d continuation policy
+(`max_steps=300`, `max_states=32`) locate three example stops:
+
+| traced entry | stop SW PC | loader-order bytes |
+| --- | --- | --- |
+| `0xb896de` | `0xb896e4` | `af0480410000` |
+| `0xb897c3` | `0xb897c9` | `ef0480000000` |
+| `0x1c0891` | `0x1c08b5` | `ef0480080000` |
+
+Traces from `0x1ca9d9` and `0x1ca94e` also stop at `0x1c08b5` on retained
+paths. All three words decode as Type7a with condition `0x17` (`NOT SV`) and
+empty compute. The public SHARC+ Core Programming Reference Rev. 1.5,
+printed pp. 14-46--14-47 (extracted `out/refs/sc58x-2158x-prm/pages/p0349.txt`
+and `p0350.txt`), says the condition gates the whole instruction and SIMD
+index modification uses the OR of the two processing elements' tests; the
+classic programming reference's condition table maps `10111` to `NOT SV`.
+At the sampled stops, the tracer's PEx predicate is unknown, and MODE1 is
+unknown or absent. A conditional index update was a candidate for bounded
+static continuation, not permission to always execute or skip it, nor a
+claim that all 22 functions would become resolved. **[D][O]**
+
+An independent reader rehashed the blob, read all three loader-final SW PCs
+with `LoadedMemory.read_sw`, decoded each as Type7a with `cond=0x17` and an
+empty compute, and checked the public manual's SIMD OR rule and `NOT SV`
+condition table. This verifies the *three bytes/fields and documented rule*,
+not trace reachability or runtime execution. **[V]**
+
+A cold, single-worker run of `tools/sharc_discover.py` against the checked-in
+DT2 1.16 manifest, without the unbound Ghidra dump, wrote
+`out/sharc-index/type7a-before-06adc1b.sqlite` (v5, 1,059 function facts;
+22 containing the exact Type7a stop reason) and
+`out/sharc-discovery/type7a-before-06adc1b.json` (blob hash matches above).
+These ignored artifacts are the pre-change measurement, not a post-change
+improvement. The tracer's generic predicate helper may consume PEx `NOT SV`
+without knowing whether MODE1 enables SIMD; it must not treat PEx-false as
+skip when PEy could be true. The writer-fact chooser also prefers a concrete
+store address from one of several paths without tracking whether its predicate
+was assumed. Any conditional Type7a continuation needs a fail-closed writer
+classification test before its result counts as a definite hit or exclusion.
+**[D][O]**
+
+### Bounded Type7a continuation changes stop reasons, not writer proof **[D][O]**
+
+The tracer now admits only empty-compute `IF NOT SV` Type7a with concrete
+linear `L=0`. PEx true modifies the I register (including in SIMD); PEx false
+skips only with known SISD MODE1. Otherwise a single continued state makes
+the destination I unknown; it does not guess PEy or fork a concrete writer
+path. Other conditions, conditional computes, and unknown/nonzero circular
+lengths still stop. The existing unconditional compute behavior is retained.
+Writer-fact collection marks stores after an uncertain Type7a modify; if any
+retained path to the same store PC carries this mark, target classification is
+`UNRESOLVED` rather than choosing a definite address from another path.
+This protection is specific to Type7a; the older general preference for
+concrete store events across other divergent paths remains open. **[D][O]**
+
+A fresh DT2 1.16 v5 index under
+`out/sharc-index/type7a-after-local-06adc1b.sqlite` has the same 1,059
+function IDs as the pre-change index. The exact `unsupported Type7a predicate`
+stop reason appears in 22 function facts before and 2 after; 20 old owners
+changed stop-reason sets, not necessarily to a completed trace. Other stops
+include five additional `max-states` function facts. Only four selected store
+events changed; for each of the two cached writer targets, two prior
+`EXCLUDED-STACK` rows became `UNRESOLVED`, with no new `HIT` rows. These are
+static cache units, not unique instruction sites or runtime behavior. The
+cold `--jobs 8` and subsequent warm `--jobs 1` canonical discovery reports
+are byte-identical (SHA-256
+`3b61267c8c09f0044935d7002aef1a34e75d0157e1df0b2f5f6a0a6114a3ada7`);
+this does not compare two cold scheduling orders. **[D]**
+
+The two remaining owners, `blk93@0x1cbb57` and `blk93@0x1cbc44`, reach a
+different Type7a stop at SW PC `0x1cbc93` on retained paths under bounded
+400-step/128-state and 300-step/32-state traces respectively. Its loader-final
+bytes `810400200000` decode as empty-compute `IF EQ`, not the admitted
+`IF NOT SV` subset. This is a separate predicate/mode question, not evidence
+that broad conditional execution should be enabled. **[D][O]**
+
 ### Type7d is ACONV, and the strict run executes it **[C][V]**
 
 PRM Table 14-22 gives Type 7d as the Type 7a word whose condition is 11111 and
@@ -730,6 +871,57 @@ convert I7, B7, I6 and B6 to word addresses and back again:
 
 The round trip is exact, and the tracer's own return check agrees: every
 `JUMP (M14, I12)` return in the run matches the call it came from. **[V]**
+
+### Type7d keeps symbolic conversion provenance bounded **[D][O]**
+
+The native tracer now continues a Type7d whose source is an `Affine` value,
+but does not claim an architectural address-map result.  W2B multiplies an
+affine expression by four; B2W divides only when every known affine
+coefficient and constant is four-aligned.  For B2W with unknown low bits it
+uses a stable, source-derived opaque `aconv_b2w_...` symbol instead of treating
+right shift as affine.  An `Unknown` source still stops the state.  The
+existing `aconv` event and its `semantics="prm-likely"` tag remain the boundary
+between this tracer approximation and hardware behavior. **[D][O]**
+
+This follows the public SHARC+ PRM Rev. 1.5 Figure 14-21 / Table 14-22
+(PDF pp.352–355, Type7d form and register-bank/class rows) and Table 6-4
+(PDF p.201 / printed p.6-16): B2W/W2B are documented as likely `>> 2`/`<< 2`,
+but a missing equivalent address retains the input and raises ILAD.  The
+tracer does not model that map or trap.  The PRM also lists Type7d rows with
+an optional condition and parallel compute; this phase intentionally admits
+only the pure ACONV selector (`cond=11111`, both compute fields zero) pinned
+by `tools/sharcspec/build_table.py`.  Compute-bearing/conditional rows do not
+enter this handler and remain outside this phase. **[D][O]**
+
+### Type7d pure-selector SLEIGH p-code is a bounded approximation **[V][O]**
+
+The generated SHARC VISA language enumerates only the table's pure Type7d
+selector (`cond=11111`, empty compute): `g` chooses I0–I7/I8–I15 or
+B0–B7/B8–B15 with `breg`, and `idis` maps the destination as source-selector
+XOR `idis`.  Its p-code writes the selected destination from the selected
+source with the PRM-likely B2W `>> 2` or W2B `<< 2`; this makes the previously
+empty lift for `bf0480c00000` nonempty.  Independent manual/byte and p-code
+reviews checked the selector, mapping, byte, generated constructors, and
+focused tests, which cover both register classes, both DAG banks, XOR
+destinations, both directions, and reject a compute-bearing byte from this
+pure constructor. **[V]**
+
+The generated p-code deliberately omits the PRM's address-map lookup,
+retain-input-on-no-equivalent behavior, and ILAD. Conditional and
+compute-bearing Type7d forms remain outside this constructor family, and
+Type11a is untouched.  Consequently, the concrete backend's likely-shift
+result for `0x26f7f0` is `0x09bdfc`, not the observed mapped hardware result
+`0x09be7c` recorded above.  Hardware equivalence beyond the represented shifts
+is not claimed; reproducing the address-map conversion remains open. **[V][O]**
+
+The hand-built byte fixtures exercise that pure selector only.  A reproducible
+local byte check is available from the ignored DT2 loader stream:
+`shasum -a 256 out/sections/dt2-1.16/section_7_BLOB.bin` gives
+`0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`,
+and `LoadedMemory.from_stream(...).read(sw_to_byte(0x1c1460), 6)` gives
+`bf0480c00000` (raw `0x04bfc0800000`).  An independent check reproduced the
+hash, bytes, decode, and cited public-manual form.  This exact occurrence is
+**[V]**; no firmware behavior or ILAD-free execution is claimed. **[O]**
 
 ### Type14d and Type15a **[V][O]**
 
@@ -848,6 +1040,9 @@ interrupt on X-count) -- so all four are output/transmit, none receive:
   candidates for SPORT4A-TX / SPORT4B-TX). No literal reference to any ring
   buffer exists outside descriptor construction -- the render loop writes them
   through a runtime pointer, so the writer is not findable by literal scan.
+  **[C][V]** Core code writes rings A and C and only reads rings B and D
+  (see "The audio path from the task loop to the rings"), so B and D are not
+  core-written output rings; the all-transmit reading of the config is **[O]**.
 
 **Synthesis tables + reader code (OBSERVATION).** Only two real external float
 payloads load (rest of `0x80xxxxxx` is FILL/zero scratch), LE float32:
@@ -1471,8 +1666,12 @@ headers. About twenty small callees were not opened, so that is bounded.
 unrelated `19a_scaled` push.
 
 Two oddities worth recording. The function has **no static caller** anywhere in
-blk93's 664 resolved calls, like `FUN_1c71ec` and `FUN_1c2b24` before it -- all
-three are reached only through runtime paths, and blk93 has 12 unresolved
+blk93's 664 resolved calls, matching `FUN_1c71ec`, which likewise has no
+static `CALL` caller (it is reached only by the `cond_jump` at `0x1c7053`,
+see below). **[C]** `FUN_1c2b24` is not a third example: it does have a
+static caller, this same function's `call 0x1c771e`
+(`out/sharcdb/dt2-1.16.sqlite`, `edges`: the only edge into `0x1c2b24`).
+blk93 has 12 unresolved
 indirect calls (`sw 0x1c8530, 0x1c86b0, 0x1c8847, 0x1c9ae7, 0x1c9df7, 0x1c9f29,
 0x1c9f8b, 0x1ca216, 0x1caf50, 0x1caf67, 0x1cb095, 0x1cb1b8`). And a **conditional
 RTI** sits mid-body at `0x1c7641` (`Type11a`, `x=1`, `cond=NE`) while the
@@ -1484,7 +1683,26 @@ No per-machine dispatch here: none of the 12 indirect-call sites falls inside th
 body, and every conditional branch tests a shifter or ALU flag around lock and
 retry sequences, never a small-integer compare or table load.
 
+**Ring C and D's handlers are registered, not built inline.** `0x1c7a3b` (an
+entry point inside this function with its own static caller) starts ring C
+and D's setup: `R12=0`/`call 0x1ca58a` for ring C, `R12=2`/`call 0x1ca58a`
+for ring D, each eventually reaching `call 0x1ca7e4` with the descriptor
+head in `R8`, as above. `FUN_1ca58a` registers three handlers through
+`FUN_b8afa2(id=R4, handler=R8, ctx=R12, flag=stack arg)`: `0x1ca1bd` with
+`id=DM(I4+4)`, `0x1caebc` (in `FUN_1cae8f`) with `id=DM(I4+2)`, `0x1cb15f`
+(in `FUN_1cb14f`) with `id=DM(I4+3)`. None of the three handler bodies
+writes any ring buffer, descriptor address, `0x252d78` or `0x24ef2c` as a
+literal; `0x1ca1bd` instead ends in the unresolved indirect jump `PM(I4,M5)`
+already listed among blk93's 12 unresolved indirect calls. Bases `I4`/`I5`
+in all three come from the caller's context argument, so an indirect hit on
+those addresses at runtime is not excluded. **[V][O]**
+
 ## Reading the DSP: the `FUN_1c71ec` pipeline is a wavetable engine, not an FFT **[C][D]**
+
+**[C][V]** Superseded: `FUN_1c71ec` is out-of-line code of `FUN_1c642a`, not
+a wavetable engine, and stage 6 (`0x1cbf07`) writes the 8192-word ring it
+reads. See "The audio path from the task loop to the rings" below. The text
+here is the first read, kept as history.
 
 First systematic *read* of SHARC code rather than a search over it. Seven
 functions decoded in parallel, one agent each. Context for why this took so
@@ -1522,6 +1740,15 @@ and stage 4's per-item accumulation over a runtime count, the whole reads as a
 **bank of interpolating oscillators with per-partial state** -- additive or
 granular resynthesis -- rather than a spectral transform.
 
+**[C] Stage 6's index gather is four reads, not two.** `sw 0x1cbf9f-0x1cbfa5`
+sets `M3=R10`, `M2=R3`, `M4=R5`, `M1=R9` (`R9=inc(R3)` at `sw 0x1cbf7b`, so
+`M1=R3+1`); the loop body then reads `DM(I1,M3)`, `DM(I1,M2)`, `DM(I1,M4)`,
+`DM(I1,M1)` at `sw 0x1cbfad, 0x1cbfb0, 0x1cbfb6, 0x1cbfb9`. All four are
+pre-modify reads without update (`u=0`, SHARC+ PRM Figure 6-5: address
+I+M, I unchanged) off the one base `I1`. Only `M2`/`M1` (`R3`/`R3+1`) is
+an adjacent-index pair; `M3` (`R10`) and `M4` (`R5`) index the same table
+at two further offsets not shown to relate to `R3`. **[V]**
+
 **These are shared utilities, not machine-specific code.** Stage 3 is called
 from **four** sites: `0x1c7387` (the orchestrator) plus `0x1c2307`, `0x1c231f`,
 `0x1c6c59`, all unrelated. Stage 2 has a second caller at `0x1c6c44`. So the
@@ -1531,10 +1758,22 @@ run and with what arguments, not in a switch.
 
 **[C] The orchestrator makes nine calls, not six.** After the six there is a 7th
 to `0x1ccd96` (argument `r12 = 0x8045c3c0`, the 32-float table), an 8th that
-**re-calls stage 6** `0x1cbf07` with a different argument shape, and a 9th to
+**re-calls stage 6** `0x1cbf07`, and a 9th to
 `0x1c4e70`. Its true bounds are `0x1c71ec`-`0x1c7461`, 251 instructions. A
 conditional `rts` at `0x1c7292` means the chain is not even unconditionally
 reached from entry.
+
+**[C] The two stage-6 calls have byte-identical setup, not "a different
+argument shape."** The four instructions immediately before each
+`CALL 0x1cbf07` are the same words at both sites -- `R12=I3`
+(`0x1c73ce`/`0x1c742d`), `R4=I10` (`0x1c73d0`/`0x1c742f`),
+`R8=pass(R12), DM(I7,M7) u=1=R15` (`0x1c73d2`/`0x1c7431`),
+`CALL (DB) 0x1cbf07` (`0x1c73d5`/`0x1c7434`). What differs is I3's runtime
+value: between the two calls, a post-modify (`u=1`) read through I3 at
+`0x1c7411` (`R3=DM(I3,M6) u=1`, skipped when the branch at `0x1c740e` is
+taken) and again, `R4` times inside the register-counted `DO..UNTIL LCE`
+at `0x1c7415`, at `0x1c7418` (`R4=DM(I3,M6) u=1`), each advance I3 by M6
+(the constant 1, one normal word). **[V]**
 
 **Dataflow.** Calls 1-3 pass a single value in R8/R12, with 2 and 3 re-reading
 through an `(i3,m5)` cursor. Calls 4-6 pass **two**: a shared base pointer in
@@ -1562,6 +1801,50 @@ every one of these functions. One agent extended a scratchpad copy using
 and got a full symbolic walk of stage 5. **Folding float compute into the real
 tool would unblock every further read** -- stage 4's loop body is undecoded for
 exactly this reason.
+
+### Stage 6 receives a caller-supplied block length through the CJUMP frame **[V]**
+
+All eight of `FUN_1c71ec`'s call sites push `R15` the same way immediately
+before the `CALL (DB)`: `DM(I7,M7) u=1 = R15` at `sw 0x1c735a, 0x1c736f,
+0x1c7384, 0x1c739f, 0x1c73ba, 0x1c73d2, 0x1c73ea, 0x1c7431`. `R15` is never
+written in the orchestrator; it is only read elsewhere (`leftz(R15,R0)` at
+`0x1c72ec`/`0x1c73fc`, `dec(R15)` at `0x1c740b`). So it is a value supplied
+to the orchestrator by its (unknown) caller.
+
+The public PGR documents the call idiom
+(`out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4/all.txt`, line ~10011):
+`CJUMP (_SUB1) (DB); /* executes R2 = I6, I6 = I7 */`, followed by two
+delay-slot pushes of the old `I6` and the return address -- the
+`DM(I7,M7)=R2` / `DM(I7,M7)=<ret>` pair after every `CALL` in the
+orchestrator. The `R15` push writes at `I7` and then decrements `I7`
+(`M7 = -1`), and the call sets `I6` to the decremented `I7`, so the pushed
+`R15` sits at `I6+1`. `0x1cbf07` reads `DM(I6,M6) u=0` (`M6 = 1`, address
+`I6+1`, no update) three times, at `sw 0x1cbf3f`, `0x1cbf81` and
+`0x1cbf98`; all three read that slot. The last becomes the trip count of
+the `DO 0x1cc00c UNTIL LCE` at `sw 0x1cbf9c`. Stage 6 therefore runs a
+caller-chosen number of iterations, most likely the block length in
+samples.
+
+Inside `0x1cbf07`: `I4=R4` (`0x1cbf20`) is a context struct, `I5=R8`
+(`0x1cbf3d`), `I3=R12` (`0x1cbf53`). `I1=DM(I4+16)` (`0x1cbf93`) loads a
+table pointer. `I2=modify(I4,0x44)` (`0x1cbf95`, Type19a) has fields
+`is=4, idis=6`, so its destination is `is XOR idis = 2` (`I2`), not `I4` as
+older `tools/sharcfn.py` listings printed. `DM(I5,M6) u=1`, read into `R12`
+at `sw 0x1cbfc7`, is written back to `DM(I3,M6) u=1` from `R12` at `sw
+0x1cbfe9`: one buffer, two cursors, since the orchestrator passes the same
+pointer in `R8` and `R12`. `DM(I4+13)`/`DM(I4+14)` are written at `sw
+0x1cc019`/`0x1cc017`, just before the register restore and return. `sw
+0x1cbfdc` loads the `0x1fff` mask.
+
+The reciprocal helper `0x1c06ba` that stage 6 calls at `sw 0x1cbf4d` takes
+its argument in `F8` and returns `F0`: a `RECIPS` seed followed by three
+Newton-Raphson iterations. Its delayed branches have two delay slots; the
+second slot at `sw 0x1c06c9` (`R8 = 0x40000000`, 2.0) always executes and
+supplies the constant for the iteration. Traced with an approximate seed,
+it returns 1/x within one float32 ULP for every input tried. **[V]**
+**[C][V]** `0x1c06ba` computes `F0 = F4 / F8`; it is a reciprocal only when
+`R4 = 1.0`, as stage 6 passes (`0x1cbf50`). `0x1c070a` is a separate
+word-copy entry.
 
 ## A function inventory: 1228 functions, and we have read ten **[V]**
 
@@ -1616,7 +1899,8 @@ that would have settled it. The densest:
 | blk93 `0x1c5ed4` | 128 | 3 | FFT-like |
 | blk93 `0x1cb647` | 168 | 3 | FFT-like |
 
-None is in the `FUN_1c71ec` chain, which stands as a wavetable engine. No
+None is in the `FUN_1c71ec` chain, which stands as a wavetable engine
+(**[C]** it is not one; see "The audio path from the task loop to the rings"). No
 bit-reversed addressing (`19a_bitrev`) anywhere in the image, which is a second
 FFT tell and argues these are something else -- possibly just the butterfly
 *instruction* used for a cheap paired sum/difference. `blk69@0xb8063e` is the
@@ -1897,6 +2181,185 @@ ring-construction function and `0x1cb4b2`. They may well have had callers all
 along. The 12-indirect-calls-are-returns correction still stands (that was about
 Type 9b), but "callerless, therefore reached at runtime only" does not.
 
+**[V]** Resolved against `out/sharcdb/dt2-1.16.sqlite`'s `edges` table (second
+check, cross-read against the raw bytes): `FUN_1c2b24` has a static caller,
+`call 0x1c771e` inside `FUN_1c75d8`. `FUN_1c71ec` has no static `CALL` caller
+but has exactly one edge of any kind, `cond_jump 0x1c7053` (`JUMP IF SV`,
+non-delayed, cond 7) inside `FUN_1c642a`. `FUN_1c75d8` has no edge of any kind
+pointing to it; it is entered through the RTOS task-creation call recorded
+above.
+
+## The per-frame static chain **[V]**
+
+```
+RTOS task: call 0xb8615d at sw 0x1c7775, entry argument R4 = 0x1c7749
+           (inside FUN_1c75d8's body, not its first instruction)
+  -> FUN_1c75d8 (0x1c75d8-0x1c7bd3, no static entry)
+       call 0x1c771e
+  -> FUN_1c2b24 (per-frame render, 16-track counted loop)
+       call 0x1c3083
+  -> FUN_1c642a (1458 instructions, calls stages 1/2/3 at 0x1c6c2f/0x1c6c44/0x1c6c59)
+       cond_jump 0x1c7053, JUMP IF SV, inside DO 0x1c717f UNTIL LCE
+       (trip count 16, body [0x1c7043, 0x1c717f))
+  -> FUN_1c71ec (wavetable orchestrator: stages 1/2/4/5/6, stage 6 twice)
+```
+
+**[C][V]** `FUN_1c71ec` is out-of-line code of `FUN_1c642a` that jumps back
+into it, not a wavetable orchestrator; see "The audio path from the task loop
+to the rings".
+
+**[C]** `0x1c207b` is not a second call site of `FUN_1c642a`: it is the entry
+of `FUN_1c207b` (303 instructions), which calls stage 3 at `0x1c2307` and
+`0x1c231f` and never calls `FUN_1c642a`. `FUN_1c642a` has exactly one caller,
+`call 0x1c3083`.
+
+Stage callers (`edges`, `to_sw` = stage entry):
+
+| stage | sw | called from |
+| --- | --- | --- |
+| 1 | `0x1ccbd8` | `FUN_b80fd0`, `FUN_b820b1` (x2), `FUN_1c642a`, `FUN_1c71ec` |
+| 2 | `0x1cdecb` | `FUN_1c642a`, `FUN_1c71ec` |
+| 3 | `0x1cb3d8` | `FUN_1c207b` (x2), `FUN_1c642a`, `FUN_1c71ec` |
+| 4 | `0x1cd286` | `FUN_1c71ec` only |
+| 5 | `0x1cc79e` | `FUN_1c71ec` only |
+| 6 | `0x1cbf07` | `FUN_1c71ec` (x2) |
+
+**The `0x1c6579` table is one 15-entry array.** The three indirect jumps in
+`FUN_1c642a` read overlapping windows of the array at `0x8055c840`: the bases
+`0x8055c858` and `0x8055c874` are its entries 6 and 13. Entries 0-14 point into
+`FUN_1c642a`. Tracing from `0x1c6553` with `R6 = 0..3` loads exactly `0x1c65bd`,
+`0x1c6715`, `0x1c6782`, `0x1c686e` into `I12` at `0x1c6579`; `0x1c6553` first
+checks `R6` against 6 (`compu(R6, R2)`, `R2 = 6`). **[V]**
+
+**[C] The selector is a per-track field, loaded once per track.**
+`0x1c6530`..`0x1c6acc` is a per-track loop (`I4 += 0xdc` at `0x1c6532`;
+`JUMP IF SZ (DB)` at `0x1c6acc` back to `0x1c6530`). In the delay slot of the
+branch at `0x1c6538`, `0x1c653b` loads `R6 = DM(I4, M5)` (Type3c, `d = 0`;
+older `tools/sharcfn.py` listings printed it as a store) from
+`track_base + 0x4c`, where `track_base = 0x2506ec + track * 0xdc` is built
+from the `R8` argument (`0x1c6491`, `0x1c64a8`, `0x1c64d5`, `0x1c6532`). The
+caller's `R6 = 0x3c088889` is only spilled, at `0x1c646d`. The `out/sharcdb`
+`regdef` table gives `0x1c653b` as the only last writer of `R6` before
+`0x1c6553`. A trace from `0x1c642a` with the call-site arguments reaches
+`0x1c6579` in 149 steps; with the unwritten field reading 0 it selects entry
+0, `0x1c65bd`. **[V]**
+
+**The field is the machine type, remapped.** `FUN_1c24e9` writes it. It is
+called only from `FUN_1c2b24`'s 16-track loop, twice per track (`0x1c2c9a`,
+`0x1c2ca9`; `R12` = track 0-15, `R8` = `2*track` then `2*track + 1`); the RPC
+task root `0x1c3bf0` does not reach it. With the Type14d at `0x1c257d`
+admitted as provisional, the tracer runs to the return: `0x1c26ce` loads
+`I4 = 0x255970` (the per-track machine-type cache that `0x1c33c1` also
+reads), `0x1c26d4` reads the short word `M2 = DM(I4, M4)` with `M4 = R12`
+(set at `0x1c250e`), `0x1c2731` loads `I3 = 0x2567c0`, `0x1c273c` reads
+`S2 = DM(I3, M2)`, and `0x1c2751` stores `DM(I5 - 8) = S2` on every path.
+`I5 = 0x2506ec + R8 * 0xdc`, so the store lands on `track_base + 0x4c`; traces
+with `R8 = 0, 1, 2, 3, 30, 31` store to `0x250738`, `0x250814`, `0x2508f0`,
+`0x2509cc`, `0x252100`, `0x2521dc`. **[V]**
+
+`0x2567c0` is loader data (block 19, not a fill), referenced only at
+`0x1c2731`: words 0-6 are `0, 1, 2, 3, 4, 0, 5`. With the ColdFire machine
+types from `docs/findings/02` (0 SAMPLE, 1 WERP, 2 STRETCH, 3 REPITCH,
+4 SLICED SMP, 5 MIDI, 6 MANUAL SLICE), MIDI shares selector 0 with SAMPLE and
+MANUAL SLICE gets selector 5. No machine type maps to 6 or above, so the
+`>= 6` path at `0x1c6561` is unused by the current types. **[V]** for the
+table bytes and the load; **[D]** for the type names. The cache at
+`0x255970` sits in a fill block and has no literal store anywhere; how it is
+refreshed from the ColdFire frame is **[O]**.
+
+Array entries 0-14 at `0x8055c840`: `0x1c65bd`, `0x1c6715`, `0x1c6782`,
+`0x1c686e`, `0x1c692f`, `0x1c6992`, `0x1c69ed`, `0x1c69c6`, `0x1c6d1e`,
+`0x1c6d51`, `0x1c6d7a`, `0x1c6dd6`, `0x1c6e4e`, `0x1c6eb7`, `0x1c6ea9`.
+
+| selector | machine types | entry | back to `0x1c65fe` | callees |
+| ---: | --- | --- | --- | --- |
+| 0 | SAMPLE, MIDI | `0x1c65bd` | falls through | `0x1c4afe` |
+| 1 | WERP | `0x1c6715` | `JUMP` at `0x1c677b` | `0x1c06ba`, `0x1c4afe` |
+| 2 | STRETCH | `0x1c6782` | `JUMP` at `0x1c6865` | `0xb88f70` x2, `0xb88f06` x2, `0x1c0d68`, `0x1c06ba`, `0x1c4d88` |
+| 3 | REPITCH | `0x1c686e` | `JUMP` at `0x1c6926` | `0xb88f70` x2, `0xb88f06` x2, `0x1c06ba`, `0x1c4a31` |
+| 4 | SLICED SMP | `0x1c692f` | `JUMP` at `0x1c6989` | `0x1c06ba`, `0x1c4afe` |
+| 5 | MANUAL SLICE | `0x1c6992` | `JUMP` at `0x1c69bd` | `0x1c4bf9` |
+| >= 6 | none | -- | `JUMP` at `0x1c6561` | -- |
+
+**[V]** for entries, jumps and callees (byte listing, and traces from
+`0x1c654c` with `R6 = 0..7`); machine names follow the remap above **[D]**.
+Cases only set up a few per-track values: none writes a register that
+`0x1c65fe` reads **[V]**. **[C]** The case helpers do not leave results in
+the frame: none writes `I6`, and their `DM(I6 - 2)` to `DM(I6 - 11)`
+accesses save and restore `I5`, `I3`, `R15`, `R14`, `R13`, `R11`, `R10`,
+`R9`, `R7` and (in `0x1c4bf9`) `R6` around the body (`0x1c4afe`,
+`0x1c4bf9`, `0x1c4a31`, `0x1c4d88`) **[V]**.
+
+**The helpers write a second per-track array.** A case's `R4` argument
+comes from `I15`, which starts at `0x2412c8 + 0xd604` for track 0
+(`0x1c64e0`) and advances `0x1d8` per track (`0x1c6a82`, reloaded at
+`0x1c6acf`); each case subtracts `0x188` before the call (`0x1c65ee`).
+`0x1c4d88` writes `DM(I5 + 0x1b9)` and `DM(0x72)`; `0x1c4bf9` writes
+`DM(I5 + 0x1ba)`; `0x1c4a31` writes `DM(I5 + 0x1bb)` and nearby;
+`0x1c4afe` writes `DM(I5 + 0x1ba)` and branches on `DM(I5 + 0x1bb)` at
+`0x1c4bbe`. **[C][V]** These are I-register bases in bytes: all four
+helpers store one `(sw)` flag short at bytes +0x1bb/+0x1bc, and +0x1ba is a
+seed flag they test and clear (see "The voice record contract"). **[O]**
+Base of `I15`, two single readings: (a) `I15 = I4 + 0x18c` bytes
+(`0x1c64d2`/`0x1c64e0`), minus 0x188 gives record base `0x2412cc`;
+(b) `ws + 0xd604` (`0x24e8cc`) is the envelope array base `DM(I6-25)`
+(`0x1c648a`/`0x1c649d`), not the voice records. Helper roles: `0x1c0d68` looks up a curve table
+(`0x2411c8`, `0x241210`); `0xb88f06` converts a float to a 64-bit fixed
+value; `0xb88f70` computes the bit length of a 64-bit value; `0x1c06ba`
+is `RECIPS` plus three Newton-Raphson steps, then a word copy of `R12`
+words when `R12` is not 0. **[C][V]** `0x1c06ba` computes `F0 = F4 / F8`
+(a reciprocal when `R4 = 1.0`); the word copy is a separate entry at
+`0x1c070a`. **[C][D]** `0x1c0d68` is called with `F4 = 2.0` and an exponent
+in `F8`, read as `powf(F4, F8)`; the two tables may be its internals. The
+`DM(I5 + 0x1b9)`-style offsets here are bytes (see "Voices" below). Only case 5 reads `I0`-relative fields
+(`DM(I0 - 19)`, `DM(I0 - 27)`, `DM(I0 - 20)`) **[V]**. What each field
+means is **[D]**/**[O]**.
+
+The per-track loop is a branch loop, not a
+`DO` loop, and `I0`, `I1`, `I6` and `M5`-`M7`/`M13`-`M15` are not written in
+any case body **[V]**. After `0x1c65fe`, stage B (`0x1c66ec`, base
+`0x8055c858` = entry 6, bound 7, same `M4`) runs for every selector; stage C
+(`0x1c6c25`, base `0x8055c874` = entry 13, bound 7) is selected by
+`R2 = DM(I1, M6)` at `0x1c6c0f`. That field is one word of the per-frame
+workspace passed as `R4`: `FUN_1c642a` spills `R4` (`0x2412c8`) to
+`DM(I6 - 4)` at `0x1c6479`, reloads it at `0x1c6ad3` after the per-track
+loop, and forms `I5 = I4 + 0xdc64` (`0x1c6add`) and `I1 = I5 - 0x80`
+(`0x1c6bfe`), so the selector is `DM(0x2412c8 + 0xdbe4)`, read once per
+frame **[V]**. Its one resolved writer is `0x1c69f1` in `FUN_1c642a`
+(Type15a `DM(I1 - 0x104) = R9`; with an I register, 15a's 32-bit field is
+an offset, not an absolute address), which lies on every static path from
+the function entry and the per-track loop to `0x1c6c0f` **[V]**. The value
+is `R9 = DM(I0 - 57)` (`0x1c69e8`), a per-track field **[V]**; how `I1`
+reaches `0x24efb0` is **[O]**. No function reached from the RPC task root
+`0x1c3bf0` (91 functions) has a resolved store in the workspace
+`0x2412c8`-`0x2412c8 + 0x10000`; 61 of its stores have unresolved bases, and
+the two checked are not workspace stores **[D]**. The stage C table at
+`0x8055c874` holds `0x1c6eb7`, `0x1c6ea9` (in `FUN_1c642a`), then
+`0x1c7395`, `0x1c73b0`, `0x1c73cb`, `0x1c73e3`, `0x1c742a`, each in
+`FUN_1c71ec` just before the stage 4, stage 5, stage 6, `0x1ccd96` and
+stage-6 re-call setups. So `FUN_1c71ec` is also entered by the indirect
+jump at `0x1c6c25`, not only by the `JUMP IF SV` at `0x1c7053` **[V]**.
+
+**Boot fills the pointer table the mix reads.** `FUN_1c15e3`
+(`0x1c15e3`-`0x1c18a6`) copies 32 words from `0x24ef2c`
+(`0x2412c8 + 0xdc64`, `I15` at `0x1c1670`) to `0x252d78` (`I10` at
+`0x1c1668`) in a branch loop (`JUMP IF LT` at `0x1c16e5`), and fills a
+second table at `0x253df8` with `0x252df8 + k * 0x80`. It is reached only
+from boot: loader entry `0x1c1338` → `FUN_1c13e6` → jump at `0x1c147e` →
+`FUN_1c7ff9` → call at `0x1c8092`. `FUN_1c14e7`, the last per-frame call
+in `FUN_1c2b24` (`0x1c30a0`, after `0x1c3083`, `0x1c3090`, `0x1c3099`),
+reads `0x252d78`, `0x252df8` and nearby tables and references no
+address in the output rings **[V]**. **[C][V]** It is the last call of the
+render group (`0x1c642a`, `0x1c18a6`, `0x1c207b`, `0x1c14e7`), not of the
+frame; see "Master stage" below. Who writes the 32 source words at
+`0x24ef2c` is **[O]**: they have resolved readers (`0x1c16a0` in
+`FUN_1c15e3`; `0x1c6c0b`, `0x1c6fc6`, `0x1c711a`, `0x1c7121` in
+`FUN_1c642a`) but no resolved writer **[V]**.
+
+Entries 2-6 of the stage C table point into
+`FUN_1c71ec`. DN2 1.11's matching function checks its stage A selector
+against 5 (`R15 = 5` at `0x1c905b`, `compu(R2, R15)` at `0x1c905d`) **[V]**.
+
 50 of those 51 target one address: **`0x1c06ba`**, a heavily shared primitive
 reached from all over the engine, including from stage 3's envelope routine
 `0x1cb3d8`. It is **RECIPS followed by three Newton-Raphson iterations** -- the
@@ -2099,7 +2562,32 @@ M6 is a runtime constant. The startup routine `blk88@0x1c0f24` sets
 (`M6 = 1` at `sw 0x1c0f40`, bytes `a6 0f 01 00`). Across all nine code
 blocks the only other writer of each is a PM load in blk69 paired with a
 PM store of the same register at the same offset, an interrupt save and
-restore. The same routine sets `B7 = 0x26f000`, `I7 = 0x26f7f0` and
+restore.
+
+All six immediates execute inside one `DO 0x1c0f7c UNTIL LCE` loop (trip
+count 2, `sw 0x1c0f37`, body `[0x1c0f3a, 0x1c0f7c)`), which also covers the
+L-register zeroing and the B7/I7/L7 setup below; both loop passes write
+the same literal, so the repeat has no effect on the final value. The six
+sites: `0x1c0f3a M15=0xffff`, `0x1c0f3c M7=0xffff`, `0x1c0f3e M14=1`,
+`0x1c0f40 M6=1`, `0x1c0f42 M13=0`, `0x1c0f44 M5=0` (all `17b`, 16-bit
+immediate sign-extended, so `0xffff` is -1). The blk69 mirror
+(`blk69@0xb8853a`, the interrupt-restore function discussed under "A
+bounded set contains I6/I7/B6/B7" below) is not uniformly PM: M7/M6/M5
+restore via `PM(I3+74)`/`PM(I3+73)`/`PM(I3+72)` at `sw
+0xb885e7`/`0xb885ea`/`0xb885ed`, matching `PM(I4+74/73/72)` saves at `sw
+0xb8835c-0xb88362` in `blk69@0xb88200`; M15/M14/M13 instead restore via
+`DM(I3+82)`/`DM(I3+81)`/`DM(I3+80)` at `sw
+0xb88582`/`0xb88585`/`0xb88588`, matching `DM(I7+80/81/82)` saves at `sw
+0xb88304-0xb8830a` -- a second, DM-space save/restore pair. An independent
+aligned/depth>=8 whole-image scan (all nine `tools/sharcinv.CODE_BLOCKS`
+blocks, 50,976 confidently decoded instructions -- the same count
+`docs/findings/11-sharc-cross-image-comparison.md` reports for this image
+-- checked every `17a`/`17b`/`5a_move`/`5b_move`/`3a`/`3b`/`3d`/`14a`/
+`15a`/`15b` instruction for a write to ureg codes 37/38/39/45/46/47) finds
+exactly these twelve sites and no others for M5/M6/M7/M13/M14/M15,
+matching `tools/sharcwriters.py`'s `GLOBAL_CONSTANT_SEEDS` comment. **[V]**
+
+The same routine sets `B7 = 0x26f000`, `I7 = 0x26f7f0` and
 `L7 = 0x1fd` at `sw 0x1c0f64..0x1c0f6a`, mirrors them into B6, I6 and L6,
 and sets MODE1.CBUFEN (bit 24) at `sw 0x1c0f82`, bytes
 `14 02 01 01 18 00`, `MODE1 = set(MODE1, 0x1011800)`. No BIT CLR anywhere
@@ -2327,7 +2815,8 @@ ten of count 16 span 24, one 16/59, one 15/24, and one **count 3 span 94** that
 holds essentially all the heavy compute. Writes state back into the shared
 context struct `0x252d3c` at `+4`/`+12`.
 
-**`blk93@0x1c14e7`** (98 instructions) -- the last call in the render chain, and
+**`blk93@0x1c14e7`** (98 instructions; **[C][V]** last call of the render group
+only, see "Master stage" below) -- the last call in the render chain, and
 a candidate for the missing ring writer. Five literal loops (256, 16, 16, 32,
 16). The `R12`/`R8`/`R4` context arguments are **never dereferenced**; every
 address it uses is a hard-coded literal in `0x252d3c`-`0x254800`, all RAM. Its
@@ -2696,6 +3185,18 @@ sampled, one of them read by the render orchestrator `FUN_001c642a`; treat
 them as occupied. The L2 code block's short-word base is `0xb80000`,
 confirmed by byte comparison. **[D][O]**
 
+**DN2 1.11 has less free L2, and its loader never touches the DT2 DDR
+command block.** The L2 is 1 MB at `0x20000000` (ADSP-2156x HWR, chapter 8,
+`out/refs/adsp-2156x-hwr/pages/p0243.txt`). `LoadedMemory.ranges()` puts
+DN2 1.11's last L2 write at `0x2008823c` (with an 8-byte unwritten gap at
+`0x2001e880..0x2001e888`), leaving 490,948 free bytes past its loader; DT2's
+939,140 above reproduces with the same method. A raw 32-bit literal scan of
+`0x82a00000..0x82a00200` (the candidate DDR command block in
+`docs/sharc/structure-1.16.md` §4a) finds every field address that document
+cites in DT2 1.16 and none in DN2 1.11, and DN2's loader writes nothing in
+`0x82000000..0x83000000`. The `0x82a00000` structure is DT2-specific, or
+DN2 keeps equivalent state elsewhere. **[V]**
+
 The context-switch pointer `DM(0x2ca3e0)` is zero in the loader image, so
 its structures are built at run time. Its two writers, `FUN_00b85af7` and
 `FUN_00b85f6c`, are located but not yet read; they decide whether a second
@@ -2797,3 +3298,144 @@ So the CFADE control on XSLICE reaches the frame (`+0xde = 0x00c0` after a
 turn, HUD "Crossfade=50") but the SHARC discards it. Mirror 33 is the live
 unused slot on SLICE; SAMPLE's LOOP (`0xd0`, max `0x7802`) uses it. From a
 single agent's trace; needs a second check. **[D][O]**
+
+## The audio path from the task loop to the rings **[C][V][D]**
+
+Two agents checked each item against the 1.16 bytes. **[V]** covers the
+dataflow both confirmed; names such as DAC, delay or saturator are **[D]**.
+
+**Task loop [V].** The "Audio Task" at `0x1c7749` runs the block handler
+`0x1c74cd` when `0xb86b1e` (a notify-take wait **[D]**) returns 1. The handler
+reads a command at `0x264220 + (DM(0x261ca4) << 12)` and jumps
+(`0x1c7521`, `JUMP (M13, I12)`) through `0x25f7b0` = {`0x1c7524`, `0x1c75d8`,
+`0x1c763c`, `0x1c7671`}: 0 (and > 3) clears 64 words at `0x261cc8 + (flag << 8)`
+and stores `0x7fffffff` at `0x262138 + (flag << 11)`; 1 clears and stores 0;
+2 is loopback; 3 renders from `0x1c7671` (`0x1c766b`/`0x1c766e` are delay
+slots). All rejoin at `0x1c758b`; then bit 0 of `flag = DM(0x25f780)` toggles.
+
+**Rings [V].** `0x1c7462` (5 calls) converts Q31 to float: ring B half
+`0x261ec8 + (flag << 8)` to `0x25f280`, and four word pairs of ring D half
+`0x263138 + (flag << 11)` to `0x25f380`..`0x25f680`, 64 words each. After the
+render, `0x1c74a1` converts `0x25f180`/`0x25f200` to Q31, L/R interleaved,
+into ring A half `0x261cc8 + (flag << 8)`. The ring C half goes to `FUN_1c2b24`
+as stack argument 2 and on to `0x1c28b5` (`0x1c3153`-`0x1c3160`). Core code
+only reads ring D. B as codec input, A as DAC output: **[D]**.
+
+**Master stage [V].** `0x1c207b` gets `R4 = 0x25f180` (`0x1c771b` via
+`FUN_1c2b24`). It sums 16 tracks `0x252df8 + t*0x100` bytes (32 L + 32 R) and
+returns `0x254b78`/`0x254c78`/`0x254778` into bus A `0x254878` (bit t of
+`0x252538` set) or bus B `0x254a78` (clear), calls `0xb82d41` -> `0xb82cba`
+(dynamics **[D]**, output `0x254978`), computes
+`clip((0x254978 + 0x254a78) * 3.1623, 1.0)`, runs `0x1cb3d8` per channel into
+`0x25f180`/`0x25f200`, and applies the gain `DM(0x2526ec)` squared, ramped in
+1/32 steps. After `0x1c14e7`, `FUN_1c2b24` calls `0x1c3429`, `0x1c367e`,
+`0x1c80f2`, 16x `0x1c149b`, `0x1c29fd`, `0x1c28b5` and the meter getters.
+
+**Voices [V].** `FUN_1c642a` walks 32 records at `0x2412cc`, stride `0x1d8`
+bytes, calling `0x1c4ecf` (or `0x1c5576` -> `0x1c5615`). Both zero-fill the
+output unless word +0 and byte +0x1b8 are non-zero. `0x1c4f81` renders 64
+samples by 6-tap polyphase interpolation (table `0x25d940`) into record
++4..+0x103; `0xb80000` (state +0x104) decimates 2:1 to 32 outputs. Units:
+`DM(Ix+imm)` offsets are words, 19a modifies and `(bw)`/`(sw)` accesses are
+bytes, so +0x62..+0x6d are words (step at 0x6a/0x6b) and 0x17c..0x1bc are
+byte flags. **[C]** Earlier word offsets +0x1ab/+0x1ac (`0x1c4a31`) are bytes
+0x1a8/0x1ac, and the reset `0x1c4eaf` offsets +0x1b9..+0x1d1 are bytes too.
+
+**Case helpers [V], claim not confirmed.** Agreed parts: `0x1c4afe` and
+`0x1c4bf9` call `0x1c0d68` with `F4 = 2.0`, `F8 = clip((F8-60)+(F12-64),
+64)/12` and scale by `float(DM(I5+0x61)) / 96000`; `0x1c4d88` and `0x1c4a31`
+do not call it. Only `0x1c4bf9` skips `0x1c4914`. Step format and store
+offsets of the other three: **[O]**. **[C][V]** Resolved in "The voice
+record contract": all four store a Q31 step at words 0x6a/0x6b.
+
+**`FUN_1c71ec` [C][V].** Out-of-line blocks of `FUN_1c642a`, entered by jumps
+at `0x1c7053`, `0x1c6f07`, `0x1c6eef`, `0x1c6ed9` and table `0x8055c874`;
+every exit jumps back. The first block lerps 128-entry cosine/sine tables
+`0x8055c440`/`0x8055c640` (equal-power curves **[D]**). Table `0x8055c874`
+picks one stage per slot type: 1 `0x1cdbb2`, 2 `0x1cd286`, 3 `0x1cc79e`,
+4 and 6 `0x1cbf07`, 5 `0x1ccd96`. Gated passes then run `0x1cb3d8`
+(saturator **[D]**), `0x1cdecb` (sample-and-hold rate reduction **[D]**) and
+`0x1ccbd8` (low-pass plus DC blocker **[D]**). `0x1cbf07` reads four taps
+off `I1 = DM(I4+16)` and each sample writes `DM(I1+M4) = fclip(x + g*taps,
+1.0)`, also its output; the index `DM(I4+14)` steps `(idx+1) & 0x1fff`
+(`0x1cbfd9` is `R2 = R13 + 1`). `2^32` fixes the unsigned count before `1/N`;
+`8192.0` wraps the read position. An 8192-word feedback comb or delay **[D]**,
+not a wavetable read.
+
+## The voice record contract **[C][V][D][O]**
+
+Two agents checked six claims on the 1.16 bytes; **[V]** is what both
+confirmed. `DM(Ix + imm)` offsets are words, I-register modifies are bytes,
+M modifiers scale by access size (word x4, `(sw)` x2, `(bw)` x1).
+
+| field (record `0x2412cc + k*0x1d8`) | offset (unit) | format | written by | read by |
+| --- | --- | --- | --- | --- |
+| work buffer | bytes +0x4..+0x103 | 64 float | `0x1c4f81` | `0xb80000`, declick |
+| decimator state | byte +0x104 (pointer) | float words | `0xb80000` | `0xb80000` |
+| previous sample | word 0x60 (byte +0x180) | float | `0x1c4f81` | `0x1c4f81` |
+| rate | word 0x61 | u32 | not checked | `0x1c4afe`, `0x1c4bf9`, `0x1c4d88` |
+| loop start / start / end | words 0x64-65 / 0x66-67 / 0x68-69 | Q31 int64, low first | `0x1c4914`, `0x1c4bf9` | `0x1c4f81`, seed |
+| step | words 0x6a-6b | signed Q31 int64 | the four setters | `0x1c4f81`, `0x1c53c5` |
+| phase | words 0x6c-6d | Q31 int64 | setters (seed), `0x1c4f81` | `0x1c4f81`, `0x1c53c5` |
+| fade-in / zero-cross mute / reseed | bytes +0x17c / +0x17d / +0x17e | u8 one-shot | not checked | `0x1c4f81` |
+| active | byte +0x1b8 | u8 | `0x1c4eaf`, `0x1c4f81` | `0x1c4ecf`, `0x1c5576`, `0x1c4f81` |
+| seed pending | byte +0x1ba | u8 | `0x1c4eaf` (1), setters (0) | setters |
+| reverse / loop | bytes +0x1bb / +0x1bc | u8 pair, one `(sw)` store | setters | setters, `0x1c4f81` |
+
+**Step [C][V].** `0x1c4afe`, `0x1c4bf9`, `0x1c4d88`: step = ratio * rate /
+96000 * 2^31 (float, `scalb` 30, int64 via `0xb88f06`, `<< 3`; low 3 bits
+0). Rate is word 0x61 as unsigned (+2^32 if negative); /96000 is a multiply
+by `0x372ec33e` plus one correction step. `0x1c4afe`/`0x1c4bf9`: ratio =
+`powf(2, clip((F8-60) + (F12-64), 64)/12)` (`0x1c0d68`); **[C]** the +-64
+clip (`0x1c4b1d`, `0x1c4c18`) was missing. `0x1c4d88` takes the ratio in
+`F8`; its caller `0x1c685e` builds it the same way **[D]**. Stack arg1 !=
+0 negates the step (`0x1c4b79`/`0x1c4b7c`). Low word to 0x6a, high to 0x6b
+(`0x1c4b9d`/`0x1c4ba2`, `0x1c4e18`/`0x1c4e17`, `0x1c4c98`/`0x1c4c9b`).
+F8 = note, F12 = tune: **[D]**.
+
+**`0x1c4a31` (selector 3, caller `0x1c691f`) [V][O].** Step = +-F8 * 2^32
+(`F8 * 0.5`, `scalb` 30, `<< 3`), negated when `R12` != 0; no `0x1c0d68`, no
+word 0x61, no /96000; same words (`0x1c4a92`, `0x1c4a95`). Readers index
+with `pos >> 31`, so it is Q31 like the others: 2*F8 samples per output
+sample. **[O]** Whether the caller cancels the 2: its divide (`0x1c690a`)
+has `F2 = F2 + F2` at `0x1c68fd`. REPITCH: **[D]**.
+
+**Positions [C][V].** `0x1c4914` is called only at `0x1c4a98`, `0x1c4ba3`,
+`0x1c4e1a`. `0x1c4bf9` sets start = min(arg3, len-141) << 31; with arg2 = 0,
+0x64 = start and 0x68 = min(arg4, len) << 31, else `0x1c4d58` stores the
+min/max of min(arg4, len) and min(arg5, len) in 0x64/0x68; `0x1c4914` does
+the same when `R8` != 0 (`0x1c49de`). **[C]** The sorted pair is loop start
+and end, not start (0x66). `0x1c4914` input meanings: **[D]**.
+
+**Flags and seed [C][V].** All four setters store `(arg1 & 0xff) | (arg2 <<
+8)` as one `(sw)` short at bytes +0x1bb/+0x1bc (`DM(M6, I5 + 0x1b9)` at
+`0x1c4ba0`, `0x1c4de0`, `0x1c4c93`; `DM(M5, I5 + 0x1bb)` at `0x1c4a96`).
+**[C]** `0x1c4afe` and `0x1c4d88` do not write +0x1ba. Arg1 also negates
+the step. Each setter then tests +0x1ba (`0x1c4aa2`, `0x1c4bad`, `0x1c4d0d`,
+`0x1c4e24`); if set, it clears it and sets the phase to end - 1.0 sample
+(`+ 0xffffffff_80000000`) when +0x1bb is set, else to start. `0x1c4eaf`
+sets +0x1ba = 1 and the short 1 at +0x1b8 (`0x1c4eb9`, `0x1c4ebb`).
+`0x1c4f81` never reads +0x1ba; +0x1bb != 0 selects the descending loop
+`0x1c52ab` (`0x1c507f`); past the limit with +0x1bc = 0 it clears +0x1b8
+(`0x1c5008`, `0x1c5048`); a wrap copies +0x1bc to +0x1b8 (`0x1c50fe`,
+`0x1c530a`, `0x1c5325`). It tests +0x1b9 (`0x1c526d`); fade-out: **[D]**.
+
+**Render and declick [C][V].** `DO 64`; six `(swse)` int16 taps, 6
+coefficient words at `0x25d940 + idx*24` bytes, `float_by -15`. `0xb80000`
+reads 64, writes 32, x0.5. +0x17d zeroes samples until a sign change
+against word 0x60 or |x| <= 0.001, then clears; +0x17e reseeds word 0x60;
++0x17c runs one linear fade-in, then clears. **[C]** Declick flags, not
+envelope state. **[O]** Decimator state: (a) bytes +0x104..+0x14b; (b) only
++0x114..+0x14b used.
+
+**Envelope [V][O].** `0x1cbb57` runs after the render loop (`0x1c6f1c`), 32
+times, on 11-word records stepped 0x2c bytes, in place on `ws + 0xdc64`[k].
+**[O]** Record base: (a) not traced; (b) `ws + 0xd604` = `0x24e8cc`, outside
+the voice records.
+
+**Dispatch [C][V].** Selector word at slot +0x4c bytes (stride 0xdc bytes).
+`0x1c6ae8 R2 = btgl R2 by 1` and `0x1c6aeb JUMP IF NOT SZ`: selector 2 calls
+`0x1c5576` (`0x1c6af1`), any other `0x1c4ecf` (`0x1c6b00`). **[C]** Both
+zero-fill unless word +0 and byte +0x1b8 are non-zero. Trigger: `0x1c6553
+compu(R6, 6)`, `0x1c6561 JUMP IF GE 0x1c65fe` (unsigned), `0x1c6579 JUMP
+(M13, I12)` through `0x8055c840`. STRETCH: **[D]**.

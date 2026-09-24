@@ -1,0 +1,75 @@
+{
+  "schema": "sharc-discovery-manifest/v1",
+  "image_sha256": "336e340aa0cdcd34e314cfa44849f709a3134f6bd4cd57dfc7e15702c83115e2",
+  "code_blocks": [
+    1,
+    55,
+    56,
+    66,
+    68,
+    70,
+    78,
+    81,
+    83
+  ],
+  "min_depth": 8,
+  "code_block_declaration": {
+    "status": "bounded-static-candidate",
+    "derivation": "sharcldr.parse_blocks() plus the same loader-target code regions used by the DT2 inventory; sharcfn.load_context() decodes 54,156 instruction PCs and 1,156 recovered functions across these non-fill blocks. No audio root, runtime path, or product-specific semantic role is asserted.",
+    "blocks": [
+      {
+        "index": 1,
+        "loader_target_address": "0x282403f0",
+        "payload_bytes": 10312
+      },
+      {
+        "index": 55,
+        "loader_target_address": "0x282dd3d0",
+        "payload_bytes": 348
+      },
+      {
+        "index": 56,
+        "loader_target_address": "0x20000000",
+        "payload_bytes": 125056
+      },
+      {
+        "index": 66,
+        "loader_target_address": "0x2838004c",
+        "payload_bytes": 276
+      },
+      {
+        "index": 68,
+        "loader_target_address": "0x283801a4",
+        "payload_bytes": 320
+      },
+      {
+        "index": 70,
+        "loader_target_address": "0x28380328",
+        "payload_bytes": 264
+      },
+      {
+        "index": 78,
+        "loader_target_address": "0x28380548",
+        "payload_bytes": 8312
+      },
+      {
+        "index": 81,
+        "loader_target_address": "0x2838261c",
+        "payload_bytes": 192
+      },
+      {
+        "index": 83,
+        "loader_target_address": "0x28382720",
+        "payload_bytes": 104668
+      }
+    ]
+  },
+  "roots": [],
+  "trace_probes": [],
+  "dispatch_target_probes": [],
+  "selector_provenance_probes": [],
+  "natural_selector_frontiers": [],
+  "writer_targets": [],
+  "register_effects": [],
+  "core_vector_scans": []
+}

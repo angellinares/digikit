@@ -206,6 +206,21 @@ ALU_FLAGS_MASK = (
 # MR data-move, which the PRM (p.493) documents as clearing all four.
 MULT_FLAGS_MASK = (1 << MN_BIT) | (1 << MV_BIT) | (1 << MU_BIT) | (1 << MI_BIT)
 
+# Type3b's (l, x, w) ACCESS/BH/BHSE encode table (SHARC+ Core Programming
+# Reference rev. 1.4, pp. 13-16--13-19), used by this module's own "3b"
+# _execute branch below; Type4b/4d share the identical 3-bit l/x/w table
+# (PRM pp.13-31/13-32/13-34, no "ex" bit -- unlike Type3d/14d, which add
+# one), so tools/sharcdb.py's extract_mem_access() imports this rather than
+# re-deriving it.
+ACCESS_WIDTHS = {
+    (0, 1, 1): "normal-word",
+    (0, 0, 0): "byte",
+    (0, 1, 0): "byte-sign-extended",
+    (1, 0, 0): "short-word",
+    (1, 1, 0): "short-word-sign-extended",
+    (1, 1, 1): "long-word",
+}
+
 # IF-condition codes (PGR Table 10-4) that read a single ASTATX bit,
 # optionally complemented.
 SIMPLE_COND_BITS = {
@@ -293,6 +308,11 @@ class State:
     # and the ones it actually did. A state that used any is calibration.
     provisional_forms: tuple[str, ...] = ()
     provisional_used: tuple[str, ...] = ()
+    # Opt-in --approx-recips: whether this path may substitute a documented-
+    # but-unverified numeric model for recips's undocumented ROM seed, and
+    # whether it actually did so at least once (calibration, like above).
+    approx_recips: bool = False
+    approx_recips_used: bool = False
 
 
 def _signed(value: int, bits: int) -> int:
@@ -405,6 +425,8 @@ def _copy(state: State) -> State:
         dict(state.special),
         state.provisional_forms,
         state.provisional_used,
+        state.approx_recips,
+        state.approx_recips_used,
     )
 
 
@@ -704,7 +726,22 @@ def _negate(value: Value, expression: str) -> Value:
     )
 
 
-def _subtract(left: Value, right: Value, expression: str) -> Value:
+def _subtract(
+    left: Value, right: Value, expression: str, *, same_source: bool = False
+) -> Value:
+    """LEFT - RIGHT, with an explicit fold for the self-subtract idiom.
+
+    SAME_SOURCE=True is the caller's promise that LEFT and RIGHT are two
+    reads of the exact same register/operand at this instant (e.g. the
+    SHARC+ "Rn = Rn - Rn" self-clear idiom, PRM Table 17-5 / 18-10 ALUOP
+    add/subtract with RX=RY): whatever that shared value is -- even an
+    Unknown/symbolic one -- X - X is exactly 0 in 32-bit modular
+    arithmetic, so fold to Const(0) directly rather than letting an
+    Unknown operand swallow the whole expression (Unknown - Unknown would
+    otherwise stay Unknown forever, e.g. a subsequent DO-loop compare
+    against it never resolving concretely and forking every iteration)."""
+    if same_source:
+        return Const(0)
     return _add(left, _negate(right, expression), expression)
 
 
@@ -726,6 +763,35 @@ def _multiply(left: Value, right: Value, expression: str) -> Value:
             tuple((name, right.value * coefficient) for name, coefficient in terms),
         )
     return Unknown(expression + " (non-affine multiplication)")
+
+
+def _aconv_symbol(value: Affine, direction: str, source_code: int, pc_sw: int) -> Affine:
+    """Return an opaque, stable symbolic result for map-dependent ACONV.
+
+    B2W is not affine when the source's low two bits are unknown.  The PRM's
+    address-map/ILAD exception also prevents treating a symbolic source as an
+    unconditional shift.  Retaining a source-derived opaque symbol lets the
+    bounded writer tracer continue without asserting a false linear relation.
+    """
+    pieces = [direction, str(source_code), "%x" % pc_sw, "%x" % value.constant]
+    pieces.extend("%s_%x" % (name, coefficient) for name, coefficient in value.terms)
+    return symbol("aconv_" + "_".join(pieces))
+
+
+def _aconv(value: Value, w2b: bool, source_code: int, pc_sw: int) -> Value:
+    """Apply the PRM-likely ACONV arithmetic without inventing ILAD behavior."""
+    if isinstance(value, Const):
+        return Const(value.value << 2 if w2b else value.value >> 2)
+    if not isinstance(value, Affine):
+        return Unknown("ACONV source is not symbolic")
+    if w2b:
+        return _multiply(value, Const(4), "ACONV W2B")
+    if value.constant % 4 == 0 and all(coefficient % 4 == 0 for _, coefficient in value.terms):
+        return _affine(
+            value.constant // 4,
+            tuple((name, coefficient // 4) for name, coefficient in value.terms),
+        )
+    return _aconv_symbol(value, "b2w", source_code, pc_sw)
 
 
 def _access_modifier_scale(access_width: str, assume_nw32: bool) -> int:
@@ -1240,6 +1306,47 @@ def _float_copysign(
     return Const(bits), False
 
 
+def _float_round32(value: Value, expression: str) -> tuple[Value, Optional[bool]]:
+    """FN = rnd FX (PRM Table 18-5 opcode 1010 0101, p.20-8 "32-bit and
+    40-bit Operations"; PGR Table 12-4 opcode 1010 0101, pp.12-3/12-4, and
+    p.11-33): rounds FX to a 32-bit floating-point boundary.
+
+    The PRM's own wording for the rounding-mode choice ("as defined by the
+    REGF_MODE1.RND32 bit") is inconsistent with what RND32 documents
+    elsewhere in the same manual (register-map chapter, p.29-55: RND32
+    selects whether the computational units round floating-point data to
+    32 bits or 40 bits -- an output-width choice, not a nearest-vs-truncate
+    one) and with the classic PGR's wording for the identical op ("the
+    rounding mode bit in MODE1"); this follows the PGR and every other
+    rounding-mode citation in this file (MODE1.TRUNCATE -- see
+    ``_float_to_fixed``'s docstring).
+
+    That rounding-mode choice is not observable here regardless: per this
+    module's "Floating-point compute support" header comment, every UREG
+    this tracer tracks is already stored at IEEE-754 single precision, so
+    FX is already rounded to the 32-bit boundary this op targets, and
+    re-rounding an already-32-bit-precision, finite, normal input is a
+    no-op under either rounding rule. The "post-rounded overflow" corner
+    the manual documents only arises from rounding away mantissa bits
+    beyond 32-bit precision, which this tracer never carries between ops;
+    the float-pass op (opcode 0xA1, via ``_float_unary``) already fixes
+    AV=False on the same reasoning, so this does too. A denormal input
+    still flushes to +-zero (this op documents that override explicitly,
+    the same as ``_float_copysign`` above); a NAN input returns the fixed
+    all-1s sentinel. Returns (result, invalid).
+    """
+    a = _float32(value)
+    if a is None:
+        return Unknown(expression), None
+    if math.isnan(a):
+        return _FLOAT_ALL_ONES, True
+    magnitude = abs(a)
+    if 0.0 < magnitude < 2.0**-126:
+        return Const(0x80000000 if a < 0 else 0), False
+    bits, _overflowed = _float32_bits(a)
+    return Const(bits), False
+
+
 def _compare_flags_float(
     left: Value, right: Value, label: str
 ) -> tuple[Value, Optional[bool]]:
@@ -1299,10 +1406,18 @@ def _or_updates(
     return merged
 
 
-def _alu_arith_updates(a: Value, b: Value, subtract: bool) -> Dict[int, Optional[bool]]:
+def _alu_arith_updates(
+    a: Value, b: Value, subtract: bool, *, same_source: bool = False
+) -> Dict[int, Optional[bool]]:
     """Dict-returning counterpart of ``_astatx_alu_arith`` (PRM pp.439-440,
     446-447), for callers -- the fixed-point dual add/subtract -- that need
-    to OR two such results together before applying either to ASTATX."""
+    to OR two such results together before applying either to ASTATX.
+
+    SAME_SOURCE mirrors ``_subtract``'s: with SUBTRACT=True it means A and B
+    are the same operand read twice, so the flags are those of 0-0 (AZ/AC
+    set, AN/AV clear) regardless of what value that operand held."""
+    if same_source and subtract:
+        return _bits_to_updates(ALU_FLAGS_MASK, _arith_flag_bits(Const(0), Const(0), True))
     if isinstance(a, Const) and isinstance(b, Const):
         return _bits_to_updates(ALU_FLAGS_MASK, _arith_flag_bits(a, b, subtract))
     return _bits_to_updates(ALU_FLAGS_MASK, None)
@@ -1369,11 +1484,73 @@ def _astatx_compare_float(value: Value, invalid: Optional[bool]) -> "Callable[[V
     return update
 
 
+def _approx_recips(left: Value) -> tuple[Value, Dict[int, Optional[bool]]]:
+    """Opt-in ``--approx-recips`` model of ``FN = recips FX``.
+
+    PRM p.19-16/19-17 (out/refs/sharc-plus-prm, quoted in ``_compute``'s
+    recips/rsqrts branch below): "Creates an 8-bit accurate seed for
+    1/Fx... The mantissa of the seed is determined from a ROM table using
+    the 7 MSBs (excluding the hidden bit) of the Fx mantissa as an index."
+    That ROM table's contents are not published, so this cannot reproduce
+    the real hardware seed bit for bit. It instead:
+
+      - reproduces every documented special case exactly: NaN input ->
+        all-1s result (PRM p.417-418 IEEE-754-compatibility bullet: "NAN
+        inputs ... return a quiet NAN (all 1s)"); +-zero input -> +-infinity
+        with the overflow flag; an Fx unbiased exponent > +125 -> +-zero;
+      - flushes a denormal input to +-zero first, per the same PRM section's
+        general rule ("Denormal operands ... flush to zero when input to a
+        computational unit"), which recips's own page does not restate but
+        which applies to every computational unit;
+      - for the ordinary case, derives the seed's exponent from the
+        documented rule (unbiased exponent of Fn = -e-1, e = Fx's unbiased
+        exponent) and approximates its mantissa as the true mathematical
+        reciprocal's mantissa, truncated to the documented 8-bit accuracy
+        (the low 15 of 23 mantissa bits zeroed) so as not to claim
+        precision no public source confirms.
+
+    Every value this returns is an approximation the caller must not treat
+    as ground truth; ``_apply_compute`` tags it with an "approximate-recips"
+    trace event so a report can always tell it apart from a real seed.
+    """
+    updates: Dict[int, Optional[bool]] = {AC_BIT: False, AS_BIT: False}
+    if not isinstance(left, Const):
+        updates.update({AV_BIT: None, AI_BIT: None, AN_BIT: None, AZ_BIT: None})
+        return Unknown("recips seed (symbolic input)"), updates
+    bits = left.value & 0xFFFFFFFF
+    sign = (bits >> 31) & 1
+    biased_exp = (bits >> 23) & 0xFF
+    mantissa = bits & 0x7FFFFF
+    if biased_exp == 0xFF and mantissa != 0:  # NaN
+        updates.update({AI_BIT: True, AN_BIT: bool(sign), AV_BIT: False, AZ_BIT: False})
+        return Const(0xFFFFFFFF), updates
+    updates[AI_BIT] = False
+    updates[AN_BIT] = bool(sign)
+    if biased_exp == 0:  # +-zero, or a denormal flushed to zero on input
+        updates[AV_BIT] = True
+        updates[AZ_BIT] = False
+        return Const((sign << 31) | (0xFF << 23)), updates  # +-infinity
+    updates[AV_BIT] = False
+    unbiased_exp = biased_exp - 127
+    if unbiased_exp > 125:
+        updates[AZ_BIT] = True
+        return Const(sign << 31), updates  # +-zero
+    updates[AZ_BIT] = False
+    x = struct.unpack("<f", struct.pack("<I", bits))[0]
+    seed_bits, _overflowed = _float32_bits(1.0 / x)
+    # "8-bit accurate seed": keep sign, exponent and the top 8 mantissa
+    # bits; zero the low 15 mantissa bits this model cannot claim.
+    seed_bits &= 0xFFFF8000
+    return Const(seed_bits), updates
+
+
 def _compute(
     f: Mapping[str, int],
     short: bool,
     values: Mapping[int, Value],
     special: Optional[Mapping[str, Value]] = None,
+    *,
+    approx_recips: bool = False,
 ) -> Optional[tuple[int | str, Value, str, "Callable[[Value], Value]"]]:
     """Decode the small public-table subset, reading every operand from VALUES.
 
@@ -1435,8 +1612,10 @@ def _compute(
             0: ("add", lambda: _add(left, right, "R%d + R%d" % (rn, rx)), (left, right, False)),
             1: (
                 "subtract",
-                lambda: _subtract(left, right, "R%d - R%d" % (rn, rx)),
-                (left, right, True),
+                lambda: _subtract(
+                    left, right, "R%d - R%d" % (rn, rx), same_source=rn == rx
+                ),
+                (left, right, True, rn == rx),
             ),
             2: ("pass", lambda: right, None),
             4: (
@@ -1525,8 +1704,10 @@ def _compute(
         elif astatx_kind == "mult":
             astatx_update = _astatx_mult_forget
         else:
-            a, b, subtract = astatx_kind
-            astatx_update = _astatx_alu_arith(a, b, subtract)
+            a, b, subtract, *rest = astatx_kind
+            astatx_update = _astatx_alu_arith(
+                a, b, subtract, same_source=rest[0] if rest else False
+            )
         return rn, value, operation, astatx_update
     # PRM Table 18-1/Figure 18-1 (p.423): bit22 is MF, the multifunction
     # selector. A multifunction op's register sub-fields (PRM Table
@@ -1643,10 +1824,12 @@ def _compute(
             operation = "float-dual-add-subtract"
         else:
             add_value = _add(left, right, "R%d + R%d" % (rx, ry))
-            sub_value = _subtract(left, right, "R%d - R%d" % (rx, ry))
+            sub_value = _subtract(
+                left, right, "R%d - R%d" % (rx, ry), same_source=rx == ry
+            )
             updates = _or_updates(
                 _alu_arith_updates(left, right, False),
-                _alu_arith_updates(left, right, True),
+                _alu_arith_updates(left, right, True, same_source=rx == ry),
             )
             operation = "dual-add-subtract"
         return (rn, rs), (add_value, sub_value), operation, _astatx_from_updates(updates)
@@ -1655,8 +1838,16 @@ def _compute(
         value = _add(left, right, "R%d + R%d" % (rx, ry))
         return rn, value, "add", _astatx_alu_arith(left, right, False)
     if cu == 0 and opcode == 0x02:
-        value = _subtract(left, right, "R%d - R%d" % (rx, ry))
-        return rn, value, "subtract", _astatx_alu_arith(left, right, True)
+        same_source = rx == ry
+        value = _subtract(
+            left, right, "R%d - R%d" % (rx, ry), same_source=same_source
+        )
+        return (
+            rn,
+            value,
+            "subtract",
+            _astatx_alu_arith(left, right, True, same_source=same_source),
+        )
     # PRM p.438-439 / PGR Table 12-3 (p.573): ALUOP 00000101 is
     # RN = RX + RY + ci (add with carry) and 00000110 is RN = RX - RY + ci -
     # 1 (subtract with borrow), both using ASTATX's AC bit as an explicit
@@ -1672,7 +1863,11 @@ def _compute(
         if carry_in is None:
             value = Unknown(label)
         else:
-            base = _subtract(left, right, label) if subtract else _add(left, right, label)
+            base = (
+                _subtract(left, right, label, same_source=rx == ry)
+                if subtract
+                else _add(left, right, label)
+            )
             offset = (1 if carry_in else 0) - (1 if subtract else 0)
             value = _add(base, Const(offset), label)
         operation = "subtract-with-borrow" if subtract else "add-with-carry"
@@ -1747,6 +1942,13 @@ def _compute(
     if cu == 0 and opcode == 0xA2:
         value, overflow, invalid = _float_unary(left, "-F%d" % rx, lambda a: -a)
         return rn, value, "float-negate", _astatx_from_updates(
+            _float_alu_updates(value, av=False, ai=invalid)
+        )
+    # PRM Table 18-5 opcode 1010 0101 (p.20-8) / PGR Table 12-4 opcode
+    # 1010 0101, p.11-33: Fn = rnd Fx.
+    if cu == 0 and opcode == 0xA5:
+        value, invalid = _float_round32(left, "rnd F%d" % rx)
+        return rn, value, "float-round32", _astatx_from_updates(
             _float_alu_updates(value, av=False, ai=invalid)
         )
     # PGR p.11-34/11-35: Rn = mant Fx. Bespoke flag dict, not
@@ -1887,6 +2089,13 @@ def _compute(
     # verify; AV/AI are genuinely data-dependent here and left unknown too.
     if cu == 0 and opcode in (0xC4, 0xC5):
         name = "recips" if opcode == 0xC4 else "rsqrts"
+        # --approx-recips only covers recips: rsqrts's seed exponent rule
+        # (floor(e/2), PRM p.19-18) couples to the exponent's LSB in a way
+        # that is not a trivial mirror of recips's rule, so it is left
+        # Unknown until that is separately worked out.
+        if name == "recips" and approx_recips:
+            value, updates = _approx_recips(left)
+            return rn, value, "float-recips-seed-approx", _astatx_from_updates(updates)
         label = "%s F%d (iterative seed, not numerically modeled)" % (name, rx)
         return rn, Unknown(label), "float-" + name + "-seed", _astatx_from_updates(
             _float_alu_updates(Unknown(label), av=None, ai=None)
@@ -2148,11 +2357,22 @@ def _astatx_alu_logical(value: Value) -> "Callable[[Value], Value]":
     return update
 
 
-def _astatx_alu_arith(a: Value, b: Value, subtract: bool) -> "Callable[[Value], Value]":
+def _astatx_alu_arith(
+    a: Value, b: Value, subtract: bool, *, same_source: bool = False
+) -> "Callable[[Value], Value]":
     """add/subtract/increment/decrement: AC/AV/AN/AZ from A and B; AS/AI/AF
-    cleared."""
+    cleared.
+
+    SAME_SOURCE mirrors ``_subtract``'s: with SUBTRACT=True it means A and B
+    are the same operand read twice (the "Rn = Rn - Rn" self-clear idiom),
+    so the flags are those of 0-0 (AZ/AC set, AN/AV clear) regardless of
+    what value that operand held, even an Unknown one."""
 
     def update(astatx: Value) -> Value:
+        if same_source and subtract:
+            return _astatx_define(
+                astatx, ALU_FLAGS_MASK, _arith_flag_bits(Const(0), Const(0), True)
+            )
         if isinstance(a, Const) and isinstance(b, Const):
             return _astatx_define(astatx, ALU_FLAGS_MASK, _arith_flag_bits(a, b, subtract))
         return _astatx_forget(astatx, ALU_FLAGS_MASK)
@@ -2391,6 +2611,13 @@ def _apply_compute(
             value=value,
         )
         state.uregs[rn] = value
+    if operation == "float-recips-seed-approx":
+        # --approx-recips produced a numeric value with no ROM table behind
+        # it (see _approx_recips); mark this path and this instant so any
+        # report can find and discount it, matching how "predicate-assumption"
+        # tags a forked branch guess.
+        state.approx_recips_used = True
+        _event(state, insn, "approximate-recips", value=value)
 
 
 def decode_at(
@@ -3029,6 +3256,70 @@ def _execute(state: State, insn: Instruction) -> List[State]:
             _predicate(state, _field(f, "cond")),
             bool(_field(f, "j")),
         )
+    if name == "11a":
+        # PGR "Type 11a ISA/VISA (cond + branch return + comp/else comp)"
+        # (out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4/all.txt lines
+        # 17818-17862, printed pp.9-44/9-45): IF COND RTS/RTI (DB) (LR),
+        # compute / ELSE compute. x selects RTS (0) or RTI (1), the same
+        # bit Type11c's own "x" already gates; RTI additionally pops the
+        # status/loop stacks and clears IRPTL/IMASKP, none of which this
+        # tracer models, so it fails closed exactly like Type11c's RTI
+        # check. LR (loop reentry) changes how a loop's PC-stack entry is
+        # consumed and is also unmodeled; fail closed rather than guess.
+        # j is the (DB) delayed-return modifier, reusing
+        # ``_return_transfer``'s existing Type9b/11c-verified delay-slot
+        # handling. e selects a plain compute (e=0, runs when the return
+        # is taken) or an ELSE compute (e=1, runs only when the return is
+        # NOT taken) -- the same "compute unless ELSE" convention Type9a's
+        # own "e" bit already implements below (PGR p.9-45: "If a compute
+        # operation is specified with the ELSE, it is performed only when
+        # the If condition is false").
+        if state.pending:
+            return [_stop(state, insn, "nested delayed transfer")]
+        if _field(f, "x"):
+            return [_stop(state, insn, "unsupported Type11a RTI")]
+        if _field(f, "lr"):
+            return [_stop(state, insn, "unsupported Type11a loop reentry")]
+        cond = _field(f, "cond")
+        delayed = bool(_field(f, "j"))
+        compute_when_taken = not bool(_field(f, "e"))
+
+        def apply_compute(executed: State) -> Optional[str]:
+            try:
+                compute = _compute(
+                    f,
+                    False,
+                    dict(executed.uregs),
+                    executed.special,
+                    approx_recips=executed.approx_recips,
+                )
+            except ValueError as error:
+                return str(error)
+            if compute is not None:
+                _apply_compute(executed, insn, compute)
+            return None
+
+        predicate = _predicate(state, cond)
+        if predicate is not None:
+            if predicate == compute_when_taken:
+                error = apply_compute(state)
+                if error:
+                    return [_stop(state, insn, error)]
+            return _return_transfer(state, insn, predicate, delayed)
+        taken, not_taken = _copy(state), _copy(state)
+        compute_state = taken if compute_when_taken else not_taken
+        error = apply_compute(compute_state)
+        if error:
+            return [_stop(compute_state, insn, error)]
+        _event(
+            taken, insn, "predicate-assumption", condition=cond, predicate_assumption=True
+        )
+        _event(
+            not_taken, insn, "predicate-assumption", condition=cond, predicate_assumption=False
+        )
+        return _return_transfer(taken, insn, True, delayed) + _return_transfer(
+            not_taken, insn, False, delayed
+        )
     if name == "9a_abs":
         # PRM Type 9a (pp. 14-5, 14-8): JUMP/CALL (Md, Ic) with an optional
         # compute. I pre-modified by M gives the target; I is unchanged.
@@ -3043,7 +3334,13 @@ def _execute(state: State, insn: Instruction) -> List[State]:
 
         def apply_compute(executed: State) -> Optional[str]:
             try:
-                compute = _compute(f, False, dict(executed.uregs), executed.special)
+                compute = _compute(
+                    f,
+                    False,
+                    dict(executed.uregs),
+                    executed.special,
+                    approx_recips=executed.approx_recips,
+                )
             except ValueError as error:
                 return str(error)
             if compute is not None:
@@ -3196,15 +3493,57 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         # Type 7a is MODIFY: the manual guarantees an index-register update in
         # parallel with its optional compute.  The table now carries the M
         # register selector at bits 29-27, the same field Type7b uses.
-        if _field(f, "cond") != 0x1F:
+        cond = _field(f, "cond")
+        if cond not in (0x1F, 0x17):
             return [_stop(state, insn, "unsupported Type7a predicate")]
         bank = 8 if _field(f, "g") else 0
         source_low = _field(f, "is[2:2]") << 2 | _field(f, "is[1:0]")
         destination_low = source_low ^ _field(f, "idis")
         source, destination = source_low + bank, destination_low + bank
         modifier = _field(f, "m") + bank
+        conditional = cond == 0x17
+        if conditional:
+            if _field(f, "compute[22:16]") or _field(f, "compute[15:0]"):
+                return [_stop(state, insn, "unsupported Type7a conditional compute")]
+            length = _ureg(state.uregs, UREG_CODES["L%d" % source])
+            if not isinstance(length, Const) or length.value != 0:
+                return [_stop(state, insn, "unsupported Type7a circular modify")]
+            predicate = _predicate(state, cond)
+            mode1 = _ureg(state.uregs, UREG_CODES["MODE1"])
+            if predicate is False and isinstance(mode1, Const) and not (
+                mode1.value & (1 << 21)
+            ):
+                _event(
+                    state,
+                    insn,
+                    "i-modify-skipped",
+                    source="I%d" % source,
+                    destination="I%d" % destination,
+                    predicate="PEx false, SISD",
+                )
+                return _advance(state, insn)
+            if predicate is not True:
+                state.uregs[16 + destination] = Unknown(
+                    "conditional Type7a modify outcome"
+                )
+                _event(
+                    state,
+                    insn,
+                    "i-modify-uncertain",
+                    source="I%d" % source,
+                    destination="I%d" % destination,
+                    predicate="PEx unknown" if predicate is None else "PEx false, SIMD unknown",
+                    scale_assumption="assume_nw32" if state.assume_nw32 else "unscaled normal-word",
+                )
+                return _advance(state, insn)
         try:
-            compute = _compute(f, False, dict(state.uregs), state.special)
+            compute = _compute(
+                f,
+                False,
+                dict(state.uregs),
+                state.special,
+                approx_recips=state.approx_recips,
+            )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
         index_value = _ureg(state.uregs, 16 + source)
@@ -3225,6 +3564,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
             source="I%d" % source,
             destination="I%d" % destination,
             modifier="M%d" % modifier,
+            **({"scale_assumption": "assume_nw32"} if conditional and state.assume_nw32 else {}),
         )
         if compute is not None:
             _apply_compute(state, insn, compute)
@@ -3232,9 +3572,12 @@ def _execute(state: State, insn: Instruction) -> List[State]:
     if name == "7d":
         # SHARC+ Core Programming Reference (out/refs/sharc-plus-prm), ACONV
         # (Type 7d), Figure 13-21 p.352 and its Encode Table (same page):
-        # this is the Type7a word with cond=11111 and an empty compute
-        # (Table 13-22, p.350), which decode_table.json now pins into the
-        # mask/value, so cond/compute are not free fields here. g selects
+        # this handler is deliberately only the pure ACONV row: cond=11111
+        # and an empty compute (Table 13-22, p.350). decode_table.json pins
+        # those fields into the mask/value, so cond/compute are not free here.
+        # The PRM also describes conditional/compute-parallel Type7d rows;
+        # they are outside this bounded decoder contract and must not silently
+        # enter this handler as pure ACONV. g selects
         # DAG1/DAG2 (add 8, as for Type7a/Type19a); breg selects the I or B
         # register class; toby selects W2B (1) vs B2W (0); the destination
         # register is the source XOR idis, the same trick as Type7a/Type19a.
@@ -3266,7 +3609,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         value = _ureg(state.uregs, src_code)
         w2b = bool(_field(f, "toby"))
         direction = "w2b" if w2b else "b2w"
-        if not isinstance(value, Const):
+        if isinstance(value, Unknown) or isinstance(value, PartialConst):
             return [
                 _stop(
                     state,
@@ -3275,8 +3618,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
                     % (direction.upper(), reg_class, source),
                 )
             ]
-        shifted = value.value << 2 if w2b else value.value >> 2
-        result = Const(shifted)
+        result = _aconv(value, w2b, src_code, state.pc_sw)
         state.uregs[dst_code] = result
         _event(
             state,
@@ -3308,7 +3650,13 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         compute_fields["compute[22:16]"] = compute_field >> 16
         compute_fields["compute[15:0]"] = compute_field & 0xFFFF
         try:
-            compute = _compute(compute_fields, False, old, state.special)
+            compute = _compute(
+                compute_fields,
+                False,
+                old,
+                state.special,
+                approx_recips=state.approx_recips,
+            )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
 
@@ -3551,7 +3899,9 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         compute = None
         if name == "5a_move":
             try:
-                compute = _compute(f, False, old, state.special)
+                compute = _compute(
+                    f, False, old, state.special, approx_recips=state.approx_recips
+                )
             except ValueError as error:
                 return [_stop(state, insn, str(error))]
         src = (
@@ -3614,7 +3964,13 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         # condition field (Type2b: PRM prefix 0xc0, decode_table.json
         # "prm figure (overrides PGR; firmware-confirmed)"): always execute.
         try:
-            compute = _compute(f, False, dict(state.uregs), state.special)
+            compute = _compute(
+                f,
+                False,
+                dict(state.uregs),
+                state.special,
+                approx_recips=state.approx_recips,
+            )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
         if compute is None:
@@ -3625,7 +3981,13 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         # Type 2a conditionally executes a full compute.  Decode against the
         # pre-instruction register file before either predicate assumption mutates it.
         try:
-            compute = _compute(f, False, dict(state.uregs), state.special)
+            compute = _compute(
+                f,
+                False,
+                dict(state.uregs),
+                state.special,
+                approx_recips=state.approx_recips,
+            )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
         if compute is None:
@@ -3661,7 +4023,9 @@ def _execute(state: State, insn: Instruction) -> List[State]:
             return [_stop(state, insn, "unsupported predicate")]
         old = dict(state.uregs)
         try:
-            compute = _compute(f, False, old, state.special)
+            compute = _compute(
+                f, False, old, state.special, approx_recips=state.approx_recips
+            )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
         index = _field(f, "i") + (8 if _field(f, "g") else 0)
@@ -3820,15 +4184,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         # Validate and decode the complete access before making a predicate
         # assumption, so unsupported forms stop rather than creating paths.
         width_fields = (_field(f, "l"), _field(f, "x"), _field(f, "w"))
-        widths = {
-            (0, 1, 1): "normal-word",
-            (0, 0, 0): "byte",
-            (0, 1, 0): "byte-sign-extended",
-            (1, 0, 0): "short-word",
-            (1, 1, 0): "short-word-sign-extended",
-            (1, 1, 1): "long-word",
-        }
-        access_width = widths.get(width_fields)
+        access_width = ACCESS_WIDTHS.get(width_fields)
         if access_width is None:
             return [_stop(state, insn, "unsupported Type3b access width")]
         store = bool(_field(f, "d"))
@@ -4059,9 +4415,25 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         # unlike Type19a's post-modify MODIFY. The optional (lw) "forces
         # register pair access" (p.389), modelled the same way as Type14a's
         # own (lw) register-pair form, with no SIMD companion.
+        # SHARC+ Core Programming Reference (out/refs/sharc-plus-prm) pp.6-9
+        # -6-10 ("Enhanced Modify Instruction for Address Scaling") and
+        # Table 6-2 p.6-10/6-11: in byte-addressed space, an immediate
+        # displacement on a load/store is scaled by the access size (the
+        # (lw) row scales the same as an unqualified/(nw) access, not by 8);
+        # in word-addressed space it is not scaled at all. This tracer's
+        # opt-in 32-bit-normal-word model represents such pointers in byte
+        # space (matching Type4a/4b/15b's own modifier scaling above), so
+        # <data32> needs the same four-byte scaling those forms already
+        # apply -- this 32-bit displacement was previously added unscaled,
+        # which put a Type15a access at a different address than a Type4a/
+        # 4b/15b access using the same architectural word offset from the
+        # same I register (e.g. a stage-6 wavetable local stored via Type4a
+        # at DM(I6-4) and re-read via Type15a at DM(0xfffffffc,I6)).
         bank = 8 if _field(f, "g") else 0
         index = _field(f, "i[2:0]") + bank
-        addr = _wide(f, "addr")
+        addr = _wide(f, "addr") * _access_modifier_scale(
+            "normal-word", state.assume_nw32
+        )
         iv = _ureg(state.uregs, 16 + index)
         address = _add(iv, Const(addr), "I%d + %d" % (index, addr))
         rendered = _render(address)
@@ -4260,7 +4632,13 @@ def _execute(state: State, insn: Instruction) -> List[State]:
 
         def apply_compute(executed: State) -> Optional[str]:
             try:
-                compute = _compute(f, False, dict(executed.uregs), executed.special)
+                compute = _compute(
+                    f,
+                    False,
+                    dict(executed.uregs),
+                    executed.special,
+                    approx_recips=executed.approx_recips,
+                )
             except ValueError as error:
                 return str(error)
             if compute is not None:
@@ -4384,6 +4762,8 @@ def trace(
     core_reset_state: bool = False,
     breakpoints: Sequence[int] = (),
     provisional_forms: Sequence[str] = (),
+    pokes: Optional[Mapping[int, int]] = None,
+    approx_recips: bool = False,
 ) -> List[State]:
     uregs: Dict[int, Value] = (
         {
@@ -4397,6 +4777,10 @@ def trace(
         uregs[_seed_code(key)] = _seed_value(value)
     if concrete_memory and not isinstance(data, LoadedMemory):
         raise ValueError("concrete memory requires LoadedMemory")
+    if pokes and not concrete_memory:
+        raise ValueError("--poke-dm requires --concrete-memory")
+    if any(not 0 <= address <= 0xFFFFFFFF for address in (pokes or {})):
+        raise ValueError("--poke-dm address must be a 32-bit address")
     if not 0 <= max_steps <= 100_000:
         raise ValueError("max_steps must be between 0 and 100000")
     if not 1 <= max_states <= 1_024:
@@ -4429,7 +4813,19 @@ def trace(
         core_reset_state=core_reset_state,
         mmrs=mmrs,
         provisional_forms=tuple(provisional_forms),
+        approx_recips=approx_recips,
     )
+    # Seed the per-path write overlay before the first instruction executes,
+    # through the same _dm_write() a real store instruction uses, so a poked
+    # word is canonicalized (loader alias, MMR, width gating) exactly like a
+    # concrete write the trace itself would perform.
+    for address, value in sorted((pokes or {}).items()):
+        if not _dm_write(start_state, address, 4, Const(value & 0xFFFFFFFF)):
+            raise ValueError(
+                "--poke-dm at %#x did not take effect (add "
+                "--assume-32bit-normal-words, or use an address in "
+                "0x30000000-0x40000000)" % address
+            )
     # FIFO of distinct live states. Paths that reconverge on an identical state
     # behave identically from there, so only one is kept.
     active: Dict[tuple, State] = {_dedupe_key(start_state): start_state}
@@ -4542,6 +4938,8 @@ def summarize(
             summary["watched_dm"] = _watched_dm_snapshot(state, watch_dm)
         if state.provisional_used:
             summary["provisional_forms_used"] = list(state.provisional_used)
+        if state.approx_recips_used:
+            summary["approx_recips_used"] = True
         summaries.append(summary)
     return {"start_sw": start_sw, "states": summaries}
 
@@ -4573,6 +4971,22 @@ def main(argv=None) -> int:
         "--concrete-memory",
         action="store_true",
         help="read loader-backed DM bytes and keep a per-path write overlay",
+    )
+    p.add_argument(
+        "--poke-dm",
+        dest="pokes",
+        action="append",
+        default=[],
+        metavar="ADDR=VALUE",
+        help="seed a 32-bit DM word before tracing starts (repeatable; "
+        "requires --concrete-memory)",
+    )
+    p.add_argument(
+        "--poke-dm-file",
+        metavar="PATH",
+        help="JSON {\"addr\": value} (or {\"addr\": [v0, v1, ...]} for "
+        "consecutive 32-bit words) to seed before tracing starts "
+        "(requires --concrete-memory)",
     )
     p.add_argument("--follow-loaded-calls", action="store_true")
     p.add_argument(
@@ -4608,6 +5022,14 @@ def main(argv=None) -> int:
         help="execute this form (e.g. 14d) although the table marks it "
         "unconfirmed; any run that uses one is calibration, not qualification",
     )
+    p.add_argument(
+        "--approx-recips",
+        action="store_true",
+        help="opt in to a documented-formula, undocumented-ROM approximation "
+        "of recips's seed (PRM p.19-16/19-17); every value it produces is "
+        "tagged with an 'approximate-recips' event and is calibration, not "
+        "qualification",
+    )
     output = p.add_mutually_exclusive_group()
     output.add_argument("--json", action="store_true")
     output.add_argument(
@@ -4630,6 +5052,35 @@ def main(argv=None) -> int:
             _seed_value(values[name])
         except ValueError:
             p.error("--set must be NAME=VALUE or NAME=@symbol")
+    poke_values: dict[int, int] = {}
+    if a.poke_dm_file:
+        try:
+            with open(a.poke_dm_file) as fh:
+                poke_raw = json.load(fh)
+        except (OSError, json.JSONDecodeError) as error:
+            p.error("cannot read --poke-dm-file: %s" % error)
+        if not isinstance(poke_raw, dict):
+            p.error("--poke-dm-file must contain a JSON object")
+        for key, value in poke_raw.items():
+            try:
+                address = int(key, 0)
+            except (TypeError, ValueError):
+                p.error("--poke-dm-file keys must be integers: %r" % (key,))
+            if isinstance(value, list):
+                for offset, word in enumerate(value):
+                    poke_values[address + 4 * offset] = word
+            else:
+                poke_values[address] = value
+    for item in a.pokes:
+        try:
+            addr_text, value_text = item.split("=", 1)
+            poke_values[int(addr_text, 0)] = int(value_text, 0)
+        except ValueError:
+            p.error("--poke-dm must be ADDR=VALUE")
+    if poke_values and not a.concrete_memory:
+        p.error("--poke-dm requires --concrete-memory")
+    if any(not 0 <= address <= 0xFFFFFFFF for address in poke_values):
+        p.error("--poke-dm address must be a 32-bit address")
     if a.concrete_memory and not a.blob:
         p.error("--concrete-memory requires --blob")
     if (a.follow_loaded_calls or a.continue_external_calls) and not a.concrete_memory:
@@ -4668,24 +5119,29 @@ def main(argv=None) -> int:
             p.error("loader stream has no loaded ranges")
         if not source.blocks or "FINAL" not in source.blocks[-1].get("flags", ()):
             p.error("loader stream ended before a final marker")
-    states = trace(
-        source,
-        a.base_sw,
-        a.start,
-        values,
-        a.max_steps,
-        a.max_states,
-        concrete_memory=a.concrete_memory,
-        follow_loaded_calls=a.follow_loaded_calls,
-        continue_external_calls=a.continue_external_calls,
-        dossier_bytes=a.dossier_bytes,
-        max_call_depth=a.max_call_depth,
-        skip_provisional_entries=a.skip_provisional_entries,
-        assume_nw32=a.assume_32bit_normal_words,
-        core_reset_state=a.core_reset_state,
-        breakpoints=a.break_pc,
-        provisional_forms=tuple(a.allow_provisional_form),
-    )
+    try:
+        states = trace(
+            source,
+            a.base_sw,
+            a.start,
+            values,
+            a.max_steps,
+            a.max_states,
+            concrete_memory=a.concrete_memory,
+            follow_loaded_calls=a.follow_loaded_calls,
+            continue_external_calls=a.continue_external_calls,
+            dossier_bytes=a.dossier_bytes,
+            max_call_depth=a.max_call_depth,
+            skip_provisional_entries=a.skip_provisional_entries,
+            assume_nw32=a.assume_32bit_normal_words,
+            core_reset_state=a.core_reset_state,
+            breakpoints=a.break_pc,
+            provisional_forms=tuple(a.allow_provisional_form),
+            pokes=poke_values,
+            approx_recips=a.approx_recips,
+        )
+    except ValueError as error:
+        p.error(str(error))
     result = [
         {
             "stopped": s.stopped,
@@ -4693,6 +5149,7 @@ def main(argv=None) -> int:
             "assumptions": (
                 (["32-bit internal normal words"] if s.assume_nw32 else [])
                 + (["documented core/MMR reset values"] if s.core_reset_state else [])
+                + (["approximate RECIPS seed"] if s.approx_recips_used else [])
             ),
             "trace": s.trace,
             "registers": _register_snapshot(s),

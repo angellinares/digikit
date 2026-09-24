@@ -54,11 +54,14 @@ committed (see CLAUDE.md).
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 import os
+import re
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Any, cast
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -115,6 +118,38 @@ IMMEDIATE_STORE_FORMS = ('16a', '16b')
 DUAL_STORE_FORMS = ('1a', '1b')
 
 ALL_STORE_FORMS = SIMPLE_STORE_FORMS + IMMEDIATE_STORE_FORMS + DUAL_STORE_FORMS
+
+# Strict tracing remains the default.  The named continuation policy is
+# intentionally narrow: Type14d's decoder semantics are useful for reaching
+# later stores, but its unconfirmed encoding is not evidence for an address
+# claim.  Facts and cache requests carry this versioned name.
+STRICT_TRACE_POLICY = 'strict/v1'
+TYPE14D_CONTINUATION_POLICY = 'type14d-continuation/v1'
+WRITER_TRACE_POLICIES = {
+    STRICT_TRACE_POLICY: (),
+    TYPE14D_CONTINUATION_POLICY: ('14d',),
+}
+# Individual handler changes can bump only their form's revision.  The index
+# compares this metadata against each fact's executed/stopped form set.
+TRACE_HANDLER_REVISIONS = {
+    'default': 'trace-handler/v1',
+    # Type7d now carries opaque symbolic ACONV results through writer traces.
+    # Facts that executed or stopped on it must be recomputed.
+    '7d': 'trace-handler/7d-v2',
+    # facts that executed or stopped on Type7a must be recomputed.
+    '7a': 'trace-handler/7a-v2',
+}
+
+
+def handler_revision(form: str) -> str:
+    return TRACE_HANDLER_REVISIONS.get(form, TRACE_HANDLER_REVISIONS['default'])
+
+
+def provisional_forms_for_policy(policy: str) -> tuple[str, ...]:
+    try:
+        return WRITER_TRACE_POLICIES[policy]
+    except KeyError as error:
+        raise ValueError('unknown writer trace policy: %r' % (policy,)) from error
 
 
 def store_space_and_direction(form: str, fields: dict) -> tuple[bool, bool]:
@@ -180,6 +215,13 @@ _LXW_LIKE_4B = {(1, 1, 1): 4, (0, 0, 0): 1, (1, 0, 0): 2,
                 (0, 1, 0): 1, (1, 1, 0): 2}
 
 
+def _lxw_key(fields: dict[str, Any]) -> tuple[int, int, int] | None:
+    values = (fields.get('l'), fields.get('x'), fields.get('w'))
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+        return cast(tuple[int, int, int], values)
+    return None
+
+
 def static_store_width(form: str, fields: dict):
     """-> byte width of one store from its decoded fields alone, or None
     for a field combination tools/sharc_trace.py itself refuses (e.g. an
@@ -192,9 +234,11 @@ def static_store_width(form: str, fields: dict):
     if form == '14d':
         return 2 if fields.get('l') else 1
     if form in ('3b', '3d'):
-        return _LXW_LIKE_3B.get((fields.get('l'), fields.get('x'), fields.get('w')))
+        key = _lxw_key(fields)
+        return _LXW_LIKE_3B.get(key) if key is not None else None
     if form in ('4b', '4d'):
-        return _LXW_LIKE_4B.get((fields.get('l'), fields.get('x'), fields.get('w')))
+        key = _lxw_key(fields)
+        return _LXW_LIKE_4B.get(key) if key is not None else None
     return None
 
 
@@ -379,7 +423,7 @@ def seed_sets(seed_global_constants: bool = True) -> dict:
     not clear (L3/L4/L15 keep today's L=0 default, not because it is
     proven, but because turning it off was not asked for and would
     reopen the scaled-MODIFY poisoning the module docstring describes)."""
-    sets = {reg: '@' + symbol for symbol, reg in ENTRY_SEED_NAMES.items()}
+    sets: dict[str, int | str] = {reg: '@' + symbol for symbol, reg in ENTRY_SEED_NAMES.items()}
     sets.update({'L%d' % n: 0 for n in range(16)})
     if seed_global_constants:
         sets.update(GLOBAL_CONSTANT_SEEDS)
@@ -392,7 +436,9 @@ def choose_store_event(events: list):
     fully-Const address (most informative), then Affine, then an
     unresolved-but-load-derived Unknown, then anything else; ties broken by
     a stable JSON ordering so the result never depends on state discovery
-    order. -> the chosen event dict, or None for an empty list."""
+    order. A Type7a-uncertain path taints the selected event even if another
+    path has a more concrete address. -> the chosen event dict, or None for
+    an empty list."""
     if not events:
         return None
 
@@ -411,7 +457,10 @@ def choose_store_event(events: list):
             kind = 3
         return (kind, json.dumps(addr, sort_keys=True))
 
-    return sorted(events, key=rank)[0]
+    chosen = sorted(events, key=rank)[0]
+    if any(event.get('conditional_type7a_uncertain') for event in events):
+        return {**chosen, 'conditional_type7a_uncertain': True}
+    return chosen
 
 
 # --- classify ----------------------------------------------------------------
@@ -476,10 +525,9 @@ def combined_affine_range(constant: int, terms, stack_lo: int, stack_hi: int,
     return _affine_range_with(constant, terms, bound_for)
 
 
-def ranges_overlap(range_lo: int, range_hi: int, width: int, target: int) -> bool:
-    """True if some address in the inclusive bound [range_lo, range_hi]
-    stores across `target`, for a store of `width` bytes."""
-    return range_lo <= target < range_hi + width
+def ranges_overlap(range_lo: int, range_hi: int, width: int, target: int, target_width: int = 1) -> bool:
+    """True if a possible store overlaps requested [target,target+width)."""
+    return range_lo < target + target_width and target < range_hi + width
 
 
 def _format_affine(constant: int, terms) -> str:
@@ -492,7 +540,7 @@ def _format_affine(constant: int, terms) -> str:
     return ' + '.join(parts) if parts else '0x0'
 
 
-def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
+def classify_store_address(addr, width, target: int, stack_lo, stack_hi, target_width: int = 1):
     """Pure classifier. `addr` is the JSON-rendered resolved address exactly
     as tools/sharc_trace.py's summarize()/_json_value() produce it: an int
     (Const), {'affine': {'constant': int, 'terms': [[name, coef], ...]}},
@@ -509,7 +557,7 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
     if isinstance(addr, bool):
         return 'UNRESOLVED', {'reason': 'unrecognized address representation: %r' % (addr,)}
     if isinstance(addr, int):
-        hit = addr <= target < addr + width
+        hit = addr < target + target_width and target < addr + width
         return ('HIT' if hit else 'EXCLUDED-CONST'), {'address': addr}
     if not isinstance(addr, dict):
         return 'UNRESOLVED', {'reason': 'unrecognized address representation: %r' % (addr,)}
@@ -533,7 +581,7 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
         constant = affine['constant']
         terms = [tuple(term) for term in affine['terms']]
         if not terms:
-            hit = constant <= target < constant + width
+            hit = constant < target + target_width and target < constant + width
             return ('HIT' if hit else 'EXCLUDED-CONST'), {'address': constant}
 
         def is_stack_term(name):
@@ -549,7 +597,11 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
             # ordinary DM(I7,M7) push/pop idiom) is still driven by the
             # frame/stack pointer, and reporting 'M7' alone there would
             # wrongly suggest it had nothing to do with the stack.
-            registers = sorted({ENTRY_SEED_NAMES.get(name, name) for name, _ in terms})
+            register_names: set[str] = set()
+            for name, _ in terms:
+                display = ENTRY_SEED_NAMES.get(name)
+                register_names.add(display if isinstance(display, str) else str(name))
+            registers = sorted(register_names)
             return 'ENTRY-RELATIVE', {'registers': registers, 'expression': expression}
 
         if stack_lo is None or stack_hi is None:
@@ -566,7 +618,7 @@ def classify_store_address(addr, width, target: int, stack_lo, stack_hi):
             # bound, so a reader (or a future stricter run) can find every
             # store that depends on it without re-parsing `expression`.
             detail['via_circular_modify'] = True
-        if ranges_overlap(range_lo, range_hi, width, target):
+        if ranges_overlap(range_lo, range_hi, width, target, target_width):
             return 'UNRESOLVED', {
                 'reason': ('stack-relative address range overlaps the target; '
                            'Phase 1 bounds do not exclude it'),
@@ -603,44 +655,73 @@ def full_project_census(ctx):
     return by_function, orphan
 
 
-def resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_constants=True):
+def resolve_function(ctx, fn, dm_rows, max_steps, max_states, seed_global_constants=True,
+                     provisional_forms=()):
     """Run tools/sharc_trace.py's trace() once from `fn`'s entry, seeded
     per seed_sets(seed_global_constants), and pull the resolved 'store'
-    event at each of `dm_rows`' PCs. -> ({pc: event_or_None},
-    stop_reasons: set)."""
+    event at each of `dm_rows`' PCs.  A selected provisional form permits
+    continuation only; every store at or after it records that dependency.
+    -> ({pc: event_or_None}, stop_reasons: set, retained_path_forms)."""
     if not dm_rows:
-        return {}, set()
+        return {}, set(), ()
     wanted = {row['pc'] for row in dm_rows}
     states = trace_mod.trace(
         ctx['mem'], None, fn['entry'], sets=seed_sets(seed_global_constants),
         max_steps=max_steps, max_states=max_states,
         concrete_memory=True, assume_nw32=True,
         follow_loaded_calls=True, continue_external_calls=True,
+        provisional_forms=tuple(provisional_forms),
     )
     events_by_pc = {pc: [] for pc in wanted}
     stop_reasons = set()
+    retained_path_forms = set()
+    provisional_form_set = set(provisional_forms)
     for state in states:
+        retained_path_forms.add(tuple(getattr(state, 'provisional_used', ())))
         if state.trace:
             last = state.trace[-1]
             if last.get('action') == 'stop':
                 stop_reasons.add(last.get('reason') or 'stopped')
+        used_before_event = set()
+        conditional_type7a_uncertain = False
         for event in state.trace:
+            # _execute records a provisional form's event after admitting it,
+            # so include that form in the event's own dependency.
+            if event.get('form') in provisional_form_set:
+                used_before_event.add(event['form'])
+            if event.get('action') == 'i-modify-uncertain':
+                conditional_type7a_uncertain = True
             if event.get('action') == 'store' and event.get('pc_sw') in wanted:
-                events_by_pc[event['pc_sw']].append(event)
+                annotated = dict(event)
+                if used_before_event:
+                    annotated['provisional_forms_used'] = sorted(used_before_event)
+                if conditional_type7a_uncertain:
+                    annotated['conditional_type7a_uncertain'] = True
+                events_by_pc[event['pc_sw']].append(annotated)
     chosen = {pc: choose_store_event(events) for pc, events in events_by_pc.items()}
-    return chosen, stop_reasons
+    return chosen, stop_reasons, tuple(sorted(retained_path_forms))
 
 
-def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_lo, stack_hi):
+def classify_row(row, chosen_event, stop_reasons, target, fallback_width, stack_lo, stack_hi, target_width=1):
     width = row['width'] if row['width'] is not None else fallback_width
     if chosen_event is None:
         reasons = sorted(reason for reason in stop_reasons if reason)
         reason = ('not reached: ' + '; '.join(reasons)) if reasons else 'not reached by the tracer'
         return 'UNRESOLVED', {'reason': reason}, width
+    if chosen_event.get('conditional_type7a_uncertain'):
+        return 'UNRESOLVED', {
+            'reason': 'store may depend on conditional Type7a modify',
+        }, width
+    provisional_forms_used = chosen_event.get('provisional_forms_used', ())
+    if provisional_forms_used:
+        return 'UNRESOLVED', {
+            'reason': 'store trace depends on provisional form(s)',
+            'provisional_forms_used': list(provisional_forms_used),
+        }, width
     event_width = event_store_width(row['form'], chosen_event)
     if event_width is not None:
         width = event_width
-    cls, detail = classify_store_address(chosen_event.get('address'), width, target, stack_lo, stack_hi)
+    cls, detail = classify_store_address(chosen_event.get('address'), width, target, stack_lo, stack_hi, target_width)
     return cls, detail, width
 
 
@@ -651,15 +732,29 @@ def _init_worker(blob_path, block_idxs, min_depth):
     _WORKER['ctx'] = sharcfn.load_context(blob_path, block_idxs, min_depth)
 
 
+def _process_function_batch(fn_id, max_steps, max_states, seed_global_constants=True,
+                            provisional_forms=()):
+    """Spawn-safe unit: trace one function once and return plain records."""
+    ctx = _WORKER['ctx']
+    fn = ctx['by_id'][fn_id]
+    block = ctx['analyzed'][fn['block']]
+    dm_rows = [row for row in census_instructions(sharcinv.instructions_in(block, fn['entry'], fn['exit'])) if row['is_dm']]
+    chosen, stop_reasons, retained_path_forms = resolve_function(
+        ctx, fn, dm_rows, max_steps, max_states, seed_global_constants,
+        provisional_forms)
+    return fn_id, fn['entry'], dm_rows, chosen, sorted(stop_reasons), retained_path_forms
+
+
 def _process_function(fn_id, target, max_steps, max_states, fallback_width, stack_lo, stack_hi,
-                       seed_global_constants=True):
+                       seed_global_constants=True, provisional_forms=()):
     ctx = _WORKER['ctx']
     fn = ctx['by_id'][fn_id]
     block = ctx['analyzed'][fn['block']]
     sw_insns = sharcinv.instructions_in(block, fn['entry'], fn['exit'])
     dm_rows = [row for row in census_instructions(sw_insns) if row['is_dm']]
-    chosen, stop_reasons = resolve_function(
-        ctx, fn, dm_rows, max_steps, max_states, seed_global_constants)
+    chosen, stop_reasons, _retained_path_forms = resolve_function(
+        ctx, fn, dm_rows, max_steps, max_states, seed_global_constants,
+        provisional_forms)
     out = []
     for row in dm_rows:
         cls, detail, width = classify_row(
@@ -671,9 +766,63 @@ def _process_function(fn_id, target, max_steps, max_states, fallback_width, stac
     return fn_id, out
 
 
-def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,
-        fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True):
-    ctx = sharcfn.load_context(blob_path, block_idxs, min_depth)
+def _function_fact(fn_id, function_entry, function_ordinal, dm_rows, chosen, stops,
+                   retained_path_forms, trace_policy):
+    """Canonical, independently cacheable result of one recovered function."""
+    stores = [{'row': row, 'event': chosen.get(row['pc'])} for row in dm_rows]
+    # Store forms are deliberately included as a conservative dependency: a
+    # semantic change to a form at a retained store must never reuse its trace.
+    forms = {str(row['form']) for row in dm_rows}
+    for event in chosen.values():
+        if isinstance(event, dict) and isinstance(event.get('form'), str):
+            forms.add(event['form'])
+    blockers = set()
+    for reason in stops:
+        text = str(reason)
+        blockers.update(re.findall(r'(?:unsupported|unknown)\s+([0-9]+[a-z_]*)', text))
+        # Some conservative semantic stops name their typed form first (for
+        # example ``Type7d B2W(B7) source is not concrete``).  They are just
+        # as revision-dependent as an ``unsupported 11a`` stop.
+        blockers.update(re.findall(r'\bType([0-9]+[a-z_]*)\b', text))
+    shape = sha256(_canonical_json(dm_rows)).hexdigest()
+    return {
+        'function_id': fn_id,
+        'function_entry': function_entry,
+        'function_ordinal': function_ordinal,
+        'store_shape_sha256': shape,
+        'complete': True,
+        'trace_policy': trace_policy,
+        'dependencies': {
+            'forms': sorted(forms),
+            'blockers': sorted(blockers),
+            'handler_revisions': {form: handler_revision(form) for form in sorted(forms | blockers)},
+        },
+        'stop_reasons': sorted(stops),
+        'retained_path_provisional_forms': [list(forms) for forms in retained_path_forms],
+        'stores': stores,
+    }
+
+
+def _canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('ascii')
+
+
+def collect_trace_facts(blob_path, block_idxs, min_depth, max_steps, max_states,
+                        jobs=1, seed_global_constants=True,
+                        trace_policy=STRICT_TRACE_POLICY, cached_functions=None):
+    """Trace each owning function once and return target-independent facts.
+
+    ``trace_policy`` is an explicit, versioned continuation allowance.  It
+    never upgrades evidence: stores after an admitted provisional form are
+    retained solely as UNRESOLVED facts during classification.
+    """
+    provisional_forms = provisional_forms_for_policy(trace_policy)
+    if jobs <= 0:
+        raise ValueError('jobs must be positive')
+    try:
+        ctx = sharcfn.load_context(blob_path, block_idxs, min_depth)
+    except Exception as error:
+        raise RuntimeError(f"cannot build writer census context for {blob_path}") from error
     by_function, orphan = full_project_census(ctx)
 
     census = Counter()
@@ -681,71 +830,149 @@ def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,
         census.update(row['form'] for row in rows if row['is_dm'])
     census.update(row['form'] for row in orphan if row['is_dm'])
 
-    work = [fn_id for fn_id, rows in by_function.items() if any(row['is_dm'] for row in rows)]
+    ordered_work = sorted(
+        (fn_id for fn_id, rows in by_function.items() if any(row['is_dm'] for row in rows))
+    )
+    ordinals = {fn_id: ordinal for ordinal, fn_id in enumerate(ordered_work)}
+    cached_functions = cached_functions or {}
+    reusable = {}
+    for fn_id in ordered_work:
+        cached = cached_functions.get(fn_id)
+        rows = [row for row in by_function[fn_id] if row['is_dm']]
+        expected_shape = sha256(_canonical_json(rows)).hexdigest()
+        # Shape and ordinal bind a recovered ID to this exact static census,
+        # so a rebuilt inventory cannot silently inherit a fact.
+        if (isinstance(cached, dict)
+                and isinstance(cached.get('complete'), bool) and cached['complete']
+                and cached.get('function_entry') == ctx['by_id'][fn_id]['entry']
+                and cached.get('function_ordinal') == ordinals[fn_id]
+                and isinstance(cached.get('store_shape_sha256'), str)
+                and cached.get('store_shape_sha256') == expected_shape):
+            reusable[fn_id] = cached
+    work = [fn_id for fn_id in ordered_work if fn_id not in reusable]
 
-    all_rows = []
     if jobs <= 1:
         _init_worker(blob_path, block_idxs, min_depth)
-        for fn_id in work:
-            _, out = _process_function(fn_id, target, max_steps, max_states,
-                                        fallback_width, stack_lo, stack_hi,
-                                        seed_global_constants)
-            all_rows.extend(out)
+        batches = [_process_function_batch(
+            fn_id, max_steps, max_states, seed_global_constants, provisional_forms)
+            for fn_id in work]
     else:
-        with ProcessPoolExecutor(
-            max_workers=jobs, initializer=_init_worker,
-            initargs=(blob_path, block_idxs, min_depth),
-        ) as pool:
-            futures = [
-                pool.submit(_process_function, fn_id, target, max_steps, max_states,
-                            fallback_width, stack_lo, stack_hi, seed_global_constants)
-                for fn_id in work
-            ]
-            for future in as_completed(futures):
-                _, out = future.result()
-                all_rows.extend(out)
-
-    for row in orphan:
-        if not row['is_dm']:
-            continue
-        width = row['width'] if row['width'] is not None else fallback_width
-        all_rows.append({
-            'pc': row['pc'], 'form': row['form'], 'function_entry': None,
-            'function_id': None, 'width': width, 'class': 'UNRESOLVED',
-            'reason': 'instruction has no recovered owning function to trace from',
-        })
-
-    all_rows.sort(key=lambda row: row['pc'])
-
-    class_totals = Counter(row['class'] for row in all_rows)
-    census_total = sum(census.values())
-    if sum(class_totals.values()) != census_total:
-        raise RuntimeError(
-            'class totals (%d) do not sum to the census total (%d)'
-            % (sum(class_totals.values()), census_total))
-
-    excluded_stack_rows = [row for row in all_rows if row['class'] == 'EXCLUDED-STACK']
-    via_circular_modify = sum(
-        1 for row in excluded_stack_rows if row.get('via_circular_modify'))
-
+        with ProcessPoolExecutor(max_workers=jobs, initializer=_init_worker,
+                                 initargs=(blob_path, block_idxs, min_depth)) as pool:
+            futures = [pool.submit(
+                _process_function_batch, fn_id, max_steps, max_states,
+                seed_global_constants, provisional_forms) for fn_id in work]
+            batches = [future.result() for future in as_completed(futures)]
+    functions_by_id = dict(reusable)
+    for fn_id, function_entry, dm_rows, chosen, stops, retained_path_forms in batches:
+        functions_by_id[fn_id] = _function_fact(
+            fn_id, function_entry, ordinals[fn_id], dm_rows, chosen, stops,
+            retained_path_forms, trace_policy,
+        )
+    functions = [functions_by_id[fn_id] for fn_id in ordered_work]
     return {
-        'target': target,
+        'contract': 'sharc-writer-trace-facts/v2',
         'image_sha256': ctx['sha256'],
-        'stack': [stack_lo, stack_hi] if stack_lo is not None else None,
         'seed_global_constants': seed_global_constants,
+        'trace_policy': trace_policy,
+        'provisional_forms': list(provisional_forms),
         'census': dict(sorted(census.items())),
-        'census_total': census_total,
-        'class_totals': dict(sorted(class_totals.items())),
-        # Every EXCLUDED-STACK row carries its own 'assumption' string
-        # (ENTRY_SEED_ASSUMPTION); these two counts are the same fact
-        # rolled up so a reader does not have to scan `stores` to see how
-        # many classifications depend on the unproven entry-seed
-        # assumption (out/sharcwriters/stack-invariant.md, "Item 2") --
-        # entirely, or specifically via this run's circular-MODIFY fix.
-        'excluded_stack_depends_on_unproven_entry_assumption': len(excluded_stack_rows),
-        'excluded_stack_via_circular_modify': via_circular_modify,
-        'stores': all_rows,
+        'census_total': sum(census.values()),
+        'functions': functions,
+        'orphan_stores': [row for row in orphan if row['is_dm']],
     }
+
+
+def classify_trace_facts(facts, targets, fallback_width, stack_lo, stack_hi):
+    """Classify cached raw facts for targets without executing firmware code."""
+    try:
+        normalized_targets = {(int(address), int(width)) for address, width in targets}
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("writer targets must be (integer address, integer width) pairs") from error
+    targets = tuple(sorted(normalized_targets))
+    if not targets:
+        return {}
+    if facts.get('contract') != 'sharc-writer-trace-facts/v2':
+        raise ValueError('incompatible writer trace facts')
+
+    all_rows = []
+    for function in facts['functions']:
+        fn_id = function['function_id']
+        function_entry = function['function_entry']
+        stops = set(function['stop_reasons'])
+        for target, target_width in targets:
+            for store in function['stores']:
+                row, event = store['row'], store['event']
+                cls, detail, width = classify_row(
+                    row, event, stops, target, fallback_width,
+                    stack_lo, stack_hi, target_width,
+                )
+                all_rows.append({
+                    'target': target, 'target_width': target_width,
+                    'pc': row['pc'], 'form': row['form'],
+                    'function_entry': function_entry, 'function_id': fn_id,
+                    'width': width, 'class': cls, **detail,
+                })
+
+    for row in facts['orphan_stores']:
+        width = row['width'] if row['width'] is not None else fallback_width
+        for target, _target_width in targets:
+            all_rows.append({
+                'target': target, 'target_width': _target_width, 'pc': row['pc'], 'form': row['form'], 'function_entry': None,
+                'function_id': None, 'width': width, 'class': 'UNRESOLVED',
+                'reason': 'instruction has no recovered owning function to trace from',
+            })
+
+    all_rows.sort(key=lambda row: (row['target'], row['target_width'], row['pc']))
+    census_total = facts['census_total']
+    results = {}
+    for target, target_width in targets:
+        rows = [dict(row) for row in all_rows if row['target'] == target and row['target_width'] == target_width]
+        totals = Counter(row['class'] for row in rows)
+        if sum(totals.values()) != census_total:
+            raise RuntimeError('class totals do not sum to census total')
+        excluded = [row for row in rows if row['class'] == 'EXCLUDED-STACK']
+        results[(target, target_width)] = {
+            'target': target, 'target_width': target_width, 'width': target_width, 'image_sha256': facts['image_sha256'],
+            'stack': [stack_lo, stack_hi] if stack_lo is not None else None,
+            'seed_global_constants': facts['seed_global_constants'],
+            'trace_policy': facts['trace_policy'],
+            'provisional_forms': facts['provisional_forms'], 'census': facts['census'],
+            'census_total': census_total, 'class_totals': dict(sorted(totals.items())),
+            'excluded_stack_depends_on_unproven_entry_assumption': len(excluded),
+            'excluded_stack_via_circular_modify': sum(1 for row in excluded if row.get('via_circular_modify')),
+            'stores': rows,
+            'coverage': 'incomplete' if totals.get('UNRESOLVED', 0) else 'complete',
+            'evidence_class': 'strict-trace' if not totals.get('UNRESOLVED', 0) else 'unknown',
+        }
+    return dict(sorted(results.items()))
+
+
+def run_many(blob_path, block_idxs, min_depth, targets, max_steps, max_states,
+             fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True,
+             trace_policy=STRICT_TRACE_POLICY):
+    """Classify targets from one target-independent trace-fact collection."""
+    targets = tuple(targets)
+    if not targets:
+        return {}
+    facts = collect_trace_facts(
+        blob_path, block_idxs, min_depth, max_steps, max_states,
+        jobs=jobs, seed_global_constants=seed_global_constants,
+        trace_policy=trace_policy,
+    )
+    return classify_trace_facts(
+        facts, targets, fallback_width, stack_lo, stack_hi
+    )
+
+
+def run(blob_path, block_idxs, min_depth, target, max_steps, max_states,
+        fallback_width, stack_lo, stack_hi, jobs=1, seed_global_constants=True,
+        trace_policy=STRICT_TRACE_POLICY):
+    """Backward-compatible single-target façade."""
+    return run_many(blob_path, block_idxs, min_depth, [(target, fallback_width)],
+                    max_steps, max_states, fallback_width, stack_lo, stack_hi,
+                    jobs=jobs, seed_global_constants=seed_global_constants,
+                    trace_policy=trace_policy)[(target, fallback_width)]
 
 
 def _parse_stack(text):
@@ -795,9 +1022,12 @@ def main(argv=None):
 
     text = json.dumps(result, indent=1, sort_keys=True)
     if args.json:
-        os.makedirs(os.path.dirname(args.json) or '.', exist_ok=True)
-        with open(args.json, 'w') as fh:
-            fh.write(text)
+        try:
+            os.makedirs(os.path.dirname(args.json) or '.', exist_ok=True)
+            with open(args.json, 'w') as fh:
+                fh.write(text)
+        except OSError as error:
+            raise RuntimeError(f"cannot write writer report {args.json}") from error
         print('wrote %s (%d stores, %d hits)' % (
             args.json, result['census_total'], result['class_totals'].get('HIT', 0)))
     else:

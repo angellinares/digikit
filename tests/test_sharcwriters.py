@@ -8,6 +8,7 @@ import pathlib
 import sys
 import unittest
 from importlib import import_module
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "tools"))
 
@@ -148,6 +149,21 @@ class ChooseStoreEventTest(unittest.TestCase):
         self.assertIs(W.choose_store_event([a, b]), b)
         self.assertIs(W.choose_store_event([b, a]), b)
 
+    def test_conditional_type7a_path_cannot_make_mixed_store_definite(self):
+        row = {"form": "14a", "width": 4}
+        definite = {"address": 0x100}
+        uncertain = {
+            "address": {"unknown": "conditional Type7a modify outcome"},
+            "conditional_type7a_uncertain": True,
+        }
+        for events in ([definite, uncertain], [uncertain, definite]):
+            chosen = W.choose_store_event(events)
+            for target in (0x100, 0x200):
+                classification, _detail, _width = W.classify_row(
+                    row, chosen, set(), target, 4, None, None
+                )
+                self.assertEqual(classification, "UNRESOLVED")
+
 
 class AffineRangeTest(unittest.TestCase):
     def test_single_positive_term(self):
@@ -180,6 +196,12 @@ class RangesOverlapTest(unittest.TestCase):
     def test_overlap_at_low_edge(self):
         self.assertTrue(W.ranges_overlap(0x100, 0x200, 4, 0x100))
 
+    def test_requested_range_later_bytes_and_adjacent_boundary(self):
+        # A possible store at 0x10c hits only the final four bytes of the
+        # requested [0x100, 0x110) range; 0x110 is exactly adjacent.
+        self.assertTrue(W.ranges_overlap(0x10C, 0x10C, 4, 0x100, 16))
+        self.assertFalse(W.ranges_overlap(0x110, 0x110, 4, 0x100, 16))
+
     def test_overlap_at_high_edge_needs_width(self):
         # target sits just past range_hi, but a `width`-byte store starting
         # at range_hi still reaches it.
@@ -197,6 +219,11 @@ class ClassifyStoreAddressTest(unittest.TestCase):
 
     def test_hit_covers_the_whole_width(self):
         cls, _ = W.classify_store_address(self.TARGET - 2, 4, self.TARGET, 0x26F000, 0x2C0000)
+        self.assertEqual(cls, "HIT")
+
+    def test_requested_range_width_is_used_for_overlap(self):
+        # A store into the later bytes of a requested range is still a hit.
+        cls, _ = W.classify_store_address(self.TARGET + 4, 4, self.TARGET, 0x26F000, 0x2C0000, 16)
         self.assertEqual(cls, "HIT")
 
     def test_excluded_const(self):
@@ -340,6 +367,55 @@ class SeedSetsTest(unittest.TestCase):
             self.assertEqual(with_consts[reg], 0x1FD)
 
 
+class TraceFactClassificationTest(unittest.TestCase):
+    def test_function_fact_records_stable_identity_and_blocker_dependency(self):
+        rows = [{"pc": 0x12, "form": "14a", "fields": {}, "width": 4, "is_dm": True}]
+        fact = W._function_fact("fixture", 0x10, 3, rows, {}, {"unsupported 11a"}, (), W.STRICT_TRACE_POLICY)
+        self.assertEqual(fact["function_ordinal"], 3)
+        self.assertEqual(fact["dependencies"]["blockers"], ["11a"])
+        self.assertEqual(fact["dependencies"]["handler_revisions"]["11a"], "trace-handler/v1")
+        type7d = W._function_fact(
+            "aconv", 0x20, 4, rows, {},
+            {"Type7d B2W(B7) source is not concrete"}, (), W.STRICT_TRACE_POLICY,
+        )
+        self.assertEqual(type7d["dependencies"]["blockers"], ["7d"])
+        self.assertEqual(
+            type7d["dependencies"]["handler_revisions"]["7d"],
+            "trace-handler/7d-v2",
+        )
+        self.assertEqual(len(fact["store_shape_sha256"]), 64)
+
+    def test_target_independent_facts_can_classify_multiple_targets(self):
+        facts = {
+            "contract": "sharc-writer-trace-facts/v2",
+            "image_sha256": "0" * 64,
+            "seed_global_constants": True,
+            "trace_policy": W.STRICT_TRACE_POLICY,
+            "provisional_forms": [],
+            "census": {"14a": 1},
+            "census_total": 1,
+            "functions": [{
+                "function_id": "fixture",
+                "function_entry": 0x10,
+                "stop_reasons": [],
+                "stores": [{
+                    "row": {"pc": 0x12, "form": "14a", "fields": {},
+                            "width": 4, "is_dm": True},
+                    "event": {"address": 0x100},
+                }],
+            }],
+            "orphan_stores": [],
+        }
+        results = W.classify_trace_facts(
+            facts, [(0x100, 4), (0x200, 4)],
+            fallback_width=4, stack_lo=None, stack_hi=None,
+        )
+        self.assertEqual(results[(0x100, 4)]["class_totals"], {"HIT": 1})
+        self.assertEqual(
+            results[(0x200, 4)]["class_totals"], {"EXCLUDED-CONST": 1}
+        )
+
+
 @unittest.skipUnless(BLOB.exists(), "DT2 1.16 SHARC loader is not available")
 class IntegrationTest(unittest.TestCase):
     """The tool end-to-end against the real image, bounded to the single
@@ -353,8 +429,8 @@ class IntegrationTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        import sharcfn
-        import sharcinv
+        sharcfn = import_module("sharcfn")
+        sharcinv = import_module("sharcinv")
 
         cls.target = 0x254D9C
         cls.ctx = sharcfn.load_context(str(BLOB), (93,), 8)
@@ -363,7 +439,7 @@ class IntegrationTest(unittest.TestCase):
         sw_insns = sharcinv.instructions_in(block, cls.fn["entry"], cls.fn["exit"])
         cls.rows = W.census_instructions(sw_insns)
         dm_rows = [row for row in cls.rows if row["is_dm"]]
-        chosen, stop_reasons = W.resolve_function(
+        chosen, stop_reasons, _retained_path_forms = W.resolve_function(
             cls.ctx, cls.fn, dm_rows, max_steps=4000, max_states=128)
         cls.classified = []
         for row in dm_rows:
@@ -385,6 +461,47 @@ class IntegrationTest(unittest.TestCase):
     def test_census_form_set_matches_the_documented_forms(self):
         forms = {row["form"] for row in self.rows if row["is_dm"]}
         self.assertTrue(forms <= set(W.ALL_STORE_FORMS))
+
+
+class ProvisionalWriterTraceTest(unittest.TestCase):
+    def test_type14d_continuation_marks_only_dependent_stores_unresolved(self):
+        class State:
+            stopped = "return"
+            provisional_used = ("14d",)
+            trace = [
+                {"pc_sw": 0x10, "form": "14a", "action": "store", "address": 0x100},
+                {"pc_sw": 0x11, "form": "14d", "action": "load"},
+                {"pc_sw": 0x12, "form": "14a", "action": "store", "address": 0x100},
+            ]
+
+        ctx, fn = {"mem": object()}, {"entry": 0}
+        rows = [{"pc": 0x10}, {"pc": 0x12}]
+        with patch.object(trace_mod, "trace", return_value=[State()]) as trace:
+            events, stops, paths = W.resolve_function(
+                ctx, fn, rows, 10, 2, provisional_forms=("14d",))
+        self.assertEqual(trace.call_args.kwargs["provisional_forms"], ("14d",))
+        self.assertEqual(events[0x10]["address"], 0x100)
+        self.assertNotIn("provisional_forms_used", events[0x10])
+        self.assertEqual(events[0x12]["provisional_forms_used"], ["14d"])
+        self.assertEqual(paths, (("14d",),))
+        ordinary, _, _ = W.classify_row(
+            {"width": 4, "form": "14a"}, events[0x10], stops,
+            0x100, 4, None, None)
+        provisional, detail, _ = W.classify_row(
+            {"width": 4, "form": "14a"}, events[0x12], stops,
+            0x100, 4, None, None)
+        self.assertEqual(ordinary, "HIT")
+        self.assertEqual(provisional, "UNRESOLVED")
+        self.assertEqual(detail["provisional_forms_used"], ["14d"])
+
+    def test_strict_policy_remains_empty_and_type14d_policy_is_versioned(self):
+        self.assertEqual(W.provisional_forms_for_policy(W.STRICT_TRACE_POLICY), ())
+        self.assertEqual(
+            W.provisional_forms_for_policy(W.TYPE14D_CONTINUATION_POLICY),
+            ("14d",),
+        )
+        with self.assertRaisesRegex(ValueError, "unknown writer trace policy"):
+            W.provisional_forms_for_policy("unversioned")
 
 
 class CircularModifyEndToEndTest(unittest.TestCase):

@@ -7,43 +7,40 @@ first. The decoder MSB-aligns up to three words into a 48-bit frame, picks the
 matching form with the longest leading (most-significant-bit-aligned) run of
 fixed bits, and reports ties as ambiguous.
 """
-import json
 import os
 import struct
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+TOOLS = os.path.dirname(HERE)
+if TOOLS not in sys.path:
+    sys.path.insert(0, TOOLS)
+
+from sharc_isa import load_instruction_set  # noqa: E402
 
 
 class Decoder:
     def __init__(self, table=os.path.join(HERE, "decode_table.json"), mode="visa"):
-        forms = json.load(open(table))["forms"]
-        self.forms = []
-        for f in forms:
-            if mode == "visa" and not f["visa"]:
-                continue
-            if mode == "isa" and f["width"] != 48:
-                continue
-            mask = int(f["mask"], 16)
-            lead = 0
-            for b in range(47, -1, -1):
-                if not (mask >> b) & 1:
-                    break
-                lead += 1
-            self.forms.append((mask, int(f["value"], 16), f["fixed_bits"], lead, f))
+        self.instruction_set = load_instruction_set(table, mode)
+        self.forms = [
+            (
+                form.frame_mask,
+                form.frame_value,
+                form.fixed_bits,
+                form.leading_fixed_bits,
+                form.table_dict(),
+            )
+            for form in self.instruction_set.forms
+        ]
 
     def decode_frame(self, frame):
         # VISA/ISA length is determined by the instruction's leading bits (PRM IAB
         # section): the matching form with the longest run of fixed bits starting
         # at bit 47 and running down without a gap wins ("longest leading prefix").
         # Ties are broken by total fixed-bit count, then reported as ambiguous.
-        hits = [(lead, fixed, f) for mask, value, fixed, lead, f in self.forms if frame & mask == value]
-        if not hits:
-            return None, []
-        best_lead = max(h[0] for h in hits)
-        hits = [h for h in hits if h[0] == best_lead]
-        best_fixed = max(h[1] for h in hits)
-        top = [f for lead, fixed, f in hits if fixed == best_fixed]
-        return (top[0] if len(top) == 1 else None), top
+        selection = self.instruction_set.select_frame(frame)
+        top = [form.table_dict() for form in selection.candidates]
+        return (selection.form.table_dict() if selection.form is not None else None), top
 
     @staticmethod
     def fields(frame, form):

@@ -52,8 +52,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
-# Sibling imports (sharc_disasm, sharcinv) need tools/ on sys.path; do them
-# now, before the guard below strips tools/ for pyghidra's sake. Python
+# Sibling imports (sharc_disasm, sharcinv) need tools/ on sys.path. Python
 # auto-adds this file's own directory to sys.path when run as a script, but
 # not when loaded by path (e.g. tests/test_sharcemu.py), so make it explicit.
 _here = os.path.dirname(os.path.abspath(__file__))
@@ -64,12 +63,14 @@ from sharc_disasm import Instruction, disassemble  # noqa: E402
 from sharcinv import merge_fields  # noqa: E402
 import sharc_trace as _sharc_trace  # noqa: E402  (PypcodeConcreteBackend's CALLOTHER bridge)
 
-# tools/ghidraq.py's guard, copied exactly: tools/ghidra/ is a plain
-# directory of Java scripts that shadows the real `ghidra` Java-bridge
-# namespace PyGhidra needs, once tools/ lands on sys.path -- which it does
-# when this is run as `python tools/sharcemu.py`. Strip it before anything
-# imports pyghidra (done lazily, inside main(), well after this point).
-sys.path[:] = [p for p in sys.path if os.path.abspath(p or '.') != _here]
+# tools/ghidraq.py's guard (see main(), below, where it is actually applied):
+# stripping tools/ from sys.path here, at module import time, would break
+# any other module that also needs tools/ on sys.path but only imports
+# sharcemu.py as a library -- e.g. tests/test_sharcemu_pypcode.py, which
+# imports sharcemu for PypcodeConcreteBackend without ever touching
+# pyghidra, alongside test modules that still need `import sharcwriters`
+# to resolve. Defer the strip to right before the only place this module
+# imports pyghidra.
 
 DEFAULT_PROJECT = os.path.expanduser('~/ghidra-projects/sharc-batch-dt2-116')
 DEFAULT_PROJECT_NAME = 'sharc-batch-dt2-116'
@@ -400,6 +401,12 @@ PYCODE_USEROP_CIRCULAR = 2
 # plain ints since this interpreter's ASTATX is a concrete 32-bit register,
 # not a sharc_trace.py Value.
 PYCODE_AZ_BIT, PYCODE_AN_BIT, PYCODE_AV_BIT, PYCODE_AF_BIT = 0, 2, 1, 6
+# SV (shifter overflow), tools/sharc_trace.py's SV_BIT: written into this
+# same concrete ASTATX register by _compute_bridge()'s astatx_update
+# callback (tools/sharc_trace.py's _compute() lshift/ashift branches and
+# _astatx_shift()) through the COMPUTE CALLOTHER, so it is a modelled flag
+# here, not merely a placeholder.
+PYCODE_SV_BIT = 11
 
 
 def _pypcode_register_offsets():
@@ -529,6 +536,11 @@ class PypcodeConcreteBackend:
             if code in (0x02, 0x12):
                 return x if code == 0x02 else not x
             return y if code == 0x01 else not y
+        if code in (0x07, 0x17):
+            # PGR Table 10-4 / tools/sharc_trace.py's SIMPLE_COND_BITS:
+            # code 0x07 reads ASTATX bit SV (shifter overflow) directly,
+            # 0x17 is its complement.
+            return bit(PYCODE_SV_BIT) if code == 0x07 else not bit(PYCODE_SV_BIT)
         raise PypcodeFault('condition() code %#x not modelled by this draft' % code)
 
     def _compute_bridge(self, raw):
@@ -874,6 +886,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2  # pragma: no cover (ap.error exits)
 
     os.environ.setdefault('GHIDRA_INSTALL_DIR', DEFAULT_GHIDRA)
+    # tools/ghidra/ is a plain directory of Java scripts that shadows the
+    # real `ghidra` Java-bridge namespace PyGhidra needs, once tools/ lands
+    # on sys.path -- which it does when this is run as `python
+    # tools/sharcemu.py`. Strip it here, right before importing pyghidra,
+    # not at module import time (see the comment by the sibling imports,
+    # above).
+    sys.path[:] = [p for p in sys.path if os.path.abspath(p or '.') != _here]
     import pyghidra  # pyright: ignore[reportMissingImports]
     pyghidra.start(verbose=False)
 

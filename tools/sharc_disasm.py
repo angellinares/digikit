@@ -18,15 +18,20 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional, Protocol
+from pathlib import Path
+from typing import Iterator, Protocol
 
-from sharc_visa_tables import TYPES, decode, get_type
+from sharc_isa import load_instruction_set
+from sharc_visa_tables import TYPES, get_type
+
+
+ISA = load_instruction_set()
 
 
 class Desync(Exception):
     """disassemble(..., on_unknown="raise") met a word it cannot classify."""
 
-    def __init__(self, offset: int, reason: str, word0: int, hypotheses: List[str]):
+    def __init__(self, offset: int, reason: str, word0: int, hypotheses: list[str]):
         self.offset = offset
         self.reason = reason
         self.word0 = word0
@@ -51,21 +56,21 @@ class Instruction:
     """
 
     offset: int
-    length_bytes: Optional[int]
-    type_name: Optional[str]
-    fields: Dict[str, int] = field(default_factory=dict)
-    raw: Optional[int] = None
+    length_bytes: int | None
+    type_name: str | None
+    fields: dict[str, int] = field(default_factory=dict)
+    raw: int | None = None
     kind: str = "confident"
     note: str = ""
 
 
-def _read_u16(data: bytes, offset: int) -> Optional[int]:
+def _read_u16(data: bytes, offset: int) -> int | None:
     if offset + 2 > len(data):
         return None
     return struct.unpack_from("<H", data, offset)[0]
 
 
-def identify(insn: int, bits: int, include_uncertain: bool = False) -> List[str]:
+def identify(insn: int, bits: int, include_uncertain: bool = False) -> list[str]:
     """Every form of that width whose mask matches insn, most fixed bits first;
     forms with unconfirmed bits only with include_uncertain."""
     names = [t["name"] for t in TYPES
@@ -79,14 +84,7 @@ def identify(insn: int, bits: int, include_uncertain: bool = False) -> List[str]
     return sorted(names, key=lambda n: -fixed_bits(n))
 
 
-def _decode_fields(insn: int, type_name: str) -> Dict[str, int]:
-    entry = get_type(type_name)
-    assert entry is not None
-    return {label: (insn >> lo) & ((1 << (hi - lo + 1)) - 1)
-            for label, (hi, lo) in entry["fields"].items()}
-
-
-def disassemble(data: bytes, start_offset: int = 0, count: Optional[int] = None,
+def disassemble(data: bytes, start_offset: int = 0, count: int | None = None,
                 on_unknown: str = "yield") -> Iterator[Instruction]:
     """Walk data from start_offset, one Instruction per unit, up to count
     instructions (None: until an unknown word or the end of the buffer).
@@ -105,17 +103,21 @@ def disassemble(data: bytes, start_offset: int = 0, count: Optional[int] = None,
             if word is None:
                 break
             words.append(word)
-        entry, hypotheses = (decode(words) if words else (None, []))
+        result = ISA.decode_words(words)
+        decoded = result.instruction
+        hypotheses = [form.id for form in result.candidates]
+        entry = get_type(decoded.form.id) if decoded is not None else None
         if not words:
             reason = f"only {len(data) - offset} byte(s) remain, not enough for a 16-bit word"
         elif entry is None and hypotheses:
-            reason = f"forms tie: {hypotheses}"
+            if result.truncated and len(hypotheses) == 1:
+                form = result.candidates[0]
+                reason = (f"matches {form.id} ({form.extent_bits} bits) but only "
+                          f"{len(data) - offset} bytes remain")
+            else:
+                reason = f"forms tie: {hypotheses}"
         elif entry is None:
             reason = "no form matches"
-        elif entry["bits"] // 16 > len(words):
-            reason = (f"matches {entry['name']} ({entry['bits']} bits) but only "
-                      f"{len(data) - offset} bytes remain")
-            hypotheses = [entry["name"]]
         else:
             reason = None
         if reason is not None:
@@ -126,12 +128,10 @@ def disassemble(data: bytes, start_offset: int = 0, count: Optional[int] = None,
                               raw=words[0] if words else None, kind="unknown", note=reason)
             return
         assert entry is not None
-        insn = 0
-        for word in words[:entry["bits"] // 16]:
-            insn = (insn << 16) | word
+        assert decoded is not None
         yield Instruction(offset=offset, length_bytes=entry["bits"] // 8,
-                          type_name=entry["name"], fields=_decode_fields(insn, entry["name"]),
-                          raw=insn, kind="uncertain" if entry["uncertain"] else "confident",
+                          type_name=entry["name"], fields=decoded.field_dict(),
+                          raw=decoded.raw, kind="uncertain" if entry["uncertain"] else "confident",
                           note=f"source: {entry['source']}" if entry["uncertain"] else "")
         offset += entry["bits"] // 8
         yielded += 1
@@ -147,7 +147,7 @@ class WalkReport:
     confident: int
     uncertain: int
     stopped_reason: str
-    last_instruction: Optional[Instruction]
+    last_instruction: Instruction | None
 
     @property
     def fraction_decoded(self) -> float:
@@ -157,7 +157,8 @@ class WalkReport:
 class ShortWordReader(Protocol):
     """Minimal loader-memory interface for exact-PC decoding."""
 
-    def read_sw(self, pc_sw: int, size: int) -> Optional[bytes]: ...
+    def read_sw(self, pc_sw: int, size: int) -> bytes | None:
+        return None
 
 
 def decode_loaded_at(reader: ShortWordReader, pc_sw: int) -> Instruction:
@@ -179,7 +180,7 @@ def walk_and_report(data: bytes, start_offset: int = 0) -> WalkReport:
     """Run disassemble() until it stops, and report how far it got and why."""
     offset = start_offset
     n_conf = n_unc = 0
-    last: Optional[Instruction] = None
+    last: Instruction | None = None
     stopped_reason = "reached end of buffer cleanly"
     for rec in disassemble(data, start_offset=start_offset, on_unknown="yield"):
         last = rec
@@ -206,8 +207,10 @@ if __name__ == "__main__":
         raise SystemExit(__doc__)
     path = sys.argv[1]
     start = int(sys.argv[2], 0) if len(sys.argv) > 2 else 0
-    with open(path, "rb") as f:
-        blob = f.read()
+    try:
+        blob = Path(path).read_bytes()
+    except OSError as exc:
+        raise SystemExit(str(exc)) from exc
     report = walk_and_report(blob, start)
     print(f"Walked {path} from offset {start:#x}:")
     print(f"  buffer size:      {len(blob)} bytes")

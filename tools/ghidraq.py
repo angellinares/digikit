@@ -26,7 +26,7 @@ further subcommand into the same invocation:
 Use --json for machine-readable output (one object per query, on stdout).
 
 This exists because tools/ghidra/*.java need a full ghidra.sh launch per
-run (minutes), and tools/decompile.py deliberately covers only decompile.
+run (minutes).
 """
 import argparse
 import json
