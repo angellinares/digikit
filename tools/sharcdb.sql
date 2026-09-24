@@ -166,6 +166,19 @@ SELECT printf('%x', sw) sw, form, role FROM dataref WHERE value = 0x8055c840 ORD
 -- Every root, grouped by kind.
 SELECT kind, count(*) n FROM roots GROUP BY kind ORDER BY n DESC;
 
+-- The hardware interrupt vector table (DB_VERSION 7 -- tools/sharcdb.py's
+-- IVT_SW/_detect_interrupt_vector_roots), by slot number (note is 'slot N
+-- NAME', N first for a numeric sort rather than the default text sort).
+SELECT CAST(substr(note, 6, instr(substr(note, 6), ' ') - 1) AS INTEGER) slot,
+       printf('%x', sw) target, note
+FROM roots WHERE kind = 'interrupt_vector' ORDER BY slot;
+
+-- tools/sharc.py's Image.card(fn) (a one-function text summary) and
+-- Image.cards(order='bottom_up', root=None, limit=None) (every function, or
+-- those reachable from `root`, callee-first) are the preferred way to read a
+-- function; Image.note(fn, **fields)/Image.notes(fn) read/write the
+-- out/sharcdb/<image>.notes.sqlite sidecar `build --force` never touches.
+
 -- Functions reachable from a given root (function-level, call+jump/
 -- cond_jump edges, shortest CALL depth) -- substitute the 0x... literal.
 SELECT printf('%x', function_sw) function_sw, depth FROM reach

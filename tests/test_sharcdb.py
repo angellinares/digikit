@@ -864,6 +864,22 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
         )
         self.assertEqual(rows[0][0], 15)
 
+    def test_ivt_slot15_is_seci_at_1c0b7b(self):
+        # tools/sharcdb.py's DB_VERSION v7: the L1 hardware IVT at IVT_SW,
+        # decoded generically from the 32x24-byte slot table -- slot 15
+        # (SECI, sharc-plus-prm Table 4-46) targets 0x1c0b7b on DT2 1.16,
+        # byte-exact against the raw image (docs/findings).
+        rows = self.dt2.sql(
+            "SELECT note FROM roots WHERE image='dt2-1.16' AND kind='interrupt_vector' AND sw=0x1c0b7b"
+        )
+        self.assertEqual(rows, [("slot 15 SECI",)])
+
+    def test_card_1cbf07_names_the_function_and_its_roots(self):
+        card = self.dt2.card(0x1CBF07)
+        self.assertIn("FUN_1cbf07", card)
+        self.assertIn("roots:", card)
+        self.assertIn("dataref_code_pointer", card)
+
     def test_last_def_r6_before_1c6553(self):
         self.assertEqual(self.dt2.last_def("R6", 0x1C6553), 0x1C653B)
 

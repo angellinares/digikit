@@ -14,9 +14,11 @@ Ad hoc SQL from the shell, without writing a script:
 
 from __future__ import annotations
 
+import collections
 import os
 import sqlite3
 import sys
+import time
 
 _here = os.path.dirname(os.path.abspath(__file__))
 if _here not in sys.path:
@@ -66,6 +68,56 @@ _FUNC_COLUMNS = (
     "has_static_caller", "is_leaf",
 )
 
+# Known DM structures, addresses in this repo's own bare convention (the same
+# one literals.value/dataref.value/ptr.address already use -- see
+# tools/sharcdb.py's DB_VERSION v7 comment for how that was pinned down
+# against IVT_DISPATCH_TABLES). Used by Image.card() to label a resolved
+# memory access by structure instead of a bare hex address. Strided arrays
+# first (a fixed-size record repeated N times), then flat ranges; the first
+# match wins. Track count is a generous upper bound, not a verified count --
+# an index past the real number of tracks is still reported (as a high
+# index), not silently misclassified as "elsewhere".
+_KNOWN_STRIDED = (
+    # docs/findings/06: the per-track record array and its "array #2" twin.
+    (0x2506EC, 0xDC, 32, "per-track record"),
+    (0x2412C8 + 0xD604, 0x1D8, 32, "per-track array#2"),
+)
+_KNOWN_RANGES = (
+    (0x2412C8, 0x2412C8 + 0x10000, "per-frame workspace"),
+    (0x261CC8, 0x264200, "rings"),
+    (0x252D78, 0x252D78 + 4, "mix table base"),
+    # tools/sharcdb.py's IVT_DISPATCH_TABLES, in the same address convention;
+    # both are boot-time FILL blocks on every image checked so far (DB_VERSION
+    # v7's comment) -- labelled here anyway so a resolved access there (e.g.
+    # once startup code is traced) still gets a name instead of a bare hex.
+    (0x240948, 0x240948 + 392, "SECI dispatch table"),
+    (0x240AD4, 0x240AD4 + 1740, "generic interrupt dispatch table"),
+)
+
+# tools/sharc.py's Image.card() pairs an image with its cross-image partner
+# (same func_hash convention, see Image.match()) for the "cross-image match"
+# section -- the two shipping SHARC+ firmwares this repo builds.
+_CROSS_IMAGE_PARTNER = {
+    "dt2-1.16": "dn2-1.11", "dt2-1.15C": "dn2-1.10E",
+    "dn2-1.11": "dt2-1.16", "dn2-1.10E": "dt2-1.15C",
+}
+
+
+def _describe_address(addr):
+    """A known-structure label for a DM address (see _KNOWN_STRIDED/
+    _KNOWN_RANGES above), or a bare hex string when nothing matches."""
+    if addr is None:
+        return "unresolved"
+    for base, stride, count, label in _KNOWN_STRIDED:
+        if base <= addr < base + stride * count:
+            idx, off = divmod(addr - base, stride)
+            return "%s[%d]%s" % (label, idx, ("+0x%x" % off) if off else "")
+    for lo, hi, label in _KNOWN_RANGES:
+        if lo <= addr < hi:
+            off = addr - lo
+            return "%s%s" % (label, ("+0x%x" % off) if off else "")
+    return "0x%x" % addr
+
 
 def _hex(value):
     return "0x%x" % value if isinstance(value, int) else value
@@ -111,8 +163,13 @@ class Image:
         self.meta = dict(self.db.execute("SELECT key, value FROM meta WHERE image=?", (name,)).fetchall())
         self._mem_cache = None
         self._succ_cache = None
+        self._notes_attached = False
+        self._cross_cache = {}
 
     def close(self):
+        for other in self._cross_cache.values():
+            if other is not None:
+                other.close()
         self.db.close()
 
     # --- raw SQL ------------------------------------------------------------
@@ -297,6 +354,278 @@ class Image:
                 "function": fn["entry_sw"] if fn else None,
             })
         return out
+
+    # --- notes ----------------------------------------------------------------
+    #
+    # A human/agent-written note per function, kept in a sidecar database
+    # (out/sharcdb/<name>.notes.sqlite, ATTACHed here on first use) rather
+    # than in the main .sqlite: tools/sharcdb.py's build_database() always
+    # replaces out_path wholesale (see its own "build into a temp file" note),
+    # so a note living there would be wiped by the next `sharcdb build
+    # --force`. This file never touches the sidecar's path.
+
+    def _ensure_notes_db(self):
+        if self._notes_attached:
+            return
+        notes_path = os.path.join(os.path.dirname(os.path.abspath(self.db_path)), self.name + ".notes.sqlite")
+        self.db.execute("ATTACH DATABASE ? AS notesdb", (notes_path,))
+        self.db.execute("""CREATE TABLE IF NOT EXISTS notesdb.notes (
+            image TEXT, function_sw INTEGER, role TEXT, summary TEXT, reads TEXT,
+            writes TEXT, confidence TEXT, evidence TEXT, author TEXT, created TEXT,
+            PRIMARY KEY (image, function_sw))""")
+        self._notes_attached = True
+
+    _NOTE_FIELDS = ("role", "summary", "reads", "writes", "confidence", "evidence", "author")
+
+    def note(self, fn, **fields):
+        """Upsert this image's note for function `fn` in the sidecar
+        database. fields: any of role/summary/reads/writes/confidence/
+        evidence/author; a field left out keeps its previous value (or NULL,
+        for a brand new row). `created` is set to now on first write and left
+        alone on an update, unless passed explicitly."""
+        self._ensure_notes_db()
+        existing = self.notes(fn)
+        prior = existing[0] if existing else {}
+        row = {f: fields.get(f, prior.get(f)) for f in self._NOTE_FIELDS}
+        created = fields.get("created") or prior.get("created") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self.db.execute(
+            "INSERT INTO notesdb.notes (image, function_sw, role, summary, reads, writes, confidence, "
+            "evidence, author, created) VALUES (?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(image, function_sw) DO UPDATE SET role=excluded.role, summary=excluded.summary, "
+            "reads=excluded.reads, writes=excluded.writes, confidence=excluded.confidence, "
+            "evidence=excluded.evidence, author=excluded.author, created=excluded.created",
+            (self.name, fn, row["role"], row["summary"], row["reads"], row["writes"],
+             row["confidence"], row["evidence"], row["author"], created),
+        )
+        self.db.commit()
+
+    def notes(self, fn=None):
+        """This image's note for `fn` (a single-element list, or [] when
+        none exists), or every note in the image when fn is None."""
+        self._ensure_notes_db()
+        cols = ("function_sw", "role", "summary", "reads", "writes", "confidence", "evidence", "author", "created")
+        query = "SELECT %s FROM notesdb.notes WHERE image=?" % ",".join(cols)
+        args = [self.name]
+        if fn is not None:
+            query += " AND function_sw=?"
+            args.append(fn)
+        query += " ORDER BY function_sw"
+        rows = self.db.execute(query, args).fetchall()
+        out = [dict(zip(cols, r)) for r in rows]
+        for d in out:
+            d["function_sw"] = _hex(d["function_sw"])
+        return out
+
+    # --- function cards ---------------------------------------------------------
+
+    def _cross_partner(self):
+        """The Image for this one's cross-image partner (see
+        _CROSS_IMAGE_PARTNER), lazily loaded and cached, or None when there
+        is no known partner or its database isn't built."""
+        if self.name in self._cross_cache:
+            return self._cross_cache[self.name]
+        other_name = _CROSS_IMAGE_PARTNER.get(self.name)
+        other = None
+        if other_name:
+            try:
+                other = load(other_name)
+            except Exception:
+                other = None
+        self._cross_cache[self.name] = other
+        return other
+
+    def card(self, fn, listing_n=8):
+        """A deterministic, compact text card for one function: header,
+        roots reaching it, callers/callees (with any note's role/summary),
+        literals and datarefs, resolved memory reads/writes grouped by
+        known structure (see _describe_address), loops, float-compute
+        density, a cross-image match, and a listing (full when short,
+        otherwise the first/last `listing_n` instructions plus every
+        branch/call/return/indirect/store line in between)."""
+        f = self.func(fn)
+        if f is None:
+            return "no function at 0x%x" % fn
+        entry, end = int(f["entry_sw"], 16), int(f["end_sw"], 16)
+        L = []
+        L.append("FUN_%06x  entry=0x%x end=0x%x  n_insns=%d  bytes=%d" %
+                  (entry, entry, end, f["n_insns"], (end - entry) * 2))
+        bits = ["block=%s" % f["block"], "leaf" if f["is_leaf"] else "non-leaf"]
+        if f["name"] and f["name"] != "FUN_%06x" % entry:
+            bits.append("name=%s" % f["name"])
+        if f["label"]:
+            bits.append("label=%s" % f["label"])
+        if f["entry_kind"]:
+            bits.append("entry_kind=%s" % f["entry_kind"])
+        L.append("  " + " ".join(bits))
+
+        own_note = self.notes(entry)
+        if own_note:
+            n = own_note[0]
+            L.append("note: role=%s  %s" % (n.get("role"), n.get("summary") or ""))
+
+        root_rows = self.db.execute(
+            "SELECT r.kind, MIN(rc.depth) FROM reach rc JOIN roots r "
+            "ON r.image = rc.image AND r.sw = rc.root_sw "
+            "WHERE rc.image=? AND rc.function_sw=? GROUP BY r.kind ORDER BY 2",
+            (self.name, entry),
+        ).fetchall()
+        L.append("roots: " + (", ".join("%s(depth=%s)" % (k, d) for k, d in root_rows) if root_rows else "none reach this function"))
+
+        def _role_suffix(fn_hex):
+            if fn_hex is None:
+                return ""
+            rows = self.notes(int(fn_hex, 16))
+            if not rows or not rows[0].get("summary"):
+                return ""
+            return " -- %s: %s" % (rows[0].get("role") or "?", rows[0]["summary"])
+
+        callers = self.callers(entry)
+        seen, caller_bits = set(), []
+        for c in callers:
+            key = (c["from_function"], c["kind"])
+            if key in seen:
+                continue
+            seen.add(key)
+            caller_bits.append("%s(%s)%s" % (c["from_function"] or c["from_sw"], c["kind"], _role_suffix(c["from_function"])))
+        L.append("callers (%d): %s" % (len(caller_bits), "; ".join(caller_bits) or "none"))
+
+        callees = self.callees(entry)
+        L.append("callees (%d): %s" % (
+            len(callees), "; ".join("%s%s" % (c, _role_suffix(c)) for c in callees) or "none"))
+
+        lit_rows = self.db.execute(
+            "SELECT DISTINCT l.value, l.form, l.dest_reg FROM literals l JOIN insn i "
+            "ON i.image = l.image AND i.sw = l.sw WHERE l.image=? AND i.function_sw=? ORDER BY l.value",
+            (self.name, entry),
+        ).fetchall()
+        if lit_rows:
+            shown = ["0x%x(%s%s)" % (v, form, "->" + dr if dr else "") for v, form, dr in lit_rows[:20]]
+            more = "" if len(lit_rows) <= 20 else " ... +%d more" % (len(lit_rows) - 20)
+            L.append("literals (%d): %s%s" % (len(lit_rows), ", ".join(shown), more))
+
+        dataref_rows = self.db.execute(
+            "SELECT DISTINCT d.value, d.role FROM dataref d WHERE d.image=? AND d.sw>=? AND d.sw<? ORDER BY d.value",
+            (self.name, entry, end),
+        ).fetchall()
+        if dataref_rows:
+            L.append("datarefs: " + ", ".join("%s(%s)" % (_describe_address(v), role) for v, role in dataref_rows[:20]))
+
+        mem_rows = self.db.execute(
+            "SELECT direction, address, base_value FROM ptr WHERE image=? AND sw>=? AND sw<?",
+            (self.name, entry, end),
+        ).fetchall()
+        grouped = collections.defaultdict(lambda: [0, 0])
+        for direction, address, base_value in mem_rows:
+            label = _describe_address(address if address is not None else base_value)
+            grouped[label][0 if direction == "load" else 1] += 1
+        if grouped:
+            L.append("memory: " + "; ".join(
+                "%s(r=%d,w=%d)" % (label, r, w) for label, (r, w) in sorted(grouped.items())))
+
+        loop_rows = self.db.execute(
+            "SELECT header_block, n_blocks, kind, depth FROM loops WHERE image=? AND function_sw=? ORDER BY header_block",
+            (self.name, entry),
+        ).fetchall()
+        if loop_rows:
+            L.append("loops: " + "; ".join("0x%x(%s,n_blocks=%d,depth=%d)" % (h, k, n, d) for h, n, k, d in loop_rows))
+
+        total = self.db.execute(
+            "SELECT COUNT(*) FROM regdef WHERE image=? AND sw>=? AND sw<? AND kind='compute'",
+            (self.name, entry, end),
+        ).fetchone()[0]
+        if total:
+            floaty = self.db.execute(
+                "SELECT COUNT(*) FROM regdef WHERE image=? AND sw>=? AND sw<? AND kind='compute' AND reg LIKE 'F%'",
+                (self.name, entry, end),
+            ).fetchone()[0]
+            L.append("float-compute density: %.0f%% (%d/%d compute regdefs)" % (100.0 * floaty / total, floaty, total))
+
+        other = self._cross_partner()
+        if other is not None:
+            matches = self.match(other, entry)
+            L.append("cross-image (%s): %s" % (
+                other.name,
+                ", ".join("%s%s" % (m["entry_sw"], "" if m["exact_match"] else "(reloc-only)") for m in matches)
+                if matches else "no match",
+            ))
+
+        all_rows = self.db.execute(
+            "SELECT sw, mnemonic FROM insn WHERE image=? AND function_sw=? AND aligned=1 ORDER BY sw",
+            (self.name, entry),
+        ).fetchall()
+        n = listing_n
+        L.append("listing (%d insns%s):" % (len(all_rows), "" if len(all_rows) <= 2 * n + 4 else ", truncated"))
+        if len(all_rows) <= 2 * n + 4:
+            L += ["  0x%x  %s" % (sw, m) for sw, m in all_rows]
+        else:
+            # Branch/call/return/indirect sites are kept in full (there are
+            # rarely more than a handful); store sites are capped so one
+            # store-heavy dispatcher (e.g. FUN_1c642a) doesn't blow the
+            # card's whole size budget -- see the module note on card()'s
+            # 1-3k token target.
+            control_flow = set(r[0] for r in self.db.execute(
+                "SELECT DISTINCT from_sw FROM edges WHERE image=? AND from_sw>=? AND from_sw<? "
+                "AND kind IN ('call','jump','cond_jump','indirect','return')", (self.name, entry, end),
+            ).fetchall())
+            stores = set(r[0] for r in self.db.execute(
+                "SELECT DISTINCT sw FROM mem_access WHERE image=? AND sw>=? AND sw<? AND direction='store'",
+                (self.name, entry, end),
+            ).fetchall())
+            head, tail = all_rows[:n], all_rows[-n:]
+            edge_sws = {sw for sw, _ in head} | {sw for sw, _ in tail}
+            store_cap = 40
+            mid_stores = [(sw, m) for sw, m in all_rows if sw not in edge_sws and sw in stores]
+            omitted_stores = max(0, len(mid_stores) - store_cap)
+            mid_stores = mid_stores[:store_cap]
+            mid = sorted(
+                {(sw, m) for sw, m in all_rows if sw not in edge_sws and sw in control_flow} | set(mid_stores)
+            )
+            L += ["  0x%x  %s" % (sw, m) for sw, m in head]
+            L.append("  ...")
+            L += ["  0x%x  %s" % (sw, m) for sw, m in mid]
+            if omitted_stores:
+                L.append("  ... (+%d more store lines omitted)" % omitted_stores)
+            L.append("  ...")
+            L += ["  0x%x  %s" % (sw, m) for sw, m in tail]
+
+        return "\n".join(L)
+
+    def cards(self, order="bottom_up", root=None, limit=None):
+        """Yield card() text for every function in the image (or, with
+        `root`, only those in `reach` from that root sw or sws), in
+        callee-first ('bottom_up', the default) or caller-first
+        ('top_down') topological order over the CALL-edge graph (SCC-
+        condensed, same construction as tools/sharcdb.py's
+        _detect_callgraph, so a recursive cluster is yielded as one group)."""
+        if order not in ("bottom_up", "top_down"):
+            raise ValueError("cards(): order must be 'bottom_up' or 'top_down', got %r" % order)
+        fn_rows = self.db.execute("SELECT entry_sw FROM functions WHERE image=?", (self.name,)).fetchall()
+        G = nx.DiGraph()
+        G.add_nodes_from(r[0] for r in fn_rows)
+        G.add_edges_from(self.db.execute(
+            "SELECT DISTINCT from_function, to_function FROM edges WHERE image=? AND kind='call' "
+            "AND from_function IS NOT NULL AND to_function IS NOT NULL", (self.name,),
+        ).fetchall())
+        if root is not None:
+            roots = root if isinstance(root, (list, tuple, set)) else [root]
+            keep = set()
+            for r in roots:
+                keep |= {row[0] for row in self.db.execute(
+                    "SELECT function_sw FROM reach WHERE image=? AND root_sw=?", (self.name, r),
+                ).fetchall()}
+            G = G.subgraph(keep).copy()
+
+        C = nx.condensation(G)
+        topo = list(nx.topological_sort(C))
+        if order == "bottom_up":
+            topo.reverse()
+        count = 0
+        for c in topo:
+            for entry in sorted(C.nodes[c]["members"]):
+                if limit is not None and count >= limit:
+                    return
+                yield self.card(entry)
+                count += 1
 
     # --- cross-image ------------------------------------------------------------
 

@@ -80,11 +80,31 @@ import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
 
-DB_VERSION = 6
+DB_VERSION = 7
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
 # the right thing on the next run.
+#
+# --- v7: interrupt-vector roots ---------------------------------------------
+#
+# CMMR_SYSCTL.IIVT is set at boot (confirmed by the byte-exact slot targets
+# below), so the IVT lives in L1 block 0's 48-bit (PM) space at the fixed
+# short-word address IVT_SW -- sc58x-2158x-prm pp.226-231 ("L1 Memory
+# Interface": "Block 0 has 256 addresses reserved for internal interrupt
+# vector table"; the exact numeric address isn't in either public manual,
+# "see the memory-map in the product specific data sheet") and
+# sharc-plus-prm Table 4-47 (IIVT=1 -> L1) / Table 4-46 (the 32 interrupt
+# names IVT_VECTOR_NAMES below reuses verbatim). _detect_interrupt_vector_roots()
+# reads the 32x24-byte slot table there and adds a `roots` row per slot whose
+# 4 instructions aren't the all-empty pattern, for every image (DT2 and DN2
+# alike -- the location and slot layout were checked byte-for-byte identical
+# across all four .sqlite images this repo builds). Two further ISR dispatch
+# tables (IVT_DISPATCH_TABLES, an ASTATX-indexed and a SEC-id-indexed one)
+# were checked the same way and found to sit entirely inside a boot-stream
+# FILL block on DT2 1.16/1.15C (argument=0, i.e. the ROM ships them zeroed) --
+# _detect_dispatch_table_roots() detects that case and adds no root rather
+# than reporting an all-zero table as "no code pointers" by coincidence.
 #
 # --- v6: `ptr` -- constant-pointer propagation ------------------------------
 #
@@ -355,7 +375,10 @@ CREATE INDEX reguse_sw ON reguse(image, sw);
 -- consecutive in-code-pointer run found at an i_reg_base table address --
 -- note carries the table base and index), no_static_entry (a function with
 -- no edges of any kind pointing at its entry -- the same set `unentered`
--- clusters), vector_entry (ColdFire only: a function Ghidra itself named
+-- clusters), interrupt_vector (SHARC only: one populated slot of the L1
+-- hardware IVT at IVT_SW -- note carries 'slot N NAME', NAME from
+-- IVT_VECTOR_NAMES/sharc-plus-prm Table 4-46; see the DB_VERSION v7 comment
+-- above), vector_entry (ColdFire only: a function Ghidra itself named
 -- vector_<N>_handler -- an exception/interrupt vector table entry; note
 -- carries that name).
 CREATE TABLE roots (image TEXT, sw INTEGER, kind TEXT, note TEXT);
@@ -1385,6 +1408,104 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
 # on what is already in the database, using networkx instead of another
 # hand-rolled CFG walk.
 
+# --- interrupt vector table (see DB_VERSION v7 comment above) ---------------
+
+IVT_SW = 0x120000
+IVT_N_SLOTS = 32
+IVT_SLOT_BYTES = 24
+# An unpopulated slot's four 48-bit words, verified identical across all four
+# images this repo builds.
+IVT_EMPTY_INSN = bytes((0, 0, 0, 0, 0x3E, 0x0B))
+# The trailing two bytes of a direct-jump 8a_abs instruction (see
+# _gather_terminators's own t in ("8a_abs", ...) check) -- distinguishes a
+# real jump word from the LCNTR-literal/other filler words some slots also
+# carry (e.g. slot 5's second word, '020000 05760f').
+_IVT_JUMP_SUFFIX = b"\x3e\x06"
+
+# sharc-plus-prm Table 4-46 "Interrupt Priority and Vectors".
+IVT_VECTOR_NAMES = {
+    0: "EMUI", 1: "RSTI", 2: "reserved", 3: "PARI", 4: "ILOPI", 5: "CB7I",
+    6: "IICDI", 7: "SOVFI", 8: "ILADI", 9: "reserved", 10: "reserved",
+    11: "TMZHI", 12: "BKPI", 13: "FIR", 14: "IIR", 15: "SECI",
+    16: "reserved", 17: "reserved", 18: "reserved", 19: "reserved",
+    20: "RINSEQI", 21: "CB15I", 22: "TMZLI", 23: "FIXI", 24: "FLTOI",
+    25: "FLTUI", 26: "FLTII", 27: "EMULI", 28: "SFT0I", 29: "SFT1I",
+    30: "SFT2I", 31: "SFT3I",
+}
+
+# Two further ISR dispatch tables outside the IVT proper (addresses in this
+# repo's bare DM convention -- literals.value/dataref.value/ptr.address all
+# already use it; add sharcldr.SW_ALIAS_BASE to reach a LoadedMemory byte
+# address). Checked against DT2 1.16/1.15C: both sit entirely inside a
+# zero-argument FILL block (see DB_VERSION v7 comment), so this table only
+# ever fires the "runtime-filled, no root added" branch there today; it is
+# still CPU/image-generic so a future image that ships these tables
+# initialized gets code_pointer_array roots for free.
+IVT_DISPATCH_TABLES = (
+    (0x240ad8, 8, "generic interrupt dispatch (by ASTATX number)"),
+    (0x240948, 2, "SECI dispatch (by SEC id)"),
+)
+
+
+def _detect_interrupt_vector_roots(mem):
+    """[(target_sw, 'interrupt_vector', 'slot N NAME'), ...] -- one per
+    populated IVT slot (see the module-level IVT_* constants). mem is
+    optional: without it (no LoadedMemory on hand), this detector is
+    skipped, like loader_entry/code_pointer_array above."""
+    if mem is None:
+        return []
+    roots = []
+    byte_base = sharcldr.sw_to_byte(IVT_SW)
+    for slot in range(IVT_N_SLOTS):
+        chunk = mem.read(byte_base + slot * IVT_SLOT_BYTES, IVT_SLOT_BYTES)
+        if chunk is None:
+            break
+        if chunk == IVT_EMPTY_INSN * 4:
+            continue
+        target = None
+        for k in range(4):
+            insn = chunk[k * 6:(k + 1) * 6]
+            if insn[4:6] == _IVT_JUMP_SUFFIX:
+                target = int.from_bytes(insn[0:3], "little")
+                break
+        if target is None:
+            # A populated slot with no recognisable direct-jump word --
+            # left unmodelled rather than guessed (none seen on any of the
+            # four images checked).
+            continue
+        name = IVT_VECTOR_NAMES.get(slot, "reserved")
+        roots.append((target, "interrupt_vector", "slot %d %s" % (slot, name)))
+    return roots
+
+
+def _detect_dispatch_table_roots(mem, blocks, owner):
+    """[(value, 'code_pointer_array', note), ...] for IVT_DISPATCH_TABLES,
+    same consecutive-in-code-pointer-run logic as _detect_roots's
+    i_reg_base table scan. A table whose base sits inside a FILL block is
+    reported as runtime-filled and skipped -- see the module note above."""
+    if mem is None or blocks is None:
+        return []
+    roots = []
+    for base, stride, desc in IVT_DISPATCH_TABLES:
+        byte_base = base + sharcldr.SW_ALIAS_BASE
+        if sharcldr.fill_block_for_address(blocks, byte_base, space="byte") is not None:
+            continue
+        values, first_owner = [], None
+        for i in range(64):
+            raw = mem.read(byte_base + i * stride, min(stride, 4))
+            if raw is None:
+                break
+            value = int.from_bytes(raw, "little")
+            fn = owner(value)
+            if fn is None or (first_owner is not None and fn != first_owner):
+                break
+            first_owner = fn
+            values.append(value)
+        if len(values) >= 2:
+            for i, value in enumerate(values):
+                roots.append((value, "code_pointer_array", "%s table=0x%x idx=%d" % (desc, base, i)))
+    return roots
+
 
 def _owner_factory(function_spans):
     """A closure mapping any sw to the entry_sw of the function whose
@@ -1423,6 +1544,9 @@ def _detect_roots(db, name, mem, blocks):
             # application's code (a boot stream may carry earlier FIRST
             # blocks for a bootstrap stage this file never scans).
             roots.append((firsts[-1], "loader_entry", "last of %d BFLAG_FIRST entries" % len(firsts)))
+
+    roots += _detect_interrupt_vector_roots(mem)
+    roots += _detect_dispatch_table_roots(mem, blocks, owner)
 
     # RTOS task entries: a CALL whose immediately preceding instructions (in
     # the SAME function, within a small window -- this idiom is always a
@@ -2625,8 +2749,8 @@ def cmd_analyze(args):
             blocks = sharcldr.parse_blocks(data)
             mem = sharcldr.LoadedMemory.from_stream(data, blocks)
         else:
-            print("    %-16s blob not found (%s); loader_entry/code_pointer_array roots skipped"
-                  % (name, blob_path))
+            print("    %-16s blob not found (%s); loader_entry/code_pointer_array/"
+                  "interrupt_vector roots skipped" % (name, blob_path))
 
         out_dir = os.path.dirname(os.path.abspath(path)) or "."
         tmp_path = os.path.join(
