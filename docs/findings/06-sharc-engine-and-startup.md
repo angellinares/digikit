@@ -1040,6 +1040,9 @@ interrupt on X-count) -- so all four are output/transmit, none receive:
   candidates for SPORT4A-TX / SPORT4B-TX). No literal reference to any ring
   buffer exists outside descriptor construction -- the render loop writes them
   through a runtime pointer, so the writer is not findable by literal scan.
+  **[C][V]** Core code writes rings A and C and only reads rings B and D
+  (see "The audio path from the task loop to the rings"), so B and D are not
+  core-written output rings; the all-transmit reading of the config is **[O]**.
 
 **Synthesis tables + reader code (OBSERVATION).** Only two real external float
 payloads load (rest of `0x80xxxxxx` is FILL/zero scratch), LE float32:
@@ -1696,6 +1699,11 @@ those addresses at runtime is not excluded. **[V][O]**
 
 ## Reading the DSP: the `FUN_1c71ec` pipeline is a wavetable engine, not an FFT **[C][D]**
 
+**[C][V]** Superseded: `FUN_1c71ec` is out-of-line code of `FUN_1c642a`, not
+a wavetable engine, and stage 6 (`0x1cbf07`) writes the 8192-word ring it
+reads. See "The audio path from the task loop to the rings" below. The text
+here is the first read, kept as history.
+
 First systematic *read* of SHARC code rather than a search over it. Seven
 functions decoded in parallel, one agent each. Context for why this took so
 long: blk93 holds about **410 functions** and until this pass we had read
@@ -1834,6 +1842,9 @@ Newton-Raphson iterations. Its delayed branches have two delay slots; the
 second slot at `sw 0x1c06c9` (`R8 = 0x40000000`, 2.0) always executes and
 supplies the constant for the iteration. Traced with an approximate seed,
 it returns 1/x within one float32 ULP for every input tried. **[V]**
+**[C][V]** `0x1c06ba` computes `F0 = F4 / F8`; it is a reciprocal only when
+`R4 = 1.0`, as stage 6 passes (`0x1cbf50`). `0x1c070a` is a separate
+word-copy entry.
 
 ## A function inventory: 1228 functions, and we have read ten **[V]**
 
@@ -1888,7 +1899,8 @@ that would have settled it. The densest:
 | blk93 `0x1c5ed4` | 128 | 3 | FFT-like |
 | blk93 `0x1cb647` | 168 | 3 | FFT-like |
 
-None is in the `FUN_1c71ec` chain, which stands as a wavetable engine. No
+None is in the `FUN_1c71ec` chain, which stands as a wavetable engine
+(**[C]** it is not one; see "The audio path from the task loop to the rings"). No
 bit-reversed addressing (`19a_bitrev`) anywhere in the image, which is a second
 FFT tell and argues these are something else -- possibly just the butterfly
 *instruction* used for a cheap paired sum/difference. `blk69@0xb8063e` is the
@@ -2192,6 +2204,10 @@ RTOS task: call 0xb8615d at sw 0x1c7775, entry argument R4 = 0x1c7749
   -> FUN_1c71ec (wavetable orchestrator: stages 1/2/4/5/6, stage 6 twice)
 ```
 
+**[C][V]** `FUN_1c71ec` is out-of-line code of `FUN_1c642a` that jumps back
+into it, not a wavetable orchestrator; see "The audio path from the task loop
+to the rings".
+
 **[C]** `0x1c207b` is not a second call site of `FUN_1c642a`: it is the entry
 of `FUN_1c207b` (303 instructions), which calls stage 3 at `0x1c2307` and
 `0x1c231f` and never calls `FUN_1c642a`. `FUN_1c642a` has exactly one caller,
@@ -2285,7 +2301,11 @@ comes from `I15`, which starts at `0x2412c8 + 0xd604` for track 0
 (`0x2411c8`, `0x241210`); `0xb88f06` converts a float to a 64-bit fixed
 value; `0xb88f70` computes the bit length of a 64-bit value; `0x1c06ba`
 is `RECIPS` plus three Newton-Raphson steps, then a word copy of `R12`
-words when `R12` is not 0. Only case 5 reads `I0`-relative fields
+words when `R12` is not 0. **[C][V]** `0x1c06ba` computes `F0 = F4 / F8`
+(a reciprocal when `R4 = 1.0`); the word copy is a separate entry at
+`0x1c070a`. **[C][D]** `0x1c0d68` is called with `F4 = 2.0` and an exponent
+in `F8`, read as `powf(F4, F8)`; the two tables may be its internals. The
+`DM(I5 + 0x1b9)`-style offsets here are bytes (see "Voices" below). Only case 5 reads `I0`-relative fields
 (`DM(I0 - 19)`, `DM(I0 - 27)`, `DM(I0 - 20)`) **[V]**. What each field
 means is **[D]**/**[O]**.
 
@@ -2323,7 +2343,9 @@ from boot: loader entry `0x1c1338` → `FUN_1c13e6` → jump at `0x1c147e` →
 `FUN_1c7ff9` → call at `0x1c8092`. `FUN_1c14e7`, the last per-frame call
 in `FUN_1c2b24` (`0x1c30a0`, after `0x1c3083`, `0x1c3090`, `0x1c3099`),
 reads `0x252d78`, `0x252df8` and nearby tables and references no
-address in the output rings **[V]**. Who writes the 32 source words at
+address in the output rings **[V]**. **[C][V]** It is the last call of the
+render group (`0x1c642a`, `0x1c18a6`, `0x1c207b`, `0x1c14e7`), not of the
+frame; see "Master stage" below. Who writes the 32 source words at
 `0x24ef2c` is **[O]**: they have resolved readers (`0x1c16a0` in
 `FUN_1c15e3`; `0x1c6c0b`, `0x1c6fc6`, `0x1c711a`, `0x1c7121` in
 `FUN_1c642a`) but no resolved writer **[V]**.
@@ -2787,7 +2809,8 @@ ten of count 16 span 24, one 16/59, one 15/24, and one **count 3 span 94** that
 holds essentially all the heavy compute. Writes state back into the shared
 context struct `0x252d3c` at `+4`/`+12`.
 
-**`blk93@0x1c14e7`** (98 instructions) -- the last call in the render chain, and
+**`blk93@0x1c14e7`** (98 instructions; **[C][V]** last call of the render group
+only, see "Master stage" below) -- the last call in the render chain, and
 a candidate for the missing ring writer. Five literal loops (256, 16, 16, 32,
 16). The `R12`/`R8`/`R4` context arguments are **never dereferenced**; every
 address it uses is a hard-coded literal in `0x252d3c`-`0x254800`, all RAM. Its
@@ -3269,3 +3292,65 @@ So the CFADE control on XSLICE reaches the frame (`+0xde = 0x00c0` after a
 turn, HUD "Crossfade=50") but the SHARC discards it. Mirror 33 is the live
 unused slot on SLICE; SAMPLE's LOOP (`0xd0`, max `0x7802`) uses it. From a
 single agent's trace; needs a second check. **[D][O]**
+
+## The audio path from the task loop to the rings **[C][V][D]**
+
+Two agents checked each item against the 1.16 bytes. **[V]** covers the
+dataflow both confirmed; names such as DAC, delay or saturator are **[D]**.
+
+**Task loop [V].** The "Audio Task" at `0x1c7749` runs the block handler
+`0x1c74cd` when `0xb86b1e` (a notify-take wait **[D]**) returns 1. The handler
+reads a command at `0x264220 + (DM(0x261ca4) << 12)` and jumps
+(`0x1c7521`, `JUMP (M13, I12)`) through `0x25f7b0` = {`0x1c7524`, `0x1c75d8`,
+`0x1c763c`, `0x1c7671`}: 0 (and > 3) clears 64 words at `0x261cc8 + (flag << 8)`
+and stores `0x7fffffff` at `0x262138 + (flag << 11)`; 1 clears and stores 0;
+2 is loopback; 3 renders from `0x1c7671` (`0x1c766b`/`0x1c766e` are delay
+slots). All rejoin at `0x1c758b`; then bit 0 of `flag = DM(0x25f780)` toggles.
+
+**Rings [V].** `0x1c7462` (5 calls) converts Q31 to float: ring B half
+`0x261ec8 + (flag << 8)` to `0x25f280`, and four word pairs of ring D half
+`0x263138 + (flag << 11)` to `0x25f380`..`0x25f680`, 64 words each. After the
+render, `0x1c74a1` converts `0x25f180`/`0x25f200` to Q31, L/R interleaved,
+into ring A half `0x261cc8 + (flag << 8)`. The ring C half goes to `FUN_1c2b24`
+as stack argument 2 and on to `0x1c28b5` (`0x1c3153`-`0x1c3160`). Core code
+only reads ring D. B as codec input, A as DAC output: **[D]**.
+
+**Master stage [V].** `0x1c207b` gets `R4 = 0x25f180` (`0x1c771b` via
+`FUN_1c2b24`). It sums 16 tracks `0x252df8 + t*0x100` bytes (32 L + 32 R) and
+returns `0x254b78`/`0x254c78`/`0x254778` into bus A `0x254878` (bit t of
+`0x252538` set) or bus B `0x254a78` (clear), calls `0xb82d41` -> `0xb82cba`
+(dynamics **[D]**, output `0x254978`), computes
+`clip((0x254978 + 0x254a78) * 3.1623, 1.0)`, runs `0x1cb3d8` per channel into
+`0x25f180`/`0x25f200`, and applies the gain `DM(0x2526ec)` squared, ramped in
+1/32 steps. After `0x1c14e7`, `FUN_1c2b24` calls `0x1c3429`, `0x1c367e`,
+`0x1c80f2`, 16x `0x1c149b`, `0x1c29fd`, `0x1c28b5` and the meter getters.
+
+**Voices [V].** `FUN_1c642a` walks 32 records at `0x2412cc`, stride `0x1d8`
+bytes, calling `0x1c4ecf` (or `0x1c5576` -> `0x1c5615`). Both zero-fill the
+output unless word +0 and byte +0x1b8 are non-zero. `0x1c4f81` renders 64
+samples by 6-tap polyphase interpolation (table `0x25d940`) into record
++4..+0x103; `0xb80000` (state +0x104) decimates 2:1 to 32 outputs. Units:
+`DM(Ix+imm)` offsets are words, 19a modifies and `(bw)`/`(sw)` accesses are
+bytes, so +0x62..+0x6d are words (step at 0x6a/0x6b) and 0x17c..0x1bc are
+byte flags. **[C]** Earlier word offsets +0x1ab/+0x1ac (`0x1c4a31`) are bytes
+0x1a8/0x1ac, and the reset `0x1c4eaf` offsets +0x1b9..+0x1d1 are bytes too.
+
+**Case helpers [V], claim not confirmed.** Agreed parts: `0x1c4afe` and
+`0x1c4bf9` call `0x1c0d68` with `F4 = 2.0`, `F8 = clip((F8-60)+(F12-64),
+64)/12` and scale by `float(DM(I5+0x61)) / 96000`; `0x1c4d88` and `0x1c4a31`
+do not call it. Only `0x1c4bf9` skips `0x1c4914`. Step format and store
+offsets of the other three: **[O]**.
+
+**`FUN_1c71ec` [C][V].** Out-of-line blocks of `FUN_1c642a`, entered by jumps
+at `0x1c7053`, `0x1c6f07`, `0x1c6eef`, `0x1c6ed9` and table `0x8055c874`;
+every exit jumps back. The first block lerps 128-entry cosine/sine tables
+`0x8055c440`/`0x8055c640` (equal-power curves **[D]**). Table `0x8055c874`
+picks one stage per slot type: 1 `0x1cdbb2`, 2 `0x1cd286`, 3 `0x1cc79e`,
+4 and 6 `0x1cbf07`, 5 `0x1ccd96`. Gated passes then run `0x1cb3d8`
+(saturator **[D]**), `0x1cdecb` (sample-and-hold rate reduction **[D]**) and
+`0x1ccbd8` (low-pass plus DC blocker **[D]**). `0x1cbf07` reads four taps
+off `I1 = DM(I4+16)` and each sample writes `DM(I1+M4) = fclip(x + g*taps,
+1.0)`, also its output; the index `DM(I4+14)` steps `(idx+1) & 0x1fff`
+(`0x1cbfd9` is `R2 = R13 + 1`). `2^32` fixes the unsigned count before `1/N`;
+`8192.0` wraps the read position. An 8192-word feedback comb or delay **[D]**,
+not a wavetable read.
