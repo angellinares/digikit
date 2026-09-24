@@ -316,6 +316,23 @@ def decode_alu(opcode: int, field23: int, is_dual: bool, is_float: bool):
     return text + _gap_mark(gap), gap
 
 
+def _mod1_label(opcode: int) -> str:
+    """PRM Table 18-7 / 'MOD1 Encode Table' (p.428-430;
+    tools/sharcspec/compute_table.json's mulop_32_40bit/mod1_table): for a
+    fixed-point RN=RX*RY or MAC, opcode bit 4 is the X operand's sign
+    (1=signed, 0=unsigned), bit 5 is Y's, bit 3 selects an Integer (0) or
+    Fraction (1) result, and bit 0 selects Rounded (only meaningful when
+    bit 3 is set) -- e.g. 0x48 (y=0,x=0,frac=1,rnd=0) is "UUF". The
+    non-rounded Fraction forms return the high word of the double-length
+    product; Integer forms do not."""
+    x_sign = "S" if (opcode >> 4) & 1 else "U"
+    y_sign = "S" if (opcode >> 5) & 1 else "U"
+    fraction = bool((opcode >> 3) & 1)
+    fmt = "F" if fraction else "I"
+    rounded = "R" if fraction and (opcode & 1) else ""
+    return x_sign + y_sign + fmt + rounded
+
+
 def decode_mult(
     opcode: int,
     field23: int,
@@ -329,16 +346,31 @@ def decode_mult(
     # opcode==0x30 "FN = FX*FY" special case) comes from
     # tools/sharcinv.py's classify_compute() -- PRM Table 18-7 -- not
     # recomputed here, so this always agrees with the feature-vector counts.
+    #
+    # classify_compute()'s is_float is wrong for every MULT opcode except
+    # 0x30: bit 3 of the mulop opcode (the "01yx f00r"/"10yx.../11yx..."
+    # families) is MOD1's Integer(0)/Fraction(1) result-format bit for a
+    # fixed-point multiply or MAC, not a float/fixed switch -- opcode 0x30
+    # ("FN = FX*FY") is the only real floating-point row in this space
+    # (mulop_32_40bit in tools/sharcspec/compute_table.json). Recompute it
+    # here rather than trust the passed-in flag.
+    is_float = opcode == 0x30
     rn, rx, ry = ((field23 >> sh) & 0xF for sh in (8, 4, 0))
     Rn, Rx, Ry = (reg_name(r, is_float) for r in (rn, rx, ry))
     if housekeeping:
         return "MR housekeeping (opcode 0x%02x)" % opcode, False
     if is_plain_mul:
-        return "%s = %s * %s" % (Rn, Rx, Ry), False
+        if opcode == 0x30:
+            return "%s = %s * %s" % (Rn, Rx, Ry), False
+        mod1 = _mod1_label(opcode)
+        hw = ", high word" if "F" in mod1 else ""
+        return "%s = %s * %s  (MOD1 %s%s)" % (Rn, Rx, Ry, mod1, hw), False
     if is_mac:
         top2 = (opcode >> 6) & 3
         op = "MR + %s * %s  (MAC add)" if top2 == 2 else "MR - %s * %s  (MAC sub)"
-        return ("%s = " + op) % (Rn, Rx, Ry), False
+        mod1 = _mod1_label(opcode)
+        hw = ", high word" if "F" in mod1 else ""
+        return ("%s = " + op + "  (MOD1 %s%s)") % (Rn, Rx, Ry, mod1, hw), False
     return "mult?0x%02x(%s, %s) -> %s  !!GAP!!" % (opcode, Rx, Ry, Rn), True
 
 

@@ -146,6 +146,21 @@ class ExtractMemAccessTest(unittest.TestCase):
         rows = sharcdb.extract_mem_access("4a", f)
         self.assertEqual(rows[0][2:4], ("I6", "-24"))
 
+    def test_immoff_4b_byte_access_is_labeled_byte_not_word(self):
+        # Type4b l=0,x=0,w=0 is a byte (bw) access (PRM pp.13-31/13-32's BH
+        # Encode Table), not the "long if l else word" fallback's "word".
+        insn = insn_at(field_insn("4b", i=6, data=0, dreg=2, g=0, d=1, l=0, w=0, x=0))
+        f = sharcinv.merge_fields(insn.fields)
+        rows = sharcdb.extract_mem_access("4b", f)
+        self.assertEqual(rows[0][6], "byte")
+
+    def test_immoff_4d_short_word_access_is_labeled_short_not_long(self):
+        # Type4d l=1,x=0,w=0 is a short-word (sw) access, not "long".
+        insn = insn_at(field_insn("4d", i=6, data=0, dreg=2, g=0, d=1, l=1, w=0, x=0))
+        f = sharcinv.merge_fields(insn.fields)
+        rows = sharcdb.extract_mem_access("4d", f)
+        self.assertEqual(rows[0][6], "short-word")
+
     def test_dual_mem_form_yields_two_rows(self):
         insn = insn_at(field_insn(
             "1a", dmi=4, dmm=5, dmd=1, dmdreg=0, pmi=6, pmm=7, pmd=0, pmdreg=1,
@@ -503,6 +518,17 @@ class RegisterEffectsTest(unittest.TestCase):
         defs, uses, unknown = sharcdb.register_effects("2a", {"compute": field23})
         self.assertEqual(defs, [("R3", "compute")])
         self.assertEqual(sorted(uses), sorted(["R4", "R5", "MR"]))
+        self.assertEqual(unknown, [])
+
+    def test_mult_plain_mod1_opcode_uses_r_registers(self):
+        # opcode 0x48 ("01yx f00r" with f=1: MOD1 UUF) is a fixed-point
+        # multiply, not float; classify_compute()'s bit-3 is_float used to
+        # leak into regdef/reguse as F-registers here.
+        opcode = 0x48
+        field23 = (1 << 20) | (opcode << 12) | (3 << 8) | (4 << 4) | 5
+        defs, uses, unknown = sharcdb.register_effects("2a", {"compute": field23})
+        self.assertEqual(defs, [("R3", "compute")])
+        self.assertEqual(sorted(uses), ["R4", "R5"])
         self.assertEqual(unknown, [])
 
     def test_mult_housekeeping_is_unknown(self):

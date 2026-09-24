@@ -206,6 +206,21 @@ ALU_FLAGS_MASK = (
 # MR data-move, which the PRM (p.493) documents as clearing all four.
 MULT_FLAGS_MASK = (1 << MN_BIT) | (1 << MV_BIT) | (1 << MU_BIT) | (1 << MI_BIT)
 
+# Type3b's (l, x, w) ACCESS/BH/BHSE encode table (SHARC+ Core Programming
+# Reference rev. 1.4, pp. 13-16--13-19), used by this module's own "3b"
+# _execute branch below; Type4b/4d share the identical 3-bit l/x/w table
+# (PRM pp.13-31/13-32/13-34, no "ex" bit -- unlike Type3d/14d, which add
+# one), so tools/sharcdb.py's extract_mem_access() imports this rather than
+# re-deriving it.
+ACCESS_WIDTHS = {
+    (0, 1, 1): "normal-word",
+    (0, 0, 0): "byte",
+    (0, 1, 0): "byte-sign-extended",
+    (1, 0, 0): "short-word",
+    (1, 1, 0): "short-word-sign-extended",
+    (1, 1, 1): "long-word",
+}
+
 # IF-condition codes (PGR Table 10-4) that read a single ASTATX bit,
 # optionally complemented.
 SIMPLE_COND_BITS = {
@@ -4169,15 +4184,7 @@ def _execute(state: State, insn: Instruction) -> List[State]:
         # Validate and decode the complete access before making a predicate
         # assumption, so unsupported forms stop rather than creating paths.
         width_fields = (_field(f, "l"), _field(f, "x"), _field(f, "w"))
-        widths = {
-            (0, 1, 1): "normal-word",
-            (0, 0, 0): "byte",
-            (0, 1, 0): "byte-sign-extended",
-            (1, 0, 0): "short-word",
-            (1, 1, 0): "short-word-sign-extended",
-            (1, 1, 1): "long-word",
-        }
-        access_width = widths.get(width_fields)
+        access_width = ACCESS_WIDTHS.get(width_fields)
         if access_width is None:
             return [_stop(state, insn, "unsupported Type3b access width")]
         store = bool(_field(f, "d"))

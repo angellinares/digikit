@@ -79,12 +79,27 @@ import sharcfn  # noqa: E402
 import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
+from sharc_trace import ACCESS_WIDTHS  # noqa: E402
 
-DB_VERSION = 9
+DB_VERSION = 10
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
 # the right thing on the next run.
+#
+# --- v10: MULT regdef/reguse naming, Type4b/4d mem_access width ------------
+#
+# _compute_regdef_reguse()'s MULT branch used classify_compute()'s is_float,
+# which is wrong for every MULT opcode except 0x30 ("FN = FX*FY"): bit 3 of
+# the mulop opcode is MOD1's Integer/Fraction result-format bit, not a
+# float/fixed switch (PRM Table 18-7). regdef/reguse rows for other MULT
+# opcodes (e.g. 0x48, "UUF"-style fixed-point multiplies) previously named
+# F-registers where the manual calls for R-registers.
+#
+# extract_mem_access() also mislabeled Type4b/4d's l/x/w-encoded byte (bw)
+# and short-word (sw) accesses as "word"/"long" (that fallback is only
+# correct for forms whose lone "l" bit really means long-word); see
+# _immoff_width() and sharc_trace.ACCESS_WIDTHS.
 #
 # --- v7: interrupt-vector roots ---------------------------------------------
 #
@@ -518,6 +533,23 @@ def classify_literal_range(value: int, code_spans_sw, code_spans_byte, mem):
     return in_code, in_data
 
 
+# Type4b/4d (decode_table.json: l/w/x at bits 18/17/16, no "ex" bit) share
+# Type3b's ACCESS/BH/BHSE l/x/w encode table verbatim (PRM pp.13-31/13-32/
+# 13-34): the "long if l else word" fallback used for every other
+# DIRECT_MEM_FORMS/IMMOFF_MEM_FORMS member (whose lone "l" bit really does
+# mean a plain long-word/Ureg-pair access, e.g. 4a/15a/14a/15b) mislabels a
+# byte (bw, l=0) access as "word" and a short-word (sw, l=1) access as
+# "long" for these two forms.
+_LXW_WIDTH_FORMS = {"4b", "4d"}
+
+
+def _immoff_width(insn_type: str, f: dict):
+    if insn_type in _LXW_WIDTH_FORMS:
+        fields = (f.get("l", 0), f.get("x", 0), f.get("w", 0))
+        return ACCESS_WIDTHS.get(fields, "unknown(l=%d,x=%d,w=%d)" % fields)
+    return "long" if f.get("l") else "word"
+
+
 def extract_mem_access(insn_type: str, f: dict):
     """-> [(space, direction, base_reg, modifier, u, form, width, abs_address), ...]
     for a memory-referencing form; [] for any other form. form is
@@ -540,7 +572,7 @@ def extract_mem_access(insn_type: str, f: dict):
         off = sharcfn.sign_extend(f.get("data", 0), bits)
         rows.append((space, direction, "I%d" % f.get("i", 0), str(off), None,
                      sharcinv.MEM_FORMS.get(insn_type, insn_type),
-                     "long" if f.get("l") else "word", None))
+                     _immoff_width(insn_type, f), None))
     elif insn_type in sharcfn.DUAL_MEM_FORMS:
         rows.append(("DM", "store" if f.get("dmd") else "load", "I%d" % f.get("dmi", 0),
                      "M%d" % f.get("dmm", 0), None, "dual", None, None))
@@ -820,7 +852,11 @@ def _compute_regdef_reguse(field23):
                 # guess unary.
                 uses += [Rx, Ry]
     elif cu == "MULT":
-        is_float = d.get("is_float", False)
+        # classify_compute()'s is_float is only correct for opcode 0x30
+        # ("FN = FX*FY"); every other MULT opcode's bit 3 is MOD1's
+        # Integer/Fraction result-format bit, not a float/fixed switch --
+        # see tools/sharcfn.py's decode_mult for the same fix and citation.
+        is_float = opcode == 0x30
         rn, rx, ry = ((field23 >> sh) & 0xF for sh in (8, 4, 0))
         Rn, Rx, Ry = (sharcfn.reg_name(r, is_float) for r in (rn, rx, ry))
         if d.get("housekeeping"):

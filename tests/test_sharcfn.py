@@ -166,6 +166,17 @@ class ComputeRenderingTest(unittest.TestCase):
         self.assertEqual(text, "F5 = F6 * F7")
         self.assertFalse(gap)
 
+    def test_mult_plain_opcode_0x48_is_fixed_point_not_float(self):
+        # PRM Table 18-7's mulop_32_40bit family "01yx f00r": opcode 0x48
+        # (y=0,x=0,f=1,r=0) is a fixed-point RN=RX*RY with MOD1 "UUF"
+        # (unsigned*unsigned, fraction/high-word result), NOT a float
+        # multiply -- classify_compute()'s is_float (derived from bit 3)
+        # used to be trusted here and rendered this with F registers.
+        f = self._field23(1, 0x48, rn=5, rx=6, ry=7)
+        text, gap = sharcfn.render_compute(f)
+        self.assertEqual(text, "R5 = R6 * R7  (MOD1 UUF, high word)")
+        self.assertFalse(gap)
+
     def test_mult_mac_add(self):
         # top2=10 (MAC add), fixed-point: opcode top bits '10'.
         f = self._field23(1, 0b10000000, rn=1, rx=2, ry=3)
