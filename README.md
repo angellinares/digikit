@@ -411,7 +411,6 @@ The full index, with usage details, is
 | `tools/machinecheck.py` | Select a machine end to end, turn its encoders, read the TX frame; compares against a baseline. |
 | `tools/cavefind.py` | Find dead-byte caves in a MAIN OS image that survive a cold boot. |
 | `tools/speedab.py` | Trustworthy emulator speed A/B: timing, Python-crossing census, cProfile split. |
-| `tools/qemuceiling/ceiling.py` | Unicorn vs. QEMU raw ColdFire instruction ceiling, same hand-encoded loop on both. |
 | `tools/sharc_trace.py` | Concrete SHARC+ instruction tracer over the loaded image, public-manual semantics only. |
 | `tools/sharcemu.py` | Ghidra p-code / `pypcode` SHARC+ emulator. |
 | `tools/selasm.py` | Assemble a VISA snippet with Selache and cross-check it against our own decoder. |

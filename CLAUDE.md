@@ -64,10 +64,15 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
   a new one gives wrong numbers; measure each language in its own run.
 - SHARC facts come from the program database first:
   `uv run python tools/sharcdb.py build out/sections/*/section_7_BLOB.bin`
-  (seconds; skipped when current) writes `out/sharcdb/<image>.sqlite` with
-  instructions, functions, call/jump/indirect edges, literals, memory
-  accesses and cross-image function hashes. Query it with `sqlite3` and
-  `tools/sharcdb.sql` before running `tools/sharcfn.py` or writing a script.
+  (seconds; skipped when current) writes `out/sharcdb/<image>.sqlite`:
+  instructions, functions, edges, basic blocks, literals, memory accesses,
+  data references, register def/use, cross-image function hashes, and a
+  whole-image analysis (roots, reach, call graph, dominators, loops,
+  unentered functions). Use it through `tools/sharc.py`: in one script,
+  `img = sharc.load("dt2-1.16")` then `img.func`, `callers`, `callees`,
+  `reach`, `roots`, `last_def`, `uses`, `refs`, `xref_table`, `match`,
+  `trace`, or `img.sql(...)`; `uv run python tools/sharc.py IMAGE "SQL"` for
+  one query. Do this before running `tools/sharcfn.py` or writing a script.
   A new kind of fact goes into `tools/sharcdb.py`, not a scratch script.
 
 ## Shell and tests
