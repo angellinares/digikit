@@ -48,7 +48,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import sharc_disasm  # noqa: E402
 from sharc_disasm import disassemble  # noqa: E402
+from sharc_isa import frame_of  # noqa: E402
 
 PERIPHERAL_SPACE = (0x30000000, 0x31FFFFFF)
 
@@ -229,10 +231,118 @@ def values_of(fields: dict) -> list[tuple[str, int, int]]:
 # 0x1c4b9b had been corrupting.
 _NEVER_ALIGNED_FORMS = {"10a_rel", "10a_abs"}
 
+# tools/sharc_isa.py's select_frame() picks the matching form with the most
+# *leading* fixed bits, so a 32/48-bit form whose header shares a narrower
+# form's prefix always wins the tie even when every one of its confirmed
+# bits sits inside the first word -- it has verified nothing a 16-bit
+# reading didn't already verify, and its "extra" word is free bits that
+# will decode into *something* almost any time. That is exactly the DT2
+# 1.16 sw 0x1c4b99 desync: Type2b (48-bit header cut down to leading_fixed_
+# bits=9, fixed_bits=9) outranks Type2c (fixed_bits=4) on the same word,
+# even though the 6-byte gap it opens up (sw 0x1c4b9b) only decodes as
+# Type10a_rel -- a form _NEVER_ALIGNED_FORMS already knows is not real -- and
+# even on a clean run (DT2 1.16 sw 0x1c4e10, Type2b again over Type2c) the
+# extra word it swallows is provably recoverable: decoding the same span at
+# 16-bit width for a few more steps lands back on one of the wide form's own
+# successor offsets. Width selection below re-checks both signals -- a
+# candidate that fails to keep decoding confidently, or that a narrower
+# reading can rejoin -- before trusting select_frame()'s width-priority
+# pick; see _prefer_confident_widths().
+_WIDTH_LOOKAHEAD = 8
+
+
+def _words_at(data: bytes, offset: int) -> list:
+    words = []
+    for i in range(3):
+        o = offset + 2 * i
+        if o + 2 > len(data):
+            break
+        words.append(struct.unpack_from("<H", data, o)[0])
+    return words
+
+
+def _narrow_candidates(data: bytes, offset: int, max_bits: int) -> list:
+    """Confident/uncertain Instructions decodable at offset from VISA forms
+    narrower than max_bits, using tools/sharc_isa.py's own form list and
+    matches()/extract_fields() directly -- bypassing select_frame()'s
+    width-priority tie-break so a narrower form it discarded is visible
+    here too."""
+    words = _words_at(data, offset)
+    if not words:
+        return []
+    frame = frame_of(words)
+    widths = sorted({f.extent_bits for f in sharc_disasm.ISA.forms if f.extent_bits < max_bits})
+    out = []
+    for width in widths:
+        if len(words) < width // 16:
+            continue
+        forms = [f for f in sharc_disasm.ISA.forms
+                 if f.extent_bits == width and f.matches(frame)]
+        if not forms:
+            continue
+        best = max(f.fixed_bits for f in forms)
+        ties = [f for f in forms if f.fixed_bits == best]
+        if len(ties) != 1:
+            continue
+        form = ties[0]
+        field_values = {item.field.label: item.value for item in form.extract_fields(frame)}
+        out.append(sharc_disasm.Instruction(
+            offset=offset, length_bytes=width // 8, type_name=form.id,
+            fields=field_values, raw=frame >> form.width_shift,
+            kind="uncertain" if form.uncertain else "confident", note=""))
+    return out
+
+
+def _confident_reach(table: dict, offset: int, first_insn, max_insns: int) -> tuple:
+    """Boundary offsets a confident-only walk of up to max_insns instructions
+    visits, starting at offset with first_insn and then following table[] for
+    each successor. The second element is False if the walk hit a missing or
+    non-confident entry before max_insns (an unresolved gap, an uncertain
+    form, or the never-aligned-forms trap all count as a break)."""
+    boundaries = {offset}
+    insn = first_insn
+    off = offset
+    for _ in range(max_insns):
+        if insn is None or insn.kind != "confident":
+            return boundaries, False
+        off += insn.length_bytes
+        boundaries.add(off)
+        insn = table.get(off)
+    return boundaries, True
+
+
+def _prefer_confident_widths(data: bytes, table: dict) -> None:
+    """Second pass over decode_all()'s table: at each offset whose chosen
+    instruction is wider than 16 bits, look for a narrower form that also
+    matches the same bits and either (a) keeps decoding confidently where
+    the chosen instruction's own run breaks down within _WIDTH_LOOKAHEAD
+    instructions, or (b) independently walks back onto one of the chosen
+    instruction's own successor offsets -- proof its extra word(s) added no
+    information a narrower reading lacked. Mutates table in place."""
+    for offset, insn in list(table.items()):
+        if insn.length_bytes is None or insn.length_bytes <= 2:
+            continue
+        wide_boundaries, wide_clean = _confident_reach(table, offset, insn, _WIDTH_LOOKAHEAD)
+        candidates = _narrow_candidates(data, offset, insn.length_bytes * 8)
+        if not candidates:
+            continue
+        wide_targets = wide_boundaries - {offset}
+        for cand in candidates:
+            if cand.kind != "confident":
+                continue
+            cand_boundaries, cand_clean = _confident_reach(table, offset, cand, _WIDTH_LOOKAHEAD)
+            if not cand_clean:
+                continue
+            if not wide_clean or (cand_boundaries & wide_targets):
+                table[offset] = cand
+                break
+
 
 def decode_all(data: bytes) -> dict:
     """offset -> Instruction for every even offset that decodes, excluding
-    the decode-trap forms in _NEVER_ALIGNED_FORMS (see the comment above)."""
+    the decode-trap forms in _NEVER_ALIGNED_FORMS (see the comment above),
+    then re-resolved by _prefer_confident_widths() wherever a narrower VISA
+    form also matches and is the better-supported reading."""
     table = {}
     for offset in range(0, len(data) - 1, 2):
         insn = next(disassemble(data, offset, count=1), None)
@@ -242,6 +352,7 @@ def decode_all(data: bytes) -> dict:
             and insn.type_name not in _NEVER_ALIGNED_FORMS
         ):
             table[offset] = insn
+    _prefer_confident_widths(data, table)
     return table
 
 

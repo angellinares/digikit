@@ -116,5 +116,61 @@ class NeverAlignedFormsTest(unittest.TestCase):
         self.assertEqual(table[6].type_name, '17a')
 
 
+class WidthPreferenceTest(unittest.TestCase):
+    """tools/sharc_isa.py's select_frame() ranks matching forms by leading
+    fixed bits, so Type2b (32-bit, 9 leading fixed bits, all inside word0)
+    always outranks Type2c (16-bit, 4 fixed bits) on any word0 whose top 9
+    bits happen to fit both -- even though Type2b's word1 is entirely free
+    (its mask never touches it), so it "matches" no matter what comes next.
+    This is DT2 1.16 sw 0x1c4b99 and sw 0x1c4e10 (see sharcimm.py's
+    _WIDTH_LOOKAHEAD comment): decode_all() must prefer Type2c whenever
+    Type2b's own successor chain breaks down, or a Type2c-led reading
+    independently walks back onto one of Type2b's own successor offsets.
+    Built from tools/sharc_visa_tables.py's public field layout only (never
+    from firmware bytes)."""
+
+    def test_broken_successor_prefers_narrower_form(self):
+        # word0 = Type2c with an all-zero compute field, which happens to
+        # also satisfy Type2b's mask (0xC000's top 9 bits are 0b110000000).
+        word0 = encode('2c', 0)
+        naive = next(sharc_disasm.disassemble(word0 + b'\x00' * 24, 0, count=1))
+        self.assertEqual(naive.type_name, '2b')  # sanity: select_frame alone picks the wide form
+
+        # Landing on offset+4 with real code following only ever lines up
+        # with a full instruction's *middle*, so it decodes uncertain/unknown
+        # -- exactly the DT2 1.16 sw 0x1c4b99 break (there it was a
+        # _NEVER_ALIGNED_FORMS trap instead; either way the wide reading's
+        # own chain fails to stay confident).
+        filler = b''.join(insn17a(4 + (i % 8), 0x1000 + i) for i in range(12))
+        table = sharcimm.decode_all(word0 + filler)
+        self.assertEqual(table[0].type_name, '2c')
+        self.assertEqual(table[0].length_bytes, 2)
+        self.assertEqual(table[2].type_name, '17a')
+
+    def test_reconverging_successor_prefers_narrower_form(self):
+        # word1 = Type21c, a fully-fixed 16-bit form (all 16 bits pinned, no
+        # fields) that wins its own leading-fixed-bits tie outright, so
+        # reading word0+word1 as two 16-bit instructions is unambiguous on
+        # its own. It also happens to be exactly the free word1 Type2b's
+        # mask lets through, so the two readings consume the identical 4
+        # bytes and land on the identical successor offset -- proof Type2b's
+        # extra word added no information a 16-bit reading lacked (DT2 1.16
+        # sw 0x1c4e10: both widths kept decoding confidently for thousands
+        # of instructions afterwards, so a broken-successor check alone
+        # cannot tell them apart; only this reconvergence can).
+        word0 = encode('2c', 0)
+        word1 = struct.pack('<H', 1)
+        filler = b''.join(insn17a(4 + (i % 8), 0x2000 + i) for i in range(10))
+        data = word0 + word1 + filler
+
+        naive = next(sharc_disasm.disassemble(data, 0, count=1))
+        self.assertEqual((naive.type_name, naive.length_bytes), ('2b', 4))  # sanity
+
+        table = sharcimm.decode_all(data)
+        self.assertEqual(table[0].type_name, '2c')
+        self.assertEqual(table[0].length_bytes, 2)
+        self.assertEqual(table[2].type_name, '21c')
+
+
 if __name__ == '__main__':
     unittest.main()
