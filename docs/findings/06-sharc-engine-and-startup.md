@@ -2241,7 +2241,15 @@ workspace passed as `R4`: `FUN_1c642a` spills `R4` (`0x2412c8`) to
 `DM(I6 - 4)` at `0x1c6479`, reloads it at `0x1c6ad3` after the per-track
 loop, and forms `I5 = I4 + 0xdc64` (`0x1c6add`) and `I1 = I5 - 0x80`
 (`0x1c6bfe`), so the selector is `DM(0x2412c8 + 0xdbe4)`, read once per
-frame **[V]**; its writer and meaning are **[O]**. The stage C table at
+frame **[V]**. Its one resolved writer is `0x1c69f1` in `FUN_1c642a`
+(Type15a `DM(I1 - 0x104) = R9`; with an I register, 15a's 32-bit field is
+an offset, not an absolute address), which lies on every static path from
+the function entry and the per-track loop to `0x1c6c0f` **[V]**. The value
+is `R9 = DM(I0 - 57)` (`0x1c69e8`), a per-track field **[V]**; how `I1`
+reaches `0x24efb0` is **[O]**. No function reached from the RPC task root
+`0x1c3bf0` (91 functions) has a resolved store in the workspace
+`0x2412c8`-`0x2412c8 + 0x10000`; 61 of its stores have unresolved bases, and
+the two checked are not workspace stores **[D]**. The stage C table at
 `0x8055c874` holds `0x1c6eb7`, `0x1c6ea9` (in `FUN_1c642a`), then
 `0x1c7395`, `0x1c73b0`, `0x1c73cb`, `0x1c73e3`, `0x1c742a`, each in
 `FUN_1c71ec` just before the stage 4, stage 5, stage 6, `0x1ccd96` and
@@ -2258,7 +2266,9 @@ from boot: loader entry `0x1c1338` → `FUN_1c13e6` → jump at `0x1c147e` →
 in `FUN_1c2b24` (`0x1c30a0`, after `0x1c3083`, `0x1c3090`, `0x1c3099`),
 reads `0x252d78`, `0x252df8` and nearby tables and references no
 address in the output rings **[V]**. Who writes the 32 source words at
-`0x24ef2c` is **[O]**.
+`0x24ef2c` is **[O]**: they have resolved readers (`0x1c16a0` in
+`FUN_1c15e3`; `0x1c6c0b`, `0x1c6fc6`, `0x1c711a`, `0x1c7121` in
+`FUN_1c642a`) but no resolved writer **[V]**.
 
 Entries 2-6 of the stage C table point into
 `FUN_1c71ec`. DN2 1.11's matching function checks its stage A selector
