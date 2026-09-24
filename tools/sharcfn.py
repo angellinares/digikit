@@ -602,11 +602,51 @@ def _type14d_suffix(f, direction):
 
 
 def render_mem_direct(sw, f, kind):
-    """15a/14a/14d: direct DM/PM addressing. 14a/15a's "l" is the PRM's
-    (LW) "long word" modifier (a Ureg-pair access, PRM pp.382-383); 14d's
-    "l" is instead one of the BW/SW/BWSE/SWSE sub-word-width selectors
-    (see _type14d_suffix), so 14d needs its own rendering, not the plain
-    ", long" suffix."""
+    """14a/14d: direct (pure-absolute) DM/PM addressing. 14a's "l" is the
+    PRM's (LW) "long word" modifier (a Ureg-pair access, PRM pp.382-383);
+    14d's "l" is instead one of the BW/SW/BWSE/SWSE sub-word-width
+    selectors (see _type14d_suffix), so 14d needs its own rendering, not
+    the plain ", long" suffix.
+
+    Type15a is NOT another absolute form despite sharing this function's
+    DIRECT_MEM_FORMS grouping: SHARC+ Core Programming Reference
+    (out/refs/sharc-plus-prm) pp.387-390, Figure 15-3 "Type15a Instruction
+    Opcode" and its Syntax Summary (p.387) give "DM(<data32>,Ia) = Ureg" /
+    "PM(<data32>,Ic) = Ureg" (and the load-direction reverse) -- an
+    I-register-relative access, not an absolute one; the Description
+    (p.388) is explicit: "The I register is pre-modified with an immediate
+    value specified in the instruction. The I register is not updated."
+    The worked example (p.389), "DM(24,I5)=TCOUNT;", shows that <data32>
+    raw and unscaled, the same convention this file's 4a/15b renderer
+    already uses for its own (much narrower) immediate field -- see
+    _fmt_index_offset(); tools/sharc_trace.py's own "15a" handler applies a
+    x4 byte-space scale to this same field only for its internal 32-bit-
+    normal-word address *arithmetic*, not for display, and its module
+    comment gives the identical frame slot rendered by a Type4a as
+    "DM(I6-4)" (raw, unscaled) alongside the Type15a re-read of the same
+    slot as data32 0xfffffffc (also -4, raw, unscaled) -- so a matching
+    disassembler rendering keeps the raw signed value too. Bank selection
+    (g=1 -> DAG2/PM, I8-I15) is computed exactly as that same tracer
+    handler does: index = i[2:0] + (8 if g else 0) (PRM opcode table
+    p.387: g=0 -> dm/I1REG i.e. DAG1, g=1 -> pm/I2REG i.e. DAG2)."""
+    if kind == "15a":
+        bank = 8 if f.get("g") else 0
+        index = (f.get("i", 0) & 0x7) + bank
+        off = sign_extend(f.get("addr", 0) & 0xFFFFFFFF, 32)
+        ureg = f.get("ureg")
+        dreg = f.get("dreg")
+        reg = (
+            ureg_name(ureg)
+            if ureg is not None
+            else ("R%d" % dreg if dreg is not None else "?")
+        )
+        space, direction = _space_dir(f)
+        suffix = ", long" if f.get("l") else ""
+        addr = _fmt_index_offset_hex(index, off)
+        if direction == "store":
+            return "%s(%s) = %s%s" % (space, addr, reg, suffix), None, False
+        return "%s = %s(%s)%s" % (reg, space, addr, suffix), None, False
+
     addr = f.get("addr", 0)
     ureg = f.get("ureg")
     dreg = f.get("dreg")
@@ -665,6 +705,13 @@ _IMMOFF_DATA_BITS = {"4a": 6, "4b": 6, "4d": 6, "15b": 7}
 def _fmt_index_offset(i: int, off: int) -> str:
     """'I%d + %d' / 'I%d - %d' for a signed I-register displacement."""
     return "I%d %s %d" % (i, "-" if off < 0 else "+", abs(off))
+
+
+def _fmt_index_offset_hex(i: int, off: int) -> str:
+    """'I%d + 0x%x' / 'I%d - 0x%x': same shape as _fmt_index_offset() for a
+    wide (32-bit) signed I-register displacement (Type15a's <data32>), where
+    hex reads better than decimal."""
+    return "I%d %s 0x%x" % (i, "-" if off < 0 else "+", abs(off))
 
 
 def render_mem_immoff(sw, f, insn_type):
@@ -971,7 +1018,12 @@ def render_instruction(
 
     if t in DIRECT_MEM_FORMS:
         text, addr, _ = render_mem_direct(sw, f, t)
-        literal_note(addr, False)
+        # Type15a's "addr" is an I-register-relative displacement (see
+        # render_mem_direct's docstring), not an absolute address -- unlike
+        # 14a/14d, it has nothing for literal_note's absolute-address
+        # annotation (named-region lookup, float-literal check) to key on.
+        if t != "15a":
+            literal_note(addr, False)
         if compute_text:
             text = compute_text + "; " + text
         return text, notes, gap

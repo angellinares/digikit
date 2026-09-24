@@ -501,6 +501,24 @@ class ImmediateOffsetSignednessTest(unittest.TestCase):
         )
         self.assertIn("R3 = DM(I6 - 1)", mnemonic)
 
+    def test_15a_data32_is_an_i_register_relative_offset_not_absolute(self):
+        # DT2 1.16 sw 0x1c69f1, raw a309ffffffbf (g=0, i=1, d=1, l=0,
+        # ureg=9/R9, addr=0xffffffbf): a previous version of
+        # render_mem_direct() grouped Type15a with the pure-absolute
+        # 14a/14d forms and rendered this "DM(0xffffffbf) = R9", dropping
+        # the I1 register entirely. PRM (out/refs/sharc-plus-prm) p.387's
+        # Syntax Summary ("DM(<data32>,Ia) = Ureg") and p.388's Description
+        # ("The I register is pre-modified with an immediate value...") say
+        # this is I-register-relative: addr=0xffffffbf as a signed 32-bit
+        # data32 is -0x41 (-65), so the correct rendering is "DM(I1 -
+        # 0x41)", the same signed-offset style _fmt_index_offset() already
+        # uses for Type4a/15b's own (narrower) immediate.
+        mnemonic = self.render(
+            "15a", g=0, i=1, d=1, l=0, ureg=9, addr=0xFFFFFFBF
+        )
+        self.assertIn("DM(I1 - 0x41) = R9", mnemonic)
+        self.assertNotIn("DM(0xffffffbf)", mnemonic)
+
 
 class CondPrefixRenderingTest(unittest.TestCase):
     """render_instruction()'s IF-condition rendering: PGR Table 10-4
