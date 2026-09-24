@@ -108,6 +108,7 @@ class Image:
         self.db_path = db_path
         self.blob_path = blob_path
         self.db = sqlite3.connect(db_path)
+        self.meta = dict(self.db.execute("SELECT key, value FROM meta WHERE image=?", (name,)).fetchall())
         self._mem_cache = None
         self._succ_cache = None
 
@@ -286,16 +287,24 @@ class Image:
             self._mem_cache = sharcldr.LoadedMemory.from_stream(data, blocks)
         return self._mem_cache
 
-    def trace(self, start, max_steps=100, max_states=32, pokes=None, **regs):
+    def trace(self, start, max_steps=100, max_states=32, pokes=None, provisional_forms=(), **regs):
         """tools/sharc_trace.py's trace(), in-process against this image's
         loaded memory: firmware DAG-modify constants seeded by default
         (override any of them, or add more, via **regs), concrete memory
-        and 32-bit-normal-word addressing on by default."""
+        and 32-bit-normal-word addressing on by default. provisional_forms
+        is passed straight through (e.g. ("14d",) to trace through Type14d).
+        Raises NotImplementedError for a ColdFire image (see sharc.load's
+        module docstring): sharc_trace only symbolically executes SHARC+."""
+        if self.meta.get("cpu") == "coldfire":
+            raise NotImplementedError(
+                "Image.trace(): %r is a ColdFire image; sharc_trace only symbolically "
+                "executes SHARC+ code, not m68k/ColdFire" % self.name
+            )
         sets = dict(_DEFAULT_TRACE_REGS)
         sets.update(regs)
         return sharc_trace.trace(
             self._mem(), None, start, sets, max_steps, max_states,
-            concrete_memory=True, assume_nw32=True, pokes=pokes,
+            concrete_memory=True, assume_nw32=True, pokes=pokes, provisional_forms=provisional_forms,
         )
 
 

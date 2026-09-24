@@ -40,6 +40,7 @@ DT2_116_BLOB = pathlib.Path("out/sections/dt2-1.16/section_7_BLOB.bin")
 DT2_116_SHA256 = "0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2"
 DN2_111_BLOB = pathlib.Path("out/sections/dn2-1.11/section_7_BLOB.bin")
 DN2_111_SHA256 = "336e340aa0cdcd34e314cfa44849f709a3134f6bd4cd57dfc7e15702c83115e2"
+DT2_116_GHIDRA_DUMP = pathlib.Path("out/ghidra/dt2-1.16-emac")
 
 
 def insn_at(data, offset=0):
@@ -859,6 +860,52 @@ class SharcApiGoldenFactsTest(unittest.TestCase):
     def test_dn2_stage6_matches_dt2(self):
         matches = self.dt2.match(self.dn2, 0x1CBF07)
         self.assertIn(0xB806F5, {int(m["entry_sw"], 16) for m in matches})
+
+
+@pytest.mark.slow
+@unittest.skipUnless(DT2_116_GHIDRA_DUMP.exists(), "DT2 1.16 ColdFire Ghidra dump is not available")
+class ColdfireImportTest(unittest.TestCase):
+    """The task's ColdFire golden facts, through tools/sharc.py's own API
+    against a real import-ghidra build: vector-191 calls the DSPI2 frame
+    builder, that builder has exactly two callers, the machine-type-copy
+    callers are found, the machine dispatch is inside its real (small)
+    function and that function is reachable from a root, and trace() refuses
+    a ColdFire image (see sharcdb.py's DB_VERSION comment for the schema
+    mapping this exercises)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out_path = "out/sharcdb/dt2-1.16-cf.sqlite"
+        sharcdb.build_ghidra_database(str(DT2_116_GHIDRA_DUMP), cls.out_path, name="dt2-1.16-cf")
+        cls.img = sharc.load("dt2-1.16-cf", db_dir="out/sharcdb")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.img.close()
+
+    def test_1_vector_191_handler_calls_the_dspi2_frame_builder(self):
+        fn = self.img.func(0x4002DD74)
+        self.assertEqual(fn["entry_sw"], "0x4002dd0c")
+        self.assertIn("0x400cd2bc", self.img.callees(0x4002DD0C))
+
+    def test_2_dspi2_frame_builder_has_exactly_two_callers(self):
+        callers = {c["from_sw"] for c in self.img.callers(0x400CD2BC)}
+        self.assertEqual(callers, {"0x4002dd74", "0x400ceccc"})
+
+    def test_3_machine_type_copy_has_callers(self):
+        self.assertTrue(self.img.callers(0x4002D438))
+
+    def test_4_machine_dispatch_is_inside_its_real_function_and_reachable(self):
+        fn = self.img.func(0x400CAF48)
+        self.assertEqual(fn["entry_sw"], "0x400cae8c")
+        reached = self.img.sql(
+            "SELECT COUNT(*) FROM reach WHERE image='dt2-1.16-cf' AND function_sw=0x400cae8c"
+        )
+        self.assertGreater(reached[0][0], 0)
+
+    def test_5_trace_refuses_a_coldfire_image(self):
+        with self.assertRaises(NotImplementedError):
+            self.img.trace(0x4002DD0C)
 
 
 if __name__ == "__main__":

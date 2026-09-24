@@ -61,6 +61,7 @@ import collections
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -79,11 +80,88 @@ import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
 
-DB_VERSION = 3
+DB_VERSION = 4
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
 # the right thing on the next run.
+#
+# --- ColdFire images (import_ghidra) -----------------------------------------
+#
+# build_ghidra_database() fills this SAME schema from a tools/ghidradump.py
+# dump directory (manifest.json/xrefs.sqlite/disasm/decomp) instead of
+# decoding a SHARC+ blob, so every image -- SHARC or ColdFire -- is one
+# `sharcdb.load()`/`sharc.py` API. meta.cpu is 'sharc' or 'coldfire';
+# sharc.Image.trace() checks it and raises for a ColdFire image (no SHARC
+# symbolic tracer for m68k). Column mapping, one column at a time:
+#   - insn.sw / functions.entry_sw,end_sw / edges.from_sw,to_sw / dataref.sw:
+#     the ColdFire BYTE address (there is no "short word" unit on this CPU;
+#     the column is reused as-is rather than adding a parallel `addr` column
+#     everywhere it's already keyed on `sw`).
+#   - insn.raw: hex bytes exactly as tools/ghidradump.py's disasm_line() wrote
+#     them (concatenated 16-bit words, no spaces); insn.mnemonic: its
+#     rendered text (Ghidra's CodeUnitFormat string, not ours); insn.block,
+#     .form, .fields, .cond, .confidence: NULL (no per-instruction decode of
+#     our own to fill them). insn.aligned is always 1 (Ghidra has already
+#     disassembled every byte; there is no sweep/depth ambiguity to record).
+#   - functions.block/.label/.entry_kind: NULL (no loader block, no SHARC
+#     label pass); functions.has_static_caller/.is_leaf: from the `edges`
+#     this same import wrote (any incoming/outgoing call edge), same
+#     definition as the SHARC build.
+#   - edges: one row per tools/ghidradump.py `calls` row (already function-
+#     level: a plain intra-function jump is dropped by that tool's own
+#     collect(), never a reference at all). kind is the Ghidra reference type
+#     with its UNCONDITIONAL_/COMPUTED_ prefix stripped down to this schema's
+#     call/jump/cond_jump vocabulary (COMPUTED_* rounds down to the same kind
+#     as its unconditional counterpart -- Ghidra had already resolved the
+#     target, so there is no "unknown target" left the way SHARC's own
+#     'indirect' kind means); the ORIGINAL Ghidra kind string (e.g.
+#     "COMPUTED_CALL") is kept in `note` so that distinction isn't lost.
+#     `fallthrough`/`return`/`indirect` never appear: a Ghidra dump has no
+#     basic-block CFG to derive them from (see `bblocks`/`succ` below).
+#   - dataref: one row per tools/ghidradump.py `data_refs` row; value=to_addr,
+#     sw=site, form='ghidra', role=the Ghidra kind lowercased
+#     (read/write/read_write/data) -- not a SHARC form label (14a/17a/...),
+#     since nothing here decoded the instruction that owns it.
+#   - decomp(image, function_sw, c): decompiled C read verbatim from
+#     tools/ghidradump.py's own decomp/*.c (empty for a SHARC image, which
+#     has no decompiler in this pipeline: Ghidra-only table, PK (image,
+#     function_sw)).
+#   - blocks, literals, mem_access, regdef, reguse, func_hash, bblocks, succ,
+#     idom, loops: left EMPTY for a ColdFire image -- known gaps, not
+#     silently-wrong data:
+#       * blocks: Ghidra's own memory blocks (ram/MCF5441X_* MMIO regions)
+#         don't fit this table's loader-block shape (idx/target_address/
+#         byte_count); query xrefs.sqlite's own `blocks` table instead.
+#       * literals/mem_access/regdef/reguse: instruction-decode facts this
+#         import never computes (no re-disassembly of the ColdFire bytes;
+#         Ghidra's own P-code has the same information but importing it is
+#         future work, not done here).
+#       * func_hash: relocation-tolerant hashing needs a decoder's own field
+#         layout (SHARC's mask_relocatable); no ColdFire equivalent here, so
+#         no cross-image function matching for ColdFire images yet.
+#       * bblocks/succ/idom/loops: NO per-instruction CFG survives a Ghidra
+#         dump at all -- tools/ghidradump.py's collect() only records a
+#         reference that is a CALL or a JUMP to a DIFFERENT function's entry
+#         (see its build_rows()); an ordinary intra-function branch is never
+#         turned into a reference, so this import cannot reconstruct basic
+#         blocks, successors, dominators or loops. `functions`/`edges`
+#         (function-level call graph) are still complete; analyze_image()'s
+#         idom/loop pass simply sees no bblocks rows for this image and
+#         produces no rows for it either (not an error).
+#   - roots: the SHARC-only detectors (loader_entry, code_pointer_array,
+#     rtos_task) are already gated on `mem`/`blocks`/the `literals` table,
+#     which build_ghidra_database() never supplies, so they emit nothing for
+#     a ColdFire image without a separate code path. dataref_code_pointer and
+#     no_static_entry are already CPU-generic (pure SQL over
+#     dataref/edges/functions) and fire the same way for both CPUs. The one
+#     ColdFire-specific ADDITION is `vector_entry`: any function whose Ghidra
+#     name matches `vector_<N>_handler` (an exception/interrupt vector table
+#     entry Ghidra already named) -- a SHARC function is always named
+#     FUN_%06x, so this pattern never matches there either, and needed no
+#     cpu flag threaded through _detect_roots.
+#   - reach/callgraph: fully reused (they only read edges/functions, both
+#     CPU-generic tables).
 
 # --- known per-image code-block selections ----------------------------------
 #
@@ -147,6 +225,11 @@ CREATE TABLE mem_access (
 CREATE TABLE func_hash (
     image TEXT, entry_sw INTEGER, exact_hash TEXT, reloc_hash TEXT, n_insns INTEGER, byte_len INTEGER,
     PRIMARY KEY (image, entry_sw));
+
+-- Decompiled C per function, verbatim from tools/ghidradump.py's decomp/*.c
+-- (see the DB_VERSION comment's ColdFire-images section above). Empty for a
+-- SHARC image -- no decompiler in this pipeline.
+CREATE TABLE decomp (image TEXT, function_sw INTEGER, c TEXT, PRIMARY KEY (image, function_sw));
 
 -- Basic blocks: a maximal straight-line run of aligned instructions, ended
 -- by any branch/call/return/indirect site (after its delay slots, when
@@ -245,7 +328,9 @@ CREATE INDEX reguse_sw ON reguse(image, sw);
 -- consecutive in-code-pointer run found at an i_reg_base table address --
 -- note carries the table base and index), no_static_entry (a function with
 -- no edges of any kind pointing at its entry -- the same set `unentered`
--- clusters).
+-- clusters), vector_entry (ColdFire only: a function Ghidra itself named
+-- vector_<N>_handler -- an exception/interrupt vector table entry; note
+-- carries that name).
 CREATE TABLE roots (image TEXT, sw INTEGER, kind TEXT, note TEXT);
 CREATE INDEX roots_image ON roots(image);
 
@@ -972,6 +1057,7 @@ def _fill_database(db, name, sha, blob_path, code_blocks, min_depth, ctx):
         (name, "db_version", str(DB_VERSION)),
         (name, "tool_commit", git_commit() or ""),
         (name, "build_time", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
+        (name, "cpu", "sharc"),
         (name, "blob_path", os.path.abspath(blob_path)),
         (name, "min_depth", str(min_depth)),
         (name, "blocks", json.dumps(list(code_blocks))),
@@ -1384,6 +1470,16 @@ def _detect_roots(db, name, mem, blocks):
     ).fetchall():
         roots.append((entry, "no_static_entry", None))
 
+    # ColdFire vector table entries: Ghidra itself named these
+    # vector_<N>_handler (see build_ghidra_database); a SHARC function is
+    # always named FUN_%06x, so this never matches a SHARC image either --
+    # no cpu flag needed here.
+    for entry, fn_name in db.execute(
+        r"SELECT entry_sw, name FROM functions WHERE image=? AND name LIKE 'vector\_%\_handler' ESCAPE '\'",
+        (name,),
+    ).fetchall():
+        roots.append((entry, "vector_entry", fn_name))
+
     return roots
 
 
@@ -1662,6 +1758,212 @@ def build_database(blob_path, out_path, name=None, min_depth=8, blocks=None, for
     }
 
 
+# --- ColdFire import from a tools/ghidradump.py dump -------------------------
+#
+# See the DB_VERSION comment above for the full column-by-column schema
+# mapping and the tables this deliberately leaves empty.
+
+_GHIDRA_CALL_KIND = {
+    "UNCONDITIONAL_CALL": "call",
+    "COMPUTED_CALL": "call",
+    "UNCONDITIONAL_JUMP": "jump",
+    "COMPUTED_JUMP": "jump",
+    "CONDITIONAL_JUMP": "cond_jump",
+}
+
+_GHIDRA_DATAREF_ROLE = {
+    "READ": "read", "WRITE": "write", "READ_WRITE": "read_write", "DATA": "data",
+}
+
+_DISASM_LINE = re.compile(r"^[0-9a-f]{8}  ")
+
+
+def _parse_disasm_insns(path):
+    """[(sw, raw_hex, mnemonic), ...] from one tools/ghidradump.py
+    disasm/*.s file, in file order -- see that file's disasm_line()'s own
+    '%08x  %-24s  %s' format (address, space-joined 16-bit words, rendered
+    text). A comment (';...') or label ('name:') line doesn't start with 8
+    hex digits and two spaces and is skipped."""
+    rows = []
+    with open(path) as f:
+        for line in f:
+            if not _DISASM_LINE.match(line):
+                continue
+            parts = re.split(r" {2,}", line.rstrip("\n"), maxsplit=2)
+            if len(parts) != 3:
+                continue
+            addr_hex, words, text = parts
+            rows.append((int(addr_hex, 16), words.replace(" ", ""), text))
+    return rows
+
+
+def _fill_ghidra_database(db, name, sha, dump_dir, manifest, functions, ranges, calls, data_refs):
+    meta_rows = [
+        (name, "image", name),
+        (name, "image_sha256", sha),
+        (name, "db_version", str(DB_VERSION)),
+        (name, "tool_commit", git_commit() or ""),
+        (name, "build_time", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
+        (name, "cpu", "coldfire"),
+        (name, "ghidra_dump_dir", os.path.abspath(dump_dir)),
+        (name, "ghidra_project", manifest.get("project") or ""),
+        (name, "ghidra_program", manifest.get("program") or ""),
+        (name, "language", manifest.get("language") or ""),
+    ]
+    db.executemany("INSERT INTO meta VALUES (?,?,?)", meta_rows)
+
+    callers = collections.defaultdict(set)
+    callees = collections.defaultdict(set)
+    edge_rows = []
+    for from_fn, to_fn, to_addr, site, kind in calls:
+        if to_fn is not None:
+            callees[from_fn].add(to_fn)
+            callers[to_fn].add(from_fn)
+        edge_rows.append((name, site, to_addr, _GHIDRA_CALL_KIND.get(kind, "jump"), None, None,
+                          from_fn, to_fn, kind))
+
+    dataref_rows = [
+        (name, to_addr, site, "ghidra", _GHIDRA_DATAREF_ROLE.get(kind, kind.lower()))
+        for site, _func, to_addr, kind in data_refs
+    ]
+
+    func_rows, insn_rows, decomp_rows = [], [], []
+    for entry, fname, size, decomp_path, disasm_path in functions:
+        # A Ghidra function's body can be several disjoint ranges (a switch
+        # whose case bodies live far from the entry, seen on ~130 functions
+        # in dt2-1.16-emac -- e.g. ParameterSet::vfunc_23 spans entry..entry
+        # +141 plus a dozen scattered chunks up near 0x400e2258). functions.
+        # end_sw only covers the ENTRY's own contiguous range (the one whose
+        # lo == entry), not every scattered chunk: using max(hi) across all
+        # ranges instead made func()'s [entry_sw, end_sw) span swallow
+        # unrelated code in between -- confirmed by hand on 0x400caf48, which
+        # sits inside its own small FUN_400cae8c, not inside vfunc_23's
+        # bogus multi-megabyte span. A scattered function's other chunks are
+        # simply not covered by any functions row here (func() on an address
+        # in one of them returns None or, if another function's own entry
+        # range happens to include it, that other function -- never this
+        # one); their instructions are still in `insn` (grouped by disasm
+        # file, i.e. by owning function, not by this span).
+        spans = ranges.get(entry) or [(entry, entry + max(size, 1) - 1)]
+        entry_span = next((hi for lo, hi in spans if lo == entry), max(hi for _lo, hi in spans))
+        end_sw = entry_span + 1
+        insns = _parse_disasm_insns(os.path.join(dump_dir, disasm_path)) if disasm_path else []
+        for sw, raw_hex, mnemonic in insns:
+            insn_rows.append((name, sw, None, len(raw_hex) // 2, raw_hex, None, None, None,
+                              mnemonic, 1, None, entry))
+        func_rows.append((
+            name, entry, end_sw, len(insns), None, fname,
+            int(bool(callers.get(entry))), int(not callees.get(entry)), None, None,
+        ))
+        if decomp_path:
+            full = os.path.join(dump_dir, decomp_path)
+            if os.path.exists(full):
+                with open(full) as f:
+                    decomp_rows.append((name, entry, f.read()))
+
+    db.executemany("INSERT INTO functions VALUES (?,?,?,?,?,?,?,?,?,?)", func_rows)
+    db.executemany("INSERT INTO insn VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", insn_rows)
+    db.executemany("INSERT INTO edges VALUES (?,?,?,?,?,?,?,?,?)", edge_rows)
+    db.executemany("INSERT INTO dataref VALUES (?,?,?,?,?)", dataref_rows)
+    db.executemany("INSERT INTO decomp VALUES (?,?,?)", decomp_rows)
+
+    return {
+        "n_functions": len(func_rows), "n_insn": len(insn_rows), "n_edges": len(edge_rows),
+        "n_dataref": len(dataref_rows), "n_decomp": len(decomp_rows),
+    }
+
+
+def build_ghidra_database(dump_dir, out_path, name=None, force=False):
+    """Import a tools/ghidradump.py dump directory (manifest.json, xrefs.sqlite,
+    disasm/, decomp/) into the same sharcdb schema as build_database(), for
+    a ColdFire image. Returns a stats dict; see the DB_VERSION comment for
+    the exact column mapping and the tables this leaves empty."""
+    t0 = time.time()
+    manifest_path = os.path.join(dump_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        raise SystemExit("sharcdb import-ghidra: no manifest.json in %s" % dump_dir)
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    if not manifest.get("complete"):
+        raise SystemExit("sharcdb import-ghidra: %s is not a complete dump (manifest 'complete' is false)" % dump_dir)
+    sha = manifest.get("image_sha256")
+    if not sha:
+        raise SystemExit("sharcdb import-ghidra: %s has no image_sha256 in its manifest" % dump_dir)
+    if name is None:
+        name = os.path.basename(os.path.normpath(dump_dir))
+
+    if not force and os.path.exists(out_path):
+        existing = read_meta(out_path)
+        if existing.get("image_sha256") == sha and existing.get("db_version") == str(DB_VERSION):
+            return {
+                "name": name, "path": out_path, "skipped": True,
+                "seconds": time.time() - t0, "size": os.path.getsize(out_path),
+            }
+
+    xrefs_path = os.path.join(dump_dir, "xrefs.sqlite")
+    src = sqlite3.connect(xrefs_path)
+    try:
+        functions = src.execute(
+            "SELECT entry, name, size, decomp, disasm FROM functions ORDER BY entry"
+        ).fetchall()
+        ranges = collections.defaultdict(list)
+        for func, lo, hi in src.execute("SELECT func, lo, hi FROM function_ranges"):
+            ranges[func].append((lo, hi))
+        calls = src.execute("SELECT from_func, to_func, to_addr, site, kind FROM calls").fetchall()
+        data_refs = src.execute("SELECT site, func, to_addr, kind FROM data_refs").fetchall()
+    finally:
+        src.close()
+
+    out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
+    os.makedirs(out_dir, exist_ok=True)
+    tmp_path = os.path.join(
+        out_dir, ".%s.tmp-%d-%d" % (os.path.basename(out_path), os.getpid(), int(time.time() * 1e6))
+    )
+    try:
+        db = open_db(tmp_path)
+        try:
+            counts = _fill_ghidra_database(db, name, sha, dump_dir, manifest, functions, ranges, calls, data_refs)
+            counts["analyze"] = analyze_image(db, name, mem=None, blocks=None)
+            db.commit()
+        finally:
+            db.close()
+        os.replace(tmp_path, out_path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
+    return {
+        "name": name, "path": out_path, "skipped": False,
+        "seconds": time.time() - t0, "size": os.path.getsize(out_path), **counts,
+    }
+
+
+def cmd_import_ghidra(args):
+    name = args.name or os.path.basename(os.path.normpath(args.dump_dir))
+    out = args.out or os.path.join(args.out_dir, name + ".sqlite")
+    try:
+        r = build_ghidra_database(args.dump_dir, out, name=name, force=args.force)
+    except SystemExit as exc:
+        print("FAILED  %s  %s" % (name, exc))
+        return 1
+    if r["skipped"]:
+        print("%-16s SKIPPED (up to date)  %s  %.1fs" % (r["name"], r["path"], r["seconds"]))
+        return 0
+    print(
+        "%-16s built  %s  %.1fs  %.1f KB  functions=%d insn=%d edges=%d dataref=%d decomp=%d"
+        % (r["name"], r["path"], r["seconds"], r["size"] / 1024, r["n_functions"], r["n_insn"],
+           r["n_edges"], r["n_dataref"], r["n_decomp"])
+    )
+    a = r.get("analyze") or {}
+    if a:
+        print(
+            "    analyze  %.1fs  roots=%d reach=%d callgraph=%d idom=%d loops=%d unentered=%d"
+            % (a["seconds"], a["n_roots"], a["n_reach"], a["n_callgraph"], a["n_idom"],
+               a["n_loops"], a["n_unentered"])
+        )
+    return 0
+
+
 def _build_one_cli(blob, out, name, min_depth, blocks, force):
     try:
         return build_database(blob, out, name=name, min_depth=min_depth, blocks=blocks, force=force)
@@ -1797,10 +2099,19 @@ def main(argv=None):
 
     a = sub.add_parser("analyze", help="re-run the roots/reach/callgraph/idom/loops/unentered pass")
     a.add_argument("dbs", nargs="+", help="out/sharcdb/<image>.sqlite path(s)")
+
+    g = sub.add_parser("import-ghidra", help="import a tools/ghidradump.py dump as a ColdFire image database")
+    g.add_argument("dump_dir", help="e.g. out/ghidra/dt2-1.16-emac")
+    g.add_argument("--name", help="image name; default is the dump directory's own name")
+    g.add_argument("--out", help="output .sqlite path (default: --out-dir/<name>.sqlite)")
+    g.add_argument("--out-dir", default="out/sharcdb")
+    g.add_argument("--force", action="store_true", help="rebuild even if sha256+DB_VERSION already match")
     args = ap.parse_args(argv)
 
     if args.cmd == "build":
         return cmd_build(args)
+    if args.cmd == "import-ghidra":
+        return cmd_import_ghidra(args)
     if args.cmd == "analyze":
         return cmd_analyze(args)
     return 1
