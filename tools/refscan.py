@@ -13,7 +13,12 @@ absolute addressing-mode operands (`$xxxxxxxx.l`/`.w`), immediate loads
 --min-value (default 0x10000) are dropped as noise (small immediates,
 displacements, SR masks, etc); `(An)`-style displacement operands are
 excluded by construction (a `$xx` immediately followed by `(` is a
-displacement, not an absolute address, and is skipped).
+displacement, not an absolute address, and is skipped) -- **except**
+PC-relative operands. `dt2.coldfire.disasm` already resolves those to
+the absolute target and prints it as `$400dd6a6(pc)`, so the value in
+front of `(pc` is an address, not a displacement, and is kept. GCC
+emits `lea %pc@(target),%aN` followed by `jsr %aN@` for calls in
+loops, so skipping these hides real callers entirely.
 
 This is a *static, no-semantics* scan. It cannot see an address that is
 computed (built in a register via arithmetic, e.g. a base + index*stride)
@@ -60,7 +65,12 @@ from dt2.coldfire import disasm  # noqa: E402
 
 # A bare "$hex" token not immediately followed by "(" -- that "(" case is a
 # displacement operand like "$14(a7)" or "-$14(a7)", not an absolute address.
-_TOKEN_RE = re.compile(r'\$([0-9A-Fa-f]+)(?!\()')
+# The one exception is "(pc": disasm() prints a PC-relative operand with its
+# target already resolved, so "$400dd6a6(pc), a4" names 0x400dd6a6 itself.
+# The token must also be taken whole: without (?![0-9A-Fa-f]) the regex backs
+# off to a shorter prefix when the lookahead fails, so "$14(a7)" yielded 0x1
+# and "$400dd6a6(a2)" yielded 0x400dd6a -- a false hit above --min-value.
+_TOKEN_RE = re.compile(r'\$([0-9A-Fa-f]+)(?![0-9A-Fa-f])(?!\((?!pc))')
 
 
 def extract_refs(ops, min_value):
