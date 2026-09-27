@@ -1682,6 +1682,31 @@ in which case reporting the card's real, larger capacity through
 at least `0x5EE180`+ sectors) would remove this bound entirely, without
 needing to touch `tools/plusdrive.py` or the mount code at all.
 
+**[C]: fixed, in a later session -- confirmed by execution, not just
+re-reading the decompile.** The re-test above was right that the dma_sem fix
+mattered, but the earlier "`SEC_COUNT=0x760000` hangs boot" hang was never
+actually the same bug: `SEC_COUNT`'s own second consumer this project had
+flagged as "not yet located" is `FUN_4012dca0` (found via `xrefs.sqlite`),
+which busy-waits on `PRSSTAT` bit `0x18` after issuing raw CMD6/SWITCH
+commands whenever EXT_CSD's `SLC_OK` byte isn't `1` -- a real hang risk this
+model doesn't implement, but only reachable, on the evidence gathered
+(`tools/refscan.py` over the whole image; see
+`docs/findings/14-plus-drive-format.md`'s new section), from the debug
+console, not the normal boot path. Separately, the CSD-1.0 fallback formula
+(the mechanism this project used for the *smaller* constant) turns out to
+have a genuine firmware arithmetic-shift-overflow bug for any capacity at
+or above 2 GiB, so it can never reach the larger constant either way --
+`SEC_COUNT` was always the only correct path there. `emu/esdhc.py` now sets
+`SEC_COUNT=0x00760000` and `SLC_OK=0` together
+(`emu.esdhc._CAPACITY_PARAMS`); a live cold boot confirms `DAT_44e3fea0`
+reads back `0x00760000` correctly, `FUN_4012dbe0` accepts it (`D0=0`), the
+superblock CMD18 at `0x5D8000` is issued and accepted, and **the mount flag
+`_DAT_44f2bd68` reads `1`** -- the first successful `FUN_4015a450` mount
+this project has observed. See `docs/findings/14-plus-drive-format.md`'s
+"The capacity bound fixed" section for the full trace. This does **not**
+reach "running" on its own -- see the branch-(C) section immediately below,
+which remains open and is a separate gap.
+
 ### Follow-up: branch (C) never hands vector 208 to the real display ISR; the six unconditional calls and `FUN_40032eaa` are not it **[V][O]**
 
 Read all six unconditional calls named above (`FUN_400c14dc`, `FUN_400f03e8`,
@@ -1797,6 +1822,17 @@ key press) to wake the display on this path, which would need reproducing
 against a real device to confirm. No emulator fix was applied this
 session; applying one without a verified root cause would not be
 trustworthy per this repo's own verification rule.
+
+**Re-tested, in a later session, now that +Drive's own mount succeeds
+(above): the gap is unchanged and clearly not caused by the mount stall.**
+A true cold boot with `--card-image out/plusdrive/dt2.img` (the same run
+that confirmed the mount fix) continued to 780M total instructions: zero
+new eSDHC traffic and zero new tasks created past `n≈260M`, `vec208` still
+`0x400d0668` (the intro's own ISR), and the boot task still parked at
+`0x400cccd8`. Since this run's `FUN_4015a450` genuinely mounts (mount flag
+`1`) where every earlier run in this section's history never did, this
+rules out "waiting on the +Drive mount" as a contributing explanation for
+branch (C)'s missing display-start -- the two are independent gaps.
 
 ## Opening the sample-pool list or the +Drive browser panics the UI task: a null `std::string` construction inside `SampleManager::vfunc_40`, not a resource cache **[V][C][O]**
 

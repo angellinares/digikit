@@ -144,14 +144,17 @@ DMA_CHAN = 59
 # earlier firmware build. The whitelist check (`FUN_4012da80`, reading this
 # same byte at its own second-EXT_CSD-read destination, `0x4FE69100` -- a
 # separate DMA than `EXTCSD_BUF` but the same underlying `Card.ext_csd`
-# bytes in this model) DOES read it, to choose between two capacity
-# constants a matched whitelist row carries; **do not** flip this byte to
-# satisfy that comparison by making `SEC_COUNT` (below) read as the row's
-# other, larger constant instead -- that was tried and hangs real
-# boots (see `SEC_COUNT`'s comment and docs/findings/14-plus-drive-format.md).
-# Left at its original value (1) so the whitelist check compares against the
-# matched row's *smaller* capacity constant, which `SEC_COUNT=0` (below) is
-# built to equal via the CSD fallback path instead.
+# bytes in this model) DOES read it, to choose which of the matched
+# whitelist row's own two literal capacity constants `DAT_44e3fea0` (the
+# capacity `FUN_4012d4b2` computes and `FUN_4012deda`/`FUN_4012e0c0` bound
+# every CMD18/CMD25 sector against) must equal: read directly from the row's
+# raw bytes at `0x402b4a24` (docs/findings/14), the row this model targets
+# carries `0x00760000` at its own offset 0x18 and `0x003B0000` at 0x1c, and
+# `FUN_4012da80`/`FUN_4012dbe0`'s disassembly shows `SLC_OK` byte `0`
+# selects 0x18 (the larger constant), `1` selects 0x1c (the smaller), and
+# any other byte value skips the compare entirely. `SLC_OK` and
+# `_CAPACITY_PARAMS` (below) must be changed together -- see there for which
+# constant this model targets and why.
 SLC_OK = 0x98
 # PARTITIONS_ATTRIBUTE was modeled as a single byte (=1); `FUN_4012dbe0`'s
 # eMMC-identity whitelist (docs/findings/14) actually reads a 3-byte
@@ -172,18 +175,90 @@ HS_TIMING = 0xB9                     # 185
 # CSD (not EXT_CSD) fields FUN_4012d4b2 reads from `_DAT_44e3fe84`/`fe88` --
 # a second CMD9/SEND_CSD copy of CMDRSP1/RSP2, the same shape as the CID copy
 # a few instructions earlier -- to compute a capacity when EXT_CSD's
-# SEC_COUNT reads as 0 (the standard CSD-1.0 C_SIZE/C_SIZE_MULT/READ_BL_LEN
-# formula, confirmed by reproducing FUN_4012d4b2's exact bit-shift sequence
-# in Python and matching its result). See `Card.csd`'s docstring for why
-# these specific field values were chosen.
+# SEC_COUNT reads as 0: the standard CSD-1.0 C_SIZE/C_SIZE_MULT/READ_BL_LEN
+# formula, confirmed by reproducing FUN_4012d4b2's exact bit-shift sequence in
+# Python and matching its result.
+#
+# **This formula cannot represent this model's larger target capacity
+# (0x00760000 sectors = 3,959,422,976 bytes)** -- confirmed live, not just by
+# reading the decompile. `FUN_4012d4b2`'s last step is `asr.l #9,D1`
+# (ARITHMETIC, not logical, shift) on the capacity-in-bytes value built up to
+# that point; for any encoding whose byte-capacity is >= 2^31 (2 GiB) -- true
+# here, since 3,959,422,976 > 2,147,483,648 -- that intermediate value's own
+# bit 31 is set, so the arithmetic shift sign-extends instead of shifting in
+# zeroes, corrupting the result. Verified by an instrumented live cold boot:
+# raising `_CSD_READ_BL_LEN` from 10 to 11 (the minimal change that makes the
+# *unsigned* arithmetic reach 0x00760000) made `DAT_44e3fea0` read back
+# `0xFFF60000`, not `0x00760000` -- exactly what sign-extending
+# -655360 (the byte-capacity's value once bit 31 is treated as the sign bit)
+# right by 9 produces. This is a real firmware limitation, not an emulator
+# bug: CSD-1.0's `C_SIZE`/`C_SIZE_MULT` addressing tops out well under 2 GiB
+# in the JEDEC spec too, which is exactly why EXT_CSD's `SEC_COUNT` exists
+# for larger cards. So the CSD-1.0 fallback stays fixed at the ORIGINAL,
+# verified-safe encoding (evaluates to 0x003B0000 sectors, comfortably under
+# the 2 GiB ceiling) regardless of which capacity `Card` targets; it is only
+# ever consulted when EXT_CSD's `SEC_COUNT` reads as 0 (see `ext_csd`).
 _CSD_C_SIZE = 3775
 _CSD_C_SIZE_MULT = 7
 _CSD_READ_BL_LEN = 10
 CSD_RSP1 = ((_CSD_C_SIZE & 0x3FF) << 22) | (_CSD_C_SIZE_MULT << 7)
 CSD_RSP2 = ((_CSD_READ_BL_LEN & 0xF) << 8) | ((_CSD_C_SIZE >> 10) & 3)
 
+# The eMMC-identity whitelist row this model targets (manufacturer 0x11,
+# product "004GE0") carries exactly two literal capacity constants, read
+# directly from the row's raw bytes at `0x402b4a24`
+# (docs/findings/14-plus-drive-format.md): `0x00760000` sectors at the row's
+# own offset 0x18, `0x003B0000` at 0x1c. `FUN_4012dbe0` requires
+# `DAT_44e3fea0` -- the capacity `FUN_4012d4b2` computes, from `SEC_COUNT` if
+# nonzero else the CSD-1.0 fallback above -- to equal whichever one `SLC_OK`
+# selects (byte 0 -> offset 0x18, byte 1 -> offset 0x1c). Since the CSD
+# fallback can only ever reach the smaller constant (see above), the larger
+# one has to come from `SEC_COUNT` directly -- a plain 32-bit big-endian
+# `move.l`, no shifting, so it carries none of the CSD path's overflow risk.
+# This table is deliberately the single place that picks `sec_count` (which
+# constant `DAT_44e3fea0` actually becomes) and `slc_ok` (which constant the
+# whitelist compares against) together, so they can't drift apart.
+#
+# `+Drive`'s own real filesystem lives at absolute sectors up to ~0x760000
+# (superblock at 0x5D8000, records from 0x5D8180, content from 0x5EE180),
+# past the smaller constant, so `_DEFAULT_CAPACITY_SECTORS` picks the larger
+# one -- this is also `tools/plusdrive.py`'s own default image size, so a
+# `Card.from_file()` load of a default-built image reports exactly the
+# capacity the whitelist demands.
+#
+# An EARLIER session tried packing `SEC_COUNT=0x00760000` (this same native
+# big-endian encoding) and saw a real cold boot hang outright, before
+# blaming an unidentified "other consumer" of these bytes and reverting to
+# the CSD fallback instead (which, at the time, nobody had yet proven could
+# only reach the smaller constant). `xrefs.sqlite` now names that consumer:
+# `FUN_4012dca0`, which re-reads these same 4 bytes (`DAT_4fe691d4`) and, on
+# `SLC_OK != 1`, issues its own raw CMD6/SWITCH sequence over the eSDHC MMIO
+# registers, busy-waiting on `PRSSTAT` bit 0x18 after each -- a real second
+# consumer, exactly as suspected, and one this model does not implement (no
+# code here ever sets that bit in response to a raw SWITCH command), so any
+# path that reaches it with `SLC_OK != 1` would spin forever. Both of
+# `FUN_4012dca0`'s own static callers are debug-console-only
+# (`FUN_400cae8c`, already the "resample raw PCM" console handler
+# docs/findings/14 names) or an indirect function-pointer reference with no
+# resolved static caller (`tools/refscan.py` over the whole image: the only
+# hits in `FUN_4012dca0`'s neighbour `FUN_4010a54e` are its own internal
+# branches and one address-load, not a call site) -- consistent with it not
+# being part of the normal boot path, and an instrumented live cold boot
+# with `SLC_OK=0` (this model's setting for the larger constant) never
+# entered `FUN_4012dca0` or its PRSSTAT-wait loop through Main-OS task
+# creation and well beyond. Not exhaustively proven unreachable from every
+# boot path (an indirect call through a function pointer this project hasn't
+# traced), so this remains **[O]** if a future run ever hangs spinning on
+# `PRSSTAT` bit 0x18 right after an eSDHC command -- the fix then is to
+# model that SWITCH/PRSSTAT sequence in `Esdhc`, not to change `SLC_OK` back.
+_CAPACITY_PARAMS = {
+    0x00760000: {"sec_count": 0x00760000, "slc_ok": 0},  # this model's default
+    0x003B0000: {"sec_count": 0, "slc_ok": 1},  # the previous default
+}
+_DEFAULT_CAPACITY_SECTORS = 0x00760000
 
-def ext_csd(sectors=0x00760000, slc=True):
+
+def ext_csd(sectors=_DEFAULT_CAPACITY_SECTORS, slc=True):
     """-> 512 bytes of EXT_CSD.
 
     Deliberately sparse: only the fields this firmware has been observed to
@@ -191,48 +266,38 @@ def ext_csd(sectors=0x00760000, slc=True):
     itself as a spin or a rejected card rather than hiding behind a plausible
     value.
 
-    `SEC_COUNT` is deliberately **not** set from `sectors` here -- it's left
-    0 unconditionally (an older/optional eMMC field some real chips also
-    leave unset), so `FUN_4012d4b2` takes its CSD-based capacity fallback
-    instead of comparing `sectors` against the eMMC-identity whitelist's
-    capacity constant. Two things forced this, both confirmed by execution,
-    not just by reading the decompile:
+    `sectors` must be one of `_CAPACITY_PARAMS`'s two keys -- the eMMC-
+    identity whitelist (`FUN_4012dbe0`, see `docs/findings/14`) only accepts
+    a capacity exactly equal to one of the matched row's two literal
+    constants, so anything else is a caller error, not a value to silently
+    round or ignore.
 
-    1. That whitelist comparison (`FUN_4012dbe0`, see `docs/findings/14`)
-       needs `sectors` to equal one of a matched row's two literal capacity
-       constants (`0x760000` or `0x3B0000` sectors for the row this model
-       targets) exactly, as a native big-endian 32-bit load of these 4
-       bytes -- not the JEDEC byte-serial little-endian order a real card
-       would use, and not this project's existing +Drive-image default
-       capacity (which needs the *larger* constant's magnitude, ruled out
-       next).
-    2. Packing `sectors=0x00760000` that way (to match the larger constant)
-       was tried and made a real cold boot **hang**: some other, not yet
-       located consumer reads these same 4 bytes and, given the ~30x larger
-       value that encoding produces there, spins for at least 500M
-       instructions with zero progress (bisected with
-       `emu.dspboot.run` directly -- reverting only this field's packing
-       removed the hang, confirming it, not the CID/other EXT_CSD fields
-       changed alongside it). Packed to equal the smaller constant
-       (`0x3B0000`) instead needs a 24-bit-deep bit-shift by a
-       manufactured `sectors` value with no obvious real-capacity meaning,
-       which felt like exactly the kind of "hides behind a plausible value"
-       shortcut this docstring already warns against -- so this model
-       leaves `SEC_COUNT` unset (0) and reports the same target capacity
-       through `Card.csd`'s real formula instead.
+    `SEC_COUNT` and `SLC_OK` are both set from `sectors`, via
+    `_CAPACITY_PARAMS` -- see its comment for why `SEC_COUNT` (not the CSD-1.0
+    fallback) is the only way to reach the larger constant, and why `SLC_OK`
+    has to move in lock-step with it.
 
     Nothing in this codebase enforces that this reported capacity match the
-    +Drive card image's real, larger size: `Card.blocks`/`data_for` use the
-    backing file's own length, never this field. (A separate, unrelated
-    emulator hang -- see docs/findings/14-plus-drive-format.md -- currently
-    stops a real boot from reaching `FUN_4015a450`'s own read of sector
-    `0x5D8000` to confirm this end to end; it isn't blocked by this field.)
+    +Drive card image's real size beyond the whitelist check itself:
+    `Card.blocks`/`data_for` use the backing file's own length, never this
+    field. `Card.from_file()` derives `capacity_blocks` from the file size,
+    so a `tools/plusdrive.py` image built with a non-default
+    `--capacity-blocks` other than these two values will fail the whitelist
+    with a clear `ValueError` here rather than booting into a silently
+    truncated card.
     """
-    del slc  # SLC_OK is a fixed literal now; see that constant's comment
-    del sectors  # SEC_COUNT is a fixed literal (0) now; see the docstring
+    del slc  # SLC_OK is derived from `sectors` now; see the docstring
+    if sectors not in _CAPACITY_PARAMS:
+        raise ValueError(
+            "capacity %#x isn't one of the eMMC-identity whitelist's two "
+            "capacity constants (0x760000, 0x3B0000 sectors) -- "
+            "FUN_4012dbe0 will reject anything else; see "
+            "emu.esdhc._CAPACITY_PARAMS" % sectors
+        )
+    params = _CAPACITY_PARAMS[sectors]
     b = bytearray(512)
-    b[SLC_OK] = 1
-    b[SEC_COUNT:SEC_COUNT + 4] = struct.pack('>I', 0)
+    b[SLC_OK] = params["slc_ok"]
+    b[SEC_COUNT:SEC_COUNT + 4] = struct.pack('>I', params["sec_count"])
     b[ERASE_GROUP_DEF] = 1
     b[BUS_WIDTH] = 1
     b[HS_TIMING] = 1
@@ -252,7 +317,8 @@ class Card:
     know this is an eMMC and not a card).
     """
 
-    def __init__(self, image=None, capacity_blocks=0x00760000, slc=True):
+    def __init__(self, image=None, capacity_blocks=_DEFAULT_CAPACITY_SECTORS,
+                 slc=True):
         self.image = image
         self.blocks = capacity_blocks
         self._image_file = None  # keeps the fd/mmap alive; see from_file()
@@ -281,15 +347,14 @@ class Card:
         # CSD, same [RSP0, RSP1, RSP2, RSP3] order and origin as CID (a
         # second CMD9/SEND_CSD copy of CMDRSP1/RSP2 into _DAT_44e3fe84/fe88,
         # a few instructions after the CID copy -- disassembly again, not
-        # the decompile). RSP1/RSP2 (`CSD_RSP1`/`CSD_RSP2`) encode a
-        # standard CSD-1.0 C_SIZE=3775/C_SIZE_MULT=7/READ_BL_LEN=10, chosen
-        # so `FUN_4012d4b2`'s capacity formula (reproduced exactly in
-        # `ext_csd`'s module-level constants) evaluates to 0x3B0000 sectors
-        # -- the eMMC-identity whitelist row this model targets carries that
-        # exact value as its "SLC_OK=1" capacity constant (see
-        # `SEC_COUNT`'s comment in `ext_csd` for why the *other*, larger
-        # constant isn't used instead). RSP0/RSP3 aren't read by that
-        # formula and are left 0.
+        # the decompile). RSP1/RSP2 (`CSD_RSP1`/`CSD_RSP2`) are fixed
+        # regardless of `capacity_blocks`: they only matter when EXT_CSD's
+        # `SEC_COUNT` reads as 0 (see `_CAPACITY_PARAMS`'s comment on why
+        # this CSD-1.0 fallback can only ever reach the smaller capacity
+        # constant, 0x3B0000, without corrupting `DAT_44e3fea0` via a real
+        # firmware arithmetic-shift overflow), and `ext_csd()` only leaves
+        # `SEC_COUNT` at 0 for that smaller constant. RSP0/RSP3 aren't read
+        # by that formula and are left 0.
         self.csd = [0x00000000, CSD_RSP1, CSD_RSP2, 0x00000000]
 
     @classmethod
@@ -297,10 +362,13 @@ class Card:
         """A card backed by a real +Drive image file (tools/plusdrive.py),
         read via mmap so the file's own size (not its content) never has to
         be loaded into RAM. capacity_blocks is derived from the file's size,
-        so an image built with a non-default --capacity-blocks still reports
-        the right EXT_CSD SEC_COUNT. The file is opened read-only here; all
-        writes during emulation go to the in-RAM overlay (see
-        checkpoint_state), and this file itself is never modified.
+        so an image built with `tools/plusdrive.py`'s default
+        `--capacity-blocks` (0x00760000) reports the capacity the
+        eMMC-identity whitelist actually demands (`ext_csd`/`_csd_rsp`); any
+        other size raises `ValueError` unless it happens to be the
+        whitelist's other constant (0x003B0000). The file is opened
+        read-only here; all writes during emulation go to the in-RAM overlay
+        (see checkpoint_state), and this file itself is never modified.
         """
         f = open(path, "rb")
         size = os.fstat(f.fileno()).st_size

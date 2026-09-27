@@ -261,5 +261,93 @@ class BuildWritesSuperblockTest(unittest.TestCase):
             self.assertIn(version, (3, 4))
 
 
+def _dat_44e3fea0(card):
+    """Reproduces FUN_4012d4b2's own capacity derivation: EXT_CSD's
+    SEC_COUNT (a plain native big-endian 32-bit field) if nonzero, else the
+    CSD-1.0 C_SIZE/C_SIZE_MULT/READ_BL_LEN fallback formula (same derivation
+    as tests/test_esdhc_identity.py's _csd_capacity_sectors) -- see
+    emu/esdhc.py's `_CAPACITY_PARAMS` comment for why only SEC_COUNT can
+    reach the larger of the eMMC-identity whitelist's two capacity
+    constants without corrupting the result via a real firmware
+    arithmetic-shift overflow."""
+    import struct
+
+    sec_count = struct.unpack_from(">I", card.ext_csd, 0xD4)[0]
+    if sec_count:
+        return sec_count
+    rsp1, rsp2 = card.csd[1], card.csd[2]
+    c_size = ((rsp2 & 3) << 10) | (rsp1 >> 22)
+    c_size_mult = (rsp1 >> 7) & 7
+    read_bl_len = (rsp2 >> 8) & 0xF
+    return ((c_size + 1) << (c_size_mult + 2) << read_bl_len) >> 9
+
+
+class CardCapacityCoversImageTest(unittest.TestCase):
+    """emu/esdhc.py's Card reports a capacity (via EXT_CSD's SEC_COUNT, or
+    the CSD-1.0 fallback formula for the smaller constant, gated through the
+    eMMC-identity whitelist's SLC_OK selection -- see that module's
+    docstrings) that becomes DAT_44e3fea0, the exact global
+    FUN_4012deda/FUN_4012e0c0 bound every CMD18/CMD25 sector against
+    (docs/findings/07-emulator.md's "Booting with an already-formatted card
+    stalls" section). If a built image's highest real sector fell outside
+    that reported capacity, the firmware would reject reads/writes to it --
+    the same failure this project spent a whole investigation on. This test
+    builds a real image and checks the two stay in lock-step, rather than
+    just asserting the two constants happen to match today."""
+
+    def test_default_build_capacity_matches_the_identity_whitelist(self):
+        import emu.esdhc as esdhc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            samples_dir = os.path.join(tmp, "samples")
+            os.makedirs(samples_dir)
+            with open(os.path.join(samples_dir, "hat.wav"), "wb") as f:
+                f.write(b"RIFF" + os.urandom(4096))
+            out_path = os.path.join(tmp, "dt2.img")
+            pd.build(samples_dir, out_path)
+
+            # The image is truncated to pd.DEFAULT_CAPACITY_BLOCKS sectors up
+            # front; if any region's writer pushed a real byte past that
+            # (Image.write() seeks+writes with no bound of its own), the file
+            # would have grown larger than declared -- past what the
+            # firmware's own capacity bound will ever let it read back.
+            size = os.path.getsize(out_path)
+            self.assertEqual(
+                size,
+                pd.DEFAULT_CAPACITY_BLOCKS * pd.SECTOR,
+                "the image grew past its declared capacity while building -- "
+                "some region wrote past sector %#x, which the real "
+                "firmware's capacity bound (DAT_44e3fea0) would then reject"
+                % pd.DEFAULT_CAPACITY_BLOCKS,
+            )
+
+            card = esdhc.Card.from_file(out_path)
+            self.assertEqual(card.blocks, pd.DEFAULT_CAPACITY_BLOCKS)
+            self.assertIn(
+                card.blocks,
+                esdhc._CAPACITY_PARAMS,
+                "this capacity isn't one of the eMMC-identity whitelist's "
+                "two literal constants -- FUN_4012dbe0 would reject it",
+            )
+
+            # Confirm this Card's ext_csd/csd fields actually make
+            # DAT_44e3fea0 equal the image's real size, not just that
+            # capacity_blocks looks right in isolation.
+            dat_44e3fea0 = _dat_44e3fea0(card)
+            self.assertEqual(dat_44e3fea0, card.blocks)
+            self.assertGreaterEqual(
+                dat_44e3fea0,
+                pd.CONTENT_AREA_SECTOR,
+                "DAT_44e3fea0 must cover at least the fixed region bases "
+                "+Drive's real filesystem uses",
+            )
+            # capacity_blocks sectors were carved out for the file (0 ..
+            # capacity_blocks-1); DAT_44e3fea0 rejects any sector >= itself
+            # (FUN_4012deda's bounds check), so equality here means every
+            # sector plusdrive.py could possibly have written is covered.
+            highest_possible_sector = size // pd.SECTOR - 1
+            self.assertGreater(dat_44e3fea0, highest_possible_sector)
+
+
 if __name__ == "__main__":
     unittest.main()

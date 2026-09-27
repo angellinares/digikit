@@ -30,12 +30,19 @@ _MAIN_IMG_BASE = 0x40000400
 FUN_4012dc80 = 0x4012DC80
 
 
-def _csd_capacity_sectors(card):
-    """Reproduces FUN_4012d4b2's CSD-1.0 capacity formula (C_SIZE from
-    csd[2]'s low 2 bits + csd[1]'s top 10 bits; C_SIZE_MULT and
-    READ_BL_LEN from csd[1]/csd[2] respectively), the same bit-shift
-    sequence emu/esdhc.py's CSD_RSP1/CSD_RSP2 comment cites -- this is what
-    `_DAT_44e3fea0` holds once EXT_CSD's SEC_COUNT reads as 0."""
+def _dat_44e3fea0(card):
+    """Reproduces FUN_4012d4b2's own capacity derivation, in order: EXT_CSD's
+    SEC_COUNT (a plain native big-endian 32-bit field at offset 0xD4) if
+    nonzero, else the CSD-1.0 C_SIZE/C_SIZE_MULT/READ_BL_LEN fallback formula
+    (C_SIZE from csd[2]'s low 2 bits + csd[1]'s top 10 bits; C_SIZE_MULT and
+    READ_BL_LEN from csd[1]/csd[2] respectively -- the same bit-shift
+    sequence emu/esdhc.py's CSD_RSP1/CSD_RSP2 comment cites). See that
+    module's `_CAPACITY_PARAMS` comment for why only SEC_COUNT can reach the
+    eMMC-identity whitelist's larger capacity constant without corrupting the
+    result via a real firmware arithmetic-shift overflow."""
+    sec_count = struct.unpack_from(">I", card.ext_csd, 0xD4)[0]
+    if sec_count:
+        return sec_count
     rsp1, rsp2 = card.csd[1], card.csd[2]
     c_size = ((rsp2 & 3) << 10) | (rsp1 >> 22)
     c_size_mult = (rsp1 >> 7) & 7
@@ -98,7 +105,7 @@ class EmmcIdentityWhitelistTest(unittest.TestCase):
         # literal, so this test tracks that module if its CSD constants
         # ever change instead of silently drifting from them.
         m.uc.mem_write(0x44E3FE7C, struct.pack(">I", 1))
-        m.uc.mem_write(0x44E3FEA0, struct.pack(">I", _csd_capacity_sectors(card)))
+        m.uc.mem_write(0x44E3FEA0, struct.pack(">I", _dat_44e3fea0(card)))
 
         return harness.call(m, FUN_4012dc80, [], limit=2_000_000)
 

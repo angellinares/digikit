@@ -494,6 +494,116 @@ the real format, not because mount depends on them. **[V]** for what reads
 them and where the values come from; **[O]** still for what the
 `FUN_4015ae12` scan's cached table is actually used for downstream.
 
+## The capacity bound fixed: `FUN_4015a450` genuinely mounts on a cold boot **[V][C]**
+
+`docs/findings/07-emulator.md`'s "Booting with an already-formatted card
+stalls" section pinned the remaining blocker down to `FUN_4012deda`'s bounds
+check against `DAT_44e3fea0` (`0x3B0000` sectors, chosen to satisfy the
+eMMC-identity whitelist), which rejects every sector `>= 0x3B0000` --
+including the +Drive superblock at `0x5D8000`. This session fixed it, and
+**corrects** that file's own closing paragraph: it is no longer true that
+"no card-image boot has ever mounted +Drive's real filesystem in this
+project".
+
+**The fix is not simply "increase the capacity constant".** The first
+attempt tried reaching `0x00760000` sectors (the whitelist's other literal
+constant, `tools/plusdrive.py`'s own default image size) through the CSD-1.0
+fallback formula `FUN_4012d4b2` already used for the smaller constant, by
+raising `READ_BL_LEN` from 10 to 11. This is wrong, confirmed by an
+instrumented live cold boot, not just by reading the decompile:
+`FUN_4012d4b2`'s last step is `asr.l #9,D1` (an ARITHMETIC, not logical,
+shift) on the capacity-in-bytes value built up to that point. `0x00760000`
+sectors is `3,959,422,976` bytes, which is `>= 2^31` -- so that
+intermediate value's own bit 31 is set, and the arithmetic shift
+sign-extends instead of shifting in zeroes. Live result: `DAT_44e3fea0` read
+back `0xFFF60000`, not `0x00760000` (exactly what sign-extending
+`-655,360`, the byte-capacity reinterpreted as negative, right by 9
+produces). **This is a real firmware limitation, not an emulator bug**:
+CSD-1.0's `C_SIZE`/`C_SIZE_MULT` addressing tops out well under 2 GiB in the
+real JEDEC spec too, which is exactly why EXT_CSD's `SEC_COUNT` field
+exists for larger cards -- consistent with real hardware, this firmware's
+CSD-1.0 fallback path simply cannot represent a capacity at or above 2 GiB.
+
+**The correct path is EXT_CSD's `SEC_COUNT` field**, which an earlier
+session had already tried and reverted, citing a real cold-boot hang
+attributed to "some other, not yet located consumer" of those same 4 bytes.
+`xrefs.sqlite` now names that consumer: `FUN_4012dca0`, a second,
+independent identity/capacity check (re-reads `_DAT_4fe691d4` itself, not
+just via `FUN_4012dc80`) that, whenever `SLC_OK` (EXT_CSD byte `0x98`) is
+anything other than `1`, issues its own raw CMD6/SWITCH sequence directly
+over the eSDHC MMIO registers and busy-waits on `PRSSTAT` bit `0x18` after
+each write -- a sequence this project's `Esdhc` model does not implement
+(nothing here ever sets that bit in response to a raw SWITCH command), so
+any boot path that reaches it with `SLC_OK != 1` would spin forever. Both of
+`FUN_4012dca0`'s own static callers are either debug-console-only
+(`FUN_400cae8c`, the same "resample raw PCM" console handler this file
+already names) or an indirect function-pointer reference with no resolved
+static call site (`FUN_4010a54e`; `tools/refscan.py` over the whole image
+found only internal branches and the address-load itself, no call
+instruction) -- consistent with `FUN_4012dca0` not being part of the normal
+boot path. An instrumented live cold boot with `SLC_OK=0` (required to
+select the whitelist row's larger capacity constant, see below) confirmed
+this directly: `FUN_4012dca0` and its `PRSSTAT`-wait loop were never
+entered through Main-OS task creation and hundreds of millions of
+instructions beyond it. **[O]**: not exhaustively proven unreachable from
+every boot path (an indirect call through a function pointer this project
+hasn't traced) -- if a future run ever hangs spinning on `PRSSTAT` bit
+`0x18` right after an eSDHC command, the fix is to model that SWITCH/
+`PRSSTAT` sequence in `Esdhc`, not to revert `SLC_OK`.
+
+`FUN_4012dbe0`'s own capacity compare (the eMMC-identity whitelist's third
+check, see the section above) reads the matched row's raw bytes directly at
+offsets 0x18 (`0x00760000`) and 0x1c (`0x003B0000`) and picks between them
+via `SLC_OK`: byte `0` selects offset 0x18, byte `1` selects 0x1c (disproven
+by disassembling `FUN_4012da80`, not by inspection of the row struct alone).
+So reaching the larger constant needs `SLC_OK=0` (not `1`) alongside
+`SEC_COUNT=0x00760000`, packed as a plain native big-endian 32-bit value --
+no shifting, so it carries none of the CSD path's overflow risk.
+
+**`emu/esdhc.py` now derives both together from one table**
+(`_CAPACITY_PARAMS`), keyed by the target capacity in sectors, so
+`SEC_COUNT`/`SLC_OK` (for the larger, `0x00760000`-sector constant this
+model defaults to) and the CSD-1.0 fallback fields (for the smaller,
+`0x003B0000`-sector constant, kept at their original, already-verified
+encoding) can never drift out of sync. `Card.from_file()` derives
+`capacity_blocks` from the image file's own size, so a default
+`tools/plusdrive.py` build (exactly `0x00760000` sectors) reports the
+capacity the whitelist demands automatically; any other size now raises a
+clear `ValueError` instead of silently booting a card the real whitelist
+would reject.
+
+**Verified two ways.** A bounded, isolated call to the real `FUN_4012dc80`
+(`tests/test_esdhc_identity.py`, extended to reproduce
+`FUN_4012d4b2`'s real SEC_COUNT-vs-CSD-fallback branch rather than assuming
+the CSD-1.0 formula alone) returns `D0=0`. An instrumented live cold boot
+(`emu.dspboot.run` with `--card-image out/plusdrive/dt2.img`, scoped code
+hooks, no `--card-image`-driven resume) confirms the same live: `D0=0` right
+after `FUN_4012dc80`, `DAT_44e3fea0` reads back `0x00760000` correctly, the
+superblock CMD18 at sector `0x5D8000` is issued and accepted
+(`payload_available=True`), the factory-table CMD18 at `0x458000` likewise,
+and **`_DAT_44f2bd68` (the mount flag) reads `1`** -- the first time this
+project has observed a real, successful `FUN_4015a450` mount. The boot task
+then falls into its own known terminal idle loop (`0x400cccd8`, the same
+address `docs/findings/07-emulator.md` already names as this task's normal
+end state, not a hang) having done real, further filesystem-level eSDHC
+traffic (reads/writes of the record-id and page-occupancy bitmaps, the
+record area, and other pool/cache sectors) beyond the mount check itself.
+
+**This does not, on its own, reach `docs/findings/07-emulator.md`'s
+"running" state (PIT3/DTIM3 firing, vector 208 handed to the real display
+ISR).** A continued run to 780M total instructions shows zero further eSDHC
+traffic and zero new tasks created after ~n=260M, `vec208` still equal to
+the intro's own PIT3 ISR, and the boot task still parked at `0x400cccd8`.
+This is that file's own already-documented, separately-scoped branch-(C)
+display-start gap ("Update MMC Caches" -- the header this project's header
+now validly forces, per the header-state decision tree in that file's
+"Booting with an already-formatted card stalls" section) -- not a
+regression from this fix, and not something this session chased further:
+it was open before this fix and remains open after it, unrelated to +Drive
+or card capacity. **[O]**: locating branch (C)'s real display-start
+mechanism remains the blocker for observing the +Drive browser end-to-end
+in a genuinely "running" emulator state.
+
 ## `SampleManager` holds two `Directory` implementations, not one **[D]**
 
 `SampleManager`'s real constructor is Ghidra-mislabeled as
@@ -751,6 +861,17 @@ nothing about mount state; readdir only happens on actual navigation
   actually delivers into `DAT_47e203cc`. Until this is resolved, no
   card-image boot reaches a valid mount, and item 3 (browser lists
   `hat.wav`) still can't be demonstrated end-to-end.
+
+  **[C]: resolved, in a later session -- see "The capacity bound fixed:
+  `FUN_4015a450` genuinely mounts on a cold boot" above.** `FUN_4002ccd0`
+  *was* being reached; its `CMD18` for the factory-table sector (and the
+  superblock's) simply never reached the eSDHC hardware at all, rejected
+  outright by `FUN_4012deda`'s capacity bounds check before any DMA -- a
+  different root cause than either alternative this paragraph considered.
+  With that fixed, the mount flag now reads `1` on a true cold boot. Full
+  "running" (needed to demonstrate the browser listing `hat.wav`
+  end-to-end) is still blocked, but by `docs/findings/07-emulator.md`'s
+  separate, already-open branch-(C) display-start gap, not by this.
 - Which `Directory` (`FileSystemDirectory` vs `SamplePoolDirectory`)
   `SampleManager` actually browses — **answered**: a live crash trace
   (see `docs/findings/07-emulator.md`'s corrected section below) found
