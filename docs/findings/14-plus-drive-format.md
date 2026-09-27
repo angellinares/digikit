@@ -568,54 +568,107 @@ nothing about mount state; readdir only happens on actual navigation
   now carries a superblock that self-verifies (`build_superblock()`'s own
   checksum recomputes to the same value; confirmed against a freshly
   rebuilt image with `tools/plusdrive.py ls`).
-- **New, and the current blocker: `FUN_4015a450` (mount) is never called
-  at all on a `--card-image` boot, independent of the superblock's
-  correctness.** Traced with the corrected image (`snapshots/dt2-1.16-sb/`):
-  the eSDHC command log stays at exactly the two reads a plain header/pool
-  format-check makes (blocks `0` and `0x800`) through 1,000,056,162
-  instructions -- no third `CMD18` to `0x5D8000` ever happens, reproducing
-  `docs/findings/07-emulator.md`'s existing control-image result byte for
-  byte, now confirmed with a real, byte-correct superblock present too. The
-  reason: `FUN_400cc864` (the boot task that calls `FUN_4015a450`/
-  `FUN_4015a424`) gates that whole call behind `_DAT_42940a48 == 0`, and
-  that variable is set from an eMMC identity check
-  (`FUN_4012dc80`→`FUN_4012dbe0`→`FUN_4012da2c`) that compares the
-  emulated card's `ALL_SEND_CID`/`SEND_CID` response against a 7-entry
-  whitelist of (manufacturer-ID, 6-character product-name) pairs at
-  `0x402b4a24`-`0x402b4b04` (values `0x11`×4/`0x15`/`0x70`×2, names like
-  `"004GE0"`, eMMC part numbers, not SD OIDs) baked into `MAIN_OS`.
-  `emu/esdhc.py`'s `Card.__init__` already sets `self.cid`'s manufacturer
-  byte to `0x11` (`self.cid = [0, 0, 0, 0x00110000]`) — a prior, incomplete
-  attempt at this same fix — but leaves the product-name portion zero,
-  which fails the whitelist's exact-string compare
-  (`FUN_40189ff4`, literally glibc's word-at-a-time `strcmp`) and yields
-  `_DAT_42940a48 = 7` (not 0), skipping the mount/format call. **Confirmed
-  live**: the CID→RAM mapping is `self.cid[0..3]` (R2 response words
-  RSP0-RSP3) → `_DAT_44e3fe90/94/98/9c` respectively (byte-exact, read back
-  from a fresh cold boot with test marker words); `FUN_4012db90` reads the
-  manufacturer byte as `_DAT_44e3fe9c & 0xff` (RSP3's **low** byte, not
-  bits `23:16` as the register's own `RSP3[23:0]` framing might suggest) and
-  the product name from `_DAT_44e3fe98`'s 4 bytes plus `_DAT_44e3fe94`'s top
-  2 bytes. Setting `self.cid = [0, 0x45300000, 0x30303447, 0x00000011]`
-  (manufacturer `0x11` in RSP3's low byte, name `"004GE0"` split across
-  RSP2/RSP1 per that mapping) and rebuilding a cold ladder still produced
-  `_DAT_42940a48 = 6` (eMMC identity check's *first* branch, `-1`: "no
-  manufacturer-ID match at all"), not the expected `0` (success) or even
-  `7` (name mismatch) — i.e. the manufacturer-byte comparison itself did not
-  match this time even though `_DAT_44e3fe9c & 0xff` reads back as `0x11`
-  exactly as intended, which contradicts the straightforward reading of
-  `FUN_4012da2c` above. **[O], unresolved**: either the whitelist-scan
-  function reads a different field than the one this session traced, or an
-  intervening step (not yet found) transforms the value between
-  `FUN_4012db90` and the comparison. This needs one more session with
-  disassembly-level (not decompiled-C-level) register tracing through
-  `FUN_4012dbe0`/`FUN_4012da2c` at the exact call, not another guess-and-
-  rebuild cycle -- each cold-boot iteration costs a multi-minute ladder
-  rebuild, so bound further attempts to reading the raw instructions first.
-  Until this is fixed, no card-image boot -- with or without a valid
-  +Drive superblock -- ever reaches a mounted `FileSystemDirectory`, and
-  item 3 (browser lists `hat.wav`) cannot be demonstrated end-to-end in
-  this emulator.
+- **`FUN_4015a450` (mount) was never called at all on a `--card-image`
+  boot, independent of the superblock's correctness — this is now fixed
+  and verified, but a separate, deeper emulator hang was uncovered right
+  behind it.** `FUN_400cc864` (the boot task that calls `FUN_4015a450`/
+  `FUN_4015a424`) gates that whole call behind `_DAT_42940a48 == 0`, set
+  from an eMMC identity check (`FUN_4012dc80`→`FUN_4012db90`[build a
+  struct]→`FUN_4012dbe0`→`FUN_4012da2c`×2, a scan of a 7-entry
+  manufacturer/product-name whitelist at `0x402b4a24`-`0x402b4b04`, values
+  `0x11`×4/`0x15`/`0x70`×2, names like `"004GE0"`, eMMC part numbers).
+
+  **The fix, confirmed correct by execution.** Disassembling (not
+  decompiling) `FUN_4012db90`/`FUN_4012d4b2`/`FUN_4012db32` found the
+  decompiler had misread the manufacturer-ID read as `_DAT_44e3fe9c & 0xff`
+  (a byte mask on a 32-bit load); the real instruction is `mvz.w
+  (DAT_44e3fe9c).l,D0` (a 16-bit load) then `mvz.b D0b,D0` (keep the word's
+  low byte) — i.e. the byte actually compared is at `0x44e3fe9d`, which is
+  CID RSP3 bits `[23:16]`, exactly where a real CID's manufacturer ID
+  (JEDEC CID\[127:120\]) lives. `emu/esdhc.py`'s existing
+  `self.cid = [0, 0, 0, 0x00110000]` already put `0x11` there — so the
+  manufacturer half of a prior, incomplete fix attempt was already right;
+  only the product name was missing. The product name is 6 ASCII chars,
+  RSP2's 4 bytes followed by RSP1's top 2 bytes (`FUN_4012db32`,
+  confirmed by disassembly), compared with `FUN_40189ff4` (literally
+  glibc's word-at-a-time `strcmp`). `emu/esdhc.py`'s `Card.cid` now encodes
+  `"004GE0"` there (`self.cid = [0, 0x45300000, 0x30303447, 0x00110000]`),
+  one of the four valid names for manufacturer `0x11`.
+
+  A second, nested check inside `FUN_4012dbe0` (only reached once the first
+  matches) compares the caller's own struct fields 2-4 -- a 24-bit
+  big-endian pack of EXT_CSD bytes `0x9C:0x9D:0x9E` (`FUN_4012db90`) plus
+  bytes `0xDE`/`0xE3` -- against the *same matched row*'s own fields 2-4
+  (`0x1D8`/`0x01`/`0x08` for "004GE0"); `emu/esdhc.py`'s `ext_csd()` now
+  sets those three fields (previously a single `PARTITIONS_ATTRIBUTE` byte
+  fixed at `1`). A third, final check compares a computed capacity against
+  one of that row's own two capacity constants (`0x760000` or `0x3B0000`
+  sectors), selected by EXT_CSD byte `0x98` (`FUN_4012da80`; previously
+  modeled, under the name `SLC_OK`, as an unrelated "MMC NOT IN SLC MODE"
+  flag some *other*, now-stale-cited address wanted `1` for -- see
+  `emu/esdhc.py`'s `SLC_OK` comment for the full correction). **The
+  capacity constant can't be reached through EXT_CSD's real `SEC_COUNT`
+  field**: encoding it there so a native 32-bit big-endian load recovers
+  `0x760000` (this project's existing default card capacity, needed since
+  it's smaller than +Drive's own layout) made a real cold boot **hang**
+  outright, confirmed by bisection (`emu.dspboot.run` directly, reverting
+  only that one field's byte order) -- some other consumer of the same 4
+  bytes evidently depends on the JEDEC byte-serial (little-endian)
+  convention this project's `SEC_COUNT` already used, and a ~30x larger
+  value there stalls something indefinitely. So EXT_CSD's `SEC_COUNT` is
+  now left at a fixed `0` (a real, if less common, eMMC behaviour: no
+  extended-capacity report), and the smaller capacity constant
+  (`0x3B0000`) is supplied instead through the CSD-1.0 fallback formula
+  `FUN_4012d4b2` computes from `_DAT_44e3fe84`/`fe88` (a second CMD9/
+  SEND_CSD copy) when `SEC_COUNT` reads as 0 -- reproduced exactly (down to
+  matching the disassembled bit-shift sequence in Python) and set via
+  `Card.csd`'s `CSD_RSP1`/`CSD_RSP2`. **Verified this whole chain is
+  correct with a bounded, isolated call to the real `FUN_4012dc80`**
+  (`tests/test_esdhc_identity.py`, gated on `DT2_SYX` since it needs the
+  real firmware image): built from `emu.esdhc.Card()`'s own live CID/
+  EXT_CSD/CSD values (not hand duplicated), it returns D0=0. A live,
+  instrumented cold boot (code hooks on every function in the chain, not
+  just the unit test) confirms the *exact same* result happens for real:
+  `FUN_4012dc80` runs to completion and returns 0, having read
+  `fe7c=1 fea0=0x3b0000 fe88=0xa03 fe84=0xafc00380` -- byte-for-byte the
+  intended values -- immediately after a real `CMD9`/SEND_CSD exchange.
+  **This part of the fix is done and correct.**
+
+  **New, separate blocker found immediately after it, in code that has
+  nothing to do with +Drive or this identity check.** Passing the identity
+  check for the first time ever means `FUN_400cc864` now runs further than
+  any previous card-image boot did before returning to its own next
+  unconditional step -- and that next step hangs. Instrumented tracing
+  (code hooks + register/stack reads, `emu.dspboot.run` directly) shows,
+  in order: the identity check succeeds, then a `CMD18` read of sector
+  `0x40000` (called from `0x400efcc4`, inside `FUN_400cc864`'s own
+  unconditional bring-up block -- not `FUN_4015a450`/`FUN_4015a424`, which
+  never even get hooked-hit) is issued, and the CPU then spins forever at
+  `0x400CC7AE` (a `bra.b $-2` self-loop right after an unrelated
+  task-creation trampoline, 12.9M+ consecutive hits with zero progress in
+  one test window). **This is not new or identity-check-specific code**:
+  the *identical* `CMD18(0x40000)` from the *identical* return address
+  `0x400efcc4` also happens in an unpatched, stock `emu/esdhc.py` boot of
+  the same card image (confirmed by literally swapping the file back in
+  and re-running the same instrumented trace) -- and there it does **not**
+  hang; the boot proceeds normally (5th task created at n=47,097,717, as
+  usual). The only difference between the two runs at that point is that
+  the identity-check success path executes measurably more instructions
+  first (a second `FUN_4012db90`/`FUN_4012da2c` pass the failing path
+  never took) before reaching the exact same `CMD18` call -- i.e. this
+  looks like a timing-sensitive fragility in the emulator's own
+  interrupt/semaphore-completion delivery for that read (or the RTOS
+  scheduler tick around it), exposed by a few hundred extra instructions
+  shifting *when* the read happens, not by anything wrong with the CID/
+  EXT_CSD/CSD content itself. **[O], unresolved, and out of scope for the
+  +Drive format work**: needs its own session tracing the `Esdhc`
+  peripheral model's completion-semaphore/IRQ delivery for this specific
+  read against the RTOS's own PIT/DTIM tick schedule, not another
+  CID/EXT_CSD adjustment. Until it's fixed, no card-image boot reaches
+  `FUN_4015a450` in a real run even though the gate in front of it
+  (`_DAT_42940a48 == 0`) is now provably satisfiable, and item 3 (browser
+  lists `hat.wav`) still can't be demonstrated end-to-end in this
+  emulator.
 - Which `Directory` (`FileSystemDirectory` vs `SamplePoolDirectory`)
   `SampleManager` actually browses — **answered**: a live crash trace
   (see `docs/findings/07-emulator.md`'s corrected section below) found

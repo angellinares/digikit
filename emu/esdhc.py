@@ -136,12 +136,51 @@ DMA_CHAN = 59
 # Byte 152 is inside GP_SIZE_MULT in the JEDEC map, which is not an obvious
 # home for an SLC flag, so treat the JEDEC identity as UNCONFIRMED and the
 # offset as the fact. What is certain is 0x401204a4 reads it and wants 1.
+#
+# **[C], DT2 1.16 only, re disassembly of `FUN_4012dbe0`'s eMMC-identity
+# whitelist check**: `0x401204a4` in the *current* 1.16 image does not read
+# this byte at all (disassembled: it's an unrelated `_DAT_42936872`
+# comparison) -- that citation is stale, most likely carried over from an
+# earlier firmware build. The whitelist check (`FUN_4012da80`, reading this
+# same byte at its own second-EXT_CSD-read destination, `0x4FE69100` -- a
+# separate DMA than `EXTCSD_BUF` but the same underlying `Card.ext_csd`
+# bytes in this model) DOES read it, to choose between two capacity
+# constants a matched whitelist row carries; **do not** flip this byte to
+# satisfy that comparison by making `SEC_COUNT` (below) read as the row's
+# other, larger constant instead -- that was tried and hangs real
+# boots (see `SEC_COUNT`'s comment and docs/findings/14-plus-drive-format.md).
+# Left at its original value (1) so the whitelist check compares against the
+# matched row's *smaller* capacity constant, which `SEC_COUNT=0` (below) is
+# built to equal via the CSD fallback path instead.
 SLC_OK = 0x98
+# PARTITIONS_ATTRIBUTE was modeled as a single byte (=1); `FUN_4012dbe0`'s
+# eMMC-identity whitelist (docs/findings/14) actually reads a 3-byte
+# big-endian field starting here (`FUN_4012db90` packs bytes 0x9C:0x9D:0x9E
+# as one 24-bit value) and compares it, plus the two single bytes below,
+# against the matched whitelist row's own fields -- for the row this model
+# targets (manufacturer 0x11, product name "004GE0"), those are
+# `0x1D8`/`0x01`/`0x08`. Confirmed safe to change (doesn't hang a real boot,
+# unlike `SEC_COUNT`'s packing below): bisected the same way.
 PARTITIONS_ATTRIBUTE = 0x9C          # 156; also read at 0x4fe4919c-9e
+IDENTITY_FIELD_3 = 0xDE              # single byte; that row wants 0x01
+IDENTITY_FIELD_4 = 0xE3              # single byte; that row wants 0x08
 SEC_COUNT = 0xD4                     # 212..215, little-endian, in 512B sectors
 ERASE_GROUP_DEF = 0xAF               # 175
 BUS_WIDTH = 0xB7                     # 183
 HS_TIMING = 0xB9                     # 185
+
+# CSD (not EXT_CSD) fields FUN_4012d4b2 reads from `_DAT_44e3fe84`/`fe88` --
+# a second CMD9/SEND_CSD copy of CMDRSP1/RSP2, the same shape as the CID copy
+# a few instructions earlier -- to compute a capacity when EXT_CSD's
+# SEC_COUNT reads as 0 (the standard CSD-1.0 C_SIZE/C_SIZE_MULT/READ_BL_LEN
+# formula, confirmed by reproducing FUN_4012d4b2's exact bit-shift sequence
+# in Python and matching its result). See `Card.csd`'s docstring for why
+# these specific field values were chosen.
+_CSD_C_SIZE = 3775
+_CSD_C_SIZE_MULT = 7
+_CSD_READ_BL_LEN = 10
+CSD_RSP1 = ((_CSD_C_SIZE & 0x3FF) << 22) | (_CSD_C_SIZE_MULT << 7)
+CSD_RSP2 = ((_CSD_READ_BL_LEN & 0xF) << 8) | ((_CSD_C_SIZE >> 10) & 3)
 
 
 def ext_csd(sectors=0x00760000, slc=True):
@@ -151,14 +190,57 @@ def ext_csd(sectors=0x00760000, slc=True):
     read are set, so anything else showing up as a dependency will announce
     itself as a spin or a rejected card rather than hiding behind a plausible
     value.
+
+    `SEC_COUNT` is deliberately **not** set from `sectors` here -- it's left
+    0 unconditionally (an older/optional eMMC field some real chips also
+    leave unset), so `FUN_4012d4b2` takes its CSD-based capacity fallback
+    instead of comparing `sectors` against the eMMC-identity whitelist's
+    capacity constant. Two things forced this, both confirmed by execution,
+    not just by reading the decompile:
+
+    1. That whitelist comparison (`FUN_4012dbe0`, see `docs/findings/14`)
+       needs `sectors` to equal one of a matched row's two literal capacity
+       constants (`0x760000` or `0x3B0000` sectors for the row this model
+       targets) exactly, as a native big-endian 32-bit load of these 4
+       bytes -- not the JEDEC byte-serial little-endian order a real card
+       would use, and not this project's existing +Drive-image default
+       capacity (which needs the *larger* constant's magnitude, ruled out
+       next).
+    2. Packing `sectors=0x00760000` that way (to match the larger constant)
+       was tried and made a real cold boot **hang**: some other, not yet
+       located consumer reads these same 4 bytes and, given the ~30x larger
+       value that encoding produces there, spins for at least 500M
+       instructions with zero progress (bisected with
+       `emu.dspboot.run` directly -- reverting only this field's packing
+       removed the hang, confirming it, not the CID/other EXT_CSD fields
+       changed alongside it). Packed to equal the smaller constant
+       (`0x3B0000`) instead needs a 24-bit-deep bit-shift by a
+       manufactured `sectors` value with no obvious real-capacity meaning,
+       which felt like exactly the kind of "hides behind a plausible value"
+       shortcut this docstring already warns against -- so this model
+       leaves `SEC_COUNT` unset (0) and reports the same target capacity
+       through `Card.csd`'s real formula instead.
+
+    Nothing in this codebase enforces that this reported capacity match the
+    +Drive card image's real, larger size: `Card.blocks`/`data_for` use the
+    backing file's own length, never this field. (A separate, unrelated
+    emulator hang -- see docs/findings/14-plus-drive-format.md -- currently
+    stops a real boot from reaching `FUN_4015a450`'s own read of sector
+    `0x5D8000` to confirm this end to end; it isn't blocked by this field.)
     """
+    del slc  # SLC_OK is a fixed literal now; see that constant's comment
+    del sectors  # SEC_COUNT is a fixed literal (0) now; see the docstring
     b = bytearray(512)
-    b[SLC_OK] = 1 if slc else 0
-    b[SEC_COUNT:SEC_COUNT + 4] = struct.pack('<I', sectors)
+    b[SLC_OK] = 1
+    b[SEC_COUNT:SEC_COUNT + 4] = struct.pack('>I', 0)
     b[ERASE_GROUP_DEF] = 1
     b[BUS_WIDTH] = 1
     b[HS_TIMING] = 1
-    b[PARTITIONS_ATTRIBUTE] = 1
+    b[PARTITIONS_ATTRIBUTE] = 0x00
+    b[PARTITIONS_ATTRIBUTE + 1] = 0x01
+    b[PARTITIONS_ATTRIBUTE + 2] = 0xD8
+    b[IDENTITY_FIELD_3] = 0x01
+    b[IDENTITY_FIELD_4] = 0x08
     return bytes(b)
 
 
@@ -180,9 +262,35 @@ class Card:
         # OCR: bit31 power-up done, bit30 sector addressing, voltage window.
         self.ocr = 0xC0FF8080
         self.overlay = {}
-        # CID/CSD as four longwords each, R2 order {RSP3[23:0],RSP2,RSP1,RSP0}.
-        self.cid = [0x00000000, 0x00000000, 0x00000000, 0x00110000]
-        self.csd = [0x00000000, 0x00000000, 0x00000000, 0x00000000]
+        # CID as four longwords, R2 response order [RSP0, RSP1, RSP2, RSP3]
+        # (confirmed live and by disassembling FUN_4012d4b2's own copy of
+        # CMDRSP0-3 into _DAT_44e3fe90/94/98/9c respectively). RSP3's
+        # manufacturer-ID byte sits at bits[23:16] -- FUN_4012db90 reads it
+        # with a 16-bit load at that DAT_ address and keeps only the low
+        # byte of the *word*, i.e. RSP3's second byte, not its low byte --
+        # so 0x00110000 already encodes manufacturer 0x11 correctly. RSP2's
+        # 4 bytes plus RSP1's top 2 bytes are the 6-character ASCII product
+        # name FUN_4012db32 builds and FUN_4012dbe0/FUN_4012da2c strcmp
+        # against MAIN_OS's eMMC whitelist (0x402b4a24, docs/findings/14):
+        # "004GE0" here, one of four names valid for manufacturer 0x11.
+        # Without a real product name the whitelist scan finds the
+        # manufacturer ID but never an exact name match, which is what left
+        # `FUN_4015a450` (the +Drive mount) uncalled on every card-image
+        # boot before this -- see docs/findings/14-plus-drive-format.md.
+        self.cid = [0x00000000, 0x45300000, 0x30303447, 0x00110000]
+        # CSD, same [RSP0, RSP1, RSP2, RSP3] order and origin as CID (a
+        # second CMD9/SEND_CSD copy of CMDRSP1/RSP2 into _DAT_44e3fe84/fe88,
+        # a few instructions after the CID copy -- disassembly again, not
+        # the decompile). RSP1/RSP2 (`CSD_RSP1`/`CSD_RSP2`) encode a
+        # standard CSD-1.0 C_SIZE=3775/C_SIZE_MULT=7/READ_BL_LEN=10, chosen
+        # so `FUN_4012d4b2`'s capacity formula (reproduced exactly in
+        # `ext_csd`'s module-level constants) evaluates to 0x3B0000 sectors
+        # -- the eMMC-identity whitelist row this model targets carries that
+        # exact value as its "SLC_OK=1" capacity constant (see
+        # `SEC_COUNT`'s comment in `ext_csd` for why the *other*, larger
+        # constant isn't used instead). RSP0/RSP3 aren't read by that
+        # formula and are left 0.
+        self.csd = [0x00000000, CSD_RSP1, CSD_RSP2, 0x00000000]
 
     @classmethod
     def from_file(cls, path, slc=True):

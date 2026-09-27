@@ -1541,24 +1541,50 @@ that file's new section for the full layout and checksum.
 **Update, a later session:** that superblock is now implemented
 (`tools/plusdrive.py`'s `hashlittle()`/`build_superblock()`, checked against
 44 real firmware executions) and confirmed self-consistent in a rebuilt
-`out/plusdrive/dt2.img`, but it does not by itself get a card-image boot to
-`FUN_4015a450` at all -- the eSDHC command log still stops at the same two
-reads (blocks `0` and `0x800`) through 1,000,056,162 instructions with the
-corrected image, exactly reproducing the control-image result above.
-`FUN_400cc864` gates the `FUN_4015a450`/`FUN_4015a424` call behind
-`_DAT_42940a48 == 0`, which an eMMC-identity whitelist check
-(`FUN_4012dc80`→`FUN_4012dbe0`→`FUN_4012da2c`, comparing the emulated
-card's CID against `MAIN_OS`'s own 7-entry manufacturer/product-name table)
-sets to a nonzero error code instead -- `emu/esdhc.py`'s existing
-`self.cid = [0, 0, 0, 0x00110000]` is a prior, incomplete attempt at
-satisfying this same check (the manufacturer byte alone, not the
-product-name string). This is upstream of, and independent from, the
-branch-(C) display stall investigated below: fixing one does not fix the
-other. See `docs/findings/14-plus-drive-format.md`'s "Open questions" for
-the confirmed CID→RAM field mapping and why the obvious fix (setting a
-whitelisted manufacturer ID *and* product name) was tried and did not
-resolve it -- left **[O]** for a session with disassembly-level tracing
-through the comparison itself.
+`out/plusdrive/dt2.img`. `FUN_400cc864` gates `FUN_4015a450`/`FUN_4015a424`
+behind `_DAT_42940a48 == 0`, set from an eMMC-identity whitelist check
+(`FUN_4012dc80`→`FUN_4012db90`→`FUN_4012dbe0`→`FUN_4012da2c`×2 against
+`MAIN_OS`'s own 7-entry manufacturer/product-name table) that this superblock
+work alone did not satisfy.
+
+**That whitelist check is now fixed and verified, in a later session still.**
+Disassembling (not decompiling) the chain found the decompiler had misread
+one field's width (the manufacturer-ID read is a 16-bit load then the word's
+low byte, not a byte mask on the raw 32-bit CID word the decompile showed --
+`emu/esdhc.py`'s existing `self.cid=[0,0,0,0x00110000]` already happened to
+place the byte correctly despite that). `emu/esdhc.py`'s `Card.cid`/`csd`/
+`ext_csd()` now encode a complete, valid whitelist entry (manufacturer
+`0x11`, product name `"004GE0"`, that entry's own two auxiliary fields, and
+its capacity through a CSD-1.0 fallback rather than EXT_CSD's `SEC_COUNT` --
+encoding the capacity there hung a real boot outright, confirmed by
+bisection; see `docs/findings/14-plus-drive-format.md` for the full
+derivation and why). Verified two ways: a bounded, isolated call to the real
+`FUN_4012dc80` returns 0 (`tests/test_esdhc_identity.py`), and an
+instrumented live cold boot shows the *exact same* real values reaching that
+function and it returning 0 for real, right after a real CMD9/SEND_CSD
+exchange.
+
+**Passing that check for the first time exposed a second, unrelated blocker
+immediately behind it, still open.** `FUN_400cc864` proceeds further than
+any previous card-image boot, issues a `CMD18` read of sector `0x40000`
+(from `0x400efcc4`, part of its own always-executed bring-up, not
+`FUN_4015a450`/`FUN_4015a424` -- neither ever gets hit), and then hangs
+in a `bra.b $-2` self-loop with zero progress for 12.9M+ instructions.
+The *identical* `CMD18(0x40000)` from the *identical* caller also happens,
+harmlessly, in an unpatched stock-`emu/esdhc.py` boot of the same image
+(confirmed by swapping the file back and re-running the same instrumented
+trace) -- the only difference is that the now-successful identity check
+takes a measurably longer instruction path (an extra `FUN_4012db90`/
+`FUN_4012da2c` pass the old, failing check never took) before reaching that
+same read, pointing at a timing-sensitive fragility in the emulator's own
+interrupt/semaphore-completion delivery (or the RTOS scheduler tick around
+it) rather than anything wrong with the CID/EXT_CSD/CSD content. This is
+upstream of, and independent from, the branch-(C) display stall investigated
+below: fixing one does not fix the other, and this new hang happens earlier
+in boot than branch (C) is even decided. **[O]**, needs a session tracing
+`Esdhc`'s completion-semaphore/IRQ delivery for this read against the
+PIT/DTIM tick schedule -- see `docs/findings/14-plus-drive-format.md`'s
+matching section for the full instrumented trace.
 
 ### Follow-up: branch (C) never hands vector 208 to the real display ISR; the six unconditional calls and `FUN_40032eaa` are not it **[V][O]**
 
