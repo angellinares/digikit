@@ -11,6 +11,14 @@ Language id `68000:BE:32:ColdfireEMAC`. It is stock Ghidra 12.1.3's
   is the inverse of the lsb for the load forms); fixed with `accregload`.
 - `move.l Ry,ACCx`, `move.l Ry,ACCext01` and `move.l Ry,ACCext23` printed
   their operands in the wrong order; fixed.
+- The word forms of MAC, MSAC and the dual-accumulate variants (`mac.w`,
+  `msac.w`, `maaac.w`, `masac.w`, `msaac.w`, `mssac.w`, with and without load)
+  multiplied two 16-bit operands into a 16-bit temporary, so the decompiler
+  showed the product truncated to 16 bits. The product is now the 32-bit
+  signed product (signed mode, as the stock `sext` already assumed).
+- `sats.l` saturated on `Dx == 0` instead of on the sign of the overflowed
+  result. Now: if V, `Dx[31] == 0` gives `0x80000000`, otherwise `0x7fffffff`
+  (CFPRM; QEMU's `helper_sats` does the same).
 
 Not modelled: the saturation and rounding in `movclr` (a pcodeop,
 `emacSaturate`), and its clearing of ACCext and MACSR[PAVx].

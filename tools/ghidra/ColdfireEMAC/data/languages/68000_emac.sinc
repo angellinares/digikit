@@ -1724,7 +1724,9 @@ macro move16(src, dst)
 
 :mov3q "#"^d911, eal	is (op=0xa & op68=5 & d911 )  ... & eal		{ eal = d911; }
 
-:sats.l regdn			is opbig=0x4c & op37=0x10 & regdn	{ if (VF == 0) goto inst_next; regdn = (zext(regdn == 0 ) * 0x80000000) + (zext(regdn != 0) * 0x7fffffff); VF=0; CF=0; }
+# EMAC-LANG: SATS.L saturates on the SIGN of the overflowed result (CFPRM: if V, Dx[31]==0 -> 0x80000000, else 0x7FFFFFFF;
+# QEMU helper_sats agrees). Stock 68000.sinc tested regdn == 0 instead.
+:sats.l regdn			is opbig=0x4c & op37=0x10 & regdn	{ if (VF == 0) goto inst_next; regdn = (zext(regdn s>= 0) * 0x80000000) + (zext(regdn s< 0) * 0x7fffffff); VF=0; CF=0; }
 
 skip_addr: skipAddr		is op02=2 [skipAddr = inst_next + 2;] { export *[ram]:4 skipAddr; }
 skip_addr: skipAddr		is op02=3 [skipAddr = inst_next + 4;] { export *[ram]:4 skipAddr; }
@@ -3000,13 +3002,14 @@ m_eal: (d16,regan) is mode=5 & regan; d16		{ local tmp  = regan + d16; export *:
   accw = accw + tmp;
 }
 
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :maaac.w macregy, macregx^scalefactor, accreg, accw	is (op=10 & op8=0 & op45=0 ; fbit=0 & wl=0 & scalefactor & accw & odsize=1) ... & macregy ... &  macregx ... & accreg ...
 {
-  local tmp = macregy * macregx;
+  local tmp:4 = sext(macregy) * sext(macregx);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accreg = accreg + sext(tmp);
-  accw = accw + sext(tmp);
+  accreg = accreg + tmp;
+  accw = accw + tmp;
 }
 
 :mac.l reg03y, reg9dn^scalefactor, accreg	is (op=10 & reg9dn & reg03y & op6=0 & op8=0 & op45=0 ; fbit=0 & wl=1 & scalefactor) ... & accreg ...
@@ -3024,23 +3027,25 @@ m_eal: (d16,regan) is mode=5 & regan; d16		{ local tmp  = regan + d16; export *:
   accreg = accreg + tmp;
 }
 
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :mac.w macregy, macregx^scalefactor, accreg	is (op=10 & op8=0 & op45=0 ; fbit=0 & wl=0 & scalefactor) ... & macregy ... &  macregx ... & accreg ...
 {
-  local tmp = macregy * macregx;
+  local tmp:4 = sext(macregy) * sext(macregx);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accreg = accreg + sext(tmp);
+  accreg = accreg + tmp;
 }
 
 #mac with load
 # EMAC-LANG: accreg -> accregload (see accregload definition above; CFPRM
 # p.6-4 load-form ACC-selector polarity is inverted vs. the non-load form).
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :mac.w macregyl, macregxl^scalefactor, m_eal, macrw, accregload	is ((op=10 & macrw & op8=0 ; macregxl & fbit=0 & macregyl & wl=0 & scalefactor) ... & accregload ...) ... & m_eal
 {
-  local tmp = macregyl * macregxl;
+  local tmp:4 = sext(macregyl) * sext(macregxl);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accregload = accregload + sext(tmp);
+  accregload = accregload + tmp;
   macrw = m_eal;
 }
 
@@ -3071,13 +3076,14 @@ m_eal: (d16,regan) is mode=5 & regan; d16		{ local tmp  = regan + d16; export *:
   accw = accw - tmp;
 }
 
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :masac.w macregy, macregx^scalefactor, accreg, accw	is (op=10 & op8=0 & op45=0 ; fbit=0 & wl=0 & scalefactor & accw & odsize=3) ... & macregy ... &  macregx ... & accreg ...
 {
-  local tmp = macregy * macregx;
+  local tmp:4 = sext(macregy) * sext(macregx);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accreg = accreg + sext(tmp);
-  accw = accw - sext(tmp);
+  accreg = accreg + tmp;
+  accw = accw - tmp;
 }
 
 moveaccreg: ACC0  is ACC0 & op0910=0    { export ACC0; }
@@ -3149,13 +3155,14 @@ moveaccreg2: ACC3  is ACC3 & op01=3    { export ACC3; }
   accw = accw + tmp;
 }
 
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :msaac.w macregy, macregx^scalefactor, accreg, accw	is (op=10 & op8=0 & op45=0 ; fbit=1 & wl=0 & scalefactor & accw & odsize=1) ... & macregy ... &  macregx ... & accreg ...
 {
-  local tmp = macregy * macregx;
+  local tmp:4 = sext(macregy) * sext(macregx);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accreg = accreg - sext(tmp);
-  accw = accw + sext(tmp);
+  accreg = accreg - tmp;
+  accw = accw + tmp;
 }
 
 :msac.l reg03y, reg9dn^scalefactor, accreg	is (op=10 & reg9dn & reg03y & op6=0 & op8=0 & op45=0 ; fbit=1 & wl=1 & scalefactor) ... & accreg ...
@@ -3173,12 +3180,13 @@ moveaccreg2: ACC3  is ACC3 & op01=3    { export ACC3; }
   accreg = accreg - tmp;
 }
 
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :msac.w macregy, macregx^scalefactor, accreg	is (op=10 & op6=0 & op8=0 & op45=0 ; fbit=1 & wl=0 & scalefactor) ... & macregy ... &  macregx ... & accreg ...
 {
-  local tmp = macregy * macregx;
+  local tmp:4 = sext(macregy) * sext(macregx);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accreg = accreg - sext(tmp);
+  accreg = accreg - tmp;
 }
 
 
@@ -3186,12 +3194,13 @@ moveaccreg2: ACC3  is ACC3 & op01=3    { export ACC3; }
 # EMAC-LANG: accreg -> accregload in both constructors below (same CFPRM
 # p.6-4 load-form polarity inversion as the MAC-with-load fix above).
 
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :msac.w macregyl, macregxl^scalefactor, m_eal, macrw, accregload	is ((op=10 & macrw & op8=0 ; macregxl & fbit=1 & macregyl & wl=0 & scalefactor) ... & accregload ...) ... & m_eal
 {
-  local tmp = macregyl * macregxl;
+  local tmp:4 = sext(macregyl) * sext(macregxl);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accregload = accregload - sext(tmp);
+  accregload = accregload - tmp;
   macrw = m_eal;
 }
 
@@ -3221,13 +3230,14 @@ moveaccreg2: ACC3  is ACC3 & op01=3    { export ACC3; }
   accw = accw - tmp;
 }
 
+# EMAC-LANG: the 16x16 product is 32 bits (CFPRM); stock multiplied into a 16-bit temporary, truncating it.
 :mssac.w macregy, macregx^scalefactor, accreg, accw	is (op=10 & op8=0 & op45=0 ; fbit=1 & wl=0 & scalefactor & accw & odsize=3) ... & macregy ... &  macregx ... & accreg ...
 {
-  local tmp = macregy * macregx;
+  local tmp:4 = sext(macregy) * sext(macregx);
   tmp = tmp << (scalefactor == 1);
   tmp = tmp >> (scalefactor == 2);
-  accreg = accreg - sext(tmp);
-  accw = accw - sext(tmp);
+  accreg = accreg - tmp;
+  accw = accw - tmp;
 }
 
 # EMAC-LANG: MOVCLR is entirely absent from stock 68000.sinc. CFPRM p.6-6/6-7
