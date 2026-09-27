@@ -1584,13 +1584,36 @@ CMD25-posts-`dma_sem` behavior was already covered by `tests/test_esdhc.py`.
 
 With that fixed, a cold ladder now reaches 400M instructions with 10 tasks
 (including the priority-6 Main-OS task) and confirms `FUN_4015a450` (mount)
-is genuinely called (`_DAT_42940a48 == 0` at the boot task's own stable
-terminal idle loop). Mount itself still doesn't succeed -- a **third**,
-previously-undocumented on-disk structure at sector `0x458000` (a
-"MaGj"-tagged, CRC-32-checked 32 KiB record `FUN_4015a124` reads via
-`FUN_4002cd6a`/`FUN_4002ccd0`, all zero in our image) now blocks it -- see
+should be genuinely called (`_DAT_42940a48 == 0` at the boot task's own
+stable terminal idle loop). A **third**, previously-undocumented on-disk
+structure at sector `0x458000` (a "MaGj"-tagged, two-stage-CRC-32-checked
+32 KiB record `FUN_4015a124` reads via `FUN_4002cd6a`/`FUN_4002ccd0`) was
+fully pinned down by disassembly (not the decompile, which had misread two
+of its fields as one overlapping 32-bit read) and a valid record built
+(`tools/plusdrive.py`'s `build_factory_table_record()`) -- confirmed
+against the real firmware with a bounded isolated call
+(`tests/test_factory_table.py`), same technique as the eMMC-identity
+fix's own test.
+
+**That did not, on its own, get a live boot to mount.** With the new
+record written and the card ladder rebuilt, the boot task is already
+parked in its known terminal idle loop after 1.6B total instructions, the
+mount flag stays `0`, and the RAM buffer `FUN_4002ccd0` reads the sector
+into (`DAT_47e203cc`) reads back all zero -- meaning either
+`FUN_4015a450`/`FUN_4002cd6a`/`FUN_4002ccd0` were never actually reached in
+this live run (which a straightforward read of `FUN_4015a124`'s own
+unconditional call chain doesn't explain), or the live `CMD18` read of this
+unusually large (32 KiB / 64-sector) single request didn't deliver the
+image's bytes the way the isolated unit test's direct RAM write did.
+Branch-(C)'s own display-start question (`vector208 == intro_pit3_isr`,
+still true after 1.6B instructions) also remains exactly as documented
+below -- this run never got far enough past mount to newly test whether
+the dma_sem fix incidentally helped it. **[O]**: needs scoped-hook tracing
+(not a global per-instruction hook, too slow for a run this long) on the
+three functions above, resumed from shortly before the expected call
+rather than from a cold start -- see
 `docs/findings/14-plus-drive-format.md`'s matching section for the full
-trace, the CRC algorithm, and what's left to pin down there.
+trace and the CRC derivation.
 
 ### Follow-up: branch (C) never hands vector 208 to the real display ISR; the six unconditional calls and `FUN_40032eaa` are not it **[V][O]**
 

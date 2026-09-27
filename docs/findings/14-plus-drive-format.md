@@ -694,31 +694,63 @@ nothing about mount state; readdir only happens on actual navigation
   succeed: `_DAT_44f2bd68` (the mount flag) stays `0`.
 
   **A third, previously-undocumented on-disk structure blocks mount's own
-  success, past the superblock at `0x5D8000`.** `FUN_4015a450`'s own
+  success, past the superblock at `0x5D8000` -- record now built and
+  verified valid in isolation, but a live boot still doesn't show it being
+  consumed, for a reason not yet found.** `FUN_4015a450`'s own
   `FUN_4015a124(0)` call (already read in this file's earlier section) goes
   on to call `FUN_4002cd6a`, which -- via `FUN_4002ccd0` -- reads **32 KiB
   from sector `0x458000`** (finding 14's own earlier table already flagged
-  this exact sector as "purpose unresolved") and checks: magic
-  `0x4D61476A` ("MaGj") at offset 0, then a CRC-32 (`FUN_4013e06c`, IEEE
-  polynomial `0xEDB88320`, confirmed by its table-init loop matching the
-  standard algorithm byte-for-byte) over a length-prefixed span starting at
-  offset 8, chained into a second CRC-32 pass over 4 more bytes at offset
-  4, expected to equal the literal constant `0xDEBB20E3`. All zero in our
-  image (never written), so this check fails, `FUN_4002ccd0` returns 0,
-  `FUN_4002cd6a` returns `0xFFFFFFFF`, `FUN_4015a124` returns `-1`, and
-  `FUN_4015a450` returns failure without ever setting the mount flag.
-  **[O], not yet implemented**: the exact byte widths of the two small
-  fields at offsets 8 and 10 (`_DAT_47e203d4`/`_DAT_47e203d6`, read as if
-  overlapping -- the same decompiler unreliability this file has already
-  hit more than once, see the CID/EXT_CSD section above) were not pinned
-  down by disassembly this session, so the exact bytes needed to make the
-  chained CRC land on `0xDEBB20E3` were not computed; this needs either a
-  disassembly read of `FUN_4002ccd0`/`FUN_4013e06c` (not just the
-  decompile) or a bounded, isolated call to `FUN_4002ccd0` on a candidate
-  buffer this tool constructs, the same technique
-  `tests/test_esdhc_identity.py` already used for the CID/EXT_CSD chain.
-  Until this is written, no card-image boot reaches a valid mount, and item
-  3 (browser lists `hat.wav`) still can't be demonstrated end-to-end.
+  this exact sector as "purpose unresolved").
+
+  **Fully pinned down by disassembly, not the decompile** (which had
+  misread offsets 8/10 as one overlapping 32-bit field --
+  `out/ghidra/dt2-1.16-emac/disasm/4002ccd0_FUN_4002ccd0.s` shows two
+  separate `mvz.w` 16-bit reads): magic `0x4D61476A` ("MaGj") at offset 0;
+  a 16-bit field at offset 10 == `3`; a 16-bit field at offset 8 == `0x2B`;
+  then a two-stage CRC-32/IEEE (`FUN_4013e06c`, disassembled -- its
+  per-byte update is the textbook table-driven `crc =
+  table[(crc^byte)&0xff] ^ (crc>>8)`, no extra initial/final complement
+  beyond whatever seed the caller passes): first pass seeded `0xFFFFFFFF`
+  over `record[8:8+length]` where `length = record[12:16] - 8` (a
+  self-describing size field, built here as `12`, so `length=4`, covering
+  exactly the two checked 16-bit fields); second pass chained from that
+  result over `record[4:8]`, expected to equal the literal `0xDEBB20E3`.
+  `record[4:8]`'s value isn't checked directly, only through that chained
+  CRC -- solved for (not guessed) via a GF(2) linear-algebra CRC inversion
+  (`crc32_ieee_raw` is linear in its input bits for a fixed starting state,
+  the same property CRC-combine tools use): `0xA7,0x27,0x55,0x8C`.
+  **Verified against the real firmware**: `tools/plusdrive.py`'s
+  `build_factory_table_record()` builds this record (the rest of the 32
+  KiB left zero), and `tests/test_factory_table.py` (`DT2_SYX`-gated) makes
+  a bounded, isolated call to the real `FUN_4002ccd0` with this exact
+  record in RAM (bypassing the CMD18 read, the same technique
+  `tests/test_esdhc_identity.py` used) and gets `D0=1` (accepted).
+
+  **Still open**: once `FUN_4002ccd0` accepts, `FUN_4002cd6a`'s own success
+  path goes on to iterate a ~1265-entry factory-drum-hit table
+  (`FUN_4015bede`/`FUN_4002cc7e`, reading further into this same 32 KiB
+  buffer) before returning success unconditionally -- this project has not
+  verified that loop is safe against an otherwise-all-zero buffer (it
+  might, itself, block on something, e.g. by trying to link
+  garbage-addressed filesystem entries). A cold boot with the new record
+  written (`out/plusdrive/dt2.img` rebuilt, ladder rebuilt to match) still
+  shows the mount flag at `0` and the boot task already parked in its own
+  known terminal idle loop after 1.6B total instructions -- i.e. `FUN_4015a450`
+  should have already run and returned by then, but the RAM buffer
+  `FUN_4002ccd0` reads into (`DAT_47e203cc`) reads back all zero afterward,
+  meaning either `FUN_4002ccd0` was never actually reached in the live run
+  (contradicting a straightforward read of `FUN_4015a124`'s own
+  unconditional call chain), or its `CMD18` read of this unusually large
+  (32 KiB / 64-sector) single request didn't deliver the image's bytes the
+  way the isolated unit test's direct RAM write did. **[O]**: needs a
+  session with scoped code hooks (fast; a global per-instruction hook is
+  too slow to run for the ~1-1.6B instructions this boot needs) on
+  `FUN_4015a450`/`FUN_4002cd6a`/`FUN_4002ccd0`, resumed from a snapshot
+  taken shortly before the expected call (not from the very start), to see
+  whether these are reached at all and, if so, what the live `CMD18`
+  actually delivers into `DAT_47e203cc`. Until this is resolved, no
+  card-image boot reaches a valid mount, and item 3 (browser lists
+  `hat.wav`) still can't be demonstrated end-to-end.
 - Which `Directory` (`FileSystemDirectory` vs `SamplePoolDirectory`)
   `SampleManager` actually browses — **answered**: a live crash trace
   (see `docs/findings/07-emulator.md`'s corrected section below) found

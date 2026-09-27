@@ -93,6 +93,34 @@ BOOT_CONFIG_SECTOR = 0x40000
 BOOT_CONFIG_SECTOR_2 = 0x48000
 BOOT_CONFIG_MAGIC = 0x434F4B69  # "COKi"
 
+# A fourth on-disk structure, also unrelated to +Drive's own filesystem: a
+# 32 KiB "factory drum-hit table" FUN_4015a124 (mount's own continuation,
+# past the superblock check) reads from sector 0x458000 via
+# FUN_4002cd6a -> FUN_4002ccd0, and validates before going on to register
+# ~1265 factory sample paths against it (FUN_4015bede/FUN_4002cc7e -- not
+# implemented here; see FACTORY_TABLE_SECTOR's comment). Disassembled (not
+# decompiled -- the decompile showed two fields at offsets 8/10 as if they
+# overlapped a single 32-bit read, which is wrong): `FUN_4002ccd0` checks,
+# in order: magic 0x4D61476A ("MaGj") at offset 0; a 16-bit field at offset
+# 10 == 3; a 16-bit field at offset 8 == 0x2B; then a two-stage CRC-32/IEEE
+# (`FUN_4013e06c`, confirmed standard by its table-init loop, poly
+# 0xEDB88320): first pass seeded 0xFFFFFFFF over `record[8:8+length]` where
+# `length = record[12:16] - 8` (a self-describing "total size" field, here
+# built as small as possible: `length=4`, covering exactly the two 16-bit
+# fields already checked); second pass chained from that result over
+# `record[4:8]`; the final value must equal the literal `0xDEBB20E3`.
+# `record[4:8]`'s own value isn't checked directly -- solved for with a
+# GF(2) linear-algebra CRC inversion (the update function is linear in its
+# input bits for a fixed starting state, the same property CRC-combine
+# tools rely on) once the other fields were fixed, not guessed.
+FACTORY_TABLE_SECTOR = 0x458000
+FACTORY_TABLE_MAGIC = 0x4D61476A  # "MaGj"
+FACTORY_TABLE_FIELD_8 = 0x2B
+FACTORY_TABLE_FIELD_10 = 3
+FACTORY_TABLE_LENGTH_FIELD = 12  # record[12:16]; CRC1 covers record[8:8+(12-8)]
+FACTORY_TABLE_CRC_TARGET = 0xDEBB20E3
+FACTORY_TABLE_FIELD_4 = b"\xa7\x27\x55\x8c"  # solved, see build_factory_table_record()
+
 # Region 2 (the real filesystem): absolute sector numbers, hard-coded in the
 # firmware, not derived from card capacity.
 ID_BITMAP_SECTOR = 0x5D8040
@@ -301,6 +329,84 @@ def build_boot_config_record():
     return bytes(buf)
 
 
+_CRC32_TABLE = None
+
+
+def _crc32_table():
+    """The exact table FUN_4013e06c builds once (poly 0xEDB88320, the
+    standard reflected CRC-32/IEEE polynomial) and caches -- reproduced here
+    from its own disassembly (`out/ghidra/dt2-1.16-emac/disasm/
+    4013e06c_FUN_4013e06c.s`), not from a library, so the update loop below
+    matches instruction-for-instruction."""
+    global _CRC32_TABLE
+    if _CRC32_TABLE is None:
+        table = []
+        for i in range(256):
+            c = i
+            for _ in range(8):
+                c = (c >> 1) ^ (0xEDB88320 if c & 1 else 0)
+            table.append(c & 0xFFFFFFFF)
+        _CRC32_TABLE = table
+    return _CRC32_TABLE
+
+
+def crc32_ieee_raw(seed, data):
+    """FUN_4013e06c(seed, data, len(data)) -- one byte at a time,
+    `crc = table[(crc ^ byte) & 0xff] ^ (crc >> 8)`, starting from `seed`
+    and returning the raw resulting register with **no** initial/final
+    complement (unlike the textbook "full" CRC-32 checksum, which XORs
+    0xFFFFFFFF in and out around exactly this same per-byte loop -- this
+    firmware's caller does that XOR-in explicitly, by passing
+    `seed=0xFFFFFFFF` itself, and never XORs the result back out, so the
+    raw register value is what gets compared). Confirmed against the real
+    firmware with a bounded call in `tests/test_factory_table.py`.
+    """
+    table = _crc32_table()
+    crc = seed & 0xFFFFFFFF
+    for byte in data:
+        crc = (table[(crc ^ byte) & 0xFF] ^ (crc >> 8)) & 0xFFFFFFFF
+    return crc
+
+
+def build_factory_table_record():
+    """-> the 32 KiB record `FUN_4002ccd0` validates at
+    `FACTORY_TABLE_SECTOR` -- see that constant's comment for the full
+    derivation. `FACTORY_TABLE_FIELD_4`'s bytes were solved (not guessed)
+    from the other, checked fields via a GF(2) linear-algebra CRC
+    inversion: `crc32_ieee_raw` is linear in its input bits for a fixed
+    starting state (the same property behind CRC-combine algorithms), so
+    `crc32_ieee_raw(crc1, V) = crc32_ieee_raw(crc1, b'\\0\\0\\0\\0') XOR
+    (XOR of each set bit's own zero-seeded contribution)`; solving
+    `target XOR A = M @ x` over GF(2) for the 32 unknown bits of `V` (a
+    32x32 system, always solvable since the map is a bijection) gives a
+    valid `V` directly, verified by re-running the forward computation
+    below and, live, in `tests/test_factory_table.py`.
+
+    The rest of the 32 KiB (everything after the checked/checksummed
+    header) is left zero: `FUN_4002cd6a`'s own success path (reached once
+    this record validates) goes on to register ~1265 factory sample paths
+    against further fields of this buffer, but its own return value does
+    not depend on that loop succeeding -- it returns success unconditionally
+    once this record's header validates. **[O]**: the factory drum-hit
+    content itself (not needed for mount to succeed) is not implemented.
+    """
+    buf = bytearray(PAGE)  # 32 KiB
+    struct.pack_into(">I", buf, 0x00, FACTORY_TABLE_MAGIC)
+    buf[0x04:0x08] = FACTORY_TABLE_FIELD_4
+    struct.pack_into(">H", buf, 0x08, FACTORY_TABLE_FIELD_8)
+    struct.pack_into(">H", buf, 0x0A, FACTORY_TABLE_FIELD_10)
+    struct.pack_into(">I", buf, 0x0C, FACTORY_TABLE_LENGTH_FIELD)
+    crc1 = crc32_ieee_raw(
+        0xFFFFFFFF, bytes(buf[0x08 : 0x08 + (FACTORY_TABLE_LENGTH_FIELD - 8)])
+    )
+    crc2 = crc32_ieee_raw(crc1, bytes(buf[0x04:0x08]))
+    assert crc2 == FACTORY_TABLE_CRC_TARGET, (
+        "FACTORY_TABLE_FIELD_4 no longer satisfies the CRC -- re-derive it "
+        "(see build_factory_table_record's docstring)"
+    )
+    return bytes(buf)
+
+
 class Image:
     """An in-progress (or already-built) +Drive card image, as a sparse file.
 
@@ -425,6 +531,12 @@ def build(samples_dir, out_path, capacity_blocks=DEFAULT_CAPACITY_BLOCKS):
         boot_config = build_boot_config_record()
         img.write(BOOT_CONFIG_SECTOR, boot_config)
         img.write(BOOT_CONFIG_SECTOR_2, boot_config)
+
+        # Unrelated fourth structure: without this, mount (FUN_4015a450, via
+        # FUN_4015a124 -> FUN_4002cd6a) fails cleanly even once the
+        # superblock and boot-config checks both pass -- see
+        # FACTORY_TABLE_SECTOR's comment above.
+        img.write(FACTORY_TABLE_SECTOR, build_factory_table_record())
 
         # Region 2: allocate physical pages up front -- page 0 is the root
         # directory's content (the child listing), page 1 is its 0x10001
