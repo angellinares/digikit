@@ -1565,26 +1565,35 @@ function and it returning 0 for real, right after a real CMD9/SEND_CSD
 exchange.
 
 **Passing that check for the first time exposed a second, unrelated blocker
-immediately behind it, still open.** `FUN_400cc864` proceeds further than
-any previous card-image boot, issues a `CMD18` read of sector `0x40000`
-(from `0x400efcc4`, part of its own always-executed bring-up, not
-`FUN_4015a450`/`FUN_4015a424` -- neither ever gets hit), and then hangs
-in a `bra.b $-2` self-loop with zero progress for 12.9M+ instructions.
-The *identical* `CMD18(0x40000)` from the *identical* caller also happens,
-harmlessly, in an unpatched stock-`emu/esdhc.py` boot of the same image
-(confirmed by swapping the file back and re-running the same instrumented
-trace) -- the only difference is that the now-successful identity check
-takes a measurably longer instruction path (an extra `FUN_4012db90`/
-`FUN_4012da2c` pass the old, failing check never took) before reaching that
-same read, pointing at a timing-sensitive fragility in the emulator's own
-interrupt/semaphore-completion delivery (or the RTOS scheduler tick around
-it) rather than anything wrong with the CID/EXT_CSD/CSD content. This is
-upstream of, and independent from, the branch-(C) display stall investigated
-below: fixing one does not fix the other, and this new hang happens earlier
-in boot than branch (C) is even decided. **[O]**, needs a session tracing
-`Esdhc`'s completion-semaphore/IRQ delivery for this read against the
-PIT/DTIM tick schedule -- see `docs/findings/14-plus-drive-format.md`'s
-matching section for the full instrumented trace.
+immediately behind it, narrowed further in a follow-up pass but still
+open.** The first pass here mis-attributed a `bra.b $-2` at `0x400CC7AE` to
+the boot task; a corrected, TCB-filtered instrumented trace (disassembling
+`FUN_400cc864` directly instead of estimating addresses -- the first pass's
+were each off by exactly `0x400`) shows that address actually belongs to an
+unrelated, low-priority task idling normally, and the *real* boot-task
+sequence is: identity check succeeds -> `FUN_400f0628` (an always-executed,
+identity-independent step) -> `CMD18(0x40000)` -> a genuine RTOS
+`sem_pend` block on `sd_dma_sem`, inside `FUN_4012e0c0` (CMD25/WRITE),
+that's never released. `FUN_400f0628` first validates a 256-byte "COKi"
+-tagged record at sector `0x40000`/`0x48000` (unrelated to +Drive; a
+factory calibration/config record `tools/plusdrive.py` never wrote) and,
+on failure, would fall into an unrelated ~13.85 MiB repair-write path --
+now fixed by writing a valid minimal record there
+(`tools/plusdrive.py`'s `build_boot_config_record()`). That fix alone did
+not stop the hang: right after that check (pass or fail), the same function
+unconditionally does a *second*, separate ~13.85 MiB read from the same two
+sector numbers, gated on `_DAT_4029e9b0 & 3 == 0` -- confirmed to hold
+identically in a stock and a patched boot at that point, yet only the
+patched boot's task ends up parked on `sd_dma_sem` afterward. The exact
+mechanism connecting "identity check now succeeds" to this later,
+nominally-unconditional read/write's different outcome was not found this
+session. This is upstream of, and independent from, the branch-(C) display
+stall investigated below: fixing one does not fix the other, and this hang
+happens earlier in boot than branch (C) is even decided. **[O]**, needs a
+session of bounded, targeted `emu.dspboot.run` + `sem_pend`-hook comparison
+runs (the technique used here) rather than more static reading -- see
+`docs/findings/14-plus-drive-format.md`'s matching section for the full
+trace and remaining candidates.
 
 ### Follow-up: branch (C) never hands vector 208 to the real display ISR; the six unconditional calls and `FUN_40032eaa` are not it **[V][O]**
 

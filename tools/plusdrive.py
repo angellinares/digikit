@@ -72,6 +72,27 @@ HEADER_SECTOR = 0
 HEADER_MAGIC = 0xBEEFBACE
 POOL_TABLE_SECTOR = 0x800
 
+# A third, separate on-disk structure, unrelated to +Drive itself: a
+# 256-byte "boot config"/calibration record FUN_400f0628 (called from
+# FUN_400cc864, unconditionally, on every boot, before the eMMC-identity
+# whitelist's own mount/format decision is even reached) reads from this
+# sector and a redundant backup at BOOT_CONFIG_SECTOR_2. Left all-zero (as
+# tools/plusdrive.py did until this was found), its validator
+# (FUN_400c0e90 -> FUN_400c0e54: magic `0x434F4B69` ("COKi"), a checksum,
+# and a bounded length field) fails on both copies, and FUN_400f0628 falls
+# back to a "restore a ~13.85 MiB factory image from internal flash and
+# rewrite this sector" repair path (FUN_400f04e2) that issues on the order
+# of 28,000 CMD25 writes -- confirmed, by an instrumented cold boot, to be
+# where a real boot task ends up permanently pending on `sd_dma_sem`
+# (unposted in this build's Esdhc model either way; see emu/esdhc.py) far
+# short of completing that many writes. Writing a minimal, self-consistent
+# valid record here instead (matching FUN_400c0e54's own check) skips that
+# whole unrelated repair path, the same way the region-1 header above is
+# written just to satisfy ITS OWN first-boot format check.
+BOOT_CONFIG_SECTOR = 0x40000
+BOOT_CONFIG_SECTOR_2 = 0x48000
+BOOT_CONFIG_MAGIC = 0x434F4B69  # "COKi"
+
 # Region 2 (the real filesystem): absolute sector numbers, hard-coded in the
 # firmware, not derived from card capacity.
 ID_BITMAP_SECTOR = 0x5D8040
@@ -255,6 +276,31 @@ def build_superblock():
     return bytes(buf)
 
 
+def build_boot_config_record():
+    """-> the 256-byte record FUN_400c0e54 validates at BOOT_CONFIG_SECTOR
+    (and its backup, BOOT_CONFIG_SECTOR_2) -- see BOOT_CONFIG_SECTOR's
+    comment. Unrelated to +Drive's own filesystem; this only exists to make
+    FUN_400f0628's unconditional boot-time check pass immediately instead of
+    falling into its 13.85 MiB internal-flash "repair" path.
+
+    FUN_400c0e54's check, transliterated: `buf[0]==0x434F4B69 and buf[3]<0xF1
+    and FUN_400c0d3a(buf)==buf[1]` (all as big-endian 32-bit words).
+    FUN_400c0d3a sums `(i ^ buf[2+i-1])` for i in 1..(buf[3]+8)>>2 -- i.e. it
+    covers `buf[3]` itself (word index 1 relative to its own start at word
+    2) as well as whatever payload precedes it. This picks the simplest
+    valid record: length field (word 3) = 0, so the loop covers exactly
+    words 2 and 3 (both left 0), giving a checksum of `(1^0) + (2^0) = 3`
+    -- no payload beyond the header is written or needed for a boot that
+    only checks validity, not content.
+    """
+    buf = bytearray(SECTOR // 2)  # 256 bytes; FUN_400f0628 reads exactly this
+    struct.pack_into(">I", buf, 0x00, BOOT_CONFIG_MAGIC)
+    struct.pack_into(">I", buf, 0x0C, 0)  # length field, must be < 0xF1
+    checksum = (1 ^ 0) + (2 ^ 0)  # words at offsets 8 and 12, both 0
+    struct.pack_into(">I", buf, 0x04, checksum)
+    return bytes(buf)
+
+
 class Image:
     """An in-progress (or already-built) +Drive card image, as a sparse file.
 
@@ -370,6 +416,15 @@ def build(samples_dir, out_path, capacity_blocks=DEFAULT_CAPACITY_BLOCKS):
         # fails and FileSystemDirectory never reports itself valid -- see
         # docs/findings/07-emulator.md's std::logic_error section.
         img.write(SUPERBLOCK_SECTOR, build_superblock())
+
+        # Unrelated third structure: without this, every boot (regardless of
+        # +Drive/mount content) falls into FUN_400f0628's ~13.85 MiB
+        # internal-flash "repair" path and the boot task ends up pending
+        # forever on an unposted semaphore -- see BOOT_CONFIG_SECTOR's
+        # comment and docs/findings/14-plus-drive-format.md.
+        boot_config = build_boot_config_record()
+        img.write(BOOT_CONFIG_SECTOR, boot_config)
+        img.write(BOOT_CONFIG_SECTOR_2, boot_config)
 
         # Region 2: allocate physical pages up front -- page 0 is the root
         # directory's content (the child listing), page 1 is its 0x10001
