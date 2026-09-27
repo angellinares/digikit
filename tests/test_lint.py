@@ -18,6 +18,7 @@ CLEAN = [
     "emu/sharc_capture.py",
     "emu/sharc_peer.py",
     "tests/test_dspi2.py",
+    "tests/test_dspboot_esdhc_wiring.py",
     "tests/test_dt2_reach_running.py",
     "tests/test_esdhc_identity.py",
     "tests/test_lint.py",

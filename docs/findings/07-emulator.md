@@ -1564,36 +1564,33 @@ instrumented live cold boot shows the *exact same* real values reaching that
 function and it returning 0 for real, right after a real CMD9/SEND_CSD
 exchange.
 
-**Passing that check for the first time exposed a second, unrelated blocker
-immediately behind it, narrowed further in a follow-up pass but still
-open.** The first pass here mis-attributed a `bra.b $-2` at `0x400CC7AE` to
-the boot task; a corrected, TCB-filtered instrumented trace (disassembling
-`FUN_400cc864` directly instead of estimating addresses -- the first pass's
-were each off by exactly `0x400`) shows that address actually belongs to an
-unrelated, low-priority task idling normally, and the *real* boot-task
-sequence is: identity check succeeds -> `FUN_400f0628` (an always-executed,
-identity-independent step) -> `CMD18(0x40000)` -> a genuine RTOS
-`sem_pend` block on `sd_dma_sem`, inside `FUN_4012e0c0` (CMD25/WRITE),
-that's never released. `FUN_400f0628` first validates a 256-byte "COKi"
--tagged record at sector `0x40000`/`0x48000` (unrelated to +Drive; a
-factory calibration/config record `tools/plusdrive.py` never wrote) and,
-on failure, would fall into an unrelated ~13.85 MiB repair-write path --
-now fixed by writing a valid minimal record there
-(`tools/plusdrive.py`'s `build_boot_config_record()`). That fix alone did
-not stop the hang: right after that check (pass or fail), the same function
-unconditionally does a *second*, separate ~13.85 MiB read from the same two
-sector numbers, gated on `_DAT_4029e9b0 & 3 == 0` -- confirmed to hold
-identically in a stock and a patched boot at that point, yet only the
-patched boot's task ends up parked on `sd_dma_sem` afterward. The exact
-mechanism connecting "identity check now succeeds" to this later,
-nominally-unconditional read/write's different outcome was not found this
-session. This is upstream of, and independent from, the branch-(C) display
-stall investigated below: fixing one does not fix the other, and this hang
-happens earlier in boot than branch (C) is even decided. **[O]**, needs a
-session of bounded, targeted `emu.dspboot.run` + `sem_pend`-hook comparison
-runs (the technique used here) rather than more static reading -- see
+**Passing that check for the first time exposed a second, unrelated
+blocker immediately behind it -- now fixed.** A corrected, TCB-filtered
+instrumented trace (disassembling `FUN_400cc864` directly, not estimating
+addresses) showed the boot task legitimately blocking forever in
+`sem_pend` on `sd_dma_sem`, inside `FUN_4012e0c0` (the CMD25/multi-block
+-WRITE primitive), reached via `FUN_400f0628` (an always-executed,
+identity-independent step) right after the identity check. Root cause:
+`emu/dspboot.py`'s own `Esdhc(...)` construction (used only for the
+*initial* cold-boot pass -- exactly where this hang occurs) never passed
+`dma_sem`, unlike `emu/longrun.py`'s construction of the same class, which
+always has. `Esdhc._post(None)` is a documented no-op, so the real
+eDMA-channel-59-completion `give` this model performs on a write's behalf
+never landed; reads (which pend on `data_sem` instead) were unaffected,
+which is why only writes hung. **Fixed** by passing
+`dma_sem=profile.sd_dma_sem` there too, with a new regression test
+(`tests/test_dspboot_esdhc_wiring.py`) -- the `Esdhc` model's own
+CMD25-posts-`dma_sem` behavior was already covered by `tests/test_esdhc.py`.
+
+With that fixed, a cold ladder now reaches 400M instructions with 10 tasks
+(including the priority-6 Main-OS task) and confirms `FUN_4015a450` (mount)
+is genuinely called (`_DAT_42940a48 == 0` at the boot task's own stable
+terminal idle loop). Mount itself still doesn't succeed -- a **third**,
+previously-undocumented on-disk structure at sector `0x458000` (a
+"MaGj"-tagged, CRC-32-checked 32 KiB record `FUN_4015a124` reads via
+`FUN_4002cd6a`/`FUN_4002ccd0`, all zero in our image) now blocks it -- see
 `docs/findings/14-plus-drive-format.md`'s matching section for the full
-trace and remaining candidates.
+trace, the CRC algorithm, and what's left to pin down there.
 
 ### Follow-up: branch (C) never hands vector 208 to the real display ISR; the six unconditional calls and `FUN_40032eaa` are not it **[V][O]**
 

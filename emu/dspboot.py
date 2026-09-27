@@ -368,9 +368,19 @@ def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
     if esdhc:
         from emu.esdhc import Card, Esdhc
         card = Card.from_file(card_image) if card_image else None
-        # cmd_sem/data_sem are per-image for the same reason drv_status is.
+        # cmd_sem/data_sem/dma_sem are per-image for the same reason
+        # drv_status is. dma_sem was missing here (unlike emu/longrun.py's
+        # own Esdhc construction, which has always passed it) -- harmless
+        # for a card-less/no-real-write boot, since nothing pends on it, but
+        # any multi-block CMD25 write's own sem_pend(sd_dma_sem) then blocks
+        # forever: Esdhc._post(None) is a no-op (see its own docstring), so
+        # the real eDMA-channel-59-completion give this models never lands.
+        # Confirmed live: the +Drive-mount boot task hangs exactly here (a
+        # write inside FUN_4012e0c0) once an earlier fix let it reach this
+        # code at all -- see docs/findings/14-plus-drive-format.md.
         m.esdhc = Esdhc(m, card=card, drv_status=profile.sd_status,
-                        cmd_sem=profile.sd_cmd_sem, data_sem=profile.sd_data_sem)
+                        cmd_sem=profile.sd_cmd_sem, data_sem=profile.sd_data_sem,
+                        dma_sem=profile.sd_dma_sem)
 
     m.install_mmio()
     m.install_exceptions()

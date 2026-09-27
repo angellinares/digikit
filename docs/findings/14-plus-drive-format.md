@@ -634,83 +634,91 @@ nothing about mount state; readdir only happens on actual navigation
   intended values -- immediately after a real `CMD9`/SEND_CSD exchange.
   **This part of the fix is done and correct.**
 
-  **New, separate blocker found immediately after it, in code that has
-  nothing to do with +Drive or this identity check -- narrowed further, and
-  one contributing gap fixed, but not yet root-caused.**
+  **The boot-task hang immediately after the identity check is now fixed --
+  root cause was an emulator wiring gap, not firmware or image content.**
 
-  Two corrections to this file's own first pass at this, from disassembling
-  the real code (the earlier draft's addresses were each off by exactly
-  `0x400`, and `0x400CC7AE`'s `bra.b $-2` belongs to an unrelated,
-  *low*-priority task (`entry=0x400cc780`, confirmed by reading its own TCB
-  live) that legitimately idles there -- not to the boot task at all, so it
-  is not evidence of anything hanging by itself). The real call sequence,
-  read from `out/ghidra/dt2-1.16-emac/disasm/400cc864_FUN_400cc864.s`, is:
-  identity check succeeds -> `_DAT_42940a48` stored at `0x400ccb5a` ->
-  `FUN_400f0628` (`0x400ccb6a`) -> ... -> `FUN_4015a43a`/`FUN_4015a450`
-  (`0x400ccbe6`/`0x400ccc00`), all unconditional on the identity result
-  except the last two. An instrumented boot that follows the *current*
-  task's own TCB (not a whole-image PC sample, which mixes in every other
-  task) shows the boot task (`tcb=0x42944aac`) enter `FUN_400f0628`,
-  issue the `CMD18(0x40000)` read, and then legitimately block in
-  `sem_pend` (`0x4000141a`) -- a real RTOS wait, not a spin -- and never run
-  again in an 8-12M-instruction window. `tools/guirun.py`'s own
-  `sem_pend`/`pend_b` hook pattern, reused directly, names exactly which
-  semaphore: the boot task's *last* pend, after several ordinary
-  `cmd_sem`/`data_sem` waits that all resolve normally, is on
-  `sd_dma_sem` (`0x44e3feb8`) from inside `FUN_4012e0c0` (the CMD25/WRITE
-  primitive, return address `0x4012e06e`) -- i.e. the boot task is waiting
-  on a **write's** DMA completion, and that never arrives.
+  Two corrections to this file's own earlier passes at this, from
+  disassembling the real code (addresses were off by exactly `0x400` in an
+  earlier pass, and a `bra.b $-2` at `0x400CC7AE` belongs to an unrelated,
+  low-priority task idling normally, confirmed by reading its own TCB live
+  -- not evidence of a hang by itself). The real call sequence, read from
+  `out/ghidra/dt2-1.16-emac/disasm/400cc864_FUN_400cc864.s`, is: identity
+  check succeeds -> `_DAT_42940a48` stored at `0x400ccb5a` -> `FUN_400f0628`
+  (`0x400ccb6a`) -> ... -> `FUN_4015a43a`/`FUN_4015a450` (`0x400ccbe6`/
+  `0x400ccc00`). An instrumented boot following the boot task's own TCB
+  (not a whole-image PC sample) showed it enter `FUN_400f0628`, issue a
+  `CMD18(0x40000)` read, and then legitimately block in `sem_pend`
+  (`0x4000141a`) forever. `tools/guirun.py`'s own `sem_pend`/`pend_b` hook
+  pattern, reused directly, named the exact semaphore: after several
+  ordinary `cmd_sem`/`data_sem` waits that all resolved normally, the last
+  pend was on `sd_dma_sem` (`0x44e3feb8`) from inside `FUN_4012e0c0` (the
+  CMD25/multi-block-WRITE primitive) -- a **write's** DMA completion that
+  never arrived.
 
-  `FUN_400f0628` reads 256 bytes from sector `0x40000` (a copy at `0x48000`
-  too) and validates each with `FUN_400c0e90`->`FUN_400c0e54`: magic
-  `0x434F4B69` ("COKi"), a bounded length field, and a checksum
-  (`FUN_400c0d3a`, `sum(i ^ word[i+1])` over the header's own words). Zero
-  bytes there (this tool never wrote anything at these sectors) fail that
-  check on both copies, which is meant to trigger `FUN_400f04e2` --
-  "repair" the header by copying a `0x434F4B69`-tagged ~13.85 MiB blob from
-  one of 3 candidate addresses into it via ~27,000 CMD25 writes. Unrelated
-  to +Drive; this looks like a factory calibration/config record, not
-  filesystem content. **Fixed**: `tools/plusdrive.py` now writes a minimal,
-  valid record at both sectors (`BOOT_CONFIG_SECTOR`/`_2`,
-  `build_boot_config_record()`) so this check passes immediately -- this is
-  a real, independently-justified fix (the same rationale as the region-1
-  header write already there: satisfy an unconditional first-boot check
-  cheaply and deterministically), not a guess.
+  **Root cause: `emu/dspboot.py`'s own `Esdhc(...)` construction never
+  passed `dma_sem`.** `emu/longrun.py`'s construction of the same class
+  always has (`dma_sem=profile.sd_dma_sem`); `emu/dspboot.py`'s (used only
+  for the *initial* cold-boot pass, i.e. exactly where this hang occurs)
+  passed `cmd_sem`/`data_sem` but silently left `dma_sem` at its `None`
+  default. `Esdhc._post(None)` is a documented no-op (see its own
+  docstring), so the guest's real eDMA-channel-59-completion `give` this
+  model performs on a write's behalf (see `vector_192_handler`'s own
+  disassembly below) never lands, and any multi-block CMD25 write's own
+  `sem_pend(sd_dma_sem)` -- reads, which pend on `data_sem` instead, are
+  unaffected -- blocks forever. **Fixed**: pass `dma_sem=profile.sd_dma_sem`
+  in `emu/dspboot.py`, matching `emu/longrun.py`. New regression test,
+  `tests/test_dspboot_esdhc_wiring.py` (`DT2_SYX`-gated); the `Esdhc` model's
+  own CMD25-posts-`dma_sem` behavior was already covered by
+  `tests/test_esdhc.py`'s `test_cmd25_consumes_host_buffer_and_is_visible_to_cmd18`
+  -- this was purely a construction-site wiring gap, not a model bug.
 
-  **It did not, on its own, stop the boot task's final hang.** With the new
-  record in place, the identical `sd_dma_sem`/`FUN_4012e0c0` pend still
-  happens at the same point. Tracing further: right after the 256-byte
-  header check (pass *or* fail), `FUN_400f0628` unconditionally reads a
-  *second*, separate ~13.85 MiB (`0xdd9714`-byte) block -- from sector
-  `0x40000` or `0x48000` again (a different table, `&DAT_40215d24`, same
-  two sector numbers, not the repair function's own candidate list) --
-  whenever `_DAT_4029e9b0 & 3 == 0`, which this session confirmed holds
-  identically in both a stock and a patched boot at the point
-  `FUN_400f0628` is entered. Both a stock (identity check fails fast) and
-  this session's patched (identity check now succeeds) boot reach that same
-  gate with the same bits, yet only the patched boot's boot task ends up
-  parked on `sd_dma_sem` afterward -- a stock boot reaches `running`'s next
-  milestone (the 5th task, at n=47,097,717) without it. **[O], unresolved**:
-  the mechanism connecting "identity check now succeeds" to "this later,
-  logically-unconditional big read/write behaves differently" was not
-  found this session -- candidates not yet checked: whether the *content*
-  `FUN_400efc8e` reads back from sector `0x40000`/`0x48000` for this second,
-  large read differs now that a valid 256-byte header sits at the start of
-  it (previously all zero either way, so this session's own boot-config fix
-  could itself be the new variable, not just the identity check --
-  re-verify by testing the identity fix *without* the boot-config fix, which
-  this session did not do fully cleanly), and whether `FUN_4012e0c0`
-  behaves differently on a card image whose `Card.blocks`/apparent capacity
-  interacts with sector numbers this large (`0x40000`/`0x48000` are both
-  large but well within the card's own bounds either way). Needs a session
-  with more bounded, targeted comparison runs (the fast
-  `emu.dspboot.run`-plus-`sem_pend`-hook technique used here, not a full
-  cold-boot ladder) rather than more static reading -- the mechanism is
-  runtime state, not a code-level question at this point. Until it's found,
-  no card-image boot reaches `FUN_4015a450` in a real run even though the
-  gate in front of it (`_DAT_42940a48 == 0`) is now provably satisfiable,
-  and item 3 (browser lists `hat.wav`) still can't be demonstrated
-  end-to-end in this emulator.
+  For completeness (per the coordinator's own ask), the real firmware's
+  eDMA-channel-59 completion ISR, `vector_192_handler`
+  (`out/ghidra/dt2-1.16-emac/disasm/4012d3c4_vector_192_handler.s`, 40
+  bytes) is trivial: `move.b #0x3b,(EDMA_CINT)` (acks/clears channel 59's
+  own interrupt request) then unconditionally `give_b(sd_dma_sem)` -- no
+  IRQSTAT/TCD inspection at all, confirming this model's own
+  synchronous-completion shortcut (posting straight from `Esdhc.command()`,
+  never actually raising vector 192 -- see `emu/longrun.py`'s own comment
+  on this) is a faithful enough simplification of what the real ISR does;
+  the bug was purely that this specific construction site left the target
+  semaphore address as `None`.
+
+  **With this fixed, the boot progresses dramatically further** (a cold
+  ladder to 400M instructions now creates 10 tasks, including the
+  priority-6 Main-OS task, `entry=0x400337ba`, that finding 07's own
+  branch-A/B/C investigation names) **and `_DAT_42940a48` (the identity
+  check's own gate) reads `0` at the boot task's own terminal idle loop
+  (`0x400cccd8`, confirmed unmoving after 1B total instructions) -- i.e.
+  `FUN_4015a450` (mount) is now definitely called.** It still does not
+  succeed: `_DAT_44f2bd68` (the mount flag) stays `0`.
+
+  **A third, previously-undocumented on-disk structure blocks mount's own
+  success, past the superblock at `0x5D8000`.** `FUN_4015a450`'s own
+  `FUN_4015a124(0)` call (already read in this file's earlier section) goes
+  on to call `FUN_4002cd6a`, which -- via `FUN_4002ccd0` -- reads **32 KiB
+  from sector `0x458000`** (finding 14's own earlier table already flagged
+  this exact sector as "purpose unresolved") and checks: magic
+  `0x4D61476A` ("MaGj") at offset 0, then a CRC-32 (`FUN_4013e06c`, IEEE
+  polynomial `0xEDB88320`, confirmed by its table-init loop matching the
+  standard algorithm byte-for-byte) over a length-prefixed span starting at
+  offset 8, chained into a second CRC-32 pass over 4 more bytes at offset
+  4, expected to equal the literal constant `0xDEBB20E3`. All zero in our
+  image (never written), so this check fails, `FUN_4002ccd0` returns 0,
+  `FUN_4002cd6a` returns `0xFFFFFFFF`, `FUN_4015a124` returns `-1`, and
+  `FUN_4015a450` returns failure without ever setting the mount flag.
+  **[O], not yet implemented**: the exact byte widths of the two small
+  fields at offsets 8 and 10 (`_DAT_47e203d4`/`_DAT_47e203d6`, read as if
+  overlapping -- the same decompiler unreliability this file has already
+  hit more than once, see the CID/EXT_CSD section above) were not pinned
+  down by disassembly this session, so the exact bytes needed to make the
+  chained CRC land on `0xDEBB20E3` were not computed; this needs either a
+  disassembly read of `FUN_4002ccd0`/`FUN_4013e06c` (not just the
+  decompile) or a bounded, isolated call to `FUN_4002ccd0` on a candidate
+  buffer this tool constructs, the same technique
+  `tests/test_esdhc_identity.py` already used for the CID/EXT_CSD chain.
+  Until this is written, no card-image boot reaches a valid mount, and item
+  3 (browser lists `hat.wav`) still can't be demonstrated end-to-end.
 - Which `Directory` (`FileSystemDirectory` vs `SamplePoolDirectory`)
   `SampleManager` actually browses — **answered**: a live crash trace
   (see `docs/findings/07-emulator.md`'s corrected section below) found
