@@ -1615,6 +1615,73 @@ rather than from a cold start -- see
 `docs/findings/14-plus-drive-format.md`'s matching section for the full
 trace and the CRC derivation.
 
+**Update, a later session: the scoped-hook trace above was done, from a true
+cold start (`emu.dspboot.run`, not a `--card-image` resume through
+`emu.longrun.build`/`tools/dt2_reach_running.py` -- that resume path was
+tried first and gave a non-reproducing, divergent trace: no eSDHC traffic
+and no boot-task-entry hit for hundreds of millions of instructions after
+resuming a mid-ladder snapshot, most likely because it drives scheduling
+through `unblock` (force-satisfy every pending semaphore) where a native
+cold boot drives it through `emu.dspboot.run`'s own idle-spin/vector-32 tick
+-- the two are not equivalent for this code path and should not be assumed
+interchangeable for anything past the point a card-image boot starts real
+SD traffic). A native cold boot with `--card-image out/plusdrive/dt2.img`,
+code hooks on `FUN_400cc864`/`FUN_400ccb6a`(call site of
+`FUN_400f0628`)/`FUN_400ccbde`(pre-mount check)/`FUN_4015a43a`/`FUN_4015a450`/
+`FUN_4015a124`/`FUN_4002cd6a`/`FUN_4002ccd0`, and `Esdhc.command_log_enabled`
+turned on, shows: the boot task (entry `0x400cc864`) is created at
+n≈32.36M, calls `FUN_400f0628` at n≈47.1M (returns at n≈52.66M -- it does
+return; it is not an infinite job-pump loop as an earlier pass through this
+same investigation, using the divergent resume path, mistakenly concluded
+from an unrelated later worker task that happens to reuse the same generic
+`BgWorker` job-loop code), reaches the pre-mount check at n≈82.911M with
+`DAT_42940a48==0` and `DAT_4029e9b0==0` (both consistent with proceeding),
+calls `FUN_4015a43a` then **`FUN_4015a450` is genuinely entered** at
+n≈82.911127M -- contradicting this section's own earlier "never reached"
+framing, which was built on the divergent resume trace. `FUN_4015a450`
+issues its CMD18 for sector `0x5D8000` (confirmed: the stack argument at
+its own `FUN_4012deda` entry is exactly `0x5D8000`, length `0x200`, dest
+`0x46f4dcb0`), but **`Esdhc.command_log_enabled`'s own log has no entry for
+this call at all** -- no XFERTYP write ever reaches the eSDHC MMIO
+registers for it, unlike every other CMD18 in the same log (449 entries by
+this point, all with a normal `armed=59`/`dma_bytes` record). `DAT_46f4dcb0`
+reads back all zero both before and after, `FUN_4015a450` returns
+`0xFFFFFFFF` (magic check fails against zero), and the boot task falls
+through the rest of `FUN_400cc864` to its terminal spin by n≈83.003M.
+**Root cause, pinned down by disassembly of `FUN_4012deda`
+(`out/ghidra/dt2-1.16-emac/disasm/4012deda_FUN_4012deda.s`, not the
+decompile): before ever touching `EDMA_SERQ`/`ESDHC_XFERTYP`, it does
+`tst.l D4` (the requested sector, signed) then
+`cmp.l (DAT_44e3fea0).l,D4; bcc.b <error return, D2=-1>` -- an unsigned
+bounds check against the card's own believed capacity in sectors, and bails
+out (no hardware access at all, buffer untouched) if the sector is `>=`
+that capacity.** `DAT_44e3fea0` is the exact same global this file's eMMC-
+identity section already named: the CSD-1.0-fallback capacity `FUN_4012d4b2`
+computes and this project deliberately set to `0x3B0000` sectors (not the
+card's real, larger size) because encoding the correct, larger capacity
+through EXT_CSD's own `SEC_COUNT` field "made a real cold boot hang
+outright" in that earlier session. **`0x5D8000` (the +Drive superblock
+sector) is `0x1FD000` sectors past `0x3B0000`** -- i.e. every sector
+`tools/plusdrive.py`'s real filesystem uses (superblock at `0x5D8000`,
+records from `0x5D8180`, content from `0x5EE180`) sits entirely outside the
+capacity this build's identity fix tells the firmware the card has, so
+`FUN_4012deda` rejects every read of it, unconditionally, regardless of
+whether the image bytes at that file offset are correct (they are --
+verified directly against `out/plusdrive/dt2.img`: the exact documented
+superblock bytes are there) or whether the superblock/MaGj-record work is
+otherwise right. **This, not a display-start gap or a format-writer bug, is
+why no card-image boot has ever mounted +Drive's real filesystem in this
+project.** **[O]**, one static pass, not yet independently re-checked: the
+fix is very likely to re-test whether the "`SEC_COUNT=0x760000` hangs boot"
+result from the eMMC-identity session still reproduces now that the
+dma_sem wiring fix (a later fix in the *same* investigation chain, for a
+hang inside a CMD25 write) is in place -- that earlier hang was bisected
+before the dma_sem fix existed and may well have been the very same bug,
+in which case reporting the card's real, larger capacity through
+`SEC_COUNT` (or any row/encoding that both passes the whitelist and covers
+at least `0x5EE180`+ sectors) would remove this bound entirely, without
+needing to touch `tools/plusdrive.py` or the mount code at all.
+
 ### Follow-up: branch (C) never hands vector 208 to the real display ISR; the six unconditional calls and `FUN_40032eaa` are not it **[V][O]**
 
 Read all six unconditional calls named above (`FUN_400c14dc`, `FUN_400f03e8`,
