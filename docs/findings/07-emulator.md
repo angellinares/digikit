@@ -2582,3 +2582,37 @@ boundaries, so coalescing (few boundaries) under-reads it.
   channel 59, post card/dma/data semaphores or deliver interrupts. The
   transfer contract will be fallible and chunked when machine wiring adds it;
   early register replay alone is not a cold-boot or real-time audio gate.
+
+## Live SR trace and bounded channel-59 transfer effects (2026-09-29)
+
+- **[C]** The early trace's 2/3 unexpected vector-207 predictions did not
+  establish a PIT defect. The v1 trace records an RTE returning with SR
+  `0x2700` to `0x40001416`, whose decoded instruction is `move D1w,SR`;
+  the next interrupt frame reports SR `0x2004`. Replay could not observe
+  that direct guest SR write. The opt-in v2 recorder samples **live** SR
+  immediately before async and timer service; replay applies it before
+  predicting delivery. This is not a vector-specific exemption or a value
+  inferred from the IRQ under test. Existing v1 traces still use their
+  explicitly reported legacy scheduler-trap exemption, or retain their
+  original mismatches where that exemption does not apply.
+- **[D]** Fresh, ignored v2 traces recorded for 30M more DT2 and 80M more
+  DN2 instructions from the 24M checkpoints have respectively 52 and 159
+  service-boundary SR samples. Recorded/control snapshots compare identical
+  under `tools/snapeq.py`. Both **whole early traces** now pass `mmio-replay`
+  with zero mismatches and no SR exemption; on each trace the focused GPIO
+  gate (20) and eSDHC gate (74) also pass. Original v1 ready-state traces
+  continue to pass with one explicit legacy SR exemption each. This only
+  establishes parity for the captured early windows, not late +Drive boot.
+- **[D]** `native/periph` now supplies `transfer_dma59`, a pure CMD8/CMD18
+  card-to-guest and CMD25 guest-to-card helper. It uses caller-provided
+  windows bounded to 1 MiB, validates addresses before mutating payloads,
+  returns a detached TCD effect, and restricts TCD completion writeback to
+  the three oracle-written registers. Tests exercise synthetic 512-byte and
+  32-KiB transfers and a real `Card` media/overlay round-trip. The first
+  512-byte `_dma_out` at clock 70562053 in the DT2 late trace is **CMD18**
+  (XFERTYP `0x123a0036`), not evidence of CMD8 merely because of its size.
+- **[O]** A native machine still needs to arm channel 59 on SERQ, select the
+  card window, map guest RAM, apply these effects to its live eDMA bank and
+  deliver completion. There is no independent full late boot DMA payload
+  replay or native ISR parity gate yet. Old v1 late traces have separate
+  vector-208 timing residues; do not call that timer parity.

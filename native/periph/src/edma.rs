@@ -83,6 +83,26 @@ pub const CSR_INT_HALF: u16 = 0x0004;
 pub const CSR_INT_MAJOR: u16 = 0x0002;
 pub const CSR_START: u16 = 0x0001;
 
+/// A detached eDMA TCD image.  Peripheral helpers use this instead of a
+/// `RegFile` so their transfer effects are pure and can be applied by a
+/// machine owner after its guest-memory operation succeeds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TcdSnapshot {
+    pub saddr: u32,
+    pub attr: u16,
+    pub soff: i16,
+    pub nbytes: u32,
+    pub slast: i32,
+    pub daddr: u32,
+    /// The count with E_LINK removed.
+    pub citer: u16,
+    pub doff: i16,
+    pub dlast: i32,
+    /// The count with E_LINK removed.
+    pub biter: u16,
+    pub csr: u16,
+}
+
 /// -> the byte offset of channel `chan`'s TCD, within `EdmaBank`'s slot.
 pub const fn tcd_offset(chan: usize) -> usize {
     TCD_SLOT_OFFSET + chan * 0x20
@@ -172,6 +192,38 @@ impl<'a> TcdView<'a> {
     /// pointer verification, or `RegFile::load_page` cross-checks).
     pub fn base_offset(&self) -> usize {
         self.base
+    }
+
+    /// Copy the live descriptor into a detached value for a pure peripheral
+    /// transfer helper. E_LINK is intentionally not carried in its counts;
+    /// the oracle masks it before its eSDHC channel-59 bookkeeping too.
+    pub fn snapshot(&self) -> TcdSnapshot {
+        TcdSnapshot {
+            saddr: self.saddr(),
+            attr: self.attr(),
+            soff: self.soff() as i16,
+            nbytes: self.nbytes(),
+            slast: self.slast() as i32,
+            daddr: self.daddr(),
+            citer: self.citer(),
+            doff: self.doff() as i16,
+            dlast: self.dlast() as i32,
+            biter: self.biter(),
+            csr: self.csr(),
+        }
+    }
+
+    /// Apply only the three writes the eSDHC oracle performs on completion:
+    /// the moving address, reloaded CITER, and DONE-set CSR. The remaining
+    /// snapshot fields are inputs, not writebacks (or extra HWR events).
+    pub fn apply_dma59_writeback(&mut self, tcd: TcdSnapshot, card_to_guest: bool) {
+        if card_to_guest {
+            self.set_daddr(tcd.daddr);
+        } else {
+            self.set_saddr(tcd.saddr);
+        }
+        self.set_citer(tcd.citer);
+        self.regs.set_u16_at(self.base + CSR, tcd.csr);
     }
 }
 

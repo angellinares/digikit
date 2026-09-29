@@ -24,15 +24,10 @@
 //!   consistency check: if this crate's own simulation had already drifted,
 //!   the resync papers over it silently, but a mismatch reported *before*
 //!   that point is real.
-//! * Every `STEP` record's clock equals the guest instruction count right
-//!   after the *previous* step finished -- exactly the value
-//!   `emu.longrun.spin` passes to `Timers.service` (see `pit.rs`'s module
-//!   docs and this file's design notes in the handback). So: whenever the
-//!   trace's clock advances to an unseen value, this replay calls
-//!   `Timers::service` with that same value, before processing whatever
-//!   record revealed the advance, and matches the vectors it raises against
-//!   the trace's own `IRQ` records for PIT (205-208) and DTIM (96-99)
-//!   vectors, in order, at that same clock.
+//! * v2 emits an `SR` record immediately before each async/PIT service
+//!   boundary. Replay seeds `SrTracker` from that live sample and then calls
+//!   `Timers::service` at the same clock, before the resulting trace IRQs.
+//!   v1 has no samples and retains its historical clock-advance behaviour.
 //! * Guest `RD`/`WR` records at a timers/INTC address are routed through
 //!   `Timers::read`/`write`; a `RD` is checked, a `WR` is mirrored (input,
 //!   not compared -- see `regfile.rs`: unmodelled registers are plain RAM in
@@ -43,10 +38,8 @@
 //!   read-modify-write; PIT never writes guest memory, see `pit.rs`) are
 //!   checked against the host writes `Timers::service` reports performing.
 //! * SR/IPL, which `deliver_pending`'s masking check needs and this
-//!   peripheral-only crate has no CPU to supply, is reconstructed from every
-//!   `IRQ` record's `frame_sr` and every `RTE` record's restored `sr` --
-//!   see `sr.rs`'s module docs for why this is exact at those points and
-//!   what the residual gap is.
+//!   peripheral-only crate has no CPU to supply, comes from each v2 boundary
+//!   `SR` sample; IRQ frame SR and RTE remain resync points for all traces.
 //!
 //! ## DMA + SSI + DSPI lane (P4 stage 2b, `spilink::DmaLink`)
 //!
@@ -75,9 +68,7 @@
 //!   replay tracks `TxChannel::pending`/`consume_pending` and checks
 //!   *ordering* (every vector-155 `IRQ` consumes a completion this crate's
 //!   own `run()` tracking already queued) rather than the exact boundary,
-//!   and reports it separately (`edma155`), not as a mismatch -- the same
-//!   distinction `bin/replay.rs`'s `sr-exempt` window already draws between
-//!   "wrong" and "outside what this model can predict".
+//!   and reports it separately (`edma155`), not as a mismatch.
 //!
 //! DSPI2's RX delivery (`_deliver`, multi-byte) and the FlexBus DSP FIFO's
 //! read echo (`on_read`, always `READY` at `poll_delay=0` -- see `dsp.rs`)
@@ -108,9 +99,8 @@ struct Counters {
     irq_mismatch: u64,
     irq_missing: u64,    // expected but never appeared
     irq_unexpected: u64, // appeared but not expected
-    /// IRQ mismatches/missing/unexpected that happened while `sr_exempt` was
-    /// set -- see the module docs' "scheduler-trap SR" note. Counted
-    /// separately, not part of `total_mismatches`.
+    /// Only v1 traces lack SR samples: preserve their recorded, explicitly
+    /// bounded scheduler-trap uncertainty rather than regressing old gates.
     irq_sr_exempt: u64,
     hwr_checked: u64,
     hwr_mismatch: u64,
@@ -602,21 +592,9 @@ fn main() -> ExitCode {
     // compare these after the stream against the controller's ordered effects.
     let mut esdhc_hwr: Vec<(u32, Vec<u8>)> = Vec::new();
 
-    // See the module docs' "scheduler-trap SR" note: this crate reconstructs
-    // SR/IPL from IRQ.frame_sr and RTE.sr. Vector 32 is not a real interrupt
-    // source (MCF5441x vectors 0-63 are the core's own; 32-47 are TRAP
-    // #0-15) -- `emu.longrun.IdleSpin` repurposes it purely as an
-    // emulator-side idle-credit device, and the RTOS's own context switcher
-    // also runs through it (`pit.py`'s module docstring). When its handler's
-    // RTE restores a nonzero IPL, that value belongs to whichever task the
-    // scheduler just switched TO, not to a delivered interrupt this crate
-    // can attribute -- the task may lower it again through a direct
-    // `move.w #x,sr` this peripheral-only model cannot see (`sr.rs`'s module
-    // docs). `sr_exempt` marks that window: it opens on such an RTE and
-    // closes on the very next taken IRQ of any vector, which carries its own
-    // `frame_sr` ground truth. A timer/INTC prediction that disagrees with
-    // the trace while it is open is not a model defect; it is counted
-    // separately (`irq_sr_exempt`), not as a mismatch.
+    // v2 samples live SR immediately before delivery, so it never exempts a
+    // prediction. Legacy v1 has no record for a guest `move ...,SR` after a
+    // scheduler trap RTE; retain its original narrow window for old traces.
     let mut sr_exempt = false;
     let mut last_dispatched_vector: Option<u16> = None;
 
@@ -624,14 +602,8 @@ fn main() -> ExitCode {
         ($clock:expr) => {
             if !expected_irqs.is_empty() {
                 for r in expected_irqs.drain(..) {
-                    if sr_exempt {
+                    if reader.version == 1 && sr_exempt {
                         counters.irq_sr_exempt += 1;
-                        if verbose {
-                            eprintln!(
-                                "(sr-exempt) expected IRQ vec={} level={} at clock={} never appeared before the next boundary",
-                                r.vector, r.level, $clock
-                            );
-                        }
                         continue;
                     }
                     report(
@@ -678,29 +650,29 @@ fn main() -> ExitCode {
         n_records += 1;
         let clock = rec.clock;
 
-        match last_boundary {
-            None => last_boundary = Some(clock),
-            Some(lb) if clock > lb => {
-                if !initial_deadline_applied {
-                    // Mirrors `spin`'s very first `pits.step(base+done)`
-                    // call, at `done=lb` (the window's start clock), before
-                    // its first chunk has even run -- see
-                    // `Timers::service`'s doc comment on arming. Applied
-                    // here, not at record #1, because it must run after the
-                    // window's `MARK "setup"` and initial `STATE` have
-                    // configured the banks' channels; both share the
-                    // window's start clock, so `lb` is unchanged either way.
-                    timers.pit.deadline(lb);
-                    timers.dtim.deadline(lb);
-                    initial_deadline_applied = true;
+        // v1 has no live SR samples, so retain its historical boundary
+        // behaviour. v2 defers prediction until its SR record below: the
+        // recorder emits that record before any async/PIT service, so this
+        // seeds IPL before timer delivery at the same clock.
+        if reader.version == 1 {
+            match last_boundary {
+                None => last_boundary = Some(clock),
+                Some(lb) if clock > lb => {
+                    if !initial_deadline_applied {
+                        timers.pit.deadline(lb);
+                        timers.dtim.deadline(lb);
+                        initial_deadline_applied = true;
+                    }
+                    check_boundary_carryover!(lb);
+                    let (raised, writes) = timers.service(clock);
+                    expected_irqs.extend(raised);
+                    expected_hwr.extend(writes.into_iter().map(|w| (w.addr, w.byte)));
+                    last_boundary = Some(clock);
                 }
-                check_boundary_carryover!(lb);
-                let (raised, writes) = timers.service(clock);
-                expected_irqs.extend(raised);
-                expected_hwr.extend(writes.into_iter().map(|w| (w.addr, w.byte)));
-                last_boundary = Some(clock);
+                _ => {}
             }
-            _ => {}
+        } else if last_boundary.is_none() {
+            last_boundary = Some(clock);
         }
 
         match rec.tag {
@@ -851,12 +823,7 @@ fn main() -> ExitCode {
                     Some(level_raw)
                 };
                 if taken && owned_vector(vector) {
-                    // Snapshot before this record's own frame_sr resync (and
-                    // before it closes the window): the exemption covers
-                    // whether the PREDICTION (made earlier, at the boundary)
-                    // could have been trusted, not whether the record itself
-                    // now gives us fresh ground truth.
-                    let exempt_now = sr_exempt;
+                    let exempt_now = reader.version == 1 && sr_exempt;
                     counters.irq_checked += 1;
                     match expected_irqs.pop_front() {
                         Some(exp) => {
@@ -864,12 +831,6 @@ fn main() -> ExitCode {
                             if exp.vector != vector || exp.level != got_level {
                                 if exempt_now {
                                     counters.irq_sr_exempt += 1;
-                                    if verbose {
-                                        eprintln!(
-                                            "(sr-exempt) IRQ mismatch at clock={clock}: trace vec={vector} level={got_level} vs model expected vec={} level={}",
-                                            exp.vector, exp.level
-                                        );
-                                    }
                                 } else {
                                     report(
                                         &mut first_mismatch,
@@ -883,33 +844,21 @@ fn main() -> ExitCode {
                                 }
                             }
                         }
-                        None => {
-                            if exempt_now {
-                                counters.irq_sr_exempt += 1;
-                                if verbose {
-                                    eprintln!(
-                                        "(sr-exempt) unexpected IRQ vec={vector} level={} at clock={clock}: model predicted nothing",
-                                        level.unwrap_or(0)
-                                    );
-                                }
-                            } else {
-                                report(
-                                    &mut first_mismatch,
-                                    &mut counters.irq_unexpected,
-                                    format!(
-                                        "unexpected IRQ vec={vector} level={} at clock={clock}: model predicted nothing",
-                                        level.unwrap_or(0)
-                                    ),
-                                    verbose,
-                                );
-                            }
-                        }
+                        None if exempt_now => counters.irq_sr_exempt += 1,
+                        None => report(
+                            &mut first_mismatch,
+                            &mut counters.irq_unexpected,
+                            format!(
+                                "unexpected IRQ vec={vector} level={} at clock={clock}: model predicted nothing",
+                                level.unwrap_or(0)
+                            ),
+                            verbose,
+                        ),
                     }
                 }
                 if taken {
-                    // Ground truth for this instant, closing the exempt
-                    // window regardless of vector: any taken IRQ's frame_sr
-                    // resyncs the tracker (see sr.rs).
+                    // The frame SR remains ground truth for non-boundary
+                    // deliveries and older v1 traces.
                     timers.sr.on_taken(level, frame_sr);
                     sr_exempt = false;
                     last_dispatched_vector = Some(vector);
@@ -926,10 +875,25 @@ fn main() -> ExitCode {
             trace::RTE => {
                 let sr = rec.u16(1);
                 timers.sr.on_rte(sr);
-                let ipl_restored = (sr >> 8) & 0x07;
-                if last_dispatched_vector == Some(32) && ipl_restored != 0 {
+                if reader.version == 1 && last_dispatched_vector == Some(32) && (sr & 0x0700) != 0 {
                     sr_exempt = true;
                 }
+            }
+            trace::SR => {
+                if !initial_deadline_applied {
+                    let initial = last_boundary.unwrap_or(clock);
+                    timers.pit.deadline(initial);
+                    timers.dtim.deadline(initial);
+                    initial_deadline_applied = true;
+                }
+                if let Some(previous) = last_boundary {
+                    check_boundary_carryover!(previous);
+                }
+                timers.sr.seed(rec.u16(0));
+                let (raised, writes) = timers.service(clock);
+                expected_irqs.extend(raised);
+                expected_hwr.extend(writes.into_iter().map(|w| (w.addr, w.byte)));
+                last_boundary = Some(clock);
             }
             trace::HWR => {
                 let src_id = rec.u16(0) as u16;
@@ -1198,7 +1162,10 @@ fn main() -> ExitCode {
         println!("END VALIDATION FAIL: {reason}");
         ExitCode::FAILURE
     } else if total == 0 {
-        println!("0 mismatches ({} sr-exempt)", counters.irq_sr_exempt);
+        println!(
+            "0 mismatches ({} legacy v1 sr-exempt)",
+            counters.irq_sr_exempt
+        );
         ExitCode::SUCCESS
     } else {
         println!("{total} mismatches");

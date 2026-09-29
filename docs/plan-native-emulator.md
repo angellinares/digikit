@@ -95,12 +95,14 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
 - Task 3 (partial): early 24M checkpoints now supply bounded DT2/DN2 traces
   through the GPIO SD gate and initial eSDHC access. `native/periph` matches
   all 20 gate writes, 20 read-hook writes and 20 reads per image in its
-  explicit focused replay mode; whole-trace replay still reports 2/3
-  unexpected vector-207 IRQ predictions. Continue with that timing issue,
-  eSDHC/card, then UART/panel/display. The early eSDHC register slice now
-  checks 74 accesses and 111 host writes per image, and the pure eMMC card
-  model is bounded/WASM-checkable. CMD18/CMD25 eDMA payloads, completion
-  delivery and whole-machine wiring remain. See finding 07.
+  explicit focused replay mode. Original v1 whole traces report 2/3
+  unexpected vector-207 IRQs because they cannot see a guest SR write after
+  RTE. New v2 traces sample SR before timer service; both whole early
+  windows now replay with zero mismatches, including the GPIO/eSDHC gates.
+  The early eSDHC register slice checks 74 accesses and 111 host writes per
+  image; pure eMMC and bounded channel-59 CMD8/18/25 transfer effects build
+  for WASM. Late guest RAM/card window wiring, live TCD writeback, DMA
+  completion delivery, and UART/panel/display remain. See finding 07.
 
 ## Where we are
 

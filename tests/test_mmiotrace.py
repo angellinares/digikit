@@ -133,6 +133,27 @@ def test_recording_changes_nothing(tmp_path):
     assert final(plain) == final(recorded)
 
 
+def test_sr_boundary_sample_precedes_async_irq(tmp_path):
+    path = str(tmp_path / "t.mmio")
+    rec = mmiotrace.Recorder(path, state_every=0)
+    m = machine(rec)
+    clock = {"now": 7}
+    rec.start({}, clock=lambda: clock["now"])
+    sampler = rec.boundary_sampler()
+    sampler.service(clock["now"])
+    m.raise_vector(64, level=3)
+    rec.stop()
+
+    reader = mmiotrace.Reader(path)
+    recs = list(reader)
+    sr_index = next(i for i, rec in enumerate(recs) if rec.tag == mmiotrace.SR)
+    irq_index = next(i for i, rec in enumerate(recs) if rec.tag == mmiotrace.IRQ)
+    assert reader.version == 2
+    assert recs[sr_index].fields == (0x2700,)
+    assert recs[sr_index].clock == clock["now"]
+    assert sr_index < irq_index
+
+
 def test_icount_clock(tmp_path):
     path = str(tmp_path / "t.mmio")
     rec = mmiotrace.Recorder(path, icount=True, state_every=0)

@@ -2,9 +2,66 @@ use emmc_card::{
     Card, CardError, DEFAULT_CAPACITY_BLOCKS, MAX_TRANSFER_BYTES, RandomAccessRead,
     SMALL_CAPACITY_BLOCKS,
 };
-use periph::esdhc::{self, Esdhc};
+use periph::{
+    edma::TcdSnapshot,
+    esdhc::{self, DmaBuffers, Esdhc, transfer_dma59},
+};
 
 struct TinyBacking(Vec<u8>);
+
+#[test]
+fn card_media_flows_through_bounded_dma59_in_both_directions() {
+    let media: Vec<u8> = (0..1024).map(|n| (n % 251) as u8).collect();
+    let mut card =
+        Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(TinyBacking(media)))).unwrap();
+    let mut tcd = TcdSnapshot {
+        saddr: 0x8000_0000,
+        attr: 0,
+        soff: 512,
+        nbytes: 512,
+        slast: -512,
+        daddr: 0x8000_0000,
+        citer: 1,
+        doff: 0,
+        dlast: 0,
+        biter: 1,
+        csr: 0,
+    };
+    let mut guest = [0u8; 512];
+    let mut read_window = card.data_for(18, 1, 512).unwrap().unwrap();
+    let read = transfer_dma59(
+        18,
+        tcd,
+        &mut DmaBuffers {
+            guest_base: 0x8000_0000,
+            guest: &mut guest,
+            card: &mut read_window,
+        },
+    )
+    .unwrap();
+    assert_eq!(guest.as_slice(), read_window.as_slice());
+    assert_eq!(read.bytes, 512);
+    assert_eq!(read.tcd.daddr, 0x8000_0200);
+
+    // Card contents are only committed after the transfer succeeds. CMD25
+    // reads the guest's own window and returns a bounded staging buffer.
+    guest[0] = 0x5a;
+    tcd.saddr = 0x8000_0000;
+    let mut write_window = [0u8; 512];
+    let written = transfer_dma59(
+        25,
+        tcd,
+        &mut DmaBuffers {
+            guest_base: 0x8000_0000,
+            guest: &mut guest,
+            card: &mut write_window,
+        },
+    )
+    .unwrap();
+    card.write_data(25, 1, &write_window).unwrap();
+    assert_eq!(written.tcd.saddr, 0x8000_0000);
+    assert_eq!(card.data_for(18, 1, 512).unwrap().unwrap()[0], 0x5a);
+}
 
 #[test]
 fn card_port_drives_real_controller_identity_and_bus_test() {

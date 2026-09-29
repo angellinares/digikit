@@ -304,7 +304,13 @@ def record(args: argparse.Namespace) -> int:
         if forcer is not None:
             forcer.on_chunk(pc_, done)
 
-    pc, done, stop = spin(m, pc, args.instrs, pits=timers, on_chunk=on_chunk)
+    # The recorder-only sampler runs before PIT and all other async services
+    # at each exact boundary. It only reads SR, so the no-record oracle path
+    # remains byte-for-byte the existing configuration.
+    sampler = (rec.boundary_sampler(),) if rec is not None else ()
+    pc, done, stop = spin(
+        m, pc, args.instrs, pits=timers, async_events=sampler, on_chunk=on_chunk
+    )
     wall = time.time() - t0
     info: dict[str, Any] = {
         "done": done,

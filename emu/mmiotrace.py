@@ -14,8 +14,11 @@ state and wraps five Unicorn/Machine methods with pass-through wrappers.
 ``tools/snapeq.py`` shows a recorded run ends in the same state as an
 unrecorded one.
 
-File format, version 1
+File format, version 2
 ======================
+
+Version 2 adds the opt-in ``SR`` boundary sample below. Version 1 has no
+such samples and remains readable by both readers.
 
 All integers are little-endian.
 
@@ -51,6 +54,10 @@ TIME record sets the clock for every record after it.
     0x0d MARK   u32 len, len bytes   JSON annotation (input events, window notes)
     0x0e RATE   u64 ips   the timers' instructions-per-second changed
     0x0f END    u32 len, len bytes   JSON summary; last record
+    0x10 SR     u16 sr   live guest status register at a service boundary
+                Recorded only when the recorder's BoundarySampler is passed
+                to ``spin(..., async_events=...)``. It precedes every other
+                async event and PIT service at that boundary.
 
 Semantics a replayer needs
 --------------------------
@@ -105,14 +112,15 @@ import zlib
 from collections.abc import Callable, Iterator
 from typing import Any, BinaryIO, NamedTuple
 
-from unicorn.m68k_const import UC_M68K_REG_A7, UC_M68K_REG_PC
+from unicorn.m68k_const import UC_M68K_REG_A7, UC_M68K_REG_PC, UC_M68K_REG_SR
 
 MAGIC = b"DT2MMIO\x00"
-VERSION = 1
+VERSION = 2
+SUPPORTED_VERSIONS = frozenset((1, VERSION))
 FLAG_ZLIB = 1
 
-TIME, STEP, RD, WR, IRQ, RTE, HWR, HRD, HREG, SRC, STATE, PAGE, MARK, RATE, END = range(
-    1, 16
+TIME, STEP, RD, WR, IRQ, RTE, HWR, HRD, HREG, SRC, STATE, PAGE, MARK, RATE, END, SR = (
+    range(1, 17)
 )
 
 # tag -> (name, fixed-part struct, has trailing bytes)
@@ -132,6 +140,7 @@ RECORDS: dict[int, tuple[str, struct.Struct, bool]] = {
     MARK: ("MARK", struct.Struct("<I"), True),
     RATE: ("RATE", struct.Struct("<Q"), False),
     END: ("END", struct.Struct("<I"), True),
+    SR: ("SR", struct.Struct("<H"), False),
 }
 _PREAMBLE = struct.Struct("<8sHHI")
 
@@ -720,6 +729,25 @@ class Recorder:
 
         return reg_write
 
+    def boundary_sampler(self) -> Any:
+        """A read-only ``spin`` async event that records live SR first.
+
+        The caller passes this only for recording runs, and before any other
+        async event. ``spin`` invokes async events before ``pits.service``,
+        making the sample the replay contract for that service boundary.
+        """
+        return _BoundarySampler(self)
+
+    def sample_sr_boundary(self) -> None:
+        """Record live SR at the current service boundary without mutation."""
+        if not self.armed:
+            return
+        try:
+            self._tick()
+            self._emit(SR, self._reg_read(UC_M68K_REG_SR) & 0xFFFF)
+        except Exception as exc:
+            self._error(exc)
+
     def _wrap_emu_start(self, orig: Any) -> Any:
         def emu_start(begin: int, until: int, timeout: int = 0, count: int = 0) -> Any:
             if not self.armed:
@@ -856,6 +884,19 @@ def machine_state(m: Any, ev: dict, extra: dict | None = None) -> dict:
 # -- reading ---------------------------------------------------------------------
 
 
+class _BoundarySampler:
+    """``spin``-compatible no-deadline event used only by Recorder mode."""
+
+    def __init__(self, recorder: Recorder) -> None:
+        self.recorder = recorder
+
+    def step(self, now: int, _limit: Any) -> None:
+        return None
+
+    def service(self, _now: int) -> None:
+        self.recorder.sample_sr_boundary()
+
+
 class Record(NamedTuple):
     tag: int
     name: str
@@ -875,10 +916,12 @@ class Reader:
             magic, version, flags, hlen = _PREAMBLE.unpack(pre)
             if magic != MAGIC:
                 raise ValueError("%s: not a DT2MMIO trace" % path)
-            if version != VERSION:
+            if version not in SUPPORTED_VERSIONS:
                 raise ValueError(
-                    "%s: trace version %d, reader %d" % (path, version, VERSION)
+                    "%s: trace version %d, reader supports %s"
+                    % (path, version, sorted(SUPPORTED_VERSIONS))
                 )
+            self.version = version
             self.flags = flags
             self.header = json.loads(fh.read(hlen))
             self._body_at = _PREAMBLE.size + hlen

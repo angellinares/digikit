@@ -1,11 +1,11 @@
-//! Reader for the `DT2MMIO` v1 trace format `emu/mmiotrace.py` writes.
+//! Reader for the `DT2MMIO` v1/v2 trace format `emu/mmiotrace.py` writes.
 //!
 //! Format (`emu/mmiotrace.py`'s module docstring is the full spec; this is
 //! the subset this crate needs):
 //!
 //! ```text
 //! magic    8 bytes   b"DT2MMIO\0"
-//! version  u16       1
+//! version  u16       1 or 2 (v2 adds `SR` boundary samples)
 //! flags    u16       bit 0: body is a zlib (RFC 1950) stream
 //! hdr_len  u32
 //! header   hdr_len bytes of UTF-8 JSON
@@ -25,7 +25,8 @@ use std::io::{self, BufReader, Read};
 use flate2::read::ZlibDecoder;
 
 const MAGIC: &[u8; 8] = b"DT2MMIO\0";
-const VERSION: u16 = 1;
+const VERSION: u16 = 2;
+const OLDEST_VERSION: u16 = 1;
 const FLAG_ZLIB: u16 = 1;
 
 pub const TIME: u8 = 0x01;
@@ -43,6 +44,8 @@ pub const PAGE: u8 = 0x0c;
 pub const MARK: u8 = 0x0d;
 pub const RATE: u8 = 0x0e;
 pub const END: u8 = 0x0f;
+/// v2: a live guest SR sample immediately before a service boundary.
+pub const SR: u8 = 0x10;
 
 pub const IRQ_TAKEN: u8 = 1;
 pub const IRQ_SYNC: u8 = 2;
@@ -101,6 +104,8 @@ impl Record {
 
 pub struct Reader {
     pub header: serde_json::Value,
+    /// On-disk protocol version; v1 traces simply contain no [`SR`] records.
+    pub version: u16,
     body: Box<dyn Read>,
     buf: Vec<u8>,
     pos: usize,
@@ -118,7 +123,7 @@ impl Reader {
             return Err(TraceError::BadMagic);
         }
         let version = u16::from_le_bytes([pre[8], pre[9]]);
-        if version != VERSION {
+        if !(OLDEST_VERSION..=VERSION).contains(&version) {
             return Err(TraceError::UnsupportedVersion(version));
         }
         let flags = u16::from_le_bytes([pre[10], pre[11]]);
@@ -135,6 +140,7 @@ impl Reader {
         };
         Ok(Self {
             header,
+            version,
             body,
             buf: Vec::with_capacity(1 << 20),
             pos: 0,
@@ -199,6 +205,7 @@ impl Reader {
             MARK => (&[4], true),
             RATE => (&[8], false),
             END => (&[4], true),
+            SR => (&[2], false),
             _ => return Err(TraceError::UnknownTag(tag)),
         };
         let fixed_len: usize = widths.iter().sum();
@@ -250,5 +257,68 @@ impl Iterator for Reader {
             Ok(None) => None,
             Err(e) => Some(Err(e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn trace(version: u16, body: &[u8]) -> std::path::PathBuf {
+        let mut bytes = Vec::new();
+        let header = br#"{"format":"dt2-mmio-trace"}"#;
+        bytes.extend_from_slice(MAGIC);
+        bytes.extend_from_slice(&version.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&(header.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(header);
+        bytes.extend_from_slice(body);
+        let path = std::env::temp_dir().join(format!(
+            "periph-trace-{}-{}.mmio",
+            std::process::id(),
+            version
+        ));
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn reads_v1_without_boundary_samples() {
+        let mut body = vec![TIME];
+        body.extend_from_slice(&7u64.to_le_bytes());
+        let path = trace(1, &body);
+        let mut reader = Reader::open(path.to_str().unwrap()).unwrap();
+        assert_eq!(reader.version, 1);
+        let record = reader.next_record().unwrap().unwrap();
+        assert_eq!(
+            (record.tag, record.clock, record.fields),
+            (TIME, 7, vec![7])
+        );
+        assert!(reader.next_record().unwrap().is_none());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn reads_v2_boundary_sample_in_stream_order() {
+        let mut body = vec![TIME];
+        body.extend_from_slice(&9u64.to_le_bytes());
+        body.push(SR);
+        body.extend_from_slice(&0x2004u16.to_le_bytes());
+        body.push(IRQ);
+        body.extend_from_slice(&207u16.to_le_bytes());
+        body.extend_from_slice(&[3, IRQ_TAKEN]);
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&[0; 10]);
+        let path = trace(2, &body);
+        let mut reader = Reader::open(path.to_str().unwrap()).unwrap();
+        assert_eq!(reader.version, 2);
+        let records: Vec<_> = reader.by_ref().map(Result::unwrap).collect();
+        assert_eq!(
+            records.iter().map(|r| r.tag).collect::<Vec<_>>(),
+            [TIME, SR, IRQ]
+        );
+        assert_eq!(records[1].fields, vec![0x2004]);
+        assert_eq!(records[1].clock, records[2].clock);
+        std::fs::remove_file(path).unwrap();
     }
 }
