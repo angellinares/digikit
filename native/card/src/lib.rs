@@ -8,6 +8,8 @@
 
 use std::collections::BTreeMap;
 
+use periph::esdhc::CardPort;
+
 /// Bytes in one sector for the sector-addressed commands modelled here.
 pub const SECTOR_SIZE: usize = 512;
 /// Largest data transfer accepted by one card call.
@@ -211,6 +213,16 @@ impl Card {
             self.overlay.insert(start + offset as u64, value);
         }
         Ok(())
+    }
+}
+
+impl CardPort for Card {
+    fn command(&mut self, idx: u8, arg: u32) -> [u32; 4] {
+        Card::command(self, u32::from(idx), arg)
+    }
+
+    fn read_word(&mut self, idx: u8, pattern: u32) -> u32 {
+        Card::read_word(self, u32::from(idx), pattern)
     }
 }
 

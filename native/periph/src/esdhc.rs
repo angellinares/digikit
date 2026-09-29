@@ -30,14 +30,12 @@ const BWR: u32 = 1 << 4;
 const BRR: u32 = 1 << 5;
 const SELF_CLEAR: u32 = 0x0F00_0000; // RSTA/RSTC/RSTD/INITA
 
-/// The card-side contract needed by the controller.  Storage and eDMA are
-/// deliberately outside this module; `data_for`/`write_data` are retained so
-/// that a machine can connect them without changing command semantics.
+/// The card-side contract exercised by early commands. Storage/eDMA needs
+/// a separate, fallible bounded-transfer contract when it is implemented;
+/// do not silently discard a card's transfer-size errors here.
 pub trait CardPort {
     fn command(&mut self, idx: u8, arg: u32) -> [u32; 4];
     fn read_word(&mut self, idx: u8, pattern: u32) -> u32;
-    fn data_for(&mut self, idx: u8, arg: u32, len: usize) -> Option<Vec<u8>>;
-    fn write_data(&mut self, idx: u8, arg: u32, payload: &[u8]);
 }
 
 /// Guest-write behavior for registers where the Python oracle intentionally

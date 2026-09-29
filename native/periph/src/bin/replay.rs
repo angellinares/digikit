@@ -290,10 +290,6 @@ impl CardPort for EarlyCard {
     fn read_word(&mut self, idx: u8, pattern: u32) -> u32 {
         if idx == 14 { !pattern } else { 0 }
     }
-    fn data_for(&mut self, _idx: u8, _arg: u32, _len: usize) -> Option<Vec<u8>> {
-        None
-    }
-    fn write_data(&mut self, _idx: u8, _arg: u32, _payload: &[u8]) {}
 }
 
 fn gpio_gate_failure(counters: &Counters, expected: u64, end: &EndStatus) -> Option<String> {

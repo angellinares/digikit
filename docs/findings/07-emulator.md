@@ -2558,3 +2558,27 @@ boundaries, so coalescing (few boundaries) under-reads it.
   totals. This is **not** full peripheral parity. eSDHC/card, other GPIO,
   UART, panel, and display remain native-model work; an isolated full-card
   trace/replay gate has not been established.
+
+## Native eSDHC and bounded eMMC card slice (2026-09-29)
+
+- **[D]** The pure `native/periph/src/esdhc.rs` controller models early
+  command/register effects with a card-port interface. The explicit Oracle
+  register policy matches `emu/esdhc.py`'s plain-RAM guest writes to IRQSTAT;
+  Device policy implements the RM's write-one-to-clear behavior. On each
+  24M-checkpoint early DT2/DN2 trace, `mmio-replay TRACE
+  --esdhc-early-only 74` checks 74 guest register accesses (26 returned
+  reads), 111 predicted host register writes, zero read mismatches and zero
+  unmodeled eSDHC operations, with a clean recorder END. This focused mode
+  reports but excludes the existing 2/3 vector-207 replay mismatches.
+- **[D]** `native/card/` carries the card's synthetic command/identity state,
+  sector-addressed reads and sparse write overlay. Its random-access backing
+  is supplied by the caller, not opened or copied by the core; transfers
+  require an explicit size of at most 1 MiB or fail before allocation. The
+  early controller-to-card `CardPort` is connected for command responses and
+  the bus-test word; tests cover that connection, synthetic EXT_CSD bytes and
+  overlay precedence. Both crates' tests pass and their pure library builds
+  check for `wasm32-unknown-unknown`.
+- **[O]** The controller does not yet feed CMD18/CMD25 payloads through eDMA
+  channel 59, post card/dma/data semaphores or deliver interrupts. The
+  transfer contract will be fallible and chunked when machine wiring adds it;
+  early register replay alone is not a cold-boot or real-time audio gate.

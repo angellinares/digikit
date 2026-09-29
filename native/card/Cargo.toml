@@ -5,6 +5,9 @@ edition = "2024"
 publish = false
 description = "Pure minimal eMMC card identity and media model for the native emulator"
 
+[dependencies]
+periph = { path = "../periph", default-features = false }
+
 [lib]
 name = "emmc_card"
 crate-type = ["rlib"]

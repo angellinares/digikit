@@ -2,8 +2,37 @@ use emmc_card::{
     Card, CardError, DEFAULT_CAPACITY_BLOCKS, MAX_TRANSFER_BYTES, RandomAccessRead,
     SMALL_CAPACITY_BLOCKS,
 };
+use periph::esdhc::{self, Esdhc};
 
 struct TinyBacking(Vec<u8>);
+
+#[test]
+fn card_port_drives_real_controller_identity_and_bus_test() {
+    let mut controller = Esdhc::new(Card::default());
+    assert!(controller.write(esdhc::BASE + esdhc::XFERTYP, 4, 0x0100_0000));
+    assert_eq!(
+        controller.read(esdhc::BASE + esdhc::CMDRSP0, 4),
+        Some(0xc0ff_8080)
+    );
+
+    assert!(controller.write(esdhc::BASE + esdhc::XFERTYP, 4, 0x0200_0000));
+    assert_eq!(
+        controller.read(esdhc::BASE + esdhc::CMDRSP1, 4),
+        Some(0x4530_0000)
+    );
+    assert_eq!(
+        controller.read(esdhc::BASE + esdhc::CMDRSP2, 4),
+        Some(0x3030_3447)
+    );
+
+    assert!(controller.write(esdhc::BASE + esdhc::DATPORT, 4, 0x5a));
+    assert!(controller.write(esdhc::BASE + esdhc::XFERTYP, 4, 0x0e3a_0010));
+    assert_eq!(
+        controller.read(esdhc::BASE + esdhc::DATPORT, 4),
+        Some(0xffff_ffa5)
+    );
+}
+
 impl RandomAccessRead for TinyBacking {
     fn len(&self) -> u64 {
         self.0.len() as u64

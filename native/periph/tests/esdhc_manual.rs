@@ -14,10 +14,6 @@ impl CardPort for Card {
     fn read_word(&mut self, _idx: u8, pattern: u32) -> u32 {
         !pattern
     }
-    fn data_for(&mut self, _idx: u8, _arg: u32, _len: usize) -> Option<Vec<u8>> {
-        None
-    }
-    fn write_data(&mut self, _idx: u8, _arg: u32, _payload: &[u8]) {}
 }
 
 #[test]

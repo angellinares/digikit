@@ -97,7 +97,10 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
   all 20 gate writes, 20 read-hook writes and 20 reads per image in its
   explicit focused replay mode; whole-trace replay still reports 2/3
   unexpected vector-207 IRQ predictions. Continue with that timing issue,
-  eSDHC/card, then UART/panel/display. See finding 07.
+  eSDHC/card, then UART/panel/display. The early eSDHC register slice now
+  checks 74 accesses and 111 host writes per image, and the pure eMMC card
+  model is bounded/WASM-checkable. CMD18/CMD25 eDMA payloads, completion
+  delivery and whole-machine wiring remain. See finding 07.
 
 ## Where we are
 
