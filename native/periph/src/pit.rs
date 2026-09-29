@@ -348,10 +348,27 @@ impl PitBank {
     // -- checkpoint resync (from a trace `STATE` record's `Pits` blob) ------
 
     pub fn load_checkpoint(&mut self, next: &[Option<f64>; 4], pending: &[bool; 4], held: bool) {
+        self.load_checkpoint_state(next, pending, held, &[0; 4], &[0; 4], &[0; 4]);
+    }
+
+    /// Restore timer scheduling state from a portable checkpoint. Register
+    /// pages are intentionally loaded by the board's separate MMIO path.
+    pub fn load_checkpoint_state(
+        &mut self,
+        next: &[Option<f64>; 4],
+        pending: &[bool; 4],
+        held: bool,
+        fired: &[u64; 4],
+        missed: &[u64; 4],
+        cleared: &[u64; 4],
+    ) {
         self.held = held;
         for i in 0..4 {
             self.ch[i].next = next[i];
             self.ch[i].pending = pending[i];
+            self.ch[i].fired = fired[i];
+            self.ch[i].missed = missed[i];
+            self.ch[i].cleared = cleared[i];
         }
     }
 
@@ -372,6 +389,9 @@ impl PitBank {
     }
     pub fn channels(&self) -> &[usize] {
         &self.channels
+    }
+    pub fn ips(&self) -> f64 {
+        self.ips
     }
     pub fn set_channels(&mut self, channels: Vec<usize>) {
         self.channels = channels;

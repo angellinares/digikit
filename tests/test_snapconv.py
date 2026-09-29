@@ -12,6 +12,7 @@ TOOLS = ROOT / "tools"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from emu.snapshot import _validate_timer_source  # noqa: E402
 from tools import snapconv  # noqa: E402
 
 
@@ -52,6 +53,56 @@ def test_synthetic_roundtrip_has_nonzero_and_mapped_zero_page():
         zlib.decompress(encoded[24 + header_len : 24 + header_len + compressed_len])[9]
         == 0xA5
     )
+
+
+def test_timer_component_normalizes_tuple_channels_and_counter_keys():
+    source = blob()
+    source["components"] = {
+        "timers": {
+            "type": "Timers",
+            "version": 1,
+            "sources": [
+                {
+                    "type": "Pits",
+                    "version": 1,
+                    "channels": (3, 2, 0),
+                    "ips": 4_680_000,
+                    "next": [None, None, 125.5, 101.0],
+                    "now": 100,
+                    "held": False,
+                    "fired": {3: 4},
+                    "missed": {2: 5},
+                    "cleared": {0: 6},
+                    "pending": [1, 1],
+                },
+                {
+                    "type": "Dtims",
+                    "version": 1,
+                    "channels": (3,),
+                    "ips": 4_680_000,
+                    "next": [None, None, None, 130.0],
+                    "now": 100,
+                    "held": False,
+                    "fired": {3: 7},
+                    "missed": {3: 8},
+                    "cleared": {3: 9},
+                    "pending": [0, 0],
+                    "arm": [],
+                    "stale": [0, 0, 2],
+                },
+            ],
+        }
+    }
+    for timer_source in source["components"]["timers"]["sources"]:
+        _validate_timer_source(timer_source)
+    encoded = snapconv.convert_blob(source)
+    header_len = struct.unpack("<I", encoded[8:12])[0]
+    timers = json.loads(encoded[12 : 12 + header_len])["components"]["timers"]
+    assert timers["sources"][0]["channels"] == [3, 2, 0]
+    assert timers["sources"][0]["fired"] == {"3": 4}
+    assert timers["sources"][0]["pending"] == [1, 1]
+    assert timers["sources"][1]["pending"] == [0, 0]
+    assert timers["sources"][1]["stale"] == [0, 0, 2]
 
 
 def test_rejects_opaque_integer_outside_portable_range():

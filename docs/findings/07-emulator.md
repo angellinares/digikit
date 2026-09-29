@@ -2711,3 +2711,37 @@ boundaries, so coalescing (few boundaries) under-reads it.
   fresh traces. This establishes only these **reached CPU-state boundaries**:
   it does not compare memory writes, peripheral registers, timer scheduling,
   interrupt behavior or later firmware execution.
+
+### Bounded guest writes and timer-component handoff (2026-09-30)
+
+- **[D]** The new, separate `tools/checkpointprep.py effects --dt2-syx
+  Digitakt_II_OS1.16.syx --dn2-syx Digitone_II_OS1.11.syx --limit 1000`
+  repeats the source, section and complete loaded-MAIN-OS checks above before
+  generating fresh, ignored v2 effect traces and running native `Machine`.
+  The original `diff` command retains its v1 CPU-state trace and was rerun
+  through 1,000 instructions for both products after integration. In the
+  effects run, **DT2 and DN2 each matched 1,000 ordered guest RAM writes**
+  (address, width and value) at their reached instruction boundaries. Both
+  windows contained **zero FC/EC MMIO reads and zero FC/EC writes**: MMIO-read
+  parity is explicitly *unexercised*, not established by empty comparisons.
+  Synthetic tests detect a corrupted write value and keep CPU instruction
+  fetches out of guest-data-read records. Bus-access capture is opt-in and
+  disabled for ordinary long-running stepping to avoid an unbounded log.
+  These checks do not compare final
+  whole-RAM contents, host/DMA writes, peripheral state or later execution.
+- **[D]** `native/machine::timer_state::import_timers` exposes a separate,
+  synthetic-tested **component-only** Python v1 `Timers` importer. It checks
+  ordered PIT/DTIM source configurations, rebases finite deadlines against
+  the checkpoint-relative clock, retains pending/held/counters and DTIM stale
+  history, and rejects nonempty DTIM arm state because its scheduling effect
+  is not implemented. The Python MSTATE converter narrowly normalizes timer
+  tuple channels and integer counter keys; it does not relax other host
+  component validation. Seven focused native tests, five Python converter
+  tests and the machine WASM check passed. No real late timer checkpoint was
+  imported through `Machine` or source-verified by these synthetic tests.
+- **[O]** `Machine::apply_state` still rejects nonempty host components, and
+  the attached `Time` facade currently routes PIT/INTC rather than a restored
+  PIT/DTIM pair. Timer register pages, storage/card overlay, eDMA and UART
+  component state, Device interrupt delivery and a provenance-verified late
+  CPU/effects gate remain to be integrated and independently checked. Do not
+  extrapolate this 1,000-step RAM-write result to those effects or full boot.

@@ -59,7 +59,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 CRATE = ROOT / "native" / "coldfire" / "cfabi"
@@ -273,13 +273,16 @@ class StepTrace:
 
     def __init__(self):
         self.reads: list[tuple[int, int, int]] = []  # (addr, size, value)
+        # Kept for existing CPU lockstep users, which compare write locations.
         self.writes: list[tuple[int, int]] = []  # (addr, size)
+        self.write_values: list[tuple[int, int, int]] = []  # (addr, size, value)
         self.exception = False
         self.unmapped = False
 
     def reset(self):
         self.reads.clear()
         self.writes.clear()
+        self.write_values.clear()
         self.exception = False
         self.unmapped = False
 
@@ -301,6 +304,7 @@ class StepTrace:
 
     def _write_hook(self, uc, access, address, size, value, ud):
         self.writes.append((address, size))
+        self.write_values.append((address, size, value))
 
     def _intr_hook(self, uc, intno, ud):
         self.exception = True
@@ -333,8 +337,13 @@ def diff_regs(expected: CfRegs, actual: CfRegs) -> list[str]:
     out = []
     for f, ev in e.items():
         av = a[f]
-        if ev != av:
-            out.append("%s: expected 0x%x, got 0x%x" % (f, int(ev), int(av)))  # type: ignore[arg-type]
+        # `gp_only` excludes the sole list-valued register field (`acc`).
+        expected_value = cast(int, ev)
+        actual_value = cast(int, av)
+        if expected_value != actual_value:
+            out.append(
+                "%s: expected 0x%x, got 0x%x" % (f, expected_value, actual_value)
+            )
     return out
 
 

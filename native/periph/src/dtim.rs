@@ -73,6 +73,9 @@ pub struct DtimBank {
     channels: Vec<usize>,
     ips: f64,
     held: bool,
+    /// Snapshot repair history from Python's `clear_stale`; informational
+    /// only, but retained when a portable timer component is imported.
+    stale: Vec<usize>,
     ch: [Channel; 4],
 }
 
@@ -88,6 +91,7 @@ impl Default for DtimBank {
             channels: vec![3],
             ips: 4_680_000.0,
             held: false,
+            stale: Vec::new(),
             ch: Default::default(),
         }
     }
@@ -317,10 +321,29 @@ impl DtimBank {
     }
 
     pub fn load_checkpoint(&mut self, next: &[Option<f64>; 4], pending: &[bool; 4], held: bool) {
+        self.load_checkpoint_state(next, pending, held, &[0; 4], &[0; 4], &[0; 4], Vec::new());
+    }
+
+    /// Restore scheduling and representable bookkeeping state. Register
+    /// pages are intentionally loaded by the board's separate MMIO path.
+    pub fn load_checkpoint_state(
+        &mut self,
+        next: &[Option<f64>; 4],
+        pending: &[bool; 4],
+        held: bool,
+        fired: &[u64; 4],
+        missed: &[u64; 4],
+        cleared: &[u64; 4],
+        stale: Vec<usize>,
+    ) {
         self.held = held;
+        self.stale = stale;
         for i in 0..4 {
             self.ch[i].next = next[i];
             self.ch[i].pending = pending[i];
+            self.ch[i].fired = fired[i];
+            self.ch[i].missed = missed[i];
+            self.ch[i].cleared = cleared[i];
         }
     }
 
@@ -341,6 +364,12 @@ impl DtimBank {
     }
     pub fn channels(&self) -> &[usize] {
         &self.channels
+    }
+    pub fn ips(&self) -> f64 {
+        self.ips
+    }
+    pub fn stale(&self) -> &[usize] {
+        &self.stale
     }
 
     pub const DTMR_OFFSET: usize = DTMR;

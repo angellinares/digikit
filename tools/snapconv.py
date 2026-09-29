@@ -60,6 +60,59 @@ def _json_value(value, name):
     raise ValueError("%s contains a value that is not JSON-safe" % name)
 
 
+def _timer_counter(value, name):
+    """Normalize the timer checkpoints' u32-channel Counter maps only."""
+    if not isinstance(value, dict):
+        raise ValueError("%s must be a dictionary" % name)
+    normalized = {}
+    for channel, count in value.items():
+        if type(channel) is not int or not 0 <= channel < 4:
+            raise ValueError("%s channel is not in range" % name)
+        normalized[str(channel)] = _json_value(count, name)
+    return normalized
+
+
+def _timer_component(value):
+    """Make the known Python Timers checkpoint representation JSON portable."""
+    if not isinstance(value, dict) or value.get("type") != "Timers":
+        raise ValueError("components.timers is not a Timers checkpoint")
+    result = dict(value)
+    sources = result.get("sources")
+    if not isinstance(sources, (list, tuple)):
+        raise ValueError("components.timers.sources must be a sequence")
+    normalized_sources = []
+    for index, source in enumerate(sources):
+        name = "components.timers.sources[%d]" % index
+        if not isinstance(source, dict) or source.get("type") not in ("Pits", "Dtims"):
+            raise ValueError("%s is not a timer source" % name)
+        normalized = {
+            key: _json_value(item, "%s.%s" % (name, key))
+            for key, item in source.items()
+            if key not in ("channels", "fired", "missed", "cleared")
+        }
+        channels = source.get("channels")
+        if not isinstance(channels, (list, tuple)):
+            raise ValueError("%s.channels must be a sequence" % name)
+        normalized["channels"] = [_json_value(channel, name) for channel in channels]
+        for counter in ("fired", "missed", "cleared"):
+            if counter in source:
+                normalized[counter] = _timer_counter(
+                    source[counter], "%s.%s" % (name, counter)
+                )
+        normalized_sources.append(normalized)
+    result["sources"] = normalized_sources
+    return _json_value(result, "components.timers")
+
+
+def _components(value):
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        return _json_value(value, "components")
+    result = dict(value)
+    if "timers" in result:
+        result["timers"] = _timer_component(result["timers"])
+    return _json_value(result, "components")
+
+
 def convert_blob(blob, clock=0):
     """Return portable version-1 bytes for a blob already trusted by _load_blob."""
     if type(clock) is not int or not 0 <= clock <= 0xFFFFFFFFFFFFFFFF:
@@ -90,7 +143,7 @@ def convert_blob(blob, clock=0):
     header = {
         "clock": clock,
         "clock_basis": "checkpoint_relative_zero",
-        "components": _json_value(blob.get("components", {}), "components"),
+        "components": _components(blob.get("components", {})),
         "ctlregs": _address_map(blob["ctlregs"], "ctlregs"),
         "ff1_count": blob["ff1_count"],
         "format_version": 1,

@@ -3,6 +3,7 @@
 pub mod board;
 pub mod state;
 pub mod time;
+pub mod timer_state;
 
 pub use board::{Board, BoardWriteError, CompletionEvent, CompletionPolicy, SemaphoreAddresses};
 pub use state::{MachineState, StateError};

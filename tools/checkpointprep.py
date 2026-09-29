@@ -15,8 +15,10 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -89,10 +91,15 @@ def verify(product: str, syx: Path, snapshot_path: Path | None = None) -> Snapsh
     return snapshot
 
 
-def prepare(product: str, syx: Path, snapshot_path: Path | None = None) -> Path:
+def prepare(
+    product: str,
+    syx: Path,
+    snapshot_path: Path | None = None,
+    output: Path | None = None,
+) -> Path:
     """Verify and convert one local snapshot to ignored portable MSTATE."""
     snapshot = verify(product, syx, snapshot_path)
-    output = ROOT / PRODUCTS[product].output
+    output = output or ROOT / PRODUCTS[product].output
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(snapconv.convert_blob(snapshot._blob))
     return output
@@ -116,8 +123,14 @@ def _regs(uc, constants) -> dict[str, object]:
     }
 
 
-def _trace_states(product, uc, constants, trace, limit, run_step):
-    """Capture bounded boundaries; a valid branch may deliberately retain PC."""
+def _mmio_read(access: tuple[int, int, int]) -> bool:
+    """Select peripheral data reads; UC_HOOK_MEM_READ excludes instruction fetches."""
+    address, _, _ = access
+    return address >> 24 in (0xEC, 0xFC)
+
+
+def _trace_cpu_states(product, uc, constants, trace, limit, run_step):
+    """Capture CPU boundaries; a valid branch may deliberately retain PC."""
     states = [{**_regs(uc, constants), "clock": 0}]
     for step in range(limit):
         result = run_step(uc, constants, trace, int(states[-1]["pc"]))
@@ -129,8 +142,31 @@ def _trace_states(product, uc, constants, trace, limit, run_step):
     return states
 
 
-def oracle_trace(product: str, syx: Path, limit: int = 1000) -> Path:
-    """Write exactly ``limit`` trusted single-instruction oracle boundaries."""
+def _trace_effect_states(product, uc, constants, trace, limit, run_step):
+    """Capture bounded instruction-local effects without exporting CPU state."""
+    pc = cast(int, _regs(uc, constants)["pc"])
+    states = []
+    for step in range(limit):
+        result = run_step(uc, constants, trace, pc)
+        if result.exception:
+            raise RuntimeError(f"{product}: oracle exception at step {step}")
+        if result.unmapped:
+            raise RuntimeError(f"{product}: oracle unmapped access at step {step}")
+        states.append(
+            {
+                "writes": [list(access) for access in trace.write_values],
+                "mmio_reads": [
+                    list(access) for access in trace.reads if _mmio_read(access)
+                ],
+            }
+        )
+        pc = cast(int, _regs(uc, constants)["pc"])
+    return states
+
+
+def _oracle_trace(
+    product: str, syx: Path, limit: int, effects: bool, output: Path | None = None
+) -> Path:
     from unicorn import m68k_const as constants
 
     from emu import snapshot as emu_snapshot
@@ -144,16 +180,48 @@ def oracle_trace(product: str, syx: Path, limit: int = 1000) -> Path:
     machine.install_isa_patches_scoped(image.read_bytes(), LOAD_ADDRESS)
     trace = StepTrace()
     trace.install(machine.uc)
-    states = _trace_states(product, machine.uc, constants, trace, limit, run_uc_step)
-    output = ROOT / "out/native/checkpoint-gate" / f"{product}-oracle-1k.json"
+    if effects:
+        states = _trace_effect_states(
+            product, machine.uc, constants, trace, limit, run_uc_step
+        )
+        name, version, key = "effects", 2, "steps"
+    else:
+        states = _trace_cpu_states(
+            product, machine.uc, constants, trace, limit, run_uc_step
+        )
+        name, version, key = "cpu", 1, "states"
+    output = output or (
+        ROOT / "out/native/checkpoint-gate" / f"{product}-oracle-{name}-1k.json"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
+    temporary = output.with_suffix(f"{output.suffix}.tmp")
+    temporary.write_text(
         json.dumps(
-            {"format_version": 1, "product": product, "limit": limit, "states": states},
+            {
+                "format_version": version,
+                "product": product,
+                "limit": limit,
+                key: states,
+            },
             separators=(",", ":"),
         )
     )
+    temporary.replace(output)
     return output
+
+
+def oracle_trace(
+    product: str, syx: Path, limit: int = 1000, output: Path | None = None
+) -> Path:
+    """Write exactly ``limit`` trusted V1 CPU oracle boundaries."""
+    return _oracle_trace(product, syx, limit, effects=False, output=output)
+
+
+def oracle_effects_trace(
+    product: str, syx: Path, limit: int = 1000, output: Path | None = None
+) -> Path:
+    """Write exactly ``limit`` trusted V2 guest-effect oracle records."""
+    return _oracle_trace(product, syx, limit, effects=True, output=output)
 
 
 def gate(dt2_syx: Path, dn2_syx: Path) -> None:
@@ -183,38 +251,58 @@ def gate(dt2_syx: Path, dn2_syx: Path) -> None:
     )
 
 
-def diff(dt2_syx: Path, dn2_syx: Path, limit: int = 1000) -> None:
-    """Provenance-gated Python-oracle/native differential run."""
+def _differential(dt2_syx: Path, dn2_syx: Path, limit: int, effects: bool) -> None:
     limit = _limit(limit)
-    # Both source checks must complete before Cargo is allowed to start.
-    dt2 = prepare("dt2", dt2_syx)
-    dn2 = prepare("dn2", dn2_syx)
-    dt2_trace = oracle_trace("dt2", dt2_syx, limit)
-    dn2_trace = oracle_trace("dn2", dn2_syx, limit)
-    env = os.environ | {
-        "NATIVE_CHECKPOINT_UNVERIFIED_SMOKE_ACK": "unverified-local-inputs",
-        "DT2_CHECKPOINT_MSTATE": str(dt2.resolve()),
-        "DN2_CHECKPOINT_MSTATE": str(dn2.resolve()),
-        "DT2_CHECKPOINT_TRACE": str(dt2_trace.resolve()),
-        "DN2_CHECKPOINT_TRACE": str(dn2_trace.resolve()),
-        "NATIVE_CHECKPOINT_DIFF_LIMIT": str(limit),
-    }
-    print("source-verified products=dt2,dn2", flush=True)
-    subprocess.run(
-        [
-            "cargo",
-            "test",
-            "--release",
-            "--test",
-            "checkpoint_diff",
-            "--",
-            "--ignored",
-            "--nocapture",
-        ],
-        cwd=ROOT / "native/machine",
-        env=env,
-        check=True,
-    )
+    mode = "effects" if effects else "cpu"
+    gate_dir = ROOT / "out/native/checkpoint-gate"
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    # The context owns all firmware-derived inputs for one Cargo invocation.
+    # A unique ignored directory prevents another same-mode invocation from
+    # observing a partially converted MSTATE or trace.
+    with tempfile.TemporaryDirectory(prefix=f"{mode}-", dir=gate_dir) as directory:
+        output = Path(directory)
+        # Both source checks must complete before Cargo is allowed to start.
+        dt2 = prepare("dt2", dt2_syx, output=output / "dt2-boot24M.mstate")
+        dn2 = prepare("dn2", dn2_syx, output=output / "dn2-boot24M.mstate")
+        tracer = oracle_effects_trace if effects else oracle_trace
+        dt2_trace = tracer("dt2", dt2_syx, limit, output / f"dt2-oracle-{mode}-1k.json")
+        dn2_trace = tracer("dn2", dn2_syx, limit, output / f"dn2-oracle-{mode}-1k.json")
+        env = os.environ | {
+            "NATIVE_CHECKPOINT_UNVERIFIED_SMOKE_ACK": "unverified-local-inputs",
+            "DT2_CHECKPOINT_MSTATE": str(dt2.resolve()),
+            "DN2_CHECKPOINT_MSTATE": str(dn2.resolve()),
+            "DT2_CHECKPOINT_TRACE": str(dt2_trace.resolve()),
+            "DN2_CHECKPOINT_TRACE": str(dn2_trace.resolve()),
+            "NATIVE_CHECKPOINT_DIFF_LIMIT": str(limit),
+        }
+        test = "checkpoint_effects" if effects else "checkpoint_diff"
+        label = "effects " if effects else ""
+        print(f"{label}source-verified products=dt2,dn2", flush=True)
+        subprocess.run(
+            [
+                "cargo",
+                "test",
+                "--release",
+                "--test",
+                test,
+                "--",
+                "--ignored",
+                "--nocapture",
+            ],
+            cwd=ROOT / "native/machine",
+            env=env,
+            check=True,
+        )
+
+
+def diff(dt2_syx: Path, dn2_syx: Path, limit: int = 1000) -> None:
+    """Provenance-gated Python-oracle/native CPU differential run."""
+    _differential(dt2_syx, dn2_syx, limit, effects=False)
+
+
+def effects(dt2_syx: Path, dn2_syx: Path, limit: int = 1000) -> None:
+    """Provenance-gated Python-oracle/native guest-effect differential run."""
+    _differential(dt2_syx, dn2_syx, limit, effects=True)
 
 
 def main() -> None:
@@ -232,13 +320,19 @@ def main() -> None:
     diff_parser.add_argument("--dt2-syx", type=Path, required=True)
     diff_parser.add_argument("--dn2-syx", type=Path, required=True)
     diff_parser.add_argument("--limit", type=int, default=1000)
+    effects_parser = commands.add_parser("effects")
+    effects_parser.add_argument("--dt2-syx", type=Path, required=True)
+    effects_parser.add_argument("--dn2-syx", type=Path, required=True)
+    effects_parser.add_argument("--limit", type=int, default=1000)
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args.product, args.syx, args.snapshot)
     elif args.command == "gate":
         gate(args.dt2_syx, args.dn2_syx)
-    else:
+    elif args.command == "diff":
         diff(args.dt2_syx, args.dn2_syx, args.limit)
+    else:
+        effects(args.dt2_syx, args.dn2_syx, args.limit)
 
 
 if __name__ == "__main__":

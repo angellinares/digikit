@@ -68,6 +68,9 @@ fn guest_instructions_transfer_512_bytes_and_invalidate_decoded_ram() {
     machine.cpu.pc = CODE;
     assert!(machine.step().unwrap().is_empty()); // guest SERQ59
     let effects = machine.step().unwrap(); // guest CMD18, DMA59
+    // Normal stepping never retains an unbounded per-instruction access log.
+    assert!(machine.board.take_guest_reads().is_empty());
+    assert!(machine.board.take_guest_writes().is_empty());
     assert!(effects.iter().any(
         |event| matches!(event, CompletionEvent::Dma59 { completion, .. } if completion.done)
     ));

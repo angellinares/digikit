@@ -57,6 +57,16 @@ pub enum BoardWriteError {
     CompletionAddress { address: u32 },
 }
 
+/// One successful access made through the public ColdFire [`Bus`] interface.
+/// Hosts delimit a guest instruction by clearing these before `Machine::step`
+/// and taking them afterwards; setup/import helpers do not use this recorder.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GuestAccess {
+    pub address: u32,
+    pub size: u8,
+    pub value: u32,
+}
+
 /// Caller-mapped 1 MiB RAM pages.  The tagged 4096-entry table is indexed by
 /// address bits 31:20, so ordinary 1/2/4-byte RAM accesses take one table
 /// lookup.  MMIO is always dispatched before this table.
@@ -77,6 +87,10 @@ pub struct Board {
     /// Oracle read hooks: each value overlays four big-endian bytes before a
     /// guest read, without changing the backing page or later guest writes.
     forced_mmio: BTreeMap<u32, u32>,
+    /// Opt-in only: ordinary long-running execution must not retain every Bus access.
+    capture_guest_accesses: bool,
+    guest_reads: Vec<GuestAccess>,
+    guest_writes: Vec<GuestAccess>,
 }
 impl Board {
     pub fn new(card: Card, semaphores: SemaphoreAddresses, policy: CompletionPolicy) -> Self {
@@ -98,6 +112,9 @@ impl Board {
             last_error: None,
             time: None,
             forced_mmio: BTreeMap::new(),
+            capture_guest_accesses: false,
+            guest_reads: vec![],
+            guest_writes: vec![],
         }
     }
 
@@ -242,6 +259,25 @@ impl Board {
     }
     pub fn last_write_error(&self) -> Option<&BoardWriteError> {
         self.last_error.as_ref()
+    }
+    /// Enable bounded, caller-delimited Bus effect capture for a differential gate.
+    /// Disabling it discards any unconsumed entries.
+    pub fn set_guest_access_capture(&mut self, enabled: bool) {
+        self.clear_guest_accesses();
+        self.capture_guest_accesses = enabled;
+    }
+    /// Discard accesses collected outside the next guest instruction.
+    pub fn clear_guest_accesses(&mut self) {
+        self.guest_reads.clear();
+        self.guest_writes.clear();
+    }
+    /// Return ordered successful Bus reads since the last clear/take.
+    pub fn take_guest_reads(&mut self) -> Vec<GuestAccess> {
+        std::mem::take(&mut self.guest_reads)
+    }
+    /// Return ordered successful Bus writes since the last clear/take.
+    pub fn take_guest_writes(&mut self) -> Vec<GuestAccess> {
+        std::mem::take(&mut self.guest_writes)
     }
     /// Fallible Board entry point used by hosts that need the DMA/configuration
     /// cause rather than the ColdFire trait's address-only `BusError`.
@@ -619,31 +655,89 @@ impl Board {
 }
 impl Bus for Board {
     fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
-        Ok(self.read_inner(addr, 1)? as u8)
+        let result = self.read_inner(addr, 1).map(|value| value as u8);
+        if self.capture_guest_accesses
+            && let Ok(value) = result
+        {
+            self.guest_reads.push(GuestAccess {
+                address: addr,
+                size: 1,
+                value: u32::from(value),
+            });
+        }
+        result
     }
     fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
-        Ok(self.read_inner(addr, 2)? as u16)
+        let result = self.read_inner(addr, 2).map(|value| value as u16);
+        if self.capture_guest_accesses
+            && let Ok(value) = result
+        {
+            self.guest_reads.push(GuestAccess {
+                address: addr,
+                size: 2,
+                value: u32::from(value),
+            });
+        }
+        result
+    }
+    /// Fetches share normal board dispatch but are not guest data reads.
+    fn fetch16(&mut self, addr: u32) -> Result<u16, BusError> {
+        self.read_inner(addr, 2).map(|value| value as u16)
     }
     fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
-        self.read_inner(addr, 4)
+        let result = self.read_inner(addr, 4);
+        if self.capture_guest_accesses
+            && let Ok(value) = result
+        {
+            self.guest_reads.push(GuestAccess {
+                address: addr,
+                size: 4,
+                value,
+            });
+        }
+        result
     }
     fn write8(&mut self, addr: u32, value: u8) -> Result<(), BusError> {
-        self.write_inner(addr, 1, value as u32).map_err(|e| {
+        let result = self.write_inner(addr, 1, value as u32).map_err(|e| {
             self.last_error = Some(e);
             Self::bus_error(addr, true)
-        })
+        });
+        if self.capture_guest_accesses && result.is_ok() {
+            self.guest_writes.push(GuestAccess {
+                address: addr,
+                size: 1,
+                value: u32::from(value),
+            });
+        }
+        result
     }
     fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
-        self.write_inner(addr, 2, value as u32).map_err(|e| {
+        let result = self.write_inner(addr, 2, value as u32).map_err(|e| {
             self.last_error = Some(e);
             Self::bus_error(addr, true)
-        })
+        });
+        if self.capture_guest_accesses && result.is_ok() {
+            self.guest_writes.push(GuestAccess {
+                address: addr,
+                size: 2,
+                value: u32::from(value),
+            });
+        }
+        result
     }
     fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
-        self.write_inner(addr, 4, value).map_err(|e| {
+        let result = self.write_inner(addr, 4, value).map_err(|e| {
             self.last_error = Some(e);
             Self::bus_error(addr, true)
-        })
+        });
+        if self.capture_guest_accesses && result.is_ok() {
+            self.guest_writes.push(GuestAccess {
+                address: addr,
+                size: 4,
+                value,
+            });
+        }
+        result
     }
 }
 
@@ -691,6 +785,38 @@ mod tests {
     fn issue(b: &mut Board, c: u8, read: bool) -> Result<(), BusError> {
         b.write8(edma::SERQ, 59)?;
         command(b, c, read)
+    }
+    #[test]
+    fn fetch_is_not_a_guest_data_read() {
+        let mut b = board(CompletionPolicy::Oracle);
+        let address = edma::EDMA_BASE;
+        b.set_guest_access_capture(true);
+        let fetched = b.fetch16(address).unwrap();
+        assert!(b.take_guest_reads().is_empty());
+        assert_eq!(b.read16(address).unwrap(), fetched);
+        assert_eq!(
+            b.take_guest_reads(),
+            vec![GuestAccess {
+                address,
+                size: 2,
+                value: u32::from(fetched),
+            }]
+        );
+    }
+    #[test]
+    fn guest_access_capture_is_opt_in_and_disabling_discards_pending_entries() {
+        let mut b = board(CompletionPolicy::Oracle);
+        b.write16(RAM, 0x1234).unwrap();
+        assert_eq!(b.read16(RAM).unwrap(), 0x1234);
+        assert!(b.take_guest_reads().is_empty());
+        assert!(b.take_guest_writes().is_empty());
+
+        b.set_guest_access_capture(true);
+        b.write16(RAM, 0xabcd).unwrap();
+        assert_eq!(b.read16(RAM).unwrap(), 0xabcd);
+        b.set_guest_access_capture(false);
+        assert!(b.take_guest_reads().is_empty());
+        assert!(b.take_guest_writes().is_empty());
     }
     #[test]
     fn cmd8_payload_tcd_and_semaphores() {
