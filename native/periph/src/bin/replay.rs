@@ -41,13 +41,50 @@
 //!   `IRQ` record's `frame_sr` and every `RTE` record's restored `sr` --
 //!   see `sr.rs`'s module docs for why this is exact at those points and
 //!   what the residual gap is.
+//!
+//! ## DMA + SSI + DSPI lane (P4 stage 2b, `spilink::DmaLink`)
+//!
+//! Extends the same method to `EdmaBank`/`Dspi2Link`/`Fifo` (`spilink::
+//! DmaLink`, see its module docs for the wiring and the SERQ multi-model
+//! dispatch). Two things this lane needs that the timers lane did not:
+//!
+//! * **TX capture: HRD as the memory substitute.** A `TxChannel`/`Dspi2Link`
+//!   TX capture needs source bytes from outside this crate's own register
+//!   file (arbitrary guest DDR); a replay cannot read them any other way,
+//!   so it takes them from the trace's own next `HRD` record instead --
+//!   `DmaLink::write` returns a [`periph::spilink::SerqEffect`] saying one is
+//!   owed, and this loop's `pending_capture` completes it from the very
+//!   next record read (always that `HRD`, since the recorder's own writer
+//!   emits it synchronously, with nothing interleaved -- see `dspi.rs`'s
+//!   module docs). This is a genuinely different replay technique from the
+//!   timers lane's boundary prediction: it replays the trace's own recorded
+//!   *input*, then checks this crate's *transformation* of it (PUSHR-tag
+//!   stripping, TCD write-back), not an independent re-derivation of memory
+//!   this crate cannot see.
+//! * **PC-triggered completions are not predicted.** Channel 35's
+//!   completion vector (155) is delivered from a Python code hook at a
+//!   fixed firmware PC (`emu/edma.py`'s `wait_loop`), not from a clock
+//!   deadline a peripheral-only replay can compute -- unlike PIT/DTIM, an
+//!   instruction-count boundary for it does not exist here to predict. This
+//!   replay tracks `TxChannel::pending`/`consume_pending` and checks
+//!   *ordering* (every vector-155 `IRQ` consumes a completion this crate's
+//!   own `run()` tracking already queued) rather than the exact boundary,
+//!   and reports it separately (`edma155`), not as a mismatch -- the same
+//!   distinction `bin/replay.rs`'s `sr-exempt` window already draws between
+//!   "wrong" and "outside what this model can predict".
+//!
+//! DSPI2's RX delivery (`_deliver`, multi-byte) and the FlexBus DSP FIFO's
+//! read echo (`on_read`, always `READY` at `poll_delay=0` -- see `dsp.rs`)
+//! are genuine `HWR` checks; SSI0 is not wired in here at all (see `ssi.rs`'s
+//! module docs -- no trace ever installs it).
 
 use std::collections::VecDeque;
 use std::env;
 use std::process::ExitCode;
 
+use periph::spilink::{DmaLink, SerqEffect};
 use periph::trace::{self, Reader, Record};
-use periph::{Raised, Timers};
+use periph::{Raised, Timers, dsp};
 
 const PIT_VECTORS: [u16; 4] = periph::pit::VECTORS;
 const DTIM_VECTORS: [u16; 4] = periph::dtim::VECTORS;
@@ -71,6 +108,27 @@ struct Counters {
     hwr_mismatch: u64,
     state_resyncs: u64,
     state_drift: u64,
+    /// DmaLink (eDMA/DSPI2/DSP FIFO) `RD` checks -- see the module docs.
+    dma_rd_checked: u64,
+    dma_rd_mismatch: u64,
+    /// DSPI2 `_deliver` and DSP FIFO `on_read` `HWR` checks.
+    dma_hwr_checked: u64,
+    dma_hwr_mismatch: u64,
+    /// A capture's expected follow-up `HRD` (see the module docs,
+    /// "TX capture") was not the next record, or its length did not cover
+    /// what the TCD asked for.
+    dma_capture_mismatch: u64,
+    /// Vector-155 (channel 35, UART8 TX) ordering only -- see the module
+    /// docs, "PC-triggered completions are not predicted". Not a mismatch.
+    edma155_seen: u64,
+    edma155_unordered: u64,
+    /// DSPI2 TX frames captured, and how many carried a nonzero TRIG mask
+    /// at frame offset 0x22..0x24 (`docs/findings`'s "the DSPI2 TX frame
+    /// carrying the TRIG mask" -- the gate's byte-exactness check, done
+    /// generically: a window presses TRIG at most once, so this should be
+    /// 0 or 1, not hardcoded to one trace's exact clock).
+    dspi2_frames: u64,
+    dspi2_trig_frames: u64,
 }
 
 impl Counters {
@@ -87,6 +145,15 @@ impl Counters {
             hwr_mismatch: 0,
             state_resyncs: 0,
             state_drift: 0,
+            dma_rd_checked: 0,
+            dma_rd_mismatch: 0,
+            dma_hwr_checked: 0,
+            dma_hwr_mismatch: 0,
+            dma_capture_mismatch: 0,
+            edma155_seen: 0,
+            edma155_unordered: 0,
+            dspi2_frames: 0,
+            dspi2_trig_frames: 0,
         }
     }
     fn total_mismatches(&self) -> u64 {
@@ -95,6 +162,9 @@ impl Counters {
             + self.irq_missing
             + self.irq_unexpected
             + self.hwr_mismatch
+            + self.dma_rd_mismatch
+            + self.dma_hwr_mismatch
+            + self.dma_capture_mismatch
     }
 }
 
@@ -145,6 +215,7 @@ fn parse_next_pending(source: &serde_json::Value) -> ([Option<f64>; 4], [bool; 4
 
 fn apply_state(
     timers: &mut Timers,
+    dma: &mut DmaLink,
     data: &[u8],
     counters: &mut Counters,
     verbose: bool,
@@ -154,6 +225,22 @@ fn apply_state(
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(data) else {
         return;
     };
+    // Every `STATE` record carries the live forced-MMIO table
+    // (`emu.harness.Machine.mmio`, `emu/mmiotrace.py`'s `machine_state`) --
+    // see `spilink.rs`'s module docs. Applied on every resync, not just the
+    // first, since a run can change it after restore (`emu/longrun.py`'s
+    // `dspi2_peer` re-apply, see its own comment).
+    if let Some(mmio) = v.get("mmio").and_then(|m| m.as_object()) {
+        for (k, val) in mmio {
+            if let (Some(addr), Some(value)) = (
+                k.strip_prefix("0x")
+                    .and_then(|h| u32::from_str_radix(h, 16).ok()),
+                val.as_u64(),
+            ) {
+                dma.set_forced(addr, value as u32);
+            }
+        }
+    }
     let Some(tstate) = v.pointer("/components/timers") else {
         return;
     };
@@ -255,14 +342,17 @@ fn apply_mark(timers: &mut Timers, data: &[u8]) {
     }
 }
 
-fn apply_page(timers: &mut Timers, base: u32, data: &[u8]) {
+fn apply_page(timers: &mut Timers, dma: &mut DmaLink, base: u32, data: &[u8]) {
     if timers.pit.load_page(base, data) {
         return;
     }
     if timers.dtim.load_page(base, data) {
         return;
     }
-    let _ = timers.intc.load_page(base, data);
+    if timers.intc.load_page(base, data) {
+        return;
+    }
+    let _ = dma.load_page(base, data);
 }
 
 fn main() -> ExitCode {
@@ -299,6 +389,7 @@ fn main() -> ExitCode {
     };
 
     let mut timers = Timers::default();
+    let mut dma = DmaLink::default();
     let mut counters = Counters::new();
     let mut first_mismatch: Option<String> = None;
 
@@ -306,6 +397,13 @@ fn main() -> ExitCode {
     let mut initial_deadline_applied = false;
     let mut expected_irqs: VecDeque<Raised> = VecDeque::new();
     let mut expected_hwr: VecDeque<(u32, u8)> = VecDeque::new();
+    // DSPI2's RX `_deliver` (multi-byte, unlike PIT/DTIM's single-byte
+    // `expected_hwr`) -- see the module docs.
+    let mut expected_dma_hwr: VecDeque<(u32, Vec<u8>)> = VecDeque::new();
+    // A DMA capture this replay owes the DmaLink from the trace's very next
+    // record (see the module docs, "TX capture: HRD as the memory
+    // substitute").
+    let mut pending_capture: Option<SerqEffect> = None;
     let mut n_records: u64 = 0;
 
     // See the module docs' "scheduler-trap SR" note: this crate reconstructs
@@ -410,12 +508,70 @@ fn main() -> ExitCode {
         }
 
         match rec.tag {
+            trace::HRD if pending_capture.is_some() => {
+                // A capture owed by an earlier WR (see the module docs, "TX
+                // capture: HRD as the memory substitute"). Python's own
+                // field-accessor helpers (`_u16`/`_u32`/`_s16` for TCD
+                // fields this crate already reads from its own register
+                // file) are recorded as their OWN, separate, small `HRD`
+                // records ahead of the one big merged block read this
+                // replay actually needs -- so every `HRD` seen while a
+                // capture is owed is checked by source name, not blindly
+                // taken as the next record; a non-matching one (or one with
+                // no still-known source, e.g. the DSP FIFO's echo has none
+                // to read at all) is simply not this replay's concern and
+                // falls through with no effect, same as any other `HRD`.
+                let src_id = rec.u16(0);
+                let name = reader
+                    .sources
+                    .get(&src_id)
+                    .map(String::as_str)
+                    .unwrap_or("");
+                let target = match pending_capture.unwrap() {
+                    SerqEffect::Tx35Capture => name.ends_with(".run"),
+                    SerqEffect::Dspi2Capture => name.ends_with("._capture"),
+                    SerqEffect::None => false,
+                };
+                if target {
+                    match pending_capture.take().unwrap() {
+                        SerqEffect::Tx35Capture => dma.finish_tx35_capture(&rec.data),
+                        SerqEffect::Dspi2Capture => {
+                            let frame = dma.finish_dspi2_capture(&rec.data);
+                            counters.dspi2_frames += 1;
+                            // The gate's byte-exact TRIG-mask check: offset
+                            // 0x22..0x24 of the logical TX frame (`docs/
+                            // findings`'s "The ColdFire tells the SHARC
+                            // through a periodic DSPI2 frame"). A window
+                            // presses TRIG at most once, so this should end
+                            // at 0 or 1, not a hardcoded clock.
+                            if frame.len() >= 0x24 && frame[0x22..0x24] != [0, 0] {
+                                counters.dspi2_trig_frames += 1;
+                                if verbose {
+                                    eprintln!(
+                                        "DSPI2 TX frame #{} at clock={clock}: TRIG mask={:02x}{:02x}",
+                                        counters.dspi2_frames, frame[0x22], frame[0x23]
+                                    );
+                                }
+                            }
+                        }
+                        SerqEffect::None => {}
+                    }
+                }
+            }
             trace::WR => {
                 let addr = rec.u32(0);
                 let value = rec.u32(1);
                 let size = rec.u8(3);
                 if Timers::owns(addr) {
                     timers.write(addr, size, value);
+                } else if DmaLink::owns(addr) {
+                    let (_, effect, hw) = dma.write(addr, size, value);
+                    if effect != SerqEffect::None {
+                        pending_capture = Some(effect);
+                    }
+                    if let Some((a, data)) = hw {
+                        expected_dma_hwr.push_back((a, data));
+                    }
                 }
             }
             trace::RD => {
@@ -431,6 +587,18 @@ fn main() -> ExitCode {
                             &mut counters.rd_mismatch,
                             format!(
                                 "RD mismatch addr={addr:#010x} size={size} pc={pc:#010x} clock={clock}: trace={value:#x} model={expected:#x}"
+                            ),
+                            verbose,
+                        );
+                    }
+                } else if let Some(expected) = dma.read(addr, size) {
+                    counters.dma_rd_checked += 1;
+                    if expected != value {
+                        report(
+                            &mut first_mismatch,
+                            &mut counters.dma_rd_mismatch,
+                            format!(
+                                "DMA RD mismatch addr={addr:#010x} size={size} pc={pc:#010x} clock={clock}: trace={value:#x} model={expected:#x}"
                             ),
                             verbose,
                         );
@@ -511,6 +679,14 @@ fn main() -> ExitCode {
                     timers.sr.on_taken(level, frame_sr);
                     sr_exempt = false;
                     last_dispatched_vector = Some(vector);
+                    if vector == 155 {
+                        // Ordering only, not boundary prediction -- see the
+                        // module docs, "PC-triggered completions".
+                        counters.edma155_seen += 1;
+                        if !dma.tx35.consume_pending() {
+                            counters.edma155_unordered += 1;
+                        }
+                    }
                 }
             }
             trace::RTE => {
@@ -555,14 +731,80 @@ fn main() -> ExitCode {
                             );
                         }
                     }
+                } else if name.starts_with("emu.dspi2.Dspi2Link._deliver") {
+                    // DSPI2 RX: queued by `write`'s SERQ handling (RX arms
+                    // second -- see `dspi.rs`'s module docs), so this is
+                    // always the very next such record; checked against it
+                    // directly rather than through `expected_dma_hwr`'s
+                    // queue-by-address search (there is at most one entry).
+                    counters.dma_hwr_checked += 1;
+                    match expected_dma_hwr.pop_front() {
+                        Some((a, d)) if a == addr && d == rec.data => {}
+                        Some((a, d)) => report(
+                            &mut first_mismatch,
+                            &mut counters.dma_hwr_mismatch,
+                            format!(
+                                "DSPI2 deliver mismatch clock={clock}: trace addr={addr:#010x} len={} vs model addr={a:#010x} len={}",
+                                rec.data.len(),
+                                d.len()
+                            ),
+                            verbose,
+                        ),
+                        None => report(
+                            &mut first_mismatch,
+                            &mut counters.dma_hwr_mismatch,
+                            format!(
+                                "unexpected DSPI2 deliver addr={addr:#010x} len={} clock={clock}: model predicted none",
+                                rec.data.len()
+                            ),
+                            verbose,
+                        ),
+                    }
+                } else if name.starts_with("emu.dsp.Fifo") {
+                    // The FlexBus DSP FIFO's read echo: at this crate's
+                    // (and the oracle's) `poll_delay=0`, always exactly
+                    // READY (`dsp.rs`'s module docs) -- checked as a
+                    // constant rather than through a same-order queue,
+                    // because in Python this write happens INSIDE the read
+                    // hook, before the matching `RD` record even exists (the
+                    // opposite order from every other HWR this replay
+                    // checks), so there is nothing yet to queue against.
+                    counters.dma_hwr_checked += 1;
+                    let expected = dsp::READY.to_be_bytes();
+                    if rec.data != expected {
+                        report(
+                            &mut first_mismatch,
+                            &mut counters.dma_hwr_mismatch,
+                            format!(
+                                "DSP FIFO echo mismatch clock={clock}: trace={:02x?} expected={:02x?}",
+                                rec.data, expected
+                            ),
+                            verbose,
+                        );
+                    }
+                } else {
+                    // Any other host write into one of this link's slots
+                    // (e.g. `emu.panelin.feed` advancing TCD34's DADDR --
+                    // owned by a different P4 lane, see `spilink.rs`'s
+                    // `mirror_write` docs) still has to land in the register
+                    // bytes a later `RD` checks against, even though this
+                    // replay does not model its source.
+                    dma.mirror_write(addr, &rec.data);
                 }
             }
             trace::STATE => {
-                apply_state(&mut timers, &rec.data, &mut counters, verbose, clock);
+                apply_state(
+                    &mut timers,
+                    &mut dma,
+                    &rec.data,
+                    &mut counters,
+                    verbose,
+                    clock,
+                );
             }
             trace::PAGE => {
                 let base = rec.u32(0);
-                apply_page(&mut timers, base, &rec.data);
+                apply_page(&mut timers, &mut dma, base, &rec.data);
             }
             trace::MARK => {
                 apply_mark(&mut timers, &rec.data);
@@ -576,6 +818,25 @@ fn main() -> ExitCode {
     }
     // Drain any leftover expectation at end of stream.
     check_boundary_carryover!(last_boundary.unwrap_or(0));
+    if let Some(effect) = pending_capture {
+        report(
+            &mut first_mismatch,
+            &mut counters.dma_capture_mismatch,
+            format!("a DMA capture ({effect:?}) was never completed by end of stream"),
+            verbose,
+        );
+    }
+    for (addr, data) in expected_dma_hwr.drain(..) {
+        report(
+            &mut first_mismatch,
+            &mut counters.dma_hwr_mismatch,
+            format!(
+                "expected DSPI2 deliver addr={addr:#010x} len={} never appeared before end of stream",
+                data.len()
+            ),
+            verbose,
+        );
+    }
 
     let total = counters.total_mismatches();
     println!(
@@ -591,6 +852,18 @@ fn main() -> ExitCode {
         counters.hwr_mismatch,
         counters.state_resyncs,
         counters.state_drift,
+    );
+    println!(
+        "  DMA RD checked={} (mismatch {}), DMA HWR checked={} (mismatch {}), capture mismatches={}, edma vec155 seen={} (unordered {}), DSPI2 TX frames={} (trig-mask {})",
+        counters.dma_rd_checked,
+        counters.dma_rd_mismatch,
+        counters.dma_hwr_checked,
+        counters.dma_hwr_mismatch,
+        counters.dma_capture_mismatch,
+        counters.edma155_seen,
+        counters.edma155_unordered,
+        counters.dspi2_frames,
+        counters.dspi2_trig_frames,
     );
     if let Some(ctx) = &first_mismatch {
         println!("FIRST MISMATCH: {ctx}");

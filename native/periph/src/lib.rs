@@ -14,14 +14,20 @@
 //! `trace`'s module docs for the format and `bin/replay.rs` for the
 //! comparison method.
 
+pub mod dsp;
+pub mod dspi;
 pub mod dtim;
+pub mod edma;
 pub mod intc;
 pub mod machine;
 pub mod pit;
 pub mod regfile;
+pub mod spilink;
 pub mod sr;
+pub mod ssi;
 
 #[cfg(feature = "trace")]
 pub mod trace;
 
 pub use machine::{HostWrite, Raised, Timers};
+pub use spilink::DmaLink;

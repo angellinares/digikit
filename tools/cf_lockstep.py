@@ -53,9 +53,12 @@ from __future__ import annotations
 import argparse
 import ctypes
 import random
+import struct
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CRATE = ROOT / "native" / "coldfire" / "cfabi"
@@ -577,6 +580,559 @@ def cmd_fuzz(args) -> int:
     return 1 if divergences else 0
 
 
+# ---------------------------------------------------------------------------
+# emac subcommand: EMAC semantics against the oracle via guest probes.
+#
+# Unicorn exposes no MACSR/ACC/MASK register API (module docstring above), so
+# EMAC state is observed the way CFPRM's own EMAC_state_save/restore routine
+# does: guest instructions copy it into GPRs, which Unicorn's register API
+# CAN read. tests/test_unicorn_emac.py already validates that this Unicorn
+# build executes those instructions correctly (movclr, moves to/from ACCn/
+# MACSR/MASK/ACCext, MAC/MSAC with and without load, fractional mode) against
+# CFPRM's own pseudocode; this subcommand runs the SAME technique through
+# BOTH engines via the existing lockstep machinery (run_window), so any
+# divergence in native/coldfire's EMAC semantics shows up the same way a
+# fuzz/snap divergence does. Every case runs:
+#   setup (8 words) -- move Dn into ACC0-3, ACCext01/23, MASK, MACSR, in
+#                       that order, MACSR LAST: MOVE-to-ACCn itself rewrites
+#                       MACSR's N/Z/PAV bits (native/coldfire/src/cpu.rs
+#                       Form::MoveToAcc, CFPRM p.184), so setting MACSR after
+#                       the ACCn/ext/mask loads is the only way to hand the
+#                       instruction under test the exact MACSR value the
+#                       case asked for.
+#   test  (1-3 words) -- the EMAC form under test.
+#   probe (8 words)   -- move ACC0-3, MACSR, MASK, ACCext01/23 back into Dn,
+#                        non-destructively (MOVCLR is only ever the
+#                        instruction UNDER TEST here, never the probe, so
+#                        its own clear-on-read side effect is itself
+#                        checked against the oracle, not assumed correct).
+# run_window already lockstep-compares every GPR after every step, so a
+# divergence in any of these ~17-19 instructions -- setup, test, or probe --
+# is reported, not just the instruction nominally "under test": this also
+# exercises every move-to/move-from-Dn form on every single case.
+#
+# Every encoder below was checked by hand against native/coldfire's own
+# decoder before use: build native/coldfire/src/bin/cfdis.rs (`cargo build
+# --release --bin cfdis`) and feed it "0 <w0> <w1> <w2>" lines on
+# `cfdis --words` stdin; each encoder here reproduces the exact bit
+# extractions in native/coldfire/src/decode_gen.rs's f_mac/f_mac_load/
+# f_movclr/f_move_to_*/f_move_from_* (the same table cpu.rs's execute()
+# dispatches on), and was spot-checked that way, not just derived from
+# tools/cfisa/coldfire.json's "enc" strings by inspection.
+
+EMAC_CODE = 0x00300000
+EMAC_DATA = 0x00310000
+EMAC_DATA_SIZE = 0x2000
+EMAC_REG_POOL = list(range(15))  # D0-D7 (0-7), A0-A6 (8-14); A7 stays the SP
+EMAC_MODES = [m << 4 for m in range(16)]  # OMC,S/U,F/I,R/T (CFPRM Table 1-5)
+EMAC_EDGE32 = (
+    0,
+    1,
+    0x7FFFFFFF,
+    0x80000000,
+    0xFFFFFFFF,
+    0x80000001,
+    0x0000FFFF,
+    0xFFFF0000,
+)
+
+
+def enc_move_to_macsr(m, r):
+    return [0xA900 | (m & 7) << 3 | (r & 7)]
+
+
+def enc_move_from_macsr(r):
+    return [0xA980 | (r & 0xF)]
+
+
+def enc_move_to_acc(acc, m, r):
+    return [0xA100 | (acc & 3) << 9 | (m & 7) << 3 | (r & 7)]
+
+
+def enc_move_from_acc(acc, r):
+    return [0xA180 | (acc & 3) << 9 | (r & 0xF)]
+
+
+def enc_movclr(acc, r):
+    return [0xA1C0 | (acc & 3) << 9 | (r & 0xF)]
+
+
+def enc_move_to_mask(m, r):
+    return [0xAD00 | (m & 7) << 3 | (r & 7)]
+
+
+def enc_move_from_mask(r):
+    return [0xAD80 | (r & 0xF)]
+
+
+def enc_move_to_accext01(m, r):
+    return [0xAB00 | (m & 7) << 3 | (r & 7)]
+
+
+def enc_move_from_accext01(r):
+    return [0xAB80 | (r & 0xF)]
+
+
+def enc_move_to_accext23(m, r):
+    return [0xAF00 | (m & 7) << 3 | (r & 7)]
+
+
+def enc_move_from_accext23(r):
+    return [0xAF80 | (r & 0xF)]
+
+
+def enc_mac(y, v, x, u, f, z, acc, msac=False):
+    """mac/msac without load (CFPRM p.170-171,189-190). y/v is the Ry
+    operand (register 0-15, upper/lower half select for a word op); x/u is
+    Rx the same way; f is the scale (0 none, 1 <<1, 3 >>1); z is size
+    (0=.w, 1=.l); acc is the target accumulator 0-3."""
+    w0 = 0xA000 | ((x >> 3 & 1) << 6) | ((x & 7) << 9) | ((acc & 1) << 7) | (y & 0xF)
+    w1 = (
+        ((z & 1) << 11)
+        | ((f & 3) << 9)
+        | (0x100 if msac else 0)
+        | ((u & 1) << 7)
+        | ((v & 1) << 6)
+        | ((acc >> 1 & 1) << 4)
+    )
+    return [w0, w1]
+
+
+def enc_mac_load(y, v, x, u, f, z, m, r, k, rw, acc, msac=False, disp=None):
+    """mac/msac with load (CFPRM p.172-173,191-192). m/r is the memory
+    operand's raw mode/register (2=(An), 3=(An)+, 4=-(An), 5=(d16,An), r is
+    An 0-7); k is the MASK-applies-to-address flag; rw is the register (0-15)
+    the loaded long word lands in; disp is the (d16,An) displacement, added
+    as a third word when given. Note the accumulator field's LSB is stored
+    inverted (CFPRM p.172-173's own footnote, reproduced in
+    native/coldfire/src/decode_gen.rs's f_mac_load)."""
+    w0 = (
+        0xA000
+        | ((rw >> 3 & 1) << 6)
+        | ((rw & 7) << 9)
+        | (((acc & 1) ^ 1) << 7)
+        | ((m & 7) << 3)
+        | (r & 7)
+    )
+    w1 = (
+        ((z & 1) << 11)
+        | ((f & 3) << 9)
+        | (0x100 if msac else 0)
+        | ((u & 1) << 7)
+        | ((v & 1) << 6)
+        | ((k & 1) << 5)
+        | ((acc >> 1 & 1) << 4)
+        | ((x & 0xF) << 12)
+        | (y & 0xF)
+    )
+    words = [w0, w1]
+    if disp is not None:
+        words.append(disp & 0xFFFF)
+    return words
+
+
+def _setup_words():
+    return [
+        enc_move_to_acc(0, 0, 1)[0],
+        enc_move_to_acc(1, 0, 2)[0],
+        enc_move_to_acc(2, 0, 3)[0],
+        enc_move_to_acc(3, 0, 4)[0],
+        enc_move_to_accext01(0, 5)[0],
+        enc_move_to_accext23(0, 6)[0],
+        enc_move_to_mask(0, 7)[0],
+        enc_move_to_macsr(0, 0)[0],
+    ]
+
+
+_PROBE_WORDS = [
+    enc_move_from_acc(0, 0)[0],
+    enc_move_from_acc(1, 1)[0],
+    enc_move_from_acc(2, 2)[0],
+    enc_move_from_acc(3, 3)[0],
+    enc_move_from_macsr(4)[0],
+    enc_move_from_mask(5)[0],
+    enc_move_from_accext01(6)[0],
+    enc_move_from_accext23(7)[0],
+]
+
+
+def _base_state(rnd, edge_i):
+    """d[1..7]: ACC0-3, ACCext01, ACCext23, MASK source values (d[0], MACSR,
+    is filled in by the caller since it is mode-driven). `edge_i`, if not
+    None, selects EMAC_EDGE32 values (cycled with an offset per case) instead
+    of random ones."""
+    if edge_i is not None:
+        return {i + 1: EMAC_EDGE32[(edge_i + i) % len(EMAC_EDGE32)] for i in range(7)}
+    return {i: rnd.getrandbits(32) for i in range(1, 8)}
+
+
+def _rand_a(rnd):
+    return [rnd.getrandbits(32) for _ in range(7)]  # A0-A6 default fill
+
+
+def _macsr_source(rnd, mode, edge_i):
+    # Keep bits 31-12 clear: CFPRM Table 1-5 defines them "Reserved, should
+    # be cleared", and this patched Unicorn is already known (and pinned by
+    # tests/test_unicorn_emac.py's test_known_gap_macsr_read_keeps_high_bits)
+    # not to clear them on a MACSR read -- an oracle defect, not a
+    # native/coldfire one, so left out of the main sweep to avoid burying
+    # real findings under one already-documented gap repeated thousands of
+    # times. bits 3-0 (status) and 11-8 (PAVx) are real, software-writable
+    # bits (Table 1-5) and are exercised randomly.
+    if edge_i is not None:
+        return mode
+    return mode | rnd.getrandbits(4) | (rnd.getrandbits(4) << 8)
+
+
+def _gen_mac_form(rnd, mode, msac, edge_i):
+    d = _base_state(rnd, edge_i)
+    d[0] = _macsr_source(rnd, mode, edge_i)
+    y = rnd.choice(EMAC_REG_POOL)
+    x = rnd.choice(EMAC_REG_POOL)
+    v = rnd.getrandbits(1)
+    u = rnd.getrandbits(1)
+    f = rnd.choice((0, 1, 3))
+    z = rnd.getrandbits(1)
+    acc = rnd.randrange(4)
+    words = enc_mac(y, v, x, u, f, z, acc, msac=msac)
+    note = "acc%d %s.%s r%d.%s,r%d.%s f=%d" % (
+        acc,
+        "msac" if msac else "mac",
+        "w" if z == 0 else "l",
+        y,
+        "u" if v else "l",
+        x,
+        "u" if u else "l",
+        f,
+    )
+    return words, d, _rand_a(rnd), [], note
+
+
+_LOAD_EA = {"ind": 2, "post": 3, "pre": 4, "disp": 5}
+
+
+def _gen_mac_load_form(rnd, mode, msac, ea_kind, masked, edge_i):
+    d = _base_state(rnd, edge_i)
+    d[0] = _macsr_source(rnd, mode, edge_i)
+    a = _rand_a(rnd)
+    y = rnd.choice(EMAC_REG_POOL)
+    x = rnd.choice(EMAC_REG_POOL)
+    v = rnd.getrandbits(1)
+    u = rnd.getrandbits(1)
+    f = rnd.choice((0, 1, 3))
+    z = rnd.getrandbits(1)
+    acc = rnd.randrange(4)
+    rw = rnd.choice(EMAC_REG_POOL)
+    m = _LOAD_EA[ea_kind]
+    loaded_val = (
+        rnd.getrandbits(32)
+        if edge_i is None
+        else EMAC_EDGE32[edge_i % len(EMAC_EDGE32)]
+    )
+    mem = []
+    disp = None
+    base = EMAC_DATA + 0x100
+    if masked:
+        # Exact pattern validated in tests/test_unicorn_emac.py's
+        # LOAD_CASES "msac.w with load subtracts and applies MASK":
+        # MASK source 0x00000FFF -> self.emac.mask = 0xFFFF0FFF, address
+        # EMAC_DATA+0x1010 masked down to EMAC_DATA+0x010.
+        d[7] = 0x00000FFF
+        target = EMAC_DATA + 0x1010
+        masked_addr = target & 0xFFFF0FFF
+        a[1] = target  # A1
+        mem.append((masked_addr, loaded_val))
+        k = 1
+    else:
+        k = 0
+        if ea_kind == "ind" or ea_kind == "post":
+            a[1] = base
+            mem.append((base, loaded_val))
+        elif ea_kind == "pre":
+            a[1] = base + 4
+            mem.append((base, loaded_val))
+        elif ea_kind == "disp":
+            a[1] = EMAC_DATA
+            disp = 0x100
+            mem.append((base, loaded_val))
+    words = enc_mac_load(y, v, x, u, f, z, m, 1, k, rw, acc, msac=msac, disp=disp)
+    note = "acc%d %s.%s load(%s%s) r%d.%s,r%d.%s rw=r%d" % (
+        acc,
+        "msac" if msac else "mac",
+        "w" if z == 0 else "l",
+        ea_kind,
+        "+mask" if masked else "",
+        y,
+        "u" if v else "l",
+        x,
+        "u" if u else "l",
+        rw,
+    )
+    return words, d, a, mem, note
+
+
+def _gen_movclr_form(rnd, mode, edge_i):
+    d = _base_state(rnd, edge_i)
+    d[0] = _macsr_source(rnd, mode, edge_i)
+    a = _rand_a(rnd)
+    acc = rnd.randrange(4)
+    dest = rnd.choice(EMAC_REG_POOL)
+    words = enc_movclr(acc, dest)
+    note = "movclr.l acc%d,r%d" % (acc, dest)
+    return words, d, a, [], note
+
+
+def _ea_an_or_imm(rnd, a, val, use_imm):
+    if use_imm:
+        return 7, 4, [(val >> 16) & 0xFFFF, val & 0xFFFF]
+    r = rnd.randrange(7)
+    a[r] = val
+    return 1, r, []
+
+
+def _gen_move_to_dedicated(rnd, mode, target, use_imm, edge_i):
+    """move.l An,<target> / move.l #imm,<target> -- the Dn-source variant of
+    every move-to-EMAC form is already exercised by every case's own setup
+    (_setup_words), so this covers only the other two valid EA kinds (CFPRM
+    p.184-188's EA restriction to Dn/An/Imm)."""
+    d = _base_state(rnd, edge_i)
+    d[0] = _macsr_source(rnd, mode, edge_i)
+    a = _rand_a(rnd)
+    val = (
+        rnd.getrandbits(32)
+        if edge_i is None
+        else EMAC_EDGE32[edge_i % len(EMAC_EDGE32)]
+    )
+    m, r, extra = _ea_an_or_imm(rnd, a, val, use_imm)
+    if target == "macsr":
+        words = enc_move_to_macsr(m, r) + extra
+    elif target == "mask":
+        words = enc_move_to_mask(m, r) + extra
+    elif target == "accext01":
+        words = enc_move_to_accext01(m, r) + extra
+    elif target == "accext23":
+        words = enc_move_to_accext23(m, r) + extra
+    else:
+        words = enc_move_to_acc(int(target[3]), m, r) + extra
+    note = "move.l %s,%s" % (
+        "#0x%08x" % val if use_imm else "a%d(=0x%08x)" % (r, val),
+        target,
+    )
+    return words, d, a, [], note
+
+
+def _gen_move_from_dedicated(rnd, mode, source, edge_i):
+    """move.l <source>,An -- the Dn-dest variant is already exercised by
+    every case's own probe (_PROBE_WORDS)."""
+    d = _base_state(rnd, edge_i)
+    d[0] = _macsr_source(rnd, mode, edge_i)
+    a = _rand_a(rnd)
+    r = rnd.randrange(7)
+    if source == "macsr":
+        words = enc_move_from_macsr(8 + r)
+    elif source == "mask":
+        words = enc_move_from_mask(8 + r)
+    elif source == "accext01":
+        words = enc_move_from_accext01(8 + r)
+    elif source == "accext23":
+        words = enc_move_from_accext23(8 + r)
+    else:
+        words = enc_move_from_acc(int(source[3]), 8 + r)
+    note = "move.l %s,a%d" % (source, r)
+    return words, d, a, [], note
+
+
+def _emac_generators():
+    generators: list[tuple[str, Callable[..., Any]]] = []
+    for msac, tag in ((False, "mac"), (True, "msac")):
+        generators.append(
+            (tag, lambda rnd, mode, ei, msac=msac: _gen_mac_form(rnd, mode, msac, ei))
+        )
+        for ea_kind in ("ind", "post", "pre", "disp"):
+            label = "%s_load_%s" % (tag, ea_kind)
+            generators.append(
+                (
+                    label,
+                    lambda rnd, mode, ei, msac=msac, ea=ea_kind: _gen_mac_load_form(
+                        rnd, mode, msac, ea, False, ei
+                    ),
+                )
+            )
+        generators.append(
+            (
+                "%s_load_masked" % tag,
+                lambda rnd, mode, ei, msac=msac: _gen_mac_load_form(
+                    rnd, mode, msac, "ind", True, ei
+                ),
+            )
+        )
+    generators.append(("movclr", lambda rnd, mode, ei: _gen_movclr_form(rnd, mode, ei)))
+    for target in (
+        "acc0",
+        "acc1",
+        "acc2",
+        "acc3",
+        "macsr",
+        "mask",
+        "accext01",
+        "accext23",
+    ):
+        for use_imm, tag in ((False, "an"), (True, "imm")):
+            label = "move_to_%s_%s" % (target, tag)
+            generators.append(
+                (
+                    label,
+                    lambda rnd, mode, ei, t=target, ui=use_imm: _gen_move_to_dedicated(
+                        rnd, mode, t, ui, ei
+                    ),
+                )
+            )
+    for source in (
+        "acc0",
+        "acc1",
+        "acc2",
+        "acc3",
+        "macsr",
+        "mask",
+        "accext01",
+        "accext23",
+    ):
+        label = "move_from_%s_an" % source
+        generators.append(
+            (
+                label,
+                lambda rnd, mode, ei, s=source: _gen_move_from_dedicated(
+                    rnd, mode, s, ei
+                ),
+            )
+        )
+    return generators
+
+
+def _apply_case_regs(r, d, a):
+    for i in range(8):
+        r.d[i] = d.get(i, 0) & 0xFFFFFFFF
+    for i in range(7):
+        r.a[i] = a[i] & 0xFFFFFFFF
+    r.a[7] = EMAC_DATA + EMAC_DATA_SIZE - 0x100
+
+
+def _run_one_case(core, uc, K, trace, words, d, a, mem):
+    setup = _setup_words()
+    full = setup + list(words) + _PROBE_WORDS
+    code = b"".join(struct.pack(">H", w & 0xFFFF) for w in full)
+    core.write_mem(EMAC_CODE, code)
+    uc.mem_write(EMAC_CODE, code)
+    for addr, val in mem:
+        packed = struct.pack(">I", val & 0xFFFFFFFF)
+        core.write_mem(addr, packed)
+        uc.mem_write(addr, packed)
+    r = CfRegs()
+    r.pc = EMAC_CODE
+    r.sr = 0x2700
+    _apply_case_regs(r, d, a)
+    core.clear_overrides()
+    core.set_regs(r)
+    uc_set_regs(uc, K, r)
+    # `limit` is an INSTRUCTION count, not a word count: setup and probe are
+    # always one word per instruction, but the form under test is always
+    # exactly one instruction regardless of how many words it encodes as
+    # (mac/msac 2 words, mac_load/msac_load 2-3 with a (d16,An) EA) -- using
+    # len(full) here made run_window attempt one phantom extra step per
+    # extra word, decoding whatever garbage memory follows the probe.
+    steps = len(setup) + 1 + len(_PROBE_WORDS)
+    n, err = run_window(core, uc, K, trace, EMAC_CODE, steps)
+    return n, err, steps
+
+
+def cmd_emac(args) -> int:
+    lib = load_cfabi(build_cfabi())
+
+    def fresh_core():
+        return Core(lib)
+
+    def fresh_uc():
+        uc, K, trace = unicorn_machine()
+        uc.mem_map(EMAC_CODE, 0x1000)
+        uc.mem_map(EMAC_DATA, EMAC_DATA_SIZE)
+        return uc, K, trace
+
+    core = fresh_core()
+    uc, K, trace = fresh_uc()
+    rnd = random.Random(args.seed)
+    generators = _emac_generators()
+
+    # A fresh Uc (and cfabi Cpu) EVERY case, not just periodically: this
+    # Unicorn build's documented "general instability under sustained
+    # single-stepping" (tools/cf_lockstep.py module docstring; P3 stage-2
+    # report) turns out to include SILENT register corruption, not just the
+    # segfaults that motivated fuzz's 10,000-step recycle -- confirmed here
+    # directly (case ~1730, ~2,200 steps into that recycle window: Unicorn
+    # left the instruction's own destination register unwritten AND wrote a
+    # stale-looking value into an unrelated register the instruction never
+    # touches; the identical case against a brand-new Uc/Cpu pair matched
+    # cleanly). Each emac case is only ~17-19 instructions, so per-case
+    # recycling is cheap enough to just always do.
+    case_count = 0
+    total_cases = 0
+    total_steps = 0
+    incomplete = 0
+    divergences = []
+
+    def do_case(label, mode, words, d, a, mem, tag):
+        nonlocal core, uc, K, trace, case_count, total_cases, total_steps, incomplete
+        case_count += 1
+        core.close()
+        core = fresh_core()
+        uc, K, trace = fresh_uc()
+        n, err, total = _run_one_case(core, uc, K, trace, words, d, a, mem)
+        total_cases += 1
+        total_steps += n
+        if n < total and err is None:
+            incomplete += 1
+        if err:
+            divergences.append("%s mode=0x%02x %s\n  %s" % (label, mode, tag, err))
+
+    stop = False
+    for label, gen in generators:
+        if stop:
+            break
+        for mode in EMAC_MODES:
+            for i in range(args.per_cell):
+                words, d, a, mem, note = gen(rnd, mode, None)
+                do_case(label, mode, words, d, a, mem, "case=%d %s" % (i, note))
+                if args.limit and total_cases >= args.limit:
+                    stop = True
+                    break
+            if stop:
+                break
+            for ei in range(len(EMAC_EDGE32)):
+                words, d, a, mem, note = gen(rnd, mode, ei)
+                do_case(label, mode, words, d, a, mem, "edge=%d %s" % (ei, note))
+                if args.limit and total_cases >= args.limit:
+                    stop = True
+                    break
+            if stop:
+                break
+
+    core.close()
+    print(
+        "%d forms x %d MACSR modes: %d cases, %d single-step comparisons, "
+        "%d divergence(s), %d incomplete (unmapped access/interrupt, not compared)"
+        % (
+            len(generators),
+            len(EMAC_MODES),
+            total_cases,
+            total_steps,
+            len(divergences),
+            incomplete,
+        )
+    )
+    for dtext in divergences[: args.max_failures]:
+        print(dtext)
+    return 1 if divergences else 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -601,6 +1157,21 @@ def main(argv=None) -> int:
         help="print each pc tried, for debugging a crash",
     )
     pf.set_defaults(func=cmd_fuzz)
+
+    pe = sub.add_parser(
+        "emac",
+        help="EMAC semantics (MAC/MSAC/MOVCLR/moves) via guest probes, synthetic instructions",
+    )
+    pe.add_argument("--seed", type=int, default=0)
+    pe.add_argument(
+        "--per-cell",
+        type=int,
+        default=6,
+        help="random cases per form x MACSR-mode cell",
+    )
+    pe.add_argument("--limit", type=int, default=0, help="cap total cases (0 = no cap)")
+    pe.add_argument("--max-failures", type=int, default=50)
+    pe.set_defaults(func=cmd_emac)
 
     args = p.parse_args(argv)
     return args.func(args)
