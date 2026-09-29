@@ -55,6 +55,58 @@ pub enum CardError {
     TransferTooLarge { requested: usize, maximum: usize },
 }
 
+/// One sparse card sector. Unwritten bytes still come from the backing;
+/// writes of zero are distinct from bytes that have never been written.
+struct OverlaySector {
+    data: [u8; SECTOR_SIZE],
+    written: [u64; SECTOR_SIZE / 64],
+    count: usize,
+}
+
+impl OverlaySector {
+    fn new() -> Self {
+        Self {
+            data: [0; SECTOR_SIZE],
+            written: [0; SECTOR_SIZE / 64],
+            count: 0,
+        }
+    }
+
+    fn write(&mut self, start: usize, bytes: &[u8]) -> usize {
+        self.data[start..start + bytes.len()].copy_from_slice(bytes);
+        if start == 0 && bytes.len() == SECTOR_SIZE {
+            let newly_written = SECTOR_SIZE - self.count;
+            self.written.fill(u64::MAX);
+            self.count = SECTOR_SIZE;
+            return newly_written;
+        }
+        let mut newly_written = 0;
+        for position in start..start + bytes.len() {
+            let mask = 1u64 << (position & 63);
+            let word = &mut self.written[position >> 6];
+            if *word & mask == 0 {
+                *word |= mask;
+                newly_written += 1;
+            }
+        }
+        self.count += newly_written;
+        newly_written
+    }
+
+    fn read_into(&self, start: usize, destination: &mut [u8]) {
+        if self.count == SECTOR_SIZE {
+            destination.copy_from_slice(&self.data[start..start + destination.len()]);
+        } else {
+            for (offset, out) in destination.iter_mut().enumerate() {
+                let position = start + offset;
+                if self.written[position >> 6] & (1u64 << (position & 63)) != 0 {
+                    *out = self.data[position];
+                }
+            }
+        }
+    }
+}
+
 /// Minimal eMMC card identity, selection state, base reader, and write overlay.
 pub struct Card {
     backing: Option<Box<dyn RandomAccessRead>>,
@@ -62,7 +114,8 @@ pub struct Card {
     ext_csd: [u8; SECTOR_SIZE],
     rca: u16,
     selected: bool,
-    overlay: BTreeMap<u64, u8>,
+    overlay: BTreeMap<u64, Box<OverlaySector>>,
+    overlay_bytes: usize,
     cid: [u32; 4],
     csd: [u32; 4],
 }
@@ -98,6 +151,7 @@ impl Card {
             rca: 0,
             selected: false,
             overlay: BTreeMap::new(),
+            overlay_bytes: 0,
             cid: [0, 0x4530_0000, 0x3030_3447, 0x0011_0000],
             csd: [0, CSD_RSP1, CSD_RSP2, 0],
         })
@@ -117,7 +171,7 @@ impl Card {
     }
     /// Number of bytes retained in the sparse write overlay.
     pub fn overlay_len(&self) -> usize {
-        self.overlay.len()
+        self.overlay_bytes
     }
 
     /// Execute the minimal identity/selection command set and return RSP0..3.
@@ -191,12 +245,23 @@ impl Card {
                 .min(destination.len() as u64) as usize;
             let _ = backing.read_at(start, &mut destination[..available]);
         }
-        for (&offset, &value) in self.overlay.range(start..) {
-            let relative = offset - start;
-            if relative >= destination.len() as u64 {
-                break;
-            }
-            destination[relative as usize] = value;
+        if destination.is_empty() {
+            return Ok(());
+        }
+        let end = start + destination.len() as u64;
+        for (&sector, overlay) in self
+            .overlay
+            .range(start / SECTOR_SIZE as u64..=(end - 1) / SECTOR_SIZE as u64)
+        {
+            let sector_start = sector * SECTOR_SIZE as u64;
+            let copied_start = sector_start.max(start);
+            let copied_end = (sector_start + SECTOR_SIZE as u64).min(end);
+            let out_offset = (copied_start - start) as usize;
+            let sector_offset = (copied_start - sector_start) as usize;
+            overlay.read_into(
+                sector_offset,
+                &mut destination[out_offset..out_offset + (copied_end - copied_start) as usize],
+            );
         }
         Ok(())
     }
@@ -211,8 +276,18 @@ impl Card {
             return Ok(());
         }
         let start = u64::from(arg) * SECTOR_SIZE as u64;
-        for (offset, &value) in payload.iter().enumerate() {
-            self.overlay.insert(start + offset as u64, value);
+        let mut consumed = 0;
+        while consumed < payload.len() {
+            let position = start + consumed as u64;
+            let sector = position / SECTOR_SIZE as u64;
+            let sector_offset = (position % SECTOR_SIZE as u64) as usize;
+            let count = (SECTOR_SIZE - sector_offset).min(payload.len() - consumed);
+            let page = self
+                .overlay
+                .entry(sector)
+                .or_insert_with(|| Box::new(OverlaySector::new()));
+            self.overlay_bytes += page.write(sector_offset, &payload[consumed..consumed + count]);
+            consumed += count;
         }
         Ok(())
     }
@@ -236,6 +311,23 @@ fn check_transfer_length(length: usize) -> Result<(), CardError> {
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod overlay_tests {
+    use super::*;
+
+    #[test]
+    fn megabyte_write_uses_one_entry_per_sector() {
+        let mut card = Card::default();
+        let payload = vec![0x5a; MAX_TRANSFER_BYTES];
+        card.write_data(25, 0, &payload).unwrap();
+        assert_eq!(card.overlay_len(), MAX_TRANSFER_BYTES);
+        assert_eq!(card.overlay.len(), MAX_TRANSFER_BYTES / SECTOR_SIZE);
+        let mut out = vec![0; MAX_TRANSFER_BYTES];
+        card.read_into(0, &mut out).unwrap();
+        assert_eq!(out, payload);
+    }
 }
 
 fn make_ext_csd(sectors: u32) -> Result<[u8; SECTOR_SIZE], CardError> {

@@ -196,6 +196,32 @@ fn backed_reads_sparse_overlay_and_out_of_range_match_oracle() {
 }
 
 #[test]
+fn overlapping_partial_and_full_sectors_preserve_backing_and_zero_writes() {
+    let base: Vec<u8> = (0..8192).map(|n| (n % 251) as u8).collect();
+    let mut card = Card::with_backing(
+        DEFAULT_CAPACITY_BLOCKS,
+        Some(Box::new(TinyBacking(base.clone()))),
+    )
+    .unwrap();
+    let mut expected = base;
+    let mut covered = [false; 8192];
+    for i in 0..130 {
+        let sector = (i * 7) % 13;
+        let count = (i * 37) % 1023 + 1;
+        let data: Vec<u8> = (0..count).map(|j| ((i + j * 13) % 256) as u8).collect();
+        let offset = sector * 512;
+        card.write_data(25, sector as u32, &data).unwrap();
+        expected[offset..offset + count].copy_from_slice(&data);
+        covered[offset..offset + count].fill(true);
+        let mut output = [0; 1017];
+        card.read_into(((i + 3) % 13) as u32, &mut output).unwrap();
+        let start = ((i + 3) % 13) * 512;
+        assert_eq!(output.as_slice(), &expected[start..start + output.len()]);
+    }
+    assert_eq!(card.overlay_len(), covered.iter().filter(|&&b| b).count());
+}
+
+#[test]
 fn oversized_transfer_is_rejected_before_allocation() {
     let card = Card::default();
     assert_eq!(

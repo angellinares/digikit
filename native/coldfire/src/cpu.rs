@@ -102,6 +102,14 @@ pub enum RunState {
     Halted,
 }
 
+/// The Python oracle declines vectors with absent/out-of-range handlers;
+/// hardware follows the vector even if the target later faults.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InterruptPolicy {
+    Oracle,
+    Device,
+}
+
 /// Why `step` did not complete an instruction normally.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stop {
@@ -126,13 +134,8 @@ pub enum Stop {
 /// per-instruction tracking would need a second index from byte address to
 /// the instructions overlapping it, for no benefit here (self-modifying
 /// code is rare and this only costs a re-decode, never a wrong answer).
-/// Known gap: this only sees writes `Cpu::step` itself issues through
-/// `Bus`. A write from outside `step` (DMA, a peer device mutating RAM
-/// behind the `Bus` impl) is invisible here; no `Bus` impl in this crate
-/// does that today (`cfrealmix`'s `SparseBus`, `cfabi`'s `Bus`), so it is
-/// not exercised by this crate's own gates, but a future one that models a
-/// live DMA writer into code space would need to invalidate on `Cpu`'s
-/// behalf.
+/// External DMA writes are invalidated by the machine owner through
+/// [`Cpu::invalidate_external_write`] before the next instruction executes.
 const DC_PAGE_BITS: u32 = 12;
 const DC_PAGE_SIZE: u32 = 1 << DC_PAGE_BITS;
 const DC_PAGE_MASK: u32 = DC_PAGE_SIZE - 1;
@@ -415,6 +418,65 @@ impl Cpu {
                 self.state = RunState::Halted;
                 Err(Stop::Halted)
             }
+        }
+    }
+
+    /// Offer an external interrupt or the Oracle idle-credit vector.
+    /// Oracle mode refuses absent/out-of-range handlers *before* changing
+    /// guest state; Device mode must select an eligible level at its own
+    /// instruction boundary. The saved frame keeps the interrupted SR;
+    /// only the handler's live IPL is raised. `None` leaves IPL unchanged.
+    pub fn take_interrupt(
+        &mut self,
+        bus: &mut impl Bus,
+        vec: u8,
+        level: Option<u8>,
+        policy: InterruptPolicy,
+    ) -> Result<bool, Stop> {
+        if self.state == RunState::Halted {
+            return Err(Stop::Halted);
+        }
+        if policy == InterruptPolicy::Oracle {
+            let handler = bus
+                .read32(self.ctrl.vbr.wrapping_add(4 * u32::from(vec)))
+                .map_err(|_| {
+                    self.state = RunState::Halted;
+                    Stop::Halted
+                })?;
+            if handler == 0 || handler >= 0x4800_0000 {
+                return Ok(false);
+            }
+        }
+        self.exception(bus, vec, self.pc)?;
+        if let Some(level) = level {
+            self.sr = (self.sr & !sr::IPL) | (u16::from(level & 7) << 8);
+        }
+        self.state = RunState::Running;
+        Ok(true)
+    }
+
+    /// Evict touched decode pages and the page immediately before the first
+    /// touched page; a cached instruction may begin there and consume extension
+    /// words across the boundary.
+    pub fn invalidate_external_write(&mut self, addr: u32, len: usize) {
+        if len == 0 {
+            return;
+        }
+        // A near-full or wrapping 32-bit range touches every decode page.
+        // Avoid narrowing usize to u32 or walking a million pages.
+        if len >= u32::MAX as usize {
+            self.decode_cache = DecodeCache::default();
+            return;
+        }
+        let first = (addr & !DC_PAGE_MASK).wrapping_sub(DC_PAGE_SIZE);
+        let last = addr.wrapping_add((len - 1) as u32) & !DC_PAGE_MASK;
+        let mut page = first;
+        loop {
+            self.decode_cache.invalidate(page, 1);
+            if page == last {
+                break;
+            }
+            page = page.wrapping_add(DC_PAGE_SIZE);
         }
     }
 

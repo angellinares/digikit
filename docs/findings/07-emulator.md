@@ -2622,3 +2622,40 @@ boundaries, so coalescing (few boundaries) under-reads it.
   and deliver completion. There is no independent full late boot DMA payload
   replay or native ISR parity gate yet. Old v1 late traces have separate
   vector-208 timing residues; do not call that timer parity.
+
+### Late v2 DMA: native board and bounded CPU stepping
+
+- **[C]** Correct the preceding **[O]** only at Board/synthetic CPU scope:
+  `native/machine` Board now arms channel59 on SERQ, dispatches eSDHC XFERTYP
+  through live `Esdhc<Card>`, sparse guest RAM and TCD. Oracle policy posts
+  configured semaphores directly; Device only queues events. Bounded
+  `Machine::step` executes actual ColdFire synthetic guest MMIO instructions,
+  invalidates decoded code after successful external DMA, and accepts an
+  explicitly HOST-CONFIGURED synthetic Device vector/level on the next
+  instruction boundary; it does not know firmware INTC vector or timers. Do
+  not claim a live firmware ISR or full boot.
+- **[D]** Local ignored late v2 peripheral replay reached DT2 220,166,405 and
+  DN2 100,614,927 instructions with zero peripheral mismatches and zero
+  live-SR exemptions. Both recorded vs no-record control final snapshots
+  compare identical (DT2 134 mapped pages, DN2 110, plus
+  registers/MMIO/control/counters). Legacy v1 late vector208 timing residue
+  is not evidence of v2 timer parity.
+- **[D]** Explicit ignored native board-gate invocation `cd native/machine &&
+  cargo test --release --features trace --test late_dma -- --ignored` with
+  the operator's own ignored DT2/DN2 traces and DT2 card image. Bounded
+  windows compare guest RAM byte-for-byte against all captured CMD18 output
+  payloads, DT2 2,224/DN2 2,050 COMMAND/TRANSFER COUNTS; stage recorded CMD25
+  HRD guest input and verify card overlay and TCD source/CITER/CSR writeback
+  for DT2 222/DN2 2. This is replay against recorded peripheral writes, not
+  independent CPU boot; no derived artifact is committed. The correlated
+  trace gate is now integrated and reviewed; this remains
+  **[D]**, not **[V]**, and does not establish an independent cold boot.
+- **[D]** `Card` overlay now stores written-byte masks in sparse 512-byte
+  sectors rather than a map node per byte; backing remains visible where not
+  written and explicit zero writes remain visible. Bounded 1MiB sector test
+  and release/WASM build gates pass. Synthetic Machine Device IRQ test uses
+  an arbitrary host-supplied vector and RTE, not firmware ISR path.
+- **[O]** P5 live firmware CPU loop with timers/INTC, eDMA request
+  enable/disable gating, cross-product ISR/semantic parity, real-time audio,
+  and browser runtime still need independent gates; do not claim full native
+  machine parity.

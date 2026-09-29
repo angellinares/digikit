@@ -10,6 +10,6 @@ pub mod decode;
 #[rustfmt::skip]
 mod decode_gen;
 
-pub use cpu::{Bus, BusError, Cpu, RunState, Stop};
+pub use cpu::{Bus, BusError, Cpu, InterruptPolicy, RunState, Stop};
 pub use decode::{Ea, Insn, Operand, Size, decode, decode_at};
 pub use decode_gen::Form;

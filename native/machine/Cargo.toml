@@ -1,0 +1,27 @@
+[package]
+name = "machine"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Pure board bus seam for the native emulator"
+
+[features]
+default = []
+trace = ["periph/trace"]
+
+[dependencies]
+coldfire = { path = "../coldfire" }
+periph = { path = "../periph", default-features = false }
+emmc-card = { path = "../card" }
+
+[lib]
+name = "machine"
+crate-type = ["rlib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
