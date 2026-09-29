@@ -36,6 +36,47 @@ cannot pass about 0.4x). So:
    SHARC + native/live in one native process, checked against the Python
    emulator on the same snapshot windows, then 1.0x with audio.
 
+## Hand-off: status and next tasks (2026-09-29, commit fc15de5)
+
+Self-contained for a new session or another model. Branch
+`work/sharc-emulator`. Rules: CLAUDE.md, plus the working method below.
+Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
+
+### Status
+
+| Area | State | Where |
+|---|---|---|
+| Live play (desktop) | Works: a TRIG in the GUI plays through the ahead-of-time SHARC core. The ColdFire (Unicorn + Python) runs at 0.22x, so the UI and sequencer are slow. | `uv run python tools/dt2gui.py --live-audio`; finding 15 |
+| SHARC, ahead of time | 411-467 us per frame of 667, exact vs Python. The library carries a `sharc_core` hash and refuses a stale build. | `native/sharc`; rebuild command = `REGENERATE_HINT` in `tools/sharc_transpile_run.py` |
+| SHARC JIT (P2) | Paused. Correct (91/91 drive3 frames) and deterministic, but 2.5-3.3 ms/frame under wasmtime. On resume: diff its WebAssembly for one hot loop against the ahead-of-time code compiled to wasm32 (630-720 us/frame), fix the differences, and measure with counters (region entries/frame, bytes/instruction, spills). | `native/sharc-jit` (build with `SHARC_GEN_DIR=$PWD/out/native/opt/gen-final`) |
+| ColdFire core (P3) | All 101 used forms; lockstep vs patched Unicorn clean on fuzz and EMAC. **47.7M instr/s** on real code (target at least 62M useful). **Open divergence at pc 0x401768a6** in the boot280M snap lockstep; it predates the speed work and is uncharacterised. | `native/coldfire`; `tools/cf_lockstep.py {snap,fuzz,emac}` |
+| Peripherals (P4) | Timers, INTC, eDMA, SSI0, DSPI, DSP FIFO replay the traces with 0 register mismatches. The two boot traces keep about 20 vector-208 timing differences each. Missing: eSDHC + card, GPIO, UART, panel, display. | `native/periph` (`mmio-replay <trace> [--limit N] [--verbose]`); traces in `out/mmio-trace/` from `tools/mmio_record.py` |
+| Machine (P5) | Designed, not built. | `docs/design/p5-machine.md` (ten steps, oracle vs device mode) |
+| Unicorn oracle | 5 patches installed (`tools/install-patched-unicorn.sh`). Four known EMAC defects outside the firmware's MACSR modes (0x00, 0x20) are not patched, and the MVZ N flag is wrong; `cf_lockstep` treats these as oracle-exempt. | `patches/README.md` |
+
+### Benchmarks and gates
+
+- ColdFire speed:
+  1. `PYTHONPATH=. uv run python tools/cf_snapdump.py snapshots/dt2-1.16-drive3/boot280M.snap out/coldfire-bench/boot280M.cfdump` (once);
+  2. in `native/coldfire`, `cargo build --release --bin cfrealmix && ./target/release/cfrealmix ../../out/coldfire-bench/boot280M.cfdump 100000000`.
+
+  Gate: the state hash stays `0x0bb544e65d49266b` and instructions/s are reported. (That dump is byte-identical to the one the baseline used.)
+- ColdFire correctness: `uv run python tools/cf_lockstep.py fuzz dt2-1.16 --seed 42` (and `dn2-1.11`), `... emac`, `... snap SNAP --limit N`.
+- Peripherals: `cargo run --release --bin mmio-replay -- out/mmio-trace/<trace>.mmio` in `native/periph`.
+- Tests: `uv run python -m pytest tests -q` (add `--slow` before a commit; the SHARC slow tests need splitting into groups under 10 minutes) and `cargo test --release` in each crate.
+
+### Next tasks, in order
+
+1. **ColdFire divergence at 0x401768a6** (oracle-driven; Sonnet or GPT). Find which side is wrong using the manual, fix it, then run `snap` lockstep over more windows of both images (the drive3/auto snapshots and `snapshots/dn2-1.11/`) until they are clean or every exemption is explained.
+2. **ColdFire handler dispatch** (Sonnet or GPT): one handler per decoded form with pre-extracted operands, no `Result`/`dyn` on the hot path. Gate: at least 62M instructions/s on `cfrealmix`, hash unchanged, lockstep unchanged. If it falls short, profile before considering a ColdFire JIT.
+3. **Remaining peripherals** (oracle-driven): eSDHC + card (with the +Drive overlay), GPIO, UART, panel input and display, each against the traces and following the `native/periph` interface (see its lib.rs docs).
+4. **P5 machine**, following `docs/design/p5-machine.md` step by step. Opus for the scheduler, the oracle/device interrupt delivery and the pacing; the rest is oracle-driven.
+5. **Findings to record** (with a second check before [V]):
+   - the four Unicorn EMAC defects and the MVZ N flag;
+   - Ghidra's MAC-with-load mis-decode at DT2 0x400d92e2 and DN2 0x400db16a;
+   - the registers the Python emulator leaves as RAM (INTC force/mask, DTIM1, eDMA CERQ, DSPI2 MCR, DN2 edge port).
+6. Later: resume the SHARC JIT (P2, method above), then the browser (P6) and DSP patching (P7).
+
 ## Where we are
 
 | Part | State |
