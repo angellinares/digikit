@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -97,6 +98,64 @@ def prepare(product: str, syx: Path, snapshot_path: Path | None = None) -> Path:
     return output
 
 
+def _limit(value: int) -> int:
+    if not 1 <= value <= 1000:
+        raise ValueError("limit must be between 1 and 1000")
+    return value
+
+
+def _regs(uc, constants) -> dict[str, object]:
+    from tools.cf_lockstep import uc_get_regs
+
+    regs = uc_get_regs(uc, constants)
+    return {
+        "d": [int(value) for value in regs.d],
+        "a": [int(value) for value in regs.a],
+        "pc": int(regs.pc),
+        "sr": int(regs.sr),
+    }
+
+
+def _trace_states(product, uc, constants, trace, limit, run_step):
+    """Capture bounded boundaries; a valid branch may deliberately retain PC."""
+    states = [{**_regs(uc, constants), "clock": 0}]
+    for step in range(limit):
+        result = run_step(uc, constants, trace, int(states[-1]["pc"]))
+        if result.exception:
+            raise RuntimeError(f"{product}: oracle exception at step {step}")
+        if result.unmapped:
+            raise RuntimeError(f"{product}: oracle unmapped access at step {step}")
+        states.append({**_regs(uc, constants), "clock": step + 1})
+    return states
+
+
+def oracle_trace(product: str, syx: Path, limit: int = 1000) -> Path:
+    """Write exactly ``limit`` trusted single-instruction oracle boundaries."""
+    from unicorn import m68k_const as constants
+
+    from emu import snapshot as emu_snapshot
+    from tools.cf_lockstep import StepTrace, run_uc_step
+
+    limit = _limit(limit)
+    trusted = verify(product, syx)
+    machine, _, _ = emu_snapshot.restore(str(trusted.path))
+    image = ROOT / PRODUCTS[product].section_dir / "section_3_MAIN_OS.bin"
+    machine.install_mmio()
+    machine.install_isa_patches_scoped(image.read_bytes(), LOAD_ADDRESS)
+    trace = StepTrace()
+    trace.install(machine.uc)
+    states = _trace_states(product, machine.uc, constants, trace, limit, run_uc_step)
+    output = ROOT / "out/native/checkpoint-gate" / f"{product}-oracle-1k.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(
+            {"format_version": 1, "product": product, "limit": limit, "states": states},
+            separators=(",", ":"),
+        )
+    )
+    return output
+
+
 def gate(dt2_syx: Path, dn2_syx: Path) -> None:
     """Re-verify both products, prepare them, then run the ignored 1k gate."""
     dt2 = prepare("dt2", dt2_syx)
@@ -124,6 +183,40 @@ def gate(dt2_syx: Path, dn2_syx: Path) -> None:
     )
 
 
+def diff(dt2_syx: Path, dn2_syx: Path, limit: int = 1000) -> None:
+    """Provenance-gated Python-oracle/native differential run."""
+    limit = _limit(limit)
+    # Both source checks must complete before Cargo is allowed to start.
+    dt2 = prepare("dt2", dt2_syx)
+    dn2 = prepare("dn2", dn2_syx)
+    dt2_trace = oracle_trace("dt2", dt2_syx, limit)
+    dn2_trace = oracle_trace("dn2", dn2_syx, limit)
+    env = os.environ | {
+        "NATIVE_CHECKPOINT_UNVERIFIED_SMOKE_ACK": "unverified-local-inputs",
+        "DT2_CHECKPOINT_MSTATE": str(dt2.resolve()),
+        "DN2_CHECKPOINT_MSTATE": str(dn2.resolve()),
+        "DT2_CHECKPOINT_TRACE": str(dt2_trace.resolve()),
+        "DN2_CHECKPOINT_TRACE": str(dn2_trace.resolve()),
+        "NATIVE_CHECKPOINT_DIFF_LIMIT": str(limit),
+    }
+    print("source-verified products=dt2,dn2", flush=True)
+    subprocess.run(
+        [
+            "cargo",
+            "test",
+            "--release",
+            "--test",
+            "checkpoint_diff",
+            "--",
+            "--ignored",
+            "--nocapture",
+        ],
+        cwd=ROOT / "native/machine",
+        env=env,
+        check=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=str(FORMAT_VERSION))
@@ -135,11 +228,17 @@ def main() -> None:
     gate_parser = commands.add_parser("gate")
     gate_parser.add_argument("--dt2-syx", type=Path, required=True)
     gate_parser.add_argument("--dn2-syx", type=Path, required=True)
+    diff_parser = commands.add_parser("diff")
+    diff_parser.add_argument("--dt2-syx", type=Path, required=True)
+    diff_parser.add_argument("--dn2-syx", type=Path, required=True)
+    diff_parser.add_argument("--limit", type=int, default=1000)
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args.product, args.syx, args.snapshot)
-    else:
+    elif args.command == "gate":
         gate(args.dt2_syx, args.dn2_syx)
+    else:
+        diff(args.dt2_syx, args.dn2_syx, args.limit)
 
 
 if __name__ == "__main__":

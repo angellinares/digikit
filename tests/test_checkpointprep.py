@@ -3,6 +3,7 @@
 import hashlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -120,6 +121,29 @@ def test_verify_rejects_snapshot_loaded_image_mismatch(tmp_path, monkeypatch):
         checkpointprep.verify("test", source)
 
 
+@pytest.mark.parametrize("limit", [0, 1001])
+def test_oracle_trace_rejects_out_of_range_limit(limit, tmp_path):
+    with pytest.raises(ValueError, match="limit must be between 1 and 1000"):
+        checkpointprep.oracle_trace("dt2", tmp_path / "source.syx", limit)
+
+
+def test_trace_states_keeps_repeated_program_counter(monkeypatch):
+    monkeypatch.setattr(
+        checkpointprep,
+        "_regs",
+        lambda _uc, _constants: {"d": [0] * 8, "a": [0] * 8, "pc": 0x4000, "sr": 0},
+    )
+    calls = []
+
+    def step(_uc, _constants, _trace, pc):
+        calls.append(pc)
+        return SimpleNamespace(exception=False, unmapped=False)
+
+    states = checkpointprep._trace_states("test", object(), object(), object(), 2, step)
+    assert calls == [0x4000, 0x4000]
+    assert [state["clock"] for state in states] == [0, 1, 2]
+
+
 def test_gate_does_not_start_cargo_when_a_product_fails(monkeypatch, tmp_path):
     prepared = []
 
@@ -136,4 +160,61 @@ def test_gate_does_not_start_cargo_when_a_product_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(checkpointprep.subprocess, "run", no_cargo)
     with pytest.raises(ValueError, match="dn2 failed verification"):
         checkpointprep.gate(tmp_path / "dt2.syx", tmp_path / "dn2.syx")
+    assert prepared == ["dt2", "dn2"]
+
+
+def test_diff_passes_requested_limit_to_rust(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        checkpointprep, "prepare", lambda product, _syx: tmp_path / f"{product}.mstate"
+    )
+    monkeypatch.setattr(
+        checkpointprep,
+        "oracle_trace",
+        lambda product, _syx, _limit: tmp_path / f"{product}.json",
+    )
+    invoked = {}
+    monkeypatch.setattr(
+        checkpointprep.subprocess,
+        "run",
+        lambda _args, **kwargs: invoked.update(kwargs),
+    )
+    checkpointprep.diff(tmp_path / "dt2.syx", tmp_path / "dn2.syx", 7)
+    assert invoked["env"]["NATIVE_CHECKPOINT_DIFF_LIMIT"] == "7"
+
+
+@pytest.mark.parametrize("limit", [0, 1001])
+def test_diff_invalid_limit_does_not_start_cargo(monkeypatch, tmp_path, limit):
+    monkeypatch.setattr(
+        checkpointprep,
+        "prepare",
+        lambda *_args: pytest.fail("invalid limit must fail before preparation"),
+    )
+    monkeypatch.setattr(
+        checkpointprep.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("invalid limit must fail before cargo"),
+    )
+    with pytest.raises(ValueError, match="limit must be between 1 and 1000"):
+        checkpointprep.diff(tmp_path / "dt2.syx", tmp_path / "dn2.syx", limit)
+
+
+def test_diff_does_not_start_cargo_when_a_product_fails(monkeypatch, tmp_path):
+    prepared = []
+
+    def fake_prepare(product, _syx):
+        prepared.append(product)
+        if product == "dn2":
+            raise ValueError("dn2 failed verification")
+        return tmp_path / "dt2.mstate"
+
+    monkeypatch.setattr(checkpointprep, "prepare", fake_prepare)
+    monkeypatch.setattr(
+        checkpointprep.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail(
+            "cargo must not start after failed provenance"
+        ),
+    )
+    with pytest.raises(ValueError, match="dn2 failed verification"):
+        checkpointprep.diff(tmp_path / "dt2.syx", tmp_path / "dn2.syx")
     assert prepared == ["dt2", "dn2"]

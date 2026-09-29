@@ -2695,3 +2695,19 @@ boundaries, so coalescing (few boundaries) under-reads it.
   reverse `.snap` conversion, equal-clock `snapeq` comparison, live Device
   timer/INTC delivery, full ISR parity, real-time audio and browser execution
   remain unproven. Do not extrapolate the 1k checkpoint smoke gate to them.
+
+- **[D]** Follow-up CPU-state differential: `uv run python
+  tools/checkpointprep.py diff --dt2-syx Digitakt_II_OS1.16.syx --dn2-syx
+  Digitone_II_OS1.11.syx --limit 1000` repeats both source/image checks,
+  restores each trusted 24M checkpoint in the Python Unicorn oracle, and
+  takes exactly one bounded instruction per trace boundary. An ignored native
+  Machine test checks **initial state and every subsequent boundary** through
+  1,000 instructions for D0–D7, A0–A7, PC, SR and checkpoint-relative clock,
+  stopping on the first differing field, unsupported MOVEC or completion
+  event. DT2 and DN2 both passed; a seven-step run and a deliberate corrupted
+  register detector also passed. The trace JSON is firmware-derived and stays
+  ignored under `out/native/checkpoint-gate/`; direct Rust test invocation is
+  unverified, whereas the Python wrapper verifies provenance before generating
+  fresh traces. This establishes only these **reached CPU-state boundaries**:
+  it does not compare memory writes, peripheral registers, timer scheduling,
+  interrupt behavior or later firmware execution.
