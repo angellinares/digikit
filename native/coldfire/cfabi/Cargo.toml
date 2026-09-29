@@ -1,0 +1,21 @@
+[package]
+name = "cfabi"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Desktop-only C ABI (ctypes) over coldfire::Cpu for tools/cf_lockstep.py"
+
+[dependencies]
+coldfire = { path = ".." }
+
+[lib]
+name = "cfabi"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

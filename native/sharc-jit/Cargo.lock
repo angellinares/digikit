@@ -970,11 +970,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharc-decode"
+version = "0.0.1"
+
+[[package]]
 name = "sharc-jit"
 version = "0.0.1"
 dependencies = [
+ "sharc-decode",
+ "sharc-translate",
  "wasm-encoder 0.259.0",
  "wasmtime",
+]
+
+[[package]]
+name = "sharc-translate"
+version = "0.0.1"
+dependencies = [
+ "sharc-decode",
+ "wasm-encoder 0.259.0",
 ]
 
 [[package]]

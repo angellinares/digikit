@@ -1,0 +1,22 @@
+[package]
+name = "sharc-jit-rt"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "The SHARC+ JIT's runtime module (wasm32): machine state, the one-instruction interpreter, region dispatch and the helpers region code calls"
+
+# Build for wasm32-unknown-unknown with SHARC_GEN_DIR naming a
+# tools/sharc_transpile.py output (no image: firmware-free).
+[dependencies]
+sharc-native = { path = "../../sharc" }
+sharc-decode = { path = "../decode" }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+codegen-units = 16
+debug = false
+panic = "abort"
+incremental = false

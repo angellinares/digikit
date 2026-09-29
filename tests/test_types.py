@@ -19,6 +19,7 @@ TYPED = [
     "tests/test_mmio_record.py",
     "tests/test_mmiotrace.py",
     "tools/cf.py",
+    "tools/cf_lockstep.py",
     "tools/cf_names.py",
     "tools/cfdb.py",
     "tools/cfisa/gen.py",

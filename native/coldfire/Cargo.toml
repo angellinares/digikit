@@ -17,6 +17,10 @@ crate-type = ["rlib"]
 name = "cfdis"
 path = "src/bin/cfdis.rs"
 
+[[bin]]
+name = "cfbench"
+path = "src/bin/cfbench.rs"
+
 [profile.release]
 opt-level = 3
 debug = false

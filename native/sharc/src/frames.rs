@@ -103,8 +103,13 @@ const CALL_END: &str = "return without followed call";
 /// Run the current call until it returns (the clean 9a/9b stop the
 /// Python replay also ends on). Instructions, including the return.
 pub fn run_call(e: &mut Engine, max: u32) -> Result<u64, String> {
+    run_call_with(e, max, &mut |e: &mut Engine, n: u32| e.step(n))
+}
+
+/// `run_call` with another stepper (the JIT runtime's).
+pub fn run_call_with(e: &mut Engine, max: u32, step: &mut dyn FnMut(&mut Engine, u32) -> u32) -> Result<u64, String> {
     // One step call runs until a trap halts the engine or the budget ends.
-    let done = e.step(max) as u64;
+    let done = step(e, max) as u64;
     if done >= max as u64 {
         return Err("max-steps".into());
     }
@@ -155,6 +160,17 @@ pub fn frame(
     data: &[u8],
     clock: &dyn Fn() -> u64,
 ) -> Result<FrameOut, String> {
+    frame_with(e, p, data, clock, &mut |e: &mut Engine, n: u32| e.step(n))
+}
+
+/// `frame` with another stepper (the JIT runtime's).
+pub fn frame_with(
+    e: &mut Engine,
+    p: &Pack,
+    data: &[u8],
+    clock: &dyn Fn() -> u64,
+    step: &mut dyn FnMut(&mut Engine, u32) -> u32,
+) -> Result<FrameOut, String> {
     let shift = e
         .peek(p.shift_src as u64, 4)
         .map_err(|_| "shift source is an unmodelled MMR".to_string())?
@@ -166,10 +182,10 @@ pub fn frame(
     }
     e.fresh_call(p.dma_cb, None);
     e.set_reg(p.r8 as usize, V::c(p.r8_value as Int));
-    run_call(e, 64).map_err(|w| format!("DMA completion call: {w}"))?;
+    run_call_with(e, 64, step).map_err(|w| format!("DMA completion call: {w}"))?;
     e.fresh_call(p.block_handler, None);
     let t = clock();
-    let n = run_call(e, 4_000_000)?;
+    let n = run_call_with(e, 4_000_000, step)?;
     let dt = clock().wrapping_sub(t);
     Ok(FrameOut {
         handler_time: dt,

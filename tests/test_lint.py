@@ -83,6 +83,7 @@ CLEAN = [
     "tests/test_timer_hold.py",
     "tests/test_types.py",
     "tools/cf.py",
+    "tools/cf_lockstep.py",
     "tools/cf_names.py",
     "tools/cfdb.py",
     "tools/cfisa/gen.py",

@@ -3,18 +3,21 @@ name = "sharc-jit"
 version = "0.0.1"
 edition = "2024"
 publish = false
-description = "SHARC+ block translation to WebAssembly: P1 measurements (wasmtime host, run-time module generation)"
+description = "SHARC+ JIT: run-time translation of the loaded image into WebAssembly, run under wasmtime (P2); P1's measurement tools"
 
-# Firmware-free: the tools read modules built under out/ at run time.
-# The WebAssembly build of the core itself is ./wasm-frames (its own crate,
-# built for wasm32-unknown-unknown).
+# Firmware-free. Build with SHARC_GEN_DIR (a tools/sharc_transpile.py output,
+# the translator's input) and SHARC_JIT_RT (the runtime module, ./rt built for
+# wasm32-unknown-unknown). The P1 tools read modules built under out/.
 [dependencies]
 wasm-encoder = "0.259.0"
 wasmtime = "49.0.1"
+sharc-translate = { path = "translate" }
+sharc-decode = { path = "decode" }
 
 [lib]
 name = "sharc_jit"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [profile.release]
 opt-level = 3
@@ -28,3 +31,7 @@ path = "src/bin/wasm_frames.rs"
 [[bin]]
 name = "jit-probe"
 path = "src/bin/jit_probe.rs"
+
+[[bin]]
+name = "jit-frames"
+path = "src/bin/jit_frames.rs"

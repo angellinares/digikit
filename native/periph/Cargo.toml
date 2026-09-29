@@ -1,0 +1,39 @@
+[package]
+name = "periph"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "MCF5441x timer/INTC peripheral models (PIT, DTIM, INTC), plus a DT2MMIO trace reader and replay harness for checking them against the Python emulator (the frozen oracle)."
+
+# The models themselves (this file's default target) are std-only, no
+# dependencies, so they build for wasm32. The trace reader/replay binary
+# needs zlib (the trace body) and JSON (the header and STATE/MARK blobs);
+# both are gated behind the `trace` feature so a wasm32 build of the models
+# never pulls them in: `cargo build --target wasm32-unknown-unknown
+# --no-default-features`.
+[features]
+default = ["trace"]
+trace = ["dep:flate2", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+flate2 = { version = "1", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[lib]
+name = "periph"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "mmio-replay"
+path = "src/bin/replay.rs"
+required-features = ["trace"]
+
+[profile.release]
+opt-level = 3
+debug = false
+
+[profile.dev]
+# Matches the other native/ crates' choice; replay runs are single-shot CLI
+# tools, not long-lived services, so an abort on panic is fine here too.
+panic = "unwind"

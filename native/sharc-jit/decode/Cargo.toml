@@ -1,0 +1,31 @@
+[package]
+name = "sharc-decode"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Firmware-free port of tools/sharc_core.sequencer.decode_at()'s single-PC SHARC+ VISA decoder (tools/sharcspec/decode_table.json), for a run-time JIT"
+
+# std only: no crate dependencies at all (not even for the comparison
+# tools under examples/, which are not needed to build or use the library).
+[dependencies]
+
+[lib]
+name = "sharc_decode"
+path = "src/lib.rs"
+
+[[example]]
+name = "compare_insns"
+path = "examples/compare_insns.rs"
+
+[[example]]
+name = "compare_sweep"
+path = "examples/compare_sweep.rs"
+
+[[example]]
+name = "bench_decode"
+path = "examples/bench_decode.rs"
+
+[profile.release]
+opt-level = 3
+debug = false
+incremental = false

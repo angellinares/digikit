@@ -1,0 +1,22 @@
+[package]
+name = "sharc-translate"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "SHARC+ JIT translator: partial evaluation of the transpiled core (tools/sharc_transpile.py) into WebAssembly, pure (no OS, no threads)"
+
+# Build with SHARC_GEN_DIR naming a tools/sharc_transpile.py output (core_g.rs,
+# tables.rs, syms.rs: firmware-free). The runtime's boundary functions come
+# from native/sharc/src/rt.rs and rt/bnd.rs, read as source.
+[dependencies]
+wasm-encoder = "0.259.0"
+sharc-decode = { path = "../decode" }
+
+[lib]
+name = "sharc_translate"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+debug = false
+incremental = false
