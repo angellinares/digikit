@@ -14,12 +14,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TYPED = [
     "emu/livesharc.py",
+    "emu/mmiotrace.py",
     "emu/sharc_peer.py",
+    "tests/test_mmio_record.py",
+    "tests/test_mmiotrace.py",
     "tools/cf.py",
     "tools/cf_names.py",
     "tools/cfdb.py",
+    "tools/cfisa/gen.py",
+    "tools/cfisa/oracle.py",
     "tools/live_audio.py",
     "tools/live_gui_check.py",
+    "tools/mmio_record.py",
     "tools/sharc.py",
     "tools/sharc_core",
     "tools/sharc_dac.py",

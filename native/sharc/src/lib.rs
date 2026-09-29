@@ -27,6 +27,7 @@
 //! caller then lets the Python core execute it (tools/sharc_transpile_run.py).
 
 pub mod canon;
+pub mod frames;
 pub mod mem;
 pub mod rt;
 pub mod sha256;
@@ -821,22 +822,34 @@ pub unsafe extern "C" fn sharc_native_info(out: *mut u8, out_cap: usize) -> i32 
     info.len() as i32
 }
 
+/// The build's description (sharc_native_info): the SHA-256 of the
+/// tools/sharc_core sources and the generator version the generated code
+/// came from (0: generated before the version existed), the image's
+/// SHA-256 and the block count. Loaders compare the first two with the
+/// current sources and refuse a stale library
+/// (tools/sharc_transpile_run.check_build_info, native/live).
 #[allow(unused_assignments)]
 pub fn build_info() -> String {
     #[allow(unused_mut)]
     let mut core = "none";
+    #[allow(unused_mut)]
+    let mut generator: u32 = 0;
     #[allow(unused_mut)]
     let mut image = "none";
     #[cfg(sharc_gen)]
     {
         core = generated::tables::CORE_SHA256;
     }
+    #[cfg(all(sharc_gen, sharc_gen_version))]
+    {
+        generator = generated::tables::GENERATOR_VERSION;
+    }
     #[cfg(all(sharc_gen, sharc_image))]
     {
         image = generated::image::IMAGE_SHA256;
     }
     format!(
-        "{{\"core_sha256\": \"{core}\", \"image_sha256\": \"{image}\", \"blocks\": {}}}",
+        "{{\"core_sha256\": \"{core}\", \"generator_version\": {generator}, \"image_sha256\": \"{image}\", \"blocks\": {}}}",
         image_blocks().len()
     )
 }

@@ -1,0 +1,26 @@
+[package]
+name = "coldfire"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "ColdFire V4e core (ISA_C, EMAC): decoder generated from tools/cfisa/coldfire.json, hand-written semantics"
+
+# std only: no crate dependencies. The library does no I/O and starts no
+# threads, so it can build for wasm32 later.
+[dependencies]
+
+[lib]
+name = "coldfire"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "cfdis"
+path = "src/bin/cfdis.rs"
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

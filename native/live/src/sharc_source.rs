@@ -99,6 +99,18 @@ pub struct LivePack {
     /// state came from (trailer version 2; None in a version 1 pack or when
     /// the builder named no card).
     pub card: Option<String>,
+    /// SHA-256 (hex) of the tools/sharc_core sources the start state was
+    /// built with (trailer version 3; None before). A library generated
+    /// from other sources is refused (`check_library`).
+    pub core: Option<String>,
+}
+
+/// The string value of KEY in a flat JSON object (sharc_native_info).
+fn json_str<'a>(json: &'a str, key: &str) -> Option<&'a str> {
+    let at = json.find(&format!("\"{key}\""))? + key.len() + 2;
+    let rest = json[at..].trim_start().strip_prefix(':')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    Some(&rest[..rest.find('"')?])
 }
 
 struct Rd<'a> {
@@ -177,7 +189,7 @@ impl LivePack {
             return Err("frame pack has no live trailer (use live-pack, not pack)".into());
         }
         let trailer_version = r.u32()?;
-        if !(1..=2).contains(&trailer_version) {
+        if !(1..=3).contains(&trailer_version) {
             return Err("unsupported live trailer version".into());
         }
         let nv = r.u32()?;
@@ -197,6 +209,12 @@ impl LivePack {
         } else {
             None
         };
+        let core = if trailer_version >= 3 {
+            let (c, cn) = r.blob()?;
+            Some(String::from_utf8_lossy(&bytes[c..c + cn]).into_owned())
+        } else {
+            None
+        };
         Ok(LivePack {
             bytes,
             image,
@@ -208,7 +226,29 @@ impl LivePack {
             voices,
             key,
             card,
+            core,
         })
+    }
+
+    /// Refuse a native library (its `sharc_native_info` JSON) generated
+    /// from other tools/sharc_core sources than the ones this pack's start
+    /// state was built with: it would run the old semantics. A pack before
+    /// trailer version 3 carries no hash and is not checked.
+    pub fn check_library(&self, info: &str) -> Result<(), String> {
+        let Some(core) = self.core.as_deref() else {
+            return Ok(());
+        };
+        let lib = json_str(info, "core_sha256").unwrap_or("none");
+        if lib.eq_ignore_ascii_case(core) {
+            return Ok(());
+        }
+        Err(format!(
+            "stale native SHARC library: generated from tools/sharc_core {lib}, but live pack {} \
+             was built with {core}; regenerate and rebuild it (the command is in \
+             tools/sharc_transpile_run.py REGENERATE_HINT: tools/sharc_rsgen.py, then \
+             cargo build --release --manifest-path native/sharc/Cargo.toml with SHARC_GEN_DIR)",
+            self.key
+        ))
     }
 
     /// Refuse a pack whose start state was fed from another card image
@@ -1015,6 +1055,51 @@ mod tests {
         assert!(p2.check_card("BEEF").is_ok());
         let e = p2.check_card("cafe").unwrap_err();
         assert!(e.contains("beef") && e.contains("cafe"), "{e}");
+    }
+
+    #[test]
+    fn a_version_3_trailer_refuses_a_library_from_another_core() {
+        let p = pack(&[&[1, 2]]);
+        assert_eq!(p.core, None);
+        assert!(
+            p.check_library("{}").is_ok(),
+            "no hash in the pack: not checked"
+        );
+        let mut b = p.bytes.clone();
+        // trailer version 1 -> 3: an empty card blob, then the core hash
+        let at = b.windows(4).rposition(|w| w == b"SHLV").unwrap() + 4;
+        b[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
+        b.extend_from_slice(&0u32.to_le_bytes());
+        b.extend_from_slice(&4u32.to_le_bytes());
+        b.extend_from_slice(b"c0de");
+        let p3 = LivePack::parse(b).unwrap();
+        assert_eq!(p3.card, None);
+        assert_eq!(p3.core.as_deref(), Some("c0de"));
+        let ok = r#"{"core_sha256": "C0DE", "generator_version": 1, "blocks": 3}"#;
+        assert!(p3.check_library(ok).is_ok());
+        let stale = r#"{"core_sha256": "beef", "generator_version": 1}"#;
+        let e = p3.check_library(stale).unwrap_err();
+        assert!(
+            e.contains("stale") && e.contains("beef") && e.contains("c0de"),
+            "{e}"
+        );
+        assert!(
+            e.contains("sharc_rsgen.py"),
+            "names the regenerate command: {e}"
+        );
+        assert!(
+            p3.check_library("{}").is_err(),
+            "a library without a hash is refused"
+        );
+    }
+
+    #[test]
+    fn json_str_reads_a_flat_object() {
+        let j = r#"{"core_sha256": "ab12", "generator_version": 0, "image_sha256":"ff"}"#;
+        assert_eq!(json_str(j, "core_sha256"), Some("ab12"));
+        assert_eq!(json_str(j, "image_sha256"), Some("ff"));
+        assert_eq!(json_str(j, "generator_version"), None);
+        assert_eq!(json_str(j, "missing"), None);
     }
 
     #[test]

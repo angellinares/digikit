@@ -2201,12 +2201,19 @@ FUN_4012faea` (three scans under the MmcFs lock), `clr.l d0`, `rts`.
 
 **Snapshot evidence [V].** `snapshots/dt2-1.16-control/running.snap`
 (branch C) draws the full main page with the progress task never created
-(TCB `0x44e46564` saved sp = 0 **[D]**), and its vector-208 slot is still
+(TCB `0x44e46564` saved sp = 0 **[V] (P0 2026-09-29: the TCB's first three
+words are 0; in `snapshots/dt2-1.16/running.snap`, a formatting boot that
+did run the progress screen, they are set and vector 208 is `0x40133518`)**),
+and its vector-208 slot is still
 `0x400d0668`. `snapshots/dt2-1.16-drive2/boot400M.snap` has vector 208 =
 `0x400d0668` and the intro on frame 1 (`0x43153a04 = 1`), with Main OS
-parked on `0x43149550` **[D for the TCB state]**. The same intro-at-frame-1
+parked on `0x43149550` **[V] (P0: in drive2/boot400M.snap and
+drive/running.snap the Main OS stack holds the argument `0x43149550` at
+`0x4098f6a4` and the return address `0x400337e2` at `0x4098f6a8`; the intro
+task's stack holds `0x43149548` at `0x4314d548`)**. The same intro-at-frame-1
 state is in every `emu.checkpoint make` rung read, so the ladder builder
-(`emu/dspboot.py`) does not deliver PIT3 **[D]**.
+(`emu/dspboot.py`) does not deliver PIT3 **[D]** (P0: also true of
+`drive3/boot400M.snap`).
 
 **Confirmed by a run [D].** `tools/guirun.py` from
 `snapshots/dt2-1.16-drive2/boot400M.snap` with `--card-image
@@ -2255,11 +2262,32 @@ boot project's samples on a cold boot, with no UI.
   guirun's "intro handover at 52M" line then reuses a cold-boot heuristic
   against the resumed run's relative count.
 
-## Fractional EMAC was wrong in patched Unicorn **[D][O]**
+## Fractional EMAC was wrong in patched Unicorn **[V][D][C][O]**
 
 2026-09-28. Everything here was executed or read once; the fix is built and
 tested in worktree `.claude/worktrees/agent-a35ef1ffe626acbe5` but **not
 installed in the shared venv** and not merged.
+
+> **[C] 2026-09-29 (P0).** The fix is merged (commit `95d92de`:
+> `patches/unicorn-2.1.4-m68k-emac-fractional.patch`, sha256 `8f497c93...`,
+> pinned third in `tools/install-patched-unicorn.sh`) and installed in the
+> shared venv: `uv run python -m emu.unicorn_compat` reports
+> `emac_fractional` pass (0.5 x 0.5 = `0x20000000`, -0.5 x 0.5 =
+> `0xE0000000`, the mode switch keeps `0x12345678`). The install steps at
+> the end of this section are done. A capture made with it exists:
+> `out/captures/drive3/dt2-1.16-drive3-trig1-emac.dt2cap`.
+>
+> P0 checked rows 1, 2 and 5 twice: against MCF54418RM p.5-17 (PDF p.159:
+> `product[63:0] = (operandY * operandX) << 1`, and the zero-fill for
+> `0x8000_0000 * 0x8000_0000`, row 4's manual column), and by running
+> `emu/unicorn_compat.py`'s own case on the stock `unicorn==2.1.4` wheel in
+> an isolated environment: 0.5 x 0.5 = `0x10000000`, -0.5 x 0.5 =
+> `0x30000000`, and the mode switch reads `0x00123456`. Rows 1, 2 and 5 are
+> **[V]**; the Unicorn column of rows 3, 4 and 6-8 stays **[D]** (only the
+> patched build's tests exercise them). The seven MACSR immediates were
+> found again by a raw scan for `a93c` (seven code hits, three more in data
+> past `0x40220000`) and in the Ghidra listing, which also shows two `move.l
+> A0,MACSR` restores (`0x4002f398`, `0x400cee02`).
 
 The ColdFire uses fractional EMAC (`MACSR = 0x20`, F/I = 1, truncating, no
 OMC) in `vector_191_handler` (the parameter smoother `FUN_400d92a2` and the
@@ -2286,7 +2314,8 @@ against the manuals (MCF54418RM section 5, PDF p.145-159; CFPRM chapter 6):
 | 10 | OMC with PAVn already set | still accumulates | ACC unchanged | no (firmware never sets OMC) |
 | 11 | integer-mode EV and saturation sign | looks wrong | RM p.5-15/16 | no, out of scope |
 
-Effect on the firmware **[D]**: the smoother is a unity-gain one-pole
+Effect on the firmware **[V]** (P0: the numbers below follow from row 1
+alone; see finding 04, "The smoother"): the smoother is a unity-gain one-pole
 (finding 04, "1.16 frame fields"). With the old library it settles at
 0.029 x: running `FUN_400d92a2` directly on `loaded.snap`'s SRAM, track 1's
 raw `[15614, 768, 7, 30720, 28458]` (TUNE, PLAY, SAMP, LEN, LEV) settles at
@@ -2303,7 +2332,8 @@ venv the compat check fails on the old build and passes on the new one, and
 
 What it invalidates:
 
-- Every `out/captures/*.dt2cap` made so far: the smoothed bands
+- Every `out/captures/*.dt2cap` made before the fix (all except
+  `dt2-1.16-drive3-trig1-emac.dt2cap`): the smoothed bands
   (`0x02`, `0x74`, `0xda`-`0x139` per track) are wrong; `0x94` is right.
   Tests that read captures (`test_sharc_replay.py`, `test_sharc_inputs.py`,
   `test_sharc_armpath.py`, `test_sharc_calltrace.py`, `test_sharc_memdiff.py`,
@@ -2316,12 +2346,45 @@ What it invalidates:
 - SHARC golden hashes do not depend on it (no capture input).
 - **[O]** what `0x400cec70` and `FUN_40138ff8` compute, before and after.
 
-Install (Em, between runs; running processes keep the old library):
+Install (Em, between runs; running processes keep the old library; done
+by 2026-09-29, and the installer now runs from any tree at `95d92de` or
+later):
 
     cd /Users/em/src/digi/digitakt2/.claude/worktrees/agent-a35ef1ffe626acbe5 && tools/install-patched-unicorn.sh
 
 Then `uv run python -m emu.unicorn_compat` and `uv run python -m pytest
 tests/test_unicorn_emac.py tests/test_unicorn_compat.py -q`.
+
+## The count-stop BTST flag bug and the flush-flags patch **[V]**
+
+2026-09-29 (P0). Checks the root cause in `patches/README.md` ("What the
+flush-flags patch fixes") and `emu/unicorn_compat.py`'s `btst_flush_z`.
+
+- **The site [V].** `0x400cd2f4` is `btst.l #28,d0` and `0x400cd2f8` is
+  `beq.w 0x400cd47c`, in `FUN_400cd2bc`, after `move.l (0xec03802c).l,d0`
+  (Ghidra listing and capstone agree).
+- **The mechanism [V], from Unicorn 2.1.4's `qemu/target/m68k/translate.c`
+  (tag commit `8028ec43`).** `update_cc_op()` stores `s->cc_op` to the CPU
+  state only when `cc_op_synced` is 0. `gen_flush_flags()` handles
+  `CC_OP_ADD*`, `SUB*`, `CMP*` and `LOGIC` in line and then sets
+  `s->cc_op = CC_OP_FLAGS` without clearing `cc_op_synced` (only the helper
+  cases, which also write `env->cc_op`, set it to 1). `bitop_im` (BTST)
+  calls `gen_flush_flags()`. Stock Unicorn stores CC_OP only at block end,
+  where the flag is still 0 from the producer's `set_cc_op`, so it stores
+  `CC_OP_FLAGS`. The hook CCR patch adds an `update_cc_op()` before each
+  code hook, which stores the producer's op (`CC_OP_LOGIC` after
+  `move.l`) and sets the flag to 1; after BTST the state still says LOGIC,
+  and a later reader recomputes Z from N. The flush-flags patch clears the
+  flag in the four in-line cases.
+- **By execution [V].** On the stock `unicorn==2.1.4` wheel (isolated
+  environment) `btst_flush_z` passes (both shapes, D1 = 2) and
+  `count_boundary_cmp_z` fails (SR = 1, not 4): stock has the lazy-CCR
+  count-stop bug but not the BTST one, so the BTST bug comes from the hook
+  CCR patch, as the README says. The installed library passes all six
+  compat cases. A build with the hook patch but without the flush-flags
+  patch was not run.
+- **[D]** that the 1.16 run hit it after 69.87M instructions, 49
+  instructions after an `rte` (a run observation).
 
 ## The 1.16 serial console **[V][D][C]**
 
@@ -2330,9 +2393,13 @@ tests/test_unicorn_emac.py tests/test_unicorn_compat.py -q`.
 - **[V]** `FUN_400cc63a` creates the console task, entry `0x400cae8c`
   (`pea` at `0x400cc660`), priority 2. `FUN_400cc864` calls it only when
   bit 5 of `0x4029e9b0` is set (1.15C: `0x40288190`). Task TCB `0x4039be58`,
-  line queue `0x403a0eac` **[D]**.
+  line queue `0x403a0eac` **[V] (P0: `FUN_400cc63a` creates the queue with
+  `FUN_40001834(0x403a0eac, ...)` and the task with `FUN_400012c8(0x4039be58,
+  0x400cae8c, 2, 0x4039beac, 0x4000)`; the gate is `moveq #$20,d0; and.l
+  0x4029e9b0,d0; beq` at `0x400ccc7c`, and the only call is `0x400ccc98`)**.
 - `emu/serial.py` (`CONSOLE_QUEUE 0x40388EAC` etc.) still has the 1.15C
-  addresses and needs porting **[D]**.
+  addresses and needs porting **[V]** (P0: `emu/serial.py:50`,
+  `CONSOLE_QUEUE = 0x40388EAC`).
 - Commands **[D]**: `#RECEIVE_AUDIO`, `#PLAY_START`/`#PLAY_STEREO`/
   `#PLAY_STOP`/`#RECORD_*`/`#DUMP_AUDIO` (the vector-191 debug player,
   finding 04; bypasses the SHARC); `#SAMPLE_UPLOAD n` (writes eMMC sector
@@ -2361,6 +2428,16 @@ configuration ended on the same instruction count, PC and TX CRC.
   (`0x0936`/8593, `0x400d137c`). This corrects the 15 fps, 50 Hz and
   60 Hz above. Checked against the bytes by the time-base lane and again
   here. `emu/pit.py` now uses 2^PRE.
+  **P0 2026-09-29 [V][C].** Re-read in both passes (Ghidra listing and
+  capstone on the raw image) with the manual text (p.1156 PRE table 2^0 ..
+  2^15, p.1159 Eqn. 38-1). At 132 MHz: PIT0 2^5 x 41250 = 10.000 ms
+  (PMR at `0x40001290`, PCSR at `0x400012bc`); PIT2 2^6 x 17188 = 8.333
+  ms; PIT3 2^9 x 17188 = 66.67 ms; intro 2^9 x 8594 = 33.33 ms; PIT1 2^0
+  x 132 = 1 us (`0x40136310`, outside any Ghidra function, then a PIF
+  count loop with write-1-clear). **[C]** The 15 Hz PIT3 rate at
+  `0x401335f8` is `FUN_40133586`'s, the +Drive progress screen (see
+  "Branch (C) draws through its own flush"), not the display's; the main
+  UI does not use PIT3.
 - **[V] A refused tick is held.** PIF (PIT) and REF (DTIM) stay set until
   the handler write-1-clears them, so `Pits`/`Dtims` keep a refused tick
   pending and offer it at every later `emu_start` boundary. A tick due

@@ -2809,7 +2809,10 @@ counts both times).
 SHARC receive side is in [15](15-sharc-sample-path.md); the file format and
 the boot project in [14](14-plus-drive-format.md). Marks: **[V]** re-read
 against the image bytes by a second agent (verification lane, 2026-09-28);
-**[D]** read or executed once.
+**[D]** read or executed once. *P0 check 2026-09-29:* claims marked
+"(P0)" were re-derived twice, from the Ghidra listing or `tools/cf.py` and
+again from the raw `section_3_MAIN_OS.bin` bytes (capstone m68k decode, or
+a hand decode of the ColdFire-only opcodes such as `mvs`/`mvz`).
 
 **Boot path to the loader [V].** `FUN_400337ba` (Main OS, every branch)
 calls `FUN_400311d0` at `0x40033980`. It queues the job "Load all samples"
@@ -2821,12 +2824,17 @@ resets all 0x400 loader slots (`FUN_40154358`), builds the slot list
 non-empty slot) and calls `FUN_40154540(ref, slot)` per slot, with ref =
 settings data + 2 + (slot + 0x1d) * 0x10 **[D for the list order and the
 ref address]**. Other callers of the loader: `0x4004b502` (assign a ref to
-a slot) and `0x4004b60a` (first free slot) **[D]**.
+a slot) and `0x4004b60a` (first free slot) **[V for the call sites (P0):
+`jsr FUN_40154540` at `0x4004b5a2` and `0x4004b6be`, in the cfdb call table
+and as raw literals; D for their roles]**.
 
 **`FUN_40154540` = `sample_loader_load_sample(ref, slot)` [V]** (Ghidra
 names it `OnScopeExit::ctor_dtor`):
 
-1. Rejects slot > 0x3ff and slot & 0x7f == 0.
+1. Rejects slot > 0x3ff and slot & 0x7f == 0 (P0: `cmpi.l #$3ff,d2; bhi`
+   at `0x40154550`, `moveq #$7f,d0; and.l d2,d0; beq` at `0x401545be`). So
+   slots 0, 0x80, ..., 0x380 are never loaded; `FUN_4004e598` skips the
+   same slots (`andi.l #$8000007f` at `0x4004e634`).
 2. Resolves the ref (`FUN_4015b178`, needs the mount flag
    `_DAT_44f2bd68`); `FUN_4015abe6` -> `FUN_4015ab5c` builds the key and
    returns -1 unless bit 0 of record word +0x0C is set.
@@ -2856,8 +2864,13 @@ in bits 15:8. `FUN_400ccda0` sends the word least significant byte first;
 `FUN_400cce2c` sends bytes 1, 0, 3, 2 of the big-endian word, so big-endian
 int16 PCM arrives as little-endian int16. **[C]** `emu/dsp.py`'s docstring
 ("four bytes most-significant first", 1.15C addresses) is wrong for 1.16.
+(P0: re-read in both passes. `FUN_400ccda0` loads the word's bytes with
+`mvz.b` from stack offsets 0x1f, 0x1e, 0x1d, 0x1c in send order;
+`FUN_400cce2c` from 0x1d, 0x1c, 0x1f, 0x1e. `FUN_40136268` programs DTIM1
+with DTRR = the argument and DTMR `0x841b` (prescale 133, bus clock), so
+100 is about 100 us.)
 
-**Observed on a cold boot [D].** `emu/dsp.py` `Fifo(log_path=...)` logs one
+**Observed on a cold boot [D]; the byte log [V] (P0).** `emu/dsp.py` `Fifo(log_path=...)` logs one
 byte per strobe write (`tools/guirun.py --flexbus-log PATH`; name the file
 `*.raw` so `tools/sharc_lp0.py` reads it as latched bytes). From
 `snapshots/dt2-1.16-drive3/boot400M.snap` with the native hat image, a
@@ -2868,7 +2881,14 @@ headers `{slot, 0x20, 0xa1020, 48000, 0xa0b70}` (one real load, 296
 aliases) and 322 data pages (tags 0..321, no gaps). `emu/dsp.py`'s burst
 count agreed (1,988,500 = 1940 x 1025). Rebuilt from the pages, both
 channels equal the file's PCM. The 100 us sleep never blocked: guirun's
-default `unblock` covers it (`real_sleep=False`).
+default `unblock` covers it (`real_sleep=False`). P0 re-parsed
+`out/captures/drive3/flexbus-drive3.raw` (7,954,000 bytes) as 1025
+little-endian words per transfer, independently of `tools/sharc_lp0.py`:
+1321 reset headers, 297 real headers, 322 pages with tags 0..321, and the
+L and R halves (from sample-memory offsets 0x20 and 0xa1020, 0xa0b70 bytes
+each) equal the byte-swapped left and right PCM of the file at content page
+0x7C of `out/plusdrive/native/dt2.img`. The call counts come from the run
+and stay **[D]**.
 
 **Consequence for the old bounded runs.** Lane Z1's zero FlexBus writes
 (section above) were correct for its snapshots: nothing was loaded after
@@ -2882,12 +2902,12 @@ boot. The bounded runs did not rule FlexBus out as the sample path.
 
 | TX offset | ColdFire source | meaning |
 |---|---|---|
-| `0x00` | 3 (1 on the first frame) | command **[D]** |
-| `0x02 + 2t` | `*(long*)(0x800047fc + 4t) >> 8` (written from a fractional `mac.l` at `0x4002e9f6`) | pitch, note << 8 (`0x3c00` = note 60) **[D]** |
+| `0x00` | 3 (1 on the first frame) | command **[V for 3** (P0: `moveq #3` at `0x4002ea9a`, stored at `0x4002eacc`)**; D for the first frame]** |
+| `0x02 + 2t` | `*(long*)(0x800047fc + 4t) >> 8` (stored at `0x4002e9f6` from the fractional `mac.l` at `0x4002e9ee`; `A4 = 0x800047fc` at `0x4002e9ae`, P0) | pitch, note << 8 (`0x3c00` = note 60) **[D]** |
 | `0x22` | per-frame mask | **trig mask**, bit t = track t note-on **[V]** (SHARC test at sw `0x1c2d1a`) |
 | `0x24` | per-frame mask | **release mask** **[D]** |
 | `0x26` / `0x28` | trigs / releases with event flag 0x200 | **[D]**, meaning **[O]** |
-| `0x2a` | `0x80005372` (0 or 0xffff) | all-voice reset **[D]** |
+| `0x2a` | `0x80005372` (0 or 0xffff) | all-voice reset **[V code** (P0: `0x4002eaa6` stores D1, which is 0 or -1)**; D meaning]** |
 | `0x34 + 2t` | `0x800047dc[t]` = velocity << 8 | velocity **[D]** |
 | `0x94 + 2t` | byte 0 of `0x80003cd0 + t*0x9a` | machine type **[V]** (earlier section) |
 | `0xda + 0x60t` .. | smoothed mirror, from index 25 | per-track parameter pages |
@@ -2899,8 +2919,17 @@ boot. The bounded runs did not rule FlexBus out as the sample path.
   `0x80003362 + t*0x8e` and `Sound + 0xa2` (0x9a bytes) to the row
   `0x80003cd0 + t*0x9a`, so mirror index i = `Sound + 0x14 + 2i` and the
   slot (`Sound + 0x4c`) is index 28 **[V]**.
-- The ColdFire rewrites row halfword 0x2d as `hw2f + hw2e * 0x80` (unless it
-  is 0x400) when `FUN_4002dcee(t)` is nonzero **[D]**.
+- ~~The ColdFire rewrites row halfword 0x2d as `hw2f + hw2e * 0x80` (unless
+  it is 0x400) when `FUN_4002dcee(t)` is nonzero **[D]**.~~
+  **[C][V] (P0).** The halfword is in the smoother's output (`A4 = A2 =`
+  the return value `0x80005b50`, stride 0x8e), not in the row
+  `0x80003cd0`; smoother offset 0x5a is mirror index 28, the sample slot.
+  For each track with `FUN_4002dcee(t) != 0` (`A3` set at `0x4002e8d0` and
+  `0x4002e966`) the handler splits it after the smoother (`0x4002e8e2`-
+  `0x4002e8fa`: hw 0x2e = `(slot << 1) & 0x700`, hw 0x2f = `(slot & 0x7f)
+  << 8`) and later rebuilds it (`0x4002e978`-`0x4002e990`, skipped when it
+  is 0x400): slot = `(sbyte at +0x5c) << 7 + (sbyte at +0x5e)`, the high
+  bytes of hw 0x2e and 0x2f.
 - Live kit **[V]**: `FUN_4004e598` gets the active kit from Project + 0xf4
   (`FUN_40041d24`), calls its vtable +0x30 (`movea.l $30(a1),a0` at
   `0x4004e5f2`, `jsr (a0)` at `0x4004e5f6`), and walks 16 track records of
@@ -2909,14 +2938,21 @@ boot. The bounded runs did not rule FlexBus out as the sample path.
 - Machine type 0 is ONESHOT (1.16 display-name pointer table `0x4020eb68`,
   entry 0 -> "Oneshot" at `0x402427c6`), type 5 is MIDI, and
   `FUN_4004e598` skips type-5 tracks **[V]**. **[C]** A lane report read
-  type 0 as "off/empty".
+  type 0 as "off/empty". P0: the table has 12-byte entries {long name,
+  short name, extra}: 0 Oneshot/ONE, 1 Werp/WRP, 2 Stretch/STRE, 3
+  Repitch/RPI, 4 Grid/GRD, 5 MIDI/MIDI, 6 Slice/SLC ("Y:Slice Menu"), then
+  zeros; its only reference is `0x400da55a`. The type-5 skip is `moveq
+  #5,d1; mvs.b $d6(a0),d0; cmp.l; beq` at `0x4004e61c`-`0x4004e62a`, and
+  the track loop steps `D4` by 0x450 to 0x4500 (`0x4004e702`).
 - In `snapshots/dt2-1.16-drive3/loaded.snap` (live track base
   `*0x80004704 = 0x426532b8`) the 16 tracks' (machine, slot) are (0,7)
   (0,1) (2,3) (0,7) (0,8) (0,9) (0,12) (0,1) (0,9) (0,4) (0,2) (0,2) (0,10)
   (0,6) (0,5) (0,11) **[V]**: the built-in project's kit 0, so TRIG 1 is a
-  ONESHOT on slot 7.
+  ONESHOT on slot 7. (P0: read again from the track records, and
+  independently from the frame-side copies, row byte 0 and raw mirror
+  index 28 at `0x80003362 + t*0x8e + 0x38`; both give this list.)
 
-**The smoother [V code; D effect].** `FUN_400d92a2` (called from
+**The smoother [V code; V effect (P0)].** `FUN_400d92a2` (called from
 `vector_191_handler` at `0x4002e8c6`, returns to `0x4002e8cc`; state
 `0x8000dd40`, output `0x80005b50 + t*0x8e`) runs a one-pole filter over
 every mirror word in fractional EMAC mode (`MACSR = 0x20` at `0x4002dd52`):
@@ -2928,9 +2964,19 @@ smoothed bands (`0x74`, `0xda`-`0x139` per track, and `0x02`) therefore
 depend on the emulator's fractional EMAC, which was wrong by a factor of 2
 (finding 07, "Fractional EMAC was wrong in patched Unicorn"): in every
 capture before the fix the slot field decays to 0 and TUNE 15614 reads
-455. `0x94` (machine type) is not smoothed.
+455. `0x94` (machine type) is not smoothed. P0: without the `<< 1` each
+product is half size, so the steady state is `(0.03/2) / (1 - 0.97/2) =
+0.0291 x`; that gives 455, 22, 0, 895 and 829 for the raw 15614, 768, 7,
+30720 and 28458 in finding 07, which are the values measured there.
+The coefficients were read in both passes (`move.l #$7c290000,d5` at
+`0x400d92ae`, `move.l #$3d70000,d6` at `0x400d92b6`); the function
+writes the first 0x990 input bytes smoothed to `0x80005b50` and copies the
+next 0x9a0 input bytes unchanged to `0x800064e0` = `0x80005b50 + 0x990`
+(`FUN_401360ac` at `0x400d9310`).
 
-**`--settle-smoother` [D].** Until the EMAC fix is installed,
+**`--settle-smoother` [D].** *2026-09-29: the EMAC fix is installed (finding
+07); the flag is only needed for captures made before it.* Until the EMAC
+fix is installed,
 `tools/sharc_capture_run.py --settle-smoother` hooks the smoother's return
 (`0x4002e8cc`) and copies the first 0x990 input bytes over the output every
 tick: the filter's settled value when no parameter moves. With it the drive3

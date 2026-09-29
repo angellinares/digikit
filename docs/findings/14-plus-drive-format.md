@@ -968,7 +968,20 @@ Writer: the sampler's "Save recording" job, `FUN_400213f4` ->
 
 File size = data + 0x50. `0x405a50a0` is referenced only inside
 `FUN_40153994`; the trailer's content is **[O]** (plusdrive writes zeros).
-The loader reads byte 1, +4 and +8 of the header (finding 04).
+The loader reads byte 1, +4 and +8 of the header (finding 04) **[D]**.
+
+*P0 2026-09-29.* The header was re-derived twice: from the Ghidra listing
+and decompilation of `FUN_40153994`, and from a capstone decode of its raw
+bytes (`0x40153a1e`-`0x40153a5a`: `memset(hdr, 0, 0x40)`, then +4 = byte
+length, +1 = the stereo flag, +0xC = 0, +8 = `#$bb80`, +0x10 = 0, +0x14 =
+`#$7f`; the file is sized with `pea $50(a0)`, a0 = byte length). The
+trailer's only literal is at `0x40153afa`. The job chain was checked too:
+`FUN_400213f4` passes `0x4001f8b0` as a functor (`move.l #$4001f8b0,d0` at
+`0x4002154a`; cfdb has no caller, as expected for a functor), and
+`FUN_4001f8b0` is `FUN_40153994`'s only caller. End to end, hat's file at
+content page 0x7C of `out/plusdrive/native/dt2.img` has this header (length
+1,316,576, 48000, stereo), and its PCM equals the FlexBus pages after the
+wire swap (finding 04).
 
 **Content hash [D].** After close, `FUN_4015b0ce` -> `FUN_4015af0c`
 computes a hash over the file (seeds `0x43fa243a` x3, `FUN_4015aa20` /
@@ -1028,7 +1041,12 @@ table at sector `0x5ee980 + (id >> 13) * 0x40`, word `id & 0x1fff`.
   0xC3F424 bytes, `BE EF BA CE 00 00 00 03` (v3). At container offset
   `0xC2D6FB` (unaligned) is the 1024 x 16-byte reference table: entry 0 =
   `{0xFFFFFFFF, 0, 0, 0}`, 297 non-empty entries **[V]**; 286 with factory
-  ids `0x1000000`-`0x10007FF`, 11 with id 0 **[D]**.
+  ids `0x1000000`-`0x10007FF`, 11 with id 0 **[V]** (P0 2026-09-29: a
+  struct parse of the depacked table, separate from
+  `plusdrive.container_refs`, gives 286 factory ids, 11 zero ids and 726
+  empty entries `{0xFFFFFFFF, ...}`; the two copies are byte-identical
+  over their whole packed length 0x1a6b9, and the sector table at
+  `0x40215d24` reads `{0x40000, 0x48000}`).
 - COKi header **[D]**: +0x104 is the record sequence counter
   (`FUN_4015b7ac`), +0x18 is set to the superblock version at mount
   (`FUN_400c0eea` -> `FUN_400c0ec8`), +0x14 bit 1 -> flags `|= 0x92`, bit 0
@@ -1051,6 +1069,9 @@ header (+0x104 = 4, +0x18 = 4, +0x14 = 0) and the built-in container
 (depacked at build time from `out/sections/dt2-1.16/`, never committed)
 with all 297 slot references and 1,471 track copies replaced by hat's,
 padded to 0xDD9714 bytes. `--no-project` and `--main-os` exist.
+(P0 2026-09-29 **[V]** for the file: 329,144 frames, 1,316,576 data bytes
++ 0x50 = 1,316,656, 41 content pages from `0x7C` to `0xA4`, read back from
+the image.)
 
 `tools/plusdrive_check.py` on that image (bounded calls on
 `snapshots/dt2-1.16/running.snap`; eMMC reads served from the image, writes

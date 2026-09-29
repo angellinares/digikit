@@ -345,7 +345,11 @@ view is constructed and its list vectors are built; only the row-building
 > **Note 2026-09-28 [V].** The addresses in this section are 1.15C. On 1.16
 > the display-name table is a pointer array at `0x4020eb68`; entry 0 points
 > to "Oneshot" (`0x402427c6`). Machine type 0 is ONESHOT, a sample machine,
-> not "off" (finding 04, "1.16 frame fields").
+> not "off" (finding 04, "1.16 frame fields"). *P0 2026-09-29:* the table
+> has 12-byte entries {long name, short name, extra}, in type order Oneshot,
+> Werp, Stretch, Repitch, Grid, MIDI, Slice (read from the raw image; the
+> table's only literal reference is at `0x400da55a`). The MIDI = 5 index
+> matches the type-5 skip in `FUN_4004e598` (finding 04).
 
 Seeing the machine-select screen render for the first time showed three of the
 seven names disagreeing with the descriptors: position 0 reads `ONESHOT` where

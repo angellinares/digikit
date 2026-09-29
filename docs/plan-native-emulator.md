@@ -86,7 +86,8 @@ Constraints:
 native/
   sharc/        SHARC core: transpiled handlers + runtime (pure, no firmware)
   sharc-jit/    block translator: SHARC blocks -> WebAssembly (or native)
-  coldfire/     ColdFire V4e core: ISA_C, EMAC, FPU (pure)
+  coldfire/     ColdFire V4e core: ISA_A/B/C, EMAC (pure; the MCF5441x
+                has no FPU)
   cf-jit/       ColdFire block translator (shares the backend with sharc-jit)
   periph/       MCF5441x peripherals: INTC, PIT, DTIM, eDMA, SSI, DSPI,
                 eSDHC + card, GPIO, UART, FlexBus/DSP FIFO, panel, display
@@ -165,9 +166,12 @@ runs about 132M/s).
 2. **Models:** port each peripheral against its trace, one lane per group:
    timers and INTC; DMA, SSI and DSPI; eSDHC and card; GPIO, UART, panel and
    display.
-3. **Drop hooks that only existed for Unicorn or speed.** The soft-float HLE
-   goes because the core has an FPU, the bitmap HLE because it was only
-   there for speed, and the idle hook because the core stops at idle itself.
+3. **Drop hooks that only existed for Unicorn or speed.** The MCF5441x has
+   no FPU (RM p.106-107), and the P3 census found no FPU instruction in
+   either image, so the firmware's float routines are ordinary code: the
+   soft-float HLE is only a speed-up, dropped unless profiling needs it. The
+   bitmap HLE (speed only) and the idle hook (the core stops at idle itself)
+   go too.
 4. **Machine profile per product,** DT2 and DN2. The differences are
    recorded in findings.
 
@@ -221,8 +225,13 @@ Keep workflows under about 10 agents; each lane has a single owner per crate.
 1. **Merging large changes:** copy the verified worktree files with a byte
    check, instead of a spec re-typed by a coder. Coders stay for small
    edits.
-2. **Backend:** decided by the P1 numbers (WebAssembly everywhere, or also
-   Cranelift natively).
+2. **Backend (decided by P1, 2026-09-29):** WebAssembly everywhere, with
+   wasmtime on the desktop. The same generated SHARC code runs at 1.9
+   ns/instruction native, 2.9-3.3 under wasmtime and 2.9-3.1 under V8. The
+   JIT ports the block specialiser to Rust and emits concrete-typed
+   WebAssembly, one module per region in a shared table (not
+   copy-and-patch). Cranelift-native only if P2 misses 550 us/frame under
+   wasmtime.
 3. **UI:** one HTML canvas UI for desktop and browser.
 4. **Python emulator:** kept as the frozen oracle and not extended further,
    except for the recorders the oracles need.

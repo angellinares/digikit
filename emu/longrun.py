@@ -82,7 +82,7 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
           trace=None, trace_path=None, trace_ranges=(), trace_registers=None,
           deferred_components=(), idle_yield=20000, ssi0_request_hz=None,
           ssi0_legacy_upgrade=False, dspi2_peer=None, ssi0_peer=None,
-          ssi0_coalesce=False):
+          ssi0_coalesce=False, mmio_recorder=None):
     """Stand up a hooked Machine and restore `snapshot` onto it.
 
     -> (m, ev, st, pc, inq, at) where `at(addr, fn)` registers a further
@@ -280,6 +280,11 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     cost of exactness that its own counter and a tools/snapeq.py comparison
     have to vouch for. Off by default; it is a run mode, not checkpoint
     topology, so it is not in the manifest.
+
+    ``mmio_recorder`` (an `emu.mmiotrace.Recorder`) is attached right after
+    the Machine exists, so its observer hooks precede every model's; it
+    records nothing until the caller starts it. None (default): nothing
+    is installed.
     """
     if trace is not None and trace_path is not None:
         raise ValueError('pass either trace or trace_path, not both')
@@ -300,6 +305,8 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     if ssi0_request_hz is not None and not ssi0_legacy_upgrade:
         checkpoint_manifest['ssi0_dma'] = {'request_hz': int(ssi0_request_hz)}
     m = Machine(); st = {'seen': set(), 'n': 0, 'task_create_hits': {}}
+    if mmio_recorder is not None:
+        mmio_recorder.attach(m)
     ev = {'tasks': [], 'prints': [], 'setpixel': 0, 'pxcopy': 0,
           'switch': collections.Counter(), 'switch_seq': [],
           'uart_out': bytearray(), 'satisfied': 0, 'satisfied_by': collections.Counter(),

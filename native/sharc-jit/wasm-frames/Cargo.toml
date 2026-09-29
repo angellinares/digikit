@@ -1,0 +1,20 @@
+[package]
+name = "sharc-wasm-frames"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "The native SHARC+ core built for WebAssembly, with a frame-pack runner (P1 measurement)"
+
+# Build for wasm32-unknown-unknown with SHARC_GEN_DIR set, as for native/sharc.
+[dependencies]
+sharc-native = { path = "../../sharc" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+codegen-units = 64
+debug = false
+panic = "abort"
+incremental = false

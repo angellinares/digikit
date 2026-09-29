@@ -47,7 +47,10 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
 - **2026-09-28:** Unicorn's fractional-mode EMAC is wrong (no `<< 1` on the
   product, unsigned operands, broken mode switch, among others); the
   ColdFire's parameter smoother runs in that mode. See finding 07,
-  "Fractional EMAC was wrong in patched Unicorn". **[D]**
+  "Fractional EMAC was wrong in patched Unicorn". **[D]** *P0 2026-09-29:*
+  the missing `<< 1`, the unsigned operands and the mode switch are **[V]**
+  (manual plus a run of the compat case on the stock wheel), and **[C]** the
+  fix is merged and installed.
 
 ## Names from RTTI and code seeds in the EMAC Ghidra project **[V][D]**
 
@@ -479,4 +482,10 @@ patterns above do not match. **[O]**
   without building a Machine (`Snapshot(path).u32(addr)`, `.read`, `.regs`,
   `.tasks()`, or the CLI). `tools/snapeq.py A B` checks two snapshots for
   equal guest state (finding 07, cold-boot ladder speed).
+- *P0 2026-09-29:* `cf.load("dt2-1.16-emac")` with `callers`/`func`, and
+  `Snapshot(path).u32`/`.read`/`.tasks()`, work as described (used for the
+  P0 checks). `callers(0x40030ce8)` is empty and `func(0x40030ce8)` is
+  None, as stated; a raw scan finds its only literal at `0x4003124e`, in
+  `FUN_400311d0`. `.tasks()` returns [] for snapshots saved without task
+  tracking (for example `dt2-1.16-control/running.snap`).
 

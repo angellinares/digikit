@@ -18,148 +18,30 @@
 //! `--check` compares against such a file, so a build whose frames were
 //! checked against the Python replay once can be re-checked in seconds.
 
+use sharc_native::frames::{self, FrameOut, Pack, hex, median, run_call};
 use sharc_native::rt::{Int, NUREG, V};
 use sharc_native::sha256::Sha256;
 use sharc_native::{Engine, canon, trap_name};
+use std::sync::OnceLock;
 use std::time::Instant;
 
-struct Rd<'a> {
-    b: &'a [u8],
-    off: usize,
-}
-
-impl<'a> Rd<'a> {
-    fn take(&mut self, n: usize) -> &'a [u8] {
-        let s = &self.b[self.off..self.off + n];
-        self.off += n;
-        s
-    }
-    fn u32(&mut self) -> u32 {
-        u32::from_le_bytes(self.take(4).try_into().unwrap())
-    }
-    fn i64(&mut self) -> i64 {
-        i64::from_le_bytes(self.take(8).try_into().unwrap())
-    }
-    fn blob(&mut self) -> &'a [u8] {
-        let n = self.u32() as usize;
-        self.take(n)
-    }
-}
-
-struct Pack<'a> {
-    image: &'a [u8],
-    state: &'a [u8],
-    opts: Vec<(u32, i64)>,
-    shift_src: u32,
-    command_word: u32,
-    ring: u32,
-    dma_cb: u32,
-    r8: u32,
-    r8_value: u32,
-    block_handler: u32,
-    first: u32,
-    frames: Vec<&'a [u8]>,
-}
-
-fn parse(b: &[u8]) -> Pack<'_> {
-    let mut r = Rd { b, off: 0 };
-    assert_eq!(r.take(4), b"SHFP", "not a frame pack");
-    assert_eq!(r.u32(), 1, "frame pack version");
-    let image = r.blob();
-    let state = r.blob();
-    let n = r.u32();
-    let opts = (0..n).map(|_| (r.u32(), r.i64())).collect();
-    let c: Vec<u32> = (0..7).map(|_| r.u32()).collect();
-    let first = r.u32();
-    let n = r.u32();
-    let frames = (0..n).map(|_| r.blob()).collect();
-    Pack {
-        image,
-        state,
-        opts,
-        shift_src: c[0],
-        command_word: c[1],
-        ring: c[2],
-        dma_cb: c[3],
-        r8: c[4],
-        r8_value: c[5],
-        block_handler: c[6],
-        first,
-        frames,
-    }
-}
-
-const CALL_END: &str = "return without followed call";
-
-/// Run the current call until it returns (the clean 9a/9b stop the
-/// Python replay also ends on). Instructions, including the return.
-fn run_call(e: &mut Engine, max: u32) -> Result<u64, String> {
-    // One step call runs until a trap halts the engine or the budget ends.
-    let done = e.step(max) as u64;
-    if done >= max as u64 {
-        return Err("max-steps".into());
-    }
-    let t = e.last_trap.map(trap_name).unwrap_or_default();
-    if t.contains(CALL_END)
-        && (t.starts_with("sharc_core.forms_flow._type_9b_abs:")
-            || t.starts_with("sharc_core.forms_flow._type_9a_abs:"))
-    {
-        return Ok(done + 1);
-    }
-    Err(format!(
-        "{} (the Python core would run this instruction)",
-        e.halt.clone().unwrap_or_default()
-    ))
-}
-
-/// Back to the pack's start state (the image stays parsed).
-fn reload(e: &mut Engine, p: &Pack) {
-    e.import(p.state).expect("state blob");
-    for &(k, v) in &p.opts {
-        assert_eq!(e.set_option(k, v), 0, "option {k}");
-    }
-    e.s.icount = 0;
+/// Nanoseconds since the first call (the frame timer).
+fn clock() -> u64 {
+    static T0: OnceLock<Instant> = OnceLock::new();
+    T0.get_or_init(Instant::now).elapsed().as_nanos() as u64
 }
 
 fn load(p: &Pack) -> Engine {
-    let mut e = Engine::from_image(p.image).expect("image blob");
-    e.import(p.state).expect("state blob");
-    for &(k, v) in &p.opts {
-        assert_eq!(e.set_option(k, v), 0, "option {k}");
-    }
-    e
+    frames::load(p).expect("frame pack")
 }
 
-fn hex(d: &[u8]) -> String {
-    d.iter().map(|b| format!("{b:02x}")).collect()
+fn reload(e: &mut Engine, p: &Pack) {
+    frames::reload(e, p).expect("frame pack")
 }
 
-struct FrameOut {
-    handler_ns: u64,
-    instructions: u64,
-}
-
+/// One frame (sharc_native::frames::frame), its handler call timed in ns.
 fn frame(e: &mut Engine, p: &Pack, data: &[u8]) -> Result<FrameOut, String> {
-    let shift = e
-        .peek(p.shift_src as u64, 4)
-        .map_err(|_| "shift source is an unmodelled MMR".to_string())?
-        .unwrap_or(0)
-        & 1;
-    let base = (p.command_word as u64 + (1 - shift as u64) * p.ring as u64) & 0xFFFF_FFFF;
-    if e.poke(base, data, 1) != data.len() as i32 {
-        return Err("DMA transfer poke did not take effect".into());
-    }
-    e.fresh_call(p.dma_cb, None);
-    e.set_reg(p.r8 as usize, V::c(p.r8_value as Int));
-    run_call(e, 64).map_err(|w| format!("DMA completion call: {w}"))?;
-    e.fresh_call(p.block_handler, None);
-    let t = Instant::now();
-    let n = run_call(e, 4_000_000)?;
-    let ns = t.elapsed().as_nanos() as u64;
-    Ok(FrameOut {
-        handler_ns: ns,
-        instructions: n,
-    })
+    frames::frame(e, p, data, &clock)
 }
 
 /// Registers, flags, PC, stacks and pending transfer of two engines:
@@ -404,14 +286,6 @@ fn bench_blocks(p: &Pack, pcs: &[u32]) {
     }
 }
 
-fn median(v: &mut [f64]) -> f64 {
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    if v.is_empty() {
-        return f64::NAN;
-    }
-    v[v.len() / 2]
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut path = None;
@@ -486,7 +360,7 @@ fn main() {
     }
     let path = path.expect("usage: sharc-frames PACK [options]");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    let p = parse(&bytes);
+    let p = frames::parse(&bytes).expect("frame pack");
     let n = nframes.min(p.frames.len());
     let expect: Option<Vec<String>> = check.as_ref().map(|f| {
         std::fs::read_to_string(f)
@@ -540,7 +414,7 @@ fn main() {
                     std::process::exit(2);
                 }
             };
-            per_frame_ns[k].push(out.handler_ns as f64);
+            per_frame_ns[k].push(out.handler_time as f64);
             insns[k] = out.instructions;
             if rep == 0 {
                 generic += e.stats.single_steps - before.single_steps;
@@ -627,7 +501,7 @@ fn main() {
                     "frame {} instructions {} handler {:.1} us",
                     p.first as usize + k,
                     out.instructions,
-                    out.handler_ns as f64 / 1e3
+                    out.handler_time as f64 / 1e3
                 );
             }
         }

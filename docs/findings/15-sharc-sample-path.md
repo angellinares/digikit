@@ -40,7 +40,16 @@ feed), `tools/sharc_replay.py` (`--flexbus-log`, `--fields`,
   `FUN_1c83ff` registers the callback `0x1c7e1f` (`I12 = 0x1c7e1f` at
   sw `0x1c840f`); `FUN_1c834a` submits the descriptor.
 - On completion the DMA ISR `0x1c8705` reaches `FUN_1c85ba`, which calls the
-  callback with `R8 = 4` (sw `0x1c86a8`-`0x1c86b0`). **[D]**
+  callback with `R8 = 4` (sw `0x1c86a8`-`0x1c86b0`). **[D]** (P0
+  2026-09-29: `R8 = 0x4` at `0x1c86aa` in both decoders; the path from the
+  ISR, `0x1c8735` conditional jump to `0x1c87cd` and `CALL 0x1c85ba` at
+  `0x1c87f9`, is from sharcdb only.)
+- *P0 2026-09-29.* The LP0 and LP1 records occur once each in the raw
+  `section_7_BLOB.bin` (little-endian, 24 bytes apart, file offsets 21080 and
+  21104); sharcdb has literals for `0x269468` (in `FUN_1c8895`, from
+  `0x1c88c0`) and none for `0x269480` or `0x30FFE000`-`0x30FFE1FF`. The
+  HWR text (`out/refs/adsp-2156x-hwr/all.txt`) lists `0x30FFE000` as
+  LP0_CTL and SEC sources 81/82/168 as LP0_DMA/LP0_STAT/LP0_DMA_ERR.
 
 Callback `FUN_1c7e1f` **[V]**:
 
@@ -59,12 +68,21 @@ In every case it rewrites the descriptor and re-submits it (`FUN_1c834a`).
 `0x8045A6C8`, every voice's word 0 after init, is the 3,316-byte curve
 table (finding 06), not sample memory.
 
-**Wire packing [D].** The link port latches a byte on the clock's falling
+**Wire packing [V] (P0 2026-09-29; was [D]).** The link port latches a byte on the clock's falling
 edge and packs the first byte of a word into the low bits (HWR 14-4/14-5;
 the extracted text of Figure 14-3 is ambiguous). The firmware's own range
 checks confirm it: the ColdFire sends tag and header words least significant
 byte first, and with MSB-first packing page 1 would read `0x01000000` and
-fail the `< 0x19200` check.
+fail the `< 0x19200` check. P0 evidence: (1) the HWR text says the receiver
+"uses the falling edge of LP_CLK ... to latch the byte" and, for LP_TX,
+"The least significant byte is transmitted first"; (2) the ColdFire side
+sends LSB first (finding 04, "The wire", re-read in two passes), with the
+clock bit 7 high then low around each byte; (3) the `0x19200` bound is in
+both the callback (`R2 = 0x19200`, `comp`, `JUMP IF LT` at
+`0x1c7e3c`-`0x1c7e40`) and `FUN_1c403c` (`compu`, `JUMP IF GE` at
+`0x1c4045`-`0x1c404b`, the same fields in the SLEIGH dump); (4) parsing
+`flexbus-drive3.raw` as little-endian words gives page tags 0..321 and
+headers `{slot, 0x20, 0xa1020, 48000, 0xa0b70}`.
 
 ## The slot table **[V]**
 
@@ -80,6 +98,21 @@ fail the `< 0x19200` check.
 default record at `0x25C914` (`{0x8422b9c8, 0x8422b9c8, 0, 48000, 0}`).
 (The verification lane first read the branch the wrong way round; the
 listing at `0x1c3f89`/`0x1c3fa8` settles it.)
+
+*P0 2026-09-29, re-checked in sharcdb and in the Ghidra SLEIGH dump
+(`out/ghidra/sharc-dt2-1.16`, an older language, decoded independently):*
+the writer tests `compu(R4, 0x401)` and exits on GE (`0x1c3fea`-
+`0x1c3ff1`), forms `I4 = slot * 0x14 + 0x257810` (`0x1c3ff8`-`0x1c3ffe`)
+and stores R8 at +0, R12 at +4 (pre-modify M6), R15 as a byte at +16
+(Type 4b `(bw)`), R1 at +8; the reader tests `compu(R4, 0x401)` and jumps
+to `0x1c3fa8` on LT, otherwise copies five words from `I4 = 0x25c914`. The
+page copy `FUN_1c403c` forms `I4 = (page << 12) + 0x8422b9c8` (`lshift` 12
+at `0x1c404e`, `modify(I4, 0x8422b9c8)` at `0x1c4053`). The slot header
+branch of the callback reads slot, startL, startR, rate and len from
+`0x268244`-`0x268254`, calls `FUN_1c400f` for startL and startR, and sets
+stereo from `comp(startL, startR)` (`0x1c7e83`-`0x1c7ea8`). The hat values
+below follow: `0x8422b9c8 + 0x20 = 0x8422b9e8`, `+ 0xa1020 = 0x842cc9e8`,
+`0xa0b70 >> 1 = 0x505b8`.
 
 For hat fed as slot 7: table `{0x20, 0xa1020, 0xa0b70, 48000, 1}`, reader
 `{0x8422b9e8, 0x842cc9e8, 0x505b8, 48000, 1}` **[D, executed]**.
@@ -156,7 +189,25 @@ Sequence, frame N = the frame whose hw `0x22` bit t is set:
    and sets C **[D, executed]**.
 6. Rendering, `FUN_1c642a` second loop (sw `0x1c6ae8`): parameter record
    `+0x4c` (machine type) 2 goes to `FUN_1c5576`, all others to the sample
-   renderer `FUN_1c4ecf` **[D]**.
+   renderer `FUN_1c4ecf` **[V for the dispatch; D for the +0x4c source]**
+   (P0 2026-09-29, was [D]: `R2 = btgl(R2, bit=1)` at `0x1c6ae8`, `JUMP IF
+   NOT SZ 0x1c6afd` at `0x1c6aeb`, `CALL FUN_1c5576` at `0x1c6af1`, `CALL
+   FUN_1c4ecf` at `0x1c6b00`; sharcdb and the Ghidra SLEIGH dump agree).
+
+*P0 2026-09-29.* Steps 1-4 re-read in sharcdb and the SLEIGH dump: `btst(R7,
+R5)` at `0x1c2d1a` and `JUMP IF NOT SZ 0x1c33bc` at `0x1c2d1d`; `I4 =
+0x24f0ac` at `0x1c33c9` and the store of M14 (1) at `0x1c33ce`; the byte
+load, byte store and M13 clear at `0x1c71a0`/`0x1c71a3`/`0x1c71a6` (Type
+3d); `I1 = 0x2522ec` at `0x1c2588` and the store at `0x1c258b`; the flag
+load at `0x1c2d22` and `JUMP IF NOT SV 0x1c3329` at `0x1c2d27`; the B load
+at `0x1c6545` and `JUMP IF NOT SV 0x1c657b` at `0x1c6549`; `FUN_1c4eaf`
+forms `I4 = voice + 0x1ba` and stores M14 at `0x1c4eb9` and pre-modified
+by M7 at `0x1c4ebb`. The byte offset of those two stores (the "+0x1b8"
+above) depends on the core's Type 3 scaling rules and was not re-derived
+by hand. `0x1c2d1a`'s R7 source (the hw `0x22` word) was not traced here.
+The copy gate: sharcdb's `ptr` table has one store to `0x2567dc`
+(`0x1c2c8b`) and one load (`0x1c2c41`), and the only literal is at
+`0x1c2c88`.
 
 **The copy gate [V].** The only SHARC store to DM `0x2567dc` is the clear
 at sw `0x1c2c8b`. `tools/sharc_harness.py`'s `drive_dma_completion()` used
@@ -213,6 +264,20 @@ this path.
   BITLEN12 > 32" were this decode error. `FRAME_PATCH_TABLE[0x1C4965]`
   (forcing F6/F4 = 1.0f in `FUN_1c4914`) existed only because of it and is
   removed; `FRAME_PATCH_TABLE` is now empty.
+- *P0 2026-09-29, the four fixes above re-checked against the manual text
+  (`out/refs/`):* the Type 4b BH and BHSE encode tables list (1,1,1) with no
+  suffix; PRM p.6-9 has "scaling is by the size of the access (except in the
+  case of (lw))" and p.6-10 "Does not scale the modifier, whatever the
+  address space"; PGR Table 12-11 gives OR FDEP `0110 0100`, OR FDEP (SE)
+  `0110 1100`, BITEXT (NU) `0101 1000` and BITDEP `0111 0100`, whose upper
+  six bits are 0x19, 0x1B, 0x16 and 0x1D; PRM Table 17-9 pairs six-bit
+  `011001` with bitext (nu) while its own eight-bit column pairs `01100100`
+  with or fdep, the one-row shift. The two OR FDEP sites were decoded by
+  hand from the raw compute fields (sharcdb `shiftimm` 0x195f0c with DATAEX
+  0 and 0x191702 with DATAEX 2; the SLEIGH dump shows the same opcode 0x19
+  and data): `R0 = R0 OR FDEP R12 BY 31:1` and `R0 = R0 OR FDEP R2 BY 23:8`.
+  `0x1c336b` is (l,x,w) = (1,1,1) in the SLEIGH fields. The 156/152 site
+  counts stay **[D]**.
 - **SIMD companions [D]:** Type 4a (normal word, PRM p.212 Table 6-10),
   Type 3a (normal word), Type 3d (byte, PRM p.13-20; `FUN_1c642a`'s latch
   copy needs it, or only even voices are ever latched), Type 4b/4d and 3b
@@ -231,7 +296,10 @@ this path.
   per-PE conditions for conditional 3a/5a in SIMD; `sharcdb`
   `mem_access.width` for the Type 4b and Type 3d (0,0,0) rows (needs a
   `DB_VERSION` bump to 14 and a rebuild; the database still prints
-  (1,1,1) Type 4b as "long").
+  (1,1,1) Type 4b as "long"). **[C] (P0 2026-09-29)** for Type 4b:
+  `DB_VERSION` is 14, the database is current, and `0x1c336b` now reads
+  `normal-word` in `mem_access`; the Type 3d (0,0,0) rows were not
+  re-checked.
 
 ## First listen: TRIG 1 plays hat through the SHARC **[D]**
 
@@ -302,7 +370,9 @@ output as L/R, no injection) and `out/listen/hat-trig1.wav` (ring A).
 1. ColdFire `--settle-smoother`: copies the smoother's input over its output
    every tick, a stand-in for the fractional EMAC bug (finding 07). It
    writes the firmware's own values. Goes away once the EMAC fix is
-   installed and the capture is remade.
+   installed and the capture is remade. *2026-09-29: the fix is installed
+   and `dt2-1.16-drive3-trig1-emac.dt2cap` was captured with it (used by
+   the live check below); the long replay above has not been rerun on it.*
 2. ColdFire vector 191 is forced every 50k instructions and the frame-build
    gate is opened (the existing capture method, finding 04).
 3. Two NO presses close two modal windows (real panel input; finding 03).

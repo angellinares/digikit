@@ -168,6 +168,7 @@ pub fn capture_source(
     let pack = Arc::new(LivePack::load(pack)?);
     let core = LibCore::open(lib, pack.image())?;
     let info = core.info();
+    pack.check_library(&info)?;
     let source = CaptureSource::new(core, pack, after, gain)?;
     Ok((source, info))
 }
@@ -187,6 +188,7 @@ pub fn live_source(
     }
     let core = LibCore::open(lib, pack.image())?;
     let info = core.info();
+    pack.check_library(&info)?;
     let source = LiveSource::new(core, &pack, gain)?;
     Ok((source, info))
 }

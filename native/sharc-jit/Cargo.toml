@@ -1,0 +1,30 @@
+[package]
+name = "sharc-jit"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "SHARC+ block translation to WebAssembly: P1 measurements (wasmtime host, run-time module generation)"
+
+# Firmware-free: the tools read modules built under out/ at run time.
+# The WebAssembly build of the core itself is ./wasm-frames (its own crate,
+# built for wasm32-unknown-unknown).
+[dependencies]
+wasm-encoder = "0.259.0"
+wasmtime = "49.0.1"
+
+[lib]
+name = "sharc_jit"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+debug = false
+incremental = false
+
+[[bin]]
+name = "wasm-frames"
+path = "src/bin/wasm_frames.rs"
+
+[[bin]]
+name = "jit-probe"
+path = "src/bin/jit_probe.rs"

@@ -5008,6 +5008,7 @@ def translate(core: infer.Core, *, strict: bool = False) -> Output:
         "fn_ids": len(tr.fn_names),
         "annotated": {k: v for k, v in core.annotated.items()},
         "core_sha256": core_hash(),
+        "generator_version": GENERATOR_VERSION,
     }
     files = {
         "core_i.rs": header + core_i,
@@ -5065,6 +5066,7 @@ def render_tables(tr: Translator) -> str:
         t_lines.append(tr.lookup_fns[name])
     t_lines.append("")
     t_lines.append("pub const CORE_SHA256: &str = %s;" % json.dumps(core_hash()))
+    t_lines.append("pub const GENERATOR_VERSION: u32 = %d;" % GENERATOR_VERSION)
     t_lines.append("pub static TRAP_SITES: [&str; %d] = [" % len(tr.trap_sites))
     for site in tr.trap_sites:
         t_lines.append("    %s," % json.dumps(site))
@@ -5075,6 +5077,14 @@ def render_tables(tr: Translator) -> str:
 
 # FnIds below this are the runtime's own (values.py operations).
 FN_ID_BASE = 16
+
+
+# The version of the generated code's meaning: bump it when a change to this
+# translator, tools/sharc_transpile_infer.py or tools/sharc_rsgen.py changes
+# what generated code does, so native libraries built by an older generator
+# are refused (tools/sharc_transpile_run.check_build_info). A native library
+# also carries core_hash(), so a tools/sharc_core change needs no bump.
+GENERATOR_VERSION = 1
 
 
 def core_hash() -> str:
