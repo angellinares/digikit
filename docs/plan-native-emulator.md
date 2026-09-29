@@ -1,0 +1,228 @@
+# Plan: a firmware-agnostic native emulator (desktop and browser)
+
+Status 2026-09-29, base commit `95d92de` on `work/sharc-emulator`.
+
+## Goal
+
+A user selects their own firmware file (`.syx`) and the emulator runs it:
+ColdFire and SHARC together, in real time, with audio, on the desktop and in
+the browser. Targets: Digitakt II OS 1.16 and Digitone II OS 1.11 (same
+architecture; the differences are board and firmware level). DSP patching
+(the original goal) builds on it.
+
+Constraints:
+- No firmware or firmware-derived data in the repository or in anything we
+  distribute. All per-image work happens on the user's machine at load time.
+- Every native component is checked against an existing reference (oracle)
+  before it replaces anything.
+- Cores are pure: no OS calls or threads inside a CPU core. OS-specific code
+  (audio, files, threads, windows) stays at the edges.
+
+## Where we are
+
+| Part | State |
+|---|---|
+| SHARC semantics | `tools/sharc_core` (Python), the single source; exact against real frames. |
+| Native SHARC | `native/sharc`: transpiled handlers plus runtime, and a per-block ahead-of-time (AOT) generator. 1.9 ns/instruction, 411 us per frame (budget 667 us). The generated blocks embed the firmware, so they are built locally under `out/`, and each image needs a rebuild (about 80 s). |
+| Live audio | `native/live` (cpal); `emu/gui.py --live-audio` plays TRIGs live. |
+| ColdFire | Unicorn with 5 patches plus about 30 Python peripheral models and hooks. 0.22x real time with the audio clock running; about 0.4x is the ceiling of this design. |
+| Oracles available | Python SHARC core, `tools/sharc_diff.py` lockstep harness, patched Unicorn, the Python machine, `.snap` snapshots, `tools/snapeq.py`, `.dt2cap` captures, the FlexBus log. |
+
+## Lessons from this round
+
+1. **Do not transpile general Python again.** The Python-to-Rust transpile of
+   `sharc_core` was exact on the first pass, but it carried Python's
+   generality into Rust: 128-bit integers with known-bit masks, an undo
+   journal, `Result` on every call, and 399,470 block variants (166 MB of Rust,
+   a 10-minute build, 24.6 ns/instruction). An optimisation lane had to remove
+   all of that to reach 1.9 ns. Keep that transpiler for the SHARC, where the
+   core is large and now fast. For new components, write Rust directly with
+   concrete types, and generate only from data (decoder tables from
+   manuals), not from code.
+2. **Recompiling the firmware ahead of time ties the build to one image.** A
+   JIT that translates blocks at run time from the loaded image keeps the
+   speed and removes firmware from every build output.
+3. **Re-typing verified code is the most expensive step.** A spec written
+   by a design agent and applied by a coder cost 9 coder resumptions for 155
+   blocks, plus two paraphrase errors caught only by byte comparison.
+   Copying the verified files from the worktree is exact and nearly free.
+4. **Worktrees must start from a commit.** Syncing uncommitted work into
+   worktrees caused one stale-file overwrite and needed three-way merges.
+   Commit at every phase gate.
+5. **Unseen code paths fall back to slow paths.** The AOT build covers only
+   recorded blocks; the live path single-steps about 400 instructions a frame
+   because the coverage was recorded before the timer changes. A JIT removes
+   the coverage step.
+
+## Working method (token and time budget)
+
+- **Oracle first:** each lane starts with the differential test against its
+  oracle, then implements until the test passes. The test is the
+  specification; agents do not read Python models line by line when a trace
+  answers the question.
+- **Roles:**
+  - A **scout** reads and answers with file:line quotes.
+  - A **deep** agent decides, implements and verifies in a worktree that
+    starts from the phase's commit.
+  - Merging copies the verified files and checks them byte for byte.
+  - A **coder** is used for small hand-specified edits only.
+- **One owner per file:** lanes own whole crates or files, and shared lists
+  (`tests/test_lint.py`, `tests/test_types.py`, `CLAUDE.md`) are edited only at
+  merge time.
+- **Reuse the tools:** `tools/cf.py` (cfdb), `tools/snapread.py`,
+  `tools/sharc.py`, `tools/sharc_diff.py` and `tools/snapeq.py` come before any
+  new script. A new kind of fact goes into one of them.
+- **Hand-backs:** at most 15 lines, with the full report in the scratchpad.
+  One handover per phase.
+- **Limits:** every command under 9 minutes, no background jobs polled with
+  sleep, one SHARC replay at a time.
+- **Gates:** each phase ends on a measured gate, a commit and a push.
+- **Both images:** every differential test runs on dt2-1.16, and on dn2-1.11
+  wherever a capture or snapshot exists.
+
+## Architecture target
+
+```
+native/
+  sharc/        SHARC core: transpiled handlers + runtime (pure, no firmware)
+  sharc-jit/    block translator: SHARC blocks -> WebAssembly (or native)
+  coldfire/     ColdFire V4e core: ISA_C, EMAC, FPU (pure)
+  cf-jit/       ColdFire block translator (shares the backend with sharc-jit)
+  periph/       MCF5441x peripherals: INTC, PIT, DTIM, eDMA, SSI, DSPI,
+                eSDHC + card, GPIO, UART, FlexBus/DSP FIFO, panel, display
+  machine/      board wiring + per-product profile (DT2, DN2): memory map,
+                which peripherals, symbols; snapshot import from emu/*.snap
+  loader/       .syx extraction (port of dt2/elz.py), +Drive builder (port
+                of tools/plusdrive.py)
+  live/         desktop audio (cpal), threads, frame queue
+  web/          wasm32 bindings: Web Worker, AudioWorklet, file picker
+```
+
+The Python emulator (`emu/`, `tools/sharc_core`) stays as the frozen oracle.
+
+## Phases
+
+### P0: housekeeping (small, now)
+
+- Findings verification batch: a second agent checks the [D] sections from
+  this round against the image bytes, and the handover is updated.
+- A staleness guard: the native SHARC library carries the hash of the
+  `sharc_core` sources it was generated from, and refuses to load
+  otherwise.
+- Em removes the old worktrees.
+
+### P1: gate, the SHARC JIT backend (measure before building)
+
+Question: can blocks translated at run time reach at most 3 ns per
+instruction, in the browser as well as on the desktop?
+- **A. Floor:** a firmware-free, pre-decoded interpreter over the transpiled
+  handlers. Its ns/instruction is also the fallback path's cost.
+- **B. WebAssembly per block,** measured under wasmtime (desktop) and in
+  Chrome, for the phase-0 hot set and a full drive3 frame. Two ways to
+  generate it:
+  1. Port the block specialiser (`tools/sharc_rsgen.py`) to Rust, emitting
+     WebAssembly with the `wasm-encoder` crate.
+  2. Copy-and-patch: compile per-form templates ahead of time (firmware
+     free), then stitch them at run time with the decoded fields patched in.
+- **C.** Cranelift native code for the desktop, only if B misses on the
+  desktop.
+
+Measure: ns/instruction, translation time per block (JIT latency), memory.
+The gate picks one backend, or WebAssembly everywhere with native as an
+optional desktop speed-up. The output is a decision note with the numbers.
+
+### P2: SHARC JIT
+
+- **Build:** `native/sharc-jit` with the chosen backend. The live path
+  switches to it, and the AOT generator is retired; the transpiler stays for
+  the handlers.
+- **Gate:**
+  - lockstep exact on the compute corpus, the phase-0 vectors and the drive3
+    frames, plus a Digitone II capture;
+  - a patched image runs with no build step;
+  - at most 667 us per frame on the desktop, with 0 underruns over 60 s.
+
+### P3: ColdFire core in Rust (runs in parallel with P1 and P2)
+
+1. **Instruction census** (`tools/cf.py`) over both images: which ColdFire
+   instructions, EMAC and FPU forms, MMU and cache use, and supervisor
+   operations are actually present.
+2. **Decoder** generated from an instruction table taken from the public
+   manuals, as `tools/sharcspec` is for the SHARC. The semantics are written
+   by hand in concrete Rust; they are short for this ISA.
+3. **Oracle:** patched Unicorn, per-instruction lockstep on random states and
+   on real firmware traces from snapshots of both images.
+4. **JIT:** blocks go through the P2 backend.
+
+Gate: lockstep over 100M+ instructions of real traces for both images; an
+interpreter speed floor; the JIT at 150M+ instructions/s or more (the device
+runs about 132M/s).
+
+### P4: peripherals and machine in Rust (starts with P3)
+
+1. **MMIO recorder:** a tool that records every peripheral access and
+   interrupt from Python emulator runs (both images) as replayable traces.
+2. **Models:** port each peripheral against its trace, one lane per group:
+   timers and INTC; DMA, SSI and DSPI; eSDHC and card; GPIO, UART, panel and
+   display.
+3. **Drop hooks that only existed for Unicorn or speed.** The soft-float HLE
+   goes because the core has an FPU, the bitmap HLE because it was only
+   there for speed, and the idle hook because the core stops at idle itself.
+4. **Machine profile per product,** DT2 and DN2. The differences are
+   recorded in findings.
+
+Gate: from an imported snapshot, the whole machine matches the Python
+emulator (snapeq-equivalent state at equal device time) for both images.
+DT2 cold-boots to the ready screen.
+
+### P5: integrated desktop emulator
+
+- ColdFire, SHARC and live audio in one native process, with no Python on the
+  hot path. The firmware's own frame cadence replaces the forced vector 191
+  and the opened frame gate.
+- Model the per-track master mix, which removes the DAC injection hand step.
+- One UI for desktop and browser: an HTML canvas panel (screen, keys,
+  encoders), shown in a local webview on the desktop. The Tk GUI is retired
+  after this.
+
+Gate: UI and sequencer at 1.0x with audio, 0 underruns, on both products.
+
+### P6: browser
+
+- A wasm32 build of the cores and machine, with the JIT producing
+  WebAssembly modules at run time, running in a Web Worker.
+- AudioWorklet and SharedArrayBuffer (cross-origin isolation headers on the
+  host).
+- A file picker for the `.syx`, with extraction and the +Drive build in the
+  page; IndexedDB for images and snapshots.
+
+Gate: the user's own firmware boots in Chrome, Firefox and Safari, and a pad
+plays in real time.
+
+### P7: DSP patching
+
+Patch the SHARC image at load time. The JIT makes each change immediate, and
+the patched sound is checked against the unpatched one.
+
+## Order and parallel lanes
+
+| Stage | Lanes in parallel |
+|---|---|
+| 1 | P0 housekeeping; P1 gate (A and B); P3 census and decoder; P4 MMIO recorder |
+| 2 | P2 SHARC JIT; P3 interpreter and lockstep; P4 timers/INTC and DMA/SSI/DSPI |
+| 3 | P3 JIT; P4 eSDHC/card and the rest; machine profile DT2 and DN2 |
+| 4 | P5 integration and UI; loader ports (`elz`, `plusdrive`) |
+| 5 | P6 browser; P7 patching |
+
+Keep workflows under about 10 agents; each lane has a single owner per crate.
+
+## Decisions for Em
+
+1. **Merging large changes:** copy the verified worktree files with a byte
+   check, instead of a spec re-typed by a coder. Coders stay for small
+   edits.
+2. **Backend:** decided by the P1 numbers (WebAssembly everywhere, or also
+   Cranelift natively).
+3. **UI:** one HTML canvas UI for desktop and browser.
+4. **Python emulator:** kept as the frozen oracle and not extended further,
+   except for the recorders the oracles need.

@@ -12,7 +12,9 @@ set -euo pipefail
 
 base=${1:-work/sharc-emulator}
 here=$(git rev-parse --show-toplevel)
-main=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+# Read the whole listing (no early `exit`): with many worktrees an early exit
+# closes the pipe, git gets SIGPIPE and `pipefail` aborts the script (141).
+main=$(git worktree list --porcelain | awk '/^worktree / && !n {print $2; n=1}')
 if [[ $here == "$main" ]]; then
   echo "error: run this inside a worktree, not the main tree ($main)" >&2
   exit 2
