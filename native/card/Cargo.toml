@@ -1,0 +1,18 @@
+[package]
+name = "emmc-card"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Pure minimal eMMC card identity and media model for the native emulator"
+
+[lib]
+name = "emmc_card"
+crate-type = ["rlib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

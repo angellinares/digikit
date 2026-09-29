@@ -1,0 +1,133 @@
+use emmc_card::{
+    Card, CardError, DEFAULT_CAPACITY_BLOCKS, MAX_TRANSFER_BYTES, RandomAccessRead,
+    SMALL_CAPACITY_BLOCKS,
+};
+
+struct TinyBacking(Vec<u8>);
+impl RandomAccessRead for TinyBacking {
+    fn len(&self) -> u64 {
+        self.0.len() as u64
+    }
+
+    fn read_at(&self, offset: u64, destination: &mut [u8]) -> usize {
+        let source = self.0.get(offset as usize..).unwrap_or_default();
+        let count = source.len().min(destination.len());
+        destination[..count].copy_from_slice(&source[..count]);
+        count
+    }
+}
+
+#[test]
+fn identity_commands_match_oracle() {
+    let mut card = Card::default();
+    assert_eq!(card.command(0, 0), [0; 4]);
+    assert_eq!(card.command(1, 0), [0xc0ff_8080, 0, 0, 0]);
+    assert_eq!(
+        card.command(2, 0),
+        [0, 0x4530_0000, 0x3030_3447, 0x0011_0000]
+    );
+    assert_eq!(card.command(9, 0), [0, 0xafc0_0380, 0x0000_0a03, 0]);
+    assert_eq!(card.command(10, 0), card.command(2, 0));
+    assert_eq!(card.command(3, 0x1234_ffff), [0x900, 0, 0, 0]);
+    assert_eq!(card.rca(), 0x1234);
+    assert_eq!(card.command(7, 0x1234_0000), [0x900, 0, 0, 0]);
+    assert!(card.selected());
+    assert_eq!(card.command(7, 0x9999_0000), [0x900, 0, 0, 0]);
+    assert!(!card.selected());
+    card.command(7, 0x1234_0000);
+    card.command(0, 0);
+    assert!(!card.selected());
+    assert_eq!(card.command(42, 0), [0x900, 0, 0, 0]);
+}
+
+#[test]
+fn cid_and_ext_csd_bytes_match_python_oracle_literals() {
+    let mut card = Card::default();
+    let cid_bytes = card.command(2, 0).map(u32::to_be_bytes).concat();
+    assert_eq!(
+        cid_bytes,
+        [
+            0x00, 0x00, 0x00, 0x00, 0x45, 0x30, 0x00, 0x00, 0x30, 0x30, 0x34, 0x47, 0x00, 0x11,
+            0x00, 0x00,
+        ]
+    );
+
+    let Some(ext) = card.data_for(8, 0, 512).expect("CMD8 is bounded") else {
+        panic!("CMD8 must return EXT_CSD");
+    };
+    let mut expected = [0_u8; 512];
+    expected[0x9c..0x9f].copy_from_slice(&[0x00, 0x01, 0xd8]);
+    expected[0xaf] = 0x01;
+    expected[0xb7] = 0x01;
+    expected[0xb9] = 0x01;
+    expected[0xd4..0xd8].copy_from_slice(&[0x00, 0x76, 0x00, 0x00]);
+    expected[0xde] = 0x01;
+    expected[0xe3] = 0x08;
+    assert_eq!(ext, expected);
+
+    let small = Card::new(SMALL_CAPACITY_BLOCKS).expect("small capacity is supported");
+    let Some(small_ext) = small.data_for(8, 0, 512).expect("CMD8 is bounded") else {
+        panic!("CMD8 must return EXT_CSD");
+    };
+    assert_eq!(small_ext[0x98], 0x01);
+    assert_eq!(&small_ext[0xd4..0xd8], &[0x00, 0x00, 0x00, 0x00]);
+}
+
+#[test]
+fn backed_reads_sparse_overlay_and_out_of_range_match_oracle() {
+    let mut card = Card::with_backing(
+        DEFAULT_CAPACITY_BLOCKS,
+        Some(Box::new(TinyBacking(vec![1, 2, 3]))),
+    )
+    .expect("default capacity is supported");
+    assert_eq!(
+        card.data_for(18, 0, 5).expect("bounded CMD18"),
+        Some(vec![1, 2, 3, 0, 0])
+    );
+    assert_eq!(
+        card.data_for(18, 1, 4).expect("bounded CMD18"),
+        Some(vec![0; 4])
+    );
+
+    card.write_data(25, 0, &[9, 8, 7, 6])
+        .expect("bounded CMD25");
+    card.write_data(25, 1, &[4]).expect("bounded CMD25");
+    assert_eq!(card.overlay_len(), 5);
+    assert_eq!(
+        card.data_for(18, 0, 5).expect("bounded CMD18"),
+        Some(vec![9, 8, 7, 6, 0])
+    );
+
+    let mut reusable = [0xff; 2];
+    card.read_into(1, &mut reusable)
+        .expect("bounded stream read");
+    assert_eq!(reusable, [4, 0]);
+    card.write_data(24, 0, &[0]).expect("non-CMD25 is ignored");
+    assert_eq!(
+        card.data_for(17, 0, 1).expect("bounded unknown command"),
+        None
+    );
+}
+
+#[test]
+fn oversized_transfer_is_rejected_before_allocation() {
+    let card = Card::default();
+    assert_eq!(
+        card.data_for(18, 0, MAX_TRANSFER_BYTES + 1),
+        Err(CardError::TransferTooLarge {
+            requested: MAX_TRANSFER_BYTES + 1,
+            maximum: MAX_TRANSFER_BYTES,
+        })
+    );
+}
+
+#[test]
+fn bus_test_and_capacity_rejection_match_oracle() {
+    let card = Card::default();
+    assert_eq!(card.read_word(14, 0x0000_005a), 0xffff_ffa5);
+    assert_eq!(card.read_word(19, 0x5a), 0);
+    assert!(matches!(
+        Card::new(4),
+        Err(CardError::UnsupportedCapacity(4))
+    ));
+}
