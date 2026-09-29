@@ -18,6 +18,24 @@ Constraints:
 - Cores are pure: no OS calls or threads inside a CPU core. OS-specific code
   (audio, files, threads, windows) stays at the edges.
 
+## Revised priority (2026-09-29, after stage 2)
+
+Real time on the desktop is limited by the ColdFire, not the SHARC: the
+ahead-of-time SHARC core already renders a frame in 411-467 us of 667 with
+0 underruns, while the ColdFire runs at 0.22x (Unicorn plus Python hooks
+cannot pass about 0.4x). So:
+1. Pause the SHARC JIT (P2) until the browser phase (P6); it is correct and
+   deterministic but 2.5-3.3 ms/frame, and only the browser and patched
+   images without a rebuild need it.
+2. Gate: the Rust ColdFire interpreter's speed on a real instruction mix
+   (memory and peripheral dispatch, idle skipped) against about 62M useful
+   instructions/s. No ColdFire JIT on the desktop if it passes.
+3. Remaining peripherals against the traces: eSDHC and card, GPIO, UART,
+   panel input, display.
+4. P5 machine wiring: ColdFire core + native/periph + the ahead-of-time
+   SHARC + native/live in one native process, checked against the Python
+   emulator on the same snapshot windows, then 1.0x with audio.
+
 ## Where we are
 
 | Part | State |

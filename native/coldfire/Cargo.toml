@@ -21,6 +21,10 @@ path = "src/bin/cfdis.rs"
 name = "cfbench"
 path = "src/bin/cfbench.rs"
 
+[[bin]]
+name = "cfrealmix"
+path = "src/bin/cfrealmix.rs"
+
 [profile.release]
 opt-level = 3
 debug = false
