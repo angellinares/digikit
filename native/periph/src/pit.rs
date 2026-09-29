@@ -256,6 +256,19 @@ impl PitBank {
     /// `Pits.service`/`deliver_pending` do. -> the vectors actually raised,
     /// in delivery order, each with its ICR level.
     pub fn service(&mut self, done: u64, intc: &IntcBank, sr: &mut SrTracker) -> Vec<(u16, u8)> {
+        self.service_with(done, intc, sr, |_, _| true)
+    }
+
+    /// Service due PIT channels, retaining a pending tick when `offer`
+    /// declines it. This lets a caller validate an interrupt handler before
+    /// consuming the oracle-visible pending state.
+    pub fn service_with(
+        &mut self,
+        done: u64,
+        intc: &IntcBank,
+        sr: &mut SrTracker,
+        mut offer: impl FnMut(u16, u8) -> bool,
+    ) -> Vec<(u16, u8)> {
         if self.held {
             return Vec::new();
         }
@@ -306,6 +319,9 @@ impl PitBank {
                 continue;
             };
             if sr.ipl() >= lvl {
+                continue;
+            }
+            if !offer(vec, lvl) {
                 continue;
             }
             sr.on_taken(Some(lvl), 0);

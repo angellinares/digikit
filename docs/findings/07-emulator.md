@@ -2659,3 +2659,39 @@ boundaries, so coalescing (few boundaries) under-reads it.
   enable/disable gating, cross-product ISR/semantic parity, real-time audio,
   and browser runtime still need independent gates; do not claim full native
   machine parity.
+
+### Native portable state and bounded checkpoint smoke (2026-09-30)
+
+- **[C]** The preceding open item now has a **narrow** real-firmware CPU
+  execution gate, not a full native boot. `native/machine` imports portable
+  MSTATE v1 through a bounded parser and restores CPU registers, selector-keyed
+  control state, mapped-zero and nonzero RAM pages, and Oracle forced-read
+  words. Python alone converts trusted local `.snap` pickles; Rust does not
+  parse pickle. The clock defaults to checkpoint-relative zero. A timer facade
+  can route PIT/INTC MMIO and Oracle PIT delivery, but the early checkpoint
+  smoke run does **not** attach it; nonempty host components are rejected.
+- **[D]** `uv run python tools/checkpointprep.py gate --dt2-syx
+  Digitakt_II_OS1.16.syx --dn2-syx Digitone_II_OS1.11.syx` checks each local
+  source SHA-256 against its pinned product value and extracted sections'
+  `.source-sha256`, hashes the MAIN OS image, and compares **all** its loaded
+  bytes against the corresponding trusted 24M snapshot before converting it
+  under ignored `out/native/checkpoint-gate/`. This full-image check matters
+  because those early snapshots have no source manifest. The wrapper then
+  reported `source-verified products=dt2,dn2`; each native child completed
+  exactly **1,000 instructions** and stopped at its budget. The ignored Rust
+  test alone is explicitly `smoke-unverified`, not a provenance check. It
+  fails before unsupported MOVEC forms and on any unexpected completion event.
+  This is execution progress only: no per-instruction, MMIO, timer, snapshot,
+  ISR, full-boot or audio parity was compared.
+- **[D]** The integrated release gates passed 33 machine tests (two ignored
+  checkpoint tests), 76 peripheral tests, 11 focused Python tests, four
+  ignored late Oracle DMA trace tests, and the no-default-features WASM build
+  check. Device eDMA request controls and D_REQ persistence have synthetic
+  tests; Oracle SERQ/CERQ behavior stays separate. The late trace gate still
+  proves captured transfer effects, not independent late firmware execution.
+- **[O]** Late checkpoints carry timer, eSDHC, eDMA and UART host components;
+  their restoration is deliberately rejected. Native MOVEC register reads and
+  unmodelled selector writes still lack parity semantics; MSTATE native export,
+  reverse `.snap` conversion, equal-clock `snapeq` comparison, live Device
+  timer/INTC delivery, full ISR parity, real-time audio and browser execution
+  remain unproven. Do not extrapolate the 1k checkpoint smoke gate to them.

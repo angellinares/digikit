@@ -1,4 +1,6 @@
 //! Firmware-agnostic sparse RAM board and synchronous eMMC DMA59 seam.
+use std::collections::BTreeMap;
+
 use coldfire::{Bus, BusError};
 use emmc_card::{
     Card,
@@ -7,7 +9,12 @@ use emmc_card::{
 use periph::{
     DmaLink, edma,
     esdhc::{self, DmaCompletion, Esdhc, RegisterPolicy},
+    intc::BASES as INTC_BASES,
+    pit::BASES as PIT_BASES,
+    regfile::SLOT_SIZE,
 };
+
+use crate::time::Time;
 
 const PAGE_SIZE: usize = 1024 * 1024;
 const PAGE_SHIFT: u32 = 20;
@@ -65,6 +72,11 @@ pub struct Board {
     events: Vec<CompletionEvent>,
     dma_written: Vec<(u32, usize)>,
     last_error: Option<BoardWriteError>,
+    /// Optional PIT/INTC facade. Its owned MMIO is never backed by sparse RAM.
+    time: Option<Time>,
+    /// Oracle read hooks: each value overlays four big-endian bytes before a
+    /// guest read, without changing the backing page or later guest writes.
+    forced_mmio: BTreeMap<u32, u32>,
 }
 impl Board {
     pub fn new(card: Card, semaphores: SemaphoreAddresses, policy: CompletionPolicy) -> Self {
@@ -84,14 +96,131 @@ impl Board {
             events: vec![],
             dma_written: vec![],
             last_error: None,
+            time: None,
+            forced_mmio: BTreeMap::new(),
         }
     }
-    pub fn map_ram_page(&mut self, addr: u32) -> Result<(), BusError> {
+
+    /// Route PIT and INTC MMIO through the supplied timer facade.
+    pub fn attach_time(&mut self, time: Time) {
+        self.time = Some(time);
+    }
+
+    pub fn time_mut(&mut self) -> Option<&mut Time> {
+        self.time.as_mut()
+    }
+
+    /// Temporarily remove the timer facade for an atomic CPU interrupt offer.
+    pub fn take_time(&mut self) -> Option<Time> {
+        self.time.take()
+    }
+
+    pub fn restore_time(&mut self, time: Time) {
+        debug_assert!(self.time.is_none());
+        self.time = Some(time);
+    }
+
+    fn owned_mmio(addr: u32) -> bool {
+        Time::owns(addr) || DmaLink::owns(addr) || Esdhc::<Card>::owns(addr)
+    }
+
+    /// Validate and install Oracle forced read words. A forced word may
+    /// overlay one owned register (the Python hook does this before the
+    /// peripheral read), but may not cross into or out of owned MMIO.
+    pub fn install_forced_mmio(&mut self, words: BTreeMap<u32, u32>) -> Result<(), ()> {
+        if words.keys().any(|&base| {
+            let Some(end) = base.checked_add(3) else {
+                return true;
+            };
+            let owned = (base..=end).map(Self::owned_mmio).collect::<Vec<_>>();
+            owned.iter().any(|owned| *owned) && owned.iter().any(|owned| !owned)
+        }) {
+            return Err(());
+        }
+        self.forced_mmio = words;
+        Ok(())
+    }
+
+    /// Forced bytes available at the start of a guest read.  If the read
+    /// extends past the four-byte hook write, its suffix must come from the
+    /// normal bus (as Unicorn observes after the hook has written the word).
+    fn forced_prefix(&self, addr: u32, size: u8) -> Option<(u32, u8)> {
+        self.forced_mmio.iter().find_map(|(&base, &word)| {
+            let word_end = base.checked_add(4)?;
+            (addr >= base && addr < word_end).then(|| {
+                let count = size.min((word_end - addr) as u8);
+                let bytes = word.to_be_bytes();
+                let value = bytes
+                    [(addr - base) as usize..(addr - base + u32::from(count)) as usize]
+                    .iter()
+                    .fold(0, |value, byte| (value << 8) | u32::from(*byte));
+                (value, count)
+            })
+        })
+    }
+
+    /// Map a zero-filled 1 MiB RAM page.  This is deliberately separate from
+    /// importing bytes so snapshot mapped-but-zero pages remain observable.
+    pub fn map_zeroed_ram_page(&mut self, addr: u32) -> Result<(), BusError> {
         if addr & PAGE_MASK != 0 {
             return Err(Self::bus_error(addr, true));
         }
         self.pages[(addr >> PAGE_SHIFT) as usize]
             .get_or_insert_with(|| vec![0; PAGE_SIZE].into_boxed_slice());
+        Ok(())
+    }
+
+    /// Compatibility spelling for callers that map ordinary guest RAM.
+    pub fn map_ram_page(&mut self, addr: u32) -> Result<(), BusError> {
+        self.map_zeroed_ram_page(addr)
+    }
+
+    /// Replace one already mapped snapshot RAM page.  The fixed one-page
+    /// bound prevents a malformed state blob from allocating or copying an
+    /// unbounded guest range.
+    pub fn import_ram_page(&mut self, addr: u32, data: &[u8]) -> Result<(), BusError> {
+        if addr & PAGE_MASK != 0 || data.len() != PAGE_SIZE {
+            return Err(Self::bus_error(addr, true));
+        }
+        self.map_zeroed_ram_page(addr)?;
+        self.pages[Self::page_index(addr)]
+            .as_mut()
+            .expect("page just mapped")
+            .copy_from_slice(data);
+        // MSTATE pages are 1 MiB while the peripheral facade consumes 16 KiB
+        // slots. Restore a slot at its address within the page, not only when
+        // the MSTATE page base happens to equal the peripheral base.
+        if let Some(time) = self.time.as_mut() {
+            for slot in PIT_BASES.iter().chain(INTC_BASES.iter()) {
+                if *slot & !PAGE_MASK == addr {
+                    let offset = (*slot & PAGE_MASK) as usize;
+                    let _ = time.load_page(*slot, &data[offset..offset + SLOT_SIZE]);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// True only when every byte in `addr..addr+len` is mapped sparse RAM,
+    /// never an owned peripheral. Used to preflight ColdFire exception frames
+    /// before the CPU mutates SR or either stack pointer.
+    pub fn can_write_ram_range(&self, addr: u32, len: usize) -> bool {
+        let Ok(len) = u32::try_from(len) else {
+            return false;
+        };
+        let Some(end) = addr.checked_add(len) else {
+            return false;
+        };
+        (addr..end).all(|byte| !Self::owned_mmio(byte) && self.page(byte).is_some())
+    }
+
+    /// Read one mapped RAM page without going through MMIO dispatch.
+    pub fn read_ram_page(&self, addr: u32, out: &mut [u8]) -> Result<(), BusError> {
+        if addr & PAGE_MASK != 0 || out.len() != PAGE_SIZE {
+            return Err(Self::bus_error(addr, false));
+        }
+        let page = self.page(addr).ok_or(Self::bus_error(addr, false))?;
+        out.copy_from_slice(page);
         Ok(())
     }
     pub fn completion_events(&self) -> &[CompletionEvent] {
@@ -341,7 +470,58 @@ impl Board {
         }
         Ok(effect.completion)
     }
+    fn update_dma59_request(&mut self, addr: u32, size: u8, value: u32) {
+        if size != 1 {
+            return;
+        }
+        let byte = value as u8;
+        match self.policy {
+            // `emu.edma` only recognizes the channel form of SERQ. Its CERQ
+            // writes and SERQ all-channel form are inert for this seam.
+            CompletionPolicy::Oracle => {
+                if addr == edma::SERQ
+                    && byte & 0x40 == 0
+                    && (byte & 0x3f) as usize == esdhc::DMA_CHANNEL
+                {
+                    self.armed_dma59 = true;
+                }
+            }
+            // MCF5441xRM 19.4.5-19.4.6 (p.374-375): bit 7 is NOP; bit 6
+            // selects all channels, otherwise the low six bits select one.
+            CompletionPolicy::Device => {
+                if byte & 0x80 != 0 {
+                    return;
+                }
+                let selects_dma59 =
+                    byte & 0x40 != 0 || (byte & 0x3f) as usize == esdhc::DMA_CHANNEL;
+                if selects_dma59 {
+                    match addr {
+                        edma::SERQ => self.armed_dma59 = true,
+                        edma::CERQ => self.armed_dma59 = false,
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
     fn read_inner(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
+        if let Some((mut value, prefix)) = self.forced_prefix(addr, size) {
+            for offset in prefix..size {
+                value = (value << 8) | self.read_inner_unforced(addr + u32::from(offset), 1)?;
+            }
+            return Ok(value);
+        }
+        self.read_inner_unforced(addr, size)
+    }
+
+    fn read_inner_unforced(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
+        if Time::owns(addr) {
+            return self
+                .time
+                .as_ref()
+                .and_then(|time| time.read(addr, size))
+                .ok_or(Self::bus_error(addr, false));
+        }
         if let Some(value) = self.dma.read(addr, size) {
             return Ok(value);
         }
@@ -354,14 +534,17 @@ impl Board {
     }
     fn write_inner(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
         self.last_error = None;
+        if Time::owns(addr) {
+            if let Some(time) = self.time.as_mut()
+                && time.write(addr, size, value)
+            {
+                return Ok(());
+            }
+            return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));
+        }
         if DmaLink::owns(addr) {
             let _ = self.dma.write(addr, size, value);
-            if addr == edma::SERQ && size == 1 {
-                let byte = value as u8;
-                if byte & 0x40 == 0 && (byte & 0x3f) as usize == esdhc::DMA_CHANNEL {
-                    self.armed_dma59 = true;
-                }
-            }
+            self.update_dma59_request(addr, size, value);
             return Ok(());
         }
         if !Esdhc::<Card>::owns(addr) {
@@ -417,7 +600,11 @@ impl Board {
             let dma_completion = if data && direction_ok && self.armed_dma59 {
                 match self.service_dma59(command) {
                     Ok(completion) => {
-                        self.armed_dma59 = false;
+                        if self.policy == CompletionPolicy::Oracle
+                            || (completion.done && completion.disable_request)
+                        {
+                            self.armed_dma59 = false;
+                        }
                         Some(completion)
                     }
                     Err(error) => return Err(BoardWriteError::Dma(error)),
@@ -495,12 +682,15 @@ mod tests {
         b.write16(x + edma::BITER as u32, c).unwrap();
         b.write16(x + edma::CSR as u32, 0).unwrap()
     }
-    fn issue(b: &mut Board, c: u8, read: bool) -> Result<(), BusError> {
-        b.write8(edma::SERQ, 59)?;
+    fn command(b: &mut Board, c: u8, read: bool) -> Result<(), BusError> {
         b.write32(
             esdhc::BASE + esdhc::XFERTYP,
             (c as u32) << 24 | 1 << 21 | if read { 1 << 4 } else { 0 },
         )
+    }
+    fn issue(b: &mut Board, c: u8, read: bool) -> Result<(), BusError> {
+        b.write8(edma::SERQ, 59)?;
+        command(b, c, read)
     }
     #[test]
     fn cmd8_payload_tcd_and_semaphores() {
@@ -643,5 +833,144 @@ mod tests {
         assert!(
             matches!(b.completion_events()[0], CompletionEvent::Dma59 { completion, .. } if !completion.done)
         );
+    }
+
+    #[test]
+    fn device_cerq59_disables_cmd18_dma_but_cerq58_does_not() {
+        let mut b = board(CompletionPolicy::Device);
+        let d = RAM + 0x200;
+        tcd(&mut b, 0, d, 4, 1);
+        b.write8(edma::SERQ, 59).unwrap();
+        b.write8(edma::CERQ, 59).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert_eq!(b.read32(d).unwrap(), 0);
+        assert!(
+            !b.completion_events()
+                .iter()
+                .any(|e| matches!(e, CompletionEvent::Dma59 { .. }))
+        );
+
+        b.write8(edma::SERQ, 59).unwrap();
+        b.write8(edma::CERQ, 58).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert_eq!(
+            b.read16(edma::TCD_BASE + 59 * 0x20 + edma::CSR as u32)
+                .unwrap(),
+            edma::CSR_DONE
+        );
+        assert!(
+            b.completion_events()
+                .iter()
+                .any(|e| matches!(e, CompletionEvent::Dma59 { .. }))
+        );
+    }
+
+    #[test]
+    fn device_request_bit7_is_nop() {
+        let mut b = board(CompletionPolicy::Device);
+        let d = RAM + 0x200;
+        tcd(&mut b, 0, d, 4, 1);
+        b.write8(edma::SERQ, 59).unwrap();
+        b.write8(edma::CERQ, 0x80 | 59).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert!(b.dma59_armed());
+        assert_eq!(
+            b.read16(edma::TCD_BASE + 59 * 0x20 + edma::CSR as u32)
+                .unwrap(),
+            edma::CSR_DONE
+        );
+
+        b.write8(edma::CERQ, 59).unwrap();
+        b.write8(edma::SERQ, 0x80 | 59).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert!(!b.dma59_armed());
+    }
+
+    #[test]
+    fn device_global_request_enable_and_disable_control_dma59() {
+        let mut b = board(CompletionPolicy::Device);
+        let d = RAM + 0x200;
+        tcd(&mut b, 0, d, 4, 1);
+        b.write8(edma::SERQ, 0x40).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert!(b.dma59_armed());
+        assert_eq!(
+            b.read16(edma::TCD_BASE + 59 * 0x20 + edma::CSR as u32)
+                .unwrap(),
+            edma::CSR_DONE
+        );
+
+        b.write8(edma::CERQ, 0x40).unwrap();
+        assert!(!b.dma59_armed());
+        command(&mut b, 18, true).unwrap();
+        assert_eq!(
+            b.completion_events()
+                .iter()
+                .filter(|e| matches!(e, CompletionEvent::Dma59 { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn device_major_completion_keeps_or_disables_request_from_dreq() {
+        let mut b = board(CompletionPolicy::Device);
+        let d = RAM + 0x200;
+        tcd(&mut b, 0, d, 4, 1);
+        b.write8(edma::SERQ, 59).unwrap();
+        command(&mut b, 18, true).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert!(b.dma59_armed());
+        assert_eq!(
+            b.completion_events()
+                .iter()
+                .filter(|e| matches!(e, CompletionEvent::Dma59 { .. }))
+                .count(),
+            2
+        );
+
+        let mut b = board(CompletionPolicy::Device);
+        tcd(&mut b, 0, d, 4, 1);
+        b.write16(
+            edma::TCD_BASE + 59 * 0x20 + edma::CSR as u32,
+            edma::CSR_D_REQ,
+        )
+        .unwrap();
+        b.write8(edma::SERQ, 59).unwrap();
+        command(&mut b, 18, true).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert!(!b.dma59_armed());
+        assert_eq!(
+            b.completion_events()
+                .iter()
+                .filter(|e| matches!(e, CompletionEvent::Dma59 { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn oracle_cerq59_preserves_one_shot_arm() {
+        let mut b = board(CompletionPolicy::Oracle);
+        let d = RAM + 0x200;
+        tcd(&mut b, 0, d, 4, 1);
+        b.write8(edma::SERQ, 0x40).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert!(!b.dma59_armed());
+        assert!(
+            !b.completion_events()
+                .iter()
+                .any(|e| matches!(e, CompletionEvent::Dma59 { .. }))
+        );
+
+        b.write8(edma::SERQ, 59).unwrap();
+        b.write8(edma::CERQ, 59).unwrap();
+        command(&mut b, 18, true).unwrap();
+        assert_eq!(
+            b.read16(edma::TCD_BASE + 59 * 0x20 + edma::CSR as u32)
+                .unwrap(),
+            edma::CSR_DONE
+        );
+        assert!(!b.dma59_armed());
     }
 }

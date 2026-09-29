@@ -3,14 +3,58 @@
 //! This is not a timer/INTC scheduler. A Device DMA IRQ vector/level must
 //! be provided by the host; no firmware-specific vector is assumed here.
 
-use coldfire::{Cpu, InterruptPolicy, Stop};
+use std::collections::BTreeMap;
 
-use crate::{Board, CompletionEvent, CompletionPolicy};
+use coldfire::{Bus, Cpu, InterruptPolicy, Stop};
+
+use crate::{
+    Board, CompletionEvent, CompletionPolicy, MachineState,
+    state::{MAX_MAPPED_PAGES, PAGE_SIZE},
+    time::{TimeError, TimerPolicy},
+};
+
+/// Why a checkpoint cannot be applied to a fresh native machine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StateApplyError {
+    StatusRegisterOutOfRange { value: u32 },
+    ConflictingRambarAliases { c04: u32, c05: u32 },
+    UnsupportedComponents,
+    InvalidMappedInput,
+    ForcedMmioOverlapsOwned,
+    Ram,
+}
+
+/// Why a timed step could not complete at its instruction boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimedStepError {
+    Stop(Stop),
+    DeviceTimingUnsupported,
+    TimerNotAttached,
+    VectorOutOfRange {
+        vector: u16,
+    },
+    MissingOracleHandler {
+        vector: u8,
+    },
+    InterruptFrameUnavailable {
+        vector: u8,
+    },
+    /// A preflight passed but CPU exception entry still stopped; CPU state may
+    /// have changed and callers must treat this machine as poisoned.
+    InterruptDeliveryPoisoned {
+        stop: Stop,
+    },
+}
 
 pub struct Machine {
     pub cpu: Cpu,
     pub board: Board,
+    /// Guest instructions elapsed since the imported checkpoint.
     pub clock: u64,
+    /// MOVEC selectors the native CPU does not model, retained for export.
+    pub unknown_ctlregs: BTreeMap<u32, u32>,
+    pub ff1_count: u32,
+    pub movec_count: u32,
     dma_irq: Option<(u8, u8)>,
     pending_dma_irq: bool,
     held_events: Vec<CompletionEvent>,
@@ -23,11 +67,105 @@ impl Machine {
             cpu,
             board,
             clock: 0,
+            unknown_ctlregs: BTreeMap::new(),
+            ff1_count: 0,
+            movec_count: 0,
             dma_irq: None,
             pending_dma_irq: false,
             held_events: Vec::new(),
             irqs_delivered: 0,
         }
+    }
+
+    /// Apply portable checkpoint state to a newly constructed machine.
+    ///
+    /// Component and forced-MMIO snapshots are deliberately rejected in this
+    /// stage: the board has no equivalent facade from which to restore them.
+    /// In particular, accepting timer component state would silently lose PIT
+    /// scheduling state even when a [`crate::Time`] is attached.
+    pub fn apply_state(&mut self, state: &MachineState) -> Result<(), StateApplyError> {
+        if state.regs.sr > u32::from(u16::MAX) {
+            return Err(StateApplyError::StatusRegisterOutOfRange {
+                value: state.regs.sr,
+            });
+        }
+        if !state.components.is_null()
+            && state
+                .components
+                .as_object()
+                .is_none_or(|components| !components.is_empty())
+        {
+            return Err(StateApplyError::UnsupportedComponents);
+        }
+        let c04 = state.ctlregs.get(&0xc04).copied();
+        let c05 = state.ctlregs.get(&0xc05).copied();
+        if let (Some(c04), Some(c05)) = (c04, c05)
+            && c04 != c05
+        {
+            return Err(StateApplyError::ConflictingRambarAliases { c04, c05 });
+        }
+        if state.mapped_bases.len() > MAX_MAPPED_PAGES
+            || state.mapped_bases.windows(2).any(|pair| pair[0] >= pair[1])
+            || state
+                .mapped_bases
+                .iter()
+                .any(|base| !(*base as usize).is_multiple_of(PAGE_SIZE))
+            || state.pages.len() > state.mapped_bases.len()
+            || state
+                .pages
+                .windows(2)
+                .any(|pair| pair[0].base >= pair[1].base)
+            || state.pages.iter().any(|page| {
+                !(page.base as usize).is_multiple_of(PAGE_SIZE)
+                    || page.data.len() != PAGE_SIZE
+                    || state.mapped_bases.binary_search(&page.base).is_err()
+            })
+        {
+            return Err(StateApplyError::InvalidMappedInput);
+        }
+        self.board
+            .install_forced_mmio(state.mmio_forced.clone())
+            .map_err(|_| StateApplyError::ForcedMmioOverlapsOwned)?;
+
+        // Map all bases first: absent page records mean mapped all-zero RAM.
+        for &base in &state.mapped_bases {
+            self.board
+                .map_zeroed_ram_page(base)
+                .map_err(|_| StateApplyError::Ram)?;
+        }
+        for page in &state.pages {
+            self.board
+                .import_ram_page(page.base, &page.data)
+                .map_err(|_| StateApplyError::Ram)?;
+        }
+
+        self.cpu.d = state.regs.d;
+        self.cpu.a = state.regs.a;
+        self.cpu.pc = state.regs.pc;
+        self.cpu.sr = state.regs.sr as u16;
+        self.unknown_ctlregs.clear();
+        for (&selector, &value) in &state.ctlregs {
+            match selector {
+                0x002 => self.cpu.ctrl.cacr = value,
+                0x003 => self.cpu.ctrl.asid = value,
+                0x004..=0x007 => self.cpu.ctrl.acr[(selector - 0x004) as usize] = value,
+                0x008 => self.cpu.ctrl.mmubar = value,
+                0x009 => self.cpu.ctrl.rgpiobar = value,
+                0x00c..=0x00f => self.cpu.ctrl.acr[(selector - 0x00c + 4) as usize] = value,
+                0x800 => self.cpu.other_a7 = value,
+                0x801 => self.cpu.ctrl.vbr = value,
+                // Snapshot register fields win over these Python hook keys.
+                0x80e | 0x80f => {}
+                0xc04 | 0xc05 => self.cpu.ctrl.rambar = value,
+                _ => {
+                    self.unknown_ctlregs.insert(selector, value);
+                }
+            }
+        }
+        self.ff1_count = state.ff1_count;
+        self.movec_count = state.movec_count;
+        self.clock = state.clock;
+        Ok(())
     }
 
     /// Completion events retained when the most recent step stopped.
@@ -84,6 +222,89 @@ impl Machine {
         let mut events = std::mem::take(&mut self.held_events);
         events.append(&mut new_events);
         self.clock += 1;
+        Ok(events)
+    }
+
+    /// Arm the PIT at the current boundary, execute one instruction, then
+    /// atomically offer due Oracle PIT interrupts at the new boundary.
+    /// Device timer delivery is explicitly not implemented.
+    pub fn step_timed(&mut self) -> Result<Vec<CompletionEvent>, TimedStepError> {
+        let mut time = self
+            .board
+            .take_time()
+            .ok_or(TimedStepError::TimerNotAttached)?;
+        if time.policy() == TimerPolicy::Device {
+            self.board.restore_time(time);
+            return Err(TimedStepError::DeviceTimingUnsupported);
+        }
+        // Arming must happen before the first instruction in this interval:
+        // otherwise an enabled PIT starts one instruction late.
+        let _ = time.deadline(self.clock);
+        self.board.restore_time(time);
+
+        let events = self.step().map_err(TimedStepError::Stop)?;
+        let mut time = self
+            .board
+            .take_time()
+            .ok_or(TimedStepError::TimerNotAttached)?;
+        time.seed_sr(self.cpu.sr);
+        let mut delivery_error = None;
+        let service = time.service_with(self.clock, |raw_vector, level| {
+            let vector = match u8::try_from(raw_vector) {
+                Ok(vector) => vector,
+                Err(_) => {
+                    delivery_error = Some(TimedStepError::VectorOutOfRange { vector: raw_vector });
+                    return false;
+                }
+            };
+            match self
+                .board
+                .read32(self.cpu.ctrl.vbr.wrapping_add(4 * u32::from(vector)))
+            {
+                Ok(handler) if handler != 0 && handler < 0x4800_0000 => {}
+                _ => {
+                    delivery_error = Some(TimedStepError::MissingOracleHandler { vector });
+                    return false;
+                }
+            }
+            // `Cpu::exception` sets supervisor SR first, potentially swapping
+            // A7 with OTHER_A7 when EUSP is enabled, then stores two words.
+            let stack = if self.cpu.sr & 0x2000 == 0 && self.cpu.ctrl.cacr & 0x20 != 0 {
+                self.cpu.other_a7
+            } else {
+                self.cpu.a[7]
+            };
+            let frame = (stack & !3).wrapping_sub(8);
+            if !self.board.can_write_ram_range(frame, 4)
+                || !self.board.can_write_ram_range(frame.wrapping_add(4), 4)
+            {
+                delivery_error = Some(TimedStepError::InterruptFrameUnavailable { vector });
+                return false;
+            }
+            match self.cpu.take_interrupt(
+                &mut self.board,
+                vector,
+                Some(level),
+                InterruptPolicy::Oracle,
+            ) {
+                Ok(true) => true,
+                Ok(false) => {
+                    delivery_error = Some(TimedStepError::MissingOracleHandler { vector });
+                    false
+                }
+                Err(stop) => {
+                    delivery_error = Some(TimedStepError::InterruptDeliveryPoisoned { stop });
+                    false
+                }
+            }
+        });
+        self.board.restore_time(time);
+        service.map_err(|TimeError::DeviceInterruptDeliveryUnsupported| {
+            TimedStepError::DeviceTimingUnsupported
+        })?;
+        if let Some(error) = delivery_error {
+            return Err(error);
+        }
         Ok(events)
     }
 }

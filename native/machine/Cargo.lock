@@ -57,7 +57,10 @@ version = "0.0.1"
 dependencies = [
  "coldfire",
  "emmc-card",
+ "flate2",
  "periph",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

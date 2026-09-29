@@ -186,6 +186,16 @@ Python snapshots are pickles (`emu/snapshot.py save`): `regs` (d0-7, a0-7, pc, s
   at; this is checked on the first parity run, not assumed.
 - Export writes `.mstate`; `snapconv` turns it into a `.snap`; `tools/snapeq.py py.snap native.snap`
   compares at equal clock. The native core counts `ff1`/`movec` executions so those fields match.
+- **Stage-2 checkpoint gate limitation:** `apply_state` restores registers, selector-keyed control
+  registers, mapped RAM, and raw PIT/INTC slots **only when a `Time` facade is attached**. It
+  accepts forced-MMIO as a 32-bit big-endian read overlay (but rejects a word crossing owned
+  MMIO); it still rejects nonempty `components`,
+  including PIT deadlines/pending/held state and timer metadata. MOVEC control-to-register reads
+  and writes to unknown selectors are not parity-supported by the native CPU; the bounded gate
+  refuses a reached MOVEC read. The ignored Rust test is explicitly an **unverified local-input
+  smoke test** even when its paths parse; only `uv run python tools/checkpointprep.py gate ...`
+  verifies the hardcoded source-SYX, extracted section, and loaded snapshot image before launching
+  it. A checkpoint accepted by this seam is therefore not a parity claim.
 
 ```rust
 pub struct MachineState { pub regs: CpuRegs, pub ctlregs: BTreeMap<u32,u32>, pub pages: BTreeMap<u32, Vec<u8>>,

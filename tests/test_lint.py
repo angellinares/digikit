@@ -25,6 +25,7 @@ CLEAN = [
     "tests/test_cfdb.py",
     "tests/test_cfisa.py",
     "tests/test_checkpoint_make_fast.py",
+    "tests/test_checkpointprep.py",
     "tests/test_dspboot_esdhc_wiring.py",
     "tests/test_dspi2.py",
     "tests/test_dt2_reach_running.py",
@@ -77,6 +78,7 @@ CLEAN = [
     "tests/test_sharc_transpile.py",
     "tests/test_sharc_widthaudit.py",
     "tests/test_sharcldr.py",
+    "tests/test_snapconv.py",
     "tests/test_snapread.py",
     "tests/test_ssi_coalesce.py",
     "tests/test_timebase.py",
@@ -84,6 +86,7 @@ CLEAN = [
     "tests/test_types.py",
     "tools/cf.py",
     "tools/cf_lockstep.py",
+    "tools/checkpointprep.py",
     "tools/cf_names.py",
     "tools/cfdb.py",
     "tools/cfisa/gen.py",
@@ -127,6 +130,7 @@ CLEAN = [
     "tools/sharc_widthaudit.py",
     "tools/sharcldr.py",
     "tools/snapeq.py",
+    "tools/snapconv.py",
     "tools/snapread.py",
 ]
 
