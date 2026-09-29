@@ -157,7 +157,13 @@ pub struct CfCore {
     mem: SparseMem,
 }
 
-fn regs_from_cpu(cpu: &Cpu) -> CfRegs {
+fn regs_from_cpu(cpu: &mut Cpu) -> CfRegs {
+    // coldfire's perf step 3 (cf-interp-speed.md) defers N/Z/V into
+    // `cpu.pending_nzv`; `sr` isn't guaranteed to hold them until this is
+    // called. The lockstep harness reads `sr` after every single step, so
+    // resolving here (not inside `Cpu::step`) costs it nothing but keeps
+    // the interpreter's own hot loop lazy across steps.
+    cpu.resolve_nzv();
     CfRegs {
         d: cpu.d,
         a: cpu.a,
@@ -223,8 +229,8 @@ pub unsafe extern "C" fn cf_free(p: *mut CfCore) {
 /// `p` must be live; `out` must point to a valid `CfRegs`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cf_get_regs(p: *mut CfCore, out: *mut CfRegs) {
-    let c = unsafe { &*p };
-    unsafe { *out = regs_from_cpu(&c.cpu) };
+    let c = unsafe { &mut *p };
+    unsafe { *out = regs_from_cpu(&mut c.cpu) };
 }
 
 /// # Safety

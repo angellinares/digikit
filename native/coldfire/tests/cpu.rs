@@ -86,15 +86,19 @@ fn arithmetic_and_flags() {
     let (mut cpu, mut ram) = machine(&[0x70ff, 0x5280, 0x727f, 0xd281, 0xb081]);
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0xffff_ffff);
+    cpu.resolve_nzv(); // perf step 3: N/Z/V are lazy, see cpu.rs
     assert_eq!(cpu.sr & sr::CCR, sr::N);
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0);
+    cpu.resolve_nzv();
     assert_eq!(cpu.sr & sr::CCR, sr::Z | sr::C | sr::X);
     cpu.step(&mut ram).unwrap();
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[1], 0xfe);
+    cpu.resolve_nzv();
     assert_eq!(cpu.sr & sr::CCR, 0); // X cleared by ADD without carry
     cpu.step(&mut ram).unwrap();
+    cpu.resolve_nzv();
     // 0 - 0xfe: borrow and negative; CMP leaves X alone
     assert_eq!(cpu.sr & sr::CCR, sr::N | sr::C);
     assert_eq!(cpu.icount, 5);
@@ -211,10 +215,12 @@ fn sats() {
     cpu.sr = 0; // V clear: unchanged
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0x1234_5678);
+    cpu.resolve_nzv(); // perf step 3: N/Z/V are lazy, see cpu.rs
     assert_eq!(cpu.sr & sr::CCR, 0);
     cpu.sr = sr::V; // V set, Dx positive: saturate to the largest negative
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0x8000_0000);
+    cpu.resolve_nzv();
     assert_eq!(cpu.sr & sr::CCR, sr::N);
 }
 
@@ -236,10 +242,12 @@ fn immediate_ops_on_dn() {
     assert_eq!(cpu.d[0], 0x31);
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0xffff_fff3); // 0x31 - 0x3e wraps negative
+    cpu.resolve_nzv(); // perf step 3: N/Z/V are lazy, see cpu.rs
     assert_eq!(cpu.sr & sr::CCR, sr::N | sr::C | sr::X);
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0x0000_000c); // XOR with all-ones complements
     cpu.step(&mut ram).unwrap(); // cmpi.l #-2,d0: 0xc - 0xfffffffe = 0xe
+    cpu.resolve_nzv();
     // X is unaffected by CMP (still set from the SUBI above); C is set
     // because 0xfffffffe is the larger value bit-for-bit (unsigned borrow).
     assert_eq!(cpu.sr & sr::CCR, sr::C | sr::X);
@@ -285,11 +293,13 @@ fn shifts() {
     cpu.d[0] = 0x8000_0001; // negative, lsb set
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0xc000_0000); // sign-extended
+    cpu.resolve_nzv(); // perf step 3: N/Z/V are lazy, see cpu.rs
     assert_eq!(cpu.sr & sr::CCR, sr::N | sr::C | sr::X); // bit shifted out was 1
     cpu.d[1] = 4;
     cpu.step(&mut ram).unwrap();
     // 0xc000_0000 << 4 shifts both set bits (31,30) out of a 32-bit word.
     assert_eq!(cpu.d[0], 0);
+    cpu.resolve_nzv();
     assert_eq!(cpu.sr & sr::Z, sr::Z);
 }
 
@@ -301,6 +311,7 @@ fn multiply_and_divide() {
     cpu.d[1] = 5;
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[0], 0xffff_fff6); // -10
+    cpu.resolve_nzv(); // perf step 3: N/Z/V are lazy, see cpu.rs
     assert_eq!(cpu.sr & sr::CCR, sr::N); // V,C always cleared by MULS
     cpu.d[2] = 0;
     cpu.d[3] = 7;
@@ -350,6 +361,7 @@ fn ext_swap_neg_not() {
     cpu.d[2] = 1;
     cpu.step(&mut ram).unwrap();
     assert_eq!(cpu.d[2], 0xffff_ffff);
+    cpu.resolve_nzv(); // perf step 3: N/Z/V are lazy, see cpu.rs
     assert_eq!(cpu.sr & sr::CCR, sr::N | sr::C | sr::X);
     cpu.d[3] = 0x0000_00ff;
     cpu.step(&mut ram).unwrap();

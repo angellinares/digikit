@@ -111,6 +111,135 @@ pub enum Stop {
     Halted,
 }
 
+/// Pre-decode cache (`cf-interp-speed.md` step 1): decode each instruction
+/// once, keyed by PC, so a hot loop's `step` skips both the bus fetch and
+/// `decode()` on every later pass. 4 KiB pages (`DC_PAGE_SIZE`), one
+/// `Option<Insn>` slot per word-aligned offset -- `Insn` is `Copy`
+/// (~doz. bytes), so a page is a plain array and a hit is a shift plus an
+/// array index, not a hash lookup.
+///
+/// Invalidation: every one of `Cpu`'s own memory-write call sites (there
+/// are exactly four: `write_at`'s memory arm, `push32`, `exception`'s frame
+/// push, and `MovemStore`) evicts the whole 4 KiB page a write landed in
+/// before issuing the write. Coarse -- a write anywhere in the page evicts
+/// every cached instruction in it, not just the touched word -- but exact
+/// per-instruction tracking would need a second index from byte address to
+/// the instructions overlapping it, for no benefit here (self-modifying
+/// code is rare and this only costs a re-decode, never a wrong answer).
+/// Known gap: this only sees writes `Cpu::step` itself issues through
+/// `Bus`. A write from outside `step` (DMA, a peer device mutating RAM
+/// behind the `Bus` impl) is invisible here; no `Bus` impl in this crate
+/// does that today (`cfrealmix`'s `SparseBus`, `cfabi`'s `Bus`), so it is
+/// not exercised by this crate's own gates, but a future one that models a
+/// live DMA writer into code space would need to invalidate on `Cpu`'s
+/// behalf.
+const DC_PAGE_BITS: u32 = 12;
+const DC_PAGE_SIZE: u32 = 1 << DC_PAGE_BITS;
+const DC_PAGE_MASK: u32 = DC_PAGE_SIZE - 1;
+const DC_SLOTS: usize = (DC_PAGE_SIZE / 2) as usize;
+
+#[derive(Clone, Debug, PartialEq)]
+struct DecodePage {
+    slots: Box<[Option<Insn>]>,
+}
+
+impl DecodePage {
+    fn new() -> DecodePage {
+        DecodePage {
+            slots: vec![None; DC_SLOTS].into_boxed_slice(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct DecodeCache {
+    pages: std::collections::HashMap<u32, DecodePage>,
+}
+
+impl DecodeCache {
+    #[inline]
+    fn get(&self, pc: u32) -> Option<Insn> {
+        let page = pc & !DC_PAGE_MASK;
+        let slot = ((pc & DC_PAGE_MASK) >> 1) as usize;
+        self.pages.get(&page).and_then(|p| p.slots[slot])
+    }
+
+    #[inline]
+    fn insert(&mut self, pc: u32, insn: Insn) {
+        let page = pc & !DC_PAGE_MASK;
+        let slot = ((pc & DC_PAGE_MASK) >> 1) as usize;
+        self.pages.entry(page).or_insert_with(DecodePage::new).slots[slot] = Some(insn);
+    }
+
+    /// Evict every decoded instruction in the 4 KiB page(s) a write of
+    /// `len` bytes (1-8: a byte/word/long EA write or an 8-byte exception
+    /// frame push) at `addr` touched -- at most 2 pages, when the write
+    /// straddles a page boundary.
+    #[inline]
+    fn invalidate(&mut self, addr: u32, len: u32) {
+        if self.pages.is_empty() {
+            return;
+        }
+        let last = addr.wrapping_add(len - 1);
+        let p0 = addr & !DC_PAGE_MASK;
+        let p1 = last & !DC_PAGE_MASK;
+        self.pages.remove(&p0);
+        if p1 != p0 {
+            self.pages.remove(&p1);
+        }
+    }
+}
+
+/// Perf step 3 (cf-interp-speed.md): lazy N/Z/V. C and X stay eager --
+/// they're always written immediately by whichever ALU/shift op sets them
+/// -- because ADDX/SUBX/NEGX read X as a carry-in *during their own
+/// execution* (not just as a flag), and CFPRM's ADDX/SUBX Z rule ("clear Z
+/// only if the result is nonzero, otherwise leave it as it was") makes Z a
+/// hidden reader of the *previous* instruction's flags. Keeping C/X (and,
+/// for ADDX/SUBX, N/Z/V too -- see `flags_addx`) always-accurate sidesteps
+/// having to reconstruct a flag from a discarded, never-applied pending
+/// computation. N/Z/V, by contrast, are always fully recomputed from this
+/// instruction's own operands in every producer below (never preserved
+/// from old CCR bits), so deferring them is safe: a later producer simply
+/// overwrites `pending_nzv` and the never-read old computation is dropped,
+/// exactly like eager execution would have discarded its unread result.
+///
+/// Any code that reads N/Z/V (`cond`, MOVE from SR/CCR, SATS's V test,
+/// exception entry's frame push) or that only partially overwrites them
+/// while preserving the rest (BTST/BCHG/BCLR/BSET's Z-only write) calls
+/// `resolve_nzv` first. Any code that fully overwrites N/Z/V on its own
+/// (MOVE to CCR, `set_sr` and everything that goes through it, the MUL/DIV
+/// overflow cases) clears `pending_nzv` instead of resolving it, since its
+/// own write already makes `sr` authoritative and a stale pending
+/// computation must not be allowed to land on top of it later.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PendingNzv {
+    /// `sr`'s N/Z/V bits are already authoritative; nothing to do.
+    None,
+    /// `set_nz`: N/Z from `v` (masked/signed per `size`); V is always 0.
+    Nz { v: u32, size: Size },
+    /// `flags_add`: N/Z from `r`; V from the ADD overflow test. `src`/
+    /// `dst`/`r` are already masked to `size`.
+    Add {
+        src: u32,
+        dst: u32,
+        r: u32,
+        size: Size,
+    },
+    /// `flags_sub`: N/Z from `r`; V from the SUB overflow test. Same
+    /// pre-masking as `Add`.
+    Sub {
+        src: u32,
+        dst: u32,
+        r: u32,
+        size: Size,
+    },
+    /// `flags_shift`: N/Z from `r` (not pre-masked: masked at resolve
+    /// time, matching the original `flags_shift`); V is `v`, precomputed
+    /// by the shift loop itself.
+    Shift { v: bool, r: u32, size: Size },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cpu {
     pub d: [u32; 8],
@@ -136,6 +265,20 @@ pub struct Cpu {
     /// The form `step` could not execute, if its last call returned
     /// `Err(Stop::Unimplemented(_))`; cleared at the start of each `step`.
     pub last_unimplemented: Option<Form>,
+    /// Perf step 1's pre-decode cache; see `DecodeCache`'s doc comment. Not
+    /// architectural state -- reset (`Cpu::new`/`reset`) always starts it
+    /// empty -- but included in the derived `PartialEq`/`Clone` like any
+    /// other field (no caller compares/clones a `Cpu` mid-run today; if one
+    /// starts to, an equality check that looks past this field would need
+    /// a manual `impl PartialEq` instead of the derive).
+    decode_cache: DecodeCache,
+    /// Perf step 3's deferred N/Z/V; see `PendingNzv`'s doc comment. Not
+    /// architectural state, same reasoning as `decode_cache`: always
+    /// `PendingNzv::None` immediately after `resolve_nzv`, and any code
+    /// that reads `sr`'s N/Z/V bits calls it first, so `sr` and
+    /// `pending_nzv` together always mean the same machine state a fully
+    /// eager `Cpu` would be in -- `sr` alone just may not show it yet.
+    pending_nzv: PendingNzv,
 }
 
 /// A fault raised while executing: the vector and the PC to stack
@@ -179,6 +322,8 @@ impl Cpu {
             icount: 0,
             last_exception: None,
             last_unimplemented: None,
+            decode_cache: DecodeCache::default(),
+            pending_nzv: PendingNzv::None,
         }
     }
 
@@ -209,12 +354,19 @@ impl Cpu {
             core::mem::swap(&mut self.a[7], &mut self.other_a7);
         }
         self.sr = v;
+        // `v` fully specifies every CCR bit (it's a whole new SR, from
+        // MOVE to SR, RTE's popped frame, or `exception`'s own already-
+        // resolved `old`); a pending N/Z/V computation from before this
+        // write must not be allowed to land on top of it later.
+        self.pending_nzv = PendingNzv::None;
     }
 
     /// Exception entry (CFPRM p.286-287 11.1.2): a two-longword frame on the
     /// supervisor stack, format 4-7 recording A7[1:0], then PC from VBR.
     fn exception(&mut self, bus: &mut impl Bus, vec: u8, pc: u32) -> Result<(), Stop> {
         self.last_exception = Some(vec);
+        self.resolve_nzv(); // `old` below is pushed to the stack, so it
+        // needs sr's real, current N/Z/V, not a stale value.
         let old = self.sr;
         self.set_sr((old | sr::S) & !(sr::T | sr::M));
         let sp = self.a[7];
@@ -222,6 +374,7 @@ impl Cpu {
         let sp = (sp & !3).wrapping_sub(8);
         self.a[7] = sp;
         let fv = format << 28 | (vec as u32) << 18 | old as u32;
+        self.decode_cache.invalidate(sp, 8);
         let r = bus
             .write32(sp, fv)
             .and_then(|_| bus.write32(sp.wrapping_add(4), pc))
@@ -265,22 +418,34 @@ impl Cpu {
             return Err(Stop::Halted);
         }
         let pc = self.pc;
-        let insn = match self.fetch(bus) {
-            Ok(Some(i)) => i,
-            Ok(None) => {
-                // line A (0xAxxx) and line F (0xFxxx) have their own vectors
-                let w0 = bus.fetch16(pc).unwrap_or(0);
-                let vec = match w0 >> 12 {
-                    0xa => vector::LINE_A,
-                    0xf => vector::LINE_F,
-                    _ => vector::ILLEGAL,
-                };
-                self.icount += 1;
-                return self.exception(bus, vec, pc);
-            }
-            Err(_) => {
-                self.icount += 1;
-                return self.exception(bus, vector::ACCESS_ERROR, pc);
+        // Pre-decode cache: a hit needs no bus access at all (the cached
+        // record was produced by exactly this fetch+decode on a past miss,
+        // and every write this core issues evicts the page it lands in --
+        // see `DecodeCache`'s doc comment), so it skips straight to the
+        // privilege/unit checks below.
+        let insn = if let Some(i) = self.decode_cache.get(pc) {
+            i
+        } else {
+            match self.fetch(bus) {
+                Ok(Some(i)) => {
+                    self.decode_cache.insert(pc, i);
+                    i
+                }
+                Ok(None) => {
+                    // line A (0xAxxx) and line F (0xFxxx) have their own vectors
+                    let w0 = bus.fetch16(pc).unwrap_or(0);
+                    let vec = match w0 >> 12 {
+                        0xa => vector::LINE_A,
+                        0xf => vector::LINE_F,
+                        _ => vector::ILLEGAL,
+                    };
+                    self.icount += 1;
+                    return self.exception(bus, vec, pc);
+                }
+                Err(_) => {
+                    self.icount += 1;
+                    return self.exception(bus, vector::ACCESS_ERROR, pc);
+                }
             }
         };
         if insn.privileged() && self.sr & sr::S == 0 {
@@ -416,11 +581,19 @@ impl Cpu {
                 };
             }
             Ea::An(r) => self.a[r as usize] = v,
-            _ => match size {
-                Size::B => bus.write8(addr, v as u8)?,
-                Size::W => bus.write16(addr, v as u16)?,
-                _ => bus.write32(addr, v)?,
-            },
+            _ => {
+                let len = match size {
+                    Size::B => 1,
+                    Size::W => 2,
+                    _ => 4,
+                };
+                self.decode_cache.invalidate(addr, len);
+                match size {
+                    Size::B => bus.write8(addr, v as u8)?,
+                    Size::W => bus.write16(addr, v as u16)?,
+                    _ => bus.write32(addr, v)?,
+                }
+            }
         }
         Ok(())
     }
@@ -435,6 +608,7 @@ impl Cpu {
 
     fn push32(&mut self, bus: &mut impl Bus, v: u32) -> Result<(), Exc> {
         self.a[7] = self.a[7].wrapping_sub(4);
+        self.decode_cache.invalidate(self.a[7], 4);
         bus.write32(self.a[7], v)?;
         Ok(())
     }
@@ -447,64 +621,130 @@ impl Cpu {
 
     // -- condition codes (CFPRM chapter 4 condition code tables) -------------
 
-    fn set_nz(&mut self, v: u32, size: Size) {
-        let (m, s) = mask_sign(size);
-        let mut ccr = self.sr & !(sr::N | sr::Z | sr::V | sr::C);
-        if v & m == 0 {
-            ccr |= sr::Z;
+    /// Apply whatever's in `pending_nzv` to `sr` and clear it. A no-op
+    /// (one comparison, no write) when nothing is pending -- the common
+    /// case for straight-line code between branches/CCR reads. Every
+    /// producer below is written so its N/Z/V computation depends only on
+    /// its own operands, never on `sr`'s current N/Z/V, so resolving late
+    /// (or not at all, if a later producer overwrites `pending_nzv`
+    /// unread) gives exactly the same bits eager evaluation would have
+    /// written at the time -- see `PendingNzv`'s doc comment for the two
+    /// producers (`flags_addx`/`flags_subx`) that don't fit that pattern
+    /// and stay fully eager instead.
+    ///
+    /// Public because `sr` is a public field and laziness is meant to
+    /// persist *across* `step` calls (that's the whole benefit, in a hot
+    /// loop): `step` does not call this itself, so any caller that reads
+    /// `sr` between `step` calls -- not just this crate's own internal
+    /// consumers, which all call it already -- must call it first to see
+    /// N/Z/V that `step`'s own doc-visible behaviour has actually settled
+    /// on, not a stale value left over from an earlier instruction.
+    pub fn resolve_nzv(&mut self) {
+        let p = self.pending_nzv;
+        if p == PendingNzv::None {
+            return;
         }
-        if v & s != 0 {
-            ccr |= sr::N;
+        self.pending_nzv = PendingNzv::None;
+        let mut ccr = self.sr & !(sr::N | sr::Z | sr::V);
+        match p {
+            PendingNzv::None => unreachable!(),
+            PendingNzv::Nz { v, size } => {
+                let (m, s) = mask_sign(size);
+                if v & m == 0 {
+                    ccr |= sr::Z;
+                }
+                if v & s != 0 {
+                    ccr |= sr::N;
+                }
+            }
+            PendingNzv::Add { src, dst, r, size } => {
+                let (_, s) = mask_sign(size);
+                if r == 0 {
+                    ccr |= sr::Z;
+                }
+                if r & s != 0 {
+                    ccr |= sr::N;
+                }
+                if (src ^ r) & (dst ^ r) & s != 0 {
+                    ccr |= sr::V;
+                }
+            }
+            PendingNzv::Sub { src, dst, r, size } => {
+                let (_, s) = mask_sign(size);
+                if r == 0 {
+                    ccr |= sr::Z;
+                }
+                if r & s != 0 {
+                    ccr |= sr::N;
+                }
+                if (src ^ dst) & (r ^ dst) & s != 0 {
+                    ccr |= sr::V;
+                }
+            }
+            PendingNzv::Shift { v, r, size } => {
+                let (m, s) = mask_sign(size);
+                if r & m == 0 {
+                    ccr |= sr::Z;
+                }
+                if r & s != 0 {
+                    ccr |= sr::N;
+                }
+                if v {
+                    ccr |= sr::V;
+                }
+            }
         }
         self.sr = ccr;
     }
 
-    /// Flags of dst + src = r (ADD, ADDQ): X and C are the carry.
+    fn set_nz(&mut self, v: u32, size: Size) {
+        self.sr &= !sr::C;
+        self.pending_nzv = PendingNzv::Nz { v, size };
+    }
+
+    /// Flags of dst + src = r (ADD, ADDQ): X and C are the carry, computed
+    /// (and written) immediately; N/Z/V are deferred (`PendingNzv::Add`).
     fn flags_add(&mut self, src: u32, dst: u32, r: u32, size: Size) {
         let (m, s) = mask_sign(size);
         let (src, dst, r) = (src & m, dst & m, r & m);
-        let mut ccr = self.sr & !sr::CCR;
-        if r == 0 {
-            ccr |= sr::Z;
-        }
-        if r & s != 0 {
-            ccr |= sr::N;
-        }
-        if (src ^ r) & (dst ^ r) & s != 0 {
-            ccr |= sr::V;
-        }
         if (src & dst | !r & (src | dst)) & s != 0 {
-            ccr |= sr::C | sr::X;
+            self.sr |= sr::C | sr::X;
+        } else {
+            self.sr &= !(sr::C | sr::X);
         }
-        self.sr = ccr;
+        self.pending_nzv = PendingNzv::Add { src, dst, r, size };
     }
 
-    /// Flags of dst - src = r. `cmp` leaves X unchanged (CMP, CMPA).
+    /// Flags of dst - src = r. `cmp` leaves X unchanged (CMP, CMPA); C is
+    /// always freshly computed either way and written immediately, same as
+    /// `flags_add`. N/Z/V are deferred (`PendingNzv::Sub`).
     fn flags_sub(&mut self, src: u32, dst: u32, r: u32, size: Size, cmp: bool) {
         let (m, s) = mask_sign(size);
         let (src, dst, r) = (src & m, dst & m, r & m);
-        let keep = if cmp { sr::X } else { 0 };
-        let mut ccr = self.sr & (!sr::CCR | keep);
-        if r == 0 {
-            ccr |= sr::Z;
+        let c = (src & !dst | r & !dst | src & r) & s != 0;
+        if cmp {
+            if c {
+                self.sr |= sr::C;
+            } else {
+                self.sr &= !sr::C;
+            }
+        } else if c {
+            self.sr |= sr::C | sr::X;
+        } else {
+            self.sr &= !(sr::C | sr::X);
         }
-        if r & s != 0 {
-            ccr |= sr::N;
-        }
-        if (src ^ dst) & (r ^ dst) & s != 0 {
-            ccr |= sr::V;
-        }
-        if (src & !dst | r & !dst | src & r) & s != 0 {
-            ccr |= if cmp { sr::C } else { sr::C | sr::X };
-        }
-        self.sr = ccr;
+        self.pending_nzv = PendingNzv::Sub { src, dst, r, size };
     }
 
     /// Flags of dst + src + X_in = r (ADDX, CFPRM p.75): Z is cleared if `r`
     /// is nonzero, otherwise left unchanged, so a chain of ADDX only ever
     /// clears Z (the last one tests whether the whole chain summed to
     /// zero); X mirrors C. `src` already includes X_in (the caller adds it).
+    /// Unlike the other flags_* functions, this stays fully eager: its own
+    /// Z bit depends on `sr`'s *current* Z (the preserve rule above), so it
+    /// resolves any pending N/Z/V first rather than deferring its own.
     fn flags_addx(&mut self, src: u32, dst: u32, r: u32, size: Size) {
+        self.resolve_nzv();
         let (m, s) = mask_sign(size);
         let (src, dst, r) = (src & m, dst & m, r & m);
         let mut ccr = self.sr & !(sr::N | sr::V | sr::C | sr::X);
@@ -524,8 +764,10 @@ impl Cpu {
     }
 
     /// Flags of dst - src - X_in = r (SUBX/NEGX, CFPRM p.127,145): same Z
-    /// rule as `flags_addx`; `src` already includes X_in.
+    /// rule (and same "stays eager" reasoning) as `flags_addx`; `src`
+    /// already includes X_in.
     fn flags_subx(&mut self, src: u32, dst: u32, r: u32, size: Size) {
+        self.resolve_nzv();
         let (m, s) = mask_sign(size);
         let (src, dst, r) = (src & m, dst & m, r & m);
         let mut ccr = self.sr & !(sr::N | sr::V | sr::C | sr::X);
@@ -546,27 +788,21 @@ impl Cpu {
 
     /// Shift result flags (CFPRM p.79-80 ASx, p.109-110 LSx): N/Z from the
     /// result; C and X take the last bit shifted out, except that a count of
-    /// 0 clears C but leaves X unaffected; V is set only by ASL, if the msb
-    /// changed value at any point during the shift.
+    /// 0 clears C but leaves X unaffected (already eager/accurate, so
+    /// leaving it alone is correct with no resolve); V is set only by ASL,
+    /// if the msb changed value at any point during the shift. C/X are
+    /// written immediately; N/Z/V are deferred (`PendingNzv::Shift`).
     fn flags_shift(&mut self, count: u32, last_out: bool, v: bool, r: u32, size: Size) {
-        let (m, s) = mask_sign(size);
-        let mut ccr = self.sr & !(sr::N | sr::Z | sr::V | sr::C);
-        if r & m == 0 {
-            ccr |= sr::Z;
-        }
-        if r & s != 0 {
-            ccr |= sr::N;
-        }
-        if v {
-            ccr |= sr::V;
-        }
         if count != 0 {
-            ccr &= !sr::X;
             if last_out {
-                ccr |= sr::C | sr::X;
+                self.sr |= sr::C | sr::X;
+            } else {
+                self.sr &= !(sr::C | sr::X);
             }
+        } else {
+            self.sr &= !sr::C;
         }
-        self.sr = ccr;
+        self.pending_nzv = PendingNzv::Shift { v, r, size };
     }
 
     /// Shift `v` (size bits) by `count` one bit at a time (CFPRM p.79-80,
@@ -1034,7 +1270,8 @@ impl Cpu {
     }
 
     /// Bcc/Scc condition (CFPRM p.82 Bcc condition table).
-    fn cond(&self, c: u8) -> bool {
+    fn cond(&mut self, c: u8) -> bool {
+        self.resolve_nzv();
         let f = |b: u16| self.sr & b != 0;
         let (n, z, v, cy) = (f(sr::N), f(sr::Z), f(sr::V), f(sr::C));
         match c {
@@ -1290,6 +1527,11 @@ impl Cpu {
                     },
                 };
                 let mask = 1u32 << bit;
+                // Preserves N/V (and C/X); N/V must be resolved first, or
+                // this write would freeze whatever was pending in place
+                // and a later `resolve_nzv` would clobber this Z with a
+                // stale recomputation.
+                self.resolve_nzv();
                 self.sr = if old & mask == 0 {
                     self.sr | sr::Z
                 } else {
@@ -1307,6 +1549,7 @@ impl Cpu {
 
             // -- moves and register ops (CFPRM p.245-248,118-119,126-129,103,146) --
             Form::MoveFromSr => {
+                self.resolve_nzv();
                 self.write(bus, &ea(1), size, self.sr as u32).map_err(Ok)?;
             }
             Form::MoveToSr => {
@@ -1314,12 +1557,16 @@ impl Cpu {
                 self.set_sr(v as u16);
             }
             Form::MoveFromCcr => {
+                self.resolve_nzv();
                 self.write(bus, &ea(1), size, (self.sr & sr::CCR) as u32)
                     .map_err(Ok)?;
             }
             Form::MoveToCcr => {
                 let v = self.read(bus, &ea(0), size).map_err(Ok)?;
+                // Fully overwrites every CCR bit from `v`; no dependency on
+                // (and so no need to resolve) whatever was pending.
                 self.sr = (self.sr & !sr::CCR) | (v as u16 & sr::CCR);
+                self.pending_nzv = PendingNzv::None;
             }
             Form::MoveToUsp => {
                 let Ea::An(r) = ea(0) else { unreachable!() };
@@ -1382,6 +1629,7 @@ impl Cpu {
                 // are (re)computed from Dx either way ("condition codes are
                 // set according to the result").
                 let Ea::Dn(r) = ea(0) else { unreachable!() };
+                self.resolve_nzv();
                 if self.sr & sr::V != 0 {
                     let d = self.d[r as usize];
                     self.d[r as usize] = if d & 0x8000_0000 == 0 {
@@ -1441,6 +1689,7 @@ impl Cpu {
                     } else {
                         self.a[(reg - 8) as usize]
                     };
+                    self.decode_cache.invalidate(addr, 4);
                     bus.write32(addr, v).map_err(|e| Ok(e.into()))?;
                     k += 1;
                 }
@@ -1630,7 +1879,11 @@ impl Cpu {
                 let d = self.d[r as usize];
                 let q = d / s;
                 if q > 0xffff {
+                    // Fully overwrites N/Z/C (to 0) and sets V; no
+                    // dependency on old N/Z/C, so no resolve needed first,
+                    // but this makes sr authoritative again either way.
                     self.sr = (self.sr & !(sr::N | sr::Z | sr::C)) | sr::V;
+                    self.pending_nzv = PendingNzv::None;
                 } else {
                     let rem = d % s;
                     self.d[r as usize] = (rem << 16) | q;
@@ -1650,7 +1903,11 @@ impl Cpu {
                 let s32 = s as i32;
                 let q = d / s32;
                 if !(-32768..=32767).contains(&q) {
+                    // Fully overwrites N/Z/C (to 0) and sets V; no
+                    // dependency on old N/Z/C, so no resolve needed first,
+                    // but this makes sr authoritative again either way.
                     self.sr = (self.sr & !(sr::N | sr::Z | sr::C)) | sr::V;
+                    self.pending_nzv = PendingNzv::None;
                 } else {
                     let rem = d % s32;
                     self.d[r as usize] = ((rem as u32) << 16) | (q as u16 as u32);
@@ -1681,7 +1938,11 @@ impl Cpu {
                 }
                 let d = self.d[r as usize] as i32;
                 if d == i32::MIN && s == -1 {
+                    // Fully overwrites N/Z/C (to 0) and sets V; no
+                    // dependency on old N/Z/C, so no resolve needed first,
+                    // but this makes sr authoritative again either way.
                     self.sr = (self.sr & !(sr::N | sr::Z | sr::C)) | sr::V;
+                    self.pending_nzv = PendingNzv::None;
                 } else {
                     let q = d / s;
                     self.d[r as usize] = q as u32;
@@ -1721,7 +1982,11 @@ impl Cpu {
                 }
                 let d = self.d[q as usize] as i32;
                 if d == i32::MIN && s == -1 {
+                    // Fully overwrites N/Z/C (to 0) and sets V; no
+                    // dependency on old N/Z/C, so no resolve needed first,
+                    // but this makes sr authoritative again either way.
                     self.sr = (self.sr & !(sr::N | sr::Z | sr::C)) | sr::V;
+                    self.pending_nzv = PendingNzv::None;
                 } else {
                     let (quot, rem) = (d / s, d % s);
                     self.d[w as usize] = rem as u32;

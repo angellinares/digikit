@@ -3,10 +3,11 @@
 //! machine state (registers + every mapped RAM/flash page) exported by
 //! `scratchpad/export_snap.py` from an `emu.snapshot` capture, and runs
 //! `Cpu::step` over it with a stub bus: RAM/flash pages come from the dump
-//! (a `HashMap<u32, Box<page>>` at the snapshot's own 1 MiB page
-//! granularity, `tools/snapread.py`'s `PAGE`); any address outside those
-//! pages is peripheral/MMIO space and is answered with a constant 0 on
-//! reads and silently accepted on writes (no recorded-MMIO-trace replay --
+//! (a flat page-pointer table indexed by `addr >> 20`, at the snapshot's
+//! own 1 MiB page granularity, `tools/snapread.py`'s `PAGE`); any address
+//! outside those pages is peripheral/MMIO space and is answered with a
+//! constant 0 on reads and silently accepted on writes (no recorded-MMIO-
+//! trace replay --
 //! wiring `native/periph`'s trace reader in needs clock/SR synchronization
 //! this bench doesn't attempt; see the handback). Interrupts are not
 //! delivered (nothing raises one from outside `Cpu::step`).
@@ -24,11 +25,23 @@
 //! headline instructions/s number, which always comes from the plain pass.
 
 use coldfire::{Bus, BusError, Cpu, Stop, decode};
-use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
 const PAGE_SIZE: usize = 0x0010_0000; // matches tools/snapread.py's PAGE
+const PAGE_SHIFT: u32 = 20; // log2(PAGE_SIZE)
 const PAGE_MASK: u32 = !(PAGE_SIZE as u32 - 1);
+/// Perf step 2 (cf-interp-speed.md): `pages[addr >> PAGE_SHIFT]` covers the
+/// full 32-bit address space at 1 MiB granularity, so a mapped RAM/flash
+/// access is a shift + array index, never a hash. `None` means unmapped/
+/// peripheral space, the only case that reaches the MMIO stub below.
+const PAGE_TABLE_LEN: usize = 1 << (32 - PAGE_SHIFT);
+
+#[inline]
+fn page_index(addr: u32) -> usize {
+    (addr >> PAGE_SHIFT) as usize
+}
 
 /// bra.b -2 (CFPRM p.81-82): branches to its own address, the firmware's
 /// idle spin. Confirmed, not just inferred from pc==pc_before: see
@@ -36,7 +49,7 @@ const PAGE_MASK: u32 = !(PAGE_SIZE as u32 - 1);
 const BRA_SELF: u16 = 0x60fe;
 
 struct SparseBus {
-    pages: HashMap<u32, Box<[u8; PAGE_SIZE]>>,
+    pages: Vec<Option<Box<[u8; PAGE_SIZE]>>>,
     mmio_reads: u64,
     mmio_writes: u64,
     // --profile only
@@ -47,7 +60,7 @@ struct SparseBus {
 }
 
 impl SparseBus {
-    fn new(pages: HashMap<u32, Box<[u8; PAGE_SIZE]>>, profiling: bool) -> SparseBus {
+    fn new(pages: Vec<Option<Box<[u8; PAGE_SIZE]>>>, profiling: bool) -> SparseBus {
         SparseBus {
             pages,
             mmio_reads: 0,
@@ -60,7 +73,7 @@ impl SparseBus {
     }
 
     fn page_present(&self, addr: u32) -> bool {
-        self.pages.contains_key(&(addr & PAGE_MASK))
+        self.pages[page_index(addr)].is_some()
     }
 
     /// `n` bytes at `addr`, only when they fit in one dump page (they always
@@ -71,7 +84,9 @@ impl SparseBus {
         if off + n > PAGE_SIZE {
             return None;
         }
-        self.pages.get(&base).map(|p| &p[off..off + n])
+        self.pages[page_index(addr)]
+            .as_deref()
+            .map(|p| &p[off..off + n])
     }
 
     fn slice_mut(&mut self, addr: u32, n: usize) -> Option<&mut [u8]> {
@@ -80,7 +95,9 @@ impl SparseBus {
         if off + n > PAGE_SIZE {
             return None;
         }
-        self.pages.get_mut(&base).map(|p| &mut p[off..off + n])
+        self.pages[page_index(addr)]
+            .as_deref_mut()
+            .map(|p| &mut p[off..off + n])
     }
 }
 
@@ -163,7 +180,7 @@ impl Bus for SparseBus {
     }
 }
 
-fn load_dump(path: &str) -> (Cpu, HashMap<u32, Box<[u8; PAGE_SIZE]>>) {
+fn load_dump(path: &str) -> (Cpu, Vec<Option<Box<[u8; PAGE_SIZE]>>>) {
     let raw = std::fs::read(path).expect("read dump");
     assert_eq!(&raw[0..8], b"CFDUMP1\0", "bad magic in {path}");
     let mut off = 8usize;
@@ -183,14 +200,15 @@ fn load_dump(path: &str) -> (Cpu, HashMap<u32, Box<[u8; PAGE_SIZE]>>) {
     off += 4;
     let npages = u32le(off);
     off += 4;
-    let mut pages = HashMap::with_capacity(npages as usize);
+    let mut pages: Vec<Option<Box<[u8; PAGE_SIZE]>>> = vec![None; PAGE_TABLE_LEN];
     for _ in 0..npages {
         let base = u32le(off);
         off += 4;
         let mut page = Box::new([0u8; PAGE_SIZE]);
         page.copy_from_slice(&raw[off..off + PAGE_SIZE]);
         off += PAGE_SIZE;
-        pages.insert(base, page);
+        assert_eq!(base & !PAGE_MASK, 0, "dump page base not page-aligned");
+        pages[page_index(base)] = Some(page);
     }
     (cpu, pages)
 }
@@ -205,6 +223,46 @@ struct RunResult {
     mmio_writes: u64,
     bus_ns: u64,
     sample: Vec<(u32, [u16; 3])>,
+    /// Correctness gate for perf changes to this crate: a hash of the full
+    /// final state (every register incl. EMAC/ctrl, plus every mapped
+    /// page's bytes, in address order). Must be byte-identical to the
+    /// pre-change baseline.
+    state_hash: u64,
+}
+
+fn state_hash(cpu: &Cpu, pages: &[Option<Box<[u8; PAGE_SIZE]>>]) -> u64 {
+    let mut h = DefaultHasher::new();
+    cpu.d.hash(&mut h);
+    cpu.a.hash(&mut h);
+    cpu.other_a7.hash(&mut h);
+    cpu.pc.hash(&mut h);
+    cpu.sr.hash(&mut h);
+    cpu.icount.hash(&mut h);
+    cpu.ctrl.vbr.hash(&mut h);
+    cpu.ctrl.cacr.hash(&mut h);
+    cpu.ctrl.asid.hash(&mut h);
+    cpu.ctrl.acr.hash(&mut h);
+    cpu.ctrl.mmubar.hash(&mut h);
+    cpu.ctrl.rgpiobar.hash(&mut h);
+    cpu.ctrl.rambar.hash(&mut h);
+    cpu.emac.macsr.hash(&mut h);
+    cpu.emac.acc.hash(&mut h);
+    cpu.emac.accext01.hash(&mut h);
+    cpu.emac.accext23.hash(&mut h);
+    cpu.emac.mask.hash(&mut h);
+    // Index order is address order (unlike the old HashMap's), so this is
+    // already deterministic without a separate sort. Hash the recovered
+    // base address, not the bare index, so this matches the pre-step-2
+    // hash bit for bit (the actual gate: the state is unchanged, not just
+    // "a" hash of it).
+    for (idx, page) in pages.iter().enumerate() {
+        if let Some(p) = page {
+            let base = (idx as u32) << PAGE_SHIFT;
+            base.hash(&mut h);
+            p.hash(&mut h);
+        }
+    }
+    h.finish()
 }
 
 fn run(mut cpu: Cpu, mut bus: SparseBus, limit: u64, profiling: bool) -> RunResult {
@@ -248,6 +306,12 @@ fn run(mut cpu: Cpu, mut bus: SparseBus, limit: u64, profiling: bool) -> RunResu
         }
     }
     let elapsed = start.elapsed();
+    // coldfire's perf step 3 defers N/Z/V (cpu.pending_nzv); resolve it
+    // before hashing so the gate sees the true final architectural state,
+    // not whatever's left in `sr` from before the last flags-setting
+    // instruction. After `elapsed` is captured, so it isn't timed.
+    cpu.resolve_nzv();
+    let state_hash = state_hash(&cpu, &bus.pages);
     RunResult {
         icount_start,
         icount_end: cpu.icount,
@@ -258,6 +322,7 @@ fn run(mut cpu: Cpu, mut bus: SparseBus, limit: u64, profiling: bool) -> RunResu
         mmio_writes: bus.mmio_writes,
         bus_ns: bus.bus_ns,
         sample: bus.sample,
+        state_hash,
     }
 }
 
@@ -276,12 +341,10 @@ fn main() {
         .unwrap_or(20_000_000);
 
     let (cpu, pages) = load_dump(&dump);
+    let mapped = pages.iter().filter(|p| p.is_some()).count();
     println!(
-        "loaded {} pages, pc=0x{:08x}, sr=0x{:04x}, limit={}",
-        pages.len(),
-        cpu.pc,
-        cpu.sr,
-        limit
+        "loaded {mapped} pages, pc=0x{:08x}, sr=0x{:04x}, limit={}",
+        cpu.pc, cpu.sr, limit
     );
 
     // Headline pass: no instrumentation.
@@ -312,6 +375,7 @@ fn main() {
             "BELOW the real-time floor"
         }
     );
+    println!("final state hash: {:#018x}", r.state_hash);
 
     if !profile {
         return;
