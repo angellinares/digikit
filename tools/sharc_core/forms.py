@@ -16,12 +16,13 @@ from .forms_move import FORMS as _FORMS_MOVE
 from .forms_system import FORMS as _FORMS_SYSTEM
 from .state import (
     State,
+    _note_provisional,
     _stop,
 )
 
 
-def _merge(
-    *tables: Mapping[str, Callable[..., list[State]]],
+def _build_forms(
+    tables: tuple[Mapping[str, Callable[..., list[State]]], ...],
 ) -> dict[str, Callable[..., list[State]]]:
     merged: dict[str, Callable[..., list[State]]] = {}
     for table in tables:
@@ -33,17 +34,16 @@ def _merge(
 
 
 # Form name -> handler(state, insn, fields, name).
-FORMS = _merge(_FORMS_COMPUTE, _FORMS_MOVE, _FORMS_DAG, _FORMS_FLOW, _FORMS_SYSTEM)
+FORMS = _build_forms(
+    (_FORMS_COMPUTE, _FORMS_MOVE, _FORMS_DAG, _FORMS_FLOW, _FORMS_SYSTEM)
+)
 
 
 def _execute(state: State, insn: Instruction) -> list[State]:
     if insn.kind != "confident" or insn.length_bytes is None:
         if insn.length_bytes is None or insn.type_name not in state.provisional_forms:
             return [_stop(state, insn, "uncertain or undecodable form: " + insn.note)]
-        if insn.type_name not in state.provisional_used:
-            state.provisional_used = tuple(
-                sorted(set(state.provisional_used) | {insn.type_name})
-            )
+        _note_provisional(state, insn.type_name)
     state.at_loaded_entry = False
     f, name = insn.fields, insn.type_name
     # sharc_disasm.disassemble() only ever sets type_name to a decode-table

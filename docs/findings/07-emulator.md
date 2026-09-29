@@ -985,6 +985,11 @@ image instead of allocating per frame.
 
 ## The intro is meant to run at 15.00 fps, and the bus clock is 132 MHz **[V]**
 
+> **[C] 2026-09-29.** The rates in this section use a PIT prescaler of
+> 2^(PRE+1). The divisor is 2^PRE, so the intro runs at **30 fps**, the RTOS
+> tick is 100 Hz and PIT2 is 120 Hz; the 132 MHz bus clock stands. See
+> "Timers at the device rate" at the end of this file.
+
 "How fast should it be?" is answerable exactly, not by eye.
 
 **The draw loop is paced by a semaphore, not by how fast it can go.** The task
@@ -1110,6 +1115,10 @@ Two things found along the way:
 `emu.serial.send_command` enqueues through the firmware's own `queue_send`
 (`0x40001896`), so the semaphore is posted and the task woken exactly as it
 would be normally; output is captured by hooking `print` at `0x400054B4`.
+
+> **Note 2026-09-28 [C].** The addresses in this section and in "A boot-mode
+> flag word at `0x40288190`" are 1.15C. For 1.16 see "The 1.16 serial
+> console" at the end of this file.
 
 **`#UPGRADE` answering `READY FOR BOOTSTRAP` matters for work item B**: the
 firmware-upload path is now drivable under emulation, so a patched image can
@@ -1431,6 +1440,35 @@ validated fixture or commit them. A future benchmark must first demonstrate
 a persistent ColdFire parameter or DSP-frame difference against an
 uninjected control, then time that same bounded path. **[D][O]**
 
+## Cold-boot ladder speed: the `cover` hook costs 1.94x; ladders skip it by default **[D]**
+
+`emu/dspboot.py:run(fast=True)` (cold boot, and `emu.checkpoint.make`'s
+ladder) installs one GLOBAL `UC_HOOK_CODE` hook, `cover`, alongside its
+scoped (begin==end) per-address hooks. `cover` only counts instructions,
+tracks coverage (`seen`/`stall_pcs`/`curve`), and calls `checkpoint.make`'s
+`extra_hook` to notice when a requested rung is reached -- it never touches a
+register or memory. A/B on a true cold boot to 60M instructions (no card
+image, `sdgate=True`, `esdhc=True`, 3 reps each, strictly alternated,
+identical final PC and `TASK_CREATE` timings on every rep): median wall time
+49.894s (`coverage=True`, 1.203e6 instr/s) vs 25.682s (`coverage=False`,
+2.336e6 instr/s) -- **1.94x**.
+
+`emu.checkpoint.make` now defaults to `coverage=False`: instead of one
+`db.run()` call driven by `cover`, it calls `db.prepare()` (the same hook set
+minus the global one) and steps itself with one exact
+`uc.emu_start(pc, 0, count=delta)` per rung -- the same shape
+`emu/longrun.py`'s `extend()` uses on the resume side. Verified on a 30M/60M
+ladder and a 60M ladder with a +Drive card image
+(`out/plusdrive/dt2.img`): registers, every mapped memory page, mmio,
+ctlregs and the FF1/MOVEC counters are byte-identical between
+`coverage=True` and `coverage=False` at every rung (`tools/snapeq.py`).
+Timed on the same 60M window: 56.0s median (`coverage=True`) vs 26.9s median
+(`coverage=False`), consistent with the 1.94x figure above (other jobs were
+running on the measuring machine; treat these two as noisy, not a precise
+re-measurement). `coverage=True` (`--coverage` on the CLI) still exists for
+when `seen`/`stall_pcs`/`curve` are actually wanted; the `.ladder.json`
+sidecar records which mode built a given ladder.
+
 ## SHARC voice-render tooling: post-init snapshot, watchpoints, survey **[D]**
 
 Support used to reach the "one voice renders correctly" result in finding
@@ -1511,6 +1549,15 @@ place in the whole 1.16 image found to write vector 208, arm `PIT3_PMR`/
 (`profile.display_start` = `0x401335e0`, inside this function, confirmed
 against the live vector-208 check). It is confirmed as `FUN_40133586`'s
 sole caller via `out/ghidra/dt2-1.16-emac/xrefs.sqlite`'s `calls` table.
+
+> **Corrected 2026-09-28 [C][V].** `FUN_40133586` does not start the
+> display. It is the progress screen ("INITIALIZING +DRIVE...") used by the
+> factory-reset and migrate jobs: a prio-6 task `FUN_40133646` draws a
+> spinner and a bar and flushes through `FUN_4013390e`, and `FUN_40133626`
+> tears it down. Branch (C) draws through the main UI's own flush
+> (`0x40032992` -> `FUN_4013390e`). The +Drive boots were stuck behind the
+> intro, which the ladder builder does not advance. See "Branch (C) draws
+> through its own flush" at the end of this file.
 
 This can't be the whole story for a shipping device -- branch (C) ("Update
 MMC Caches") is what an **ordinary second boot** takes on real hardware, and
@@ -1709,6 +1756,13 @@ which remains open and is a separate gap.
 
 ### Follow-up: branch (C) never hands vector 208 to the real display ISR; the six unconditional calls and `FUN_40032eaa` are not it **[V][O]**
 
+> **Corrected 2026-09-28 [C][V].** `FUN_400d18ae` is the intro task, not a
+> display task; `0x40133518` is the progress screen's ISR. Branch (C) needs
+> neither after the intro. The "`FUN_400337ba` is not the blocked task"
+> result below holds for the control-image ladder; on the +Drive snapshots
+> Main OS is parked on the intro's semaphore `0x43149550`. See "Branch (C)
+> draws through its own flush" at the end of this file.
+
 Read all six unconditional calls named above (`FUN_400c14dc`, `FUN_400f03e8`,
 `FUN_4002dcb2`, `FUN_401339aa`, `FUN_40133e22`, `FUN_40133ac8`) and
 `FUN_40032eaa`: none of them is display/PIT3-related. `FUN_40032eaa` is a
@@ -1833,6 +1887,13 @@ new eSDHC traffic and zero new tasks created past `n≈260M`, `vec208` still
 `1`) where every earlier run in this section's history never did, this
 rules out "waiting on the +Drive mount" as a contributing explanation for
 branch (C)'s missing display-start -- the two are independent gaps.
+
+> **Corrected 2026-09-28 [C][V].** That run never left the intro. In
+> `snapshots/dt2-1.16-drive2/boot400M.snap` and
+> `snapshots/dt2-1.16-drive/running.snap` the intro is on frame 1
+> (`0x43153a04 = 1`), the intro task is parked on `0x43149548`, and Main OS
+> (TCB `0x40966ee8`) is parked in `sem_pend(0x43149550)` returning to
+> `0x400337e2`. It only measured the intro gate.
 
 ## Opening the sample-pool list or the +Drive browser panics the UI task: a null `std::string` construction inside `SampleManager::vfunc_40`, not a resource cache **[V][C][O]**
 
@@ -2087,3 +2148,286 @@ before the throw. That is now explained: the `FileSystemDirectory`
 object's invalidity is a state left over from an *earlier*, already
 completed (and already failing) mount attempt or its total absence, not
 something this exact screen's own code tries to read from the card live.
+
+## Branch (C) draws through its own flush; the +Drive boots were stuck behind the intro **[V][D][C]**
+
+2026-09-28. Corrects "Booting with an already-formatted card stalls" and
+its follow-ups above. Marks: **[V]** re-read against the image bytes and
+snapshot memory by a second agent (verification lane, 2026-09-28);
+**[D]** read or run once. Static sources: `out/ghidra/dt2-1.16-emac`
+(`tools/cf.py`), raw `section_3_MAIN_OS.bin` (loaded at `0x40000400`),
+snapshot memory through `tools/snapread.py`.
+
+**Vector 208 [V].** VBR = `0x40000000` (`0x400019b0`/`0x400019b6`);
+`FUN_40001992` fills the 256 slots with `0x40001252`. The literal
+`0x40000340` (vector 208's slot) occurs only at `0x400d135a` (intro,
+`FUN_400d12e4`) and `0x401335dc` (`FUN_40133586`). `0x40133586` is
+referenced only by the two `jsr` in branches A and B (`0x4003382e`,
+`0x400338a0`).
+
+**`FUN_40133586` is the progress screen [V].** It creates task
+`FUN_40133646` (prio 6), points vector 208 at `0x40133518` (acks PIT3,
+gives `0x44e460d8`) and arms PIT3 with PMR `0x4323`. The task draws a
+spinner and a bar from the bitmaps at `0x402b4b80`/`0x402b4cf8` and flushes
+with `FUN_4013390e`. `FUN_40133626` (PIT3 off, `INTC2_SIMR = 0x10`, post
+`0x44e460e0`) ends it, called at `0x400335b6`, `0x40033618` (factory reset
+job) and `0x400334a0` (migrate job). `emu/symbols.py` already names it the
+progress screen.
+
+**The intro is the same pattern [V].** `FUN_400d12e4` (called at
+`0x400ccb8e` on every boot) creates the intro task `FUN_400d18ae` (prio 7),
+points vector 208 at `0x400d0668` and arms PIT3 with PMR `0x2191`. The task
+plays one frame per PIT3 tick; at the end (`0x400d1934`) it turns PIT3 off
+and posts `0x43149550` (`0x400d1950`). **Main OS waits for that post
+first**: `0x400337dc` calls `FUN_400d139e` = `sem_pend(0x43149550)`, before
+any branch.
+
+**Branch (C) [V].** After the intro, `FUN_400337ba` queues "Update MMC
+Caches" (`0x4003390c` invoker `0x400333e6`, `0x40033912` manager
+`0x40032eaa`, `0x40033934` `jsr FUN_400f0ab8`, non-blocking), clears the
+framebuffers (`0x40033962` `FUN_401339aa`), does the first UI render
+(`0x4003398a` `jsr 0x40032992`, which flushes through `FUN_4013390e`) and
+enters the event loop (`0x40033d06`, queue `0x40966f3c`). The main UI never
+uses PIT3. The job body at `0x400333e6` is `jsr 0x4019d8fe` (MmcFs), `jsr
+FUN_4012faea` (three scans under the MmcFs lock), `clr.l d0`, `rts`.
+
+- **[C]** `FUN_40032eaa` is the job functor's std::function manager, not a
+  completion routine; "Update MMC Caches" has no completion callback.
+- **[C]** The GUI's `jobs` figure counts entries to the worker loop
+  `FUN_400f0958` (one per worker thread; it pends on worker+0x14 at
+  `0x400f0986`), not queued jobs.
+- The prio-3 SampleLoaderBgWorker (ctor `0x400f0d30`) runs the same loop
+  **[D]**.
+
+**Snapshot evidence [V].** `snapshots/dt2-1.16-control/running.snap`
+(branch C) draws the full main page with the progress task never created
+(TCB `0x44e46564` saved sp = 0 **[D]**), and its vector-208 slot is still
+`0x400d0668`. `snapshots/dt2-1.16-drive2/boot400M.snap` has vector 208 =
+`0x400d0668` and the intro on frame 1 (`0x43153a04 = 1`), with Main OS
+parked on `0x43149550` **[D for the TCB state]**. The same intro-at-frame-1
+state is in every `emu.checkpoint make` rung read, so the ladder builder
+(`emu/dspboot.py`) does not deliver PIT3 **[D]**.
+
+**Confirmed by a run [D].** `tools/guirun.py` from
+`snapshots/dt2-1.16-drive2/boot400M.snap` with `--card-image
+out/plusdrive/dt2.img --intro-timers pit3` and markers, 300M instructions
+(68 s): intro done at about 51M (`0x400d1934` 1 hit), Main OS past the intro
+(`0x400337e2` 1), no branch A or B (`0x4003382c`/`0x4003389e` 0), queue
+"Update MMC Caches" (`0x40033934` 1), job start and end (`0x400333e6`,
+`0x400333f6` 1 each), first UI render (`0x4003398a` 1), event loop
+(`0x40033d06` 383), panel flush (`0x4013390e` 303). No fault. This is the
+first branch-(C) boot seen on a +Drive image, and it draws. The black
+screen in earlier GUI runs was the intro gate, not missing firmware work.
+
+## A +Drive cold boot loads a sample end to end **[D]**
+
+2026-09-28. With the native-format image (finding 14) the firmware loads the
+boot project's samples on a cold boot, with no UI.
+
+    uv run python tools/plusdrive.py build samples -o out/plusdrive/native/dt2.img
+    DT2_SYX=Digitakt_II_OS1.16.syx uv run python tools/plusdrive_check.py out/plusdrive/native/dt2.img
+    DT2_SYX=Digitakt_II_OS1.16.syx uv run python -m emu.checkpoint make \
+      280000000,400000000 snapshots/dt2-1.16-drive3/boot \
+      Digitakt_II_OS1.16.syx --card-image out/plusdrive/native/dt2.img
+    DT2_SYX=Digitakt_II_OS1.16.syx uv run python tools/guirun.py \
+      snapshots/dt2-1.16-drive3/boot400M.snap \
+      --card-image out/plusdrive/native/dt2.img --intro-timers pit3 \
+      --trace-tasks --esdhc-log --limit 400000000 \
+      --at 0x40154540=load_sample --at 0x400cd638=page_send \
+      --flexbus-log FLEXBUS.raw \
+      --save-at 390M:snapshots/dt2-1.16-drive3/loaded.snap
+
+- The ladder took 5:55 wall; the guirun run 88.5 s (4.52M instr/s), no
+  HALT, FAULT or STALL.
+- One hit each of "Load all samples" queue (`0x400311d0`), its invoker
+  (`0x40030ce8`) and `reloadAllSamples` (`0x4004e8be`); 297
+  `FUN_40154540` calls (one real load, 296 aliases); 1940 `FUN_400cd638`
+  calls; 1321 `FUN_40153b90` (mono and reset headers) and 297 `FUN_40153b28`
+  (stereo) calls. The wire content is in finding 04 ("Sample data crosses
+  FlexBus to link port 0 on 1.16"); the PCM matches the file.
+- eSDHC: 3698 commands (CMD18 3250, CMD23 224, CMD25 224).
+- `pends force-satisfied by unblock: 13`, none at the 100 us sleep, so the
+  per-page DTIM1 sleep needs no model under guirun's default `unblock`.
+- `loaded.snap` (99 MB, holds the sample RAM) is the source of the first
+  listen ([15](15-sharc-sample-path.md)). Its UI has two modal windows open
+  (finding 03, "Modal windows take every key").
+- `--intro-timers pit3` has no effect when resuming past the intro;
+  guirun's "intro handover at 52M" line then reuses a cold-boot heuristic
+  against the resumed run's relative count.
+
+## Fractional EMAC was wrong in patched Unicorn **[D][O]**
+
+2026-09-28. Everything here was executed or read once; the fix is built and
+tested in worktree `.claude/worktrees/agent-a35ef1ffe626acbe5` but **not
+installed in the shared venv** and not merged.
+
+The ColdFire uses fractional EMAC (`MACSR = 0x20`, F/I = 1, truncating, no
+OMC) in `vector_191_handler` (the parameter smoother `FUN_400d92a2` and the
+`mac.l` that writes `0x800047fc` at `0x4002e9f6`), the second vector-191
+routine `0x400cec70`, and `FUN_40138ff8`. The image's only `move.l
+#imm,MACSR` immediates are 0x00 and 0x20 (`0x4002dd38`, `0x4002dd52`,
+`0x4002f384`, `0x400cec94`, `0x400cecb0`, `0x400cedee`, `0x4013900c`)
+**[V]**.
+
+Unicorn 2.1.4's `qemu/target/m68k/helper.c` (the same in QEMU master)
+against the manuals (MCF54418RM section 5, PDF p.145-159; CFPRM chapter 6):
+
+| # | behaviour | Unicorn | manual | fixed |
+|---|---|---|---|---|
+| 1 | product shift | none: 0.5*0.5 -> `0x10000000` | `(Y * X) << 1` (RM p.5-17): `0x20000000` | yes |
+| 2 | operand sign | unsigned multiply: -0.5*0.5 -> `0x30000000` | signed: `0xE0000000` | yes |
+| 3 | R/T rounding | one bit off | rounds `product << 1` at [23:0]/[24] | yes |
+| 4 | -1 * -1 | 0.5 | +1.0 | yes |
+| 5 | MACSR mode change (`set_macsr`) | re-encodes with the old MACSR (no-op); signed/unsigned swapped | ACCn/ACCext bits kept | yes |
+| 6 | accumulation saturation (OMC) | 48-bit limit with the opposite sign | `0x007f_ffff_ff00` / `0xff80_0000_0000` | yes |
+| 7 | fractional EV | tests ACC[47:40] | ACC[47:39] | yes |
+| 8 | store with OMC (`get_macf`) | returns 0 for negatives; 16-bit never saturates | saturate on Temp[47:39] | yes |
+| 9 | store without OMC, MOVE to ACC, operand extraction, MOVCLR, ACCext layout | right | -- | unchanged |
+| 10 | OMC with PAVn already set | still accumulates | ACC unchanged | no (firmware never sets OMC) |
+| 11 | integer-mode EV and saturation sign | looks wrong | RM p.5-15/16 | no, out of scope |
+
+Effect on the firmware **[D]**: the smoother is a unity-gain one-pole
+(finding 04, "1.16 frame fields"). With the old library it settles at
+0.029 x: running `FUN_400d92a2` directly on `loaded.snap`'s SRAM, track 1's
+raw `[15614, 768, 7, 30720, 28458]` (TUNE, PLAY, SAMP, LEN, LEV) settles at
+`[455, 22, 0, 895, 829]`; with the fixed library it holds the raw values
+(slot state exactly 7.0). The old numbers match every existing capture.
+
+The fix (in the worktree): `patches/unicorn-2.1.4-m68k-emac-fractional.patch`
+(sha256 `8f497c93...`), a third patch pinned in
+`tools/install-patched-unicorn.sh`; `emu/unicorn_compat.py` case
+`emac_fractional` (the emulator refuses to start on an old library once this
+is merged); `tests/test_unicorn_emac.py` 11 `FRACTIONAL_CASES`. In a scratch
+venv the compat check fails on the old build and passes on the new one, and
+104 tests pass.
+
+What it invalidates:
+
+- Every `out/captures/*.dt2cap` made so far: the smoothed bands
+  (`0x02`, `0x74`, `0xda`-`0x139` per track) are wrong; `0x94` is right.
+  Tests that read captures (`test_sharc_replay.py`, `test_sharc_inputs.py`,
+  `test_sharc_armpath.py`, `test_sharc_calltrace.py`, `test_sharc_memdiff.py`,
+  the capture part of `test_sharc_framemap.py`) keep passing until the
+  captures are remade.
+- `snapshots/dt2-1.16/running-audio.snap` holds smoother state at the old
+  steady value. Other DT2 snapshots have smoother output 0 (not run yet),
+  including `drive3/loaded.snap`. Whether `FUN_40138ff8` or `0x400cec70`
+  left state in boot snapshots is **[O]**.
+- SHARC golden hashes do not depend on it (no capture input).
+- **[O]** what `0x400cec70` and `FUN_40138ff8` compute, before and after.
+
+Install (Em, between runs; running processes keep the old library):
+
+    cd /Users/em/src/digi/digitakt2/.claude/worktrees/agent-a35ef1ffe626acbe5 && tools/install-patched-unicorn.sh
+
+Then `uv run python -m emu.unicorn_compat` and `uv run python -m pytest
+tests/test_unicorn_emac.py tests/test_unicorn_compat.py -q`.
+
+## The 1.16 serial console **[V][D][C]**
+
+2026-09-28. Corrects the console addresses above, which are 1.15C.
+
+- **[V]** `FUN_400cc63a` creates the console task, entry `0x400cae8c`
+  (`pea` at `0x400cc660`), priority 2. `FUN_400cc864` calls it only when
+  bit 5 of `0x4029e9b0` is set (1.15C: `0x40288190`). Task TCB `0x4039be58`,
+  line queue `0x403a0eac` **[D]**.
+- `emu/serial.py` (`CONSOLE_QUEUE 0x40388EAC` etc.) still has the 1.15C
+  addresses and needs porting **[D]**.
+- Commands **[D]**: `#RECEIVE_AUDIO`, `#PLAY_START`/`#PLAY_STEREO`/
+  `#PLAY_STOP`/`#RECORD_*`/`#DUMP_AUDIO` (the vector-191 debug player,
+  finding 04; bypasses the SHARC); `#SAMPLE_UPLOAD n` (writes eMMC sector
+  `0x458000 + n*0x800`, the factory-content region); `#VERIFY_SAMPLES`;
+  `#READ_SAMPLE_STATUS`; `#FORMAT_FS`; `#PLAY_PATTERN` (depacks the built-in
+  project `0x4027989c`, `loadProjectFromMemory`, queues "ReloadAllSamples"
+  and starts the sequencer; factory sample ids only); `#STOP_PATTERN`. None
+  loads a +Drive file into sample memory.
+
+## Timers at the device rate: prescaler, held ticks, idle skip **[V][C]**
+
+2026-09-29. Measured with `tools/cfrealtime.py` from
+`snapshots/dt2-1.16-drive3/loaded.snap` (SSI0 model at 96 kHz,
+`RxHandoverPeer`, +Drive image), 0.3 s of device time after a 0.1 s
+warm-up, three alternated repeats, medians. Every repeat of a
+configuration ended on the same instruction count, PC and TX CRC.
+
+- **[V][C] The PIT prescaler divides by 2^PRE, not 2^(PRE+1).** MCF5441XRM
+  Table 38-3 (p.1156) and Eqn. 38-1 (p.1159): timeout = 2^PRE x (PM+1) /
+  (fsys/2). The firmware agrees: `0x40136310` writes PCSR1 = `0x0033`
+  (PRE 0) and PMR1 = `0x83`, then counts PIF (bit 2) events, so one event
+  is 132 bus cycles = 1 us only under 2^PRE. The rates the firmware
+  programs are PIT0 100 Hz (PCSR `0x053f`, PMR 41249, `0x40001290`), PIT2
+  120 Hz (`0x0636`/17187, `0x40002c5e`), PIT3 15 Hz for the display
+  (`0x0936`/17187, `0x401335f8`) and 30 fps for the intro
+  (`0x0936`/8593, `0x400d137c`). This corrects the 15 fps, 50 Hz and
+  60 Hz above. Checked against the bytes by the time-base lane and again
+  here. `emu/pit.py` now uses 2^PRE.
+- **[V] A refused tick is held.** PIF (PIT) and REF (DTIM) stay set until
+  the handler write-1-clears them, so `Pits`/`Dtims` keep a refused tick
+  pending and offer it at every later `emu_start` boundary. A tick due
+  while one is pending is lost (`missed`); a guest write of 1 to PIF or REF
+  clears a pending one (`cleared`: the context switcher's `0x053f` write to
+  PIT0's PCSR does this). Before, PIT0 and PIT2 lost almost every tick at
+  every rate: their periods are whole numbers of audio blocks, so their
+  deadlines kept falling inside the audio interrupt. `(3, 2, 0)` is now
+  just the INTC's order within a level (higher source first, MCF5441XRM
+  Table 17-19), not a starvation trade-off.
+- **[V] The idle loop is skipped exactly.** At a boundary with PC on a
+  `bra.b *` site, `spin` credits the passes to the clock without running
+  them, up to the next boundary or one pass short of the next idle
+  reschedule (`emu.longrun.IdleSpin`). Exact runs with and without it, to
+  the same device time (1.1 s, 145M instructions): `tools/snapeq.py`
+  identical, and the 7,241 host-raised vectors (3,987 idle reschedules,
+  1,500 each of 170 and 191, 100 PIT0, 120 PIT2, 30 DTIM3) identical in
+  order, PC and SP. A skip that also skips the reschedule pass differs
+  (negative control). Exact runs skip only steps that start in the loop:
+  a stopped `emu_start` cannot say how many instructions it ran. With the
+  SSI0 model there is a boundary every ~1,375 instructions, and 95% of
+  idle passes are skipped. `spin(fast=True)` counts blocks anyway, so there
+  the first pass stops the step and the rest is skipped.
+- **[V] The "1,370 vector-191 a second" cap was the hand-over window.**
+  After a resume, vector 170 runs the generic handler `0x400d2f98` until it
+  has seen the RX marker in 64 major loops (finding 04, Lane J2); that
+  handler does not force vector 191. It takes 65 blocks (43 ms), which is
+  130 per second over a 0.5 s window. After it, vector 191 runs 1,500 times
+  a guest second with a gap of exactly one block.
+
+| from loaded.snap, 132M instr/s | wall s | real-time factor | executed instr/s | v191 per wall s | IPL >= 5 | PIT0 / PIT2 / DTIM3 taken |
+|---|---:|---:|---:|---:|---:|---|
+| before, exact | 16.02 | 0.019 | 2.47M | 28 | 38% | 0/15, 0/18, 9/9 |
+| + 2^PRE prescaler | 15.94 | 0.019 | 2.48M | 28 | 38% | 0/30, 18/36, 9/9 |
+| + held ticks | 16.28 | 0.018 | 2.43M | 28 | 38% | 30/30, 36/36, 9/9 |
+| + idle skip, exact | 1.38 | **0.217** | 12.8M | 326 | 38% | 30/30, 36/36, 9/9 |
+| + idle skip, SSI0 coalescing | 16.05 | 0.019 | 2.47M | 28 | 5% | 12/30 (18 cleared), 36/36, 9/9 |
+| before, fast | 8.57 | 0.035 | 4.62M | 53 | 19% | 0/15, 0/18, 9/9 |
+| + all, fast | 1.24 | **0.241** | 7.3M | 362 | 36% | 30/30, 36/36, 9/9 |
+| + all, fast, coalescing | 1.06 | 0.282 | 8.5M | 424 | 2% | 30/30, 36/36, 9/9 |
+| GUI config (fast, no SSI0), before, 18.72M | 1.09 | 0.274 | 5.1M | - | 0% | 15/15, 18/18, 9/9 |
+| GUI config, after, 132M | 0.17 | **1.81** | 8.9M | - | 0% | 30/30, 36/36, 9/9 |
+
+"Executed" excludes skipped idle passes; the guest clock counts them. In
+fast mode it is `_FastStepper`'s estimate. IPL >= 5 is sampled at
+boundaries, so coalescing (few boundaries) under-reads it.
+
+- **Time base.** At 4.68M and 18.72M the audio state starves: IPL >= 5 at
+  every boundary, no PIT or DTIM tick taken in a guest second, the main
+  loop never runs, and vector 191 runs 123 and 551 times a guest second.
+  At 132M everything is taken and the main loop runs 30 times a second.
+  `emu/gui.py` and `tools/guirun.py` now switch to
+  `DEVICE_INSTR_PER_SEC` when the intro hands over (was 4 x 4.68M), and a
+  checkpoint saved at another rate is rescaled (`Timers.rescale`,
+  `Ssi0Dma.rescale`). `INSTR_PER_SEC` stays 4.68M for the
+  instruction-budgeted tools, whose budgets were calibrated on it. The
+  `dt2gui` sample load from `boot400M.snap` at the new default: the same
+  15,908,000 FlexBus bytes and 3,698 eSDHC commands, idle by 200M
+  instructions, 44.9 s wall against 84.6 s.
+- **Coalescing stays opt-in.** In exact mode a coalesced span almost never
+  starts in the idle loop, so it defeats the idle skip, and held ticks
+  wait for a span end, where the RTOS has often cleared them.
+- **[O] Real time in the audio state.** The best is 0.28x (fast,
+  coalesced); exact is 0.22x. The device runs ~55M non-idle instructions a
+  guest second here, and Unicorn with our hooks runs 7-13M a second, so
+  this is the ceiling of this core, not of the timer model. The rules here
+  (2^PRE, held ticks, skipping the idle loop to the next deadline) carry
+  over unchanged to a native or WASM core, which can also stop at idle
+  entry because it knows its own instruction count. SSI0 coalescing only
+  works around Python boundary costs and would not.

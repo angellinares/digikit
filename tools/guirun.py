@@ -33,13 +33,17 @@ repeat the option for multiple writes.
 `--watch ADDR:LEN[=NAME]` and `--watch-max N` install a memory write watch
 over LEN bytes at ADDR, printing up to N hits with a stack scan each.
 `--ips N` overrides the emulator's instructions-per-second timer rate
-(accepts `18.72M`-style suffixes).
+(accepts `18.72M`-style suffixes). Timers restored from a checkpoint saved
+at another rate are rescaled to it (emu.dtim.Timers.rescale).
 `--ips-at WHEN:N` changes the timer rate to N instructions per emulated
 second at instruction count WHEN, e.g. after boot, so the boot itself is not
 stretched.
-`--post-intro-ips N` sets the timer rate applied when the intro hands over;
-default 18720000 (4x INSTR_PER_SEC); 0 keeps the default rate; ignored when
---ips or --ips-at is given.
+`--post-intro-ips N` sets the timer rate applied when the intro hands over,
+or at the start for a checkpoint already past it; default
+emu.pit.DEVICE_INSTR_PER_SEC (132M, the device's rate); 0 keeps the rate the
+run started with (INSTR_PER_SEC, or the checkpoint's own); ignored when
+--ips or --ips-at is given. `--post-intro-ips 18.72M` is the rate used
+before 2026-09-29.
 `--intro-timers pit3` drives an in-progress intro with its real PIT3 while
 holding DTIM until handover.  The historical default, `held`, keeps every
 timer held for exploratory runs that use semaphore unblocking.
@@ -78,7 +82,7 @@ from emu.dtim import Dtims, Timers
 from emu import config, panel, symbols, taskprof, uitrace
 from emu import device as devices, panelin
 from emu.esdhc import format_command_log_entry
-from emu.pit import INSTR_PER_SEC, Pits, intro_running
+from emu.pit import DEVICE_INSTR_PER_SEC, Pits, intro_running
 from unicorn import UC_HOOK_BLOCK, UC_HOOK_MEM_WRITE, UcError
 from unicorn.m68k_const import UC_M68K_REG_A7, UC_M68K_REG_PC
 from machinepatch import patch_b, DEFAULT_CAVE_B, spec_from_arg, DEFAULT_SPEC
@@ -107,6 +111,11 @@ def parse_args(argv):
         '--ssi0-upgrade-legacy', action='store_true',
         help='explicitly add fresh SSI0 state at this legacy checkpoint boundary',
     )
+    p.add_argument(
+        '--ssi0-coalesce', action='store_true',
+        help='coalesce SSI0 requests between major loops (opt-in; see '
+             'emu.ssi.Ssi0Dma, "Coalescing")',
+    )
     p.add_argument('--syx')
     p.add_argument('--patch-machine', nargs='?',
                     const='list+dispatch+group+name+rank+permit'
@@ -127,13 +136,13 @@ def parse_args(argv):
     p.add_argument('--watch-max', type=int, default=16)
     p.add_argument('--ips', type=parse_when, default=None)
     p.add_argument('--ips-at', action='append', default=[], type=parse_ips_at)
-    # Timer rate applied once the intro hands over to the OS. At the default
-    # rate the UI task falls behind the 30 Hz DTIM3 tick
-    # (docs/findings/03-ui-and-panel.md: "MACHINE SEL closes itself"). 0 keeps
-    # the default rate. Ignored when --ips or
-    # --ips-at is given.
+    # Timer rate applied once the intro hands over to the OS: the device's.
+    # At the legacy rate the UI task falls behind the 30 Hz DTIM3 tick
+    # (docs/findings/03-ui-and-panel.md: "MACHINE SEL closes itself"), and
+    # the audio interrupts starve the RTOS (emu.pit, DEVICE_INSTR_PER_SEC).
+    # 0 keeps the starting rate. Ignored when --ips or --ips-at is given.
     p.add_argument('--post-intro-ips', type=parse_when,
-                   default=4 * INSTR_PER_SEC)
+                   default=DEVICE_INSTR_PER_SEC)
     p.add_argument(
         '--intro-timers', choices=('held', 'pit3', 'all'), default='held',
         help='while the intro is active: hold PITs (historical default), '
@@ -174,6 +183,15 @@ def parse_args(argv):
     p.add_argument('--esdhc-log-from', type=parse_when, default=0,
                     help='only print --esdhc-log entries at/after WHEN '
                          'instructions')
+    # --flexbus-log PATH: opt-in raw byte capture of the 0x8C000000
+    # coprocessor port (see emu/dsp.py). Off by default; writes the exact
+    # byte stream the firmware placed on the wire, in order, with no
+    # markers -- the 4-byte page/cmd word + 4096-byte payload framing of
+    # each FUN_400cd638 call is fixed, so it is recovered by chunking the
+    # file into 4100-byte groups during analysis.
+    p.add_argument('--flexbus-log', default=None,
+                    help='opt-in raw byte capture of the 0x8C000000 '
+                         'coprocessor port (emu/dsp.py)')
     # --stall-window N: if the mainloop counter (profile.mainloop) does not
     # advance for this many instructions, dump a diagnostic at the end of
     # the run -- pc, current task (current_tcb), and the last --pend-ring
@@ -194,12 +212,18 @@ def parse_when(s):
 
 
 def restore_or_construct_timers(ev, construct, requested_ips=None):
-    """Restore checkpoint cadence rather than constructing over it."""
+    """Restore checkpoint cadence rather than constructing over it.
+
+    A checkpoint saved at another rate than `requested_ips` is rescaled to
+    it: each deadline keeps its device time.
+    """
     timers = ev['restore_checkpoint_timers']()
     if timers is not None:
         if requested_ips is not None and any(
                 source.ips != requested_ips for source in timers.sources):
-            raise RuntimeError('--ips conflicts with checkpoint timer rate')
+            print('[guirun] checkpoint timer rate %d rescaled to %d'
+                  % (timers.sources[0].ips, requested_ips))
+            timers.rescale(requested_ips)
         return timers, True
     timers = construct()
     ev['checkpoint_components']['timers'] = timers
@@ -393,6 +417,9 @@ def main():
         print('[guirun] card image: %s' % args.card_image)
     if args.esdhc_log:
         extra['esdhc_command_log'] = True
+    if args.flexbus_log:
+        extra['dsp_log'] = args.flexbus_log
+        print('[guirun] flexbus log: %s' % args.flexbus_log)
     m, ev, st, pc, inq, at = build(args.snapshot, unblock=args.unblock,
                                     softfloat=True,
                                     bitmap=True, dsp=True, on_pixel=None,
@@ -400,6 +427,7 @@ def main():
                                     deferred_components=('timers',),
                                     ssi0_request_hz=args.ssi0_request_hz,
                                     ssi0_legacy_upgrade=args.ssi0_upgrade_legacy,
+                                    ssi0_coalesce=args.ssi0_coalesce,
                                     **extra)
 
     for addr, data in args.poke:
@@ -469,23 +497,28 @@ def main():
 
     intro = intro_running(m, profile.intro_pit3_isr)
 
-    pits, restored_timers = restore_or_construct_timers(
+    pits, _restored = restore_or_construct_timers(
         ev, lambda: construct_timers(m, args, intro), args.ips)
     ssi0 = ev.get('ssi0_dma')
     if ssi0 is not None:
         if ssi0._checkpoint_restored and ssi0.now != pits.now:
             raise RuntimeError('SSI0 and timer checkpoint clocks disagree')
         timer_ips = pits.sources[0].ips
+        if ssi0._checkpoint_restored and args.ips is not None:
+            ssi0.rescale(timer_ips)        # as restore_or_construct_timers did
         if ssi0._checkpoint_restored and ssi0.ips != timer_ips:
             raise RuntimeError('SSI0 and timer checkpoint instruction rates disagree')
         if not ssi0._checkpoint_restored:
             ssi0.ips = timer_ips
         ssi0.align(pits.now)
-        print('[guirun] SSI0 requests %d Hz%s'
+        print('[guirun] SSI0 requests %d Hz%s%s'
               % (ssi0.request_hz,
-                 ' (fresh legacy upgrade)' if args.ssi0_upgrade_legacy else ''))
+                 ' (fresh legacy upgrade)' if args.ssi0_upgrade_legacy else '',
+                 ', coalesced' if ssi0.coalesce else ''))
     timer_origin = pits.now
-    post_intro_ips = (0 if restored_timers else args.post_intro_ips
+    # A restored checkpoint past the intro gets the post-intro rate at the
+    # start, as emu/gui.py gives it.
+    post_intro_ips = (args.post_intro_ips
                       if args.ips is None and not args.ips_at else 0)
     print('[guirun] timer rate %d, after intro %s'
           % (pits.sources[0].ips, post_intro_ips or 'unchanged'))
@@ -813,10 +846,9 @@ def main():
             [e for e in pending_ips if e[0] <= state['instrs']],
             [e for e in pending_ips if e[0] > state['instrs']])
         for when, n in due_ips:
-            for source in pits.sources:
-                source.ips = n
+            pits.rescale(n)
             if ssi0 is not None:
-                ssi0.ips = n
+                ssi0.rescale(n)
             print('[guirun] ips -> %d at %d' % (n, state['instrs']))
         due_feeds, pending_feeds[:] = (
             [e for e in pending_feeds if e[0] <= state['instrs']],
@@ -922,6 +954,15 @@ def main():
         for ret, n in ev['satisfied_by'].most_common(15):
             print('  ret=0x%08x  %d' % (ret, n))
     print('[guirun] faults: %d distinct pages touched' % len(m.fault_pages))
+    if ev.get('dsp') is not None:
+        fifo = ev['dsp']
+        print('[guirun] flexbus: %d bytes accepted, %d bursts (~%.1f calls '
+              'of 1025 bursts each)'
+              % (fifo.words, fifo.bursts, fifo.bursts / 1025.0))
+        if args.flexbus_log:
+            fifo.close()
+            print('[guirun] flexbus log -> %s (%d bytes)'
+                  % (args.flexbus_log, os.path.getsize(args.flexbus_log)))
     if ev.get('esdhc') is not None:
         esdhc = ev['esdhc']
         cmd_counts = collections.Counter(idx for idx, _arg in esdhc.log)

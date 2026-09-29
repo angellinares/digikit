@@ -25,20 +25,29 @@ from .flags import (
     _astatx_bit_field,
     _astatx_btst,
     _astatx_fext,
-    _astatx_forget,
-    _astatx_from_updates,
     _astatx_lefto,
     _astatx_leftz,
     _astatx_shift,
 )
-from .state import MR, _ureg
+from .state import (
+    MR,
+    NO_SPECIAL,
+    _ureg,
+)
 from .values import (
     ComputeResult,
     Const,
+    FlagUpdate,
     Operand,
     Unknown,
     Value,
     _bitwise,
+    _flags_forget,
+    _flags_from_pairs,
+    _flags_put,
+    _op_andnot,
+    _op_or,
+    _op_xor,
     _signed,
     _signed32,
 )
@@ -67,8 +76,8 @@ def _field_deposit_or(
     label: str,
 ) -> Operand:
     """RN = RN or fdep RX by BIT6:LEN6[(SE)] (PGR p.11-70/11-74, cross-
-    checked against compute_table.json's shiftop_shiftimm rows 011011/
-    011101): deposits the low LENGTH bits of SOURCE at bit POSITION of DEST
+    checked against compute_table.json's shiftop_shiftimm rows 011001/
+    011011): deposits the low LENGTH bits of SOURCE at bit POSITION of DEST
     -- sign-extending the deposited field's own top bit upward through bit
     31 first when SIGN_EXTEND, mirroring the sign-extend convention the
     already-implemented FEXT-SE (opcode 0x12) uses -- then ORs the result
@@ -113,13 +122,12 @@ def _bff_words(
     pointer's boundary (MSB-first); BITEXT always reads from the top.
     Tracked in STATE.special (see this module's own docstring) as
     "BFF_HI" (bits [63:32]) and "BFF_LO" (bits [31:0]), the same dict
-    BFFWRP already uses. Absent -- nothing in dt2-1.16 ever executes a
-    BITDEP, so this is the default in every trace of this image; see
-    _bff_deposit's docstring -- reads as Unknown, matching BFFWRP's own
-    uninitialized default below."""
+    BFFWRP already uses. Absent (until a BITDEP, ShiftImm 0x1d, fills
+    it) reads as Unknown, matching BFFWRP's own uninitialized default
+    below."""
     absent = Unknown("uninitialized bit FIFO")
-    hi = (special or {}).get("BFF_HI", absent)
-    lo = (special or {}).get("BFF_LO", absent)
+    hi = (special if special is not None else NO_SPECIAL).get("BFF_HI", absent)
+    lo = (special if special is not None else NO_SPECIAL).get("BFF_LO", absent)
     return _as_operand(hi, "BFF_HI is an MR"), _as_operand(lo, "BFF_LO is an MR")
 
 
@@ -142,11 +150,11 @@ def _bff_extract(
 
     A BITLEN outside 0..32 is documented "prohibited" (PGR p.11-91) for
     step 1 -- FEXT on a single 32-bit word cannot return more than 32 bits
-    -- but step 2's 64-bit shift has no such limit, and dt2-1.16 does
-    decode BITEXT/BITEXT(NU) with BITLEN12 values as large as 535 (see
-    tests/test_sharc_compute_shift.py), so this function stays crash-safe
+    -- but step 2's 64-bit shift has no such limit (the BITLEN12 values
+    up to 535 once seen here were OR-FDEP fields read as BITEXT(NU) through
+    a misprinted opcode, see _shift_immediate), so this function stays crash-safe
     (no negative Python shift) for any non-negative BITLEN and still
-    returns the shifted FIFO; the ShiftImm opcode 0x14/0x19 handler below
+    returns the shifted FIFO; the ShiftImm opcode 0x14/0x16 handler below
     is the one that discards EXTRACTED and substitutes Unknown when BITLEN
     is out of range, per this file's own module docstring on staying
     Unknown only where the manual actually says so."""
@@ -174,18 +182,12 @@ def _bff_deposit(
 
         BFF = BFF OR FDEP Rx BY <64-(BFFWRP+bitlen)>:<bitlen>
 
-    (step 2, BFFWRP += bitlen, is the caller's job). BITDEP has no shiftop
-    or shiftimm encoding in either public table this project transcribed in
-    full -- tools/sharcspec/compute_table.json's own shiftop_shiftimm
-    cross_check note records that PGR omits it entirely ("may be a
-    214xx-only op") -- and none of dt2-1.16's decoded SHARC+ instructions is
-    one, so this project has no opcode to wire it to (this is also why
-    _bff_words above always finds "BFF_HI"/"BFF_LO" absent on this image).
-    Implemented anyway, sharing _bff_extract's 64-bit-int model, purely so
-    tests/test_sharc_compute_shift.py can hand-verify that model against
-    the PRM/PGR's BITDEP+BITEXT pairing (out/refs/sharc-plus-prm/
-    all.txt:3495-3545's header extraction/creation listings) without a
-    decode site to drive it through."""
+    (step 2, BFFWRP += bitlen, is the caller's job). BITDEP is shifter
+    opcode 0111 0100 (PGR Table 12-11, pp.12-10/12-11), ShiftImm 0x1d;
+    _shift_immediate wires it (dt2-1.16 sw 0xb8863c/0xb8863f). Shares
+    _bff_extract's 64-bit-int model; tests/test_sharc_compute_shift.py
+    checks it against the PRM/PGR's BITDEP+BITEXT pairing
+    (out/refs/sharc-plus-prm/all.txt:3495-3545)."""
     if bitlen == 0:
         return hi, lo
     if (
@@ -216,9 +218,9 @@ def _shift_immediate(
     """Execute the documented ShiftImm subset seen on qualifying paths.
 
     SPECIAL is the same special-register mapping ``_compute`` reads MRF
-    from: "BFFWRP" (the bit-FIFO write pointer; opcodes 0x14/0x19/0x1f
+    from: "BFFWRP" (the bit-FIFO write pointer; opcodes 0x14/0x16/0x1f
     below read and update it) and "BFF_HI"/"BFF_LO" (the bit FIFO's own
-    64-bit content, tracked as two 32-bit halves; opcodes 0x14/0x19 read
+    64-bit content, tracked as two 32-bit halves; opcodes 0x14/0x16 read
     and update these too -- see _bff_words/_bff_extract below). Defaults to
     None for every caller that does not need those opcodes."""
     field = (_field(f, "shiftimm[22:16]") << 16) | _field(f, "shiftimm[15:0]")
@@ -255,7 +257,7 @@ def _shift_immediate(
                 _ureg(values, rn),
                 shifted,
                 "R%d or %s R%d by %d" % (rn, name, rx, amount),
-                lambda a, b: a | b,
+                _op_or,
             )
             operation = (
                 "logical-shift-or-immediate"
@@ -298,9 +300,13 @@ def _shift_immediate(
         # length) is identical to 0x10; NOTE at PRM p.3-17 (all.txt
         # line 3486) says the (SE) option "sign extends the left bits" of
         # the extracted field, i.e. bits above the extracted field take the
-        # value of the field's own sign (MSB) instead of being cleared.
-        # CALIBRATION NOTE: added in a scratch copy of sharc_trace.py for
-        # this task only; not part of the tracked tool.
+        # value of the field's own sign (MSB) instead of being cleared. PGR
+        # p.11-78 (out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4/all.txt:23040)
+        # spells this out for "Rn = FEXT Rx BY <bit6>:<len6> (SE)": "The
+        # MSBs of Rn are sign-extended by the MSB of the extracted field" --
+        # i.e. the field itself must first be isolated to its own LENGTH
+        # bits (as 0x10 above does) before its sign is read and extended;
+        # bits of SOURCE above the field must not leak into the result.
         position = data8 & 0x3F
         length = (_field(f, "dataex[3:0]") << 2) | (data8 >> 6)
         if length == 0:
@@ -308,9 +314,9 @@ def _shift_immediate(
         elif not isinstance(source, Const):
             value = Unknown("fext R%d by %d:%d (se)" % (rx, position, length))
         else:
-            value = Const(
-                _signed(source.value >> position, min(length, 32)) & 0xFFFFFFFF
-            )
+            field_len = min(length, 32)
+            field = (source.value >> position) & ((1 << field_len) - 1)
+            value = Const(_signed(field, field_len) & 0xFFFFFFFF)
         return (
             rn,
             value,
@@ -322,9 +328,7 @@ def _shift_immediate(
         if position > 31:
             value = source
         else:
-            calculate = (
-                (lambda a, b: a | b) if opcode == 0x30 else (lambda a, b: a & ~b)
-            )
+            calculate = _op_or if opcode == 0x30 else _op_andnot
             name = "bset" if opcode == 0x30 else "bclr"
             value = _bitwise(
                 source,
@@ -333,7 +337,7 @@ def _shift_immediate(
                 calculate,
             )
         operation = "bit-set-immediate" if opcode == 0x30 else "bit-clear-immediate"
-        return rn, value, operation, _astatx_bit_field(position, value)
+        return rn, value, operation, _astatx_bit_field(Const(position), value)
     if opcode == 0x32:
         position = data8
         if position > 31:
@@ -343,50 +347,112 @@ def _shift_immediate(
                 source,
                 Const(1 << position),
                 "btgl R%d by %d" % (rx, position),
-                lambda a, b: a ^ b,
+                _op_xor,
             )
-        return rn, value, "bit-toggle-immediate", _astatx_bit_field(position, value)
+        return (
+            rn,
+            value,
+            "bit-toggle-immediate",
+            _astatx_bit_field(Const(position), value),
+        )
     if opcode == 0x33:
         # PRM Table 17-9: ShiftImm 110011 is btst RX by DATA8, the immediate
         # form of the 11001100 register operation. It updates status only, so
         # RN keeps its value.
         return rn, source, "bit-test", _astatx_btst(source, Const(data8))
-    if opcode == 0x1D:
-        # compute_table.json shiftop_shiftimm row 011101 / PGR p.11-73/11-74
-        # (pgr.txt:22883): RN = RN or fdep RX by BIT6:LEN6 (SE). Same
-        # bit6/len6 packing as the FEXT-SE opcode (0x12) above.
+    if opcode in (0x19, 0x1B):
+        # RN = RN or fdep RX by BIT6:LEN6 (0x19) and its (SE) form (0x1B),
+        # PGR p.11-70/11-74. PGR Table 12-11 (pp.12-10/12-11) gives the
+        # 8-bit shifter opcodes 0110 0100 / 0110 1100 and says a ShiftImm
+        # opcode is their "upper 6 MSBs": 011001 / 011011. The SHARC+ PRM's
+        # Table 17-9 (pp.17-10/17-11) has the same 8-bit values, but its
+        # 6-bit column is off by one row for bitext (nu), or fdep and or
+        # fdep (se) (011001 / 011011 / 011101 instead of 010110 / 011001 /
+        # 011011). The image agrees with PGR: every 0x19 in dt2-1.16 has a
+        # BIT6:LEN6 field that BITEXT would reject (bitlen12 95..535) and an
+        # OR-FDEP reading that fits, e.g. the integer-to-float helpers'
+        # sw 0xb88fe6 "R0 = R0 or fdep R2 by 23:8" (exponent) and sw
+        # 0xb88fa4 "R0 = R0 or fdep R12 by 31:1" (sign).
+        sign_extend = opcode == 0x1B
         position = data8 & 0x3F
         length = (_field(f, "dataex[3:0]") << 2) | (data8 >> 6)
         dest = _ureg(values, rn)
-        label = "R%d or fdep R%d by %d:%d (se)" % (rn, rx, position, length)
-        value = _field_deposit_or(dest, source, position, length, True, label)
-        return rn, value, "field-deposit-or-se", _astatx_fext(position + length, value)
+        label = "R%d or fdep R%d by %d:%d%s" % (
+            rn,
+            rx,
+            position,
+            length,
+            " (se)" if sign_extend else "",
+        )
+        value = _field_deposit_or(dest, source, position, length, sign_extend, label)
+        operation = "field-deposit-or-se" if sign_extend else "field-deposit-or"
+        return rn, value, operation, _astatx_fext(position + length, value)
+    if opcode == 0x1D:
+        # PGR Table 12-11: BITDEP RX by BITLEN12 is 0111 0100, ShiftImm
+        # 011101 (see the 0x19/0x1B note above); PGR p.11-86/11-87:
+        # BFF = BFF OR FDEP RX BY <64-(BFFWRP+bitlen)>:<bitlen>, BFFWRP +=
+        # bitlen. SF = updated BFFWRP >= 32; SV = bitlen > 32 or overflow
+        # (which also undefines the FIFO and pointer); SZ, SS cleared.
+        bitlen12 = (_field(f, "dataex[3:0]") << 8) | data8
+        hi, lo = _bff_words(special)
+        old_wrp = (special if special is not None else NO_SPECIAL).get("BFFWRP")
+        if isinstance(old_wrp, Const):
+            overflow: bool | None = old_wrp.value + bitlen12 > 64
+            dep_hi, dep_lo = _bff_deposit(hi, lo, old_wrp.value, source, bitlen12)
+            dep_wrp: Operand = (
+                Unknown("undefined BFFWRP")
+                if overflow
+                else Const(old_wrp.value + bitlen12)
+            )
+        else:
+            overflow = None
+            dep_hi = dep_lo = Unknown("bitdep: BFFWRP unknown")
+            dep_wrp = Unknown("uninitialized BFFWRP")
+        dep_sv: bool | None = (
+            True if bitlen12 > 32 or overflow else (None if overflow is None else False)
+        )
+        dep_updates: FlagUpdate = _flags_from_pairs(
+            (
+                (SS_BIT, False),
+                (SZ_BIT, False),
+                (SV_BIT, dep_sv),
+                (SF_BIT, dep_wrp.value >= 32 if isinstance(dep_wrp, Const) else None),
+            )
+        )
+        return (
+            ("BFFWRP", "BFF_HI", "BFF_LO"),
+            (dep_wrp, dep_hi, dep_lo),
+            "bit-deposit",
+            dep_updates,
+        )
     if opcode == 0x1F:
         # compute_table.json shiftop_shiftimm row 011111 / PGR p.11-89
         # (pgr.txt:23379): BFFWRP = DATA7 -- the immediate form of cu=2
         # opcode 0x7c above (writes the bit-FIFO write-pointer special
         # register, not an RN).
         new_wrp = Const(data8 & 0x7F)
-        updates: dict[int, bool | None] = {
-            SS_BIT: False,
-            SZ_BIT: False,
-            SV_BIT: new_wrp.value > 64,
-            SF_BIT: new_wrp.value >= 32,
-        }
-        return "BFFWRP", new_wrp, "bffwrp-write", _astatx_from_updates(updates)
-    if opcode in (0x14, 0x19):
-        # compute_table.json shiftop_shiftimm rows 010100/011001 / PGR
-        # p.11-90/11-91 (pgr.txt:23402-23481; PRM p.3-18, all.txt:
+        updates: FlagUpdate = _flags_from_pairs(
+            (
+                (SS_BIT, False),
+                (SZ_BIT, False),
+                (SV_BIT, new_wrp.value > 64),
+                (SF_BIT, new_wrp.value >= 32),
+            )
+        )
+        return "BFFWRP", new_wrp, "bffwrp-write", updates
+    if opcode in (0x14, 0x16):
+        # ShiftImm 010100/010110 (PGR Table 12-11's 0101 0000/0101 1000;
+        # see the 0x19 note above for the PRM's misprinted 6-bit column) /
+        # PGR p.11-90/11-91 (pgr.txt:23402-23481; PRM p.3-18, all.txt:
         # 3507-3511): RN = BITEXT RX|BITLEN12(,NU). Extracts the top
         # BITLEN12 bits of the shifter's internal 64-bit bit FIFO into RN,
         # left-shifts the FIFO by that amount, and decrements BFFWRP by the
-        # same amount; 0x19's NU modifier skips the FIFO/pointer update
+        # same amount; 0x16's NU modifier skips the FIFO/pointer update
         # (PGR: "does not modify the bit FIFO or Write pointer") and leaves
         # SF reflecting the un-updated pointer instead. The FIFO is tracked
         # via _bff_words/_bff_extract above (special["BFF_HI"/"BFF_LO"]);
-        # it starts Unknown/absent in every dt2-1.16 trace because nothing
-        # in this image ever executes a BITDEP to fill it (see
-        # _bff_deposit's docstring), so RN, and the FIFO/BFFWRP once a
+        # it starts Unknown/absent until a BITDEP (0x1d above) fills it, so
+        # RN, and the FIFO/BFFWRP once a
         # caller does track them, come out exactly as before this change
         # whenever the FIFO was never tracked to begin with (BFF_HI/BFF_LO
         # are only added to the returned destinations when SPECIAL already
@@ -396,11 +462,11 @@ def _shift_immediate(
         # bits than those in the bit FIFO" case (bitlen12 > the current
         # BFFWRP -- previously ignored entirely), and SZ follows the
         # manual's actual formula instead of being hardcoded Unknown.
-        no_update = opcode == 0x19
+        no_update = opcode == 0x16
         bitlen12 = (_field(f, "dataex[3:0]") << 8) | data8
         over_32 = bitlen12 > 32
         hi, lo = _bff_words(special)
-        old_wrp = (special or {}).get("BFFWRP")
+        old_wrp = (special if special is not None else NO_SPECIAL).get("BFFWRP")
         # PGR p.11-91 documents two distinct, independent error conditions
         # with two distinct consequences:
         #   "A value of more than 32 ... is prohibited and use of such a
@@ -437,25 +503,31 @@ def _shift_immediate(
             sv = None
         else:
             sv = underflow
-        updates = {
-            SS_BIT: False,
-            SV_BIT: sv,
-            SZ_BIT: (value.value == 0) if isinstance(value, Const) else None,
-        }
+        updates = _flags_from_pairs(
+            (
+                (SS_BIT, False),
+                (SV_BIT, sv),
+                (SZ_BIT, (value.value == 0) if isinstance(value, Const) else None),
+            )
+        )
         # Only thread BFF_HI/BFF_LO through the result when SPECIAL already
         # tracks the FIFO (see this branch's opening comment); otherwise
         # keep the pre-existing 2-destination (RN, "BFFWRP") shape.
-        track_fifo = "BFF_HI" in (special or {}) or "BFF_LO" in (special or {})
+        track_fifo = "BFF_HI" in (
+            special if special is not None else NO_SPECIAL
+        ) or "BFF_LO" in (special if special is not None else NO_SPECIAL)
         if no_update:
             # PGR p.11-91: NU "returns the requested number of bits as
             # usual" (VALUE above already reflects that) "but does not
             # modify the bit FIFO or Write pointer", and "the SF flag is
             # not updated" -- it keeps reflecting the pointer from before
             # this instruction, not the hypothetical post-decrement value.
-            updates[SF_BIT] = (
-                old_wrp.value >= 32 if isinstance(old_wrp, Const) else None
+            updates = _flags_put(
+                updates,
+                SF_BIT,
+                old_wrp.value >= 32 if isinstance(old_wrp, Const) else None,
             )
-            return rn, value, "bit-extract-nu", _astatx_from_updates(updates)
+            return rn, value, "bit-extract-nu", updates
         wrp_after: Operand = (
             Const(old_wrp.value - bitlen12)
             if isinstance(old_wrp, Const) and not pointer_and_fifo_undefined
@@ -465,21 +537,23 @@ def _shift_immediate(
                 else "uninitialized BFFWRP"
             )
         )
-        updates[SF_BIT] = (
-            wrp_after.value >= 32 if isinstance(wrp_after, Const) else None
+        updates = _flags_put(
+            updates,
+            SF_BIT,
+            wrp_after.value >= 32 if isinstance(wrp_after, Const) else None,
         )
         if track_fifo:
             return (
                 (rn, "BFFWRP", "BFF_HI", "BFF_LO"),
                 (value, wrp_after, fifo_after[0], fifo_after[1]),
                 "bit-extract",
-                _astatx_from_updates(updates),
+                updates,
             )
         return (
             (rn, "BFFWRP"),
             (value, wrp_after),
             "bit-extract",
-            _astatx_from_updates(updates),
+            updates,
         )
     raise ValueError("unsupported ShiftImm opcode %#x" % opcode)
 
@@ -565,7 +639,7 @@ def shift_logical_or(rn, rx, ry, left, right, values, special, approx_recips) ->
         _ureg(values, rn),
         shifted,
         "R%d or lshift R%d by R%d" % (rn, rx, ry),
-        lambda a, b: a | b,
+        _op_or,
     )
     return rn, value, "logical-shift-or", _astatx_shift(or_amount, shifted, "clear")
 
@@ -601,7 +675,7 @@ def _shift_bitset_impl(rn, rx, ry, left, right, opcode: int) -> tuple:
     elif right.value > 31:
         value = left
     else:
-        calculate = (lambda a, b: a | b) if opcode == 0xC0 else (lambda a, b: a & ~b)
+        calculate = _op_or if opcode == 0xC0 else _op_andnot
         value = _bitwise(
             left, Const(1 << right.value), "%s R%d by R%d" % (name, rx, ry), calculate
         )
@@ -635,7 +709,7 @@ def shift_btgl(rn, rx, ry, left, right, values, special, approx_recips) -> tuple
             left,
             Const(1 << right.value),
             "btgl R%d by R%d" % (rx, ry),
-            lambda a, b: a ^ b,
+            _op_xor,
         )
     return rn, value, "bit-toggle", _astatx_bit_field(right, value)
 
@@ -652,9 +726,17 @@ def shift_btst(rn, rx, ry, left, right, values, special, approx_recips) -> tuple
 # one of those has run). SF is documented "Not affected" so it is left
 # out of UPDATES entirely (stays whatever it already was).
 def shift_bffwrp_read(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
-    value = (special or {}).get("BFFWRP", Unknown("uninitialized BFFWRP"))
-    updates: dict[int, bool | None] = {SS_BIT: False, SZ_BIT: False, SV_BIT: False}
-    return rn, value, "bffwrp-read", _astatx_from_updates(updates)
+    value = (special if special is not None else NO_SPECIAL).get(
+        "BFFWRP", Unknown("uninitialized BFFWRP")
+    )
+    updates: FlagUpdate = _flags_from_pairs(
+        (
+            (SS_BIT, False),
+            (SZ_BIT, False),
+            (SV_BIT, False),
+        )
+    )
+    return rn, value, "bffwrp-read", updates
 
 
 # PGR p.11-89 (pgr.txt:23379), opcode 0111 1100: BFFWRP = RN|<data7> --
@@ -671,13 +753,15 @@ def shift_bffwrp_write(
         if isinstance(source, Const)
         else Unknown("BFFWRP = R%d" % rn)
     )
-    updates = {
-        SS_BIT: False,
-        SZ_BIT: False,
-        SV_BIT: (new_wrp.value > 64) if isinstance(new_wrp, Const) else None,
-        SF_BIT: (new_wrp.value >= 32) if isinstance(new_wrp, Const) else None,
-    }
-    return "BFFWRP", new_wrp, "bffwrp-write", _astatx_from_updates(updates)
+    updates = _flags_from_pairs(
+        (
+            (SS_BIT, False),
+            (SZ_BIT, False),
+            (SV_BIT, (new_wrp.value > 64) if isinstance(new_wrp, Const) else None),
+            (SF_BIT, (new_wrp.value >= 32) if isinstance(new_wrp, Const) else None),
+        )
+    )
+    return "BFFWRP", new_wrp, "bffwrp-write", updates
 
 
 # Shifter opcode 1011 0000: absent from both public sources' shifter
@@ -695,7 +779,7 @@ def shift_undocumented_b0(
         rn,
         Unknown(label),
         "shift-undocumented-b0",
-        lambda astatx: _astatx_forget(astatx, ALU_FLAGS_MASK),
+        _flags_forget(ALU_FLAGS_MASK),
     )
 
 
@@ -713,7 +797,7 @@ def shift_undocumented_14(
         rn,
         Unknown(label),
         "shift-undocumented-14",
-        lambda astatx: _astatx_forget(astatx, SHIFT_FLAGS_MASK),
+        _flags_forget(SHIFT_FLAGS_MASK),
     )
 
 

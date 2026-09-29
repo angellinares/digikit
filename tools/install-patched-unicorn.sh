@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Build the m68k SR-read, code-hook CCR-sync and EMAC MAC-with-load fixes from
-# official Unicorn 2.1.4.
+# Build the m68k SR-read, code-hook CCR-sync, EMAC MAC-with-load, EMAC
+# fractional-mode and flush-flags CC_OP fixes, and the count-hook fast path,
+# from official Unicorn 2.1.4.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -9,10 +10,16 @@ commit=8028ec436f2d9376525352dd38ed9ed6b9f6be10
 patches=(
   "$root/patches/unicorn-2.1.4-m68k-hook-ccr-sync.patch"
   "$root/patches/unicorn-2.1.4-m68k-emac-mac-load.patch"
+  "$root/patches/unicorn-2.1.4-m68k-emac-fractional.patch"
+  "$root/patches/unicorn-2.1.4-count-hook-fast-path.patch"
+  "$root/patches/unicorn-2.1.4-m68k-flush-flags-sync.patch"
 )
 patch_shas=(
   56de71acf2adbd5ca2f448095478e65e49fd79d378aeb5b5e4217d2c90f52f4e
   ac128dd6836997de55e0d2ad70d7a2978639168090f552c5634da50fddc70bfe
+  8f497c939b7b772a0a00a7d16ad85e8a1a6865b772191ca5ca131fb477824603
+  5f7523267ed0a6324496c7ea665d6ea22d84f30d82199218f66594291adc3e17
+  9f76167940573e1e33582f6e4fbef10d95528dfa26090406a9b40a4b45712807
 )
 python=${PYTHON:-$root/.venv/bin/python}
 dry_run=false

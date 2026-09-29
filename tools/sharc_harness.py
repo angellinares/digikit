@@ -1295,15 +1295,30 @@ def write_dma_transfer(
     return base
 
 
-def drive_dma_completion(runner: sr.Runner, image: str) -> sr.Runner:
+def drive_dma_completion(
+    runner: sr.Runner, image: str, *, rearm_copy_gate: bool = False
+) -> sr.Runner:
     """Call `FUN_1c77b4` (`DMA_SHIFT_CALLBACK`) the way the SPI service's
     own ISR dispatch would on a receive-complete event (`R8` with bit 5
     set -- see this module's own section note for why), toggling
     `profile(image).command_word_shift_src` onto the buffer
-    `write_dma_transfer()` just filled, and also re-arms `COPY_GATE_ADDRESS`
-    (see that note's own **[O]** paragraph -- a documented stand-in for a
-    real per-transfer setter this project has not found, not a traced
-    firmware write).
+    `write_dma_transfer()` just filled.
+
+    REARM_COPY_GATE (default False) also writes 1 to `COPY_GATE_ADDRESS`,
+    the old per-frame stand-in (see that note's own **[O]** paragraph).
+    **[C] 2026-09-28: off by default.** With the gate set every frame,
+    render_frame's start-of-frame copy makes the per-voice flag table
+    0x2522ac (FUN_1c24e9, from RX_BASE) and the trig test at sw 0x1c2d1a
+    (the landing ring's TX halfword 0x22) read the same frame, so the
+    sample-load gate at sw 0x1c2d22 can only be true when 0x1c2d1a has
+    already branched to the trigger block 0x1c33bc: the tail block
+    0x1c3329 (FUN_1c3f78 -> FUN_1c7442 -> FUN_1c4e70, the only per-track
+    sample load in the frame) is unreachable after a trig. Without the
+    re-arm, the unconditional end-of-frame copy (sw 0x1c3064-0x1c3078)
+    feeds the next frame, and a trig in frame N loads the track's slot and
+    arms its voices in frame N+1 (scratchpad report sharc-trig-arm.md). The
+    only SHARC writer of the gate is the clear at sw 0x1c2c8b; run_init()
+    leaves it 1, so the first frame still copies.
 
     Returns a NEW Runner (`Runner.fresh_call()`, the same convention every
     other entry point in this module uses) positioned right after the
@@ -1325,7 +1340,8 @@ def drive_dma_completion(runner: sr.Runner, image: str) -> sr.Runner:
             "drive_dma_completion: FUN_1c77b4 (%#x) did not return cleanly: %s"
             % (DMA_SHIFT_CALLBACK, result.halt)
         )
-    _poke(new_runner.state, COPY_GATE_ADDRESS, 1, width=1)
+    if rearm_copy_gate:
+        _poke(new_runner.state, COPY_GATE_ADDRESS, 1, width=1)
     return new_runner
 
 
@@ -1550,7 +1566,19 @@ FRAME_PATCH_TABLE: sv.PatchTable = {
     # does. `0x1C4965` stays; no `tools/sharc_core` change was made (no
     # citable manual value exists, and the one testable candidate would not
     # have fixed the actual bug).
-    0x1C4965: [("reg", "R6", 0x3F800000), ("reg", "R4", 0x3F800000)],
+    #
+    # **[C] 2026-09-28: the `0x1C4965` entry is REMOVED; there was no
+    # BITEXT.** ShiftImm opcode 0x19 is `Rn = Rn or fdep Rx by bit6:len6`,
+    # not BITEXT (NU): PGR Table 12-11 (pp.12-10/12-11) gives or-fdep as
+    # 0110 0100 and a ShiftImm opcode as its upper six bits; the PRM's
+    # Table 17-9 6-bit column is off by one row there
+    # (tools/sharc_core/compute_shift.py). The five "BITLEN12" sightings
+    # are bit6:len6 fields, e.g. 0xb88fa4 "R0 = R0 or fdep R12 by 31:1"
+    # sets the sign bit of FUN_b88f70's integer-to-float result. With that
+    # decoded, the fcomp at 0x1c4965 gets concrete operands and the frame
+    # returns with no patch (tests/test_sharc_harness.py's
+    # test_render_frames_without_patches_*).
+    # 0x1C4965: [("reg", "R6", 0x3F800000), ("reg", "R4", 0x3F800000)],
 }
 
 # A further, DIAGNOSTIC-ONLY hypothesis for the third known stop
@@ -1611,9 +1639,24 @@ FRAME_DIAGNOSTIC_ASTATX_PATCH: sv.PatchTable = {0x1C0885: [("reg", "ASTATX", 0x4
 # entry's own arbitrary `0x4000` register override did; the final halt
 # (pc, reason) is unchanged. tools/sharc_widthaudit.py --root frame
 # reconfirms 0 mismatches at the new count (17,475 load/store events).
+#
+# 2026-09-28: 96,044 -> 213,504 instructions, same halt, and no patch
+# needed. Five tools/sharc_core fixes change the frame's path: Type4b's
+# (l, x, w) = (1, 1, 1) is a normal word, not (lw) (PRM p.13-32); (lw)
+# modifiers scale like normal words (PRM p.6-9, Table 6-2); the plain
+# MODIFY (Type7b, Type7a without (sw)/(nw)) does not scale (PRM p.6-10);
+# ShiftImm 0x19 is Rn = Rn or fdep, not BITEXT (NU) (PGR Table 12-11), so
+# FRAME_PATCH_TABLE's last entry is gone; and byte/short SIMD companions
+# are modelled (PRM p.7-5). tools/sharc_widthaudit.py --root frame:
+# 0 mismatches over 46,128 load/store events.
+#
+# 2026-09-28 (later): 213,504 -> 213,247, same halt. The SIMD half of the
+# move forms: Type3a's PEy companion (PRM p.13-15, Table 6-10) and the PEy
+# compute of Type3a/4a/1a/5a (PRM p.101). With both switched off the count
+# is 213,504 again (scratchpad report sharc-trig-arm.md).
 FRAME_MILESTONE = {
     "pc_sw": 0x1C75D3,
-    "instructions": 96044,
+    "instructions": 213247,
     "reason": "return without followed call",
 }
 

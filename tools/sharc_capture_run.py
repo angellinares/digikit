@@ -312,6 +312,23 @@ TRACK_TYPE_OFFSET = 0
 KIT_LOAD_FN = 0x4002D9C4
 ROW_REFRESH_FN = 0x4002D438
 
+# Calibration for the unfixed fractional EMAC (1.16 only). vector_191_handler
+# calls the parameter smoother FUN_400d92a2(&0x80003340) at 0x4002e8c6; it
+# returns D0 = 0x80005b50, and the call's argument is still on the stack at
+# the return address 0x4002e8cc (`addq.l #4,SP` follows). The smoother is a
+# unity-gain one-pole in fractional EMAC mode over the first
+# SMOOTHED_BYTES of the block: output halfword j (at D0 + 2j) smooths input
+# halfword j (at arg + 2j). Patched Unicorn leaves out the fractional
+# `<< 1` (MCF54418RM p.159), so the filter settles at ~0.029 x instead of
+# x, and every smoothed TX field (sample slot, tune, level, filter, amp)
+# decays towards 0. On hardware, with no parameter moving, the output
+# settles at the input. SLOT_HALFWORD is track t's sample slot in that row
+# (mirror index 28, TX 0xe0 + 0x60t); rows are TRACK_ROW_STRIDE apart.
+SMOOTHER_RETURN = 0x4002E8CC
+SMOOTHED_BYTES = 0x990
+TRACK_ROW_STRIDE = 0x8E
+SLOT_HALFWORD = 0x2D
+
 
 def _resolve_panel_profile(main_img: bytes):
     return symbols.resolve(main_img)
@@ -328,6 +345,72 @@ def parse_track_type_poke(spec: str) -> tuple[int, int]:
     if not 0 <= track < 16:
         raise ValueError("bad --poke-track-type %r: track must be 0..15" % spec)
     return track, type_
+
+
+def parse_slot_poke(spec: str) -> tuple[int, int]:
+    """'TRACK:VALUE' -> (track, value) for `--poke-slot`."""
+    if ":" not in spec:
+        raise ValueError("bad --poke-slot %r (want TRACK:VALUE)" % spec)
+    track_s, value_s = spec.split(":", 1)
+    track, value = int(track_s, 0), int(value_s, 0)
+    if not 0 <= track < 16:
+        raise ValueError("bad --poke-slot %r: track must be 0..15" % spec)
+    if not -0x8000 <= value < 0x10000:
+        raise ValueError("bad --poke-slot %r: value must fit 16 bits" % spec)
+    return track, value
+
+
+def parse_press(spec: str) -> tuple[str, int]:
+    """'NAME@INSTR' -> (NAME, INSTR) for `--press`: a panel button by the
+    firmware's own name (e.g. NO, YES, PLAY, "TRIG 1") and the capture-relative
+    instruction count at which it is pressed and released."""
+    if "@" not in spec:
+        raise ValueError("bad --press %r (want NAME@INSTR)" % spec)
+    name, at_s = spec.rsplit("@", 1)
+    if not name:
+        raise ValueError("bad --press %r: empty button name" % spec)
+    return name, int(at_s, 0)
+
+
+def button_channel_bit(m, profile, name: str) -> tuple[int, int]:
+    """-> (channel, bit) of the panel button the running image calls NAME.
+    Codes 1..48 are `channel * 8 + bit + 1` (`emu.panelin.code_for`)."""
+    names = panelin.control_names(m, profile, "button")
+    for code, text in names.items():
+        if text == name and 1 <= code <= 48:
+            return divmod(code - 1, 8)
+    raise ValueError(
+        "no panel button named %r (known: %s)" % (name, sorted(names.values()))
+    )
+
+
+def install_smoother_calibration(m, at, settle: bool, slot_pokes) -> None:
+    """Hook the return from the parameter smoother (SMOOTHER_RETURN's own
+    comment) and, every tick:
+
+    - settle: copy the smoother's input over its output, i.e. what the
+      hardware's unity-gain filter has settled to when no parameter moves;
+    - slot_pokes: then write VALUE to track TRACK's smoothed slot halfword.
+
+    Both are host calibration standing in for the unfixed fractional EMAC
+    mode, not firmware behaviour; they are off by default and recorded in the
+    capture header. The rest of the handler (the slot rewrite for
+    FUN_4002dcee tracks, the frame copies) runs on the corrected row as it
+    would on hardware."""
+
+    def hook(uc, addr, size, data):
+        out = uc.reg_read(UC_M68K_REG_D0)
+        sp = uc.reg_read(UC_M68K_REG_A7)
+        src = struct.unpack(">I", bytes(uc.mem_read(sp, 4)))[0]
+        if settle:
+            uc.mem_write(out, bytes(uc.mem_read(src, SMOOTHED_BYTES)))
+        for track, value in slot_pokes:
+            uc.mem_write(
+                out + track * TRACK_ROW_STRIDE + 2 * SLOT_HALFWORD,
+                struct.pack(">H", value & 0xFFFF),
+            )
+
+    at(SMOOTHER_RETURN, hook)
 
 
 def parse_mem_range(spec: str) -> tuple[int, int]:
@@ -511,6 +594,10 @@ def run(
     watch_mem: tuple[tuple[int, int], ...] = (),
     pre_instrs: int = 0,
     card_image: str | None = None,
+    presses: tuple[tuple[str, int], ...] = (),
+    trig_hold: int = 0,
+    settle_smoother: bool = False,
+    slot_pokes: tuple[tuple[int, int], ...] = (),
 ) -> dict:
     if kind not in ("idle", "note", "play"):
         raise ValueError("kind must be 'idle', 'note' or 'play', got %r" % (kind,))
@@ -556,6 +643,11 @@ def run(
 
     panel_profile = _resolve_panel_profile(main_img)
     m.uc.mem_write(prof["gate"], bytes(4))  # open the frame-build gate
+    press_plan = sorted(
+        (at_, name, button_channel_bit(m, panel_profile, name)) for name, at_ in presses
+    )
+    if (settle_smoother or slot_pokes) and prof["name"] != DSPI1_PROFILE_NAME:
+        raise ValueError("--settle-smoother/--poke-slot addresses are 1.16 only")
 
     if pre_instrs:
         # Let the real per-track kit-load-and-refresh run before the timed
@@ -598,6 +690,11 @@ def run(
             "poke_track_types": ["%d:%d" % (t, y) for t, y in poke_track_types],
             "pre_instrs": pre_instrs,
             "trig_track": trig_track if kind == "note" else None,
+            "presses": ["%s@%d" % (name, at_) for at_, name, _cb in press_plan],
+            "trig_hold": trig_hold,
+            # Host calibration, not firmware behaviour (SMOOTHER_RETURN).
+            "settle_smoother": settle_smoother,
+            "poke_slots": ["%d:%d" % (t, v) for t, v in slot_pokes],
         },
     )
     peer = CapturingPeer(writer, counter=lambda: pits.now)
@@ -637,6 +734,8 @@ def run(
         uc.reg_write(UC_M68K_REG_PC, ret)
 
     at(prof["driver"], driver_hook)
+    if settle_smoother or slot_pokes:
+        install_smoother_calibration(m, at, settle_smoother, slot_pokes)
 
     if prof["name"] == DSPI1_PROFILE_NAME:
         install_dspi1_observer(at, writer, lambda: pits.now)
@@ -649,25 +748,43 @@ def run(
     for lo, hi in mem_ranges:
         install_mem_write_watch(m, writer, lambda: pits.now, lo, hi)
 
-    triggered = {"done": False}
+    triggered: dict = {"done": False, "released": not trig_hold}
     forced = {"last": 0, "skipped": 0}
     # Read once: the vector's configured INTC level, ignoring its mask bit
     # (this is a forced, not a real, delivery -- see ready_to_force()'s own
     # docstring for why the mask is irrelevant here).
     vector_level = interrupt_level(m, prof["vector"], respect_mask=False)
 
+    pressed = {"n": 0}
+
     def on_chunk(pc_, done):
+        while pressed["n"] < len(press_plan) and done >= press_plan[pressed["n"]][0]:
+            _at, _name, (channel, bit) = press_plan[pressed["n"]]
+            panelin.feed(
+                m,
+                panel_profile,
+                panelin.encode_buttons(channel, 1 << bit)
+                + panelin.encode_buttons(channel, 0),
+            )
+            pressed["n"] += 1
         if kind in ("note", "play") and not triggered["done"] and done >= trig_at:
             channel, bit = (
                 trig_channel_bit(trig_track)
                 if kind == "note"
                 else (PLAY_CHANNEL, PLAY_BIT)
             )
-            data = panelin.encode_buttons(channel, 1 << bit) + panelin.encode_buttons(
-                channel, 0
-            )
+            data = panelin.encode_buttons(channel, 1 << bit)
+            if not trig_hold:
+                data += panelin.encode_buttons(channel, 0)
+            else:
+                triggered["release"] = (trig_at + trig_hold, channel)
             panelin.feed(m, panel_profile, data)
             triggered["done"] = True
+        release = triggered.get("release")
+        if release is not None and done >= release[0]:
+            panelin.feed(m, panel_profile, panelin.encode_buttons(release[1], 0))
+            triggered["release"] = None
+            triggered["released"] = True
         if done - forced["last"] >= force_period:
             if ready_to_force(m, vector_level):
                 m.uc.mem_write(prof["counter"], bytes(4))
@@ -707,6 +824,8 @@ def run(
         "ssi0_status": ssi0_status,
         "forced_frames_deferred": forced["skipped"],
         "triggered": triggered["done"] if kind in ("note", "play") else None,
+        "presses_delivered": pressed["n"],
+        "released": triggered["released"] if kind in ("note", "play") else None,
         "image_sha256": image_sha256,
         "out": out_path,
     }
@@ -786,6 +905,47 @@ def parse_args(argv=None):
         "stops the phase as soon as it fires, so a larger budget costs "
         "nothing when it fires early",
     )
+    p.add_argument(
+        "--press",
+        dest="press",
+        action="append",
+        default=[],
+        metavar="NAME@INSTR",
+        help="press and release the panel button the image calls NAME (e.g. "
+        "NO, YES, PLAY) at capture-relative instruction INSTR; repeatable. "
+        "Use it to close a modal window (loaded +Drive snapshots show 'FILE "
+        "SYSTEM OK / PRESS Y/N TO CLOSE', which swallows TRIG keys)",
+    )
+    p.add_argument(
+        "--trig-hold",
+        dest="trig_hold",
+        type=lambda s: int(s, 0),
+        default=0,
+        metavar="N",
+        help="hold the --kind note/play button for N instructions before "
+        "releasing it (0, the default: press and release in one panel "
+        "message, the old behaviour). A hold past --instrs never releases",
+    )
+    p.add_argument(
+        "--settle-smoother",
+        dest="settle_smoother",
+        action="store_true",
+        help="CALIBRATION (1.16): after each parameter-smoother call, copy "
+        "its input over its output, i.e. the hardware's settled value. Stands "
+        "in for the unfixed fractional EMAC mode, which makes every smoothed "
+        "TX field decay to ~0.03x (see SMOOTHER_RETURN). Off by default",
+    )
+    p.add_argument(
+        "--poke-slot",
+        dest="poke_slot",
+        action="append",
+        default=[],
+        metavar="TRACK:VALUE",
+        help="CALIBRATION (1.16): after each smoother call, set 0-indexed "
+        "TRACK's smoothed sample-slot word (TX 0xe0 + 0x60*TRACK) to VALUE; "
+        "repeatable; applied after --settle-smoother. Stands in for the "
+        "unfixed fractional EMAC mode. Off by default",
+    )
     return p.parse_args(argv)
 
 
@@ -812,6 +972,10 @@ def main(argv=None) -> int:
         poke_track_types=poke_track_types,
         watch_mem=watch_mem,
         pre_instrs=args.pre_instrs,
+        presses=tuple(parse_press(spec) for spec in args.press),
+        trig_hold=args.trig_hold,
+        settle_smoother=args.settle_smoother,
+        slot_pokes=tuple(parse_slot_poke(spec) for spec in args.poke_slot),
     )
     print(
         "%s: %d frame(s), %d ssi0-rx, %d dspi1-calls, %d mem-writes, "

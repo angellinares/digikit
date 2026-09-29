@@ -38,6 +38,7 @@ from .state import (
     _copy,
     _event,
     _json_value,
+    _snapshot_uregs,
     _stop,
     _ureg,
 )
@@ -82,6 +83,26 @@ def _type_11c(
     )
 
 
+def _flow_apply_compute(
+    executed: State, insn: Instruction, f: Mapping[str, int]
+) -> str | None:
+    """The parallel compute of a Type 11a/9a transfer on EXECUTED; returns
+    a stop reason, or None."""
+    try:
+        compute = _compute(
+            f,
+            False,
+            _snapshot_uregs(executed.uregs),
+            executed.special,
+            approx_recips=executed.approx_recips,
+        )
+    except ValueError as error:
+        return str(error)
+    if compute is not None:
+        _apply_compute(executed, insn, compute)
+    return None
+
+
 def _type_11a(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
@@ -113,31 +134,16 @@ def _type_11a(
     delayed = bool(_field(f, "j"))
     compute_when_taken = not bool(_field(f, "e"))
 
-    def apply_compute(executed: State) -> str | None:
-        try:
-            compute = _compute(
-                f,
-                False,
-                dict(executed.uregs),
-                executed.special,
-                approx_recips=executed.approx_recips,
-            )
-        except ValueError as error:
-            return str(error)
-        if compute is not None:
-            _apply_compute(executed, insn, compute)
-        return None
-
     predicate = _predicate(state, cond)
     if predicate is not None:
         if predicate == compute_when_taken:
-            error = apply_compute(state)
+            error = _flow_apply_compute(state, insn, f)
             if error:
                 return [_stop(state, insn, error)]
         return _return_transfer(state, insn, predicate, delayed)
     taken, not_taken = _copy(state), _copy(state)
     compute_state = taken if compute_when_taken else not_taken
-    error = apply_compute(compute_state)
+    error = _flow_apply_compute(compute_state, insn, f)
     if error:
         return [_stop(compute_state, insn, error)]
     _event(
@@ -176,21 +182,6 @@ def _type_9a_abs(
     cond = _field(f, "cond")
     compute_when_taken = not bool(_field(f, "e"))
 
-    def apply_compute(executed: State) -> str | None:
-        try:
-            compute = _compute(
-                f,
-                False,
-                dict(executed.uregs),
-                executed.special,
-                approx_recips=executed.approx_recips,
-            )
-        except ValueError as error:
-            return str(error)
-        if compute is not None:
-            _apply_compute(executed, insn, compute)
-        return None
-
     if _field(f, "b") == 0 and cond == 0x1F and pmm == 6 and _field(f, "j") == 1:
         # The verified I(8+pmi)/M14 (DB) return idiom of 9b_abs, plus the
         # compute -- see _check_return_target's docstring for why any DAG2
@@ -207,7 +198,7 @@ def _type_9a_abs(
         if mismatch:
             return [_stop(state, insn, mismatch)]
         if compute_when_taken:
-            error = apply_compute(state)
+            error = _flow_apply_compute(state, insn, f)
             if error:
                 return [_stop(state, insn, error)]
         if insn.length_bytes is None:
@@ -234,13 +225,13 @@ def _type_9a_abs(
     transfer = _transfer if _field(f, "j") else _immediate_transfer
     if predicate is not None:
         if predicate == compute_when_taken:
-            error = apply_compute(state)
+            error = _flow_apply_compute(state, insn, f)
             if error:
                 return [_stop(state, insn, error)]
         return transfer(state, insn, target, call, predicate, loop_abort=loop_abort)
     taken, not_taken = _copy(state), _copy(state)
     compute_state = taken if compute_when_taken else not_taken
-    error = apply_compute(compute_state)
+    error = _flow_apply_compute(compute_state, insn, f)
     if error:
         return [_stop(compute_state, insn, error)]
     _event(
@@ -370,34 +361,19 @@ def _type_9a_rel(
     target = (state.pc_sw + _signed(relative, 6)) & 0xFFFFFF
     predicate = _predicate(state, _field(f, "cond"))
 
-    def apply_compute(executed: State) -> str | None:
-        try:
-            compute = _compute(
-                f,
-                False,
-                dict(executed.uregs),
-                executed.special,
-                approx_recips=executed.approx_recips,
-            )
-        except ValueError as error:
-            return str(error)
-        if compute is not None:
-            _apply_compute(executed, insn, compute)
-        return None
-
     compute_when_taken = not bool(_field(f, "e"))
     call = bool(_field(f, "b"))
     transfer = _transfer if _field(f, "j") else _immediate_transfer
     if predicate is not None:
         if predicate == compute_when_taken:
-            error = apply_compute(state)
+            error = _flow_apply_compute(state, insn, f)
             if error:
                 return [_stop(state, insn, error)]
         return transfer(state, insn, target, call, predicate, loop_abort=loop_abort)
 
     taken, not_taken = _copy(state), _copy(state)
     compute_state = taken if compute_when_taken else not_taken
-    error = apply_compute(compute_state)
+    error = _flow_apply_compute(compute_state, insn, f)
     if error:
         return [_stop(compute_state, insn, error)]
     _event(

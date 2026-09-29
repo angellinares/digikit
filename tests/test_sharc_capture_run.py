@@ -32,6 +32,44 @@ class ParseTrackTypePokeTest(unittest.TestCase):
             scr.parse_track_type_poke("-1:2")
 
 
+class ParseSlotPokeTest(unittest.TestCase):
+    def test_decimal_and_hex(self):
+        self.assertEqual(scr.parse_slot_poke("0:7"), (0, 7))
+        self.assertEqual(scr.parse_slot_poke("0xf:0x400"), (15, 0x400))
+
+    def test_rejects_bad_shape_and_range(self):
+        for spec in ("07", "16:7", "0:0x10000"):
+            with self.assertRaises(ValueError):
+                scr.parse_slot_poke(spec)
+
+
+class ParsePressTest(unittest.TestCase):
+    def test_name_with_space(self):
+        self.assertEqual(scr.parse_press("TRIG 1@0x10"), ("TRIG 1", 16))
+
+    def test_rejects_missing_at_or_name(self):
+        for spec in ("NO", "@100"):
+            with self.assertRaises(ValueError):
+                scr.parse_press(spec)
+
+
+class CalibrationDefaultsTest(unittest.TestCase):
+    """--settle-smoother, --poke-slot, --press and --trig-hold are opt-in:
+    the defaults keep the old behaviour."""
+
+    def test_defaults_off(self):
+        args = scr.parse_args(["snap", "--out", "x.dt2cap", "--kind", "note"])
+        self.assertFalse(args.settle_smoother)
+        self.assertEqual(args.poke_slot, [])
+        self.assertEqual(args.press, [])
+        self.assertEqual(args.trig_hold, 0)
+
+    def test_slot_halfword_is_tx_0xe0(self):
+        # Row halfword 0x2d; the frame's per-track block at TX 0xda starts at
+        # row halfword 0x2a, so the slot lands at TX 0xda + 6 = 0xe0.
+        self.assertEqual(0xDA + 2 * (scr.SLOT_HALFWORD - 0x2A), 0xE0)
+
+
 class ParseMemRangeTest(unittest.TestCase):
     def test_hex_range(self):
         self.assertEqual(

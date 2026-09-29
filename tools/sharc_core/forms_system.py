@@ -39,6 +39,9 @@ from .state import (
 from .values import (
     Const,
     _bitwise,
+    _op_andnot,
+    _op_or,
+    _op_xor,
 )
 
 
@@ -47,6 +50,14 @@ def _type_21a(
 ) -> list[State]:
     """21a, 21c."""
     return _advance(state, insn)
+
+
+# Type18a BOP -> (operation name, bit operation) (PRM p.401).
+_TYPE18A_OPERATIONS = {
+    0: ("set", _op_or),
+    1: ("clear", _op_andnot),
+    2: ("toggle", _op_xor),
+}
 
 
 def _type_18a(
@@ -81,7 +92,7 @@ def _type_18a(
         # SIMD; _astatx_bit_test then decides from whatever bits of the
         # complementary source (possibly a PartialConst) are known.
         if sreg in (6, 7, 8, 9) and simd is not False:
-            complement = {6: 7, 7: 6, 8: 9, 9: 8}[sreg]
+            complement = sreg ^ 1  # USTAT/STKY pair: 6<->7, 8<->9
             complement_source = _ureg_raw(
                 state.uregs, UREG_CODES["USTAT1"] + complement
             )
@@ -109,12 +120,7 @@ def _type_18a(
             simd=simd,
         )
         return _advance(state, insn)
-    operations = {
-        0: ("set", lambda a, b: a | b),
-        1: ("clear", lambda a, b: a & ~b),
-        2: ("toggle", lambda a, b: a ^ b),
-    }
-    if bop not in operations:
+    if bop not in _TYPE18A_OPERATIONS:
         return [_stop(state, insn, "unsupported Type18a BOP %#x" % bop)]
     # ASTATx/y and STKYx/y have implicit complementary-register behavior
     # in SIMD mode.  Stop rather than invent MODE1/PE state for those
@@ -130,7 +136,7 @@ def _type_18a(
     code = UREG_CODES["USTAT1"] + sreg
     mask = _wide(f, "data")
     previous = _ureg(state.uregs, code)
-    operation, calculate = operations[bop]
+    operation, calculate = _TYPE18A_OPERATIONS[bop]
     value = _bitwise(
         previous,
         Const(mask),
@@ -155,25 +161,14 @@ def _type_20a(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
     """20a."""
-    push_fields = ("lpu", "spu", "ppu")
-    pop_fields = ("lpo", "spo", "ppo")
-    if any(_field(f, field) for field in push_fields) and any(
-        _field(f, field) for field in pop_fields
-    ):
+    pushes = _field(f, "lpu") or _field(f, "spu") or _field(f, "ppu")
+    pops = _field(f, "lpo") or _field(f, "spo") or _field(f, "ppo")
+    if pushes and pops:
         return [_stop(state, insn, "invalid Type20a mixed push and pop")]
-    unsupported = [
-        field
-        for field in (
-            "lpu",
-            "ppu",
-            "llii",
-            "lldwb",
-            "lldi",
-            "llpwb",
-            "llpi",
-        )
-        if _field(f, field)
-    ]
+    unsupported: list[str] = []
+    for field in ("lpu", "ppu", "llii", "lldwb", "lldi", "llpwb", "llpi"):
+        if _field(f, field):
+            unsupported.append(field)
     if unsupported:
         return [
             _stop(
@@ -206,13 +201,13 @@ def _type_20a(
             _ureg(state.uregs, mode1_code),
             _ureg(state.uregs, UREG_CODES["MMASK"]),
             "MODE1 masked by PUSH STS",
-            lambda mode1, mmask: mode1 & ~mmask,
+            _op_andnot,
         )
         state.uregs[stkyx_code] = _bitwise(
             _ureg(state.uregs, stkyx_code),
             Const(1 << 24),
             "status stack nonempty",
-            lambda value, mask: value & ~mask,
+            _op_andnot,
         )
     if pop_status:
         if state.status_stack:
@@ -225,7 +220,7 @@ def _type_20a(
                 _ureg(state.uregs, stkyx_code),
                 Const(1 << 24),
                 "status stack empty",
-                lambda value, mask: value | mask,
+                _op_or,
             )
     if pop_loop:
         _pop_loop_stack(state)

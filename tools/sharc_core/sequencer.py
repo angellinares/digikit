@@ -43,6 +43,8 @@ from .values import (
     Unknown,
     _astatx_known_bit,
     _bitwise,
+    _op_andnot,
+    _op_or,
     _signed,
 )
 
@@ -106,7 +108,7 @@ def _advance(state: State, insn: Instruction) -> list[State]:
                     _ureg(state.uregs, stkyx_code),
                     Const(1 << 26),
                     "loop stacks empty",
-                    lambda a, b: a | b,
+                    _op_or,
                 )
         state.pc_sw = next_pc
         return [state]
@@ -399,7 +401,7 @@ def _pop_loop_stack(state: State) -> None:
             _ureg(state.uregs, stkyx_code),
             Const(1 << 26),
             "loop stacks empty",
-            lambda value, mask: value | mask,
+            _op_or,
         )
 
 
@@ -496,6 +498,26 @@ def _immediate_transfer(
     return _advance(taken, insn) + _advance(not_taken, insn)
 
 
+def _take_return(
+    taken: State, insn: Instruction, delayed: bool, length_bytes: int
+) -> list[State]:
+    """The taken half of an RTS on TAKEN."""
+    if not taken.call_stack:
+        return [_stop(taken, insn, "return without followed call")]
+    if taken.loops and taken.call_stack[-1] == taken.loops[-1].start_sw:
+        return [_stop(taken, insn, "return reached loop PC-stack entry")]
+    if delayed:
+        taken.steps += 1
+        taken.pc_sw += length_bytes // 2
+        taken.pending = Pending(None, slots=2, return_from_call=True)
+    else:
+        taken.steps += 1
+        taken.pc_sw = taken.call_stack.pop()
+        _sync_pc_stack(taken)
+        _event(taken, insn, "loaded-call-return", return_sw=taken.pc_sw)
+    return [taken]
+
+
 def _return_transfer(
     state: State, insn: Instruction, predicate: bool | None, delayed: bool
 ) -> list[State]:
@@ -510,27 +532,11 @@ def _return_transfer(
         state.trace[-1]["action"] = "return-not-taken"
         return _advance(state, insn)
 
-    def take_return(taken: State) -> list[State]:
-        if not taken.call_stack:
-            return [_stop(taken, insn, "return without followed call")]
-        if taken.loops and taken.call_stack[-1] == taken.loops[-1].start_sw:
-            return [_stop(taken, insn, "return reached loop PC-stack entry")]
-        if delayed:
-            taken.steps += 1
-            taken.pc_sw += length_bytes // 2
-            taken.pending = Pending(None, slots=2, return_from_call=True)
-        else:
-            taken.steps += 1
-            taken.pc_sw = taken.call_stack.pop()
-            _sync_pc_stack(taken)
-            _event(taken, insn, "loaded-call-return", return_sw=taken.pc_sw)
-        return [taken]
-
     if predicate is True:
-        return take_return(state)
+        return _take_return(state, insn, delayed, length_bytes)
     taken, not_taken = _copy(state), _copy(state)
     not_taken.trace[-1]["action"] = "return-not-taken"
-    return take_return(taken) + _advance(not_taken, insn)
+    return _take_return(taken, insn, delayed, length_bytes) + _advance(not_taken, insn)
 
 
 def _start_counted_loop(state: State, insn: Instruction, count: int) -> list[State]:
@@ -551,7 +557,7 @@ def _start_counted_loop(state: State, insn: Instruction, count: int) -> list[Sta
         _ureg(state.uregs, stkyx_code),
         Const(1 << 26),
         "loop stacks nonempty",
-        lambda a, b: a & ~b,
+        _op_andnot,
     )
     state.loops.append(Loop(start_sw, end_sw, count, mode))
     state.call_stack.append(start_sw)

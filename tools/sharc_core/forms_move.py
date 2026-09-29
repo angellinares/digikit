@@ -12,13 +12,16 @@ from collections.abc import Mapping
 from sharc_disasm import Instruction
 
 from .compute import (
-    _apply_compute,
-    _compute,
+    Result,
+    _apply_compute_simd,
+    _compute_simd,
 )
 from .encoding import (
     ACCESS_WIDTHS,
+    TYPE4B_ACCESS_WIDTHS,
     UREG_NAMES,
     _field,
+    _split_compute_fields,
     _wide,
 )
 from .memory import (
@@ -42,17 +45,37 @@ from .state import (
     _lw_pair_mate,
     _render,
     _simd_active,
+    _snapshot_uregs,
     _stop,
     _ureg,
 )
 from .values import (
     Const,
+    Operand,
     Unknown,
     Value,
     _add,
     _multiply,
     _signed,
 )
+
+# Bytes per access width (ACCESS_WIDTHS / TYPE4B_ACCESS_WIDTHS values).
+_ACCESS_WIDTH_BYTES: dict[str, int] = {
+    "normal-word": 4,
+    "byte": 1,
+    "byte-sign-extended": 1,
+    "short-word": 2,
+    "short-word-sign-extended": 2,
+    "long-word": 8,
+}
+
+# Type14d load (l, x) -> (access width, bytes, sign-extended) (PRM p.386).
+_TYPE14D_LOAD_WIDTHS: dict[tuple[int, int], tuple[str, int, bool]] = {
+    (0, 0): ("byte", 1, False),
+    (1, 0): ("short-word", 2, False),
+    (0, 1): ("byte-sign-extended", 1, True),
+    (1, 1): ("short-word-sign-extended", 2, True),
+}
 
 
 def _lw_store_pair(
@@ -93,6 +116,138 @@ def _type_17a(
     return _advance(state, insn)
 
 
+def _type_3a_transfer(
+    target: State,
+    insn: Instruction,
+    f: Mapping[str, int],
+    old: Mapping[int, Value],
+    long_word: bool,
+    ureg: int,
+    compute: Result | None,
+    compute_y: Result | None,
+) -> None:
+    """Type 3a's transfer and compute on TARGET (the state itself, or the
+    executed fork), reading operands from OLD, the pre-instruction file."""
+    bank = 8 if _field(f, "g") else 0
+    index, modifier = _field(f, "i") + bank, _field(f, "m") + bank
+    post_modify = bool(_field(f, "u"))
+    space = "PM" if bank else "DM"
+    access_width = "long-word" if long_word else "normal-word"
+    iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
+    scale = _access_modifier_scale(access_width, target.assume_nw32)
+    scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
+    modified = _add(iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale))
+    address = iv if post_modify else modified
+    rendered = _render(address)
+    mode = "post-modify" if post_modify else "pre-modify"
+    # SIMD: PRM p.13-15 ("In SIMD mode, the Type 3a and 3b instruction
+    # provides the same access ... for the X and Y processing
+    # elements"), Table 6-10: PEy moves the Cureg at the next normal
+    # word. (LW) overrides SIMD (no companion, handled above). The
+    # block handler's ring A pass (sw 0x1c7593-0x1c759f, 16 SIMD passes
+    # over 64 words) loads its even words with "R2 = DM(I4, M5)" (3a):
+    # without the companion S2 kept a stale float and half of ring A
+    # was written with its negation.
+    companion = (
+        None
+        if long_word or space != "DM"
+        else _simd_ureg_mem_companion(target, ureg, address, store=bool(_field(f, "d")))
+    )
+    if long_word:
+        pair_addresses: list[Operand] = []
+        for offset in range(2):
+            pair_addresses.append(
+                _add(address, Const(4 * offset), "%s + %d" % (rendered, 4 * offset))
+            )
+        if _field(f, "d"):
+            codes, values = _lw_store_pair(old, ureg)
+            all_written = False  # a PM store writes nothing
+            if space == "DM":
+                all_written = True
+                for item_address, value in zip(pair_addresses, values, strict=True):
+                    if not _dm_write(target, item_address, 4, value):
+                        all_written = False
+            _event(
+                target,
+                insn,
+                "store",
+                space=space,
+                ureg_pair=[UREG_NAMES[item] for item in codes],
+                values=[_json_value(value) for value in values],
+                address=address,
+                expression=rendered,
+                concrete_write=all_written,
+                addressing_mode="post-modify" if post_modify else "pre-modify",
+                access_width="long-word",
+            )
+        else:
+            codes = _lw_load_codes(ureg)
+            loaded_values: list[Const | None] = []
+            for item_address in pair_addresses[: len(codes)]:
+                loaded_values.append(
+                    _dm_read(target, item_address, 4) if space == "DM" else None
+                )
+            for item, mem_value in zip(codes, loaded_values, strict=True):
+                target.uregs[item] = mem_value or Unknown("memory-address " + rendered)
+            _event(
+                target,
+                insn,
+                "load",
+                space=space,
+                ureg_pair=[UREG_NAMES[item] for item in codes],
+                address=address,
+                expression=rendered,
+                concrete_values=[
+                    _json_value(value)
+                    if value is not None
+                    else {"unknown": "unavailable memory"}
+                    for value in loaded_values
+                ],
+                addressing_mode="post-modify" if post_modify else "pre-modify",
+                access_width="long-word",
+            )
+    elif _field(f, "d"):
+        value = _ureg(old, ureg)
+        wrote = _dm_write(target, address, 4, value) if space == "DM" else False
+        _event(
+            target,
+            insn,
+            "store",
+            space=space,
+            ureg=UREG_NAMES[ureg],
+            value=value,
+            address=address,
+            expression=rendered,
+            concrete_write=wrote,
+            addressing_mode="post-modify" if post_modify else "pre-modify",
+            access_width="normal-word",
+        )
+        if companion is not None:
+            _companion_transfer(target, insn, companion, True, "normal-word", old, mode)
+    else:
+        loaded = _load_normal_ureg(target, space, address, ureg)
+        _event(
+            target,
+            insn,
+            "load",
+            space=space,
+            ureg=UREG_NAMES[ureg],
+            address=address,
+            expression=rendered,
+            concrete_value=loaded,
+            addressing_mode="post-modify" if post_modify else "pre-modify",
+            access_width="normal-word",
+        )
+        if companion is not None:
+            _companion_transfer(
+                target, insn, companion, False, "normal-word", old, mode
+            )
+    if post_modify:
+        target.uregs[16 + index] = modified
+    if compute is not None:
+        _apply_compute_simd(target, insn, compute, compute_y)
+
+
 def _type_3a(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
@@ -128,13 +283,16 @@ def _type_3a(
     # codes pair up (or, for a load, do not) differently again --
     # state._lw_pair_mate's docstring has the full rule and citations.
     cond = _field(f, "cond")
-    old = dict(state.uregs)
-    compute_fields = dict(f)
-    compute_field = _field(f, "compute")
-    compute_fields["compute[22:16]"] = compute_field >> 16
-    compute_fields["compute[15:0]"] = compute_field & 0xFFFF
+    old = _snapshot_uregs(state.uregs)
+    compute_fields = _split_compute_fields(f)
+    # SIMD: the compute runs on PEy too (PRM p.101, "Dispatches a single
+    # instruction to both processing element's computational units"),
+    # as Type 2 already does. Only for an unconditional instruction: a
+    # conditional one's per-PE condition is not modelled here, so PEy's
+    # half is left out rather than guessed.
     try:
-        compute = _compute(
+        compute, compute_y = _compute_simd(
+            state,
             compute_fields,
             False,
             old,
@@ -143,120 +301,15 @@ def _type_3a(
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
+    if cond != 0x1F:
+        compute_y = None
 
     long_word = bool(_field(f, "l"))
     ureg = _field(f, "ureg")
 
-    def run_transfer(target: State) -> None:
-        bank = 8 if _field(f, "g") else 0
-        index, modifier = _field(f, "i") + bank, _field(f, "m") + bank
-        post_modify = bool(_field(f, "u"))
-        space = "PM" if bank else "DM"
-        access_width = "long-word" if long_word else "normal-word"
-        iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
-        scale = _access_modifier_scale(access_width, target.assume_nw32)
-        scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
-        modified = _add(iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale))
-        address = iv if post_modify else modified
-        rendered = _render(address)
-        if long_word:
-            pair_addresses = [
-                _add(address, Const(4 * offset), "%s + %d" % (rendered, 4 * offset))
-                for offset in range(2)
-            ]
-            if _field(f, "d"):
-                codes, values = _lw_store_pair(old, ureg)
-                writes = (
-                    tuple(
-                        _dm_write(target, item_address, 4, value)
-                        for item_address, value in zip(
-                            pair_addresses, values, strict=True
-                        )
-                    )
-                    if space == "DM"
-                    else (False, False)
-                )
-                _event(
-                    target,
-                    insn,
-                    "store",
-                    space=space,
-                    ureg_pair=[UREG_NAMES[item] for item in codes],
-                    values=[_json_value(value) for value in values],
-                    address=address,
-                    expression=rendered,
-                    concrete_write=all(writes),
-                    addressing_mode="post-modify" if post_modify else "pre-modify",
-                    access_width="long-word",
-                )
-            else:
-                codes = _lw_load_codes(ureg)
-                offsets = pair_addresses[: len(codes)]
-                loaded_values = (
-                    tuple(_dm_read(target, item_address, 4) for item_address in offsets)
-                    if space == "DM"
-                    else tuple(None for _ in codes)
-                )
-                for item, mem_value in zip(codes, loaded_values, strict=True):
-                    target.uregs[item] = mem_value or Unknown(
-                        "memory-address " + rendered
-                    )
-                _event(
-                    target,
-                    insn,
-                    "load",
-                    space=space,
-                    ureg_pair=[UREG_NAMES[item] for item in codes],
-                    address=address,
-                    expression=rendered,
-                    concrete_values=[
-                        _json_value(value)
-                        if value is not None
-                        else {"unknown": "unavailable memory"}
-                        for value in loaded_values
-                    ],
-                    addressing_mode="post-modify" if post_modify else "pre-modify",
-                    access_width="long-word",
-                )
-        elif _field(f, "d"):
-            value = _ureg(old, ureg)
-            _event(
-                target,
-                insn,
-                "store",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                value=value,
-                address=address,
-                expression=rendered,
-                concrete_write=_dm_write(target, address, 4, value)
-                if space == "DM"
-                else False,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width="normal-word",
-            )
-        else:
-            loaded = _load_normal_ureg(target, space, address, ureg)
-            _event(
-                target,
-                insn,
-                "load",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                address=address,
-                expression=rendered,
-                concrete_value=loaded,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width="normal-word",
-            )
-        if post_modify:
-            target.uregs[16 + index] = modified
-        if compute is not None:
-            _apply_compute(target, insn, compute)
-
     predicate = _predicate(state, cond)
     if predicate is True:
-        run_transfer(state)
+        _type_3a_transfer(state, insn, f, old, long_word, ureg, compute, compute_y)
         state.trace[-1].update(condition=cond, predicate_assumption=True)
         return _advance(state, insn)
     if predicate is False:
@@ -265,7 +318,7 @@ def _type_3a(
         )
         return _advance(state, insn)
     executed, skipped = _copy(state), _copy(state)
-    run_transfer(executed)
+    _type_3a_transfer(executed, insn, f, old, long_word, ureg, compute, compute_y)
     executed.trace[-1].update(condition=cond, predicate_assumption=True)
     _event(skipped, insn, "type3a-skipped", condition=cond, predicate_assumption=False)
     return _advance(executed, insn) + _advance(skipped, insn)
@@ -283,11 +336,10 @@ def _type_14a(
         rendered = _render(Const(address))
         if _field(f, "d"):
             codes, values = _lw_store_pair(state.uregs, code)
-            writes = tuple(
-                _dm_write(state, address + 4 * offset, 4, value)
-                for offset, value in enumerate(values)
-            )
-            concrete_write = all(writes)
+            concrete_write = True
+            for offset, value in enumerate(values):
+                if not _dm_write(state, address + 4 * offset, 4, value):
+                    concrete_write = False
             _event(
                 state,
                 insn,
@@ -303,9 +355,9 @@ def _type_14a(
             )
         else:
             codes = _lw_load_codes(code)
-            loaded_values = tuple(
-                _dm_read(state, address + 4 * offset, 4) for offset in range(len(codes))
-            )
+            loaded_values: list[Const | None] = []
+            for offset in range(len(codes)):
+                loaded_values.append(_dm_read(state, address + 4 * offset, 4))
             for item, mem_value, offset in zip(
                 codes, loaded_values, range(len(codes)), strict=True
             ):
@@ -335,11 +387,15 @@ def _type_14a(
     code = _field(f, "ureg")
     space = "PM" if _field(f, "g") else "DM"
     try:
-        companion = _simd_ureg_mem_companion(state, code, Const(address))
+        companion = _simd_ureg_mem_companion(
+            state, code, Const(address), store=bool(_field(f, "d"))
+        )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     if _field(f, "d"):
         value = _ureg(state.uregs, code)
+        store_now = space == "DM" and state.concrete is not None
+        wrote = _dm_write(state, address, 4, value) if store_now else False
         _event(
             state,
             insn,
@@ -350,11 +406,7 @@ def _type_14a(
             address=address,
             expression=rendered,
             simd_companion_possible=True,
-            **(
-                {"concrete_write": _dm_write(state, address, 4, value)}
-                if space == "DM" and state.concrete is not None
-                else {}
-            ),
+            **({"concrete_write": wrote} if store_now else {}),
         )
         if companion is not None and space == "DM":
             companion_value = _ureg(state.uregs, companion[0])
@@ -435,17 +487,13 @@ def _type_14d(
             ("short-word", 2, False),
         )[l_bit]
     else:
-        access_width, width, signed = {
-            (0, 0): ("byte", 1, False),
-            (1, 0): ("short-word", 2, False),
-            (0, 1): ("byte-sign-extended", 1, True),
-            (1, 1): ("short-word-sign-extended", 2, True),
-        }[(l_bit, x_bit)]
+        access_width, width, signed = _TYPE14D_LOAD_WIDTHS[(l_bit, x_bit)]
     address = _wide(f, "addr")
     rendered = _render(Const(address))
     code = _field(f, "dreg")
     if store:
         value = _ureg(state.uregs, code)
+        wrote = _dm_write(state, address, width, value)
         _event(
             state,
             insn,
@@ -456,7 +504,7 @@ def _type_14d(
             address=address,
             expression=rendered,
             access_width=access_width,
-            concrete_write=_dm_write(state, address, width, value),
+            concrete_write=wrote,
         )
     else:
         loaded = _dm_read(state, address, width, signed)
@@ -480,12 +528,12 @@ def _type_5a_move(
 ) -> list[State]:
     """5a_move, 5b_move."""
     cond = _field(f, "cond")
-    old = dict(state.uregs)
-    compute = None
+    old = _snapshot_uregs(state.uregs)
+    compute = compute_y = None
     if name == "5a_move":
         try:
-            compute = _compute(
-                f, False, old, state.special, approx_recips=state.approx_recips
+            compute, compute_y = _compute_simd(
+                state, f, False, old, state.special, approx_recips=state.approx_recips
             )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
@@ -531,18 +579,16 @@ def _type_5a_move(
     executed = state if predicate is True else _copy(state)
     # The Type 5a data move and compute both consume the pre-instruction file.
     executed.uregs[dst] = copied
-    simd_companion = None
     if simd_companion_source is not None:
         # simd_companion_source is only ever set inside the "cureg_dst is
         # not None" branch above, so this implies cureg_dst is not None too.
         assert cureg_dst is not None
         executed.uregs[cureg_dst] = _ureg(old, simd_companion_source)
-        simd_companion = {
-            "source": UREG_NAMES[simd_companion_source],
-            "destination": UREG_NAMES[cureg_dst],
-        }
     if compute is not None:
-        _apply_compute(executed, insn, compute)
+        # PEy's compute only when unconditional (see _type_3a).
+        _apply_compute_simd(
+            executed, insn, compute, compute_y if cond == 0x1F else None
+        )
     _event(
         executed,
         insn,
@@ -551,7 +597,14 @@ def _type_5a_move(
         destination=UREG_NAMES[dst],
         condition=cond,
         predicate_assumption=True,
-        simd_companion=simd_companion,
+        simd_companion=(
+            {
+                "source": UREG_NAMES[simd_companion_source],
+                "destination": UREG_NAMES[cureg_dst],
+            }
+            if simd_companion_source is not None and cureg_dst is not None
+            else None
+        ),
     )
     if predicate is True:
         return _advance(executed, insn)
@@ -568,16 +621,77 @@ def _type_5a_move(
     return _advance(executed, insn) + _advance(skipped, insn)
 
 
+def _companion_transfer(
+    state: State,
+    insn: Instruction,
+    companion: tuple[int, Value],
+    store: bool,
+    access_width: str,
+    source: Mapping[int, Value],
+    addressing_mode: str,
+) -> None:
+    """The implicit (PEy) half of a SIMD DM transfer: Cdreg <-> the
+    companion address _simd_ureg_mem_companion() returned (PRM p.212 Table
+    6-10; p.7-5 for byte and short word). SOURCE holds the register
+    values from before the instruction, for a store."""
+    code, address = companion
+    width = _COMPANION_WIDTH_BYTES[access_width]
+    if store:
+        value = _ureg(source, code)
+        _dm_write(state, address, width, value)
+        _event(
+            state,
+            insn,
+            "store-pey",
+            space="DM",
+            ureg=UREG_NAMES[code],
+            value=value,
+            address=address,
+            expression=_render(address),
+            addressing_mode=addressing_mode,
+            access_width=access_width,
+        )
+        return
+    loaded: Const | dict[str, int] | None
+    if access_width == "normal-word":
+        loaded = _load_normal_ureg(state, "DM", address, code)
+    else:
+        scalar = _dm_read(state, address, width, access_width.endswith("sign-extended"))
+        state.uregs[code] = scalar or Unknown("memory-address " + _render(address))
+        loaded = scalar
+    _event(
+        state,
+        insn,
+        "load-pey",
+        space="DM",
+        ureg=UREG_NAMES[code],
+        address=address,
+        expression=_render(address),
+        concrete_value=loaded,
+        addressing_mode=addressing_mode,
+        access_width=access_width,
+    )
+
+
+_COMPANION_WIDTH_BYTES = {
+    "normal-word": 4,
+    "byte": 1,
+    "byte-sign-extended": 1,
+    "short-word": 2,
+    "short-word-sign-extended": 2,
+}
+
+
 def _type_4a(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
     """4a."""
     if _field(f, "cond") != 0x1F:
         return [_stop(state, insn, "unsupported predicate")]
-    old = dict(state.uregs)
+    old = _snapshot_uregs(state.uregs)
     try:
-        compute = _compute(
-            f, False, old, state.special, approx_recips=state.approx_recips
+        compute, compute_y = _compute_simd(
+            state, f, False, old, state.special, approx_recips=state.approx_recips
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
@@ -595,8 +709,20 @@ def _type_4a(
     else:
         address, next_i = _add(iv, Const(offset), "I%d + %d" % (index, offset)), iv
     code = _field(f, "dreg")
+    # SIMD: the explicit transfer moves Rn at Ia; the implicit one moves
+    # Sn at Ia+k (SHARC+ PRM p.212, Table 6-10), as for Type3b/14a/15a.
+    # FUN_1c403c's page copy (sw 0x1c405d/0x1c4060) needs it.
+    companion = None
+    if space == "DM":
+        try:
+            companion = _simd_ureg_mem_companion(
+                state, code, address, store=bool(_field(f, "d"))
+            )
+        except ValueError as error:
+            return [_stop(state, insn, str(error))]
     if _field(f, "d"):
         value = _ureg(old, code)
+        wrote = _dm_write(state, address, 4, value) if space == "DM" else False
         _event(
             state,
             insn,
@@ -606,10 +732,21 @@ def _type_4a(
             value=value,
             address=address,
             expression=_render(address),
-            concrete_write=_dm_write(state, address, 4, value)
-            if space == "DM"
-            else False,
+            concrete_write=wrote,
         )
+        if companion is not None:
+            companion_value = _ureg(old, companion[0])
+            _dm_write(state, companion[1], 4, companion_value)
+            _event(
+                state,
+                insn,
+                "store-pey",
+                space=space,
+                ureg=UREG_NAMES[companion[0]],
+                value=companion_value,
+                address=companion[1],
+                expression=_render(companion[1]),
+            )
     else:
         loaded = _dm_read(state, address, 4) if space == "DM" else None
         state.uregs[code] = loaded or Unknown("memory-address " + _render(address))
@@ -623,10 +760,90 @@ def _type_4a(
             expression=_render(address),
             concrete_value=loaded,
         )
+        if companion is not None:
+            companion_loaded = _dm_read(state, companion[1], 4)
+            state.uregs[companion[0]] = companion_loaded or Unknown(
+                "memory-address " + _render(companion[1])
+            )
+            _event(
+                state,
+                insn,
+                "load-pey",
+                space=space,
+                ureg=UREG_NAMES[companion[0]],
+                address=companion[1],
+                expression=_render(companion[1]),
+                concrete_value=companion_loaded,
+            )
     state.uregs[16 + index] = next_i
     if compute is not None:
-        _apply_compute(state, insn, compute)
+        _apply_compute_simd(state, insn, compute, compute_y)
     return _advance(state, insn)
+
+
+def _type_4b_access(
+    executed: State,
+    insn: Instruction,
+    index: int,
+    offset: int,
+    post_modify: bool,
+    store: bool,
+    space: str,
+    code: int,
+    width: int,
+    signed: bool,
+    access_width: str,
+    cond: int,
+    companion: tuple[int, Value] | None,
+    mode: str,
+) -> None:
+    """Type 4b's access on EXECUTED (the state itself, or the executed fork)."""
+    old = _snapshot_uregs(executed.uregs)
+    iv = _ureg(old, 16 + index)
+    address = (
+        iv if post_modify else _add(iv, Const(offset), "I%d + %d" % (index, offset))
+    )
+    if store:
+        value = _ureg(old, code)
+        wrote = _dm_write(executed, address, width, value) if space == "DM" else False
+        _event(
+            executed,
+            insn,
+            "store",
+            space=space,
+            dreg="R%d" % code,
+            value=value,
+            address=address,
+            expression=_render(address),
+            concrete_write=wrote,
+            addressing_mode="post-modify" if post_modify else "pre-modify",
+            access_width=access_width,
+            condition=cond,
+            predicate_assumption=True,
+        )
+    else:
+        loaded = _dm_read(executed, address, width, signed) if space == "DM" else None
+        executed.uregs[code] = loaded or Unknown("memory-address " + _render(address))
+        _event(
+            executed,
+            insn,
+            "load",
+            space=space,
+            dreg="R%d" % code,
+            address=address,
+            expression=_render(address),
+            concrete_value=loaded,
+            addressing_mode="post-modify" if post_modify else "pre-modify",
+            access_width=access_width,
+            condition=cond,
+            predicate_assumption=True,
+        )
+    if companion is not None:
+        _companion_transfer(executed, insn, companion, store, access_width, old, mode)
+    if post_modify:
+        executed.uregs[16 + index] = _add(
+            iv, Const(offset), "I%d + %d" % (index, offset)
+        )
 
 
 def _type_4b(
@@ -634,31 +851,18 @@ def _type_4b(
 ) -> list[State]:
     """4b."""
     # SHARC+ Core Programming Reference rev. 1.4, pp. 13-29--13-32:
-    # conditional DM/PM transfer with a signed six-bit immediate modifier,
-    # the same 3-bit ACCESS/BH/BHSE (l, x, w) table as Type3b/Type4d --
-    # ACCESS_WIDTHS (sharc_core/encoding.py), not a separate hand-rolled
-    # one. This handler previously carried its own local ``widths`` dict
-    # that mis-keyed two of ACCESS_WIDTHS' six entries: (1, 1, 1) mapped
-    # here to ("normal-word", 4, False) -- ACCESS_WIDTHS' own (1, 1, 1) is
-    # "long-word" -- and (0, 1, 1) (ACCESS_WIDTHS' real normal-word key)
-    # was missing entirely, so that combination always stopped as
-    # "unsupported". Found by tools/sharc_widthaudit.py on dt2-1.16's
-    # frame render: every Type4b (l, x, w) = (1, 1, 1) access there (317
-    # occurrences) read/wrote a 4-byte normal word where the decoded
-    # fields select an 8-byte long-word access.
+    # conditional DM/PM transfer with a signed six-bit immediate modifier.
+    # Its (l, x, w) BH/BHSE tables (p.13-32) are TYPE4B_ACCESS_WIDTHS, not
+    # Type3b's ACCESS_WIDTHS: (1, 1, 1) is the plain normal-word access and
+    # Type4b has no (lw) option (encoding.py has the evidence). Reading
+    # (1, 1, 1) as a long word made every such load Unknown and dropped
+    # every such store, e.g. sw 0x1c336b "IF SZ R8 = DM(I6 - 12)", which
+    # picks a voice's left-channel sample address.
     width_fields = (_field(f, "l"), _field(f, "x"), _field(f, "w"))
-    access_width = ACCESS_WIDTHS.get(width_fields)
+    access_width = TYPE4B_ACCESS_WIDTHS.get(width_fields)
     if access_width is None:
         return [_stop(state, insn, "unsupported Type4b access width")]
-    widths = {
-        "normal-word": 4,
-        "byte": 1,
-        "byte-sign-extended": 1,
-        "short-word": 2,
-        "short-word-sign-extended": 2,
-        "long-word": 8,
-    }
-    width = widths[access_width]
+    width = _ACCESS_WIDTH_BYTES[access_width]
     signed = access_width.endswith("sign-extended")
     store = bool(_field(f, "d"))
     if store and signed:
@@ -672,60 +876,43 @@ def _type_4b(
     code = _field(f, "dreg")
     cond = _field(f, "cond")
 
-    def access_memory(executed: State) -> None:
-        old = dict(executed.uregs)
-        iv = _ureg(old, 16 + index)
-        address = (
-            iv if post_modify else _add(iv, Const(offset), "I%d + %d" % (index, offset))
+    # SIMD (PRM p.13-30): the Y element uses Ia + k and Cdreg, k = one
+    # normal word or the adjacent short word/byte (p.7-5). As for
+    # Type3b, the transfer follows the PEx condition.
+    companion = None
+    if space == "DM":
+        iv0 = _ureg(state.uregs, 16 + index)
+        address0 = (
+            iv0
+            if post_modify
+            else _add(iv0, Const(offset), "I%d + %d" % (index, offset))
         )
-        if store:
-            value = _ureg(old, code)
-            _event(
-                executed,
-                insn,
-                "store",
-                space=space,
-                dreg="R%d" % code,
-                value=value,
-                address=address,
-                expression=_render(address),
-                concrete_write=_dm_write(executed, address, width, value)
-                if space == "DM"
-                else False,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width=access_width,
-                condition=cond,
-                predicate_assumption=True,
+        try:
+            companion = _simd_ureg_mem_companion(
+                state, code, address0, access_width, store=bool(_field(f, "d"))
             )
-        else:
-            loaded = (
-                _dm_read(executed, address, width, signed) if space == "DM" else None
-            )
-            executed.uregs[code] = loaded or Unknown(
-                "memory-address " + _render(address)
-            )
-            _event(
-                executed,
-                insn,
-                "load",
-                space=space,
-                dreg="R%d" % code,
-                address=address,
-                expression=_render(address),
-                concrete_value=loaded,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width=access_width,
-                condition=cond,
-                predicate_assumption=True,
-            )
-        if post_modify:
-            executed.uregs[16 + index] = _add(
-                iv, Const(offset), "I%d + %d" % (index, offset)
-            )
+        except ValueError as error:
+            return [_stop(state, insn, str(error))]
+    mode = "post-modify" if post_modify else "pre-modify"
 
     predicate = _predicate(state, cond)
     if predicate is True:
-        access_memory(state)
+        _type_4b_access(
+            state,
+            insn,
+            index,
+            offset,
+            post_modify,
+            store,
+            space,
+            code,
+            width,
+            signed,
+            access_width,
+            cond,
+            companion,
+            mode,
+        )
         return _advance(state, insn)
     if predicate is False:
         _event(
@@ -737,7 +924,22 @@ def _type_4b(
         )
         return _advance(state, insn)
     executed, skipped = _copy(state), _copy(state)
-    access_memory(executed)
+    _type_4b_access(
+        executed,
+        insn,
+        index,
+        offset,
+        post_modify,
+        store,
+        space,
+        code,
+        width,
+        signed,
+        access_width,
+        cond,
+        companion,
+        mode,
+    )
     _event(
         skipped,
         insn,
@@ -746,6 +948,113 @@ def _type_4b(
         predicate_assumption=False,
     )
     return _advance(executed, insn) + _advance(skipped, insn)
+
+
+def _type_3b_access(
+    executed: State,
+    insn: Instruction,
+    f: Mapping[str, int],
+    index: int,
+    modifier: int,
+    post_modify: bool,
+    addressing_mode: str,
+    store: bool,
+    space: str,
+    ureg: int,
+    access_width: str,
+    cond: int,
+) -> str | None:
+    """Type 3b's access on EXECUTED; returns a stop reason, or None."""
+    old = _snapshot_uregs(executed.uregs)
+    iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
+    width = _ACCESS_WIDTH_BYTES[access_width]
+    scale = _access_modifier_scale(access_width, executed.assume_nw32)
+    scaled_mv = _multiply(mv, Const(scale), f"M{modifier} * {scale}")
+    address = (
+        iv if post_modify else _add(iv, scaled_mv, f"I{index} + M{modifier} * {scale}")
+    )
+    try:
+        companion = _simd_ureg_mem_companion(
+            executed, ureg, address, access_width, store=bool(_field(f, "d"))
+        )
+    except ValueError as error:
+        return str(error)
+    if store:
+        value = _ureg(old, ureg)
+        wrote = _dm_write(executed, address, width, value) if space == "DM" else False
+        _event(
+            executed,
+            insn,
+            "store",
+            space=space,
+            ureg=UREG_NAMES[ureg],
+            value=value,
+            address=address,
+            expression=_render(address),
+            concrete_write=wrote,
+            addressing_mode=addressing_mode,
+            access_width=access_width,
+            condition=cond,
+            predicate_assumption=True,
+        )
+        if companion is not None and space == "DM":
+            companion_value = _ureg(old, companion[0])
+            _dm_write(executed, companion[1], width, companion_value)
+            _event(
+                executed,
+                insn,
+                "store-pey",
+                space=space,
+                ureg=UREG_NAMES[companion[0]],
+                value=companion_value,
+                address=companion[1],
+                expression=_render(companion[1]),
+                addressing_mode=addressing_mode,
+                access_width=access_width,
+            )
+    else:
+        if access_width == "normal-word":
+            loaded: Const | dict[str, int] | None = _load_normal_ureg(
+                executed, space, address, ureg
+            )
+        else:
+            scalar_loaded = (
+                _dm_read(
+                    executed,
+                    address,
+                    width,
+                    access_width.endswith("sign-extended"),
+                )
+                if space == "DM"
+                else None
+            )
+            executed.uregs[ureg] = scalar_loaded or Unknown(
+                "memory-address " + _render(address)
+            )
+            loaded = scalar_loaded
+        _event(
+            executed,
+            insn,
+            "load",
+            space=space,
+            ureg=UREG_NAMES[ureg],
+            address=address,
+            expression=_render(address),
+            concrete_value=loaded,
+            addressing_mode=addressing_mode,
+            access_width=access_width,
+            condition=cond,
+            predicate_assumption=True,
+        )
+        if companion is not None and space == "DM":
+            _companion_transfer(
+                executed, insn, companion, False, access_width, old, addressing_mode
+            )
+    if post_modify:
+        executed.uregs[16 + index] = _add(
+            iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+        )
+    return None
 
 
 def _type_3b(
@@ -770,126 +1079,22 @@ def _type_3b(
     ureg = _field(f, "ureg")
     cond = _field(f, "cond")
 
-    def access(executed: State) -> str | None:
-        old = dict(executed.uregs)
-        iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
-        widths = {
-            "normal-word": 4,
-            "byte": 1,
-            "byte-sign-extended": 1,
-            "short-word": 2,
-            "short-word-sign-extended": 2,
-            "long-word": 8,
-        }
-        width = widths[access_width]
-        scale = _access_modifier_scale(access_width, executed.assume_nw32)
-        scaled_mv = _multiply(mv, Const(scale), f"M{modifier} * {scale}")
-        address = (
-            iv
-            if post_modify
-            else _add(iv, scaled_mv, f"I{index} + M{modifier} * {scale}")
-        )
-        try:
-            companion = _simd_ureg_mem_companion(executed, ureg, address, access_width)
-        except ValueError as error:
-            return str(error)
-        if store:
-            value = _ureg(old, ureg)
-            _event(
-                executed,
-                insn,
-                "store",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                value=value,
-                address=address,
-                expression=_render(address),
-                concrete_write=_dm_write(executed, address, width, value)
-                if space == "DM"
-                else False,
-                addressing_mode=addressing_mode,
-                access_width=access_width,
-                condition=cond,
-                predicate_assumption=True,
-            )
-            if companion is not None and space == "DM":
-                companion_value = _ureg(old, companion[0])
-                _dm_write(executed, companion[1], width, companion_value)
-                _event(
-                    executed,
-                    insn,
-                    "store-pey",
-                    space=space,
-                    ureg=UREG_NAMES[companion[0]],
-                    value=companion_value,
-                    address=companion[1],
-                    expression=_render(companion[1]),
-                    addressing_mode=addressing_mode,
-                    access_width=access_width,
-                )
-        else:
-            if access_width == "normal-word":
-                loaded: Const | dict[str, int] | None = _load_normal_ureg(
-                    executed, space, address, ureg
-                )
-            else:
-                scalar_loaded = (
-                    _dm_read(
-                        executed,
-                        address,
-                        width,
-                        access_width.endswith("sign-extended"),
-                    )
-                    if space == "DM"
-                    else None
-                )
-                executed.uregs[ureg] = scalar_loaded or Unknown(
-                    "memory-address " + _render(address)
-                )
-                loaded = scalar_loaded
-            _event(
-                executed,
-                insn,
-                "load",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                address=address,
-                expression=_render(address),
-                concrete_value=loaded,
-                addressing_mode=addressing_mode,
-                access_width=access_width,
-                condition=cond,
-                predicate_assumption=True,
-            )
-            if (
-                companion is not None
-                and space == "DM"
-                and access_width == "normal-word"
-            ):
-                companion_loaded = _load_normal_ureg(
-                    executed, space, companion[1], companion[0]
-                )
-                _event(
-                    executed,
-                    insn,
-                    "load-pey",
-                    space=space,
-                    ureg=UREG_NAMES[companion[0]],
-                    address=companion[1],
-                    expression=_render(companion[1]),
-                    concrete_value=companion_loaded,
-                    addressing_mode=addressing_mode,
-                    access_width=access_width,
-                )
-        if post_modify:
-            executed.uregs[16 + index] = _add(
-                iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
-            )
-        return None
-
     predicate = _predicate(state, cond)
     if predicate is True:
-        error = access(state)
+        error = _type_3b_access(
+            state,
+            insn,
+            f,
+            index,
+            modifier,
+            post_modify,
+            addressing_mode,
+            store,
+            space,
+            ureg,
+            access_width,
+            cond,
+        )
         if error:
             return [_stop(state, insn, error)]
         return _advance(state, insn)
@@ -911,7 +1116,20 @@ def _type_3b(
         )
         return _advance(state, insn)
     executed, skipped = _copy(state), _copy(state)
-    error = access(executed)
+    error = _type_3b_access(
+        executed,
+        insn,
+        f,
+        index,
+        modifier,
+        post_modify,
+        addressing_mode,
+        store,
+        space,
+        ureg,
+        access_width,
+        cond,
+    )
     if error:
         return [_stop(executed, insn, error)]
     _event(
@@ -933,7 +1151,7 @@ def _type_3c(
 ) -> list[State]:
     """3c."""
     index, modifier = _field(f, "dmi"), _field(f, "dmm")
-    old = dict(state.uregs)
+    old = _snapshot_uregs(state.uregs)
     iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
     scale = _access_modifier_scale("normal-word", state.assume_nw32)
     scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
@@ -944,6 +1162,7 @@ def _type_3c(
     code = _field(f, "dreg")
     if _field(f, "d"):
         value = _ureg(old, code)
+        wrote = _dm_write(state, address, 4, value)
         _event(
             state,
             insn,
@@ -953,7 +1172,7 @@ def _type_3c(
             value=value,
             address=address,
             expression=_render(address),
-            concrete_write=_dm_write(state, address, 4, value),
+            concrete_write=wrote,
         )
     else:
         loaded = _dm_read(state, address, 4)
@@ -981,7 +1200,7 @@ def _type_16a(
         _field(f, "i") + (8 if _field(f, "g") else 0),
         _field(f, "m") + (8 if _field(f, "g") else 0),
     )
-    old = dict(state.uregs)
+    old = _snapshot_uregs(state.uregs)
     iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
     scale = _access_modifier_scale(
         "normal-word", state.assume_nw32 and not bool(_field(f, "g"))
@@ -991,6 +1210,7 @@ def _type_16a(
     value = Const(
         _wide(f, "data") if name == "16a" else _signed(_field(f, "data[15:0]"), 16)
     )
+    wrote = _dm_write(state, address, 4, value) if not _field(f, "g") else False
     _event(
         state,
         insn,
@@ -1001,9 +1221,7 @@ def _type_16a(
         value=value,
         by=_field(f, "by") if name == "16a" else 0,
         sl=_field(f, "sl") if name == "16a" else 0,
-        concrete_write=_dm_write(state, address, 4, value)
-        if not _field(f, "g")
-        else False,
+        concrete_write=wrote,
     )
     state.uregs[16 + index] = _add(
         iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
@@ -1049,14 +1267,15 @@ def _type_15b(
     if _field(f, "l"):
         if _field(f, "d"):
             codes, values = _lw_store_pair(state.uregs, code)
-            offsets = tuple(
-                _add(address, Const(4 * off), "%s + %d" % (rendered, 4 * off))
-                for off in range(len(codes))
-            )
-            writes = tuple(
-                _dm_write(state, offset_address, 4, value)
-                for offset_address, value in zip(offsets, values, strict=True)
-            )
+            offsets: list[Operand] = []
+            for off in range(len(codes)):
+                offsets.append(
+                    _add(address, Const(4 * off), "%s + %d" % (rendered, 4 * off))
+                )
+            all_written = True
+            for offset_address, value in zip(offsets, values, strict=True):
+                if not _dm_write(state, offset_address, 4, value):
+                    all_written = False
             _event(
                 state,
                 insn,
@@ -1067,17 +1286,16 @@ def _type_15b(
                 expression=rendered,
                 access_width="long-word",
                 long_word=True,
-                concrete_write=all(writes),
+                concrete_write=all_written,
             )
         else:
             codes = _lw_load_codes(code)
-            offsets = tuple(
-                _add(address, Const(4 * off), "%s + %d" % (rendered, 4 * off))
-                for off in range(len(codes))
-            )
-            loaded_values = tuple(
-                _dm_read(state, offset_address, 4) for offset_address in offsets
-            )
+            loaded_values: list[Const | None] = []
+            for off in range(len(codes)):
+                offset_address = _add(
+                    address, Const(4 * off), "%s + %d" % (rendered, 4 * off)
+                )
+                loaded_values.append(_dm_read(state, offset_address, 4))
             for item, mem_value in zip(codes, loaded_values, strict=True):
                 state.uregs[item] = mem_value or Unknown("memory-address " + rendered)
             _event(
@@ -1099,6 +1317,7 @@ def _type_15b(
         return _advance(state, insn)
     if _field(f, "d"):
         value = state.uregs.get(code, Unknown("uninitialized " + UREG_NAMES[code]))
+        wrote = _dm_write(state, address, 4, value)
         _event(
             state,
             insn,
@@ -1107,7 +1326,7 @@ def _type_15b(
             address=address,
             expression=rendered,
             long_word=False,
-            concrete_write=_dm_write(state, address, 4, value),
+            concrete_write=wrote,
         )
     else:
         loaded = _dm_read(state, address, 4)
@@ -1164,15 +1383,20 @@ def _type_15a(
         code = _field(f, "ureg")
         if _field(f, "d"):
             codes, values = _lw_store_pair(state.uregs, code)
-            offsets = tuple(
-                _add(address, Const(4 * offset), "%s + %d" % (rendered, 4 * offset))
-                for offset in range(len(codes))
-            )
-            writes = tuple(
-                _dm_write(state, offset_address, 4, value) if space == "DM" else False
-                for offset_address, value in zip(offsets, values, strict=True)
-            )
-            concrete_write = all(writes)
+            offsets: list[Operand] = []
+            for offset in range(len(codes)):
+                offsets.append(
+                    _add(address, Const(4 * offset), "%s + %d" % (rendered, 4 * offset))
+                )
+            concrete_write = True
+            for offset_address, value in zip(offsets, values, strict=True):
+                wrote = (
+                    _dm_write(state, offset_address, 4, value)
+                    if space == "DM"
+                    else False
+                )
+                if not wrote:
+                    concrete_write = False
             _event(
                 state,
                 insn,
@@ -1188,14 +1412,14 @@ def _type_15a(
             )
         else:
             codes = _lw_load_codes(code)
-            offsets = tuple(
-                _add(address, Const(4 * offset), "%s + %d" % (rendered, 4 * offset))
-                for offset in range(len(codes))
-            )
-            loaded_values = tuple(
-                _dm_read(state, offset_address, 4) if space == "DM" else None
-                for offset_address in offsets
-            )
+            loaded_values: list[Const | None] = []
+            for offset in range(len(codes)):
+                offset_address = _add(
+                    address, Const(4 * offset), "%s + %d" % (rendered, 4 * offset)
+                )
+                loaded_values.append(
+                    _dm_read(state, offset_address, 4) if space == "DM" else None
+                )
             for item, mem_value in zip(codes, loaded_values, strict=True):
                 state.uregs[item] = mem_value or Unknown("memory-address " + rendered)
             _event(
@@ -1218,11 +1442,14 @@ def _type_15a(
         return _advance(state, insn)
     code = _field(f, "ureg")
     try:
-        companion = _simd_ureg_mem_companion(state, code, address)
+        companion = _simd_ureg_mem_companion(
+            state, code, address, store=bool(_field(f, "d"))
+        )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     if _field(f, "d"):
         value = _ureg(state.uregs, code)
+        wrote = _dm_write(state, address, 4, value) if space == "DM" else False
         _event(
             state,
             insn,
@@ -1233,9 +1460,7 @@ def _type_15a(
             address=address,
             expression=rendered,
             simd_companion_possible=True,
-            concrete_write=_dm_write(state, address, 4, value)
-            if space == "DM"
-            else False,
+            concrete_write=wrote,
         )
         if companion is not None and space == "DM":
             companion_value = _ureg(state.uregs, companion[0])
@@ -1280,6 +1505,57 @@ def _type_15a(
     return _advance(state, insn)
 
 
+def _type_1a_access(
+    space: str,
+    index: int,
+    modifier: int,
+    dreg: int,
+    store: bool,
+    state: State,
+    insn: Instruction,
+    old: Mapping[int, Value],
+    scale: int,
+) -> None:
+    """One of Type 1a's two post-modify transfers (DM or PM), reading
+    operands from OLD, the pre-instruction file."""
+    iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
+    scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
+    address = iv
+    if store:
+        value = _ureg(old, dreg)
+        wrote = _dm_write(state, address, 4, value) if space == "DM" else False
+        _event(
+            state,
+            insn,
+            "store",
+            space=space,
+            dreg="R%d" % dreg,
+            value=value,
+            address=address,
+            expression=_render(address),
+            concrete_write=wrote,
+            addressing_mode="post-modify",
+            access_width="normal-word",
+        )
+    else:
+        loaded = _load_normal_ureg(state, space, address, dreg)
+        _event(
+            state,
+            insn,
+            "load",
+            space=space,
+            dreg="R%d" % dreg,
+            address=address,
+            expression=_render(address),
+            concrete_value=loaded,
+            addressing_mode="post-modify",
+            access_width="normal-word",
+        )
+    state.uregs[16 + index] = _add(
+        iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+    )
+
+
 def _type_1a(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
@@ -1293,65 +1569,42 @@ def _type_1a(
     # there is no pre/post "u" bit; both accesses are always
     # post-modify. This tracer does not model the SIMD Y-element
     # (PEy/Sn) companion access the same page describes.
-    old = dict(state.uregs)
+    old = _snapshot_uregs(state.uregs)
     try:
-        compute = _compute(
-            f, False, old, state.special, approx_recips=state.approx_recips
+        compute, compute_y = _compute_simd(
+            state, f, False, old, state.special, approx_recips=state.approx_recips
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     scale = _access_modifier_scale("normal-word", state.assume_nw32)
 
-    def access1a(space: str, index: int, modifier: int, dreg: int, store: bool) -> None:
-        iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
-        scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
-        address = iv
-        if store:
-            value = _ureg(old, dreg)
-            _event(
-                state,
-                insn,
-                "store",
-                space=space,
-                dreg="R%d" % dreg,
-                value=value,
-                address=address,
-                expression=_render(address),
-                concrete_write=_dm_write(state, address, 4, value)
-                if space == "DM"
-                else False,
-                addressing_mode="post-modify",
-                access_width="normal-word",
-            )
-        else:
-            loaded = _load_normal_ureg(state, space, address, dreg)
-            _event(
-                state,
-                insn,
-                "load",
-                space=space,
-                dreg="R%d" % dreg,
-                address=address,
-                expression=_render(address),
-                concrete_value=loaded,
-                addressing_mode="post-modify",
-                access_width="normal-word",
-            )
-        state.uregs[16 + index] = _add(
-            iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
-        )
-
     dm_index, dm_modifier = _field(f, "dmi[2:0]"), _field(f, "dmm[2:0]")
     pm_index = ((_field(f, "pmi[2:2]") << 2) | _field(f, "pmi[1:0]")) + 8
     pm_modifier = _field(f, "pmm[2:0]") + 8
-    access1a(
-        "DM", dm_index, dm_modifier, _field(f, "dmdreg[3:0]"), bool(_field(f, "dmd"))
+    _type_1a_access(
+        "DM",
+        dm_index,
+        dm_modifier,
+        _field(f, "dmdreg[3:0]"),
+        bool(_field(f, "dmd")),
+        state,
+        insn,
+        old,
+        scale,
     )
-    access1a(
-        "PM", pm_index, pm_modifier, _field(f, "pmdreg[3:0]"), bool(_field(f, "pmd"))
+    _type_1a_access(
+        "PM",
+        pm_index,
+        pm_modifier,
+        _field(f, "pmdreg[3:0]"),
+        bool(_field(f, "pmd")),
+        state,
+        insn,
+        old,
+        scale,
     )
     if compute is not None:
-        _apply_compute(state, insn, compute)
+        _apply_compute_simd(state, insn, compute, compute_y)
     return _advance(state, insn)
 
 
@@ -1371,10 +1624,10 @@ def _type_5a_swap(
     # condition/predicate-fork machinery are still modeled exactly
     # like Type5a (move) above.
     cond = _field(f, "cond")
-    old = dict(state.uregs)
+    old = _snapshot_uregs(state.uregs)
     try:
-        compute = _compute(
-            f, False, old, state.special, approx_recips=state.approx_recips
+        compute, compute_y = _compute_simd(
+            state, f, False, old, state.special, approx_recips=state.approx_recips
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
@@ -1396,7 +1649,10 @@ def _type_5a_swap(
         "Type5a swap from untracked complementary S%d" % cdreg
     )
     if compute is not None:
-        _apply_compute(executed, insn, compute)
+        # PEy's compute only when unconditional (see _type_3a).
+        _apply_compute_simd(
+            executed, insn, compute, compute_y if cond == 0x1F else None
+        )
     _event(
         executed,
         insn,
@@ -1440,15 +1696,7 @@ def _type_4d(
         return [_stop(state, insn, "unsupported Type4d sign-extended store")]
     if _field(f, "cond") != 0x1F:
         return [_stop(state, insn, "unsupported Type4d predicate")]
-    widths = {
-        "normal-word": 4,
-        "byte": 1,
-        "byte-sign-extended": 1,
-        "short-word": 2,
-        "short-word-sign-extended": 2,
-        "long-word": 8,
-    }
-    width = widths[access_width]
+    width = _ACCESS_WIDTH_BYTES[access_width]
     bank = 8 if _field(f, "g") else 0
     index = _field(f, "i") + bank
     offset = _signed((_field(f, "data[5:5]") << 5) | _field(f, "data[4:0]"), 6)
@@ -1460,8 +1708,23 @@ def _type_4d(
     address = (
         iv if post_modify else _add(iv, Const(offset), "I%d + %d" % (index, offset))
     )
+    # SIMD: PEy moves Cdreg at the adjacent byte/short word (PRM p.13-33,
+    # "The load on PEy reads 16-bits from the 2-bytes addressed by I0+2";
+    # p.7-5). FUN_1c2b24's 1024-short copy (sw 0x1c2c7c/0x1c2c7f) of
+    # the per-voice flag masks runs in SIMD mode and needs it.
+    companion = None
+    if space == "DM":
+        try:
+            companion = _simd_ureg_mem_companion(
+                state, code, address, access_width, store=bool(_field(f, "d"))
+            )
+        except ValueError as error:
+            return [_stop(state, insn, str(error))]
+    old = _snapshot_uregs(state.uregs)
+    mode = "post-modify" if post_modify else "pre-modify"
     if store:
         value = _ureg(state.uregs, code)
+        wrote = _dm_write(state, address, width, value) if space == "DM" else False
         _event(
             state,
             insn,
@@ -1471,12 +1734,12 @@ def _type_4d(
             value=value,
             address=address,
             expression=_render(address),
-            concrete_write=_dm_write(state, address, width, value)
-            if space == "DM"
-            else False,
+            concrete_write=wrote,
             addressing_mode="post-modify" if post_modify else "pre-modify",
             access_width=access_width,
         )
+        if companion is not None:
+            _companion_transfer(state, insn, companion, True, access_width, old, mode)
     else:
         loaded = (
             _load_normal_ureg(state, space, address, code)
@@ -1505,9 +1768,96 @@ def _type_4d(
             addressing_mode="post-modify" if post_modify else "pre-modify",
             access_width=access_width,
         )
+        if companion is not None:
+            _companion_transfer(state, insn, companion, False, access_width, old, mode)
     if post_modify:
         state.uregs[16 + index] = _add(iv, Const(offset), "I%d + %d" % (index, offset))
     return _advance(state, insn)
+
+
+def _type_3d_access(
+    executed: State,
+    insn: Instruction,
+    index: int,
+    modifier: int,
+    scale: int,
+    scaled_mv: Operand,
+    address: Value,
+    post_modify: bool,
+    store: bool,
+    space: str,
+    ureg: int,
+    width: int,
+    access_width: str,
+    companion: tuple[int, Value] | None,
+    mode: str,
+) -> None:
+    """Type 3d's access on EXECUTED (the state itself, or the executed fork)."""
+    old = _snapshot_uregs(executed.uregs)
+    iv = _ureg(old, 16 + index)
+    if store:
+        value = _ureg(old, ureg)
+        wrote = _dm_write(executed, address, width, value) if space == "DM" else False
+        _event(
+            executed,
+            insn,
+            "store",
+            space=space,
+            ureg=UREG_NAMES[ureg],
+            value=value,
+            address=address,
+            expression=_render(address),
+            concrete_write=wrote,
+            addressing_mode="post-modify" if post_modify else "pre-modify",
+            access_width=access_width,
+        )
+        if companion is not None:
+            _companion_transfer(
+                executed, insn, companion, True, access_width, old, mode
+            )
+    else:
+        loaded = (
+            _load_normal_ureg(executed, space, address, ureg)
+            if access_width == "normal-word"
+            else (
+                _dm_read(
+                    executed,
+                    address,
+                    width,
+                    access_width.endswith("sign-extended"),
+                )
+                if space == "DM"
+                else None
+            )
+        )
+        if access_width != "normal-word":
+            # The dict[str, int] PX1/PX2 summary only comes back from
+            # the access_width == "normal-word" branch above (see
+            # Type4d's identical guard); this branch never sees it.
+            assert not isinstance(loaded, dict)
+            executed.uregs[ureg] = loaded or Unknown(
+                "memory-address " + _render(address)
+            )
+        _event(
+            executed,
+            insn,
+            "load",
+            space=space,
+            ureg=UREG_NAMES[ureg],
+            address=address,
+            expression=_render(address),
+            concrete_value=loaded,
+            addressing_mode="post-modify" if post_modify else "pre-modify",
+            access_width=access_width,
+        )
+        if companion is not None:
+            _companion_transfer(
+                executed, insn, companion, False, access_width, old, mode
+            )
+    if post_modify:
+        executed.uregs[16 + index] = _add(
+            iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
+        )
 
 
 def _type_3d(
@@ -1554,92 +1904,57 @@ def _type_3d(
     store = bool(_field(f, "d"))
     if store and access_width.endswith("sign-extended"):
         return [_stop(state, insn, "unsupported Type3d sign-extended store")]
-    widths = {
-        "normal-word": 4,
-        "byte": 1,
-        "byte-sign-extended": 1,
-        "short-word": 2,
-        "short-word-sign-extended": 2,
-        "long-word": 8,
-    }
-    width = widths[access_width]
+    width = _ACCESS_WIDTH_BYTES[access_width]
     bank = 8 if _field(f, "g") else 0
     index, modifier = _field(f, "i") + bank, _field(f, "m") + bank
     post_modify = bool(_field(f, "u"))
     space = "PM" if bank else "DM"
     ureg = _field(f, "ureg")
     cond = _field(f, "cond")
-
-    def access3d(executed: State) -> None:
-        old = dict(executed.uregs)
-        iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
-        scale = _access_modifier_scale(access_width, executed.assume_nw32)
-        scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
-        address = (
-            iv
-            if post_modify
-            else _add(iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale))
-        )
-        if store:
-            value = _ureg(old, ureg)
-            _event(
-                executed,
-                insn,
-                "store",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                value=value,
-                address=address,
-                expression=_render(address),
-                concrete_write=_dm_write(executed, address, width, value)
-                if space == "DM"
-                else False,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width=access_width,
+    # SIMD: PRM p.13-20, "Type 3d ... SIMD Mode": the Y element moves the
+    # Cureg at the explicit address + one/two (normal/short word) -- in byte
+    # space the adjacent byte/short word (p.7-5). FUN_1c642a's end-of-frame
+    # loop (sw 0x1c7191-0x1c71a6, 16 passes, I4 += 2 bytes) copies the
+    # per-voice trig-pending bytes to the latched bytes this way, R2 for
+    # the even voice and S2 for the odd one; without the companion the odd
+    # (R-channel) voice of a track was never armed.
+    iv0, mv0 = _ureg(state.uregs, 16 + index), _ureg(state.uregs, 32 + modifier)
+    scale = _access_modifier_scale(access_width, state.assume_nw32)
+    scaled_mv = _multiply(mv0, Const(scale), "M%d * %d" % (modifier, scale))
+    address = (
+        iv0
+        if post_modify
+        else _add(iv0, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale))
+    )
+    companion = None
+    if space == "DM":
+        try:
+            companion = _simd_ureg_mem_companion(
+                state, ureg, address, access_width, store=bool(_field(f, "d"))
             )
-        else:
-            loaded = (
-                _load_normal_ureg(executed, space, address, ureg)
-                if access_width == "normal-word"
-                else (
-                    _dm_read(
-                        executed,
-                        address,
-                        width,
-                        access_width.endswith("sign-extended"),
-                    )
-                    if space == "DM"
-                    else None
-                )
-            )
-            if access_width != "normal-word":
-                # The dict[str, int] PX1/PX2 summary only comes back from
-                # the access_width == "normal-word" branch above (see
-                # Type4d's identical guard); this branch never sees it.
-                assert not isinstance(loaded, dict)
-                executed.uregs[ureg] = loaded or Unknown(
-                    "memory-address " + _render(address)
-                )
-            _event(
-                executed,
-                insn,
-                "load",
-                space=space,
-                ureg=UREG_NAMES[ureg],
-                address=address,
-                expression=_render(address),
-                concrete_value=loaded,
-                addressing_mode="post-modify" if post_modify else "pre-modify",
-                access_width=access_width,
-            )
-        if post_modify:
-            executed.uregs[16 + index] = _add(
-                iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
-            )
+        except ValueError as error:
+            return [_stop(state, insn, str(error))]
+    mode = "post-modify" if post_modify else "pre-modify"
 
     predicate = _predicate(state, cond)
     if predicate is True:
-        access3d(state)
+        _type_3d_access(
+            state,
+            insn,
+            index,
+            modifier,
+            scale,
+            scaled_mv,
+            address,
+            post_modify,
+            store,
+            space,
+            ureg,
+            width,
+            access_width,
+            companion,
+            mode,
+        )
         return _advance(state, insn)
     if predicate is False:
         _event(
@@ -1651,7 +1966,23 @@ def _type_3d(
         )
         return _advance(state, insn)
     executed, skipped = _copy(state), _copy(state)
-    access3d(executed)
+    _type_3d_access(
+        executed,
+        insn,
+        index,
+        modifier,
+        scale,
+        scaled_mv,
+        address,
+        post_modify,
+        store,
+        space,
+        ureg,
+        width,
+        access_width,
+        companion,
+        mode,
+    )
     _event(skipped, insn, "type3d-skipped", condition=cond, predicate_assumption=False)
     return _advance(executed, insn) + _advance(skipped, insn)
 

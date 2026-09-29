@@ -83,6 +83,7 @@ import sharcflow  # noqa: E402
 import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
+from sharc_core.encoding import ACCESS_WIDTHS, TYPE4B_ACCESS_WIDTHS  # noqa: E402
 from sharc_trace import UREG_CODES, UREG_NAMES  # noqa: E402
 
 EXPECTED_SHA256 = {
@@ -754,6 +755,15 @@ def _fmt_index_offset_hex(i: int, off: int) -> str:
     return "I%d %s 0x%x" % (i, "-" if off < 0 else "+", abs(off))
 
 
+_LXW_SUFFIX = {
+    "normal-word": "",
+    "byte": " (bw)",
+    "byte-sign-extended": " (bwse)",
+    "short-word": " (sw)",
+    "short-word-sign-extended": " (swse)",
+}
+
+
 def render_mem_immoff(sw, f, insn_type):
     """4a/4b/4d/15b: I-register + immediate-offset addressing. PRM
     Type4a/4b/4d pp.13-26/13-30/13-34 ("u"): u=0 pre-modifies I for the
@@ -775,7 +785,14 @@ def render_mem_immoff(sw, f, insn_type):
         else (ureg_name(ureg) if ureg is not None else "?")
     )
     space, direction = _space_dir(f)
-    long_ = ", long" if f.get("l") else ""
+    if insn_type in ("4b", "4d"):
+        # l/x/w select a width, not (lw): Type4b's (1, 1, 1) is the plain
+        # normal word (PRM p.13-32), Type4d's rows are bw/sw/bwse/swse.
+        table = TYPE4B_ACCESS_WIDTHS if insn_type == "4b" else ACCESS_WIDTHS
+        width = table.get((f.get("l", 0), f.get("x", 0), f.get("w", 0)))
+        long_ = _LXW_SUFFIX.get(width, " (undocumented l/x/w)")
+    else:
+        long_ = ", long" if f.get("l") else ""
     post_modify = insn_type != "15b" and bool(f.get("u"))
     if post_modify:
         addr = "I%d" % i

@@ -76,6 +76,13 @@ class WidthRulesTest(unittest.TestCase):
             self.assertEqual(rule({"l": 1, "x": 1, "w": 1}), "long-word")
             self.assertIsNone(rule({"l": 0, "x": 0, "w": 1}))
 
+    def test_4b_has_no_long_word_row(self):
+        # PRM p.13-32, BH/BHSE (Type 4b): (1, 1, 1) has no suffix.
+        self.assertEqual(wa._w_4b({"l": 1, "x": 1, "w": 1}), "normal-word")
+        self.assertEqual(wa._w_4b({"l": 1, "x": 0, "w": 0}), "short-word")
+        self.assertEqual(wa._w_4b({"l": 0, "x": 1, "w": 0}), "byte-sign-extended")
+        self.assertIsNone(wa._w_4b({"l": 0, "x": 1, "w": 1}))
+
     def test_3d_stops_on_w1_waccess_and_matches_access3_on_w0(self):
         self.assertIsNone(wa._w_3d({"l": 0, "x": 0, "w": 1}))
         self.assertIsNone(wa._w_3d({"l": 1, "x": 1, "w": 1}))

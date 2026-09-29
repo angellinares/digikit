@@ -89,8 +89,9 @@ import sharcimm  # noqa: E402
 import sharcinv  # noqa: E402
 import sharcldr  # noqa: E402
 from sharc_trace import ACCESS_WIDTHS  # noqa: E402
+from sharc_core.encoding import TYPE4B_ACCESS_WIDTHS  # noqa: E402
 
-DB_VERSION = 13
+DB_VERSION = 14
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
@@ -675,9 +676,9 @@ def classify_literal_range(value: int, code_spans_sw, code_spans_byte, mem):
     return in_code, in_data
 
 
-# Type4b/4d (decode_table.json: l/w/x at bits 18/17/16, no "ex" bit) share
-# Type3b's ACCESS/BH/BHSE l/x/w encode table verbatim (PRM pp.13-31/13-32/
-# 13-34): the "long if l else word" fallback used for every other
+# Type4b/4d (decode_table.json: l/w/x at bits 18/17/16, no "ex" bit) carry
+# l/x/w width tables (PRM pp.13-32/13-34; Type4b's differs from Type3b's in
+# its (1, 1, 1) row, see _immoff_width): the "long if l else word" fallback used for every other
 # DIRECT_MEM_FORMS/IMMOFF_MEM_FORMS member (whose lone "l" bit really does
 # mean a plain long-word/Ureg-pair access, e.g. 4a/15a/14a/15b) mislabels a
 # byte (bw, l=0) access as "word" and a short-word (sw, l=1) access as
@@ -688,7 +689,10 @@ _LXW_WIDTH_FORMS = {"4b", "4d"}
 def _immoff_width(insn_type: str, f: dict):
     if insn_type in _LXW_WIDTH_FORMS:
         fields = (f.get("l", 0), f.get("x", 0), f.get("w", 0))
-        return ACCESS_WIDTHS.get(fields, "unknown(l=%d,x=%d,w=%d)" % fields)
+        # Type4b's own table differs from Type3b's: (1, 1, 1) is the plain
+        # normal word, not (lw) (PRM p.13-32; sharc_core.encoding).
+        table = TYPE4B_ACCESS_WIDTHS if insn_type == "4b" else ACCESS_WIDTHS
+        return table.get(fields, "unknown(l=%d,x=%d,w=%d)" % fields)
     return "long" if f.get("l") else "word"
 
 

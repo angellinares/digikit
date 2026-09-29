@@ -142,10 +142,8 @@ SHIFT_FLAGS_MASK = (1 << SV_BIT) | (1 << SZ_BIT) | (1 << SS_BIT)
 
 # Type3b's (l, x, w) ACCESS/BH/BHSE encode table (SHARC+ Core Programming
 # Reference rev. 1.4, pp. 13-16--13-19), used by this module's own "3b"
-# _execute branch below; Type4b/4d share the identical 3-bit l/x/w table
-# (PRM pp.13-31/13-32/13-34, no "ex" bit -- unlike Type3d/14d, which add
-# one), so tools/sharcdb.py's extract_mem_access() imports this rather than
-# re-deriving it.
+# _execute branch below. Type4d's BH/BHSE tables (pp.13-34/13-35) are this
+# table's w=0 slice. Type4b is NOT this table: see TYPE4B_ACCESS_WIDTHS.
 ACCESS_WIDTHS = {
     (0, 1, 1): "normal-word",
     (0, 0, 0): "byte",
@@ -153,6 +151,24 @@ ACCESS_WIDTHS = {
     (1, 0, 0): "short-word",
     (1, 1, 0): "short-word-sign-extended",
     (1, 1, 1): "long-word",
+}
+
+# Type4b's (l, x, w) BH/BHSE encode tables (PRM p.13-32). They differ from
+# Type3b's in two rows: (1, 1, 1) is the row with no suffix, the plain
+# normal-word access, and (0, 1, 1) is absent. Type4b has no (lw) option:
+# Table 13-12 (p.13-29) lists none, while Table 13-8 (Type3b, p.13-16) and
+# Type3b's ACCESS table (p.13-18) spell (lw) out as l=w=x=1. The DT2 1.16
+# image agrees: its 156 aligned (1, 1, 1) accesses include post-modify
+# strides of 7 words (misaligned for a 64-bit access every other step) and
+# loads whose neighbour register holds a live value, e.g. sw 0x1cccf3
+# "R1 = DM(I0 - 5)" then sw 0x1cccf5 "(1, 1, 1) R0 = DM(I0)" then sw
+# 0x1ccd03 "DM(I4, M6) = R1".
+TYPE4B_ACCESS_WIDTHS = {
+    (1, 1, 1): "normal-word",
+    (0, 0, 0): "byte",
+    (0, 1, 0): "byte-sign-extended",
+    (1, 0, 0): "short-word",
+    (1, 1, 0): "short-word-sign-extended",
 }
 
 # IF-condition codes (PGR Table 10-4) that read a single ASTATX bit,
@@ -189,3 +205,15 @@ def _field(f: Mapping[str, int], stem: str) -> int:
 
 def _wide(f: Mapping[str, int], stem: str) -> int:
     return (_field(f, stem + "[31:16]") << 16) | _field(f, stem + "[15:0]")
+
+
+def _split_compute_fields(f: Mapping[str, int]) -> dict[str, int]:
+    """F plus its 23-bit "compute" field split into the "compute[22:16]" and
+    "compute[15:0]" fields ``_compute`` reads (Type 3a names the field
+    whole). It depends on the decoded fields alone, so a generator
+    evaluates it once per instruction, at generation time."""
+    fields = dict(f)
+    compute = _field(f, "compute")
+    fields["compute[22:16]"] = compute >> 16
+    fields["compute[15:0]"] = compute & 0xFFFF
+    return fields

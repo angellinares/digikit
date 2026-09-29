@@ -45,9 +45,21 @@ emulated second at instruction count WHEN (e.g. --ips-at 80M:18.72M after
 boot); the GUI then runs slower than real time if the emulator cannot
 keep up.
 
---post-intro-ips N sets the timer rate applied when the intro hands over;
-default 18720000 (4x INSTR_PER_SEC); 0 keeps the default rate; ignored when
---ips-at is given.
+--post-intro-ips N sets the timer rate applied when the intro hands over,
+or at the start for a snapshot already past it; default
+emu.pit.DEVICE_INSTR_PER_SEC (132M, the device's rate); 0 keeps the rate the
+run started with; ignored when --ips-at is given. `--post-intro-ips 18.72M`
+is the rate used before 2026-09-29, and `--ips-at 0:4.68M` the legacy
+INSTR_PER_SEC from the start. With --exact and no audio model, the device
+rate is slow: an exact step cannot stop where the idle loop begins, so most
+of each timer period runs the idle loop pass by pass (emu.longrun.IdleSpin).
+
+--live-audio plays the DSP: every DSPI2 frame the firmware sends is
+rendered by the native SHARC core in real time on the default output device
+(emu/livesharc.py; needs --card-image and the sample load's FlexBus log,
+flexbus.raw next to the snapshot or --live-lp0 PATH). --live-frame-period N
+forces a frame every N instructions (default 200000). A status line shows
+the frames in, rendered and repeated, and underruns.
 
 tkinter only, no third-party GUI dependency. Note Homebrew's python@3.14 does
 not ship tkinter; uv's managed CPython does, which is why pyproject pins 3.12.
@@ -68,7 +80,7 @@ from unicorn.m68k_const import UC_M68K_REG_A7, UC_M68K_REG_PC, UC_M68K_REG_SR
 from emu.longrun import build, spin
 from emu.dtim import Dtims, Timers
 from emu import config, device as devices, panel, panelin, symbols
-from emu.pit import INSTR_PER_SEC, Pits, intro_running
+from emu.pit import DEVICE_INSTR_PER_SEC, Pits, intro_running
 from emu.screen import png
 
 # The intro's frame rate is not a guess. PIT3 is configured at 0x400d3a7a with
@@ -144,13 +156,21 @@ class Emulator(threading.Thread):
                  patch_machine: bool | tuple[str, ...] = False,
                  patch_eighth=7, patch_machine_spec=None,
                  panel_dwell=PANEL_DWELL_CHUNKS, ips_at=(),
-                 post_intro_ips=4 * INSTR_PER_SEC, card_image=None):
+                 post_intro_ips=DEVICE_INSTR_PER_SEC, card_image=None,
+                 live=None):
         super().__init__()
         self.snapshot = snapshot
         self.weakptr = weakptr
         self.slc = slc
         self.syx = syx
         self.card_image = card_image
+        # --live-audio: an emu.livesharc.LiveConfig. The worker opens the
+        # native SHARC engine when it starts and closes it when it ends, so
+        # RESTART also restarts the DSP from its start state.
+        self.live = live
+        self.live_audio = None
+        self.live_peer = None
+        self.live_forcer = None
         self.patch_machine = patch_machine
         self.patch_eighth = patch_eighth
         self.patch_machine_spec = patch_machine_spec
@@ -186,7 +206,8 @@ class Emulator(threading.Thread):
                       'bmp': 0, 'instrs': 0, 'pit': (0, 0, 0),
                       'status': 'loading snapshot', 'mainloop': 0, 'jobs': 0,
                       'dtim3': 0, 'terminal': False, 'panel_lit': 0,
-                      'source': 'setPixel', 'wall_ips': 0.0, 'real': 0.0}
+                      'source': 'setPixel', 'wall_ips': 0.0, 'real': 0.0,
+                      'dsp': ''}
         self._uc = None             # set once the machine is built
         self.error = None
         self._seen = set()
@@ -306,6 +327,23 @@ class Emulator(threading.Thread):
         return new_pc
 
     def run(self):
+        try:
+            self._run()
+        finally:
+            self._close_live()
+
+    def _close_live(self):
+        audio, self.live_audio = self.live_audio, None
+        if audio is None:
+            return
+        try:
+            from emu import livesharc
+            print(livesharc.summary(audio), flush=True)
+        except Exception as exc:                       # noqa: BLE001
+            print('[gui] live audio: no summary (%s)' % exc, flush=True)
+        audio.close()
+
+    def _run(self):
         def on_pixel(x, y, val, bmp):
             self.stats['bmp'] = bmp
             if (x, y) in self._seen and len(self._seen) > W * H // 2:
@@ -346,6 +384,13 @@ class Emulator(threading.Thread):
             extra = {'syx': self.syx} if self.syx else {}
             if self.card_image:
                 extra['card_image'] = self.card_image
+            if self.live is not None:
+                # --live-audio: every DSPI2 frame goes to the native SHARC
+                # engine (emu/livesharc.py).
+                from emu import livesharc
+                self.live_audio = self.live.open()
+                self.live_peer = livesharc.LiveFramePeer(self.live_audio)
+                extra['dspi2_peer'] = self.live_peer
             # sdgate/esdhc are not passed here -- build()'s own defaults
             # (True) supply the SD storage models, so they come along with
             # every call site that does not explicitly override them.
@@ -459,6 +504,15 @@ class Emulator(threading.Thread):
         print('[gui] timer rate %d, after intro %s'
               % (pits.sources[0].ips, self._post_intro_ips or 'unchanged'),
               flush=True)
+        on_chunk = None
+        if self.live_peer is not None:
+            from emu import livesharc
+            assert self.live is not None
+            self.live_forcer = livesharc.FrameForcer(m, pits, self.live.period)
+            on_chunk = self.live_forcer.on_chunk
+            print('[gui] live audio on %s: a DSPI2 frame every %d instructions'
+                  % (self.live_audio.device_name(), self.live.period),
+                  flush=True)
 
         # Progress markers, so the status line can say what the firmware is
         # actually doing rather than only how many pixels it drew. Resolved
@@ -528,12 +582,12 @@ class Emulator(threading.Thread):
                 [e for e in self._pending_ips
                  if e[0] > self.stats['instrs']])
             for when, n in due_ips:
-                for source in pits.sources:
-                    source.ips = n
+                pits.rescale(n)
                 print('[gui] ips -> %d at %d' % (n, self.stats['instrs']),
                       flush=True)
             pc = self._drain_input(m, profile, pc)
-            pc, executed, stop = spin(m, pc, BUDGET, pits=pits, fast=self.fast)
+            pc, executed, stop = spin(m, pc, BUDGET, pits=pits, fast=self.fast,
+                                      on_chunk=on_chunk)
             if stop != 'limit':
                 self.stats['status'] = 'halted: %s' % stop
                 # Also to stdout: the status label is invisible to anyone
@@ -565,6 +619,10 @@ class Emulator(threading.Thread):
                 if ahead > 0.003:
                     time.sleep(min(ahead, 0.05))
             self._publish_panel(m)
+            if self.live_peer is not None:
+                from emu import livesharc
+                self.stats['dsp'] = livesharc.status(
+                    self.live_audio, self.live_peer, self.live_forcer)
             fired = pits.fired
             self.stats['pit'] = (fired.get('PIT0', 0), fired.get('PIT2', 0),
                                  fired.get('PIT3', 0))
@@ -1095,7 +1153,8 @@ class App(tk.Tk):
                  patch_machine: bool | tuple[str, ...] = False,
                  patch_eighth=7, patch_machine_spec=None,
                  panel_dwell=PANEL_DWELL_CHUNKS, ips_at=(),
-                 post_intro_ips=4 * INSTR_PER_SEC, card_image=None):
+                 post_intro_ips=DEVICE_INSTR_PER_SEC, card_image=None,
+                 live=None):
         super().__init__()
         self.title('Hardware-style emulator')
         self.configure(bg='#15181d')
@@ -1148,6 +1207,7 @@ class App(tk.Tk):
         self.ips_at = ips_at
         self.post_intro_ips = post_intro_ips
         self.card_image = card_image
+        self.live = live
         self.shown = -1
         self.replay = None          # (frames, index, next_due) while replaying
         self.start()
@@ -1164,7 +1224,8 @@ class App(tk.Tk):
                             panel_dwell=self.panel_dwell,
                             ips_at=self.ips_at,
                             post_intro_ips=self.post_intro_ips,
-                            card_image=self.card_image)
+                            card_image=self.card_image,
+                            live=self.live)
         self.emu.start()
 
     def send_input(self, kind, code, arg):
@@ -1292,7 +1353,8 @@ class App(tk.Tk):
                             else s['px'],
                             s['pit'][0], s['pit'][1], s['pit'][2],
                             s['dtim3'], s['mainloop'], s['jobs'],
-                            s['instrs'] / 1e6),
+                            s['instrs'] / 1e6)
+                    + ('\n' + s['dsp'] if s['dsp'] else ''),
                     fg='#9aa7b8')
         self.after(60, self.tick)
 
@@ -1311,6 +1373,55 @@ def parse_count(s):
     if s and s[-1] in ('M', 'm'):
         return int(float(s[:-1]) * 1_000_000)
     return int(s, 0)
+
+
+def check_card_image_sidecar(snapshot, card_image):
+    """Refuse a `--card-image` that does not match what `snapshot` was
+    actually built with, instead of booting a guest whose in-RAM +Drive
+    state disagrees with the file now mapped in -- e.g. SampleManager
+    reading a directory that was never mounted against this image, and
+    showing "This folder is empty" instead of failing loudly.
+
+    The check is the `.ladder.json` sidecar `emu.checkpoint.make` writes
+    next to a boot ladder's own snapshots (see `emu.run.ladder_config_path`,
+    `LADDER_CONFIG`): one per directory, so it also covers a later save
+    (a "samples loaded" or "ready" snapshot) taken further down the same
+    ladder, since those live in the same directory and were built from the
+    same card. A directory with no sidecar predates this check, or was
+    built by hand outside a ladder -- warn rather than refuse, so those
+    still run.
+
+    -> the card image's SHA-256 when it was checked, else None.
+    """
+    import json
+    from emu.checkpoint import sha256_file
+    from emu.run import LADDER_CONFIG
+    cfg_path = os.path.join(os.path.dirname(snapshot) or '.', LADDER_CONFIG)
+    try:
+        with open(cfg_path) as fh:
+            cfg = json.load(fh)
+    except (OSError, ValueError):
+        if card_image:
+            print('[gui] WARNING: no %s next to %s, so --card-image %s cannot '
+                  'be checked against what this snapshot was actually booted '
+                  'with.\n' % (cfg_path, snapshot, card_image), flush=True)
+        return
+    recorded = cfg.get('card_image_sha256')
+    got = sha256_file(card_image) if card_image else None
+    if recorded == got:
+        return got
+    raise SystemExit(
+        '%s says %s was booted with card image %s (sha256 %s), but this run '
+        'named %s (sha256 %s).\n\n'
+        'Booting with a different card image than the one baked into the '
+        "snapshot's guest state shows stale or empty results instead of "
+        'failing loudly -- e.g. SampleManager listing nothing. Pass the '
+        'same image this snapshot was built with, or rebuild both '
+        'together:\n\n'
+        '    uv run python tools/dt2gui.py --samples SAMPLES_DIR --rebuild --no-gui\n'
+        % (cfg_path, snapshot, cfg.get('card_image') or '(none)',
+           recorded[:16] if recorded else 'none', card_image or '(none)',
+           got[:16] if got else 'none'))
 
 
 if __name__ == '__main__':
@@ -1399,12 +1510,30 @@ if __name__ == '__main__':
         ips_at.append((parse_count(when_str), parse_count(n_str)))
     ips_at.sort()
     # --post-intro-ips N sets the timer rate applied once the intro hands
-    # over (default 4x INSTR_PER_SEC, which keeps the UI queue drained); 0
-    # keeps the default rate. Ignored when --ips-at is given.
-    post_intro_ips = 4 * INSTR_PER_SEC
+    # over (default: the device's); 0 keeps the starting rate. Ignored when
+    # --ips-at is given. See the module docstring.
+    post_intro_ips = DEVICE_INSTR_PER_SEC
     if '--post-intro-ips' in argv:
         i = argv.index('--post-intro-ips')
         post_intro_ips = max(0, parse_count(argv[i + 1]))
+        del argv[i:i + 2]
+    # --live-audio plays the DSP: every DSPI2 frame the firmware sends is
+    # rendered by the native SHARC core, live, to the default output device
+    # (emu/livesharc.py). --live-lp0 PATH names the sample load's FlexBus log
+    # (default: flexbus.raw next to the snapshot, which tools/dt2gui.py
+    # records); --live-frame-period N forces a frame every N instructions.
+    live_audio = '--live-audio' in argv
+    if live_audio:
+        argv.remove('--live-audio')
+    live_lp0 = None
+    if '--live-lp0' in argv:
+        i = argv.index('--live-lp0')
+        live_lp0 = argv[i + 1]
+        del argv[i:i + 2]
+    live_period = None
+    if '--live-frame-period' in argv:
+        i = argv.index('--live-frame-period')
+        live_period = max(1, parse_count(argv[i + 1]))
         del argv[i:i + 2]
     args = [a for a in argv if not a.startswith('--')]
     snap = args[0] if args else 'snapshots/boot400M.snap'
@@ -1412,8 +1541,16 @@ if __name__ == '__main__':
         raise SystemExit('no such snapshot: %s\n'
                          'build one with:  uv run python -m emu.checkpoint make '
                          '60000000,120000000,200000000,280000000,400000000' % snap)
+    card_sha256 = check_card_image_sidecar(snap, card_image)
+    live = None
+    if live_audio:
+        from emu import livesharc
+        live = livesharc.prepare(
+            snap, card_image, card_sha256, lp0=live_lp0,
+            period=live_period or livesharc.FRAME_PERIOD)
     App(snap, weakptr=weakptr, slc=slc, scale=scale, syx=syx, fast=fast,
         realtime=realtime, patch_machine=patch_machine,
         patch_eighth=patch_eighth, patch_machine_spec=patch_machine_spec,
         panel_dwell=panel_dwell, ips_at=ips_at,
-        post_intro_ips=post_intro_ips, card_image=card_image).mainloop()
+        post_intro_ips=post_intro_ips, card_image=card_image,
+        live=live).mainloop()

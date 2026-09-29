@@ -6,7 +6,7 @@ Moved verbatim from tools/sharc_trace.py.
 from __future__ import annotations
 
 from sharcimm import name_address
-from sharcldr import SW_ALIAS_BASE, sw_to_byte
+from sharcldr import SW_ALIAS_BASE, LoadedMemory, sw_to_byte
 
 from .encoding import (
     CORE_MMR_RANGE,
@@ -113,25 +113,26 @@ def _canonical_dm_address(
     concrete = state.concrete
     if concrete is None:
         return None
-
-    def present(here: int) -> bool:
-        return here in state.overlay or concrete.read(here, 1) is not None
-
-    def fully_present(base: int) -> bool:
-        return all(present(here) for here in range(base, base + width))
-
     # Single-byte probe: which family ADDRESS belongs to, not whether this
     # particular WIDTH-wide access is fully backed there yet (that is
-    # ``fully_present``, checked once the family is settled, below).
-    if not present(address) and 0 <= address < SW_ALIAS_BASE:
+    # checked once the family is settled, below).
+    if not _byte_present(state, concrete, address) and 0 <= address < SW_ALIAS_BASE:
         alias = SW_ALIAS_BASE + address
-        if for_write or present(alias):
+        if for_write or _byte_present(state, concrete, alias):
             address = alias
     # Runtime RAM and MMR destinations need not have loader initializer bytes.
     # A concrete write creates those bytes in this path's overlay.
     if for_write:
         return address
-    return address if fully_present(address) else None
+    for here in range(address, address + width):
+        if not _byte_present(state, concrete, here):
+            return None
+    return address
+
+
+def _byte_present(state: State, concrete: LoadedMemory, here: int) -> bool:
+    """Byte HERE has a value on this path: written, or loader-backed."""
+    return here in state.overlay or concrete.read(here, 1) is not None
 
 
 def dm_write_range(state: State, address: int, width: int) -> tuple[int, int] | None:
@@ -218,10 +219,10 @@ def _dm_read(
             return Const(0)
         return None
     concrete = canonical
-    if state.data_memory_tainted and not all(
-        here in state.overlay for here in range(concrete, concrete + width)
-    ):
-        return None
+    if state.data_memory_tainted:
+        for here in range(concrete, concrete + width):
+            if here not in state.overlay:
+                return None
     backing = state.concrete
     assert backing is not None
     raw = bytearray()
@@ -259,9 +260,9 @@ def _read_px48(state: State, address: Value | int) -> tuple[Const, Const] | None
     raw = state.concrete.read(byte_address, 6)
     if raw is None:
         return None
-    high, middle, low = (
-        int.from_bytes(raw[start : start + 2], "little") for start in (0, 2, 4)
-    )
+    high = int.from_bytes(raw[0:2], "little")
+    middle = int.from_bytes(raw[2:4], "little")
+    low = int.from_bytes(raw[4:6], "little")
     px2 = Const((high << 16) | middle)
     px1 = Const(low << 16)
     return px1, px2
@@ -363,15 +364,26 @@ def _dossier(state: State, target: int, return_sw: int) -> dict:
 # Widths this tracer resolves a SIMD companion memory transfer for (SHARC+
 # PRM p.212, Table 6-10 "DAG Address vs. Access Modes": explicit address
 # Ia, implicit address Ia+k, k=1 for normal-word). Byte and short-word
-# access have their own SIMD addressing rule (PRM pp.222-223, packing the
-# companion into an adjacent byte/short-word rather than offsetting by a
-# whole normal word) that this tracer does not yet model, so those widths
-# raise rather than silently transfer only the explicit half.
+# access in byte space have their own rule (PRM p.7-5, extraction page
+# 222: the companion is the adjacent byte or short word), in
+# _SIMD_SUBWORD_COMPANION_BYTES; outside byte space (assume_nw32 off) they
+# still raise rather than transfer only the explicit half.
 _SIMD_COMPANION_WIDTHS = frozenset({"normal-word"})
+_SIMD_SUBWORD_COMPANION_BYTES = {
+    "byte": 1,
+    "byte-sign-extended": 1,
+    "short-word": 2,
+    "short-word-sign-extended": 2,
+}
 
 
 def _simd_ureg_mem_companion(
-    state: State, code: int, address: Operand, access_width: str = "normal-word"
+    state: State,
+    code: int,
+    address: Operand,
+    access_width: str = "normal-word",
+    *,
+    store: bool = False,
 ) -> tuple[int, Operand] | None:
     """The SIMD companion (Cureg code, companion address) for a single
     UREG<->memory transfer, or None when no companion transfer applies
@@ -392,7 +404,21 @@ def _simd_ureg_mem_companion(
     """
     cureg = _cureg_code(code)
     if cureg is None:
-        return None
+        # A STORE of a UREG without a SIMD complement (a DAG register such
+        # as M13) still writes both locations in SIMD mode, with the same
+        # UREG as the source of each: PRM Table 4-22 (p.4-57), "Ureg to
+        # Ureg/CUreg (from uncomplementary register to complementary
+        # pair): Executes move in each PE (and/or memory) ... Ureg is
+        # source for each move" (the LW case, p.2-10, likewise replicates
+        # the value). The firmware relies on it: FUN_1c642a's end-of-frame
+        # loop (sw 0x1c7191-0x1c71a6) clears 32 per-voice bytes in 16
+        # passes of `DM(I4, M3) = M13` with I4 += 2, and FUN_1c2b24's entry
+        # zeroes 32 words in 16 passes of `DM(I5, M4) = M11` with M4 = 2.
+        # A load into such a UREG has no implicit move (Table 4-22, "to
+        # uncomplementary register ... no implicit move occurs").
+        if not store or code == UREG_CODES["PX"]:
+            return None
+        cureg = code
     if access_width == "long-word":
         # PRM p.13-17: the (LW) modifier "override[s] SIMD mode, so these
         # loads always operate in SISD mode" -- unlike byte/short-word,
@@ -400,6 +426,13 @@ def _simd_ureg_mem_companion(
         return None
     if _simd_active(state) is not True:
         return None
+    if access_width in _SIMD_SUBWORD_COMPANION_BYTES and state.assume_nw32:
+        # Byte space: PRM p.7-5, "Byte Access in SIMD Mode" / "Short-
+        # Word Access in SIMD Mode": the SIMD pair "is updated with the
+        # content of the explicit address + 1-byte" (+ 2-byte for a short
+        # word) "memory location".
+        k = _SIMD_SUBWORD_COMPANION_BYTES[access_width]
+        return cureg, _add(address, Const(k), "%s + %d" % (_render(address), k))
     if access_width not in _SIMD_COMPANION_WIDTHS:
         raise ValueError(
             "unsupported SIMD companion access width %r for %s"
@@ -411,14 +444,35 @@ def _simd_ureg_mem_companion(
 
 
 def _access_modifier_scale(access_width: str, assume_nw32: bool) -> int:
-    """Return SHARC+ byte-space scaled-address arithmetic width."""
+    """Return SHARC+ byte-space scaled-address arithmetic width.
+
+    A load/store modifier is scaled by the size of the access in byte
+    space and not at all in word space, "except in the case of (lw)" (PRM
+    p.6-9, "Enhanced Modify Instruction for Address Scaling"): Table 6-2
+    (pp.6-10/6-11) gives "Rm = dm(mod, In) (lw)" and "Rm = dm(In, mod)
+    (lw)" the same rows as the unqualified access, scaled_mod = mod << 2
+    in byte space. So a long word steps in normal-word units, like
+    Type15b's (lw) displacement already does here."""
     if access_width.startswith("short-word"):
         return 2
-    if access_width == "long-word":
-        return 8
-    if access_width == "normal-word" and assume_nw32:
+    if access_width in ("normal-word", "long-word") and assume_nw32:
         return 4
     return 1
+
+
+def _modify_scale(option: str | None, assume_nw32: bool) -> int:
+    """Scale of an M register in MODIFY (Type7a/7b). OPTION is None for the
+    plain form, "short-word" for (sw), "normal-word" for (nw).
+
+    PRM p.6-10: "Ia = MODIFY(Ib,Mc); /* Add Mc bytes, Ia=Ib+Mc */ Does not
+    scale the modifier, whatever the address space"; only the (sw)/(nw)
+    forms scale, and only in byte space (Table 6-2, pp.6-10/6-11). The
+    DT2 1.16 frame path depends on it: sw 0x1c661c "I4 = modify(I4, M0)"
+    adds a byte offset (0x0, 0x14, 0x28, ...) to a table address in M0
+    (0x245c4c)."""
+    if option is None:
+        return 1
+    return _access_modifier_scale(option, assume_nw32)
 
 
 def _circular_wrap_const(index: int, base: int, length: int, delta: int) -> int | None:

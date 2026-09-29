@@ -72,10 +72,31 @@ class CheckpointStateTest(unittest.TestCase):
         original.next, original.now, original.held = [None, 22.5, None, 9], 21, True
         original.fired = collections.Counter({3: 4})
         original.missed = collections.Counter({2: 5})
+        original.cleared = collections.Counter({0: 6})
+        original.pending = {2}
         restored = Pits.__new__(Pits)
         restored.channels, restored.ips = (3, 2, 0), 4680000
         restored.restore_checkpoint_state(original.checkpoint_state())
         self.assertEqual(restored.checkpoint_state(), original.checkpoint_state())
+        self.assertEqual(restored.pending, {2})
+
+    def test_pits_state_saved_before_held_ticks_restores_none_pending(self):
+        state = {
+            "type": "Pits",
+            "version": 1,
+            "channels": (3, 2, 0),
+            "ips": 4680000,
+            "next": [None, None, 9.5, None],
+            "now": 3,
+            "held": False,
+            "fired": {},
+            "missed": {2: 1},
+        }
+        pit = Pits.__new__(Pits)
+        pit.channels, pit.ips = (3, 2, 0), 4680000
+        pit.restore_checkpoint_state(state)
+        self.assertEqual(pit.pending, set())
+        self.assertEqual(pit.cleared, collections.Counter())
 
     def test_timers_restores_source_order_and_rejects_mismatch(self):
         pit = Pits.__new__(Pits)
@@ -87,6 +108,7 @@ class CheckpointStateTest(unittest.TestCase):
             False,
         )
         pit.fired, pit.missed = collections.Counter(), collections.Counter()
+        pit.cleared, pit.pending = collections.Counter(), set()
         dtim = Dtims.__new__(Dtims)
         dtim.channels, dtim.ips, dtim.next, dtim.now, dtim.held = (
             (1,),
@@ -101,6 +123,7 @@ class CheckpointStateTest(unittest.TestCase):
             {1},
             [1],
         )
+        dtim.cleared, dtim.pending = collections.Counter(), {1}
         state = Timers(pit, dtim).checkpoint_state()
         other_pit = Pits.__new__(Pits)
         other_pit.channels, other_pit.ips = (3,), 1

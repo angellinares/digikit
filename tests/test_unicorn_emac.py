@@ -11,7 +11,9 @@ Manual (docs/refs/CFPRM.pdf, chapter 6), not from running Unicorn.
 
 MAC and MSAC with load run as the manual says only with
 patches/unicorn-2.1.4-m68k-emac-mac-load.patch; stock Unicorn 2.1.4 fails
-every LOAD_CASES entry.
+every LOAD_CASES entry. Fractional mode runs as the manual says only with
+patches/unicorn-2.1.4-m68k-emac-fractional.patch; without it every
+FRACTIONAL_CASES entry fails.
 
 Two differences from the manual are pinned as known gaps, so a Unicorn
 change that fixes or alters them fails here and gets noticed.
@@ -149,6 +151,116 @@ LOAD_CASES = (
 )
 
 
+# Signed fractional mode, MACSR[F/I] = 1 (MCF54418RM section 5.3, p.5-9 to
+# 5-17, PDF p.151 to 159; store rules CFPRM p.6-6 to 6-9). The product is
+# (operandY * operandX) << 1 of the signed operands, truncated or rounded
+# (MACSR[R/T]) to product[63:24] and sign-extended into ACC[47:0] =
+# {ACCext[15:8], ACCn, ACCext[7:0]}; -1 * -1 is zero-filled to +1.0.
+# Each case clears ACC0 first with movclr.l ACC0,D3.
+# (name, words, initial registers, instruction count, expected registers)
+FRACTIONAL_CASES = (
+    (
+        # move.l D7,MACSR; movclr ACC0,D3; mac.w D6u,D0u,ACC0; movclr ACC0,D1
+        "mac.w: 0.5 * 0.5 = 0.25",
+        ["a907", "a1c3", "a006", "00c0", "a1c1"],
+        {"D7": 0x20, "D0": 0x40000000, "D6": 0x40000000},
+        4,
+        {"D1": 0x20000000},
+    ),
+    (
+        # move.l D7,MACSR; movclr ACC0,D3; mac.l D4,D5,ACC0; movclr ACC0,D2
+        "mac.l: -0.5 * 0.5 = -0.25",
+        ["a907", "a1c3", "aa04", "0800", "a1c2"],
+        {"D7": 0x20, "D4": 0xC0000000, "D5": 0x40000000},
+        4,
+        {"D2": 0xE0000000},
+    ),
+    (
+        # move.l D7,MACSR; movclr ACC0,D3; msac.l D4,D5,ACC0; movclr ACC0,D2
+        "msac.l: 0 - 0.5 * 0.5 = -0.25",
+        ["a907", "a1c3", "aa04", "0900", "a1c2"],
+        {"D7": 0x20, "D4": 0x40000000, "D5": 0x40000000},
+        4,
+        {"D2": 0xE0000000},
+    ),
+    (
+        # move.l D7,MACSR; movclr ACC0,D3; mac.l D4,D5,ACC0;
+        # move.l MACSR,D2; movclr ACC0,D1.
+        # -1 * -1 = +1.0 = ACC 0x0080_0000_0000: ACC[47:39] differ, so EV
+        # (p.5-17); without OMC the store is ACC[39:8] (CFPRM p.6-8).
+        "-1 * -1 is +1.0, sets EV, stores unsaturated",
+        ["a907", "a1c3", "aa04", "0800", "a982", "a1c1"],
+        {"D7": 0x20, "D4": 0x80000000, "D5": 0x80000000},
+        5,
+        {"D2": 0x21, "D1": 0x80000000},
+    ),
+    (
+        # As above with MACSR[OMC]: the store saturates by ACC[47]
+        # (CFPRM p.6-8, OMC,S/U,R/T = 100).
+        "OMC saturates a fractional store",
+        ["a907", "a1c3", "aa04", "0800", "a982", "a1c1"],
+        {"D7": 0xA0, "D4": 0x80000000, "D5": 0x80000000},
+        5,
+        {"D2": 0xA1, "D1": 0x7FFFFFFF},
+    ),
+    (
+        # move.l D7,MACSR; movclr ACC0,D3; mac.l D4,D5,ACC0; movclr ACC0,D2.
+        # MACSR[S/U] stores ACC[47:24] rounded, in Rx[15:0] (CFPRM p.6-8).
+        "S/U stores a 16-bit fraction",
+        ["a907", "a1c3", "aa04", "0800", "a1c2"],
+        {"D7": 0x60, "D4": 0xC0000000, "D5": 0x40000000},
+        4,
+        {"D2": 0x0000E000},
+    ),
+    (
+        # move.l D7,MACSR; movclr ACC0,D3; mac.l D4,D5,ACC0;
+        # move.l ACCext01,D1. 1 * 0xC00000 << 1 = 0x1800000: product[23:0]
+        # is the halfway 0x800000 and product[24] is 1, so R/T rounds
+        # product[63:24] from 1 up to 2 (p.5-17). ACC0's low extension
+        # byte is D1[7:0] (CFPRM p.6-10).
+        "R/T rounds the product to nearest even, up",
+        ["a907", "a1c3", "aa04", "0800", "ab81"],
+        {"D7": 0x30, "D4": 1, "D5": 0x00C00000},
+        4,
+        {"D1": 2},
+    ),
+    (
+        # 1 * 0x400000 << 1 = 0x800000: halfway with product[24] = 0 stays 0.
+        "R/T rounds the product to nearest even, down",
+        ["a907", "a1c3", "aa04", "0800", "ab81"],
+        {"D7": 0x30, "D4": 1, "D5": 0x00400000},
+        4,
+        {"D1": 0},
+    ),
+    (
+        # Without R/T the product is truncated: 0x1800000 >> 24 = 1.
+        "truncation without R/T",
+        ["a907", "a1c3", "aa04", "0800", "ab81"],
+        {"D7": 0x20, "D4": 1, "D5": 0x00C00000},
+        4,
+        {"D1": 1},
+    ),
+    (
+        # move.l D7,MACSR; move.l D6,ACC0; move.l D5,MACSR; movclr ACC0,D1.
+        # ACC0 is a register: a mode change moves its place in the 48-bit
+        # accumulator, not its bits (p.5-9), which the handler's EMAC
+        # save and restore (p.5-11) relies on.
+        "integer to fractional keeps ACC0",
+        ["a907", "a106", "a905", "a1c1"],
+        {"D7": 0, "D5": 0x20, "D6": 0x12345678},
+        4,
+        {"D1": 0x12345678},
+    ),
+    (
+        "fractional to integer keeps ACC0",
+        ["a907", "a106", "a905", "a1c1"],
+        {"D7": 0x20, "D5": 0, "D6": 0x12345678},
+        4,
+        {"D1": 0x12345678},
+    ),
+)
+
+
 def reg(name):
     return getattr(m68k_const, "UC_M68K_REG_" + name)
 
@@ -193,6 +305,12 @@ class UnicornEmacTest(unittest.TestCase):
                     uc, end = run(words, init, count, memory)
                 except UcError as exc:
                     self.fail("%s: %s" % (name, exc))
+                self.check(name, uc, end, expect)
+
+    def test_fractional_cases(self):
+        for name, words, init, count, expect in FRACTIONAL_CASES:
+            with self.subTest(name):
+                uc, end = run(words, init, count)
                 self.check(name, uc, end, expect)
 
     def test_known_gap_macsr_read_keeps_high_bits(self):

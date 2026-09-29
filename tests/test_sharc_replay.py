@@ -348,10 +348,17 @@ class ReplayIdleCaptureTest(unittest.TestCase):
         self.assertEqual(frame0["instructions"], 192)
         self.assertFalse(frame0["master_bus_source_nonzero"])
 
+        # 2026-09-28 re-pin, 95063 -> 213212 and 95049 -> 205769: the fixed
+        # core takes the real per-voice paths (FRAME_MILESTONE moved 96,044
+        # -> 213,504 the same way), and drive_dma_completion() no longer
+        # re-arms the copy gate, so frame 2 decodes frame 1's copy. The
+        # silence pins below still hold: idle track buffers now hold -0.0
+        # (counted as zero), and ring A is zero since the block handler's
+        # SIMD ring pass (sw 0x1c7593) runs its PEy half.
         self.assertEqual(frame1["command"], 3)
         self.assertEqual(frame1["stop_reason"], "frame-returned")
         self.assertEqual(frame1["stop_pc"], "0x1c75d3")
-        self.assertEqual(frame1["instructions"], 95063)
+        self.assertEqual(frame1["instructions"], 213212)
         self.assertTrue(frame1["master_bus_source_nonzero"])
 
         # The second real render call, unlike the pre-lane-G1 pin, does NOT
@@ -359,7 +366,7 @@ class ReplayIdleCaptureTest(unittest.TestCase):
         self.assertEqual(frame2["command"], 3)
         self.assertEqual(frame2["stop_reason"], "frame-returned")
         self.assertEqual(frame2["stop_pc"], "0x1c75d3")
-        self.assertEqual(frame2["instructions"], 95049)
+        self.assertEqual(frame2["instructions"], 205769)
         self.assertTrue(frame2["master_bus_source_nonzero"])
 
         self.assertIsNone(result["first_stop"])
@@ -498,16 +505,47 @@ class ArmedVoiceReplayTest(unittest.TestCase):
             n_frames=26,
             start_frame=300,
         )
+        # 2026-09-28 re-pin (scratchpad report sharc-trig-arm.md). The TRIG
+        # (TX hw 0x22 bit 2) arrives in frame 303: the trigger block marks
+        # voices 4 and 5 pending; in frame 304 the sample-load block reads
+        # track 2's slot (0, an empty slot) and FUN_1c4e70's reject path
+        # (0x1c4e86/0x1c4e8a) nulls word+0, then FUN_1c642a arms both
+        # voices; the release (hw 0x24 bit 2) is seen in frame 305. The
+        # old pins (ACTIVE for one frame, word+0 0x0 before the arm) came
+        # from the reject path running every frame, which the corrupted
+        # per-voice flag table (misaddressed Type4b stores) caused; now it
+        # runs once, before the arm, so ACTIVE stays set to the end of the
+        # window and word+0 before frame 304 is the init default. Still
+        # silent: word+0 is null, and track 2 (machine type 2) is rendered
+        # by FUN_1c5576, not the sample renderer FUN_1c4ecf.
         self.assertEqual(result["arm_frame"], 304)
-        self.assertEqual(result["active_frames"], 1)
+        self.assertEqual(result["active_frames"], 22)
         self.assertEqual(result["deactivate_pc"], "0x1c4e8a")
-        self.assertEqual(result["sample_pointer_at_arm"], "0x0")
-        self.assertEqual(len(result["render_left"]), 21 * 32)
-        self.assertEqual(len(result["render_right"]), 21 * 32)
-        # Silent: word+0 was already null when the firmware armed voice 4
-        # (see the class docstring) -- not this test's own bug.
+        self.assertEqual(result["sample_pointer_at_arm"], "0x8045a6c8")
+        self.assertEqual(len(result["render_left"]), 22 * 32)
+        self.assertEqual(len(result["render_right"]), 22 * 32)
         self.assertFalse(any(result["render_left"]))
         self.assertFalse(any(result["render_right"]))
+        events = [
+            (e["frame"], e["event"], e["voice"])
+            for e in result["arm_events"]
+            if e["event"] != "set_sample"
+        ]
+        self.assertEqual(
+            events,
+            [
+                (303, "trig", 4),
+                (303, "trig", 5),
+                (304, "load", 4),
+                (304, "load", 5),
+                (304, "arm", 4),
+                (304, "arm", 5),
+                (305, "release", 4),
+                (305, "release", 5),
+            ],
+        )
+        self.assertEqual(result["frame_fields"][3]["trig_mask"], 0x4)
+        self.assertEqual(result["frame_fields"][4]["release_mask"], 0x4)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             wav_path = os.path.join(tmp_dir, "demo_trig.wav")
@@ -521,7 +559,7 @@ class ArmedVoiceReplayTest(unittest.TestCase):
                 digest = hashlib.sha256(fh.read()).hexdigest()
         self.assertEqual(
             digest,
-            "c0f5cd45c53fb016e540008dd1841249a60d0dee1558e8107e0f8988f7d664ed",
+            "7a7b66a8052921a1d9b97e115954c18e34b9bc3ea69cc80d7914bedba2372f00",
         )
 
 
@@ -551,6 +589,17 @@ class ArmedVoiceRealSampleReplayTest(unittest.TestCase):
     hook only ever touches voice 4's own record and never reads state any
     frame before 300 could have built up."""
 
+    @pytest.mark.xfail(
+        reason="2026-09-28, fixed core: voice 4 is armed in frame 304 and "
+        "stays ACTIVE, but track 2 is machine type 2, which FUN_1c642a "
+        "renders with FUN_1c5576, so the hook's trigger (FUN_1c4ecf entry "
+        "with voice 4) never fires and the injected sample never plays. "
+        "The old pins (ACTIVE 6 frames, 18 rearm events, L == -R) rested on "
+        "the per-frame FUN_1c4e70 clear and the missing PEy half of the "
+        "ring A pass, both artifacts. What this hand step should render "
+        "now is not known.",
+        strict=True,
+    )
     def test_start_frame_shortcut_matches_full_replay_and_renders_real_audio(self):
         result = replay_mod.replay_armed_voice(
             "dt2-1.16",

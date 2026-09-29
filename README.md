@@ -94,12 +94,29 @@ The tools find files from an argument first, then from these variables:
 `DT2_SYX` (the `.syx`), `DT2_SECTIONS`, `DT2_SNAPSHOTS`, `DT2_MAIN_IMG`
 (the decompressed MAIN OS).
 
+### Run with your own samples on the +Drive (Digitakt II 1.16)
+
+One command builds a +Drive image from a folder of `.wav` files, boots to
+it, loads the samples and opens the live screen:
+
+```sh
+uv run python tools/dt2gui.py --samples samples
+```
+
+Everything is cached under a content key (the samples' bytes, the firmware,
+and `tools/plusdrive.py` itself), so a second run with the same samples
+reuses the image and snapshots instead of rebuilding (seconds instead of
+minutes). `--no-gui` builds/reuses and stops, for a headless check;
+`--rebuild` forces a clean rebuild. `emu/gui.py` itself refuses to open a
+snapshot against a `--card-image` that does not match what it was actually
+booted with, instead of silently showing an empty sample folder.
+
 ### What the emulator can and cannot do
 
 | Works | Does not work |
 | --- | --- |
 | The OS boots on all four builds and shows its user interface. | No audio. The emulator does not run the SHARC DSP. |
-| The screen runs at about 20-25 frames per second. | No real storage data. The +Drive is always new and empty. |
+| The screen runs at about 20-25 frames per second. | No real storage data by default: the +Drive is new and empty unless `tools/dt2gui.py`/`tools/plusdrive.py` (Digitakt II 1.16 only) built one. |
 | Test tools can press keys and turn encoders (`tools/guirun.py`, `tools/machinecheck.py`). | No live keyboard or encoder input from a person. |
 | Timers, interrupts, DMA, the front-panel link, the display and the SD/MMC controller. | |
 

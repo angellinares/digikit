@@ -28,10 +28,19 @@ if TOOLS not in sys.path:
 
 from sharc_core.compute import CU3_OPS, _compute  # noqa: E402
 from sharc_core.compute_alu import ALU_OPS  # noqa: E402
-from sharc_core.compute_mult import MR_DATAMOVE_REGISTERS, MULT_OPS  # noqa: E402
+from sharc_core.compute_mult import (  # noqa: E402
+    MR_DATAMOVE_REGISTERS,
+    MULT_FIXED_OPS,
+    MULT_OPS,
+)
 from sharc_core.compute_multi import MULTIFN_MUL_ALU_OPS, SHORT_OPS  # noqa: E402
 from sharc_core.compute_shift import SHIFT_OPS  # noqa: E402
 from sharc_core.values import Const  # noqa: E402
+
+# The cu=1 opcode space: handler functions plus the fixed-point opcodes
+# held as MultSpec data (compute_mult.py).
+assert not (set(MULT_OPS) & set(MULT_FIXED_OPS))
+MULT_ALL = {**MULT_OPS, **MULT_FIXED_OPS}
 
 with open(os.path.join(TOOLS, "sharcspec", "compute_table.json")) as _fh:
     COMPUTE_TABLE = json.load(_fh)
@@ -94,7 +103,7 @@ def test_mult_ops_documented_in_json_or_undocumented():
         COMPUTE_TABLE["mulop_32_40bit"]["rows"] + COMPUTE_TABLE["mulop_64bit"]["rows"]
     )
     undocumented = {opcode for (unit, opcode) in UNDOCUMENTED if unit == "mult"}
-    for opcode in MULT_OPS:
+    for opcode in MULT_ALL:
         assert opcode in undocumented or _documented(rows, "opcode", opcode, 8), hex(
             opcode
         )
@@ -162,8 +171,8 @@ def test_dispatch_tables_have_no_duplicate_or_shadowed_keys():
     assert not (set(ALU_OPS) & dual_range)
     # MULT_OPS must not claim 0xb4/0xb0: compute.py's pre-mf/cu checks
     # intercept those field patterns before MULT_OPS is even consulted.
-    assert 0xB4 not in MULT_OPS
-    assert 0xB0 not in MULT_OPS
+    assert 0xB4 not in MULT_ALL
+    assert 0xB0 not in MULT_ALL
     # Sizes double-check nothing was silently dropped or duplicated when
     # the tables were assembled by hand across compute_alu.py/
     # compute_mult.py/compute_shift.py/compute_multi.py (a Python dict
@@ -178,7 +187,7 @@ def test_dispatch_tables_have_no_duplicate_or_shadowed_keys():
     # 0xB4/0xB0 (compute.py intercepts those before MULT_OPS), + float (1) +
     # undocumented 0x10 (1) + 64-bit float (Table 18-8, opcodes 0x31-0x33,
     # lane F1) (3) = 161.
-    assert len(MULT_OPS) == 161
+    assert len(MULT_ALL) == 161
     assert len(SHIFT_OPS) == 13
     assert len(CU3_OPS) == 2  # lane F1: 0xd6 (pre-existing) and 0xe0
     assert len(SHORT_OPS) == 16

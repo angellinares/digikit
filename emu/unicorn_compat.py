@@ -1,5 +1,8 @@
 # pyright: reportMissingImports=false
-"""Semantic compatibility check for patched Unicorn m68k CCR and EMAC behavior."""
+"""Semantic compatibility check for patched Unicorn m68k CCR and EMAC behavior.
+
+Each case fails on a Unicorn that lacks one of the patches under patches/.
+"""
 
 import json
 from functools import lru_cache
@@ -77,6 +80,71 @@ def _run_count_boundary_case(factory):
     return {"pc": pc, "sr": sr, "pass": pc == 0x1002 and sr == 4}
 
 
+def _run_btst_flush_case(factory):
+    """BTST after a lazy-CCR producer must leave its Z in the CPU state.
+
+    With a code hook on the BTST (the count= instruction counter covers
+    every instruction), the hook CCR sync stores CC_OP_LOGIC from the
+    ``move.l`` before BTST runs. BTST then evaluates the flags inline and
+    translates on with CC_OP_FLAGS, but without the flush-flags patch the
+    translator believes the stored CC_OP is current, so the CPU state keeps
+    CC_OP_LOGIC and recomputes Z from N. Two shapes see that stale state:
+
+    - ``tb_boundary``: the block ends at the first BEQ and the next block
+      starts with another BEQ, in one ``emu_start``.
+    - ``count_stop``: a count stop between BTST and BEQ after an RTE whose
+      interrupt hook wrote PC, as emu.harness implements RTE. Without that
+      earlier PC write Unicorn restores CC_OP from the instruction-start
+      record at the stop and hides the defect. Digitakt II 1.16 hit this at
+      0x400cd2f4 (FUN_400cd2bc) after 69.87M exact-mode instructions.
+
+    Bit 28 of 0x80000000 is clear, so Z = 1 and each BEQ is taken (D1 = 2).
+    """
+    from unicorn import UC_HOOK_INTR
+    from unicorn.m68k_const import (
+        UC_M68K_REG_D1,
+        UC_M68K_REG_PC,
+        UC_M68K_REG_SR,
+    )
+
+    def machine(code):
+        uc = factory()
+        uc.mem_map(0, 0x10000)
+        uc.mem_write(0x1000, bytes.fromhex(code) + b"\x4e\x71" * 8)
+        uc.reg_write(UC_M68K_REG_SR, 0x2700)
+        return uc
+
+    # move.l #$80000000,d0; btst #28,d0; beq.w $100e;
+    # $100e: beq.s $1014; moveq #1,d1; bra.s $1016; $1014: moveq #2,d1
+    uc = machine("203c80000000 0800001c 67000002 6704 7201 6002 7202")
+    uc.emu_start(0x1000, 0x1016, count=100)
+    tb_boundary = uc.reg_read(UC_M68K_REG_D1)
+
+    # rte; move.l #$80000000,d0; btst #28,d0; beq.w $1014;
+    # moveq #1,d1; bra.s $1016; $1014: moveq #2,d1
+    uc = machine("4e73 203c80000000 0800001c 67000006 7201 6002 7202")
+
+    def rte(uc_, intno, data):
+        uc_.reg_write(UC_M68K_REG_PC, 0x1002)
+
+    uc.hook_add(UC_HOOK_INTR, rte)
+    uc.emu_start(0x1000, 0, count=3)
+    stop_pc = uc.reg_read(UC_M68K_REG_PC)
+    stop_sr = uc.reg_read(UC_M68K_REG_SR) & 0x1F
+    uc.emu_start(stop_pc, 0x1016)
+    count_stop = uc.reg_read(UC_M68K_REG_D1)
+    return {
+        "tb_boundary_branch_value": tb_boundary,
+        "count_stop_pc": stop_pc,
+        "count_stop_sr": stop_sr,
+        "count_stop_branch_value": count_stop,
+        "pass": tb_boundary == 2
+        and stop_pc == 0x100C
+        and stop_sr == 0x0C
+        and count_stop == 2,
+    }
+
+
 def _run_mac_load_case(factory):
     """MAC with load must run as the manual says (Digitakt II 0x400db9e0).
 
@@ -122,6 +190,62 @@ def _run_mac_load_case(factory):
     return {"acc0": acc, "loaded": loaded, "pass": acc == 15 and loaded == 0x2A}
 
 
+def _run_emac_fractional_case(factory):
+    """Fractional EMAC must match MCF54418RM p.5-9 and p.5-17 (PDF p.151, p.159).
+
+    The Digitakt II one-pole smoother FUN_400d92a2 runs with MACSR = 0x20
+    (signed fractional). There ``product = (operandY * operandX) << 1`` of
+    the signed operands, so 0.5 * 0.5 = 0.25 (0x20000000) and -0.5 * 0.5 =
+    -0.25 (0xE0000000). Stock QEMU multiplies the operands unsigned and
+    drops the shift (0x10000000, 0x30000000), and a MACSR mode change does
+    not keep the ACCn bits (0x12345678 reads back as 0x00123456).
+    """
+    from unicorn import UcError
+    from unicorn.m68k_const import (
+        UC_M68K_REG_D0,
+        UC_M68K_REG_D1,
+        UC_M68K_REG_D2,
+        UC_M68K_REG_D3,
+        UC_M68K_REG_D4,
+        UC_M68K_REG_D5,
+        UC_M68K_REG_D6,
+        UC_M68K_REG_SR,
+    )
+
+    uc = factory()
+    uc.mem_map(0, 0x10000)
+    # move.l #0,MACSR; move.l #$12345678,ACC0; move.l #$20,MACSR;
+    # movclr.l ACC0,d3; mac.w d6u,d0u,ACC0; movclr.l ACC0,d1;
+    # mac.l d4,d5,ACC0; movclr.l ACC0,d2.
+    code = bytes.fromhex(
+        "a93c00000000 a13c12345678 a93c00000020 a1c3 a00600c0 a1c1 aa040800 a1c2"
+    )
+    uc.mem_write(0x1000, code)
+    uc.reg_write(UC_M68K_REG_SR, 0x2700)
+    for regid, value in (
+        (UC_M68K_REG_D0, 0x40000000),
+        (UC_M68K_REG_D6, 0x40000000),
+        (UC_M68K_REG_D4, 0xC0000000),
+        (UC_M68K_REG_D5, 0x40000000),
+    ):
+        uc.reg_write(regid, value)
+    try:
+        uc.emu_start(0x1000, 0x1000 + len(code), count=8)
+    except UcError as exc:
+        return {"error": str(exc), "pass": False}
+    got = {
+        "mode_switch": uc.reg_read(UC_M68K_REG_D3) & 0xFFFFFFFF,
+        "half_times_half": uc.reg_read(UC_M68K_REG_D1) & 0xFFFFFFFF,
+        "minus_half_times_half": uc.reg_read(UC_M68K_REG_D2) & 0xFFFFFFFF,
+    }
+    expected = {
+        "mode_switch": 0x12345678,
+        "half_times_half": 0x20000000,
+        "minus_half_times_half": 0xE0000000,
+    }
+    return {**got, "pass": got == expected}
+
+
 def evaluate(factory=None):
     """Return bounded diagnostics; ``factory`` makes this testable without Unicorn."""
     if factory is None:
@@ -138,7 +262,9 @@ def evaluate(factory=None):
         "zero_z_taken": _run_case(factory, 0, 0xDE),
         "nonzero_z_clear": _run_case(factory, 1, 0x6F),
         "count_boundary_cmp_z": _run_count_boundary_case(factory),
+        "btst_flush_z": _run_btst_flush_case(factory),
         "emac_mac_with_load": _run_mac_load_case(factory),
+        "emac_fractional": _run_emac_fractional_case(factory),
     }
     return {"compatible": all(case["pass"] for case in cases.values()), "cases": cases}
 

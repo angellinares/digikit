@@ -21,8 +21,8 @@ from .encoding import (
     _wide,
 )
 from .memory import (
-    _access_modifier_scale,
     _circular_wrap_const,
+    _modify_scale,
 )
 from .sequencer import (
     _advance,
@@ -33,6 +33,7 @@ from .state import (
     _copy,
     _event,
     _json_value,
+    _snapshot_uregs,
     _stop,
     _ureg,
 )
@@ -40,10 +41,10 @@ from .values import (
     CIRC_SYMBOL_PREFIX,
     Affine,
     Const,
-    PartialConst,
     Unknown,
     _aconv,
     _add,
+    _is_unknown,
     _multiply,
     _signed,
     _stack_bounded_symbol,
@@ -72,12 +73,16 @@ def _type_7a(
     # always scaled M as normal-word. dt2-1.16's voice-render inner loop
     # (0x1c50af/0x1c50ca/0x1c50cf/0x1c50d4, all indexing a 16-bit PCM
     # sample buffer through I4) decodes w=0, l=1 -- "(sw)" -- at every one
-    # of its MODIFY-with-compute and bare MODIFY instructions. l is not in
-    # every hand-built test fixture's fields dict, so default it to 0
-    # (normal-word, the previous behaviour) rather than raise. (1, 1) is
+    # of its MODIFY-with-compute and bare MODIFY instructions. (1, 1) is
     # not in the manual's table; treat it like l alone (short-word) since
-    # that is the only bit this tracer has evidence for.
-    access_width = "short-word" if f.get("l") else "normal-word"
+    # that is the only bit this tracer has evidence for. The blank row is
+    # the plain MODIFY, which never scales (_modify_scale).
+    if f.get("l"):
+        access_width: str | None = "short-word"
+    elif f.get("w"):
+        access_width = "normal-word"
+    else:
+        access_width = None
     conditional = cond == 0x17
     circular_wrap: Const | None = None
     if conditional:
@@ -92,7 +97,7 @@ def _type_7a(
             base = _ureg(state.uregs, UREG_CODES["B%d" % source])
             index_now = _ureg(state.uregs, 16 + source)
             modifier_now = _ureg(state.uregs, 32 + modifier)
-            scale_now = _access_modifier_scale(access_width, state.assume_nw32)
+            scale_now = _modify_scale(access_width, state.assume_nw32)
             if (
                 isinstance(base, Const)
                 and isinstance(index_now, Const)
@@ -153,7 +158,7 @@ def _type_7a(
         compute = _compute(
             f,
             False,
-            dict(state.uregs),
+            _snapshot_uregs(state.uregs),
             state.special,
             approx_recips=state.approx_recips,
         )
@@ -173,7 +178,7 @@ def _type_7a(
     else:
         index_value = _ureg(state.uregs, 16 + source)
         modifier_value = _ureg(state.uregs, 32 + modifier)
-        scale = _access_modifier_scale(access_width, state.assume_nw32)
+        scale = _modify_scale(access_width, state.assume_nw32)
         scaled_modifier = _multiply(
             modifier_value, Const(scale), "M%d * %d" % (modifier, scale)
         )
@@ -200,6 +205,61 @@ def _type_7a(
     return _advance(state, insn)
 
 
+def _type_7b_modify(
+    executed: State, insn: Instruction, source: int, destination: int, modifier: int
+) -> None:
+    """Type 7b's circular or plain MODIFY on EXECUTED."""
+    length = _ureg(executed.uregs, UREG_CODES["L%d" % source])
+    index_value = _ureg(executed.uregs, 16 + source)
+    modifier_value = _ureg(executed.uregs, 32 + modifier)
+    scale = _modify_scale(None, executed.assume_nw32)
+    if (
+        isinstance(length, Const)
+        and length.value != 0
+        and isinstance(index_value, Const)
+        and isinstance(modifier_value, Const)
+    ):
+        base = _ureg(executed.uregs, UREG_CODES["B%d" % source])
+        if isinstance(base, Const):
+            wrapped = _circular_wrap_const(
+                index_value.value,
+                base.value,
+                length.value,
+                modifier_value.value * scale,
+            )
+            executed.uregs[16 + destination] = (
+                Const(wrapped)
+                if wrapped is not None
+                else Unknown("circular modifier is not smaller than L%d" % source)
+            )
+            _event(
+                executed,
+                insn,
+                "i-modify",
+                source="I%d" % source,
+                destination="I%d" % destination,
+                modifier="M%d" % modifier,
+                circular=True,
+            )
+            return
+    scaled_modifier = _multiply(
+        modifier_value, Const(scale), "M%d * %d" % (modifier, scale)
+    )
+    executed.uregs[16 + destination] = _add(
+        index_value,
+        scaled_modifier,
+        "I%d + M%d * %d" % (source, modifier, scale),
+    )
+    _event(
+        executed,
+        insn,
+        "i-modify",
+        source="I%d" % source,
+        destination="I%d" % destination,
+        modifier="M%d" % modifier,
+    )
+
+
 def _type_7b(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
@@ -212,7 +272,9 @@ def _type_7b(
     # modify operation always executes circular buffer wraparound,
     # independent of the state of the CBUFEN bit" (same page), so --
     # unlike an ordinary load/store post-modify -- this form is not
-    # gated by MODE1.CBUFEN.
+    # gated by MODE1.CBUFEN. Its MODIFY Encode Table (p.13-50) has no
+    # (sw)/(nw) bits, so it is the plain MODIFY and never scales M
+    # (_modify_scale).
     cond = _field(f, "cond")
     bank = 8 if _field(f, "g") else 0
     source_low = _field(f, "is[2:2]") << 2 | _field(f, "is[1:0]")
@@ -220,60 +282,9 @@ def _type_7b(
     source, destination = source_low + bank, destination_low + bank
     modifier = _field(f, "m") + bank
 
-    def modify7b(executed: State) -> None:
-        length = _ureg(executed.uregs, UREG_CODES["L%d" % source])
-        index_value = _ureg(executed.uregs, 16 + source)
-        modifier_value = _ureg(executed.uregs, 32 + modifier)
-        scale = _access_modifier_scale("normal-word", executed.assume_nw32)
-        if (
-            isinstance(length, Const)
-            and length.value != 0
-            and isinstance(index_value, Const)
-            and isinstance(modifier_value, Const)
-        ):
-            base = _ureg(executed.uregs, UREG_CODES["B%d" % source])
-            if isinstance(base, Const):
-                wrapped = _circular_wrap_const(
-                    index_value.value,
-                    base.value,
-                    length.value,
-                    modifier_value.value * scale,
-                )
-                executed.uregs[16 + destination] = (
-                    Const(wrapped)
-                    if wrapped is not None
-                    else Unknown("circular modifier is not smaller than L%d" % source)
-                )
-                _event(
-                    executed,
-                    insn,
-                    "i-modify",
-                    source="I%d" % source,
-                    destination="I%d" % destination,
-                    modifier="M%d" % modifier,
-                    circular=True,
-                )
-                return
-        scaled_modifier = _multiply(
-            modifier_value, Const(scale), "M%d * %d" % (modifier, scale)
-        )
-        executed.uregs[16 + destination] = _add(
-            index_value,
-            scaled_modifier,
-            "I%d + M%d * %d" % (source, modifier, scale),
-        )
-        _event(
-            executed,
-            insn,
-            "i-modify",
-            source="I%d" % source,
-            destination="I%d" % destination,
-            modifier="M%d" % modifier,
-        )
-
     predicate = _predicate(state, cond)
     if predicate is True:
-        modify7b(state)
+        _type_7b_modify(state, insn, source, destination, modifier)
         return _advance(state, insn)
     if predicate is False:
         _event(
@@ -286,7 +297,7 @@ def _type_7b(
         )
         return _advance(state, insn)
     executed, skipped = _copy(state), _copy(state)
-    modify7b(executed)
+    _type_7b_modify(executed, insn, source, destination, modifier)
     _event(
         skipped,
         insn,
@@ -341,7 +352,7 @@ def _type_7d(
     value = _ureg(state.uregs, src_code)
     w2b = bool(_field(f, "toby"))
     direction = "w2b" if w2b else "b2w"
-    if isinstance(value, (Unknown, PartialConst)):
+    if _is_unknown(value):
         return [
             _stop(
                 state,

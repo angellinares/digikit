@@ -3474,6 +3474,10 @@ word +0 points to, in order; with word +0 = 0 the render returns after 61
 instructions without reaching `0x1c4f81`. **[O]** The firmware writer of
 word +0 for a playing voice is not yet found.
 
+> **Corrected 2026-09-28 [C][V].** The writer is `FUN_1c4e70` at
+> `0x1c4e91`, fed from the slot table that link port 0 fills; see
+> [15](15-sharc-sample-path.md).
+
 **Coefficient reads [V].** The loop's coefficient loads (`0x1c50b9`,
 `0x1c50c4`, `0x1c50c8`) are Type 15b `(lw)`: a register pair read from
 (address, address+4) with the unqualified displacement scale (SHARC+ PRM
@@ -3785,6 +3789,15 @@ p.11-91 only documents `BITLEN12 > 32` as "prohibited"/SV-setting, with no
 numeric result for real silicon, so this stays open rather than guessed
 at). `0xb88fe6` is unreachable (after an unconditional delayed jump). Both
 remain **[O]**.
+
+> **Corrected 2026-09-28 [C][V].** Opcode `0x19` is `Rn = Rn OR FDEP Rx BY
+> bit6:len6`, not BITEXT (NU): PGR Table 12-11's six-bit column, which PRM
+> Table 17-9 misprints by one row for this group. There is no BITLEN12 > 32;
+> the "sightings" are or-fdep fields (`0xb88fa4` `BY 31:1`, `0xb88fe6` `BY
+> 23:8`). `FRAME_PATCH_TABLE[0x1C4965]` is removed and the table is empty.
+> The remaining text of this section and of lanes E1, F2, G2 and H2 about
+> BITEXT and this patch is history. See [15](15-sharc-sample-path.md),
+> "Core fixes that the path needed".
 
 **The `0x1c4969` fork's own harness patch is the frame-path pitch bug's
 root cause (lane E1, 2026-09-26) `[O]`.** `tools/sharc_harness.py`'s
@@ -4403,6 +4416,10 @@ remaining patch).
 
 ### Lane H2 (2026-09-26): `BITLEN12>32` is correctly decoded; the frame-path pitch bug is not caused by it **[V][C]**
 
+> **Corrected 2026-09-28 [C].** The field is decoded correctly, but the
+> opcode is OR FDEP, not BITEXT (NU); see the correction note in "One voice
+> renders correctly" above and [15](15-sharc-sample-path.md).
+
 Task: use the frame-path pitch as the oracle to determine what real
 BITEXT(NU) hardware does with `BITLEN12>32`, and remove `0x1C4965` from
 `FRAME_PATCH_TABLE` if resolved.
@@ -4923,6 +4940,16 @@ tests/test_lint.py tests/test_types.py tests/test_sharc_golden.py -q --slow`:
   `0x254d78`/the companding record at `0x266220`.
 
 ## Lane J1: a real TRIG on a track with a real machine type reaches `FUN_1c60a2` and arms a voice for one silent frame -- the first non-diagnostic arm this project has recorded **[O, needs a second-agent byte-check]**
+
+> **Corrected 2026-09-28 [C].** This lane ran on a SHARC core with the Type
+> 4b width, (lw) and MODIFY scaling errors and a per-frame copy-gate re-arm
+> in the harness. The one-frame arm at 304, the per-frame "tail loop" for
+> voices 4/5 and the per-frame word-0 clear were artifacts of those errors
+> (misaddressed stores into the flag table `0x2522ac` and the per-track
+> records). On the fixed core the same capture arms voices 4 and 5 through
+> the trig mask (TX hw `0x22`) -> pending/latched bytes -> GUARD_B chain,
+> loads in 304 and stays ACTIVE. See [15](15-sharc-sample-path.md), "The
+> trig: mask, latch and arm".
 
 Branch `work/sharc-emulator` @ `cb77543`, worktree
 `.claude/worktrees/agent-a27e3e3d359f0cd36`. `sections/.source-sha256`

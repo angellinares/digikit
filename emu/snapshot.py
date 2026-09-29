@@ -155,6 +155,19 @@ def _validate_timer_source(state):
             not _is_int(k, 0, 3) or not _is_int(v) for k, v in state[key].items()
         ):
             raise RuntimeError("invalid timer checkpoint counters")
+    # Held ticks (emu.pit, "A refused tick is held"); absent before them.
+    if "cleared" in state and (
+        not isinstance(state["cleared"], dict)
+        or any(
+            not _is_int(k, 0, 3) or not _is_int(v) for k, v in state["cleared"].items()
+        )
+    ):
+        raise RuntimeError("invalid timer checkpoint counters")
+    if "pending" in state and (
+        not isinstance(state["pending"], list)
+        or any(not _is_int(ch, 0, 3) for ch in state["pending"])
+    ):
+        raise RuntimeError("invalid timer checkpoint pending channels")
     if state["type"] == "Dtims":
         if not isinstance(state.get("arm"), list) or not isinstance(
             state.get("stale"), list

@@ -119,6 +119,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import sharc_harness as h  # noqa: E402
+import sharc_lp0 as lp0  # noqa: E402
 import sharc_run as sr  # noqa: E402
 import sharc_survey as sv  # noqa: E402
 import sharc_trace as st  # noqa: E402
@@ -245,6 +246,187 @@ def describe_frame(tx: bytes) -> dict:
     }
 
 
+# The TX frame fields the trigger/sample-load path uses (scratchpad report
+# sharc-trig-arm.md). ColdFire writer: vector_191_handler (0x4002dd0c),
+# which builds the frame at 0x80005348; SHARC reader: FUN_1c24e9 (per track
+# and voice, from render_frame's working copy at RX_BASE) and FUN_1c2b24.
+# All are big-endian halfwords of the TX payload.
+TRIG_MASK_OFFSET = 0x22  # bit t: track t triggered this frame (note on)
+RELEASE_MASK_OFFSET = 0x24  # bit t: track t released (note off)
+MASK_26_OFFSET = 0x26  # bit t: event flag 0x200 set on track t [O] meaning
+MASK_28_OFFSET = 0x28  # bit t: release of the 0x200 event [O] meaning
+# +2t: 0x800047fc[t] >> 8, the pitch from FUN_4013a1d0 (note << 8 plus a
+# fraction: 0x3c00 = note 60 in running-play frame 131). SHARC: sw 0x1c2554
+# reads it, 0x1c255e stores it per voice at 0x25226c + 2v.
+PITCH_OFFSET = 0x02
+# +2t: 0x800047dc[t] = the trig's velocity byte << 8 (100 = the default
+# velocity). SHARC: sw 0x1c2546, then a curve lookup; the gain lands at
+# 0x25242c + 4v (sw 0x1c25cd).
+VELOCITY_OFFSET = 0x34
+# Sample slot: int16 at 0xda + t*0x60 + 6, the track row's halfword 0x2d
+# (the row block 0x54..0x67 is copied to 0xda + t*0x60). The SHARC reads it
+# at sw 0x1c3338 (landing ring + 0xda + track*0x60, (swse) +3 halfwords).
+SLOT_OFFSET_IN_BLOCK = 6
+
+
+def _s16be(data: bytes, offset: int) -> int | None:
+    value = _u16be(data, offset)
+    if value is None:
+        return None
+    return value - 0x10000 if value & 0x8000 else value
+
+
+def frame_fields(tx: bytes) -> dict:
+    """-> the header masks and per-track fields of one TX frame that the
+    SHARC trigger and sample-load path reads: trig/release masks (0x22,
+    0x24, 0x26, 0x28) and, per track, machine type, sample slot,
+    pitch, velocity, flag_a and whether the track's trig/release bit is set.
+    Read from the captured bytes; no SHARC state involved."""
+    trig = _u16be(tx, TRIG_MASK_OFFSET) or 0
+    release = _u16be(tx, RELEASE_MASK_OFFSET) or 0
+    tracks = []
+    for t in range(TRACK_COUNT):
+        velocity = _u16be(tx, VELOCITY_OFFSET + 2 * t)
+        tracks.append(
+            {
+                "track": t,
+                "trig": bool(trig >> t & 1),
+                "release": bool(release >> t & 1),
+                "machine_type": _u16be(tx, MACHINE_TYPE_OFFSET + 2 * t),
+                "slot": _s16be(
+                    tx,
+                    PER_TRACK_PARAM_BLOCK_OFFSET
+                    + t * PER_TRACK_PARAM_BLOCK_STRIDE
+                    + SLOT_OFFSET_IN_BLOCK,
+                ),
+                "pitch": _u16be(tx, PITCH_OFFSET + 2 * t),
+                "velocity": None if velocity is None else velocity >> 8,
+                "flag_a": _u16be(tx, FLAG_A_OFFSET + 2 * t),
+            }
+        )
+    return {
+        "command": frame_command(tx),
+        "trig_mask": trig,
+        "release_mask": release,
+        "mask_26": _u16be(tx, MASK_26_OFFSET),
+        "mask_28": _u16be(tx, MASK_28_OFFSET),
+        "tracks": tracks,
+    }
+
+
+def summarize_frame_fields(fields: dict) -> dict:
+    """FRAME_FIELDS (frame_fields()) with only the tracks worth printing:
+    those with a trig or release bit, a machine, or a nonzero slot."""
+    keep = [
+        t
+        for t in fields["tracks"]
+        if t["trig"] or t["release"] or t["machine_type"] or t["slot"]
+    ]
+    return {**fields, "tracks": keep}
+
+
+def capture_fields(capture_path: str, *, only_events: bool = False) -> list[dict]:
+    """frame_fields() for every DSPI2 frame of CAPTURE_PATH, summarized
+    (summarize_frame_fields()), each with its "frame" index. ONLY_EVENTS
+    keeps just the frames whose trig or release mask is nonzero."""
+    cap = sharc_capture.load(capture_path)
+    out = []
+    for idx, frame in enumerate(cap.dspi2_frames):
+        fields = frame_fields(frame.tx)
+        if only_events and not (fields["trig_mask"] or fields["release_mask"]):
+            continue
+        out.append({"frame": idx, **summarize_frame_fields(fields)})
+    return out
+
+
+# render_frame's per-voice trigger path (FUN_1c2b24 voice loop, R15 = voice)
+# and the calls it makes; replay_armed_voice() logs each hit as an
+# "arm_events" entry. See the scratchpad report sharc-trig-arm.md.
+ARM_PATH_PCS = {
+    0x1C33BC: "trig",  # TX hw 0x22 bit set: trig-pending byte 0x24f0ac + v
+    0x1C3329: "load",  # sample-load block: slot -> FUN_1c3f78 -> FUN_1c7442
+    0x1C6056: "release",  # FUN_1c6056(R8 = voice): TX hw 0x24 bit (1 frame late)
+    0x1C4E70: "set_sample",  # FUN_1c4e70(R4 = record, R8 = ptr, R12 = rate)
+    0x1C4EAF: "arm",  # FUN_1c4eaf(R4 = record): ACTIVE / seed pending
+}
+
+
+def _reg_int(state, name: str) -> int | None:
+    value = state.uregs.get(st.UREG_CODES[name])
+    return value.value & 0xFFFFFFFF if isinstance(value, st.Const) else None
+
+
+def _make_arm_event_hook(
+    image: str, events: list[dict], frame_cell: list[int]
+) -> Callable[[sr.Runner], None]:
+    """post_step_hook: append one ARM_PATH_PCS event per hit, with the
+    voice (R15 in the voice loop, R8 for FUN_1c6056, the record in R4 for
+    FUN_1c4e70/FUN_1c4eaf; None for a record outside the 32 voices, such
+    as FUN_1c2ac9's preview records)."""
+    base = h.profile(image).voice_records
+
+    def record_voice(address: int | None) -> int | None:
+        if address is None:
+            return None
+        index, rem = divmod(address - base, h.VOICE_RECORD_STRIDE)
+        return index if rem == 0 and 0 <= index < h.VOICE_RECORD_COUNT else None
+
+    def hook(runner: sr.Runner) -> None:
+        state = runner.state
+        kind = ARM_PATH_PCS.get(state.pc_sw)
+        if kind is None:
+            return
+        event: dict = {"frame": frame_cell[0], "event": kind}
+        if kind in ("trig", "load"):
+            event["voice"] = _reg_int(state, "R15")
+        elif kind == "release":
+            event["voice"] = _reg_int(state, "R8")
+        else:
+            event["voice"] = record_voice(_reg_int(state, "R4"))
+        if kind == "set_sample":
+            event["ptr"] = _hex_or_none(_reg_int(state, "R8"))
+            event["rate"] = _reg_int(state, "R12")
+        events.append(event)
+
+    return hook
+
+
+def _make_voice_output_hook(
+    image: str,
+    voices: tuple[int, ...],
+    out: dict[int, dict[int, list[float]]],
+    frame_cell: list[int],
+) -> Callable[[sr.Runner], None]:
+    """post_step_hook: when the frame reaches MASTER_STAGE_CALL_PC (after
+    every voice has rendered), read each of VOICES' own decimated work
+    buffer (`sharc_harness.read_voice_work_buffer_decimated()`, read-only)
+    into OUT[voice][frame]. This is each voice's own render output, before
+    the (unmodelled) per-track mix; it writes nothing."""
+    records = {v: h.voice_record_address(image, v) for v in voices}
+
+    def hook(runner: sr.Runner) -> None:
+        if runner.state.pc_sw != h.MASTER_STAGE_CALL_PC:
+            return
+        for v, record in records.items():
+            out[v][frame_cell[0]] = h.read_voice_work_buffer_decimated(
+                runner.state, record
+            )
+
+    return hook
+
+
+def _chain_hooks(*hooks):
+    live = [x for x in hooks if x is not None]
+    if not live:
+        return None
+
+    def hook(runner: sr.Runner) -> None:
+        for x in live:
+            x(runner)
+
+    return hook
+
+
 def parse_frame_override(spec: str) -> tuple[int, int, int]:
     """Parse one `--frame-override TRACK:OFFSET=VALUE` spec into
     `(track, offset, value)` (all ints; TRACK/OFFSET/VALUE accept `0x...`
@@ -348,14 +530,15 @@ def _track_buffers_nonzero(state) -> dict[int, bool]:
     `sharc_harness.inject_track_buffer()` writes them, but never itself
     written by this tool. Per-track (not just "any"), so a caller can tell
     which of the 16 tracks the render path actually deposited output into,
-    keyed by track index 0-15."""
+    keyed by track index 0-15. A float -0.0 (0x80000000) counts as zero:
+    the fixed core's mixer writes -0.0 into every idle track buffer."""
     out: dict[int, bool] = {}
     for track in range(16):
         base = h.TRACK_MIX_BASE + track * h.TRACK_MIX_STRIDE
         nonzero = False
         for i in range(2 * h.TRACK_MIX_CHANNEL_WORDS):
             raw = st._dm_read(state, base + i * 4, 4)
-            if raw is not None and raw.value & 0xFFFFFFFF:
+            if raw is not None and raw.value & 0x7FFFFFFF:
                 nonzero = True
                 break
         out[track] = nonzero
@@ -541,6 +724,7 @@ def replay(
     tone_freq: float = 1000.0,
     sample_len: int = 4096,
     provisional_interpretations: dict[str, str] | None = None,
+    flexbus_log: str | None = None,
 ) -> dict:
     """Replay CAPTURE_PATH's DSPI2 frames from a `run_init()` state, one
     voice set up with a `tone_freq` Hz sine (`sharc_harness.SOURCE_SAMPLE_RATE`
@@ -603,6 +787,10 @@ def replay(
     h._write_samples(state, sample_base, tone, "int16")
     h.setup_voice(state, image, voice=0, sample_len=sample_len, sample_base=sample_base)
     h.setup_frame_dma(state, image, ring_flag=ring_flag)
+    lp0_report = None
+    if flexbus_log is not None:
+        runner, lp0_report = lp0.feed(runner, image, lp0.read_log(flexbus_log))
+        state = runner.state
 
     per_frame = []
     ring_a_blocks = []
@@ -730,6 +918,7 @@ def replay(
         "per_frame": per_frame,
         "first_stop": first_stop,
         "ring_a_mono": _mono(ring_a_blocks),
+        "lp0": lp0_report,
     }
 
 
@@ -1182,6 +1371,8 @@ def replay_armed_voice(
     start_frame: int = 0,
     inject_real_sample: bool = False,
     frame_overrides: list[tuple[int, int, int]] | None = None,
+    flexbus_log: str | None = None,
+    record_voices: tuple[int, ...] = (),
 ) -> dict:
     """Replay CAPTURE_PATH continuously from frame 0 by default (no
     `start_frame` shortcut -- lane J1's own open question, see this
@@ -1288,7 +1479,13 @@ def replay_armed_voice(
     Returns a dict with `capture`, `frames_replayed`, `voice`,
     `word0_writes`, `active_writes`, `active_by_frame`, `arm_frame`,
     `active_frames`, `deactivate_pc`, `sample_pointer_at_arm`,
-    `render_left`, `render_right`, `sample_rate_hz`
+    `render_left`, `render_right`, `frame_stops` (per frame: the halt
+    reason, pc, form, text, unknowns and instruction count of that
+    frame's call),
+    `voice_outputs` (only with RECORD_VOICES: {voice: the concatenated
+    decimated work buffer of that voice over the same window as
+    `render_left`, read-only, see `_make_voice_output_hook()`),
+    `sample_rate_hz`
     (`sharc_dac`'s own ring-A rate, `int(sharc_harness.SOURCE_SAMPLE_RATE //
     2)` = 48000), `pokes`/`rearm_events` (only when `inject_real_sample`),
     and `error` (only present, and everything else absent, if `run_init()`
@@ -1310,6 +1507,10 @@ def replay_armed_voice(
     runner = h.new_runner(memory, image, init=init)
     state = runner.state
     h.setup_frame_dma(state, image, ring_flag=0)
+    lp0_report = None
+    if flexbus_log is not None:
+        runner, lp0_report = lp0.feed(runner, image, lp0.read_log(flexbus_log))
+        state = runner.state
 
     record = h.voice_record_address(image, voice)
     watchpoints = [
@@ -1324,6 +1525,7 @@ def replay_armed_voice(
     sample_ptr_before_frame: list[int | None] = []
     ring_left_by_frame: list[list[float]] = []
     ring_right_by_frame: list[list[float]] = []
+    frame_stops: list[dict] = []
 
     rearm_hook = None
     rearm_events: list[dict] = []
@@ -1346,6 +1548,17 @@ def replay_armed_voice(
             frame_cell=frame_cell,
         )
 
+    arm_events: list[dict] = []
+    frame_fields_by_frame: list[dict] = []
+    voice_out: dict[int, dict[int, list[float]]] = {v: {} for v in record_voices}
+    step_hook = _chain_hooks(
+        rearm_hook,
+        _make_arm_event_hook(image, arm_events, frame_cell),
+        _make_voice_output_hook(image, tuple(record_voices), voice_out, frame_cell)
+        if record_voices
+        else None,
+    )
+
     for local_idx, frame in enumerate(frames):
         idx = start_frame + local_idx
         frame_cell[0] = idx
@@ -1355,11 +1568,14 @@ def replay_armed_voice(
         )
 
         tx = apply_frame_overrides(frame.tx, frame_overrides)
+        frame_fields_by_frame.append(
+            {"frame": idx, **summarize_frame_fields(frame_fields(tx))}
+        )
         h.write_dma_transfer(state, image, tx)
         runner = h.drive_dma_completion(runner, image)
         state = runner.state
 
-        runner, _result, _injected = h.call_frame_with_track_injection(
+        runner, frame_result, _injected = h.call_frame_with_track_injection(
             runner,
             image,
             record,
@@ -1368,9 +1584,21 @@ def replay_armed_voice(
             write_master_mix=True,
             inject_track=False,
             watchpoints=watchpoints,
-            post_step_hook=rearm_hook,
+            post_step_hook=step_hook,
         )
         state = runner.state
+        halt = frame_result.halt
+        frame_stops.append(
+            {
+                "frame": idx,
+                "reason": halt.reason,
+                "pc": "%#x" % halt.pc_sw,
+                "form": halt.form,
+                "text": halt.text,
+                "unknowns": list(halt.unknowns),
+                "instructions": frame_result.instructions,
+            }
+        )
 
         for event in runner.watch_log:
             if event.access != "write":
@@ -1419,11 +1647,14 @@ def replay_armed_voice(
 
     render_left: list[float] = []
     render_right: list[float] = []
+    voice_outputs: dict[int, list[float]] = {v: [] for v in record_voices}
     if local_arm_idx is not None:
         hi = min(len(frames), local_arm_idx + active_frames + extra_frames)
         for i in range(local_arm_idx, hi):
             render_left.extend(ring_left_by_frame[i])
             render_right.extend(ring_right_by_frame[i])
+            for v in record_voices:
+                voice_outputs[v].extend(voice_out[v].get(start_frame + i, [0.0] * 32))
 
     result = {
         "capture": capture_path,
@@ -1446,7 +1677,13 @@ def replay_armed_voice(
         "render_left": render_left,
         "render_right": render_right,
         "sample_rate_hz": int(h.SOURCE_SAMPLE_RATE // 2),
+        "lp0": lp0_report,
+        "frame_stops": frame_stops,
+        "frame_fields": frame_fields_by_frame,
+        "arm_events": arm_events,
     }
+    if record_voices:
+        result["voice_outputs"] = {str(v): voice_outputs[v] for v in record_voices}
     if inject_real_sample:
         result["pokes"] = list(POKE_DESCRIPTIONS)
         result["rearm_events"] = rearm_events
@@ -1584,6 +1821,46 @@ def parse_args(argv=None):
         "be given more than once (repeatable, one per TRACK:OFFSET=VALUE)."
         % (PER_TRACK_PARAM_BLOCK_OFFSET, PER_TRACK_PARAM_BLOCK_STRIDE),
     )
+    p.add_argument(
+        "--fields",
+        action="store_true",
+        default=False,
+        help="print the trig/release masks and per-track machine, slot, "
+        "pitch and velocity fields (frame_fields()) of the capture's frames "
+        "that carry a trig or release bit, one JSON line per frame, without "
+        "running the SHARC (--all-frames: every frame; --report: all as JSON)",
+    )
+    p.add_argument("--all-frames", action="store_true", default=False)
+    p.add_argument(
+        "--record-voice",
+        dest="record_voice",
+        action="append",
+        type=int,
+        default=[],
+        metavar="V",
+        help="--armed-voice-wav only: also record voice V's own decimated "
+        "render output (its work buffer, read-only) every frame, over the "
+        "same window as --out; repeatable. Goes to the report as "
+        "voice_outputs and, with --voices-wav, to a WAV",
+    )
+    p.add_argument(
+        "--voices-wav",
+        dest="voices_wav",
+        default=None,
+        metavar="PATH",
+        help="--armed-voice-wav only: write the --record-voice outputs as a "
+        "WAV, one channel per voice (two voices: stereo, first = left)",
+    )
+    p.add_argument(
+        "--flexbus-log",
+        default=None,
+        metavar="PATH",
+        help="before the first frame, feed this log of ColdFire FlexBus "
+        "writes to 0x8C000002 (sample pages and slot headers) through the "
+        "modelled link port 0, so the DSP's own receive callback fills "
+        "the slot table and sample memory (tools/sharc_lp0.py has the "
+        "format; `sharc_lp0.py synth` makes one from a native sample)",
+    )
     return p.parse_args(argv)
 
 
@@ -1599,6 +1876,14 @@ def _parse_provisional(pairs: list[str]) -> dict[str, str] | None:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    if args.fields:
+        rows = capture_fields(args.capture, only_events=not args.all_frames)
+        for row in rows:
+            print(json.dumps(row))
+        if args.report:
+            with open(args.report, "w") as fh:
+                json.dump(rows, fh, indent=1)
+        return 0
     if args.armed_voice_wav:
         frame_overrides = [parse_frame_override(spec) for spec in args.frame_override]
         result = replay_armed_voice(
@@ -1610,7 +1895,22 @@ def main(argv=None) -> int:
             start_frame=args.start_frame,
             inject_real_sample=args.inject_real_sample,
             frame_overrides=frame_overrides,
+            flexbus_log=args.flexbus_log,
+            record_voices=tuple(args.record_voice),
         )
+        if args.voices_wav and result.get("voice_outputs"):
+            chans = [result["voice_outputs"][str(v)] for v in args.record_voice]
+            if len(chans) == 1:
+                h.write_wav(
+                    args.voices_wav, chans[0], sample_rate=result["sample_rate_hz"]
+                )
+            else:
+                h.sharc_dac.write_wav_stereo(
+                    args.voices_wav,
+                    chans[0],
+                    chans[1],
+                    sample_rate=result["sample_rate_hz"],
+                )
         if args.out and result.get("render_left"):
             h.sharc_dac.write_wav_stereo(
                 args.out,
@@ -1635,6 +1935,9 @@ def main(argv=None) -> int:
                 result.get("sample_pointer_at_arm"),
             )
         )
+        for event in result.get("arm_events", []):
+            if event["event"] in ("trig", "load", "arm", "release"):
+                print("  frame %(frame)d %(event)s voice=%(voice)s" % event)
         if args.inject_real_sample:
             print(
                 "  real-sample injection: sample=%s (%s samples), "
@@ -1655,6 +1958,7 @@ def main(argv=None) -> int:
         tone_freq=args.freq,
         sample_len=args.sample_len,
         provisional_interpretations=_parse_provisional(args.provisional),
+        flexbus_log=args.flexbus_log,
     )
     if args.out and "ring_a_mono" in result:
         h.write_wav(args.out, result["ring_a_mono"], sample_rate=48000)

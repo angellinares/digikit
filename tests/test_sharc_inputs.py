@@ -288,13 +288,19 @@ class BuildWithInitTest(unittest.TestCase):
 
     def test_per_track_record_defaults_are_init_written(self):
         # docs/findings/06's "Init writes" / tools/sharc_harness.py's own
-        # notes on FUN_1c15e3 filling every voice record with defaults
-        # (e.g. unity-gain fields at 1.0f == 0x3f800000).
+        # notes on FUN_1c15e3 filling every voice record with defaults.
+        # 2026-09-28 re-pin, 0x3f800000 -> 0x3f000000 (0.5f): the only
+        # init writer of 0x2506ec is now sw 0x1c60cc (0.5f). The old 1.0f
+        # came from FUN_1c6154's per-voice init stores (sw 0x1c6340/
+        # 0x1c6353) landing on this word: the core scaled the plain
+        # `modify(I3, M3)` at sw 0x1c6248 (M3 = voice * 0x38) by 4, so
+        # voice 8's 0x38-byte record was written at 0x24ffec + 8 * 0xe0 =
+        # 0x2506ec. MODIFY does not scale (PRM p.6-10).
         report = si.build(self.img, 0x1C2B24, init_state=self.init_state)
         by_addr = {lbl.address: lbl for lbl in report.labels}
         self.assertIn(0x2506EC, by_addr)
         self.assertEqual(by_addr[0x2506EC].label, "init")
-        self.assertIn("0x3f800000", by_addr[0x2506EC].detail)
+        self.assertIn("0x3f000000", by_addr[0x2506EC].detail)
 
 
 @pytest.mark.slow
@@ -354,8 +360,14 @@ class DynamicViewCaptureTest(unittest.TestCase):
     same real call chain the same way."""
 
     def test_three_frame_capture_replay_milestone(self):
+        # 2026-09-28 re-pin, 178723 -> 407044: the fixed core (Type4b
+        # (1,1,1) normal word, (lw) and MODIFY scaling, ShiftImm 0x19
+        # or-fdep, SIMD companions and PEy compute) takes the real
+        # per-voice paths, which roughly doubles a render (FRAME_MILESTONE
+        # went 96,044 -> 213,504 the same way). The run still stops at the
+        # same 0x1c32b0 opcode in the third frame.
         view = si.dynamic_view_capture("dt2-1.16", str(IDLE_CAPTURE), n_frames=3)
-        self.assertEqual(view.instructions, 178723)
+        self.assertEqual(view.instructions, 407044)
         self.assertEqual(
             view.halt["category"],
             "uncertain or undecodable form: source: firmware (undocumented; unconfirmed)",

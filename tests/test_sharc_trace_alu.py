@@ -559,7 +559,7 @@ class BitFifoShiftImmTest(ComputeHelperMixin, unittest.TestCase):
         dataex = (length >> 2) & 0xF
         source = 0b11_1000_1100_1101  # 14 bits, sign bit (bit13) set
         rn, value, op, astatx = self.shiftimm_astatx_after(
-            shiftimm_fields(0x1D, data8, 0, 1, dataex),
+            shiftimm_fields(0x1B, data8, 0, 1, dataex),
             {0: T.Const(0), 1: T.Const(source)},
             T.Unknown("start"),
         )
@@ -573,7 +573,7 @@ class BitFifoShiftImmTest(ComputeHelperMixin, unittest.TestCase):
         data8 = ((length & 0x3) << 6) | position
         dataex = (length >> 2) & 0xF
         rn, value, _, _ = self.shiftimm_astatx_after(
-            shiftimm_fields(0x1D, data8, 0, 1, dataex),
+            shiftimm_fields(0x1B, data8, 0, 1, dataex),
             {0: T.Const(1), 1: T.Const(0b1010)},  # sign bit (bit3) set
             T.Unknown("start"),
         )
@@ -584,11 +584,56 @@ class BitFifoShiftImmTest(ComputeHelperMixin, unittest.TestCase):
         data8 = ((length & 0x3) << 6) | position
         dataex = (length >> 2) & 0xF
         _, _, _, astatx = self.shiftimm_astatx_after(
-            shiftimm_fields(0x1D, data8, 0, 1, dataex),
+            shiftimm_fields(0x1B, data8, 0, 1, dataex),
             {0: T.Const(0), 1: T.Const(0)},
             T.Unknown("start"),
         )
         self.assertEqual(T._astatx_known_bit(astatx, T.SV_BIT), True)
+
+    def test_or_fdep_is_shiftimm_0x19(self):
+        # PGR Table 12-11 (pp.12-10/12-11): Rn = Rn OR FDEP is shifter
+        # opcode 0110 0100, ShiftImm = its upper six bits 011001. The PRM's
+        # Table 17-9 6-bit column misprints it as bitext (nu). DT2 1.16 sw
+        # 0xb88fe6 "R0 = R0 or fdep R2 by 23:8" puts an exponent at 23:8.
+        position, length = 23, 8
+        data8 = ((length & 0x3) << 6) | position
+        dataex = (length >> 2) & 0xF
+        rn, value, op, astatx = self.shiftimm_astatx_after(
+            shiftimm_fields(0x19, data8, 0, 2, dataex),
+            {0: T.Const(0x00400000), 2: T.Const(0x7F)},
+            T.Unknown("start"),
+        )
+        self.assertEqual((rn, op), (0, "field-deposit-or"))
+        self.assertEqual(value, T.Const(0x3FC00000))  # 1.5f
+        self.assertEqual(T._astatx_known_bit(astatx, T.SV_BIT), False)  # 31 <= 32
+
+    def test_or_fdep_sign_bit_example(self):
+        # sw 0xb88fa4 "R0 = R0 or fdep R12 by 31:1": the sign of a float.
+        data8 = ((1 & 0x3) << 6) | 31
+        rn, value, _, _ = self.shiftimm_astatx_after(
+            shiftimm_fields(0x19, data8, 0, 12, 0),
+            {0: T.Const(0x3F800000), 12: T.Const(1)},
+            T.Unknown("start"),
+        )
+        self.assertEqual(value, T.Const(0xBF800000))
+
+    def test_bitdep_immediate_is_0x1d(self):
+        # PGR Table 12-11: 0111 0100 BITDEP -> ShiftImm 011101 (not or fdep
+        # (se)). PGR p.11-86/11-87: BFF |= FDEP Rx BY <64-(WRP+len)>:<len>,
+        # WRP += len, SF = WRP >= 32. DT2 1.16 sw 0xb8863c/0xb8863f run
+        # "BITDEP R2 by 32; BITDEP R1 by 32".
+        special = {"BFFWRP": T.Const(0), "BFF_HI": T.Const(0), "BFF_LO": T.Const(0)}
+        rn, value, op, astatx = self.shiftimm_astatx_after(
+            shiftimm_fields(0x1D, 32, 0, 2, 0),
+            {2: T.Const(0xABCD1234)},
+            T.Unknown("start"),
+            special=special,
+        )
+        self.assertEqual(op, "bit-deposit")
+        self.assertEqual(rn, ("BFFWRP", "BFF_HI", "BFF_LO"))
+        self.assertEqual(value, (T.Const(32), T.Const(0xABCD1234), T.Const(0)))
+        self.assertEqual(T._astatx_known_bit(astatx, T.SF_BIT), True)
+        self.assertEqual(T._astatx_known_bit(astatx, T.SV_BIT), False)
 
     def test_field_deposit_or_helper_without_sign_extension(self):
         # Direct check of the shared helper's non-SE branch (not wired to
@@ -659,7 +704,7 @@ class BitFifoShiftImmTest(ComputeHelperMixin, unittest.TestCase):
         # NU: no special-dict write at all (single-destination return), and
         # SF (previously known =1) must stay exactly as it was.
         rn, value, op, astatx = self.shiftimm_astatx_after(
-            shiftimm_fields(0x19, 10, 3, 1, 0),
+            shiftimm_fields(0x16, 10, 3, 1, 0),
             {1: T.Const(0)},
             T.Const(1 << T.SF_BIT),
             special={"BFFWRP": T.Const(40)},

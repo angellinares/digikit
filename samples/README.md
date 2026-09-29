@@ -25,11 +25,15 @@ That writes:
 Both are fully synthetic and safe to regenerate at any time; add your own
 `.wav` files alongside them for a real test.
 
-`tools/plusdrive.py` stores each input file's bytes **verbatim** (the whole
-file, including its RIFF header) -- the firmware's own write path does no
-format validation or conversion (see the finding), so this tool doesn't
-either. What sample rate / bit depth / channel count the firmware's loader
-actually expects at playback time is one of that finding's open questions;
-until that's confirmed by an emulator run, stick to 48 kHz/16-bit/mono (the
-device's apparent native format) for anything you want to actually hear play
-back correctly.
+`tools/plusdrive.py` converts each input WAV to the drive's native sample
+format (the one the firmware's recorder writes and its loader reads): 48 kHz,
+16-bit big-endian PCM, mono or stereo, behind a 64-byte header. Other rates
+are resampled and other bit depths (8/24/32-bit integer, 32/64-bit float) are
+converted; more than two channels is refused.
+
+Unless `--no-project` is given, the image also carries an active project (the
+firmware's built-in one, taken from `out/sections/dt2-1.16/` at build time)
+whose sample references all point at the first file in name order, so the
+firmware loads that file into every track's slot at boot with no UI.
+`uv run python tools/plusdrive_check.py IMAGE` checks an image against the
+firmware's own mount, project decode and sample loader.

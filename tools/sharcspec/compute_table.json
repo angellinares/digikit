@@ -965,7 +965,7 @@
  },
  "shiftop_shiftimm": {
   "source": "PRM Table 18-9 (p.431-433); cross-check PGR Table 12-11 (pgr.txt:22882-22957)",
-  "cross_check": "PRM's own 2-column text layout (shiftimm | shiftop) is textually mangled by linear PDF extraction (the two opcode columns interleave with syntax lines); rows here are reconstructed by matching each PRM 8-bit shiftop value's upper 6 bits against PGR Table 12-11's flat opcode column, which lists the same instruction set unambiguously. All reconstructed shiftop values matched a PGR row. PGR is missing 'bffwrp=RN' / EXP(ex) / LEFTZ / LEFTO / FPACK / FUNPACK's shiftimm forms because those don't have Type-6a immediate forms (shiftimm column left None here); PGR also omits BITDEP entirely -- may be a 214xx-only op per PGR's own footnote.",
+  "cross_check": "PRM's own 2-column text layout (shiftimm | shiftop) is textually mangled by linear PDF extraction (the two opcode columns interleave with syntax lines); rows here are reconstructed by matching each PRM 8-bit shiftop value's upper 6 bits against PGR Table 12-11's flat opcode column, which lists the same instruction set unambiguously. All reconstructed shiftop values matched a PGR row. PGR is missing 'bffwrp=RN' / EXP(ex) / LEFTZ / LEFTO / FPACK / FUNPACK's shiftimm forms because those don't have Type-6a immediate forms (shiftimm column left None here); PGR also omits BITDEP entirely -- may be a 214xx-only op per PGR's own footnote. Correction (2026-09-28): the 6-bit values of bitext (nu), or fdep and or fdep (se) had been copied from PRM Table 17-9's shiftimm column, which is off by one row for those three rows (it prints 011001/011011/011101). They are now the upper 6 bits of the 8-bit values, per PGR Table 12-11 (pp.12-10/12-11: 'for shift immediate (type 6 instructions) the upper 6 MSBs represent valid bits'): 010110/011001/011011. The firmware agrees: DT2 1.16 uses 011001 only with BIT6:LEN6 fields such as 23:8 and 31:1 in its float-conversion helpers. PGR does list BITDEP (0111 0100, footnote: 214xx only); added as 011101.",
   "rows": [
    {
     "shiftop_8bit": "00000000",
@@ -1019,18 +1019,23 @@
    },
    {
     "shiftop_8bit": "01011000",
-    "shiftimm_6bit": "011001",
+    "shiftimm_6bit": "010110",
     "syntax": "RN = bitext RX|BITLEN12 (nu)"
    },
    {
     "shiftop_8bit": "01100100",
-    "shiftimm_6bit": "011011",
+    "shiftimm_6bit": "011001",
     "syntax": "RN = RN or fdep RX by RY|BIT6:LEN6"
    },
    {
     "shiftop_8bit": "01101100",
-    "shiftimm_6bit": "011101",
+    "shiftimm_6bit": "011011",
     "syntax": "RN = RN or fdep RX by RY|BIT6:LEN6 (se)"
+   },
+   {
+    "shiftop_8bit": "01110100",
+    "shiftimm_6bit": "011101",
+    "syntax": "BITDEP RX by RY|BITLEN12"
    },
    {
     "shiftop_8bit": "01110000",

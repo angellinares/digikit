@@ -15,4 +15,9 @@ Layers, lowest first; a module imports only from modules before it:
   compute    Compute operations (ALU, multiplier, shifter, multifunction) and their application.
   sequencer  Decode, program flow, conditions, delayed branches, calls, returns and loops.
   forms      Per-form instruction execution: the _execute dispatch.
+
+The code keeps to a translatable subset (SUBSET.md in this directory,
+checked by tools/sharc_subset_lint.py): values.py is the concrete/symbolic
+boundary, and everything above it is plain enough to translate to a
+native concrete core.
 """

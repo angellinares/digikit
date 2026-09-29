@@ -61,15 +61,26 @@ import math
 import struct
 
 from unicorn import UC_HOOK_MEM_WRITE
-from unicorn.m68k_const import UC_M68K_REG_SR
 
-from emu.pit import F_BUS, ICR_BASE, IDLE_STEP, IMR_BASE, INSTR_PER_SEC, INTC
+from emu.pit import (
+    _STALE,
+    F_BUS,
+    ICR_BASE,
+    IDLE_STEP,
+    IMR_BASE,
+    INSTR_PER_SEC,
+    INTC,
+    _rescale,
+    deliver_pending,
+    watch_writes,
+)
 
 BASES   = (0xFC070000, 0xFC074000, 0xFC078000, 0xFC07C000)
 VECTORS = (96, 97, 98, 99)              # INTC0 sources 32..35
 
 DTMR, DTXMR, DTER, DTRR, DTCN = 0x00, 0x02, 0x03, 0x04, 0x0C
 RST, FRR, ORRI = 0x01, 0x08, 0x10       # DTMR bit 0, bit 3, bit 4
+REF = 0x02                              # DTER bit 1
 DMAEN = 0x80                            # DTXMR bit 7
 
 # A timer armed part-way through a step is not noticed until the step ends,
@@ -117,6 +128,12 @@ class Dtims:
     source number, verified in the reference manual chapter 17 section
     17.3.1 table 19 -- DTIM3 is source 35 and DTIM1 is source 33, so
     highest-first is also what the hardware does.
+
+    A refused tick is held in `pending` until the CPU takes it, exactly as
+    `Pits` holds one: the REF bit in DTER stays set until the handler
+    write-1-clears it (MCF5441XRM chapter 39), and such a write clears a
+    pending tick (`cleared`). A tick due while one is pending is lost and
+    counted in `missed`.
     """
 
     def __init__(self, m, channels=(3,), instr_per_sec=INSTR_PER_SEC,
@@ -128,10 +145,18 @@ class Dtims:
         self.next = [None] * 4
         self.now = 0
         self.fired = collections.Counter()
+        # See Pits: ticks lost to a pending one, and pending ticks the guest
+        # cleared.
         self.missed = collections.Counter()
+        self.cleared = collections.Counter()
+        self.pending = set()
         # Channels whose registers were written but which `deadline` has
         # not been able to arm yet -- see ARM_STEP. Normally empty.
         self.arm = set()
+        # Same as Pits.transitions and Pits._periods; DTMR, DTXMR and DTRR
+        # are what `period` reads.
+        self.transitions = 0
+        self._periods = [_STALE] * 4
 
         self.stale = []
         if clear_stale:
@@ -140,8 +165,51 @@ class Dtims:
         for ch in self.channels:
             b = BASES[ch]
             m.uc.hook_add(UC_HOOK_MEM_WRITE,
-                          (lambda c: lambda uc, t, a, s, v, d: self.arm.add(c))(ch),
+                          (lambda c: lambda uc, t, a, s, v, d:
+                           self._on_write(c, a, s, v))(ch),
                           begin=b, end=b + 0x0F)
+            watch_writes(m, b, DTRR + 4,
+                         (lambda c: lambda: self.invalidate(c))(ch))
+
+    def _on_write(self, ch, address, size, value):
+        self.arm.add(ch)
+        # DTER's REF bit is write-1-to-clear; see the class docstring.
+        shift = address + size - 1 - (BASES[ch] + DTER)
+        if (0 <= shift < size and (value >> (8 * shift)) & REF
+                and ch in self.pending):
+            self.pending.discard(ch)
+            self.cleared[ch] += 1
+
+    @property
+    def ips(self):
+        """Instructions per second of device time."""
+        return self._ips
+
+    @ips.setter
+    def ips(self, value):
+        # See Pits.ips: cached periods are in instructions.
+        if getattr(self, '_ips', None) != value:
+            self._ips = value
+            self._periods = [_STALE] * 4
+
+    def rescale(self, ips):
+        """Change the time base, keeping each deadline's device time; see
+        Pits.rescale."""
+        _rescale(self, ips)
+
+    def invalidate(self, ch=None):
+        """Drop the cached period of `ch` (every channel if None); see
+        Pits.invalidate."""
+        if ch is None:
+            self._periods = [_STALE] * 4
+        else:
+            self._periods[ch] = _STALE
+
+    def _period(self, ch):
+        p = self._periods[ch]
+        if p is _STALE:
+            p = self._periods[ch] = self.period(ch)
+        return p
 
     def clear_stale(self):
         """Stop any timer a snapshot left armed. -> the channels stopped.
@@ -172,6 +240,7 @@ class Dtims:
                 continue
             self.m.uc.mem_write(BASES[ch] + DTMR, b'\x00\x00')
             self.stale.append(ch)
+            self.invalidate(ch)
         return self.stale
 
     def release(self):
@@ -183,7 +252,8 @@ class Dtims:
                 'ips': self.ips, 'next': list(self.next), 'now': self.now,
                 'held': self.held, 'fired': dict(self.fired),
                 'missed': dict(self.missed), 'arm': sorted(self.arm),
-                'stale': list(self.stale)}
+                'stale': list(self.stale), 'cleared': dict(self.cleared),
+                'pending': sorted(self.pending)}
 
     def restore_checkpoint_state(self, state):
         if state.get('type') != 'Dtims' or state.get('version') != 1:
@@ -194,12 +264,16 @@ class Dtims:
         self.held = state['held']; self.fired = collections.Counter(state['fired'])
         self.missed = collections.Counter(state['missed'])
         self.arm = set(state['arm']); self.stale = list(state['stale'])
+        # Absent from checkpoints saved before ticks were held: none pending.
+        self.cleared = collections.Counter(state.get('cleared', {}))
+        self.pending = set(state.get('pending', ()))
+        self._periods = [_STALE] * 4
 
     def period(self, ch):
         """-> instructions between interrupts, or None if it cannot fire."""
-        dtmr = struct.unpack('>H', self.m.uc.mem_read(BASES[ch] + DTMR, 2))[0]
-        dtxmr = self.m.uc.mem_read(BASES[ch] + DTXMR, 1)[0]
-        dtrr = struct.unpack('>I', self.m.uc.mem_read(BASES[ch] + DTRR, 4))[0]
+        # DTMR, DTXMR, DTER, DTRR in one read.
+        dtmr, dtxmr, _dter, dtrr = struct.unpack(
+            '>HBBI', self.m.uc.mem_read(BASES[ch] + DTMR, DTRR + 4))
         if not (dtmr & RST) or not (dtmr & ORRI) or (dtxmr & DMAEN):
             return None
         clk = (dtmr >> 1) & 0x03
@@ -236,7 +310,7 @@ class Dtims:
             return None
         best = None
         for ch in self.channels:
-            p = self.period(ch)
+            p = self._period(ch)
             # Whatever the answer, this channel has now been looked at with
             # the registers as they stand, so it is no longer waiting to be
             # noticed. Discarding only on the arming branch leaves the flag
@@ -249,10 +323,13 @@ class Dtims:
             # does. Clear it here, once, for both outcomes.
             self.arm.discard(ch)
             if p is None:
+                if self.next[ch] is not None:
+                    self.transitions += 1
                 self.next[ch] = None
                 continue
             if self.next[ch] is None:
                 self.next[ch] = done + p
+                self.transitions += 1
             if best is None or self.next[ch] < best:
                 best = self.next[ch]
         return best
@@ -273,42 +350,46 @@ class Dtims:
         return max(1, n)
 
     def service(self, done):
-        """Call at a chunk boundary with the instruction count so far."""
+        """Call at a chunk boundary with the instruction count so far.
+
+        Same as Pits.service: a due channel becomes pending, and the
+        pending ones are offered to the CPU in `channels` order.
+        """
         if self.held:
             return
         for ch in self.channels:
-            p = self.period(ch)
+            p = self._period(ch)
             if p is None:
+                if self.next[ch] is not None:
+                    self.transitions += 1
                 self.next[ch] = None
+                self.pending.discard(ch)
                 continue
             if self.next[ch] is None:
                 self.next[ch] = done + p
+                self.transitions += 1
                 continue
             if done < self.next[ch]:
                 continue
             self.next[ch] += p
             if self.next[ch] <= done:
                 self.next[ch] = done + p
-            # Set DTER bit 1 (REF) before raising. The firmware's ISRs
-            # write-1-clear it, so a model that never sets it is handing
-            # them a register that reads zero. This is the DMA-timer
-            # counterpart of the PIF bit.
+            # Set DTER bit 1 (REF) when the tick comes due. The firmware's
+            # ISRs write-1-clear it, so a model that never sets it is
+            # handing them a register that reads zero. This is the
+            # DMA-timer counterpart of the PIF bit.
             dter = self.m.uc.mem_read(BASES[ch] + DTER, 1)[0]
-            self.m.uc.mem_write(BASES[ch] + DTER, bytes([dter | 0x02]))
-            vec = VECTORS[ch]
-            lvl = self.level(vec)
-            sr = self.m.uc.reg_read(UC_M68K_REG_SR)
-            if lvl is None or ((sr >> 8) & 0x07) >= lvl:
-                self.missed[ch] += 1
-                continue
-            elif self.m.raise_vector(vec, level=lvl):
-                # The mask is raised by the entry trampoline, in guest code --
-                # see Machine.install_srtrap and the note in Pits.service.
-                self.fired[ch] += 1
+            self.m.uc.mem_write(BASES[ch] + DTER, bytes([dter | REF]))
+            if ch in self.pending:
+                self.missed[ch] += 1       # REF is still set: this tick is lost
+            else:
+                self.pending.add(ch)
             # A one-shot's disarming comes from the firmware's own ISR
             # stopping the timer, not from us: the DTIM1 ISR writes
             # DTMR = 0, so the next `period(ch)` call returns None and the
             # channel disarms itself at the top of this loop.
+        if self.pending:
+            deliver_pending(self, VECTORS)
 
 
 class Timers:
@@ -335,6 +416,19 @@ class Timers:
     @property
     def held(self):
         return all(s.held for s in self.sources)
+
+    @property
+    def transitions(self):
+        return sum(getattr(s, 'transitions', 0) for s in self.sources)
+
+    def invalidate(self):
+        for s in self.sources:
+            s.invalidate()
+
+    def rescale(self, ips):
+        """Move every source to `ips`, keeping each deadline's device time."""
+        for s in self.sources:
+            s.rescale(ips)
 
     def release(self):
         for s in self.sources:
@@ -380,6 +474,16 @@ class Timers:
         for s in self.sources:
             prefix = 'PIT' if isinstance(s, Pits) else 'DTIM'
             for ch, n in s.missed.items():
+                out['%s%d' % (prefix, ch)] = n
+        return out
+
+    @property
+    def cleared(self):
+        from emu.pit import Pits
+        out = {}
+        for s in self.sources:
+            prefix = 'PIT' if isinstance(s, Pits) else 'DTIM'
+            for ch, n in s.cleared.items():
                 out['%s%d' % (prefix, ch)] = n
         return out
 

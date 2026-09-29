@@ -342,6 +342,11 @@ view is constructed and its list vectors are built; only the row-building
 
 ## The display names are a separate table **[V]**
 
+> **Note 2026-09-28 [V].** The addresses in this section are 1.15C. On 1.16
+> the display-name table is a pointer array at `0x4020eb68`; entry 0 points
+> to "Oneshot" (`0x402427c6`). Machine type 0 is ONESHOT, a sample machine,
+> not "off" (finding 04, "1.16 frame fields").
+
 Seeing the machine-select screen render for the first time showed three of the
 seven names disagreeing with the descriptors: position 0 reads `ONESHOT` where
 the descriptor says `SAMPLE`, position 4 reads `SLICE` where index 6 says

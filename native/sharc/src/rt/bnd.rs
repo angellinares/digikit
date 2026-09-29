@@ -1,0 +1,983 @@
+//! The boundary of tools/sharc_core, hand-written (SUBSET.md section 2).
+//!
+//! One function per Python function, same name, same parameters (after
+//! the state `s`), concrete specialisation only: `Const` is a known
+//! [`V`], `Unknown` an unknown one, an `Affine` never occurs natively (the
+//! concrete driver never builds one), and the observability strings
+//! (`expression`, reasons) are ignored.
+
+use super::*;
+
+// ---------------------------------------------------------------------------
+// values.py
+// ---------------------------------------------------------------------------
+
+/// values._signed
+#[inline(always)]
+pub fn _signed(_s: &St, value: Int, bits: Int) -> Int {
+    if bits <= 0 || bits > 126 {
+        return value;
+    }
+    if value & (1 << (bits - 1)) != 0 {
+        value - (1 << bits)
+    } else {
+        value
+    }
+}
+
+/// values._signed32
+#[inline(always)]
+pub fn _signed32(_s: &St, value: Int) -> Int {
+    (value as u32 as i32) as Int
+}
+
+/// values._add
+#[inline(always)]
+pub fn _add(_s: &St, left: V, right: V, _expression: Sym) -> V {
+    if left.is_c() && right.is_c() {
+        V::c(left.val() + right.val())
+    } else {
+        V::UNK
+    }
+}
+
+/// values._negate
+#[inline(always)]
+pub fn _negate(_s: &St, value: V, _expression: Sym) -> V {
+    if value.is_c() {
+        V::c(-value.val())
+    } else {
+        V::UNK
+    }
+}
+
+/// values._subtract
+#[inline(always)]
+pub fn _subtract(s: &St, left: V, right: V, expression: Sym, same_source: bool) -> V {
+    if same_source {
+        return V::c(0);
+    }
+    _add(s, left, _negate(s, right, expression), expression)
+}
+
+/// values._multiply
+#[inline(always)]
+pub fn _multiply(_s: &St, left: V, right: V, _expression: Sym) -> V {
+    if left.is_c() && right.is_c() {
+        V::c(left.val() * right.val())
+    } else {
+        V::UNK
+    }
+}
+
+/// values._multiply_fractional
+#[inline(always)]
+pub fn _multiply_fractional(
+    s: &St,
+    left: V,
+    right: V,
+    signed_x: bool,
+    signed_y: bool,
+    _expression: Sym,
+) -> V {
+    if !(left.is_c() && right.is_c()) {
+        return V::UNK;
+    }
+    let x = if signed_x {
+        _signed32(s, left.val())
+    } else {
+        left.val()
+    };
+    let y = if signed_y {
+        _signed32(s, right.val())
+    } else {
+        right.val()
+    };
+    let shift = if signed_x && signed_y { 31 } else { 32 };
+    V::c((x * y) >> shift)
+}
+
+/// values._bitwise with one of the named _op_* operations.
+#[inline(always)]
+pub fn _bitwise(_s: &St, left: V, right: V, _expression: Sym, operation: FnId) -> V {
+    if !(left.is_c() && right.is_c()) {
+        return V::UNK;
+    }
+    let (a, b) = (left.val(), right.val());
+    V::c(match operation {
+        FN_OP_AND => a & b,
+        FN_OP_OR => a | b,
+        FN_OP_XOR => a ^ b,
+        FN_OP_ANDNOT => a & !b,
+        _ => unreachable!("_bitwise operation {operation}"),
+    })
+}
+
+/// values._not
+#[inline(always)]
+pub fn _not(_s: &St, value: V, _expression: Sym) -> V {
+    if value.is_c() {
+        V::c(!value.val())
+    } else {
+        V::UNK
+    }
+}
+
+/// values._is_unknown: Unknown or PartialConst.
+#[inline(always)]
+pub fn _is_unknown(_s: &St, value: V) -> bool {
+    !value.is_c()
+}
+
+/// values._astatx_known_bit
+#[inline(always)]
+pub fn _astatx_known_bit(_s: &St, value: V, bit: Int) -> Option<bool> {
+    if !(0..32).contains(&bit) {
+        // Python: 1 << bit beyond 32 bits is never set in a 32-bit value.
+        return if value.is_c() { Some(false) } else { None };
+    }
+    let m = 1u32 << bit;
+    if value.m & m != 0 {
+        Some(value.b & m != 0)
+    } else {
+        None
+    }
+}
+
+/// values._astatx_define
+#[inline(always)]
+pub fn _astatx_define(_s: &St, old: V, mask: Int, bits: Int) -> V {
+    let mask = mask as u32;
+    let bits = bits as u32 & mask;
+    if old.is_c() {
+        return V::c(((old.b & !mask) | bits) as Int);
+    }
+    if old.is_partial() {
+        let new_mask = old.m | mask;
+        let new_bits = (old.b & !mask) | bits;
+        return V {
+            b: new_bits & new_mask,
+            m: new_mask,
+        };
+    }
+    if mask == 0 {
+        return old;
+    }
+    V { b: bits, m: mask }
+}
+
+/// values._astatx_forget
+#[inline(always)]
+pub fn _astatx_forget(_s: &St, old: V, mask: Int) -> V {
+    let mask = mask as u32;
+    let new_mask = if old.is_c() || old.is_partial() {
+        old.m & !mask
+    } else {
+        return old;
+    };
+    V {
+        b: old.b & new_mask,
+        m: new_mask,
+    }
+}
+
+const CACC_MASK: u32 = 0xFF00_0000;
+const COMPARE_PRESERVE: u32 = 0x00FF_FFC0 & !(1 << 10);
+
+/// values._apply_flag_update
+#[inline(always)]
+pub fn _apply_flag_update(s: &St, old: V, update: FlagUpdate) -> V {
+    if update.cacc >= 0 && old.is_c() {
+        let value = old.b;
+        let shifted = (value & COMPARE_PRESERVE)
+            | ((value >> 1) & 0x7F00_0000)
+            | ((update.cacc as u32) << 31);
+        let result =
+            V::c(((shifted & !(update.define_mask as u32)) | update.define_bits as u32) as Int);
+        let forget = update.forget_mask & !(CACC_MASK as Int);
+        return if forget != 0 {
+            _astatx_forget(s, result, forget)
+        } else {
+            result
+        };
+    }
+    let mut result = old;
+    if update.define_mask != 0 {
+        result = _astatx_define(s, result, update.define_mask, update.define_bits);
+    }
+    if update.forget_mask != 0 {
+        result = _astatx_forget(s, result, update.forget_mask);
+    }
+    result
+}
+
+/// values._flags_define
+#[inline(always)]
+pub fn _flags_define(_s: &St, mask: Int, bits: Int) -> FlagUpdate {
+    FlagUpdate {
+        define_mask: mask,
+        define_bits: bits & mask,
+        forget_mask: 0,
+        cacc: -1,
+    }
+}
+
+/// values._flags_forget
+#[inline(always)]
+pub fn _flags_forget(_s: &St, mask: Int) -> FlagUpdate {
+    FlagUpdate {
+        define_mask: 0,
+        define_bits: 0,
+        forget_mask: mask,
+        cacc: -1,
+    }
+}
+
+/// values._flags_put
+#[inline(always)]
+pub fn _flags_put(_s: &St, update: FlagUpdate, bit: Int, known: Option<bool>) -> FlagUpdate {
+    let m: Int = 1 << bit;
+    match known {
+        None => FlagUpdate {
+            define_mask: update.define_mask & !m,
+            define_bits: update.define_bits & !m,
+            forget_mask: update.forget_mask | m,
+            cacc: update.cacc,
+        },
+        Some(k) => FlagUpdate {
+            define_mask: update.define_mask | m,
+            define_bits: (update.define_bits & !m) | if k { m } else { 0 },
+            forget_mask: update.forget_mask & !m,
+            cacc: update.cacc,
+        },
+    }
+}
+
+pub const FLAGS_NONE: FlagUpdate = FlagUpdate {
+    define_mask: 0,
+    define_bits: 0,
+    forget_mask: 0,
+    cacc: -1,
+};
+
+/// values._flags_from_pairs
+#[inline(always)]
+pub fn _flags_from_pairs(s: &St, pairs: Tup<(Int, Option<bool>)>) -> FlagUpdate {
+    let mut update = FLAGS_NONE;
+    for i in 0..pairs.len() {
+        let (bit, known) = pairs.get(i);
+        update = _flags_put(s, update, bit, known);
+    }
+    update
+}
+
+/// values._flags_then
+#[inline(always)]
+pub fn _flags_then(_s: &St, first: FlagUpdate, second: FlagUpdate) -> FlagUpdate {
+    let forget = (first.forget_mask & !second.define_mask) | second.forget_mask;
+    let define = (second.define_mask | (first.define_mask & !first.forget_mask)) & !forget;
+    let bits = (second.define_bits | (first.define_bits & !second.define_mask)) & define;
+    FlagUpdate {
+        define_mask: define,
+        define_bits: bits,
+        forget_mask: forget,
+        cacc: first.cacc,
+    }
+}
+
+/// values._flags_or
+#[inline(always)]
+pub fn _flags_or(_s: &St, a: FlagUpdate, b: FlagUpdate) -> FlagUpdate {
+    let t = a.define_bits | b.define_bits;
+    let unknown = (a.forget_mask | b.forget_mask) & !t;
+    let f = (a.define_mask | b.define_mask) & !t & !unknown;
+    FlagUpdate {
+        define_mask: t | f,
+        define_bits: t,
+        forget_mask: unknown,
+        cacc: -1,
+    }
+}
+
+/// values._stack_bounded_symbol: needs an Affine value, so never natively.
+#[inline(always)]
+pub fn _stack_bounded_symbol(_s: &St, _value: V) -> Option<(Sym, Int)> {
+    None
+}
+
+/// values._aconv: a Const shifts; anything else is Unknown (the symbolic
+/// branches need an Affine).
+#[inline(always)]
+pub fn _aconv(_s: &St, value: V, w2b: bool, _source_code: Int, _pc_sw: Int) -> R<V> {
+    if value.is_c() {
+        return Ok(V::c(if w2b {
+            value.val() << 2
+        } else {
+            value.val() >> 2
+        }));
+    }
+    Ok(V::UNK)
+}
+
+// ---------------------------------------------------------------------------
+// state.py
+// ---------------------------------------------------------------------------
+
+/// state._ureg_raw
+#[inline(always)]
+pub fn _ureg_raw(s: &St, values: RegView, code: Int) -> V {
+    rv_get(s, values, code)
+}
+
+/// state._ureg: a PartialConst reads as Const when fully known (never, by
+/// construction) and Unknown otherwise.
+#[inline(always)]
+pub fn _ureg(s: &St, values: RegView, code: Int) -> V {
+    let v = rv_get(s, values, code);
+    if v.is_partial() { V::UNK } else { v }
+}
+
+/// state._ureg_raw over block code's register file.
+#[inline(always)]
+pub fn _ureg_raw_rf(rf: &Rf, values: RegView, code: Int) -> V {
+    rf_get(rf, values, code)
+}
+
+/// state._ureg over block code's register file.
+#[inline(always)]
+pub fn _ureg_rf(rf: &Rf, values: RegView, code: Int) -> V {
+    let v = rf_get(rf, values, code);
+    if v.is_partial() { V::UNK } else { v }
+}
+
+/// state._snapshot_uregs: the register file as it is now.
+#[inline(always)]
+pub fn _snapshot_uregs(s: &mut St, uregs: RegView) -> RegView {
+    if uregs.0 & 1 == 0 {
+        s.snapshot();
+    }
+    RegView(uregs.0 | 1)
+}
+
+/// state._pey_view
+#[inline(always)]
+pub fn _pey_view(_s: &St, values: RegView) -> RegView {
+    RegView(values.0 | RegView::PEY)
+}
+
+/// state._pey_special
+#[inline(always)]
+pub fn _pey_special(_s: &St, special: SpecView) -> SpecView {
+    if special == SpecView::CUR {
+        SpecView::PEY_CUR
+    } else {
+        SpecView::PEY_EMPTY
+    }
+}
+
+/// state._mr_from_signed
+#[inline(always)]
+pub fn _mr_from_signed(_s: &St, value: Int) -> MR {
+    MR::new(MR_MASK, value)
+}
+
+const MR_WORD_SLICE: [(u32, u32); 3] = [(0, 32), (32, 32), (64, 16)];
+
+/// state._mr_read_word
+#[inline(always)]
+pub fn _mr_read_word(_s: &St, mr: Spec, word: Int) -> V {
+    let (shift, width) = MR_WORD_SLICE[word as usize];
+    let Spec::M(mr) = mr else {
+        return V::UNK;
+    };
+    let word_mask: Int = ((1 << width) - 1) << shift;
+    if mr.mask & word_mask != word_mask {
+        return V::UNK;
+    }
+    let mut raw = (mr.bits >> shift) & ((1 << width) - 1);
+    if word == 2 && raw & (1 << 15) != 0 {
+        raw |= 0xFFFF_0000;
+    }
+    V::c(raw)
+}
+
+/// state._mr_write_word
+#[inline(always)]
+pub fn _mr_write_word(_s: &St, mr: Spec, word: Int, value: V) -> Spec {
+    let (shift, width) = MR_WORD_SLICE[word as usize];
+    let (old_mask, old_bits) = match mr {
+        Spec::M(m) => (m.mask, m.bits),
+        Spec::V(_) => (0, 0),
+    };
+    let word_mask: Int = ((1 << width) - 1) << shift;
+    let mr2_mask: Int = 0xFFFF << 64;
+    let touched = word_mask | if word == 1 { mr2_mask } else { 0 };
+    if !value.is_c() {
+        let new_mask = old_mask & !touched;
+        let new_bits = old_bits & !touched;
+        return if new_mask != 0 {
+            Spec::M(MR::new(new_mask, new_bits))
+        } else {
+            Spec::V(V::UNK)
+        };
+    }
+    let bits = (value.val() & ((1 << width) - 1)) << shift;
+    let mut new_mask = (old_mask & !word_mask) | word_mask;
+    let mut new_bits = (old_bits & !word_mask) | bits;
+    if word == 1 {
+        let sign: Int = if (value.val() >> 31) & 1 != 0 {
+            0xFFFF
+        } else {
+            0
+        };
+        new_mask |= mr2_mask;
+        new_bits = (new_bits & !mr2_mask) | (sign << 64);
+    }
+    Spec::M(MR::new(new_mask, new_bits))
+}
+
+// ---------------------------------------------------------------------------
+// encoding.py
+// ---------------------------------------------------------------------------
+
+/// encoding._field: the exact key, else the first key STEM[...].
+#[inline(always)]
+pub fn _field(_s: &St, f: &Fields, stem: Sym) -> R<Int> {
+    for e in f.kv {
+        if e.0 == stem {
+            return Ok(e.4);
+        }
+    }
+    for e in f.kv {
+        if e.1 == stem && e.0 != e.1 {
+            return Ok(e.4);
+        }
+    }
+    Err(TRAP_KEY)
+}
+
+/// The field named exactly STEM[HI:LO].
+#[inline(always)]
+fn range_field(f: &Fields, stem: Sym, hi: i8, lo: i8) -> R<Int> {
+    for e in f.kv {
+        if e.1 == stem && e.2 == hi && e.3 == lo {
+            return Ok(e.4);
+        }
+    }
+    Err(TRAP_KEY)
+}
+
+/// encoding._wide: STEM[31:16] << 16 | STEM[15:0].
+#[inline(always)]
+pub fn _wide(_s: &St, f: &Fields, stem: Sym) -> R<Int> {
+    Ok((range_field(f, stem, 31, 16)? << 16) | range_field(f, stem, 15, 0)?)
+}
+
+/// encoding._split_compute_fields: the generator already added
+/// compute[22:16] and compute[15:0] wherever an instruction has compute.
+#[inline(always)]
+pub fn _split_compute_fields(_s: &St, f: &'static Fields) -> &'static Fields {
+    f
+}
+
+// ---------------------------------------------------------------------------
+// sequencer.decode_at: the generated table of decoded instructions.
+// ---------------------------------------------------------------------------
+
+#[inline(always)]
+pub fn decode_at(s: &St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<&'static Insn> {
+    (s.insn_at)(pc_sw).ok_or(TRAP_NO_INSN)
+}
+
+// ---------------------------------------------------------------------------
+// floats.py primitives (SUBSET.md's table of exact equivalents)
+// ---------------------------------------------------------------------------
+
+/// struct.unpack('<f'): a float32 widened to double. A NaN is converted
+/// the way the host's fcvt does (sign kept, quiet bit set, payload moved
+/// to the top), explicitly, so constant folding cannot differ.
+#[inline(always)]
+pub fn _f32_from_bits(_s: &St, bits: Int) -> f64 {
+    let b = bits as u32;
+    let f = f32::from_bits(b);
+    if f.is_nan() {
+        let sign = ((b >> 31) as u64) << 63;
+        let payload = ((b & 0x003F_FFFF) as u64) << 29;
+        return f64::from_bits(sign | 0x7FF8_0000_0000_0000 | payload);
+    }
+    f as f64
+}
+
+#[inline(always)]
+pub fn _f64_from_words(_s: &St, hi: Int, lo: Int) -> f64 {
+    f64::from_bits(((hi as u64 & 0xFFFF_FFFF) << 32) | (lo as u64 & 0xFFFF_FFFF))
+}
+
+#[inline(always)]
+pub fn _ldexp(_s: &St, value: f64, exponent: Int) -> f64 {
+    scalbn(value, exponent)
+}
+
+#[inline(always)]
+pub fn _trunc_int(_s: &St, value: f64) -> Int {
+    value.trunc() as Int
+}
+
+#[inline(always)]
+pub fn _round_even_int(_s: &St, value: f64) -> Int {
+    value.round_ties_even() as Int
+}
+
+/// floats._float32_bits: struct.pack('<f') rounds to nearest even and
+/// raises OverflowError when a finite value rounds to infinity.
+#[inline(always)]
+pub fn _float32_bits(_s: &St, value: f64) -> (Int, bool) {
+    if value.is_nan() {
+        // The host's fcvt: sign kept, quiet bit set, top payload bits kept.
+        let b = value.to_bits();
+        let sign = ((b >> 63) as u32) << 31;
+        let payload = ((b >> 29) & 0x003F_FFFF) as u32;
+        return ((sign | 0x7FC0_0000 | payload) as Int, false);
+    }
+    let y = value as f32;
+    let overflowed = y.is_infinite() && !value.is_infinite();
+    (y.to_bits() as Int, overflowed)
+}
+
+#[inline(always)]
+pub fn _double_pair_bits(_s: &St, value: f64) -> (Int, Int) {
+    let bits = value.to_bits();
+    ((bits >> 32) as Int, (bits & 0xFFFF_FFFF) as Int)
+}
+
+// ---------------------------------------------------------------------------
+// memory.py: the byte store (loader image + overlay) and its access rules.
+// ---------------------------------------------------------------------------
+
+pub const SW_ALIAS_BASE: Int = 0x2800_0000;
+const CORE_MMR_RANGE: (Int, Int) = (0x30000, 0x32000);
+const SYSTEM_MMR_RANGE: (Int, Int) = (0x3100_0000, 0x310F_FFFF);
+const L1_BLOCK3_NW_BASE: Int = 0x000E_0000;
+const L1_BLOCK3_NW_LIMIT: Int = 0x000E_8000;
+const L1_BLOCK3_SW_BASE: Int = 0x001C_0000;
+
+/// memory._concrete_address
+#[inline(always)]
+pub fn _concrete_address(_s: &St, value: VI) -> Option<Int> {
+    match value {
+        VI::V(v) if v.is_c() => Some(v.val()),
+        VI::V(_) => None,
+        VI::I(i) => Some(i),
+    }
+}
+
+#[inline(always)]
+fn in_core_mmr_range(a: Int) -> bool {
+    CORE_MMR_RANGE.0 <= a && a < CORE_MMR_RANGE.1
+}
+
+#[inline(always)]
+fn in_system_mmr_range(a: Int) -> bool {
+    SYSTEM_MMR_RANGE.0 <= a && a <= SYSTEM_MMR_RANGE.1
+}
+
+/// memory._byte_present (loader image or overlay).
+#[inline(always)]
+pub fn _byte_present(s: &St, here: Int) -> bool {
+    (0..=u32::MAX as Int).contains(&here) && s.mem.present(here as u32)
+}
+
+/// memory._canonical_dm_address
+#[inline(always)]
+pub fn _canonical_dm_address(s: &St, address: Int, width: Int, for_write: bool) -> R<Option<Int>> {
+    if !s.cfg.has_concrete {
+        return Ok(None);
+    }
+    let mut address = address;
+    if !_byte_present(s, address) && (0..SW_ALIAS_BASE).contains(&address) {
+        let alias = SW_ALIAS_BASE + address;
+        if for_write || _byte_present(s, alias) {
+            address = alias;
+        }
+    }
+    if for_write {
+        return Ok(Some(address));
+    }
+    if width > 0 && s.mem.all_present(address, width) {
+        return Ok(Some(address));
+    }
+    let mut here = address;
+    while here < address + width {
+        if !_byte_present(s, here) {
+            return Ok(None);
+        }
+        here += 1;
+    }
+    Ok(Some(address))
+}
+
+#[inline(always)]
+fn fixed_width_mmr(s: &St, c: Int) -> bool {
+    s.in_mmr_windows(c) && (s.core_mmr_reset.contains(&(c as u32)) || s.is_named_mmr(c))
+}
+
+/// The address of a plain-RAM access: a known address on a page with no
+/// MMR (St::mmr_page) under the default memory configuration. Only such
+/// accesses take the inline fast paths below; the rest go through the
+/// full rules.
+#[inline(always)]
+fn plain_address(s: &St, address: VI) -> Option<u32> {
+    let a = match address {
+        VI::V(v) if v.is_c() => v.b,
+        VI::I(i) if (0..=u32::MAX as Int).contains(&i) => i as u32,
+        _ => return None,
+    };
+    if !s.cfg.fast_mem {
+        return None;
+    }
+    Some(a)
+}
+
+/// A plain-RAM read at A: the bytes there, or (the first byte absent
+/// below the short-word alias base) the aliased bytes, when all present
+/// (_canonical_dm_address).
+#[inline(always)]
+fn plain_read(s: &St, a: u32, width: u32) -> Option<u32> {
+    s.mem.fast_read(a, width)
+}
+
+/// A block-code access's address (block code runs only under the default
+/// configuration, Cfg::block_ok, which implies fast_mem).
+#[inline(always)]
+fn plain_address_b(address: VI) -> Option<u32> {
+    match address {
+        VI::V(v) if v.is_c() => Some(v.b),
+        VI::I(i) if (0..=u32::MAX as Int).contains(&i) => Some(i as u32),
+        _ => None,
+    }
+}
+
+/// _dm_read for block code.
+#[inline(always)]
+pub fn _dm_read_b(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>> {
+    if let Some(a) = plain_address_b(address)
+        && matches!(width, 1 | 2 | 4)
+        && let Some(raw) = s.mem.fast_read(a, width as u32)
+    {
+        let raw = raw as Int;
+        let value = if signed {
+            let bits = 8 * width;
+            if raw & (1 << (bits - 1)) != 0 {
+                raw - (1 << bits)
+            } else {
+                raw
+            }
+        } else {
+            raw
+        };
+        return Ok(Some(V::c(value)));
+    }
+    _dm_read_full(s, address, width, signed)
+}
+
+/// _dm_write for block code.
+#[inline(always)]
+pub fn _dm_write_b(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+    if value.is_c()
+        && matches!(width, 1 | 2 | 4)
+        && s.un < UNDO_CAP
+        && let Some(a) = plain_address_b(address)
+        && let Some(old) = s.mem.fast_write(a, width as u32, value.b)
+    {
+        let c = s.mem.canonical_of(a);
+        s.log(Undo::MemWord(c, width as u8, old))?;
+        return Ok(true);
+    }
+    _dm_write_full(s, address, width, value)
+}
+
+/// _dm_write_nolog for block code.
+#[inline(always)]
+pub fn _dm_write_nolog_b(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+    if value.is_c()
+        && matches!(width, 1 | 2 | 4)
+        && let Some(a) = plain_address_b(address)
+        && s.mem.fast_write(a, width as u32, value.b).is_some()
+    {
+        return Ok(true);
+    }
+    _dm_write_nolog_full(s, address, width, value)
+}
+
+/// memory._dm_read. Inline: a plain-RAM read of present bytes; the rest
+/// out of line.
+#[inline(always)]
+pub fn _dm_read(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>> {
+    if let Some(a) = plain_address(s, address)
+        && matches!(width, 1 | 2 | 4)
+        && let Some(raw) = plain_read(s, a, width as u32)
+    {
+        let raw = raw as Int;
+        let value = if signed {
+            let bits = 8 * width;
+            if raw & (1 << (bits - 1)) != 0 {
+                raw - (1 << bits)
+            } else {
+                raw
+            }
+        } else {
+            raw
+        };
+        return Ok(Some(V::c(value)));
+    }
+    _dm_read_full(s, address, width, signed)
+}
+
+/// memory._dm_read, every rule.
+#[inline(never)]
+pub fn _dm_read_full(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>> {
+    let Some(concrete) = _concrete_address(s, address) else {
+        return Ok(None);
+    };
+    if !s.cfg.has_concrete || !matches!(width, 1 | 2 | 4 | 8) {
+        return Ok(None);
+    }
+    // Plain internal/external RAM, the common case: no MMR rules apply.
+    let mmr_candidate = in_core_mmr_range(concrete)
+        || in_system_mmr_range(concrete)
+        || (width == 4 && fixed_width_mmr(s, concrete));
+    if width == 4 && mmr_candidate {
+        let fixed = fixed_width_mmr(s, concrete);
+        if fixed {
+            if let Some(v) = s.mmr_get(concrete as u32) {
+                return Ok(if v.is_c() { Some(v) } else { None });
+            }
+            if s.cfg.data_memory_tainted {
+                return Ok(None);
+            }
+        }
+        if s.cfg.explicit_memory_model {
+            if let Some(v) = s.mmr_get(concrete as u32) {
+                return Ok(if v.is_c() { Some(v) } else { None });
+            }
+            return Err(TRAP_UNMODELED_MMR);
+        }
+    }
+    let fixed = width == 4 && mmr_candidate && fixed_width_mmr(s, concrete);
+    if width == 4 && !s.cfg.assume_nw32 && !fixed && !(0x3000_0000..0x4000_0000).contains(&concrete)
+    {
+        return Ok(None);
+    }
+    let canonical = _canonical_dm_address(s, concrete, width, false)?;
+    let Some(canonical) = canonical else {
+        if s.cfg.explicit_memory_model
+            && matches!(width, 1 | 2 | 4)
+            && !(fixed_width_mmr(s, concrete)
+                || in_core_mmr_range(concrete)
+                || in_system_mmr_range(concrete))
+        {
+            return Ok(Some(V::c(0)));
+        }
+        return Ok(None);
+    };
+    if s.cfg.data_memory_tainted && !s.mem.all_dirty(canonical, width) {
+        return Ok(None);
+    }
+    if width > 4 {
+        return Ok(None);
+    }
+    let raw = s.mem.read_le(canonical as u32, width as u32) as Int;
+    let value = if signed {
+        let bits = 8 * width;
+        if raw & (1 << (bits - 1)) != 0 {
+            raw - (1 << bits)
+        } else {
+            raw
+        }
+    } else {
+        raw
+    };
+    Ok(Some(V::c(value)))
+}
+
+/// memory._read_px48: the loader image only (not the overlay).
+#[inline(always)]
+pub fn _read_px48(s: &St, address: VI) -> R<Option<(V, V)>> {
+    let Some(concrete) = _concrete_address(s, address) else {
+        return Ok(None);
+    };
+    if !s.cfg.has_concrete || !(L1_BLOCK3_NW_BASE..L1_BLOCK3_NW_LIMIT).contains(&concrete) {
+        return Ok(None);
+    }
+    let offset = concrete - L1_BLOCK3_NW_BASE;
+    let byte_address = (2 * L1_BLOCK3_SW_BASE + SW_ALIAS_BASE) + 6 * offset;
+    let mut raw = [0u8; 6];
+    for (k, b) in raw.iter_mut().enumerate() {
+        match s.mem.loader_byte(byte_address as u32 + k as u32) {
+            Some(x) => *b = x,
+            None => return Ok(None),
+        }
+    }
+    let high = u16::from_le_bytes([raw[0], raw[1]]) as Int;
+    let middle = u16::from_le_bytes([raw[2], raw[3]]) as Int;
+    let low = u16::from_le_bytes([raw[4], raw[5]]) as Int;
+    Ok(Some((V::c(low << 16), V::c((high << 16) | middle))))
+}
+
+/// memory._load_normal_ureg. Returns the loaded Const, or None (the
+/// combined-PX summary dict is observability-only).
+#[inline(always)]
+pub fn _load_normal_ureg(s: &mut St, space: Sym, address: VI, code: Int) -> R<Option<V>> {
+    if code == UREG_PX as Int {
+        if let Some((px1, px2)) = _read_px48(s, address)? {
+            s.set_r(UREG_PX, V::UNK)?;
+            s.set_r(UREG_PX1, px1)?;
+            s.set_r(UREG_PX2, px2)?;
+            return Ok(None);
+        }
+        s.set_r(UREG_PX1, V::UNK)?;
+        s.set_r(UREG_PX2, V::UNK)?;
+    } else if space == S_DM {
+        let loaded = _dm_read(s, address, 4, false)?;
+        s_set_r(s, code, loaded.unwrap_or(V::UNK))?;
+        return Ok(loaded);
+    }
+    s_set_r(s, code, V::UNK)?;
+    Ok(None)
+}
+
+/// memory._load_normal_ureg over block code's register file. A DM load
+/// that reads nothing known leaves block code (the result would be an
+/// Unknown register).
+#[inline(always)]
+pub fn _load_normal_ureg_rf(
+    s: &mut St,
+    rf: &mut Rf,
+    space: Sym,
+    address: VI,
+    code: Int,
+) -> R<Option<V>> {
+    if code == UREG_PX as Int {
+        if let Some((px1, px2)) = _read_px48(s, address)? {
+            rf_put(rf, UREG_PX as Int, V::UNK)?;
+            rf_set(rf, UREG_PX1 as Int, px1)?;
+            rf_set(rf, UREG_PX2 as Int, px2)?;
+            return Ok(None);
+        }
+        rf_put(rf, UREG_PX1 as Int, V::UNK)?;
+        rf_put(rf, UREG_PX2 as Int, V::UNK)?;
+    } else if space == S_DM {
+        let loaded = _dm_read(s, address, 4, false)?;
+        match loaded {
+            Some(v) => rf_set(rf, code, v)?,
+            None => return Err(TRAP_BLOCK_UNKNOWN),
+        }
+        return Ok(loaded);
+    }
+    rf_put(rf, code, V::UNK)?;
+    Ok(None)
+}
+
+/// memory._dm_write. Inline: a plain-RAM write over overlay bytes; the
+/// rest out of line.
+#[inline(always)]
+pub fn _dm_write(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+    if value.is_c()
+        && matches!(width, 1 | 2 | 4)
+        && s.un < UNDO_CAP
+        && let Some(a) = plain_address(s, address)
+        && let Some(old) = s.mem.fast_write(a, width as u32, value.b)
+    {
+        let c = s.mem.canonical_of(a);
+        s.log(Undo::MemWord(c, width as u8, old))?;
+        return Ok(true);
+    }
+    _dm_write_full(s, address, width, value)
+}
+
+/// memory._dm_write, every rule.
+#[inline(never)]
+pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+    let Some(concrete) = _concrete_address(s, address) else {
+        return Ok(false);
+    };
+    if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
+        return Ok(false);
+    }
+    if width == 4 && fixed_width_mmr(s, concrete) {
+        s.mmr_set(concrete as u32, value)?;
+        return Ok(true);
+    }
+    if width == 4 && !s.cfg.assume_nw32 && !(0x3000_0000..0x4000_0000).contains(&concrete) {
+        return Ok(false);
+    }
+    let Some(c) = _canonical_dm_address(s, concrete, width, true)? else {
+        return Ok(false);
+    };
+    if !(0..=(u32::MAX as Int - width + 1)).contains(&c) {
+        return Err(TRAP_ADDRESS);
+    }
+    s.mem_write(c as u32, width as u32, value.b)?;
+    Ok(true)
+}
+
+/// memory._dm_write for block code whose instruction reads no memory: the
+/// write is not logged (a trap later in the instruction leaves it; the
+/// instruction runs again and stores the same bytes).
+#[inline(always)]
+pub fn _dm_write_nolog(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+    if value.is_c()
+        && matches!(width, 1 | 2 | 4)
+        && let Some(a) = plain_address(s, address)
+        && s.mem.fast_write(a, width as u32, value.b).is_some()
+    {
+        return Ok(true);
+    }
+    _dm_write_nolog_full(s, address, width, value)
+}
+
+#[inline(never)]
+fn _dm_write_nolog_full(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+    let Some(concrete) = _concrete_address(s, address) else {
+        return Ok(false);
+    };
+    if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
+        return Ok(false);
+    }
+    if width == 4 && fixed_width_mmr(s, concrete) {
+        s.mmr_put(concrete as u32, value);
+        return Ok(true);
+    }
+    if width == 4 && !s.cfg.assume_nw32 && !(0x3000_0000..0x4000_0000).contains(&concrete) {
+        return Ok(false);
+    }
+    let Some(c) = _canonical_dm_address(s, concrete, width, true)? else {
+        return Ok(false);
+    };
+    if !(0..=(u32::MAX as Int - width + 1)).contains(&c) {
+        return Err(TRAP_ADDRESS);
+    }
+    if !s.mem.write_dirty(c as u32, width as u32, value.b) {
+        for k in 0..width as u32 {
+            s.mem.write_byte(c as u32 + k, (value.b >> (8 * k)) as u8);
+        }
+    }
+    Ok(true)
+}
+
+impl St {
+    #[inline(always)]
+    fn mem_write(&mut self, a: u32, width: u32, v: u32) -> R<()> {
+        if let Some(old) = self.mem.read_dirty(a, width) {
+            self.log(Undo::MemWord(a, width as u8, old))?;
+            self.mem.write_dirty(a, width, v);
+            return Ok(());
+        }
+        for k in 0..width {
+            let addr = a + k;
+            let (old, flags) = self.mem.write_byte(addr, (v >> (8 * k)) as u8);
+            self.log(Undo::Mem(addr, old, flags))?;
+        }
+        Ok(())
+    }
+}

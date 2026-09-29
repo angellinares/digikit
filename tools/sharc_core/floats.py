@@ -1,5 +1,8 @@
 """32-bit IEEE float and fixed/float conversion helpers.
 
+The float primitives at the top of this module are the only code in the
+core that uses struct, math or try (SUBSET.md, "Floats").
+
 Moved verbatim from tools/sharc_trace.py.
 """
 
@@ -20,9 +23,13 @@ from .encoding import (
 )
 from .values import (
     Const,
+    FlagUpdate,
     Unknown,
     Value,
     _astatx_known_bit,
+    _flags_from_pairs,
+    _flags_put,
+    _flags_then,
     _signed,
     _signed32,
 )
@@ -49,6 +56,72 @@ from .values import (
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Float primitives. They are the only code in the core that uses struct,
+# math or try (tools/sharc_core/SUBSET.md, "Floats"); everything else calls
+# them. Python floats are IEEE-754 binary64, so each has an exact Rust
+# equivalent on f64:
+#
+#   _f32_from_bits(b)      f32::from_bits(b) as f64
+#   _float32_bits(x)       (x as f32).to_bits(), overflowed = the rounded
+#                          value is infinite while x is finite
+#   _f64_from_words(h, l)  f64::from_bits((h << 32) | l)
+#   _double_pair_bits(x)   x.to_bits() split into (hi, lo)
+#   _ldexp(x, n)           libm scalbn(x, n) (infinity on overflow)
+#   _trunc_int(x)          x.trunc() as i64 (finite x; callers only range-check)
+#   _round_even_int(x)     x.round_ties_even() as i64 (same)
+#   _isnan/_isinf/_isfinite/_copysign/_sqrt   f64::is_nan/is_infinite/
+#                          is_finite/copysign/sqrt
+# ---------------------------------------------------------------------------
+
+_isnan = math.isnan
+_isinf = math.isinf
+_isfinite = math.isfinite
+_copysign = math.copysign
+_sqrt = math.sqrt
+_INF = math.inf
+# The smallest float32 normal magnitude; a result below it is a denormal.
+_F32_MIN_NORMAL = 2.0**-126
+
+_PACK_U32 = struct.Struct("<I").pack
+_UNPACK_F32 = struct.Struct("<f").unpack
+_PACK_F32 = struct.Struct("<f").pack
+_UNPACK_U32 = struct.Struct("<I").unpack
+_PACK_U64 = struct.Struct(">Q").pack
+_UNPACK_F64 = struct.Struct(">d").unpack
+_PACK_F64 = struct.Struct(">d").pack
+_UNPACK_U64 = struct.Struct(">Q").unpack
+
+
+def _f32_from_bits(bits: int) -> float:
+    """The float32 whose bit pattern is BITS (32 bits), as a Python float."""
+    return _UNPACK_F32(_PACK_U32(bits))[0]
+
+
+def _f64_from_words(hi: int, lo: int) -> float:
+    """The binary64 whose bit pattern is HI:LO (two 32-bit words)."""
+    return _UNPACK_F64(_PACK_U64(((hi & 0xFFFFFFFF) << 32) | (lo & 0xFFFFFFFF)))[0]
+
+
+def _ldexp(value: float, exponent: int) -> float:
+    """VALUE * 2**EXPONENT, rounded once; +-infinity on overflow (math.ldexp
+    raises instead), a denormal or zero on underflow."""
+    try:
+        return math.ldexp(value, exponent)
+    except OverflowError:
+        return math.copysign(math.inf, value)
+
+
+def _trunc_int(value: float) -> int:
+    """VALUE (finite) rounded toward zero, as an integer."""
+    return math.trunc(value)
+
+
+def _round_even_int(value: float) -> int:
+    """VALUE (finite) rounded to the nearest integer, ties to even."""
+    return int(round(value))
+
+
 def _float32(value: Value) -> float | None:
     """Reinterpret VALUE's 32-bit pattern as IEEE-754 single precision.
 
@@ -58,7 +131,7 @@ def _float32(value: Value) -> float | None:
     """
     if not isinstance(value, Const):
         return None
-    return struct.unpack("<f", struct.pack("<I", value.value))[0]
+    return _f32_from_bits(value.value)
 
 
 def _float32_bits(value: float) -> tuple[int, bool]:
@@ -72,9 +145,9 @@ def _float32_bits(value: float) -> tuple[int, bool]:
     fallback of its own.
     """
     try:
-        return struct.unpack("<I", struct.pack("<f", value))[0], False
+        return _UNPACK_U32(_PACK_F32(value))[0], False
     except OverflowError:
-        sign = 0x80000000 if math.copysign(1.0, value) < 0 else 0
+        sign = 0x80000000 if _copysign(1.0, value) < 0 else 0
         return (0x7F800000 | sign), True
 
 
@@ -99,11 +172,11 @@ def _float_binary(
     a, b = _float32(left), _float32(right)
     if a is None or b is None:
         return Unknown(expression), None, None
-    if math.isnan(a) or math.isnan(b):
+    if _isnan(a) or _isnan(b):
         return _FLOAT_ALL_ONES, False, True
     raw = operation(a, b)
     bits, overflowed = _float32_bits(raw)
-    return Const(bits), overflowed, math.isnan(raw)
+    return Const(bits), overflowed, _isnan(raw)
 
 
 def _float_unary(
@@ -113,11 +186,36 @@ def _float_unary(
     a = _float32(value)
     if a is None:
         return Unknown(expression), None, None
-    if math.isnan(a):
+    if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
     raw = operation(a)
     bits, overflowed = _float32_bits(raw)
-    return Const(bits), overflowed, math.isnan(raw)
+    return Const(bits), overflowed, _isnan(raw)
+
+
+def _f_add(a: float, b: float) -> float:
+    return a + b
+
+
+def _f_sub(a: float, b: float) -> float:
+    return a - b
+
+
+def _f_mul(a: float, b: float) -> float:
+    return a * b
+
+
+def _f_avg(a: float, b: float) -> float:
+    """(A + B) / 2 in double precision, before the single rounding."""
+    return (a + b) / 2
+
+
+def _f_neg(a: float) -> float:
+    return -a
+
+
+def _f_pass(a: float) -> float:
+    return a
 
 
 def _float_min(a: float, b: float) -> float:
@@ -138,7 +236,7 @@ def _float_clip(a: float, b: float) -> float:
     """PGR p.11-48 / PRM p.3-6 CLIP: FX if |FX| < |FY|, else +-|FY| with
     FX's sign (copysign handles the FX=+-0 boundary the same as the PGR
     text's "if Fx is positive")."""
-    return a if abs(a) < abs(b) else math.copysign(abs(b), a)
+    return a if abs(a) < abs(b) else _copysign(abs(b), a)
 
 
 def _float_mantissa(
@@ -230,14 +328,11 @@ def _float_scalb(
     a = _float32(value)
     if a is None or not isinstance(scale, Const):
         return Unknown(expression), None, None
-    if math.isnan(a):
+    if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
     shift = _signed32(scale.value)
-    try:
-        scaled = math.ldexp(a, shift)
-    except OverflowError:
-        scaled = math.copysign(math.inf, a)
-    if scaled != 0.0 and not math.isinf(scaled) and abs(scaled) < 2.0**-126:
+    scaled = _ldexp(a, shift)
+    if scaled != 0.0 and not _isinf(scaled) and abs(scaled) < _F32_MIN_NORMAL:
         return Const(0x80000000 if scaled < 0 else 0), False, False
     bits, overflowed = _float32_bits(scaled)
     return Const(bits), overflowed, False
@@ -309,21 +404,21 @@ def _float_to_fixed(
     if a is None:
         return Unknown(expression), None, None
     saturating = _astatx_known_bit(mode1, ALUSAT_BIT)
-    if math.isnan(a):
+    if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
-    if math.isinf(a):
+    if _isinf(a):
         if saturating:
             return Const(0x7FFFFFFF if a > 0 else 0x80000000), True, False
         if saturating is False:
             return _FLOAT_ALL_ONES, True, True
         return Unknown(expression), True, None
     if always_truncate:
-        rounded = math.trunc(a)
+        rounded = _trunc_int(a)
     else:
         truncate_mode = _astatx_known_bit(mode1, TRUNCATE_BIT)
         if truncate_mode is None:
             return Unknown(expression), None, False
-        rounded = math.trunc(a) if truncate_mode else int(round(a))
+        rounded = _trunc_int(a) if truncate_mode else _round_even_int(a)
     if -(1 << 31) <= rounded <= (1 << 31) - 1:
         return Const(rounded & 0xFFFFFFFF), False, False
     if saturating:
@@ -375,11 +470,8 @@ def _fixed_to_float_scaled(
         return Unknown(expression), None
     unscaled = float(_signed32(value.value))
     shift = _signed32(scale.value)
-    try:
-        scaled = math.ldexp(unscaled, shift)
-    except OverflowError:
-        scaled = math.copysign(math.inf, unscaled) if unscaled != 0.0 else 0.0
-    if scaled != 0.0 and not math.isinf(scaled) and abs(scaled) < 2.0**-126:
+    scaled = _ldexp(unscaled, shift)
+    if scaled != 0.0 and not _isinf(scaled) and abs(scaled) < _F32_MIN_NORMAL:
         return Const(0x80000000 if scaled < 0 else 0), False
     bits, overflowed = _float32_bits(scaled)
     return Const(bits), overflowed
@@ -400,12 +492,12 @@ def _float_copysign(
     a, b = _float32(left), _float32(right)
     if a is None or b is None:
         return Unknown(expression), None
-    if math.isnan(a) or math.isnan(b):
+    if _isnan(a) or _isnan(b):
         return _FLOAT_ALL_ONES, True
     magnitude = abs(a)
-    if 0.0 < magnitude < 2.0**-126:
+    if 0.0 < magnitude < _F32_MIN_NORMAL:
         magnitude = 0.0
-    negative = math.copysign(1.0, b) < 0
+    negative = _copysign(1.0, b) < 0
     result = -magnitude if negative else magnitude
     bits, _overflowed = _float32_bits(result)
     return Const(bits), False
@@ -443,10 +535,10 @@ def _float_round32(value: Value, expression: str) -> tuple[Value, bool | None]:
     a = _float32(value)
     if a is None:
         return Unknown(expression), None
-    if math.isnan(a):
+    if _isnan(a):
         return _FLOAT_ALL_ONES, True
     magnitude = abs(a)
-    if 0.0 < magnitude < 2.0**-126:
+    if 0.0 < magnitude < _F32_MIN_NORMAL:
         return Const(0x80000000 if a < 0 else 0), False
     bits, _overflowed = _float32_bits(a)
     return Const(bits), False
@@ -493,8 +585,7 @@ def _double(hi: Value, lo: Value) -> float | None:
     isn't a fully known Const."""
     if not isinstance(hi, Const) or not isinstance(lo, Const):
         return None
-    bits = ((hi.value & 0xFFFFFFFF) << 32) | (lo.value & 0xFFFFFFFF)
-    return struct.unpack(">d", struct.pack(">Q", bits))[0]
+    return _f64_from_words(hi.value, lo.value)
 
 
 def _double_pair_bits(value: float) -> tuple[int, int]:
@@ -503,7 +594,7 @@ def _double_pair_bits(value: float) -> tuple[int, int]:
     is already a Python double (the type every 64-bit op here computes
     with), so it already IS the correctly-rounded binary64 result verbatim
     (including a literal ``inf`` on overflow)."""
-    bits = struct.unpack(">Q", struct.pack(">d", value))[0]
+    bits = _UNPACK_U64(_PACK_F64(value))[0]
     return (bits >> 32) & 0xFFFFFFFF, bits & 0xFFFFFFFF
 
 
@@ -519,12 +610,12 @@ def _double_binary(
     a, b = _double(hi_a, lo_a), _double(hi_b, lo_b)
     if a is None or b is None:
         return Unknown(expression), Unknown(expression), None, None
-    if math.isnan(a) or math.isnan(b):
+    if _isnan(a) or _isnan(b):
         return _DOUBLE_ALL_ONES_HI, _DOUBLE_ALL_ONES_LO, False, True
     raw = operation(a, b)
     hi, lo = _double_pair_bits(raw)
-    overflowed = math.isinf(raw) and math.isfinite(a) and math.isfinite(b)
-    return Const(hi), Const(lo), overflowed, math.isnan(raw)
+    overflowed = _isinf(raw) and _isfinite(a) and _isfinite(b)
+    return Const(hi), Const(lo), overflowed, _isnan(raw)
 
 
 def _double_unary(
@@ -534,11 +625,11 @@ def _double_unary(
     a = _double(hi, lo)
     if a is None:
         return Unknown(expression), Unknown(expression), None, None
-    if math.isnan(a):
+    if _isnan(a):
         return _DOUBLE_ALL_ONES_HI, _DOUBLE_ALL_ONES_LO, False, True
     raw = operation(a)
     hi_bits, lo_bits = _double_pair_bits(raw)
-    return Const(hi_bits), Const(lo_bits), False, math.isnan(raw)
+    return Const(hi_bits), Const(lo_bits), False, _isnan(raw)
 
 
 def _double_compare(
@@ -550,7 +641,7 @@ def _double_compare(
     a, b = _double(hi_a, lo_a), _double(hi_b, lo_b)
     if a is None or b is None:
         return Unknown(label), None
-    if math.isnan(a) or math.isnan(b):
+    if _isnan(a) or _isnan(b):
         return Const(0), True
     return (
         Const(
@@ -579,21 +670,21 @@ def _double_to_fixed(
     if a is None:
         return Unknown(expression), None, None
     saturating = _astatx_known_bit(mode1, ALUSAT_BIT)
-    if math.isnan(a):
+    if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
-    if math.isinf(a):
+    if _isinf(a):
         if saturating:
             return Const(0x7FFFFFFF if a > 0 else 0x80000000), True, False
         if saturating is False:
             return _FLOAT_ALL_ONES, True, True
         return Unknown(expression), True, None
     if always_truncate:
-        rounded = math.trunc(a)
+        rounded = _trunc_int(a)
     else:
         truncate_mode = _astatx_known_bit(mode1, TRUNCATE_BIT)
         if truncate_mode is None:
             return Unknown(expression), None, False
-        rounded = math.trunc(a) if truncate_mode else int(round(a))
+        rounded = _trunc_int(a) if truncate_mode else _round_even_int(a)
     if -(1 << 31) <= rounded <= (1 << 31) - 1:
         return Const(rounded & 0xFFFFFFFF), False, False
     if saturating:
@@ -615,14 +706,9 @@ def _scale_double_input(
     if a is None or not isinstance(scale, Const):
         return Unknown(expression), Unknown(expression)
     shift = _signed32(scale.value)
-    if math.isnan(a) or math.isinf(a):
-        scaled = a  # NAN/infinity pass straight through; _double_to_fixed
-        # applies its own NAN/infinity special case to the unscaled value.
-    else:
-        try:
-            scaled = math.ldexp(a, shift)
-        except OverflowError:
-            scaled = math.copysign(math.inf, a)
+    # NAN/infinity pass straight through; _double_to_fixed applies its own
+    # NAN/infinity special case to the unscaled value.
+    scaled = a if _isnan(a) or _isinf(a) else _ldexp(a, shift)
     hi_bits, lo_bits = _double_pair_bits(scaled)
     return Const(hi_bits), Const(lo_bits)
 
@@ -650,12 +736,9 @@ def _fixed_to_double_scaled(
         return Unknown(expression), Unknown(expression), None
     unscaled = float(_signed32(value.value))
     shift = _signed32(scale.value)
-    try:
-        scaled = math.ldexp(unscaled, shift)
-    except OverflowError:
-        scaled = math.copysign(math.inf, unscaled) if unscaled != 0.0 else 0.0
+    scaled = _ldexp(unscaled, shift)
     hi, lo = _double_pair_bits(scaled)
-    overflowed = math.isinf(scaled)
+    overflowed = _isinf(scaled)
     return Const(hi), Const(lo), overflowed
 
 
@@ -669,15 +752,12 @@ def _double_scalb(
     a = _double(hi, lo)
     if a is None or not isinstance(scale, Const):
         return Unknown(expression), Unknown(expression), None, None
-    if math.isnan(a):
+    if _isnan(a):
         return _DOUBLE_ALL_ONES_HI, _DOUBLE_ALL_ONES_LO, False, True
     shift = _signed32(scale.value)
-    try:
-        scaled = math.ldexp(a, shift)
-    except OverflowError:
-        scaled = math.copysign(math.inf, a)
+    scaled = _ldexp(a, shift)
     hi_bits, lo_bits = _double_pair_bits(scaled)
-    overflowed = math.isinf(scaled) and not math.isinf(a)
+    overflowed = _isinf(scaled) and not _isinf(a)
     return Const(hi_bits), Const(lo_bits), overflowed, False
 
 
@@ -694,7 +774,7 @@ def _double_to_float32(
     a = _double(hi, lo)
     if a is None:
         return Unknown(expression), None, None
-    if math.isnan(a):
+    if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
     bits, overflowed = _float32_bits(a)
     return Const(bits), overflowed, False
@@ -709,13 +789,13 @@ def _float32_to_double(
     a = _float32(value)
     if a is None:
         return Unknown(expression), Unknown(expression), None
-    if math.isnan(a):
+    if _isnan(a):
         return _DOUBLE_ALL_ONES_HI, _DOUBLE_ALL_ONES_LO, True
     hi, lo = _double_pair_bits(a)
     return Const(hi), Const(lo), False
 
 
-def _approx_recips(left: Value) -> tuple[Value, dict[int, bool | None]]:
+def _approx_recips(left: Value) -> tuple[Value, FlagUpdate]:
     """Opt-in ``--approx-recips`` model of ``FN = recips FX``.
 
     PRM p.19-16/19-17 (out/refs/sharc-plus-prm, quoted in ``_compute``'s
@@ -744,30 +824,55 @@ def _approx_recips(left: Value) -> tuple[Value, dict[int, bool | None]]:
     as ground truth; ``_apply_compute`` tags it with an "approximate-recips"
     trace event so a report can always tell it apart from a real seed.
     """
-    updates: dict[int, bool | None] = {AC_BIT: False, AS_BIT: False}
+    updates: FlagUpdate = _flags_from_pairs(
+        (
+            (AC_BIT, False),
+            (AS_BIT, False),
+        )
+    )
     if not isinstance(left, Const):
-        updates.update({AV_BIT: None, AI_BIT: None, AN_BIT: None, AZ_BIT: None})
+        updates = _flags_then(
+            updates,
+            _flags_from_pairs(
+                (
+                    (AV_BIT, None),
+                    (AI_BIT, None),
+                    (AN_BIT, None),
+                    (AZ_BIT, None),
+                )
+            ),
+        )
         return Unknown("recips seed (symbolic input)"), updates
     bits = left.value & 0xFFFFFFFF
     sign = (bits >> 31) & 1
     biased_exp = (bits >> 23) & 0xFF
     mantissa = bits & 0x7FFFFF
     if biased_exp == 0xFF and mantissa != 0:  # NaN
-        updates.update({AI_BIT: True, AN_BIT: bool(sign), AV_BIT: False, AZ_BIT: False})
+        updates = _flags_then(
+            updates,
+            _flags_from_pairs(
+                (
+                    (AI_BIT, True),
+                    (AN_BIT, bool(sign)),
+                    (AV_BIT, False),
+                    (AZ_BIT, False),
+                )
+            ),
+        )
         return Const(0xFFFFFFFF), updates
-    updates[AI_BIT] = False
-    updates[AN_BIT] = bool(sign)
+    updates = _flags_put(updates, AI_BIT, False)
+    updates = _flags_put(updates, AN_BIT, bool(sign))
     if biased_exp == 0:  # +-zero, or a denormal flushed to zero on input
-        updates[AV_BIT] = True
-        updates[AZ_BIT] = False
+        updates = _flags_put(updates, AV_BIT, True)
+        updates = _flags_put(updates, AZ_BIT, False)
         return Const((sign << 31) | (0xFF << 23)), updates  # +-infinity
-    updates[AV_BIT] = False
+    updates = _flags_put(updates, AV_BIT, False)
     unbiased_exp = biased_exp - 127
     if unbiased_exp > 125:
-        updates[AZ_BIT] = True
+        updates = _flags_put(updates, AZ_BIT, True)
         return Const(sign << 31), updates  # +-zero
-    updates[AZ_BIT] = False
-    x = struct.unpack("<f", struct.pack("<I", bits))[0]
+    updates = _flags_put(updates, AZ_BIT, False)
+    x = _f32_from_bits(bits)
     seed_bits, _overflowed = _float32_bits(1.0 / x)
     # "8-bit accurate seed": keep sign, exponent and the top 8 mantissa
     # bits; zero the low 15 mantissa bits this model cannot claim.

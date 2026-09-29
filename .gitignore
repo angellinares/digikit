@@ -40,3 +40,6 @@ scratch/
 # Never commit real recordings; the two test WAVs are also excluded and
 # regenerated on demand instead (tools/gen_test_samples.py, samples/README.md).
 samples/*.wav
+
+# Rust build output for native/
+native/**/target/

@@ -1,0 +1,3 @@
+# Toolchains for the native SHARC core (native/). Python stays on uv.
+[tools]
+rust = "1.98.1"

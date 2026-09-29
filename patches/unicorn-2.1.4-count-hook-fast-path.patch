@@ -1,0 +1,49 @@
+--- a/qemu/include/tcg/tcg-op.h
++++ b/qemu/include/tcg/tcg-op.h
+@@ -47,7 +47,29 @@
+     };
+ 
+     const int hook_type = type & UC_HOOK_IDX_MASK;
+-    if (puc->hooks_count[hook_type] == 1 && !(type & UC_HOOK_FLAG_NO_STOP)) {
++    struct hook *count_only = NULL;
++    if (hook_type == UC_HOOK_CODE_IDX && puc->count_hook != 0 &&
++        !(type & UC_HOOK_FLAG_NO_STOP)) {
++        // Unicorn (DT2 experiment): an instruction only the instruction
++        // counter covers calls it directly instead of walking every hook.
++        count_only = (struct hook *)puc->count_hook;
++        for (cur = puc->hook[hook_type].head; cur; cur = cur->next) {
++            hk = cur->data;
++            if (hk == count_only || hk->to_delete) {
++                continue;
++            }
++            if (HOOK_BOUND_CHECK(hk, pc)) {
++                count_only = NULL;
++                break;
++            }
++        }
++    }
++    if (count_only) {
++        tdata = tcg_const_ptr(tcg_ctx, count_only->user_data);
++        args[3] = tcgv_ptr_temp(tcg_ctx, tdata);
++        puc->add_inline_hook(uc, count_only, (void**)args, 4);
++        tcg_temp_free_ptr(tcg_ctx, tdata);
++    } else if (puc->hooks_count[hook_type] == 1 && !(type & UC_HOOK_FLAG_NO_STOP)) {
+         cur = puc->hook[hook_type].head;
+         
+         while (cur) {
+--- a/uc.c
++++ b/uc.c
+@@ -2028,6 +2028,13 @@
+         free(hook);
+     }
+ 
++    // Unicorn (DT2 experiment): blocks translated while only the counter
++    // covered an instruction call it directly; retranslate so a new code
++    // hook is seen there.
++    if ((type & UC_HOOK_CODE) && uc->count_hook != 0 && uc->init_done) {
++        uc->tb_flush(uc);
++    }
++
+     restore_jit_state(uc);
+     return ret;
+ }

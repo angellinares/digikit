@@ -171,15 +171,29 @@ class GuirunTimerCheckpointTest(unittest.TestCase):
         self.assertFalse(restored)
         self.assertIs(events["checkpoint_components"]["timers"], timers)
 
-    def test_explicit_ips_rejects_different_saved_rate(self):
-        timers = SimpleNamespace(sources=(SimpleNamespace(ips=18_720_000),))
+    def test_explicit_ips_rescales_different_saved_rate(self):
+        timers = SimpleNamespace(
+            sources=(SimpleNamespace(ips=18_720_000),), rescale=mock.Mock()
+        )
         events: dict[str, Any] = {
             "restore_checkpoint_timers": lambda: timers,
             "checkpoint_components": {},
         }
 
-        with self.assertRaisesRegex(RuntimeError, "conflicts with checkpoint"):
-            guirun.restore_or_construct_timers(events, lambda: None, 4_680_000)
+        result, restored = guirun.restore_or_construct_timers(
+            events, lambda: None, 4_680_000
+        )
+
+        self.assertIs(result, timers)
+        self.assertTrue(restored)
+        timers.rescale.assert_called_once_with(4_680_000)
+
+    def test_post_intro_rate_defaults_to_the_device_rate(self):
+        from emu.pit import DEVICE_INSTR_PER_SEC
+
+        args = guirun.parse_args(["checkpoint.snap"])
+        self.assertEqual(args.post_intro_ips, DEVICE_INSTR_PER_SEC)
+        self.assertIsNone(args.ips)
 
     def test_run_timer_clock_removes_restored_checkpoint_origin(self):
         timers = SimpleNamespace(now=74_936_800)

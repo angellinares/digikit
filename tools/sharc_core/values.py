@@ -1,5 +1,11 @@
 """Concrete and symbolic values and the integer arithmetic over them.
 
+This module is the value lattice: the boundary between concrete and
+symbolic execution (tools/sharc_core/SUBSET.md, sections 1-2). Semantic
+code elsewhere tests values only with isinstance(v, Const) and goes
+through the functions here for everything else, including the
+ASTATX/ASTATY FlagUpdate records and their application.
+
 Moved verbatim from tools/sharc_trace.py.
 """
 
@@ -8,6 +14,9 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import NamedTuple
+
+from .encoding import AF_BIT
 
 
 @dataclass(frozen=True)
@@ -91,10 +100,37 @@ Operand = Const | Affine | Unknown
 # tuple position, so the position's type is the union of the two.
 ComputeDest = int | str | tuple[int | str, ...]
 ComputeValue = Operand | tuple[Operand, ...]
-# A handler's 4th element is an ASTATX/ASTATY updater: a function from the
-# old (possibly PartialConst) flag value to the new one, so it stays in
-# terms of the full Value, unlike ComputeValue above.
-ComputeResult = tuple[ComputeDest, ComputeValue, str, Callable[[Value], Value]]
+
+
+class FlagUpdate(NamedTuple):
+    """An ASTATX/ASTATY update as data: what a compute does to the flags.
+
+    Applied by ``_apply_flag_update``: DEFINE_MASK's bits become known with
+    the values in DEFINE_BITS, then FORGET_MASK's bits become unknown; every
+    other bit keeps whatever the old value knew. The masks are disjoint and
+    DEFINE_BITS lies inside DEFINE_MASK.
+
+    CACC is -1 except for a compare with a known result, where it is the
+    new CACC bit (the compare result's bit 31). The CACC field (bits 31:24)
+    is an 8-bit shift register (PRM comp/compu), so its new value needs the
+    old one: when the old ASTATX is fully known the shift is exact,
+    otherwise FORGET_MASK (which then holds the CACC bits) forgets it.
+
+    Calling a FlagUpdate applies it, so ``update(astatx)`` still works for
+    callers written against the earlier closure form.
+    """
+
+    define_mask: int
+    define_bits: int
+    forget_mask: int
+    cacc: int = -1
+
+    def __call__(self, astatx: Value) -> Value:
+        return _apply_flag_update(astatx, self)
+
+
+# A handler's 4th element is its ASTATX/ASTATY update.
+ComputeResult = tuple[ComputeDest, ComputeValue, str, FlagUpdate]
 _SYMBOL_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -270,7 +306,28 @@ def _aconv(value: Value, w2b: bool, source_code: int, pc_sw: int) -> Value:
     return _aconv_symbol(value, "b2w", source_code, pc_sw)
 
 
-def _bitwise(left: Operand, right: Operand, expression: str, operation) -> Operand:
+def _op_and(a: int, b: int) -> int:
+    return a & b
+
+
+def _op_or(a: int, b: int) -> int:
+    return a | b
+
+
+def _op_xor(a: int, b: int) -> int:
+    return a ^ b
+
+
+def _op_andnot(a: int, b: int) -> int:
+    """A AND NOT B: bit clear."""
+    return a & ~b
+
+
+def _bitwise(
+    left: Operand, right: Operand, expression: str, operation: Callable[[int, int], int]
+) -> Operand:
+    """OPERATION (one of the named _op_* functions above) on two known
+    32-bit values; Unknown otherwise."""
     if isinstance(left, Const) and isinstance(right, Const):
         return Const(operation(left.value, right.value))
     return Unknown(expression)
@@ -278,6 +335,13 @@ def _bitwise(left: Operand, right: Operand, expression: str, operation) -> Opera
 
 def _not(value: Operand, expression: str) -> Operand:
     return Const(~value.value) if isinstance(value, Const) else Unknown(expression)
+
+
+def _is_unknown(value: Value) -> bool:
+    """VALUE carries no usable knowledge: an Unknown (or a PartialConst,
+    which only ASTATX/ASTATY hold). A concrete specialisation tests the
+    known flag; Affine values exist only in the symbolic driver."""
+    return isinstance(value, (Unknown, PartialConst))
 
 
 def _astatx_known_bit(value: Value, bit: int) -> bool | None:
@@ -289,3 +353,138 @@ def _astatx_known_bit(value: Value, bit: int) -> bool | None:
             return bool(value.bits & (1 << bit))
         return None
     return None
+
+
+# ---------------------------------------------------------------------------
+# ASTATX/ASTATY knowledge updates. The flag registers are the only UREGs
+# stored as PartialConst; these functions are the whole of the lattice
+# arithmetic over them.
+# ---------------------------------------------------------------------------
+
+CACC_MASK = 0xFF000000
+# Bits a known compare keeps from the old ASTATX: 6-23 minus AF.
+_COMPARE_PRESERVE = 0x00FFFFC0 & ~(1 << AF_BIT)
+
+
+def _astatx_define(old: Value, mask: int, bits: int) -> Value:
+    """Return OLD with MASK's bits set definitively to BITS (masked to MASK);
+    bits outside MASK keep whatever knowledge OLD already carried."""
+    mask &= 0xFFFFFFFF
+    bits &= mask
+    if isinstance(old, Const):
+        return Const((old.value & ~mask) | bits)
+    if isinstance(old, PartialConst):
+        new_mask = old.mask | mask
+        new_bits = (old.bits & ~mask) | bits
+        return (
+            Const(new_bits)
+            if new_mask == 0xFFFFFFFF
+            else PartialConst(new_mask, new_bits)
+        )
+    # Unknown (or a stray non-ASTATX Value type): only MASK becomes known.
+    if not mask:
+        return old
+    return Const(bits) if mask == 0xFFFFFFFF else PartialConst(mask, bits)
+
+
+def _astatx_forget(old: Value, mask: int) -> Value:
+    """Return OLD with MASK's bits downgraded to unknown; other bits keep
+    whatever knowledge OLD already carried."""
+    mask &= 0xFFFFFFFF
+    if isinstance(old, Const):
+        new_mask = 0xFFFFFFFF & ~mask
+        new_bits = old.value & new_mask
+    elif isinstance(old, PartialConst):
+        new_mask = old.mask & ~mask
+        new_bits = old.bits & new_mask
+    else:
+        return old
+    return (
+        Unknown("astatx bits forgotten")
+        if new_mask == 0
+        else PartialConst(new_mask, new_bits)
+    )
+
+
+def _apply_flag_update(old: Value, update: FlagUpdate) -> Value:
+    """The new ASTATX/ASTATY after UPDATE (see FlagUpdate)."""
+    if update.cacc >= 0 and isinstance(old, Const):
+        value = old.value
+        shifted = (
+            (value & _COMPARE_PRESERVE)
+            | ((value >> 1) & 0x7F000000)
+            | (update.cacc << 31)
+        )
+        result: Value = Const((shifted & ~update.define_mask) | update.define_bits)
+        forget = update.forget_mask & ~CACC_MASK
+        return _astatx_forget(result, forget) if forget else result
+    result = old
+    if update.define_mask:
+        result = _astatx_define(result, update.define_mask, update.define_bits)
+    if update.forget_mask:
+        result = _astatx_forget(result, update.forget_mask)
+    return result
+
+
+FLAGS_NONE = FlagUpdate(0, 0, 0)
+
+
+def _flags_define(mask: int, bits: int) -> FlagUpdate:
+    """Define MASK's bits as BITS."""
+    return FlagUpdate(mask, bits & mask, 0)
+
+
+def _flags_forget(mask: int) -> FlagUpdate:
+    """Forget MASK's bits."""
+    return FlagUpdate(0, 0, mask)
+
+
+def _flags_put(update: FlagUpdate, bit: int, known: bool | None) -> FlagUpdate:
+    """UPDATE with BIT set to KNOWN: True/False defines it, None forgets it.
+    A later put of the same bit replaces an earlier one."""
+    m = 1 << bit
+    if known is None:
+        return FlagUpdate(
+            update.define_mask & ~m,
+            update.define_bits & ~m,
+            update.forget_mask | m,
+            update.cacc,
+        )
+    return FlagUpdate(
+        update.define_mask | m,
+        (update.define_bits & ~m) | (m if known else 0),
+        update.forget_mask & ~m,
+        update.cacc,
+    )
+
+
+def _flags_from_pairs(pairs: tuple[tuple[int, bool | None], ...]) -> FlagUpdate:
+    """An update from (bit, known) pairs, applied in order with
+    ``_flags_put`` (so a later pair for the same bit wins)."""
+    update = FLAGS_NONE
+    for bit, known in pairs:
+        update = _flags_put(update, bit, known)
+    return update
+
+
+def _flags_then(first: FlagUpdate, second: FlagUpdate) -> FlagUpdate:
+    """One update equal to FIRST followed by SECOND: for each bit the later
+    update wins. SECOND must not carry a CACC shift of its own.
+
+    Exact for every result that keeps at least one known bit; when both
+    leave every bit unknown, the Unknown's reason text may differ."""
+    forget = (first.forget_mask & ~second.define_mask) | second.forget_mask
+    define = (second.define_mask | (first.define_mask & ~first.forget_mask)) & ~forget
+    bits = (second.define_bits | (first.define_bits & ~second.define_mask)) & define
+    return FlagUpdate(define, bits, forget, first.cacc)
+
+
+def _flags_or(a: FlagUpdate, b: FlagUpdate) -> FlagUpdate:
+    """Kleene OR of two updates bit by bit (PRM p.3-21/3-22: in the dual
+    add/subtract "the ALU flags from the two operations are ORed
+    together"). A known 1 wins; otherwise an unknown bit stays unknown; a
+    bit only one update mentions keeps that update's value."""
+    true = a.define_bits | b.define_bits
+    unknown = (a.forget_mask | b.forget_mask) & ~true
+    false = (a.define_mask | b.define_mask) & ~true & ~unknown
+    return FlagUpdate(true | false, true, unknown)

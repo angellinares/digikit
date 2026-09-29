@@ -15,19 +15,22 @@ from collections.abc import Callable
 from typing import NamedTuple
 
 from .flags import (
+    MULT_FLAGS_FORGET,
+    FlagUpdate,
     _astatx_alu_arith,
     _astatx_alu_logical,
-    _astatx_apply_bits,
     _astatx_compare,
     _astatx_compare_float,
-    _astatx_from_updates,
-    _astatx_mult_forget,
     _compare_flags,
     _compare_flags_float,
+    _flags_then,
     _float_alu_updates,
     _or_updates,
 )
 from .floats import (
+    _f_add,
+    _f_avg,
+    _f_sub,
     _fixed_to_float,
     _fixed_to_float_scaled,
     _float32,
@@ -37,7 +40,19 @@ from .floats import (
     _float_min,
     _float_unary,
 )
-from .values import Const, Unknown, Value, _add, _bitwise, _multiply, _not, _subtract
+from .values import (
+    Const,
+    Unknown,
+    Value,
+    _add,
+    _bitwise,
+    _multiply,
+    _not,
+    _op_and,
+    _op_or,
+    _op_xor,
+    _subtract,
+)
 
 ShortHandler = Callable[[int, int, Value, Value], tuple]
 
@@ -86,7 +101,7 @@ def short_decrement(rn, rx, left, right) -> tuple:
 
 def short_multiply(rn, rx, left, right) -> tuple:
     value = _multiply(left, right, "R%d * R%d" % (rn, rx))
-    return rn, value, "multiply", _astatx_mult_forget
+    return rn, value, "multiply", MULT_FLAGS_FORGET
 
 
 def _short_logical_impl(rn, rx, left, right, name: str, operation) -> tuple:
@@ -95,15 +110,15 @@ def _short_logical_impl(rn, rx, left, right, name: str, operation) -> tuple:
 
 
 def short_and(rn, rx, left, right) -> tuple:
-    return _short_logical_impl(rn, rx, left, right, "and", lambda a, b: a & b)
+    return _short_logical_impl(rn, rx, left, right, "and", _op_and)
 
 
 def short_or(rn, rx, left, right) -> tuple:
-    return _short_logical_impl(rn, rx, left, right, "or", lambda a, b: a | b)
+    return _short_logical_impl(rn, rx, left, right, "or", _op_or)
 
 
 def short_xor(rn, rx, left, right) -> tuple:
-    return _short_logical_impl(rn, rx, left, right, "xor", lambda a, b: a ^ b)
+    return _short_logical_impl(rn, rx, left, right, "xor", _op_xor)
 
 
 # PRM ShortCompute table (p. 17-3): 0011 is the signed comp(RN, RX).
@@ -119,25 +134,25 @@ def short_compare(rn, rx, left, right) -> tuple:
 # as both the Y input and the result (Table 18-22: "RN = RN op RX").
 def short_float_add(rn, rx, left, right) -> tuple:
     value, overflow, invalid = _float_binary(
-        left, right, "F%d + F%d" % (rn, rx), lambda a, b: a + b
+        left, right, "F%d + F%d" % (rn, rx), _f_add
     )
     return (
         rn,
         value,
         "float-add",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
 def short_float_subtract(rn, rx, left, right) -> tuple:
     value, overflow, invalid = _float_binary(
-        left, right, "F%d - F%d" % (rn, rx), lambda a, b: a - b
+        left, right, "F%d - F%d" % (rn, rx), _f_sub
     )
     return (
         rn,
         value,
         "float-subtract",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -150,7 +165,7 @@ def short_float_convert(rn, rx, left, right) -> tuple:
         rn,
         value,
         "float-convert",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -167,7 +182,7 @@ def short_float_multiply(rn, rx, left, right) -> tuple:
     else:
         bits, _overflowed = _float32_bits(a * b)
         value = Const(bits)
-    return rn, value, "float-multiply", _astatx_mult_forget
+    return rn, value, "float-multiply", MULT_FLAGS_FORGET
 
 
 SHORT_OPS: dict[int, ShortHandler] = {
@@ -230,14 +245,11 @@ def _multifn_fm_value(op: MultifnOperands) -> Value:
 
 
 def _multifn_result(
-    op: MultifnOperands, fa_value: Value, fa_updates, operation: str
+    op: MultifnOperands, fa_value: Value, fa_updates: FlagUpdate, operation: str
 ) -> tuple:
     fm_value = _multifn_fm_value(op)
-
-    def astatx_update(astatx: Value, updates=fa_updates) -> Value:
-        return _astatx_mult_forget(_astatx_apply_bits(astatx, updates))
-
-    return (op.rm, op.ra), (fm_value, fa_value), operation, astatx_update
+    update = _flags_then(fa_updates, MULT_FLAGS_FORGET)
+    return (op.rm, op.ra), (fm_value, fa_value), operation, update
 
 
 # PGR Table 12-12 (pgr.txt:23129-23198), opcode[21:16] 011000/011001:
@@ -247,10 +259,10 @@ def _multifn_result(
 # flags in the same way as the single function computations" except
 # for dual add/subtract), so the ALU half reuses
 # ``_float_alu_updates`` and the multiplier half stays forgotten via
-# ``_astatx_mult_forget`` exactly as the plain float multiply below.
+# ``MULT_FLAGS_FORGET`` exactly as the plain float multiply below.
 def multifn_add_subtract(category: int, op: MultifnOperands) -> tuple:
     subtract = category == 0x19
-    fa_op = (lambda a, b: a - b) if subtract else (lambda a, b: a + b)
+    fa_op = _f_sub if subtract else _f_add
     fa_value, fa_overflow, fa_invalid = _float_binary(
         op.fxa,
         op.fya,
@@ -291,7 +303,7 @@ def multifn_average(category: int, op: MultifnOperands) -> tuple:
         op.fxa,
         op.fya,
         "(F%d + F%d)/2" % (op.rxa_reg, op.rya_reg),
-        lambda a, b: (a + b) / 2,
+        _f_avg,
     )
     return _multifn_result(
         op,
@@ -370,22 +382,18 @@ def multifn_dual_mul_add_subtract(category: int, op: MultifnOperands) -> tuple:
     rs = category & 0xF
     fm_value = _multifn_fm_value(op)
     add_value, add_overflow, add_invalid = _float_binary(
-        op.fxa, op.fya, "F%d + F%d" % (op.rxa_reg, op.rya_reg), lambda a, b: a + b
+        op.fxa, op.fya, "F%d + F%d" % (op.rxa_reg, op.rya_reg), _f_add
     )
     sub_value, sub_overflow, sub_invalid = _float_binary(
-        op.fxa, op.fya, "F%d - F%d" % (op.rxa_reg, op.rya_reg), lambda a, b: a - b
+        op.fxa, op.fya, "F%d - F%d" % (op.rxa_reg, op.rya_reg), _f_sub
     )
     updates = _or_updates(
         _float_alu_updates(add_value, av=add_overflow, ai=add_invalid),
         _float_alu_updates(sub_value, av=sub_overflow, ai=sub_invalid),
     )
-
-    def dual_astatx_update(astatx: Value, u=updates) -> Value:
-        return _astatx_mult_forget(_astatx_apply_bits(astatx, u))
-
     return (
         (op.rm, op.ra, rs),
         (fm_value, add_value, sub_value),
         "float-mul-dual-add-subtract",
-        dual_astatx_update,
+        _flags_then(updates, MULT_FLAGS_FORGET),
     )

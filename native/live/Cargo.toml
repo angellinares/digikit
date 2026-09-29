@@ -1,0 +1,30 @@
+[package]
+name = "live-audio"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Live audio output path for the Digitakt II emulator: a lock-free SPSC ring, a FIFO repeater for SPI2 TX frames, and a cpal real-time output callback. No SHARC+ semantics live here (see native/sharc); this crate is driven by frame sources, one of which will later be the native SHARC core."
+
+# cpal is Em-approved for audio output. Everything else stays on std: this
+# crate's own job (ring buffer, repeater, WAV decode, C ABI) needs nothing
+# else.
+[dependencies]
+cpal = "0.18"
+
+[lib]
+name = "live_audio"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "live_play"
+path = "src/bin/live_play.rs"
+
+[profile.release]
+opt-level = 3
+codegen-units = 16
+debug = false
+panic = "abort"
+incremental = false
+
+[profile.dev]
+panic = "abort"

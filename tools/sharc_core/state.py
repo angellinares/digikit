@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from sharc_disasm import Instruction
 from sharcldr import LoadedMemory
@@ -24,6 +25,8 @@ from .values import (
     Unknown,
     Value,
     _bitwise,
+    _op_andnot,
+    _op_or,
     _signed32,
 )
 
@@ -321,6 +324,13 @@ def _stop(state: State, insn: Instruction | None, reason: str) -> State:
     return state
 
 
+def _note_provisional(state: State, form: str) -> None:
+    """Record that this path executed provisional form FORM (a report for
+    the caller; which forms may run provisionally is fixed per run)."""
+    if form not in state.provisional_used:
+        state.provisional_used = tuple(sorted(set(state.provisional_used) | {form}))
+
+
 def _copy(state: State) -> State:
     """A fork of STATE safe to advance independently (the symbolic tracer's
     own conditional/predicated-instruction forks in forms_move.py,
@@ -347,6 +357,41 @@ def _copy(state: State) -> State:
         mmrs=dict(state.mmrs),
         special=dict(state.special),
     )
+
+
+# An empty special-register mapping (MRF/MRB/MSF/BFFWRP/...), for a compute
+# called without one.
+NO_SPECIAL: Mapping[str, Operand | MR] = MappingProxyType({})
+
+
+def _snapshot_uregs(uregs: Mapping[int, Value]) -> dict[int, Value]:
+    """The register file as it was before this instruction: every read of
+    an instruction's operands goes through this copy, so a write earlier in
+    the same instruction is not seen (the parallel-read rule the forms
+    rely on). A concrete specialisation keeps a copy, or reads the old
+    value of each register it writes."""
+    return dict(uregs)
+
+
+def _pey_view(values: Mapping[int, Value]) -> dict[int, Value]:
+    """A PEy view of the register file for _compute: R/F codes 0-15 read
+    the paired S/SF register instead (SHARC+ PRM p.3-39, "Compute
+    Instructions in SIMD Mode": "S0 = S1 + S2; /* implicit ALU instruction
+    */" -- the PEy compute is decoded from the *same* instruction bits as
+    PEx, just re-targeted at the S file, so re-running _compute unchanged
+    against a shifted register map is exactly this rule). A concrete
+    specialisation reads code + 80 for codes 0-15 instead of copying."""
+    shifted = dict(values)
+    for code in range(16):
+        shifted[code] = values.get(80 + code, Unknown("uninitialized S%d" % code))
+    return shifted
+
+
+def _pey_special(special: Mapping[str, Operand | MR] | None) -> dict[str, Operand | MR]:
+    """PEy's special registers for _compute: its multiplier accumulator
+    MSF read under PEx's name MRF (see compute._compute_pey)."""
+    specials = special if special is not None else NO_SPECIAL
+    return {"MRF": specials.get("MSF", Unknown("uninitialized MSF"))}
 
 
 def _ureg_raw(values: Mapping[int, Value], code: int) -> Value:
@@ -479,7 +524,5 @@ def _sync_pc_stack(state: State) -> None:
         _ureg(state.uregs, stkyx_code),
         Const(1 << 22),
         "PC stack empty" if not state.call_stack else "PC stack nonempty",
-        (lambda value, mask: value | mask)
-        if not state.call_stack
-        else (lambda value, mask: value & ~mask),
+        _op_or if not state.call_stack else _op_andnot,
     )

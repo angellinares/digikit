@@ -35,6 +35,7 @@ from .state import (
     _copy,
     _event,
     _render,
+    _snapshot_uregs,
     _stop,
     _ureg,
 )
@@ -52,7 +53,7 @@ def _type_6b_shiftimm(
     if _field(f, "cond") != 0x1F:
         return [_stop(state, insn, "unsupported Type6b predicate")]
     try:
-        result = _shift_immediate(f, dict(state.uregs), state.special)
+        result = _shift_immediate(f, _snapshot_uregs(state.uregs), state.special)
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     _apply_compute(state, insn, result)
@@ -67,7 +68,7 @@ def _type_6a_mem(
     # in parallel, then post-modifies the selected I register by M.
     if _field(f, "cond") != 0x1F:
         return [_stop(state, insn, "unsupported Type6a predicate")]
-    old = dict(state.uregs)
+    old = _snapshot_uregs(state.uregs)
     try:
         result = _shift_immediate(f, old, state.special)
     except ValueError as error:
@@ -81,6 +82,7 @@ def _type_6a_mem(
     dreg = _field(f, "dreg")
     if _field(f, "d"):
         value = _ureg(old, dreg)
+        wrote = _dm_write(state, iv, 4, value) if space == "DM" else False
         _event(
             state,
             insn,
@@ -90,7 +92,7 @@ def _type_6a_mem(
             value=value,
             address=iv,
             expression=_render(iv),
-            concrete_write=_dm_write(state, iv, 4, value) if space == "DM" else False,
+            concrete_write=wrote,
             addressing_mode="post-modify",
             access_width="normal-word",
         )
@@ -122,7 +124,9 @@ def _type_2c(
     # Unconditional (no cond field): a SIMD-active MODE1 duplicates
     # this onto PEy's S register file too (PRM p.101, p.3-39).
     try:
-        compute_x, compute_y = _compute_simd(state, f, True, dict(state.uregs))
+        compute_x, compute_y = _compute_simd(
+            state, f, True, _snapshot_uregs(state.uregs)
+        )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     if compute_x is None:
@@ -144,7 +148,7 @@ def _type_2a_short(
             state,
             f,
             False,
-            dict(state.uregs),
+            _snapshot_uregs(state.uregs),
             state.special,
             approx_recips=state.approx_recips,
         )
@@ -166,7 +170,7 @@ def _type_2a(
         compute = _compute(
             f,
             False,
-            dict(state.uregs),
+            _snapshot_uregs(state.uregs),
             state.special,
             approx_recips=state.approx_recips,
         )

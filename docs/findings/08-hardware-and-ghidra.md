@@ -44,6 +44,10 @@ Identifying the MCF5441x part, eDMA, the MMIO hook, and the Ghidra tooling: RTTI
   MAC with load in `FUN_400db9aa` at `0x400db9e0`, which stock Unicorn
   2.1.4 cannot run; `patches/unicorn-2.1.4-m68k-emac-mac-load.patch` fixes
   it (see "The frame capture runs; the frame build is switched off"). **[C]**
+- **2026-09-28:** Unicorn's fractional-mode EMAC is wrong (no `<< 1` on the
+  product, unsigned operands, broken mode switch, among others); the
+  ColdFire's parameter smoother runs in that mode. See finding 07,
+  "Fractional EMAC was wrong in patched Unicorn". **[D]**
 
 ## Names from RTTI and code seeds in the EMAC Ghidra project **[V][D]**
 
@@ -454,4 +458,25 @@ The remaining ~130,000 uncovered bytes are mostly gaps whose first bytes are
 alignment or tail data rather than the entry, plus a repeated non-standard
 prologue idiom (`8f2f 0a2f 0224` after a varying first word) that the three
 patterns above do not match. **[O]**
+
+## A queryable ColdFire database and a snapshot reader **[D]**
+
+2026-09-28. Two read-only helpers, the ColdFire counterparts of
+`tools/sharcdb.py`/`tools/sharc.py` (usage in CLAUDE.md):
+
+- `tools/cfdb.py build out/ghidra/dt2-1.16-emac` imports a
+  `tools/ghidradump.py` dump into `out/cfdb/<image>.sqlite` (functions,
+  call/jump edges, data references, strings). `tools/cf.py` queries it
+  (`cf.load("dt2-1.16-emac")`: `func`, `callers`, `callees`, `reach`,
+  `paths`, `refs_to`, `decomp`, `sql`). Ghidra's tables miss code outside
+  functions (for example the "Load all samples" invoker `0x40030ce8`), so an
+  empty caller list still needs `tools/refscan.py`.
+- `tools/cf_names.py` is a hand-curated table of 1.16 addresses (live
+  kit/track records, FlexBus, sample loader, boot UI) with a mark and a
+  source for each; `tools/cf.py` and `tools/snapread.py` resolve names
+  against it. Entries are **[D]** unless a finding marks them **[V]**.
+- `tools/snapread.py` reads registers, memory and task state from a `.snap`
+  without building a Machine (`Snapshot(path).u32(addr)`, `.read`, `.regs`,
+  `.tasks()`, or the CLI). `tools/snapeq.py A B` checks two snapshots for
+  equal guest state (finding 07, cold-boot ladder speed).
 

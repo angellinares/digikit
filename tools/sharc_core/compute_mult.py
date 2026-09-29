@@ -20,20 +20,32 @@ every generated key against ``tools/sharcspec/compute_table.json``.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Mapping
+from typing import NamedTuple
 
-from .flags import _astatx_apply_bits, _astatx_mult_clear, _astatx_mult_forget
+from .flags import MULT_FLAGS_CLEAR, MULT_FLAGS_FORGET, FlagUpdate, _mult_flags
 from .floats import (
     _DOUBLE_ALL_ONES_HI,
     _DOUBLE_ALL_ONES_LO,
     _double,
     _double_binary,
     _double_pair_bits,
+    _f_mul,
     _float32,
     _float_binary,
+    _isfinite,
+    _isinf,
+    _isnan,
 )
-from .state import MR, MR_ZERO, _mr_from_signed, _mr_read_word, _mr_write_word, _ureg
+from .state import (
+    MR,
+    MR_ZERO,
+    NO_SPECIAL,
+    _mr_from_signed,
+    _mr_read_word,
+    _mr_write_word,
+    _ureg,
+)
 from .values import (
     ComputeDest,
     ComputeValue,
@@ -49,7 +61,7 @@ from .values import (
 # layer above values.py's Operand/ComputeValue by design -- values.py
 # cannot import MR without an import cycle), so this module uses this
 # locally widened result type instead of values.py's ComputeResult.
-MultResult = tuple[ComputeDest, "ComputeValue | MR", str, Callable[[Value], Value]]
+MultResult = tuple[ComputeDest, "ComputeValue | MR", str, FlagUpdate]
 
 Handler = Callable[
     [
@@ -64,12 +76,6 @@ Handler = Callable[
     ],
     MultResult,
 ]
-
-# ASTATX/ASTATY bit positions this module updates (SHARC+ PRM ch.4/ch.28
-# REGF_ASTATX). Imported directly from encoding.py rather than through
-# flags.py, since flags.py only re-exports these as opaque updater
-# functions, not the raw bit numbers this module's own flag formula needs.
-from .encoding import MI_BIT, MN_BIT, MU_BIT, MV_BIT  # noqa: E402
 
 # 80-bit two's-complement field mask (state.py's MR uses the same one, but
 # does not export it; redefined here from the same PRM p.3-10 fact -- MR2F
@@ -117,12 +123,13 @@ def _mr_data_move(
     every direction and register."""
     reg_key, word = _MR_DATAMOVE_WORD[mr_name]
     op_name = "mr-data-move-%s" % mr_name.lower()
-    current = (special or {}).get(reg_key, Unknown("uninitialized %s" % reg_key))
+    specials = special if special is not None else NO_SPECIAL
+    current = specials.get(reg_key, Unknown("uninitialized %s" % reg_key))
     if direction:  # register file -> MR word
         new_mr = _mr_write_word(current, word, _ureg(values, rn))
-        return reg_key, new_mr, op_name, _astatx_mult_clear
+        return reg_key, new_mr, op_name, MULT_FLAGS_CLEAR
     value = _mr_read_word(current, word)
-    return rn, value, op_name, _astatx_mult_clear
+    return rn, value, op_name, MULT_FLAGS_CLEAR
 
 
 def _mr_flags(
@@ -171,8 +178,8 @@ def _mr_flags(
 
 def _astatx_mult_from(
     raw80: int | None, fractional: bool, signed_result: bool, *, sat: bool = False
-) -> Callable[[Value], Value]:
-    """ASTATX/ASTATY updater for a fixed-point multiplier result: MN/MV/MU
+) -> FlagUpdate:
+    """ASTATX/ASTATY update for a fixed-point multiplier result: MN/MV/MU
     from RAW80 via ``_mr_flags``, MI fixed 0 (PRM Table 3-7: every
     fixed-point row lists MI as a flat "0" -- MI only ever applies to the
     floating-point multiply row, see ``_astatx_mult_float``). SAT=True
@@ -188,13 +195,12 @@ def _astatx_mult_from(
         mn, mv, mu = _mr_flags(raw80, fractional, signed_result)
         if sat:
             mv = False
-    updates = {MN_BIT: mn, MV_BIT: mv, MU_BIT: mu, MI_BIT: False}
-    return lambda astatx: _astatx_apply_bits(astatx, updates)
+    return _mult_flags(mn, mv, mu, False)
 
 
 def _astatx_mult_float(
     result: Value, overflowed: bool | None, invalid: bool | None
-) -> Callable[[Value], Value]:
+) -> FlagUpdate:
     """PRM Table 3-9 "FN = FX * FY": MU/MN/MV/MI all data-dependent (unlike
     every fixed-point row). MN is RESULT's own sign bit; MV is OVERFLOWED
     (post-rounded exponent > 127, exactly what ``_float_binary`` already
@@ -209,13 +215,12 @@ def _astatx_mult_float(
         mn = bool(bits & 0x80000000)
         mv = bool(overflowed)
         mu = (bits & 0x7F800000) == 0 and (bits & 0x007FFFFF) != 0
-    updates = {MN_BIT: mn, MV_BIT: mv, MU_BIT: mu, MI_BIT: invalid}
-    return lambda astatx: _astatx_apply_bits(astatx, updates)
+    return _mult_flags(mn, mv, mu, invalid)
 
 
 def _astatx_mult_double(
     hi_result: Value, lo_result: Value, overflowed: bool | None, invalid: bool | None
-) -> Callable[[Value], Value]:
+) -> FlagUpdate:
     """SC58x/2158x PRM ch.23 "64-bit Floating-Point Operations" (p.23-2..
     23-4), each op's identical "ASTATx/y Flags" table: MN/MV/MU/MI, the
     same shape as ``_astatx_mult_float`` above but reading the register
@@ -240,8 +245,7 @@ def _astatx_mult_double(
         biased_exp = (hi_bits >> 20) & 0x7FF
         mantissa_nonzero = (hi_bits & 0xFFFFF) != 0 or lo_bits != 0
         mu = biased_exp == 0 and mantissa_nonzero
-    updates = {MN_BIT: mn, MV_BIT: mv, MU_BIT: mu, MI_BIT: invalid}
-    return lambda astatx: _astatx_apply_bits(astatx, updates)
+    return _mult_flags(mn, mv, mu, invalid)
 
 
 def _mr_product_raw(
@@ -306,19 +310,46 @@ _SAT_BOUNDS: dict[tuple[bool, bool], tuple[int, int]] = {
 def _mac_accumulator(
     src_key: str, special: Mapping[str, Operand | MR] | None
 ) -> tuple[Operand | MR, int | None]:
-    accumulator = (special or {}).get(src_key, Unknown("uninitialized %s" % src_key))
+    specials = special if special is not None else NO_SPECIAL
+    accumulator = specials.get(src_key, Unknown("uninitialized %s" % src_key))
     acc_signed = accumulator.signed() if isinstance(accumulator, MR) else None
     return accumulator, acc_signed
 
 
+# Fixed-point multiplier operation kinds (PRM Table 17-7 row families).
+_MULT, _MAC, _SAT, _RND, _CLEAR = 0, 1, 2, 3, 4
+# MOD1/MOD2/MOD3 destination field -> accumulator name (RN has none).
+_DEST_KEYS: dict[str, str] = {"mrf": "MRF", "mrb": "MRB"}
+
+
+class MultSpec(NamedTuple):
+    """One fixed-point multiplier opcode of PRM Table 17-7, as data: the
+    row family (KIND) and the MOD1/MOD2/MOD3 options its bits select.
+    ``mult_fixed`` executes it."""
+
+    kind: int
+    signed_x: bool
+    signed_y: bool
+    fractional: bool
+    round_: bool
+    # Signedness of the result: signed_x or signed_y for a multiply or
+    # accumulate, the MOD2/MOD3 sign for a saturate or round.
+    signed: bool
+    subtract: bool
+    dest_key: str | None  # "MRF"/"MRB", or None for an RN destination
+    src_key: str  # accumulator read by accumulate/saturate/round
+    op_name: str
+    sat_max: int
+    sat_min: int
+
+
 def _mult_handler(
     signed_x: bool, signed_y: bool, fractional: bool, round_: bool, dest: str
-) -> Handler:
+) -> MultSpec:
     """PRM Table 17-7 "01yx f00r"/"F10r"/"F11r" rows (p.17-7): (RN|mrf|mrb)
     = RX * RY MOD1 -- a plain multiply, no accumulate. DEST is "rn", "mrf"
     or "mrb"."""
-    dest_key = {"mrf": "MRF", "mrb": "MRB"}.get(dest)
-    signed_result = signed_x or signed_y
+    dest_key = _DEST_KEYS.get(dest)
     op_name = (
         "multiply"
         if dest_key is None
@@ -326,38 +357,58 @@ def _mult_handler(
         if dest_key == "MRF"
         else "multiply-mrb"
     )
+    return MultSpec(
+        _MULT,
+        signed_x,
+        signed_y,
+        fractional,
+        round_,
+        signed_x or signed_y,
+        False,
+        dest_key,
+        "",
+        op_name,
+        0,
+        0,
+    )
 
-    def handler(rn, rx, ry, left, right, values, special, approx_recips):
-        if isinstance(left, Const) and isinstance(right, Const):
-            raw = _mr_product_raw(
-                left.value, right.value, signed_x, signed_y, fractional
-            )
-            if round_:
-                raw = _mr_round(raw)
-            astatx = _astatx_mult_from(raw, fractional, signed_result)
-            if dest_key is None:
-                return rn, Const(_mr_extract32(raw, fractional)), op_name, astatx
-            return dest_key, _mr_from_signed(raw), op_name, astatx
-        astatx = _astatx_mult_from(None, fractional, signed_result)
-        if dest_key is not None:
-            return dest_key, Unknown("R%d * R%d MOD1" % (rx, ry)), op_name, astatx
-        # RN destination, no accumulate: preserve the tracer's existing
-        # symbolic-affine multiply-by-constant capability for the plain
-        # *integer*, unrounded case (PRM p.3-9: the low 32 bits of an
-        # integer product do not depend on rounding or the redundant-sign
-        # shift, so this is exactly ``_multiply``'s domain -- the same
-        # helper the pre-80-bit-MR version of this handler called
-        # directly). A fractional or rounded RN result still has no
-        # symbolic model, matching ``_multiply_fractional``'s own Unknown
-        # fallback for anything but two Consts.
-        value = (
-            Unknown("R%d * R%d MOD1" % (rx, ry))
-            if fractional or round_
-            else _multiply(left, right, "R%d * R%d" % (rx, ry))
+
+def _mult_body(
+    spec: MultSpec, rn: int, rx: int, ry: int, left: Operand, right: Operand
+) -> MultResult:
+    if isinstance(left, Const) and isinstance(right, Const):
+        raw = _mr_product_raw(
+            left.value, right.value, spec.signed_x, spec.signed_y, spec.fractional
         )
-        return rn, value, op_name, astatx
-
-    return handler
+        if spec.round_:
+            raw = _mr_round(raw)
+        astatx = _astatx_mult_from(raw, spec.fractional, spec.signed)
+        if spec.dest_key is None:
+            return rn, Const(_mr_extract32(raw, spec.fractional)), spec.op_name, astatx
+        return spec.dest_key, _mr_from_signed(raw), spec.op_name, astatx
+    astatx = _astatx_mult_from(None, spec.fractional, spec.signed)
+    if spec.dest_key is not None:
+        return (
+            spec.dest_key,
+            Unknown("R%d * R%d MOD1" % (rx, ry)),
+            spec.op_name,
+            astatx,
+        )
+    # RN destination, no accumulate: preserve the tracer's existing
+    # symbolic-affine multiply-by-constant capability for the plain
+    # *integer*, unrounded case (PRM p.3-9: the low 32 bits of an
+    # integer product do not depend on rounding or the redundant-sign
+    # shift, so this is exactly ``_multiply``'s domain -- the same
+    # helper the pre-80-bit-MR version of this handler called
+    # directly). A fractional or rounded RN result still has no
+    # symbolic model, matching ``_multiply_fractional``'s own Unknown
+    # fallback for anything but two Consts.
+    value = (
+        Unknown("R%d * R%d MOD1" % (rx, ry))
+        if spec.fractional or spec.round_
+        else _multiply(left, right, "R%d * R%d" % (rx, ry))
+    )
+    return rn, value, spec.op_name, astatx
 
 
 def _mac_handler(
@@ -368,41 +419,63 @@ def _mac_handler(
     dest: str,
     subtract: bool,
     src: str,
-) -> Handler:
+) -> MultSpec:
     """PRM Table 17-7 "10yx.../11yx..." rows (p.17-7): (RN|mrf|mrb) =
     (mrf|mrb) [+-] RX * RY MOD1. DEST is "rn", "mrf" or "mrb"; SRC ("mrf" or
     "mrb") is the accumulator read (and, unless DEST=="rn", also written)."""
-    src_key = "MRF" if src == "mrf" else "MRB"
-    dest_key = {"mrf": "MRF", "mrb": "MRB"}.get(dest)
-    signed_result = signed_x or signed_y
-    op_name = "multiply-subtract" if subtract else "multiply-accumulate"
+    return MultSpec(
+        _MAC,
+        signed_x,
+        signed_y,
+        fractional,
+        round_,
+        signed_x or signed_y,
+        subtract,
+        _DEST_KEYS.get(dest),
+        "MRF" if src == "mrf" else "MRB",
+        "multiply-subtract" if subtract else "multiply-accumulate",
+        0,
+        0,
+    )
 
-    def handler(rn, rx, ry, left, right, values, special, approx_recips):
-        _accumulator, acc_signed = _mac_accumulator(src_key, special)
-        if acc_signed is None or not (
-            isinstance(left, Const) and isinstance(right, Const)
-        ):
-            astatx = _astatx_mult_from(None, fractional, signed_result)
-            label = "%s %s R%d * R%d MOD1" % (src_key, "-" if subtract else "+", rx, ry)
-            return (dest_key or rn, Unknown(label), op_name, astatx)
-        product = _mr_product_raw(
-            left.value, right.value, signed_x, signed_y, fractional
+
+def _mac_body(
+    spec: MultSpec,
+    rn: int,
+    rx: int,
+    ry: int,
+    left: Operand,
+    right: Operand,
+    special: Mapping[str, Operand | MR] | None,
+) -> MultResult:
+    _accumulator, acc_signed = _mac_accumulator(spec.src_key, special)
+    if acc_signed is None or not (isinstance(left, Const) and isinstance(right, Const)):
+        astatx = _astatx_mult_from(None, spec.fractional, spec.signed)
+        label = "%s %s R%d * R%d MOD1" % (
+            spec.src_key,
+            "-" if spec.subtract else "+",
+            rx,
+            ry,
         )
-        product_signed = product - (1 << 80) if product & (1 << 79) else product
-        raw = (
-            (acc_signed - product_signed) if subtract else (acc_signed + product_signed)
-        ) & _MR_MASK
-        if round_:
-            raw = _mr_round(raw)
-        astatx = _astatx_mult_from(raw, fractional, signed_result)
-        if dest_key is None:
-            return rn, Const(_mr_extract32(raw, fractional)), op_name, astatx
-        return dest_key, _mr_from_signed(raw), op_name, astatx
+        return (spec.dest_key or rn, Unknown(label), spec.op_name, astatx)
+    product = _mr_product_raw(
+        left.value, right.value, spec.signed_x, spec.signed_y, spec.fractional
+    )
+    product_signed = product - (1 << 80) if product & (1 << 79) else product
+    raw = (
+        (acc_signed - product_signed)
+        if spec.subtract
+        else (acc_signed + product_signed)
+    ) & _MR_MASK
+    if spec.round_:
+        raw = _mr_round(raw)
+    astatx = _astatx_mult_from(raw, spec.fractional, spec.signed)
+    if spec.dest_key is None:
+        return rn, Const(_mr_extract32(raw, spec.fractional)), spec.op_name, astatx
+    return spec.dest_key, _mr_from_signed(raw), spec.op_name, astatx
 
-    return handler
 
-
-def _sat_handler(fractional: bool, signed_: bool, dest: str, src: str) -> Handler:
+def _sat_handler(fractional: bool, signed_: bool, dest: str, src: str) -> MultSpec:
     """PRM Table 17-7 "0000 F--x" rows (p.17-7): (RN|mrf|mrb) = sat
     (mrf|mrb) MOD2 -- clamp the accumulator to the MOD2-declared format's
     representable range (Table 3-5). MV is architecturally fixed 0 for this
@@ -411,68 +484,126 @@ def _sat_handler(fractional: bool, signed_: bool, dest: str, src: str) -> Handle
     underflow or be negative-but-clamped-positive, so evaluating them
     post-clamp would just report the same thing the clamp already forces)."""
     src_key = "MRF" if src == "mrf" else "MRB"
-    dest_key = {"mrf": "MRF", "mrb": "MRB"}.get(dest)
-    op_name = "saturate-mrf" if src_key == "MRF" else "saturate-mrb"
     max_value, min_value = _SAT_BOUNDS[(fractional, signed_)]
-
-    def handler(rn, rx, ry, left, right, values, special, approx_recips):
-        _accumulator, acc_signed = _mac_accumulator(src_key, special)
-        if acc_signed is None:
-            astatx = _astatx_mult_from(None, fractional, signed_, sat=True)
-            return (
-                dest_key or rn,
-                Unknown("saturated %s (uninitialized)" % src_key),
-                op_name,
-                astatx,
-            )
-        clamped = max(min_value, min(max_value, acc_signed))
-        astatx = _astatx_mult_from(acc_signed & _MR_MASK, fractional, signed_, sat=True)
-        raw = clamped & _MR_MASK
-        if dest_key is None:
-            return rn, Const(_mr_extract32(raw, fractional)), op_name, astatx
-        return dest_key, _mr_from_signed(raw), op_name, astatx
-
-    return handler
+    return MultSpec(
+        _SAT,
+        False,
+        False,
+        fractional,
+        False,
+        signed_,
+        False,
+        _DEST_KEYS.get(dest),
+        src_key,
+        "saturate-mrf" if src_key == "MRF" else "saturate-mrb",
+        max_value,
+        min_value,
+    )
 
 
-def _rnd_handler(signed_: bool, dest: str, src: str) -> Handler:
+def _sat_body(
+    spec: MultSpec, rn: int, special: Mapping[str, Operand | MR] | None
+) -> MultResult:
+    _accumulator, acc_signed = _mac_accumulator(spec.src_key, special)
+    if acc_signed is None:
+        astatx = _astatx_mult_from(None, spec.fractional, spec.signed, sat=True)
+        return (
+            spec.dest_key or rn,
+            Unknown("saturated %s (uninitialized)" % spec.src_key),
+            spec.op_name,
+            astatx,
+        )
+    clamped = max(spec.sat_min, min(spec.sat_max, acc_signed))
+    astatx = _astatx_mult_from(
+        acc_signed & _MR_MASK, spec.fractional, spec.signed, sat=True
+    )
+    raw = clamped & _MR_MASK
+    if spec.dest_key is None:
+        return rn, Const(_mr_extract32(raw, spec.fractional)), spec.op_name, astatx
+    return spec.dest_key, _mr_from_signed(raw), spec.op_name, astatx
+
+
+def _rnd_handler(signed_: bool, dest: str, src: str) -> MultSpec:
     """PRM Table 17-7 "0001 1..." rows (p.17-7): (RN|mrf|mrb) = rnd
     (mrf|mrb) MOD3. Always fractional -- MOD3 only has SF/UF options ("The
     RND operation ... applies only to fractional results", PRM p.3-11)."""
     src_key = "MRF" if src == "mrf" else "MRB"
-    dest_key = {"mrf": "MRF", "mrb": "MRB"}.get(dest)
-    op_name = "round-mrf" if src_key == "MRF" else "round-mrb"
-
-    def handler(rn, rx, ry, left, right, values, special, approx_recips):
-        _accumulator, acc_signed = _mac_accumulator(src_key, special)
-        if acc_signed is None:
-            astatx = _astatx_mult_from(None, True, signed_)
-            return (
-                dest_key or rn,
-                Unknown("rounded %s (uninitialized)" % src_key),
-                op_name,
-                astatx,
-            )
-        raw = _mr_round(acc_signed & _MR_MASK)
-        astatx = _astatx_mult_from(raw, True, signed_)
-        if dest_key is None:
-            return rn, Const(_mr_extract32(raw, True)), op_name, astatx
-        return dest_key, _mr_from_signed(raw), op_name, astatx
-
-    return handler
+    return MultSpec(
+        _RND,
+        False,
+        False,
+        True,
+        True,
+        signed_,
+        False,
+        _DEST_KEYS.get(dest),
+        src_key,
+        "round-mrf" if src_key == "MRF" else "round-mrb",
+        0,
+        0,
+    )
 
 
-def _clear_handler(dest: str) -> Handler:
+def _rnd_body(
+    spec: MultSpec, rn: int, special: Mapping[str, Operand | MR] | None
+) -> MultResult:
+    _accumulator, acc_signed = _mac_accumulator(spec.src_key, special)
+    if acc_signed is None:
+        astatx = _astatx_mult_from(None, True, spec.signed)
+        return (
+            spec.dest_key or rn,
+            Unknown("rounded %s (uninitialized)" % spec.src_key),
+            spec.op_name,
+            astatx,
+        )
+    raw = _mr_round(acc_signed & _MR_MASK)
+    astatx = _astatx_mult_from(raw, True, spec.signed)
+    if spec.dest_key is None:
+        return rn, Const(_mr_extract32(raw, True)), spec.op_name, astatx
+    return spec.dest_key, _mr_from_signed(raw), spec.op_name, astatx
+
+
+def _clear_handler(dest: str) -> MultSpec:
     """PRM Table 17-7 "0001 01d0" rows (p.17-7): (mrf|mrb) = 0. PRM Table
-    3-7: all four flags fixed 0, the same pattern ``_astatx_mult_clear``
+    3-7: all four flags fixed 0, the same pattern ``MULT_FLAGS_CLEAR``
     already gives the MR-data-move rows."""
     dest_key = "MRF" if dest == "mrf" else "MRB"
-    op_name = "clear-mrf" if dest_key == "MRF" else "clear-mrb"
+    return MultSpec(
+        _CLEAR,
+        False,
+        False,
+        False,
+        False,
+        False,
+        False,
+        dest_key,
+        "",
+        "clear-mrf" if dest_key == "MRF" else "clear-mrb",
+        0,
+        0,
+    )
 
-    def handler(rn, rx, ry, left, right, values, special, approx_recips):
-        return dest_key, MR_ZERO, op_name, _astatx_mult_clear
 
-    return handler
+def mult_fixed(
+    spec: MultSpec,
+    rn: int,
+    rx: int,
+    ry: int,
+    left: Operand,
+    right: Operand,
+    special: Mapping[str, Operand | MR] | None,
+) -> MultResult:
+    """Execute one fixed-point multiplier opcode (see MultSpec)."""
+    if spec.kind == _MULT:
+        return _mult_body(spec, rn, rx, ry, left, right)
+    if spec.kind == _MAC:
+        return _mac_body(spec, rn, rx, ry, left, right, special)
+    if spec.kind == _SAT:
+        return _sat_body(spec, rn, special)
+    if spec.kind == _RND:
+        return _rnd_body(spec, rn, special)
+    assert spec.dest_key is not None
+    return spec.dest_key, MR_ZERO, spec.op_name, MULT_FLAGS_CLEAR
 
 
 # PRM Table 18-7 (p.428-429): MULOP 00110000 is Fn = Fx * Fy. Flags are the
@@ -481,7 +612,7 @@ def _clear_handler(dest: str) -> Handler:
 # these four is genuinely data-dependent for a float multiply.
 def mult_float(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
     result, overflowed, invalid = _float_binary(
-        left, right, "F%d * F%d" % (rx, ry), lambda a, b: a * b
+        left, right, "F%d * F%d" % (rx, ry), _f_mul
     )
     astatx = _astatx_mult_float(result, overflowed, invalid)
     return rn, result, "float-multiply", astatx
@@ -511,7 +642,7 @@ def mult_double_multiply(
         _ureg(values, ry + 1),
         _ureg(values, ry),
         "F%d:%d * F%d:%d" % (rx + 1, rx, ry + 1, ry),
-        lambda a, b: a * b,
+        _f_mul,
     )
     astatx = _astatx_mult_double(hi, lo, overflowed, invalid)
     return (rn + 1, rn), (hi, lo), "double-multiply", astatx
@@ -533,14 +664,14 @@ def mult_double_multiply_single(
             "double-multiply-single",
             astatx,
         )
-    if math.isnan(a) or math.isnan(b):
+    if _isnan(a) or _isnan(b):
         hi, lo = _DOUBLE_ALL_ONES_HI, _DOUBLE_ALL_ONES_LO
         astatx = _astatx_mult_double(hi, lo, False, True)
         return (rn + 1, rn), (hi, lo), "double-multiply-single", astatx
     raw = a * b
     hi_int, lo_int = _double_pair_bits(raw)
     hi, lo = Const(hi_int), Const(lo_int)
-    overflowed = math.isinf(raw) and math.isfinite(a) and math.isfinite(b)
+    overflowed = _isinf(raw) and _isfinite(a) and _isfinite(b)
     astatx = _astatx_mult_double(hi, lo, overflowed, False)
     return (rn + 1, rn), (hi, lo), "double-multiply-single", astatx
 
@@ -563,7 +694,7 @@ def mult_float_widening_multiply(
             "float-widening-multiply",
             astatx,
         )
-    if math.isnan(a) or math.isnan(b):
+    if _isnan(a) or _isnan(b):
         hi, lo = _DOUBLE_ALL_ONES_HI, _DOUBLE_ALL_ONES_LO
         astatx = _astatx_mult_double(hi, lo, False, True)
         return (rn + 1, rn), (hi, lo), "float-widening-multiply", astatx
@@ -582,10 +713,10 @@ def mult_undocumented_10(
     rn, rx, ry, left, right, values, special, approx_recips
 ) -> tuple:
     label = "multiply opcode 0x10 R%d, R%d (undocumented; no public source)" % (rx, ry)
-    return rn, Unknown(label), "multiply-undocumented-10", _astatx_mult_forget
+    return rn, Unknown(label), "multiply-undocumented-10", MULT_FLAGS_FORGET
 
 
-def _build_mult_ops() -> dict[int, Handler]:
+def _build_mult_ops() -> tuple[dict[int, Handler], dict[int, MultSpec]]:
     """PRM Table 17-7's full fixed-point MULOP encode space (p.17-7/17-8),
     generated from the same MOD1/MOD2/MOD3 bit layout the manual documents
     (p.17-9: y=bit5 Y-signed, x=bit4 X-signed, f=bit3 fractional, r=bit0
@@ -598,6 +729,7 @@ def _build_mult_ops() -> dict[int, Handler]:
     same way, just not inserted into MULT_OPS.
     """
     ops: dict[int, Handler] = {}
+    specs: dict[int, MultSpec] = {}
 
     # "0000 Fbdx": (RN|mrf|mrb) = sat (mrf|mrb) MOD2. bit3=F (MOD2
     # fractional/integer), bit2=b (0=mrf source,1=mrb), bit1=d (0=dest RN,
@@ -607,12 +739,12 @@ def _build_mult_ops() -> dict[int, Handler]:
             for d_bit, dest in ((0, "rn"), (1, src)):
                 for s_bit, signed_ in ((0, False), (1, True)):
                     opcode = (frac_bit << 3) | (b_bit << 2) | (d_bit << 1) | s_bit
-                    ops[opcode] = _sat_handler(fractional, signed_, dest, src)
+                    specs[opcode] = _sat_handler(fractional, signed_, dest, src)
 
     # "0001 01d0": (mrf|mrb) = 0.
     for d_bit, dest in ((0, "mrf"), (1, "mrb")):
         opcode = 0b00010100 | (d_bit << 1)
-        ops[opcode] = _clear_handler(dest)
+        specs[opcode] = _clear_handler(dest)
 
     # "0001 1bdx": (RN|mrf|mrb) = rnd (mrf|mrb) MOD3. bit2=b (source),
     # bit1=d (dest), bit0=MOD3 sign.
@@ -620,7 +752,7 @@ def _build_mult_ops() -> dict[int, Handler]:
         for d_bit, dest in ((0, "rn"), (1, src)):
             for s_bit, signed_ in ((0, False), (1, True)):
                 opcode = 0b00011000 | (b_bit << 2) | (d_bit << 1) | s_bit
-                ops[opcode] = _rnd_handler(signed_, dest, src)
+                specs[opcode] = _rnd_handler(signed_, dest, src)
 
     # "01yx f00r"/"F10r"/"F11r": (RN|mrf|mrb) = RX*RY MOD1 (no accumulate).
     # bits2:1 select the destination (00=RN, 10=mrf, 11=mrb).
@@ -639,7 +771,7 @@ def _build_mult_ops() -> dict[int, Handler]:
                             | (dest_bits << 1)
                             | r_bit
                         )
-                        ops[opcode] = _mult_handler(
+                        specs[opcode] = _mult_handler(
                             signed_x, signed_y, fractional, round_, dest
                         )
 
@@ -670,7 +802,7 @@ def _build_mult_ops() -> dict[int, Handler]:
                             )
                             if opcode in (0xB0, 0xB4):
                                 continue  # compute.py intercepts these first
-                            ops[opcode] = _mac_handler(
+                            specs[opcode] = _mac_handler(
                                 signed_x,
                                 signed_y,
                                 fractional,
@@ -685,10 +817,13 @@ def _build_mult_ops() -> dict[int, Handler]:
     ops[0x31] = mult_double_multiply
     ops[0x32] = mult_double_multiply_single
     ops[0x33] = mult_float_widening_multiply
-    return ops
+    return ops, specs
 
 
-MULT_OPS: dict[int, Handler] = _build_mult_ops()
+# MULT_OPS holds the handler functions; MULT_FIXED_OPS the fixed-point
+# opcodes as MultSpec data, executed by mult_fixed (compute.py consults it
+# first). Together they are the whole cu=1 opcode space.
+MULT_OPS, MULT_FIXED_OPS = _build_mult_ops()
 
 # The two multiply-accumulate-into-MRF rows compute.py's dispatch matches
 # ahead of the mf/cu table (see its module docstring): opcode 0xB4 ("mrf =
@@ -696,7 +831,5 @@ MULT_OPS: dict[int, Handler] = _build_mult_ops()
 # the exact same _mac_handler this module uses for every other MOD1
 # combination -- both a real 80-bit accumulate now, not the previous
 # 32-bit-truncating placeholder.
-multiply_accumulate_mrf: Handler = _mac_handler(
-    True, True, False, False, "mrf", False, "mrf"
-)
-multiply_add_mrf: Handler = _mac_handler(True, True, False, False, "rn", False, "mrf")
+MULTIPLY_ACCUMULATE_MRF = _mac_handler(True, True, False, False, "mrf", False, "mrf")
+MULTIPLY_ADD_MRF = _mac_handler(True, True, False, False, "rn", False, "mrf")

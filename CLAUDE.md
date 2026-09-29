@@ -78,6 +78,20 @@ current state and next steps in the newest `HANDOVER-*.md` in the repo root.
   `trace`, or `img.sql(...)`; `uv run python tools/sharc.py IMAGE "SQL"` for
   one query. Do this before running `tools/sharcfn.py` or writing a script.
   A new kind of fact goes into `tools/sharcdb.py`, not a scratch script.
+- ColdFire facts (MAIN OS) work the same way, from a `tools/ghidradump.py`
+  dump: `uv run python tools/cfdb.py build out/ghidra/dt2-1.16-emac` writes
+  `out/cfdb/<image>.sqlite` (functions, call/jump edges, data references,
+  strings; skipped when current). Use it through `tools/cf.py`:
+  `img = cf.load("dt2-1.16-emac")` then `img.func` (by address or name),
+  `callers`, `callees`, `reach`, `paths`, `refs_to`, `decomp`, or
+  `img.sql(...)`. `tools/cf_names.py` holds hand-curated 1.16 address names
+  (live kit/track records, FlexBus, sample loader, boot-time UI) that both
+  `tools/cf.py` and `tools/snapread.py` resolve against.
+- `tools/snapread.py` reads registers/memory/task state from an
+  `emu/snapshot.py` `.snap` file without restoring a Unicorn machine:
+  `Snapshot(path).u32(addr)`/`.read(addr, n)`/`.regs`/`.tasks()`, or the CLI
+  (`read`/`u32`/`u16`/`u8`/`regs`/`tasks`) -- for read-only questions where
+  spinning up a Machine just to inspect a capture would be wasted work.
 - SHARC+ instruction semantics live once, in `tools/sharc_core/` (layered
   modules; forms dispatch through `sharc_core.forms.FORMS`).
   `tools/sharc_trace.py` is the symbolic driver and `tools/sharc_run.py` the

@@ -289,6 +289,10 @@ charges instructions to RTOS tasks at each context switch.
 - The GUI session that kept the list open reached `jobs 2` at about 260M,
   and its screen changed to 409 lit pixels at about 470M. That may have
   been this splash. **[O]**
+  > **Corrected 2026-09-28 [C][V].** `jobs` is not a queue depth. `emu/gui.py`
+  > counts entries to the BgWorker loop prologue (`profile.job_pump`, on 1.16
+  > `FUN_400f0958`), which runs once per worker thread, so `jobs 2` means two
+  > worker threads started.
 - With the rate raised at 80M to 1.5x, 4x or 10x and no key input,
   `+DRIVE INITIALIZING` is still on screen at 1000M: 131, 49 and 20
   emulated seconds after the change. It first appears at 250M (1.5x) or
@@ -436,4 +440,34 @@ snapshot acquired normal vector-170 handover from host-poked markers and the
 SSI0 request rate is the exploratory 1,000 Hz value. Thus it proves the
 ColdFire behavioral join under exact execution, while natural marker
 production and firmware-backed cadence remain open. **[O]**
+
+## Modal windows take every key (1.16) **[D][O]**
+
+2026-09-28, from `snapshots/dt2-1.16-drive3/loaded.snap` (cold boot with a
++Drive image). A panel TRIG 1 reached the key dispatcher but never the note
+path, because two modal windows sat on top of the view stack.
+
+- `FUN_4011c13a(0x44f5de80, ...)` is the 1.16 key dispatcher. It walks the
+  view list at `+0x14` from the top and gives the key to the first view whose
+  predicate accepts it. In `loaded.snap`, top first: `ConfirmWindow` (vtable
+  `0x4021c898`), HelpBubbleView, KeyboardView, PatternGridView, TempoLedView,
+  SamplerLedView, SourcePageView, TransportView, MainScreenView.
+  `running.snap` has the same stack without the ConfirmWindow.
+- The ConfirmWindow shows "FILE SYSTEM OK" / "PRESS Y/N TO CLOSE" (strings at
+  `+0x50`/`+0x54`). Closing it shows a second one, "MMC NOT IN SLC MODE",
+  which `FUN_400337ba` selects when `FUN_4012da80()` (reads `0x4fe69198`,
+  EXT_CSD SLC state) is not 1 **[V for the condition]**. `emu/esdhc.py`
+  reports SLC off on purpose (finding 14, "The capacity bound fixed"), so the
+  second window is a side effect of the emulator's eMMC model. Why "FILE
+  SYSTEM OK" appears is not traced **[O]**.
+- With the windows up, the UART8 receive callback `0x4011e368` gets the
+  bytes and `FUN_4011c13a` runs for press and release, but
+  `KeyboardView::vfunc_2` (`0x4005dc58`), `FUN_4011fe12` and the record
+  builder `FUN_40139878` are never reached. On `running.snap` a TRIG goes
+  `KeyboardView::vfunc_2` -> `FUN_4005d26a` -> `FUN_4005c5e8` ->
+  `FUN_4011fe12` -> `FUN_40139878` -> `FUN_4013a78a`.
+- Two NO presses close both windows, and TRIG 1 then reaches the frame
+  (finding 04, "1.16 frame fields"). `tools/sharc_capture_run.py --press
+  NO@1000000 --press NO@2000000` does this with real panel input (button
+  names from `panelin.control_names`).
 

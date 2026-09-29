@@ -1,6 +1,6 @@
 """Tests for the shifter's bit-FIFO model (tools/sharc_core/compute_shift.py's
 ``_bff_words``/``_bff_extract``/``_bff_deposit`` and the ShiftImm opcode
-0x14/0x19 BITEXT handler built on them).
+0x14/0x16 BITEXT handler built on them).
 
 Numeric cases are hand-derived from the PRM/PGR's documented pseudocode
 (PRM p.3-18, out/refs/sharc-plus-prm/all.txt:3507-3511; PGR p.11-86/11-87/
@@ -41,7 +41,7 @@ def shiftimm_fields(opcode, data8, rn, rx, dataex=0):
 
 
 def bitext_fields(opcode, bitlen12, rn, rx=0):
-    """A ShiftImm field dict encoding BITLEN12 the way opcode 0x14/0x19
+    """A ShiftImm field dict encoding BITLEN12 the way opcode 0x14/0x16
     split it: dataex[3:0] holds bits [11:8], data8 holds bits [7:0]."""
     return shiftimm_fields(opcode, bitlen12 & 0xFF, rn, rx, (bitlen12 >> 8) & 0xF)
 
@@ -182,7 +182,7 @@ class BffDepositTest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# The wired-up ShiftImm opcode 0x14 (update) / 0x19 (NU) BITEXT handler.
+# The wired-up ShiftImm opcode 0x14 (update) / 0x16 (NU) BITEXT handler.
 # ---------------------------------------------------------------------------
 
 
@@ -215,7 +215,7 @@ class BitextOpcodeTest(unittest.TestCase):
             "BFF_LO": T.Const(0),
         }
         rn, value, op, update = T._shift_immediate(
-            bitext_fields(0x19, 6, rn=6), {}, special
+            bitext_fields(0x16, 6, rn=6), {}, special
         )
         self.assertEqual(op, "bit-extract-nu")
         self.assertEqual(rn, 6)
@@ -247,6 +247,10 @@ class BitextOpcodeTest(unittest.TestCase):
         self.assertEqual(T._astatx_known_bit(astatx, T.SF_BIT), False)  # 24 < 32
 
     def test_bitext_over_32_forces_unknown_even_when_fifo_is_known(self):
+        # Correction (2026-09-28): the "sightings" below were ShiftImm 0x19,
+        # which is Rn = Rn OR FDEP, not BITEXT (NU) (PGR Table 12-11; see
+        # compute_shift._shift_immediate). The over-32 rule tested here
+        # still holds for a real BITEXT.
         # Lane H2 (2026-09-26): docs/findings/06's real-firmware BITEXT
         # sightings (BITLEN12 in {95, 384, 192, 256, 535}, at 0xb88fa4,
         # 0xb89a60, 0xb8c8ec, 0xb8c92a and one more) all hit this same
@@ -341,6 +345,98 @@ class BitextOpcodeTest(unittest.TestCase):
         astatx = update(T.Unknown("start"))
         self.assertIsNone(T._astatx_known_bit(astatx, T.SV_BIT))
         self.assertIsNone(T._astatx_known_bit(astatx, T.SF_BIT))
+
+
+# ---------------------------------------------------------------------------
+# ShiftImm opcode 0x12 (Rn = FEXT Rx BY bit6:len6 (SE)): the fix for the
+# "reference bug" (fext ... (se) did not mask the extracted field before
+# reading/extending its sign, so bits of the source above the field leaked
+# into the result). PGR p.11-78 (out/refs/adsp-2136x_2137x_214xx_pgr_rev2.4/
+# all.txt:23036-23052): "Rn = FEXT Rx BY <bit6>:<len6> (SE) ... The MSBs of
+# Rn are sign-extended by the MSB of the extracted field"; PRM p.3-17
+# (out/refs/sharc-plus-prm/all.txt:3486): the (SE) option "sign extends the
+# left bits" of the field FEXT would otherwise clear. Vectors below are the
+# ones the bug report recorded from dt2-1.16 sw 0x1c2607's block (function
+# 0x1c24e9), whose every fext-se there has pos=0, len=16 (confirmed via
+# tools/sharc.py against out/sharcdb/dt2-1.16.sqlite).
+# ---------------------------------------------------------------------------
+
+
+class FextSeOpcodeTest(unittest.TestCase):
+    def test_positive_field_low_bit_unaffected(self):
+        # R2 = 0x00012345, pos=0, len=16: field = 0x2345, MSB (bit 15) is 0
+        # -> no sign extension, matching plain FEXT (opcode 0x10) on the
+        # same field. Before the fix this leaked bit 16 (0x10000) of the
+        # source, returning 0x12345 instead.
+        rn, value, op, update = T._shift_immediate(
+            shiftimm_fields(0x12, data8=0, rn=0, rx=2, dataex=4),
+            {2: T.Const(0x00012345)},
+        )
+        self.assertEqual(rn, 0)
+        self.assertEqual(value, T.Const(0x2345))
+        self.assertEqual(op, "field-extract-immediate-se")
+
+    def test_negative_field_sign_extends_to_32_bits(self):
+        # R2 = 0x00018000, pos=0, len=16: field = 0x8000, MSB set -> sign
+        # extend to 0xffff8000. Before the fix this returned 0x8000
+        # unextended (the field's own bits were right, but nothing above
+        # bit 15 was filled in).
+        rn, value, op, update = T._shift_immediate(
+            shiftimm_fields(0x12, data8=0, rn=0, rx=2, dataex=4),
+            {2: T.Const(0x00018000)},
+        )
+        self.assertEqual(value, T.Const(0xFFFF8000))
+
+    def test_source_bits_above_the_field_never_leak(self):
+        # R2 = 0xabcd7fff, pos=0, len=16: field = 0x7fff, MSB clear -> the
+        # field itself, with every bit of 0xabcd0000 above it discarded.
+        # Before the fix, source.value (0xabcd7fff) was passed to _signed
+        # unmasked; its bit 15 happened to be 0 so the sign check still
+        # passed, but the result kept all of 0xabcd7fff instead of masking
+        # down to the 16-bit field.
+        rn, value, op, update = T._shift_immediate(
+            shiftimm_fields(0x12, data8=0, rn=0, rx=2, dataex=4),
+            {2: T.Const(0xABCD7FFF)},
+        )
+        self.assertEqual(value, T.Const(0x7FFF))
+
+    def test_field_narrower_than_16_still_masks_and_sign_extends(self):
+        # A position/length not seen in dt2-1.16 but legal per the manual:
+        # R1 = fext-se(R3, pos=4, len=4). Source = 0x000005F0 -> bits 7:4 =
+        # 0xF (1111), MSB of the 4-bit field set -> sign-extends to
+        # 0xFFFFFFFF. data8 bit layout: position = data8 & 0x3F = 4,
+        # length = (dataex << 2) | (data8 >> 6) = 4 -> dataex=1, data8=4.
+        rn, value, op, update = T._shift_immediate(
+            shiftimm_fields(0x12, data8=4, rn=1, rx=3, dataex=1),
+            {3: T.Const(0x000005F0)},
+        )
+        self.assertEqual(rn, 1)
+        self.assertEqual(value, T.Const(0xFFFFFFFF))
+
+    def test_length_32_uses_the_whole_word(self):
+        # pos=0, len=32 (data8=0, dataex=8: length=(8<<2)|0=32): the field
+        # is the entire 32-bit source, so there are no bits above it left to
+        # sign-extend -- the 32-bit two's-complement value is unchanged
+        # regardless of its sign bit.
+        rn, value, op, update = T._shift_immediate(
+            shiftimm_fields(0x12, data8=0, rn=0, rx=2, dataex=8),
+            {2: T.Const(0x80000000)},
+        )
+        self.assertEqual(value, T.Const(0x80000000))
+
+    def test_length_zero_is_zero(self):
+        rn, value, op, update = T._shift_immediate(
+            shiftimm_fields(0x12, data8=0, rn=0, rx=2, dataex=0),
+            {2: T.Const(0xFFFFFFFF)},
+        )
+        self.assertEqual(value, T.Const(0))
+
+    def test_unknown_source_stays_unknown(self):
+        rn, value, op, update = T._shift_immediate(
+            shiftimm_fields(0x12, data8=0, rn=0, rx=2, dataex=4),
+            {},
+        )
+        self.assertIsInstance(value, T.Unknown)
 
 
 if __name__ == "__main__":

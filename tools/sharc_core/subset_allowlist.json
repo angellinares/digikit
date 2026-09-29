@@ -1,0 +1,9 @@
+{
+ "allowed": {
+  "memory.py": {
+   "dict-build": 1,
+   "isinstance-type": 1
+  }
+ },
+ "comment": "Per-module allowance of translatable-subset violations (tools/sharc_subset_lint.py, tools/sharc_core/SUBSET.md). Counts only go down."
+}

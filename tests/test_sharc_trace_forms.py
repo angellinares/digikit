@@ -216,20 +216,14 @@ class Type5aSwapTest(unittest.TestCase):
 
 
 class Type4bTest(unittest.TestCase):
-    def test_long_word_load_post_modify_real_instance(self):
-        # real SW 0x1c6b4c: d=0 load into R4 (dreg 4), l=1, x=1, w=1 ->
-        # ACCESS_WIDTHS[(1, 1, 1)] = "long-word", u=1 post-modify, I3,
-        # data=7 (six-bit signed +7).
-        #
-        # tools/sharc_widthaudit.py's frame-render audit found this: this
-        # handler's own local ``widths`` dict (before this fix) mis-keyed
-        # (1, 1, 1) as ("normal-word", 4, False) -- ACCESS_WIDTHS' own
-        # (1, 1, 1) is "long-word" -- so 0x1c6b4c (and 316 more Type4b
-        # sites with these same three bits, all in the frame render) read
-        # a wrong, concrete 4-byte word instead of correctly declining an
-        # 8-byte access this tracer does not model (sharc_core.memory.
-        # _dm_read refuses width=8, "a register pair, which this tracer
-        # does not model" -- see its own docstring).
+    """Type4b's (l, x, w) tables (PRM p.13-32, BH/BHSE (Type 4b)) have no
+    (lw) row: (1, 1, 1) is the row with no suffix, the plain normal-word
+    access (encoding.TYPE4B_ACCESS_WIDTHS). The immediate modifier is
+    scaled by the size of the access in byte space (PRM p.6-9)."""
+
+    def test_111_is_normal_word_load_post_modify_real_instance(self):
+        # real SW 0x1c6b4c: d=0 load into R4, (l, x, w) = (1, 1, 1), u=1
+        # post-modify, I3, data=+7.
         fields = {
             "cond[4:0]": 31,
             "d": 0,
@@ -243,21 +237,180 @@ class Type4bTest(unittest.TestCase):
             "w": 1,
             "x": 1,
         }
-        state = T.State(0x10, {T.UREG_CODES["I3"]: T.Const(0x4000)})
+        state = T.State(
+            0x10,
+            {T.UREG_CODES["I3"]: T.Const(0x30004000)},
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, 0x30004000, 4, T.Const(0x1234)))
         [result] = T._execute(state, insn("4b", fields, length=6))
         self.assertIsNone(result.stopped)
         load = result.trace[-1]
         self.assertEqual(load["action"], "load")
-        self.assertEqual(load["access_width"], "long-word")
+        self.assertEqual(load["access_width"], "normal-word")
         self.assertEqual(load["addressing_mode"], "post-modify")
-        self.assertEqual(load["address"], 0x4000)
-        # No concrete backing memory (this State has none) -- and even
-        # with one, sharc_core.memory._dm_read declines an 8-byte read
-        # outright -- so the load is Unknown, never a wrong Const.
-        self.assertIsInstance(result.uregs[T.UREG_CODES["R4"]], T.Unknown)
-        # Post-modify: long-word's own scale is fixed at 8, so
-        # I3 = 0x4000 + 7 * 8 = 0x4038.
-        self.assertEqual(result.uregs[T.UREG_CODES["I3"]], T.Const(0x4038))
+        self.assertEqual(result.uregs[T.UREG_CODES["R4"]], T.Const(0x1234))
+        self.assertNotIn(T.UREG_CODES["R5"], result.uregs)  # no pair load
+        # I3 = 0x30004000 + 7 * 4.
+        self.assertEqual(result.uregs[T.UREG_CODES["I3"]], T.Const(0x3000401C))
+
+    def test_sw_0x1c336b_reads_the_left_channel_slot(self):
+        # sw 0x1c336b "IF SZ R8 = DM(I6 - 12)", (l, x, w) = (1, 1, 1):
+        # FUN_1c3289 stored {L, R, frames} at I6-12..I6-10 normal words
+        # (sw 0x1c3341-0x1c3349) and read R with "R8 = DM(I6 - 11)"
+        # (Type15b, sw 0x1c3363). The (1, 1, 1) load must read L, the word
+        # at I6 - 48 bytes, not the one at I6 - 96.
+        fields = {
+            "cond[4:0]": 31,
+            "d": 0,
+            "data[4:0]": 20,
+            "data[5:5]": 1,
+            "dreg[3:0]": 8,
+            "g": 0,
+            "i[2:0]": 6,
+            "l": 1,
+            "u": 0,
+            "w": 1,
+            "x": 1,
+        }
+        i6 = 0x30005000
+        state = T.State(
+            0x1C336B,
+            {T.UREG_CODES["I6"]: T.Const(i6)},
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, i6 - 48, 4, T.Const(0x8422B9E8)))
+        self.assertTrue(T._dm_write(state, i6 - 44, 4, T.Const(0x842CC9E8)))
+        [result] = T._execute(state, insn("4b", fields, length=4))
+        self.assertEqual(result.uregs[T.UREG_CODES["R8"]], T.Const(0x8422B9E8))
+        self.assertNotIn(T.UREG_CODES["R9"], result.uregs)
+        self.assertEqual(result.uregs[T.UREG_CODES["I6"]], T.Const(i6))
+
+    def test_111_store_writes_one_word(self):
+        # sw 0x1c26eb "DM(I5, 27) = R10", (1, 1, 1), post-modify: the
+        # record fields after it are addressed as I5 - 26 .. I5 - 7, so
+        # the store is one normal word and I5 advances 27 words.
+        fields = {
+            "cond[4:0]": 31,
+            "d": 1,
+            "data[4:0]": 27,
+            "data[5:5]": 0,
+            "dreg[3:0]": 10,
+            "g": 0,
+            "i[2:0]": 5,
+            "l": 1,
+            "u": 1,
+            "w": 1,
+            "x": 1,
+        }
+        state = T.State(
+            0x10,
+            {
+                T.UREG_CODES["I5"]: T.Const(0x30006000),
+                T.UREG_CODES["R10"]: T.Const(0xA5A5),
+                T.UREG_CODES["R11"]: T.Const(0x5A5A),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, 0x30006004, 4, T.Const(0x77)))
+        [result] = T._execute(state, insn("4b", fields, length=4))
+        self.assertTrue(result.trace[-1]["concrete_write"])
+        self.assertEqual(T._dm_read(result, 0x30006000, 4), T.Const(0xA5A5))
+        self.assertEqual(T._dm_read(result, 0x30006004, 4), T.Const(0x77))
+        self.assertEqual(result.uregs[T.UREG_CODES["I5"]], T.Const(0x3000606C))
+
+    def test_011_is_not_a_type4b_encoding(self):
+        # (0, 1, 1) is Type3b's normal-word row, absent from Type4b's.
+        fields = {
+            "cond[4:0]": 31,
+            "d": 0,
+            "data[4:0]": 1,
+            "data[5:5]": 0,
+            "dreg[3:0]": 2,
+            "g": 0,
+            "i[2:0]": 0,
+            "l": 0,
+            "u": 0,
+            "w": 1,
+            "x": 1,
+        }
+        state = T.State(0x10, {T.UREG_CODES["I0"]: T.Const(0x4000)})
+        [result] = T._execute(state, insn("4b", fields))
+        self.assertEqual(result.stopped, "unsupported Type4b access width")
+
+
+class LongWordModifierScaleTest(unittest.TestCase):
+    """PRM p.6-9: load/store modifiers scale by the size of the access in
+    byte space, "except in the case of (lw)"; Table 6-2 (pp.6-10/6-11)
+    gives the (lw) rows scaled_mod = mod << 2, and no scaling in word
+    space."""
+
+    def test_long_word_scales_like_a_normal_word(self):
+        scale = import_module("sharc_core.memory")._access_modifier_scale
+        self.assertEqual(scale("long-word", True), 4)
+        self.assertEqual(scale("normal-word", True), 4)
+        self.assertEqual(scale("long-word", False), 1)
+        self.assertEqual(scale("normal-word", False), 1)
+
+
+class ModifyScaleTest(unittest.TestCase):
+    """PRM p.6-10: "Ia = MODIFY(Ib,Mc); /* Add Mc bytes, Ia=Ib+Mc */ Does
+    not scale the modifier, whatever the address space"; only (sw)/(nw)
+    scale (Table 6-2). Type7b has no (sw)/(nw) bits (p.13-50)."""
+
+    def test_type7b_adds_a_byte_offset(self):
+        # sw 0x1c661c "I4 = modify(I4, M0)": I4 = 0x14 (a record offset),
+        # M0 = 0x245c4c (a table address).
+        fields = {
+            "cond[4:0]": 31,
+            "g": 0,
+            "is[2:2]": 1,
+            "is[1:0]": 0,
+            "idis[2:0]": 0,
+            "m[2:0]": 0,
+        }
+        state = T.State(
+            0x10,
+            {
+                T.UREG_CODES["I4"]: T.Const(0x14),
+                T.UREG_CODES["M0"]: T.Const(0x245C4C),
+                T.UREG_CODES["L4"]: T.Const(0),
+            },
+            assume_nw32=True,
+        )
+        [result] = T._execute(state, insn("7b", fields))
+        self.assertEqual(result.uregs[T.UREG_CODES["I4"]], T.Const(0x245C60))
+
+    def test_type7a_plain_modify_is_unscaled_and_nw_is_scaled(self):
+        base = {
+            "cond[4:0]": 31,
+            "g": 0,
+            "is[2:2]": 1,
+            "is[1:0]": 1,
+            "idis[2:0]": 0,
+            "m[2:0]": 6,
+            "compute[22:16]": 0,
+            "compute[15:0]": 0,
+        }
+        for (w, lbit), expected in (
+            ((0, 0), 0x1001),
+            ((1, 0), 0x1004),
+            ((0, 1), 0x1002),
+        ):
+            with self.subTest(w=w, l=lbit):
+                state = T.State(
+                    0x10,
+                    {
+                        T.UREG_CODES["I5"]: T.Const(0x1000),
+                        T.UREG_CODES["M6"]: T.Const(1),
+                    },
+                    assume_nw32=True,
+                )
+                [result] = T._execute(state, insn("7a", {**base, "w": w, "l": lbit}, 6))
+                self.assertEqual(result.uregs[T.UREG_CODES["I5"]], T.Const(expected))
 
 
 class Type4dTest(unittest.TestCase):
@@ -535,9 +688,12 @@ class Type3aLongWordTest(unittest.TestCase):
             0x10,
             {
                 T.UREG_CODES["I1"]: T.Const(0x30001000),
-                T.UREG_CODES["M4"]: T.Const(1),
+                # The firmware steps (lw) pairs with M = 2 (sw 0x1c11fe,
+                # 0xb80295: "M4 = 0x2" before "R0 = DM(I4, M4) (lw)").
+                T.UREG_CODES["M4"]: T.Const(2),
             },
             concrete=loader_memory(),
+            assume_nw32=True,
         )
         self.assertTrue(T._dm_write(state, 0x30001000, 4, T.Const(0xAAAA)))
         self.assertTrue(T._dm_write(state, 0x30001004, 4, T.Const(0xBBBB)))
@@ -555,9 +711,10 @@ class Type3aLongWordTest(unittest.TestCase):
         # its neighbor RY the high 32 bits of one 64-bit access).
         self.assertEqual(result.uregs[T.UREG_CODES["R0"]], T.Const(0xAAAA))
         self.assertEqual(result.uregs[T.UREG_CODES["R1"]], T.Const(0xBBBB))
-        # Post-modify: I1 advances by M4 * 8 (long-word's own modifier
-        # scale, sharc_core.memory._access_modifier_scale), not by the
-        # normal-word scale of 4.
+        # Post-modify: an (lw) modifier is scaled like a normal word, by 4
+        # in byte space (PRM p.6-9 "except in the case of (lw)"; Table 6-2
+        # "Rm = dm(In, mod) (lw)": scaled_mod = mod << 2), so M4 = 2 steps
+        # one 64-bit pair.
         self.assertEqual(result.uregs[T.UREG_CODES["I1"]], T.Const(0x30001008))
 
     def test_pair_store_pre_modify(self):
@@ -576,11 +733,12 @@ class Type3aLongWordTest(unittest.TestCase):
             0x10,
             {
                 T.UREG_CODES["I2"]: T.Const(0x30002000),
-                T.UREG_CODES["M3"]: T.Const(1),
+                T.UREG_CODES["M3"]: T.Const(2),
                 T.UREG_CODES["R4"]: T.Const(0x11111111),
                 T.UREG_CODES["R5"]: T.Const(0x22222222),
             },
             concrete=loader_memory(),
+            assume_nw32=True,
         )
         [result] = T._execute(state, insn("3a", fields, length=6))
         self.assertIsNone(result.stopped)
@@ -590,7 +748,7 @@ class Type3aLongWordTest(unittest.TestCase):
         self.assertEqual(store["addressing_mode"], "pre-modify")
         self.assertEqual(store["ureg_pair"], ["R4", "R5"])
         self.assertTrue(store["concrete_write"])
-        # Pre-modify: the address for this access is I2 + M3 * 8 = 0x30002008;
+        # Pre-modify: the address for this access is I2 + M3 * 4 = 0x30002008;
         # I2 itself is left unchanged (matching Type3a/3d/4a's own convention).
         self.assertEqual(store["address"], 0x30002008)
         self.assertEqual(result.uregs[T.UREG_CODES["I2"]], T.Const(0x30002000))
@@ -897,10 +1055,11 @@ class Type7aShortWordScaleTest(unittest.TestCase):
         self.assertEqual(result.uregs[T.UREG_CODES["I4"]], T.Const(0x2000 + 6 * 2))
 
     def test_normal_word_modify_unaffected_by_l_absent(self):
-        # Same shape with l omitted (as every other hand-built Type7a
-        # fixture in this file has it): must still scale by 4, unchanged.
+        # Same shape with l omitted: (w, l) = (1, 0) is (nw) and scales by
+        # 4 (the blank (0, 0) row is the unscaled plain MODIFY, see
+        # ModifyScaleTest).
         fields = {
-            "w": 0,
+            "w": 1,
             "cond[4:0]": 31,
             "g": 0,
             "idis[2:0]": 0,

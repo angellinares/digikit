@@ -147,42 +147,29 @@ def build_flash(syx_path, size=0x1000000):
     return bytes(flash)
 
 
-def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
-        patch_sem=True, patch_depack=True, verbose=False, stall_window=3_000_000,
-        extra_hook=None, fast=True, resume_from=None, machine_out=None,
-        pre_start=None, sdgate=True, esdhc=True, card_image=None):
-    """resume_from: path to a snapshot (see emu/snapshot.py). Loads registers
-    and memory instead of starting at ENTRY, but installs the *same* hooks, so
-    a resumed run behaves identically to the equivalent straight run. Without
-    that the resumed run would miss flash HLE, the semaphore patch and the
-    scheduler tick, and silently diverge.
-    sdgate: install emu.gpio.SdGate, modelling the GPIO loopback the cold-boot
-    continuity check reads. esdhc: install emu.esdhc.Esdhc behind it, using
-    profile.sd_status as its drv_status (None if unresolved, in which case
-    Esdhc falls back to its own module default). Both default to True: without
-    them the firmware's SD bring-up never runs, the storage-ready flag stays
-    0, and every block-storage read returns -1. With them on, both builds
-    reach MAIN_OS_RUNNING under tools/bootcheck.py --verify -- Digitone's
-    display module initialises for the first time, and Digitakt's cold boot
-    creates 9 tasks instead of 5, including the priority-6 Main OS task at
-    entry 0x40032f5a. Digitakt reaches MAIN_OS_RUNNING both with and without
-    them, so turning them on does not regress the previously-working build.
-    Pass sdgate=False and/or esdhc=False for the old unmodelled-storage
-    behaviour.
-    machine_out: if given, receives 'm' (the Machine) and 'st' (the stats
-    dict) before emu_start is called, so a pre_start hook can see both.
-    card_image: path to a +Drive image built by tools/plusdrive.py. Passed
-    through to emu.esdhc.Card.from_file, which mmaps it read-only; writes
-    during the run go to the in-RAM overlay and the file itself is never
-    modified. Only meaningful when esdhc=True; ignored otherwise."""
-    """fast=True (default): FF1/MOVEC and every HOT_ADDRS side effect are
-    registered as per-address Unicorn hooks (begin=end=addr) instead of one
-    global UC_HOOK_CODE that runs Python on every instruction and then
-    branches. Only instruction counting / coverage tracking (which
-    inherently needs to see every instruction) stays global, and is kept as
-    small as possible. See harness.install_isa_patches_scoped's docstring.
-    fast=False keeps the original single-global-hook implementation, useful
-    to cross-check the two give identical results.
+def prepare(syx_path, main_img, tick_vec=32, tick_every=20000,
+            patch_sem=True, patch_depack=True, verbose=False, stall_window=3_000_000,
+            extra_hook=None, fast=True, resume_from=None,
+            sdgate=True, esdhc=True, card_image=None, coverage=True):
+    """Build a hooked Machine and resolve its start PC, WITHOUT calling
+    emu_start. -> (m, st, start_pc).
+
+    Factored out of run() so a caller that wants to drive execution itself
+    (emu.checkpoint.make's no-coverage ladder path, see its own docstring)
+    gets exactly the hook set and setup a fast=True run installs, instead of
+    re-implementing it and risking the two drifting apart. run() is this
+    function plus the emu_start call; every existing run() caller is
+    unaffected. See run()'s docstring for what each parameter does.
+
+    coverage: EXPERIMENTAL, opt-in, worktree-only measurement flag (see
+    HANDOVER/finding-07 "cold-boot cover-hook cost"). False skips installing
+    the global per-instruction `cover` hook below entirely: st['seen'],
+    st['stall_pcs'], st['curve'] then stay empty and extra_hook is never
+    called (checkpoint.make's OLD extra_hook-driven ladder save relies on
+    it -- do not pass coverage=False there; its new no-coverage path calls
+    this function directly and does its own chunked stepping instead). Only
+    affects the fast=True path; fast=False is unaffected. Default True keeps
+    prior behaviour byte-identical.
     """
     # Resolve every address this run needs from the image itself, instead of
     # the module-level constants above (which stay put as the Digitakt
@@ -275,18 +262,19 @@ def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
 
     if fast:
         # lightweight, GLOBAL: only counting + coverage (must see every insn)
-        def cover(uc, addr, size, data):
-            st['n'] += 1
-            if addr not in st['seen']:
-                st['seen'].add(addr)
-                st['last_new_n'] = st['n']
-            elif st['n'] - st['last_new_n'] > stall_window:
-                st['stall_pcs'][addr] += 1
-            if st['n'] % 10_000_000 == 0:
-                st['curve'].append((st['n'] // 1_000_000, len(st['seen'])))
-            if extra_hook:
-                extra_hook(uc, addr, size, st)
-        m.uc.hook_add(UC_HOOK_CODE, cover)
+        if coverage:
+            def cover(uc, addr, size, data):
+                st['n'] += 1
+                if addr not in st['seen']:
+                    st['seen'].add(addr)
+                    st['last_new_n'] = st['n']
+                elif st['n'] - st['last_new_n'] > stall_window:
+                    st['stall_pcs'][addr] += 1
+                if st['n'] % 10_000_000 == 0:
+                    st['curve'].append((st['n'] // 1_000_000, len(st['seen'])))
+                if extra_hook:
+                    extra_hook(uc, addr, size, st)
+            m.uc.hook_add(UC_HOOK_CODE, cover)
         m.install_isa_patches_scoped(main_img, MAIN_LOAD)
 
         def scoped(addr, fn):
@@ -393,6 +381,54 @@ def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
         m.uc.reg_write(UC_M68K_REG_SR, 0x2700)
         m.uc.reg_write(UC_M68K_REG_A7, 0x40800000)
         start_pc = profile.entry
+    return m, st, start_pc
+
+
+def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
+        patch_sem=True, patch_depack=True, verbose=False, stall_window=3_000_000,
+        extra_hook=None, fast=True, resume_from=None, machine_out=None,
+        pre_start=None, sdgate=True, esdhc=True, card_image=None, coverage=True):
+    """resume_from: path to a snapshot (see emu/snapshot.py). Loads registers
+    and memory instead of starting at ENTRY, but installs the *same* hooks, so
+    a resumed run behaves identically to the equivalent straight run. Without
+    that the resumed run would miss flash HLE, the semaphore patch and the
+    scheduler tick, and silently diverge.
+    sdgate: install emu.gpio.SdGate, modelling the GPIO loopback the cold-boot
+    continuity check reads. esdhc: install emu.esdhc.Esdhc behind it, using
+    profile.sd_status as its drv_status (None if unresolved, in which case
+    Esdhc falls back to its own module default). Both default to True: without
+    them the firmware's SD bring-up never runs, the storage-ready flag stays
+    0, and every block-storage read returns -1. With them on, both builds
+    reach MAIN_OS_RUNNING under tools/bootcheck.py --verify -- Digitone's
+    display module initialises for the first time, and Digitakt's cold boot
+    creates 9 tasks instead of 5, including the priority-6 Main OS task at
+    entry 0x40032f5a. Digitakt reaches MAIN_OS_RUNNING both with and without
+    them, so turning them on does not regress the previously-working build.
+    Pass sdgate=False and/or esdhc=False for the old unmodelled-storage
+    behaviour.
+    machine_out: if given, receives 'm' (the Machine) and 'st' (the stats
+    dict) before emu_start is called, so a pre_start hook can see both.
+    card_image: path to a +Drive image built by tools/plusdrive.py. Passed
+    through to emu.esdhc.Card.from_file, which mmaps it read-only; writes
+    during the run go to the in-RAM overlay and the file itself is never
+    modified. Only meaningful when esdhc=True; ignored otherwise.
+    coverage: see prepare()'s docstring -- forwarded unchanged. Default True
+    keeps this function's behaviour exactly as before this flag existed."""
+    """fast=True (default): FF1/MOVEC and every HOT_ADDRS side effect are
+    registered as per-address Unicorn hooks (begin=end=addr) instead of one
+    global UC_HOOK_CODE that runs Python on every instruction and then
+    branches. Only instruction counting / coverage tracking (which
+    inherently needs to see every instruction) stays global, and is kept as
+    small as possible. See harness.install_isa_patches_scoped's docstring.
+    fast=False keeps the original single-global-hook implementation, useful
+    to cross-check the two give identical results.
+    """
+    m, st, start_pc = prepare(
+        syx_path, main_img, tick_vec=tick_vec, tick_every=tick_every,
+        patch_sem=patch_sem, patch_depack=patch_depack, verbose=verbose,
+        stall_window=stall_window, extra_hook=extra_hook, fast=fast,
+        resume_from=resume_from, sdgate=sdgate, esdhc=esdhc,
+        card_image=card_image, coverage=coverage)
     if machine_out is not None:
         machine_out['m'] = m
         # st['n'] is the live instruction counter -- exposing it here lets a

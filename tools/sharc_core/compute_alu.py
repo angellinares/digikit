@@ -9,8 +9,6 @@ branch's own PRM/PGR citation.
 
 from __future__ import annotations
 
-import math
-import struct
 from collections.abc import Callable, Mapping
 
 from .encoding import (
@@ -31,7 +29,6 @@ from .flags import (
     _astatx_alu_logical,
     _astatx_compare,
     _astatx_compare_float,
-    _astatx_from_updates,
     _compare_flags,
     _compare_flags_float,
     _double_alu_updates,
@@ -46,6 +43,12 @@ from .floats import (
     _double_to_fixed,
     _double_to_float32,
     _double_unary,
+    _f32_from_bits,
+    _f_add,
+    _f_avg,
+    _f_neg,
+    _f_pass,
+    _f_sub,
     _fixed_to_double,
     _fixed_to_double_scaled,
     _fixed_to_float,
@@ -66,6 +69,7 @@ from .floats import (
     _float_unary,
     _scale_double_input,
     _scale_fixed_input,
+    _sqrt,
 )
 from .state import _ureg, _ureg_raw
 from .values import (
@@ -76,7 +80,12 @@ from .values import (
     _add,
     _astatx_known_bit,
     _bitwise,
+    _flags_from_pairs,
+    _flags_put,
     _not,
+    _op_and,
+    _op_or,
+    _op_xor,
     _signed32,
     _subtract,
 )
@@ -113,10 +122,10 @@ def dual_add_subtract(
     RA=RN/FN at bits 11:8 (already read above as RN)."""
     if float_form:
         add_value, add_overflow, add_invalid = _float_binary(
-            left, right, "F%d + F%d" % (rx, ry), lambda a, b: a + b
+            left, right, "F%d + F%d" % (rx, ry), _f_add
         )
         sub_value, sub_overflow, sub_invalid = _float_binary(
-            left, right, "F%d - F%d" % (rx, ry), lambda a, b: a - b
+            left, right, "F%d - F%d" % (rx, ry), _f_sub
         )
         updates = _or_updates(
             _float_alu_updates(add_value, av=add_overflow, ai=add_invalid),
@@ -135,7 +144,7 @@ def dual_add_subtract(
         (rn, rs),
         (add_value, sub_value),
         operation,
-        _astatx_from_updates(updates),
+        updates,
     )
 
 
@@ -300,9 +309,9 @@ def alu_abs(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
 # PRM Table 18-5: ALUOP 01000000..01000010 are the integer logical
 # operations AND, OR, and XOR.
 _LOGICAL_OPS = {
-    0x40: ("and", lambda a, b: a & b),
-    0x41: ("or", lambda a, b: a | b),
-    0x42: ("xor", lambda a, b: a ^ b),
+    0x40: ("and", _op_and),
+    0x41: ("or", _op_or),
+    0x42: ("xor", _op_xor),
 }
 
 
@@ -337,13 +346,13 @@ def alu_not(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
 # the SHARC+ PRM only marks a column "*"/data-dependent).
 def alu_float_add(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
     value, overflow, invalid = _float_binary(
-        left, right, "F%d + F%d" % (rx, ry), lambda a, b: a + b
+        left, right, "F%d + F%d" % (rx, ry), _f_add
     )
     return (
         rn,
         value,
         "float-add",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -351,13 +360,13 @@ def alu_float_subtract(
     rn, rx, ry, left, right, values, special, approx_recips
 ) -> tuple:
     value, overflow, invalid = _float_binary(
-        left, right, "F%d - F%d" % (rx, ry), lambda a, b: a - b
+        left, right, "F%d - F%d" % (rx, ry), _f_sub
     )
     return (
         rn,
         value,
         "float-subtract",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -372,13 +381,13 @@ def alu_float_subtract(
 # tracking overflow the way float-add's AV does.
 def alu_float_average(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
     value, _overflow, invalid = _float_binary(
-        left, right, "(F%d + F%d) / 2" % (rx, ry), lambda a, b: (a + b) / 2
+        left, right, "(F%d + F%d) / 2" % (rx, ry), _f_avg
     )
     return (
         rn,
         value,
         "float-average",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -389,17 +398,13 @@ def alu_float_average(rn, rx, ry, left, right, values, special, approx_recips) -
 def alu_float_abs_subtract(
     rn, rx, ry, left, right, values, special, approx_recips
 ) -> tuple:
-    diff, overflow, invalid = _float_binary(
-        left, right, "F%d - F%d" % (rx, ry), lambda a, b: a - b
-    )
+    diff, overflow, invalid = _float_binary(left, right, "F%d - F%d" % (rx, ry), _f_sub)
     value = Const(diff.value & 0x7FFFFFFF) if isinstance(diff, Const) else diff
     return (
         rn,
         value,
         "float-abs-subtract",
-        _astatx_from_updates(
-            _float_alu_updates(value, av=overflow, an_zero=True, ai=invalid)
-        ),
+        _float_alu_updates(value, av=overflow, an_zero=True, ai=invalid),
     )
 
 
@@ -412,23 +417,23 @@ def alu_float_compare(rn, rx, ry, left, right, values, special, approx_recips) -
 
 # PGR p.11-32: Fn = pass Fx.
 def alu_float_pass(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
-    value, overflow, invalid = _float_unary(left, "pass F%d" % rx, lambda a: a)
+    value, overflow, invalid = _float_unary(left, "pass F%d" % rx, _f_pass)
     return (
         rn,
         value,
         "float-pass",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
 # PGR p.11-30: Fn = -Fx.
 def alu_float_negate(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
-    value, overflow, invalid = _float_unary(left, "-F%d" % rx, lambda a: -a)
+    value, overflow, invalid = _float_unary(left, "-F%d" % rx, _f_neg)
     return (
         rn,
         value,
         "float-negate",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -440,7 +445,7 @@ def alu_float_round32(rn, rx, ry, left, right, values, special, approx_recips) -
         rn,
         value,
         "float-round32",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -451,16 +456,18 @@ def alu_float_round32(rn, rx, ry, left, right, values, special, approx_recips) -
 # *input*'s sign/infinity/NAN rather than the result.
 def alu_float_mant(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
     value, overflow, negative, invalid = _float_mantissa(left, "mant F%d" % rx)
-    updates = {
-        AC_BIT: False,
-        AF_BIT: True,
-        AN_BIT: False,
-        AV_BIT: overflow,
-        AS_BIT: negative,
-        AI_BIT: invalid,
-        AZ_BIT: (value.value == 0) if isinstance(value, Const) else None,
-    }
-    return rn, value, "mant", _astatx_from_updates(updates)
+    updates = _flags_from_pairs(
+        (
+            (AC_BIT, False),
+            (AF_BIT, True),
+            (AN_BIT, False),
+            (AV_BIT, overflow),
+            (AS_BIT, negative),
+            (AI_BIT, invalid),
+            (AZ_BIT, (value.value == 0) if isinstance(value, Const) else None),
+        )
+    )
+    return rn, value, "mant", updates
 
 
 # PGR p.11-36 (pgr.txt:21522), opcode 1100 0001: RN = LOGB FX. Bespoke
@@ -471,16 +478,21 @@ def alu_float_mant(rn, rx, ry, left, right, values, special, approx_recips) -> t
 def alu_float_logb(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
     mode1 = _ureg_raw(values, UREG_CODES["MODE1"])
     value, overflow, invalid = _float_logb(left, mode1, "logb F%d" % rx)
-    updates = {
-        AC_BIT: False,
-        AF_BIT: True,
-        AS_BIT: False,
-        AV_BIT: overflow,
-        AI_BIT: invalid,
-        AZ_BIT: (value.value == 0) if isinstance(value, Const) else None,
-        AN_BIT: bool(value.value & 0x80000000) if isinstance(value, Const) else None,
-    }
-    return rn, value, "logb", _astatx_from_updates(updates)
+    updates = _flags_from_pairs(
+        (
+            (AC_BIT, False),
+            (AF_BIT, True),
+            (AS_BIT, False),
+            (AV_BIT, overflow),
+            (AI_BIT, invalid),
+            (AZ_BIT, (value.value == 0) if isinstance(value, Const) else None),
+            (
+                AN_BIT,
+                bool(value.value & 0x80000000) if isinstance(value, Const) else None,
+            ),
+        )
+    )
+    return rn, value, "logb", updates
 
 
 # PGR p.11-31: Fn = abs Fx. AN fixed 0; AS carries the *input*'s sign.
@@ -490,11 +502,7 @@ def alu_float_abs(rn, rx, ry, left, right, values, special, approx_recips) -> tu
         rn,
         value,
         "float-abs",
-        _astatx_from_updates(
-            _float_alu_updates(
-                value, av=False, an_zero=True, as_source=left, ai=invalid
-            )
-        ),
+        _float_alu_updates(value, av=False, an_zero=True, as_source=left, ai=invalid),
     )
 
 
@@ -508,7 +516,7 @@ def alu_float_scalb(rn, rx, ry, left, right, values, special, approx_recips) -> 
         rn,
         value,
         "float-scalb",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -547,7 +555,7 @@ def alu_float_copysign(
         rn,
         value,
         "float-copysign",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -562,7 +570,7 @@ def _alu_minmax_float_impl(rn, rx, ry, left, right, minimum: bool) -> tuple:
         rn,
         value,
         "float-" + name,
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -583,7 +591,7 @@ def alu_float_clip(rn, rx, ry, left, right, values, special, approx_recips) -> t
         rn,
         value,
         "float-clip",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -594,7 +602,7 @@ def alu_float_convert(rn, rx, ry, left, right, values, special, approx_recips) -
         rn,
         value,
         "float-convert",
-        _astatx_from_updates(_float_alu_updates(value, av=False, ai=invalid)),
+        _float_alu_updates(value, av=False, ai=invalid),
     )
 
 
@@ -609,7 +617,7 @@ def alu_float_convert_scaled(
         rn,
         value,
         "float-convert-scaled",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=False)),
+        _float_alu_updates(value, av=overflow, ai=False),
     )
 
 
@@ -623,7 +631,7 @@ def alu_fix(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
         rn,
         value,
         "fix",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -635,7 +643,7 @@ def alu_trunc(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
         rn,
         value,
         "trunc",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -653,7 +661,7 @@ def alu_fix_scaled(rn, rx, ry, left, right, values, special, approx_recips) -> t
         rn,
         value,
         "fix-scaled",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -670,7 +678,7 @@ def alu_trunc_scaled(rn, rx, ry, left, right, values, special, approx_recips) ->
         rn,
         value,
         "trunc-scaled",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -697,9 +705,9 @@ def _alu_recip_seed_impl(rn, rx, left, name: str, approx_recips: bool) -> tuple:
             # symbolic input still takes the approximated path, it just
             # cannot resolve to a concrete value.
             value, updates = _approx_recips(left)
-            return rn, value, "float-recips-seed-approx", _astatx_from_updates(updates)
+            return rn, value, "float-recips-seed-approx", updates
         updates = _float_alu_updates(Unknown(label), av=None, ai=None)
-        return rn, Unknown(label), op, _astatx_from_updates(updates)
+        return rn, Unknown(label), op, updates
     bits = left.value & 0xFFFFFFFF
     sign = (bits >> 31) & 1
     biased_exp = (bits >> 23) & 0xFF
@@ -713,7 +721,12 @@ def _alu_recip_seed_impl(rn, rx, left, name: str, approx_recips: bool) -> tuple:
     is_zero = biased_exp == 0
     is_pos_inf = biased_exp == 0xFF and mantissa == 0 and sign == 0
     is_neg_nonzero = sign == 1 and not is_zero and not is_nan
-    updates = {AC_BIT: False, AS_BIT: False}
+    updates = _flags_from_pairs(
+        (
+            (AC_BIT, False),
+            (AS_BIT, False),
+        )
+    )
 
     if name == "rsqrts":
         # PRM p.19-18 "FN = rsqrts FX" ASTATx/y Flags:
@@ -726,19 +739,19 @@ def _alu_recip_seed_impl(rn, rx, left, name: str, approx_recips: bool) -> tuple:
         # Same page, Function: "The input +-zero returns +-infinity and
         # sets the overflow flag. The input +infinity returns +zero. A NAN
         # input or a negative nonzero input returns a result of all 1s."
-        updates[AI_BIT] = is_nan or is_neg_nonzero
-        updates[AN_BIT] = bool(is_zero and sign)
-        updates[AV_BIT] = is_zero
+        updates = _flags_put(updates, AI_BIT, is_nan or is_neg_nonzero)
+        updates = _flags_put(updates, AN_BIT, bool(is_zero and sign))
+        updates = _flags_put(updates, AV_BIT, is_zero)
         if is_nan or is_neg_nonzero:
-            updates[AZ_BIT] = False
-            return rn, Const(0xFFFFFFFF), op, _astatx_from_updates(updates)
+            updates = _flags_put(updates, AZ_BIT, False)
+            return rn, Const(0xFFFFFFFF), op, updates
         if is_zero:
-            updates[AZ_BIT] = False
+            updates = _flags_put(updates, AZ_BIT, False)
             result = Const((sign << 31) | (0xFF << 23))
-            return rn, result, op, _astatx_from_updates(updates)
+            return rn, result, op, updates
         if is_pos_inf:
-            updates[AZ_BIT] = True
-            return rn, Const(0), op, _astatx_from_updates(updates)
+            updates = _flags_put(updates, AZ_BIT, True)
+            return rn, Const(0), op, updates
         # Ordinary positive finite input: the seed mantissa comes from an
         # unpublished ROM table, and the manual's own exponent formula
         # ("the unbiased exponent of Fn = INT[e/2] <?> 1", p.19-18) has a
@@ -753,18 +766,18 @@ def _alu_recip_seed_impl(rn, rx, left, name: str, approx_recips: bool) -> tuple:
         # documented number of accurate mantissa bits (rsqrts is "a 4-bit
         # accurate seed", half of recips's 8, so the top 4 mantissa bits
         # are kept and the low 19 zeroed, vs recips's top-8/low-15 split).
-        updates[AZ_BIT] = False
+        updates = _flags_put(updates, AZ_BIT, False)
         if approx_recips:
-            x = struct.unpack("<f", struct.pack("<I", bits))[0]
-            seed_bits, _overflowed = _float32_bits(1.0 / math.sqrt(x))
+            x = _f32_from_bits(bits)
+            seed_bits, _overflowed = _float32_bits(1.0 / _sqrt(x))
             seed_bits &= 0xFFF80000
             return (
                 rn,
                 Const(seed_bits),
                 "float-rsqrts-seed-approx",
-                _astatx_from_updates(updates),
+                updates,
             )
-        return rn, Unknown(label), op, _astatx_from_updates(updates)
+        return rn, Unknown(label), op, updates
 
     # name == "recips": PRM pp.19-16/19-17 "FN = recips FX" ASTATx/y Flags
     # (also quoted in full in floats._approx_recips's docstring):
@@ -773,30 +786,30 @@ def _alu_recip_seed_impl(rn, rx, left, name: str, approx_recips: bool) -> tuple:
     #   AV  Set if the input operand is +-zero, otherwise cleared
     #   AZ  Set if the floating-point result is +-zero (unbiased exponent
     #       of Fx is greater than +125), otherwise cleared
-    updates[AI_BIT] = is_nan
-    updates[AN_BIT] = bool(sign)
+    updates = _flags_put(updates, AI_BIT, is_nan)
+    updates = _flags_put(updates, AN_BIT, bool(sign))
     if is_nan:
-        updates[AV_BIT] = False
-        updates[AZ_BIT] = False
-        return rn, Const(0xFFFFFFFF), op, _astatx_from_updates(updates)
+        updates = _flags_put(updates, AV_BIT, False)
+        updates = _flags_put(updates, AZ_BIT, False)
+        return rn, Const(0xFFFFFFFF), op, updates
     if is_zero:
-        updates[AV_BIT] = True
-        updates[AZ_BIT] = False
+        updates = _flags_put(updates, AV_BIT, True)
+        updates = _flags_put(updates, AZ_BIT, False)
         result = Const((sign << 31) | (0xFF << 23))
-        return rn, result, op, _astatx_from_updates(updates)
-    updates[AV_BIT] = False
+        return rn, result, op, updates
+    updates = _flags_put(updates, AV_BIT, False)
     unbiased_exp = biased_exp - 127
     if unbiased_exp > 125:
-        updates[AZ_BIT] = True
-        return rn, Const(sign << 31), op, _astatx_from_updates(updates)
-    updates[AZ_BIT] = False
+        updates = _flags_put(updates, AZ_BIT, True)
+        return rn, Const(sign << 31), op, updates
+    updates = _flags_put(updates, AZ_BIT, False)
     if approx_recips:
         # --approx-recips's own classification duplicates the above (kept
         # separate in floats.py, verified independently); only its
         # ordinary-case numeric mantissa approximation is used here.
         value, _ = _approx_recips(left)
-        return rn, value, "float-recips-seed-approx", _astatx_from_updates(updates)
-    return rn, Unknown(label), op, _astatx_from_updates(updates)
+        return rn, value, "float-recips-seed-approx", updates
+    return rn, Unknown(label), op, updates
 
 
 def alu_recips_seed(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
@@ -830,13 +843,13 @@ def alu_double_add(rn, rx, ry, left, right, values, special, approx_recips) -> t
         _ureg(values, ry + 1),
         _ureg(values, ry),
         "F%d:%d + F%d:%d" % (rx + 1, rx, ry + 1, ry),
-        lambda a, b: a + b,
+        _f_add,
     )
     return (
         (rn + 1, rn),
         (hi, lo),
         "double-add",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=overflow, ai=invalid)),
+        _double_alu_updates(hi, lo, av=overflow, ai=invalid),
     )
 
 
@@ -849,13 +862,13 @@ def alu_double_subtract(
         _ureg(values, ry + 1),
         _ureg(values, ry),
         "F%d:%d - F%d:%d" % (rx + 1, rx, ry + 1, ry),
-        lambda a, b: a - b,
+        _f_sub,
     )
     return (
         (rn + 1, rn),
         (hi, lo),
         "double-subtract",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=overflow, ai=invalid)),
+        _double_alu_updates(hi, lo, av=overflow, ai=invalid),
     )
 
 
@@ -878,13 +891,13 @@ def alu_double_negate(rn, rx, ry, left, right, values, special, approx_recips) -
         _ureg(values, rx + 1),
         _ureg(values, rx),
         "-F%d:%d" % (rx + 1, rx),
-        lambda a: -a,
+        _f_neg,
     )
     return (
         (rn + 1, rn),
         (hi, lo),
         "double-negate",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=False, ai=invalid)),
+        _double_alu_updates(hi, lo, av=False, ai=invalid),
     )
 
 
@@ -899,9 +912,7 @@ def alu_double_abs(rn, rx, ry, left, right, values, special, approx_recips) -> t
         (rn + 1, rn),
         (hi, lo),
         "double-abs",
-        _astatx_from_updates(
-            _double_alu_updates(hi, lo, av=False, an_zero=True, ai=invalid)
-        ),
+        _double_alu_updates(hi, lo, av=False, an_zero=True, ai=invalid),
     )
 
 
@@ -910,13 +921,13 @@ def alu_double_pass(rn, rx, ry, left, right, values, special, approx_recips) -> 
         _ureg(values, rx + 1),
         _ureg(values, rx),
         "pass F%d:%d" % (rx + 1, rx),
-        lambda a: a,
+        _f_pass,
     )
     return (
         (rn + 1, rn),
         (hi, lo),
         "double-pass",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=False, ai=invalid)),
+        _double_alu_updates(hi, lo, av=False, ai=invalid),
     )
 
 
@@ -933,7 +944,7 @@ def alu_double_fix(rn, rx, ry, left, right, values, special, approx_recips) -> t
         rn,
         value,
         "double-fix",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -954,7 +965,7 @@ def alu_double_fix_scaled(
         rn,
         value,
         "double-fix-scaled",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -971,7 +982,7 @@ def alu_double_trunc(rn, rx, ry, left, right, values, special, approx_recips) ->
         rn,
         value,
         "double-trunc",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -992,7 +1003,7 @@ def alu_double_trunc_scaled(
         rn,
         value,
         "double-trunc-scaled",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -1002,7 +1013,7 @@ def alu_double_float(rn, rx, ry, left, right, values, special, approx_recips) ->
         (rn + 1, rn),
         (hi, lo),
         "double-float",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=False, ai=invalid)),
+        _double_alu_updates(hi, lo, av=False, ai=invalid),
     )
 
 
@@ -1016,7 +1027,7 @@ def alu_double_float_scaled(
         (rn + 1, rn),
         (hi, lo),
         "double-float-scaled",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=overflow, ai=False)),
+        _double_alu_updates(hi, lo, av=overflow, ai=False),
     )
 
 
@@ -1031,7 +1042,7 @@ def alu_double_scalb(rn, rx, ry, left, right, values, special, approx_recips) ->
         (rn + 1, rn),
         (hi, lo),
         "double-scalb",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=overflow, ai=invalid)),
+        _double_alu_updates(hi, lo, av=overflow, ai=invalid),
     )
 
 
@@ -1045,7 +1056,7 @@ def alu_double_to_float32(
         rn,
         value,
         "double-to-float32",
-        _astatx_from_updates(_float_alu_updates(value, av=overflow, ai=invalid)),
+        _float_alu_updates(value, av=overflow, ai=invalid),
     )
 
 
@@ -1057,7 +1068,7 @@ def alu_float32_to_double(
         (rn + 1, rn),
         (hi, lo),
         "float32-to-double",
-        _astatx_from_updates(_double_alu_updates(hi, lo, av=False, ai=invalid)),
+        _double_alu_updates(hi, lo, av=False, ai=invalid),
     )
 
 

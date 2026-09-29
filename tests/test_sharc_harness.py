@@ -316,15 +316,24 @@ class FirmwareBackedTest(unittest.TestCase):
         self.assertEqual(h._dm_word(new_runner2.state, cw_addr2), 0x300)
 
     def test_drive_dma_completion_toggles_shift_and_rearms_copy_gate(self):
+        # The copy gate is re-armed only on request: the per-frame re-arm
+        # made the post-trig sample load unreachable (drive_dma_completion's
+        # docstring, 2026-09-28).
         init = h.run_init(self.memory, "dt2-1.16")
         self.assertTrue(init.ran, init.error)
         runner = h.new_runner(self.memory, "dt2-1.16", init=init)
         p = h.profile("dt2-1.16")
         self.assertEqual(h._dm_word(runner.state, p.command_word_shift_src), 0)
+        h._poke(runner.state, h.COPY_GATE_ADDRESS, 0, width=1)
 
         new_runner = h.drive_dma_completion(runner, "dt2-1.16")
         self.assertEqual(h._dm_word(new_runner.state, p.command_word_shift_src), 1)
         gate = sr.st._dm_read(new_runner.state, h.COPY_GATE_ADDRESS, 1)
+        self.assertEqual(gate.value, 0)
+
+        rearmed = h.drive_dma_completion(new_runner, "dt2-1.16", rearm_copy_gate=True)
+        self.assertEqual(h._dm_word(rearmed.state, p.command_word_shift_src), 0)
+        gate = sr.st._dm_read(rearmed.state, h.COPY_GATE_ADDRESS, 1)
         self.assertEqual(gate.value, 1)
 
     def test_setup_frame_dma_does_not_poke_command_word(self):
@@ -862,21 +871,24 @@ class FrameRenderFromInitTest(unittest.TestCase):
     def setUpClass(cls):
         cls.memory = h.load_image_memory("dt2-1.16")
 
-    def test_render_frames_without_patches_stops_at_the_first_known_fork(self):
+    def test_render_frames_without_patches_returns(self):
         runner, results = h.render_frames(
             self.memory, "dt2-1.16", n_frames=1, patch_table=None
         )
         self.assertEqual(len(results), 1)
         halt = results[0].halt
-        self.assertEqual(halt.reason.split(" ", 1)[0], "fork")
         # Originally the first of the known stops for an (almost) empty
-        # synthetic frame was 0xB88E4B (FIX-of-NaN/infinity, unsaturated).
-        # Lane G2 (2026-09-26) fixed that tools/sharc_core gap (see
-        # tools/sharc_core/floats.py's _float_to_fixed), so an unpatched
-        # render no longer forks there; the next known stop, 0x1C4969
-        # (the still-open, architecturally-undocumented BITEXT(BITLEN12>32)
-        # gap -- docs/findings/06's own "Lane G2" section), is now first.
-        self.assertEqual(halt.pc_sw, 0x1C4969)
+        # synthetic frame was 0xB88E4B (FIX-of-NaN/infinity, unsaturated),
+        # fixed by lane G2 (tools/sharc_core/floats.py's _float_to_fixed);
+        # then 0x1C4969, the supposed BITEXT(BITLEN12>32) gap. 2026-09-28:
+        # that "BITEXT" was ShiftImm 0x19, Rn = Rn or fdep (PGR Table
+        # 12-11; tools/sharc_core/compute_shift.py), so the frame now runs
+        # to block_handler's own return with no patch at all, and
+        # FRAME_PATCH_TABLE is empty.
+        self.assertEqual(h.FRAME_PATCH_TABLE, {})
+        self.assertEqual(halt.reason, h.FRAME_MILESTONE["reason"])
+        self.assertEqual(halt.pc_sw, h.FRAME_MILESTONE["pc_sw"])
+        self.assertEqual(results[0].instructions, h.FRAME_MILESTONE["instructions"])
 
     def test_render_frames_with_frame_patch_table_returns(self):
         runner, results = h.render_frames(self.memory, "dt2-1.16", n_frames=1)
@@ -1007,11 +1019,19 @@ class RingAMilestoneTest(unittest.TestCase):
         # the class docstring's "ring A's own L channel" note).
         self.assertGreater(max(abs(v) for v in left), 0.0)
         self.assertGreater(max(abs(v) for v in right), 0.0)
-        # L is the negation of R for this lane's own mono-duplicated
-        # injection (see the class docstring): pin that relationship too,
-        # not just each channel's own magnitude.
+        # 2026-09-28 re-pin. L == R: the block handler's ring A pass (sw
+        # 0x1c7593-0x1c759f, 16 SIMD passes over 64 words) negates every
+        # word once its PEy half runs (Type3a SIMD companion and the PEy
+        # compute of Type4a); the old "L is the negation of R" came from
+        # PEy storing a stale S1. And every frame repeats the same 32
+        # samples: on this synthetic frame the now-real parameter setters
+        # set voice 0's reverse flag (sw 0x1c4ba0) and a 0x46 end (sw
+        # 0x1c49c6), render_body clears ACTIVE in frame 0 (sw 0x1c5048),
+        # and the later frames re-inject its unchanged work buffer.
         for l_sample, r_sample in zip(left, right, strict=True):
-            self.assertAlmostEqual(l_sample, -r_sample, places=5)
+            self.assertAlmostEqual(l_sample, r_sample, places=5)
+        for frame in range(1, 4):
+            self.assertEqual(left[32 * frame : 32 * frame + 32], left[:32])
 
         # Deterministic output: pin it, rounded to 6 decimal places (float
         # repr noise only) by hash, the same convention
@@ -1020,7 +1040,7 @@ class RingAMilestoneTest(unittest.TestCase):
         digest = hashlib.sha256(repr(rounded).encode()).hexdigest()
         self.assertEqual(
             digest,
-            "88335070b1bd16edf007a8f4e67815d50e4c64bcd9e87ab88a0020e42050d071",
+            "1a01905595d06870fac4fb73e718dcc3902ea754ec2ad2503d0c807476bce03a",
         )
 
 
@@ -1198,12 +1218,18 @@ class RealFrameRingAMilestoneTest(unittest.TestCase):
         self.assertEqual(len(right), 8 * 32)
         self.assertGreater(max(abs(v) for v in left), 0.0)
         self.assertGreater(max(abs(v) for v in right), 0.0)
+        # 2026-09-28 re-pin: the same stale-block result as
+        # RingAMilestoneTest (see its comment) -- L == R and every frame
+        # repeats frame 0's 32 samples.
+        self.assertEqual(left, right)
+        for frame in range(1, 8):
+            self.assertEqual(left[32 * frame : 32 * frame + 32], left[:32])
 
         rounded = [round(v, 6) for v in left] + [round(v, 6) for v in right]
         digest = hashlib.sha256(repr(rounded).encode()).hexdigest()
         self.assertEqual(
             digest,
-            "4164f02956ae73c2ee8de616ea3177cc1075e6c9ad9dcdf2cedcf387185a2177",
+            "04484388a91f781eea0a470ccaf4cc9ccabeb3ab6f7b98ee207aad1cddceb5ea",
         )
 
 

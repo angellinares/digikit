@@ -63,7 +63,7 @@ if HERE not in sys.path:
 import sharc_harness as h  # noqa: E402
 import sharc_run as sr  # noqa: E402
 import sharcinv  # noqa: E402
-from sharc_core.encoding import ACCESS_WIDTHS  # noqa: E402
+from sharc_core.encoding import ACCESS_WIDTHS, TYPE4B_ACCESS_WIDTHS  # noqa: E402
 from sharc_core.forms import FORMS  # noqa: E402
 
 # --- static field/width tables ----------------------------------------------
@@ -115,11 +115,17 @@ def _forms_with_width_fields(
 
 
 def _w_access3(f: dict) -> str | None:
-    """Type3b/Type4b/Type4d's shared 3-bit ACCESS/BH/BHSE table (SHARC+ Core
-    Programming Reference pp.13-16--13-19/13-31--13-35): width is
-    ACCESS_WIDTHS[(l, x, w)] unconditionally -- see sharc_core/encoding.py's
-    own citation."""
+    """Type3b/Type4d's 3-bit ACCESS/BH/BHSE table (SHARC+ Core Programming
+    Reference pp.13-16--13-19/13-34--13-35): width is ACCESS_WIDTHS[(l, x,
+    w)] unconditionally -- see sharc_core/encoding.py's own citation."""
     return ACCESS_WIDTHS.get((f.get("l", 0), f.get("x", 0), f.get("w", 0)))
+
+
+def _w_4b(f: dict) -> str | None:
+    """Type4b's own BH/BHSE tables (PRM p.13-32): (1, 1, 1) is the plain
+    normal-word access and there is no (lw) or (0, 1, 1) row
+    (TYPE4B_ACCESS_WIDTHS, sharc_core/encoding.py)."""
+    return TYPE4B_ACCESS_WIDTHS.get((f.get("l", 0), f.get("x", 0), f.get("w", 0)))
 
 
 def _w_3d(f: dict) -> str | None:
@@ -190,7 +196,7 @@ def _w_19a_scaled(f: dict) -> str:
 WIDTH_RULES: dict[str, Callable[[dict], str | None]] = {
     "3a": _w_3a,
     "3b": _w_access3,
-    "4b": _w_access3,
+    "4b": _w_4b,
     "4d": _w_access3,
     "3d": _w_3d,
     "14d": _w_14d,

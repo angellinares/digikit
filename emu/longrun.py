@@ -75,12 +75,14 @@ def register_esdhc_checkpoint_component(machine, events, profile, components,
 def build(snapshot, send=b'', syx=None, isa='scoped',
           unblock=False, softfloat=False, bitmap=False, on_pixel=None,
           unblock_except=(), edma=True, real_sleep=False, dsp=False,
+          dsp_log=None,
           srtrap=False, weakptr=False, slc=False, sdgate=True, esdhc=True,
           card_image=None, esdhc_command_log=False,
           modeled_vectors=None,
           trace=None, trace_path=None, trace_ranges=(), trace_registers=None,
           deferred_components=(), idle_yield=20000, ssi0_request_hz=None,
-          ssi0_legacy_upgrade=False, dspi2_peer=None, ssi0_peer=None):
+          ssi0_legacy_upgrade=False, dspi2_peer=None, ssi0_peer=None,
+          ssi0_coalesce=False):
     """Stand up a hooked Machine and restore `snapshot` onto it.
 
     -> (m, ev, st, pc, inq, at) where `at(addr, fn)` registers a further
@@ -164,7 +166,9 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     dsp=True backs the `0x8C000000` coprocessor port's ready line, without
     which the priority-3 job worker wedges on its first transfer -- see
     emu/dsp.py. Default off because it is new, in the same spirit as
-    softfloat and bitmap defaulting off.
+    softfloat and bitmap defaulting off. dsp_log=PATH additionally records
+    the raw byte stream sent over it (see emu/dsp.py); off by default,
+    ignored when dsp=False.
 
     weakptr=True neutralises the two branches in `weak_ptr::lock` that send
     the main task into the terminal loop at `0x4012d2fa`:
@@ -270,6 +274,12 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
     implements both this and ``dspi2_peer`` at once, so one instance wired to
     both parameters answers the periodic control frame and the sample stream
     together -- see that module's docstring.
+
+    ``ssi0_coalesce=True`` runs the SSI0 model with request coalescing
+    (`emu.ssi.Ssi0Dma`, "Coalescing"): fewer `emu_start` boundaries, at the
+    cost of exactness that its own counter and a tools/snapeq.py comparison
+    have to vouch for. Off by default; it is a run mode, not checkpoint
+    topology, so it is not in the manifest.
     """
     if trace is not None and trace_path is not None:
         raise ValueError('pass either trace or trace_path, not both')
@@ -459,27 +469,24 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
             instr_per_sec=INSTR_PER_SEC,
             force_rte=profile.ssi0_dma_force_rte,
             peer=ssi0_peer,
+            coalesce=ssi0_coalesce,
         )
 
     if dsp:                            # see emu/dsp.py
         from emu.dsp import install as install_dsp
-        install_dsp(m, ev)
+        install_dsp(m, ev, log_path=dsp_log)
 
     if dspi2_peer is not None:         # see emu/dspi2.py
         from emu.dspi2 import install as install_dspi2
         ev['dspi2'] = install_dspi2(m, peer=dspi2_peer)
 
-    spins = {'n': 0}
-    ev['idle_spins'] = spins
-
-    def do_halt(uc, a, s, d):
-        spins['n'] += 1
-        if tx is not None:
-            tx.deliver()
-        if spins['n'] % idle_yield == 0:
-            m.raise_vector(32)
-    for spin_addr in db.find_idle_spins(main_img, db.MAIN_LOAD):
-        at(spin_addr, do_halt)
+    idle = IdleSpin(m, db.find_idle_spins(main_img, db.MAIN_LOAD), tx,
+                    idle_yield)
+    ev['idle'] = idle
+    ev['idle_spins'] = idle.count
+    m._idle = idle                     # spin() skips through it
+    for spin_addr in idle.addrs:
+        at(spin_addr, idle.on_spin)
 
     if softfloat:                      # see emu/softfloat.py
         from emu.softfloat import install as install_softfloat
@@ -724,6 +731,75 @@ def build(snapshot, send=b'', syx=None, isa='scoped',
         raise
 
 
+class IdleSpin:
+    """The idle loop's `bra.b *` sites, and what one pass through them does.
+
+    `build()` hooks every site with `on_spin`: count the pass, hand the
+    UART8 TX channel a queued completion, and raise vector 32 (reschedule)
+    every `every` passes. `spin` calls `skip` at an `emu_start` boundary
+    whose PC is one of these sites.
+
+    **Why the idle loop can be skipped exactly.** Nothing interrupts the
+    loop between two boundaries except its own hook: the host raises
+    interrupts either in `spin`'s service step at a boundary (timer ticks,
+    SSI0 requests) or from hooks on other code (the SSI0 force-RTE hook,
+    the UART8 TX wait loop), which the loop never executes, and a `bra.b`
+    to itself touches no memory. So from a boundary with PC in the loop,
+    the CPU does nothing until the next boundary but run `on_spin` once per
+    pass. `skip` does what those passes would do and credits them to the
+    clock without running them: the count advances, and the TX completion
+    is only ever delivered by a pass with one queued, so `skip` refuses
+    while one is. The pass that raises vector 32 is not skipped: `skip`
+    stops one short of it and Unicorn runs it, so the vector is raised by
+    the hook at its own instruction exactly as before. What differs is only
+    what the host sees: fewer instructions executed, and no hook calls for
+    the skipped passes (`skipped` counts them). A code hook another caller
+    put on an idle site does not see them either.
+
+    In exact stepping only a step that starts in the idle loop is skipped.
+    When a task blocks part-way through a step, the CPU enters the loop
+    mid-step and runs it pass by pass to the step's end: Unicorn cannot say
+    how many instructions a stopped `emu_start` executed, so stopping there
+    would lose the clock. So exact runs gain only where boundaries are
+    dense, as they are with the SSI0 model on (one every audio request).
+    `spin(fast=True)` already counts in basic blocks, and there the first
+    pass of an idle stretch stops the step (`stop_on_entry`) so the rest of
+    it is skipped too. `skip_enabled = False` turns skipping off.
+    """
+
+    def __init__(self, m, addrs, tx, every):
+        self.m = m
+        self.addrs = frozenset(addrs)
+        self.tx = tx
+        self.every = every
+        self.count = {'n': 0}          # ev['idle_spins']
+        self.skipped = 0
+        self.skip_enabled = True
+        self.stop_on_entry = False     # set by _FastStepper.run
+
+    def on_spin(self, uc, address, size, user_data):
+        count = self.count
+        count['n'] += 1
+        if self.tx is not None:
+            self.tx.deliver()
+        if count['n'] % self.every == 0:
+            self.m.raise_vector(32)
+        elif self.stop_on_entry and not (self.tx is not None and self.tx.pending):
+            uc.emu_stop()              # `skip` takes it from here
+
+    def skip(self, step):
+        """-> how many of the next `step` passes to credit without running.
+
+        Call only with PC on one of `addrs`, at a boundary.
+        """
+        if not self.skip_enabled or (self.tx is not None and self.tx.pending):
+            return 0
+        n = min(step, self.every - 1 - self.count['n'] % self.every)
+        self.count['n'] += n
+        self.skipped += n
+        return n
+
+
 def setpixel_count(ev):
     """The setPixel count from an `ev` dict returned by `build()`, whichever
     hook produced it.
@@ -886,11 +962,22 @@ class _FastStepper:
         self.left -= 1
 
     def run(self, pc, step):
-        """Execute about `step` instructions from `pc`. -> instructions run."""
+        """Execute about `step` instructions from `pc`. -> instructions run.
+
+        Stops early at the first pass through an idle loop, so `spin` can
+        skip the rest of it; see `IdleSpin`.
+        """
         self.steps += 1
         self.blocks = 0
         self.left = max(1, int(step / self.per_block))
-        self.m.uc.emu_start(pc, 0)
+        idle = getattr(self.m, '_idle', None)
+        if idle is not None:
+            idle.stop_on_entry = idle.skip_enabled
+        try:
+            self.m.uc.emu_start(pc, 0)
+        finally:
+            if idle is not None:
+                idle.stop_on_entry = False
         return max(1, int(self.blocks * self.per_block))
 
 
@@ -962,14 +1049,24 @@ def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
     block late rather than on the instruction it was due. That changes the
     instruction stream and so the boot digest. Use it for interactive running
     -- the GUI does -- and never for a determinism or pass/fail claim.
+
+    A step that starts in the idle loop of a `build()` machine is credited
+    without running it, up to the next idle reschedule; see `IdleSpin`.
+    `done` counts the credited instructions too: it is the clock.
     """
     deferred = getattr(m, '_checkpoint_deferred_restore', None)
     if deferred is not None:
         deferred.require_claimed()
     if async_events and pits is None:
         raise ValueError("async event sources require the shared timer clock")
+    for event in async_events:
+        # A coalescing Ssi0Dma checks that no timer armed or disarmed inside
+        # a span it stretched; these are the timers it has to watch.
+        if getattr(event, 'coalesce', False) and not event.watch:
+            event.watch = (pits,)
     done, stop = 0, 'limit'
     base = pits.now if pits is not None else 0      # resume, do not rewind
+    idle = getattr(m, '_idle', None)
     while done < instrs:
         if pc == 0:
             stop = 'pc zero'
@@ -989,11 +1086,14 @@ def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
         else:
             step = min(chunk, instrs - done)
         m.halt_vec = None
+        skipped = idle.skip(step) if idle is not None and pc in idle.addrs else 0
         try:
-            if fast:
-                executed = _fast_stepper(m).run(pc, step)
+            if skipped == step:
+                executed = step
+            elif fast:
+                executed = skipped + _fast_stepper(m).run(pc, step - skipped)
             else:
-                m.uc.emu_start(pc, 0, count=step)
+                m.uc.emu_start(pc, 0, count=step - skipped)
                 executed = step
         except UcError as e: stop = str(e); break
         pc = m.uc.reg_read(UC_M68K_REG_PC)
@@ -1028,7 +1128,7 @@ def spin(m, pc, instrs, chunk=500_000, on_chunk=None, tick=False, pits=None,
 def main(snapshot, instrs, chunk=500_000, send=b'', unblock=False, fast=False,
          sharc_process=False, sharc_backend='stub', sharc_audio_mode='silence',
          sharc_python='pypy', sharc_advance_every=None, ssi0_request_hz=None,
-         ssi0_legacy_upgrade=False, card_image=None):
+         ssi0_legacy_upgrade=False, card_image=None, ssi0_coalesce=False):
     """Resume `snapshot` and run `instrs` instructions. -> (m, ev, done, dt, stop).
 
     ``sharc_process=True`` wires an `emu.sharc_peer.SharcServerPeer` (see that
@@ -1065,6 +1165,7 @@ def main(snapshot, instrs, chunk=500_000, send=b'', unblock=False, fast=False,
             'dspi2_peer': peer, 'ssi0_peer': peer,
             'ssi0_request_hz': ssi0_request_hz,
             'ssi0_legacy_upgrade': ssi0_legacy_upgrade,
+            'ssi0_coalesce': ssi0_coalesce,
         }
 
     m, ev, st, pc, inq, at = build(snapshot, send, unblock=unblock,
@@ -1126,6 +1227,9 @@ def parse_args(argv=None):
     p.add_argument('--ssi0-legacy-upgrade', action='store_true',
                     help='claim a pre-existing snapshot\'s already-programmed '
                          'SSI0 TCDs (see emu.longrun.build\'s docstring)')
+    p.add_argument('--ssi0-coalesce', action='store_true',
+                    help='coalesce SSI0 requests between major loops (opt-in, '
+                         'see emu.ssi.Ssi0Dma, "Coalescing")')
     p.add_argument('--card-image', default=None,
                     help='+Drive image built by tools/plusdrive.py to serve '
                          'behind the eSDHC/eMMC model (see emu.esdhc.Card.from_file)')
@@ -1142,7 +1246,7 @@ if __name__ == '__main__':
         sharc_python=args.sharc_python, sharc_advance_every=args.sharc_advance_every,
         ssi0_request_hz=args.ssi0_request_hz,
         ssi0_legacy_upgrade=args.ssi0_legacy_upgrade,
-        card_image=args.card_image)
+        card_image=args.card_image, ssi0_coalesce=args.ssi0_coalesce)
     print('\n=== %d instrs in %.0fs (%.2fM/s) stop=%s ===' % (done, dt, done/dt/1e6, stop))
     print('new tasks : %d' % len(ev['tasks']))
     print('prints    : %d' % len(ev['prints']))

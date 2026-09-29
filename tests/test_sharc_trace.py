@@ -728,6 +728,7 @@ class TraceTest(unittest.TestCase):
                     "is[1:0]": 0,
                     "m[2:0]": 1,
                     "idis[2:0]": 0,
+                    "w": 1,  # (nw): scaled by 4 in byte space
                     "compute[22:16]": 0,
                     "compute[15:0]": 0,
                 },
@@ -2842,7 +2843,9 @@ class TraceTest(unittest.TestCase):
             (0, 1, 0): ("byte-sign-extended", 0x83),
             (1, 0, 0): ("short-word", 0x86),
             (1, 1, 0): ("short-word-sign-extended", 0x86),
-            (1, 1, 1): ("long-word", 0x98),
+            # (lw) steps in normal-word units (PRM p.6-9, Table 6-2), so
+            # unscaled here, where assume_nw32 is off.
+            (1, 1, 1): ("long-word", 0x83),
         }
         for (l, x, w), (access_width, address) in expected.items():
             event = self.run_one(

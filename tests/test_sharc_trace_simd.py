@@ -284,7 +284,11 @@ class SimdMemoryCompanionTest(TraceHelpers):
         self.assertEqual(pey_load[0]["ureg"], "S2")
         self.assertEqual(pey_load[0]["concrete_value"], 0xBBBB)
 
-    def test_type14a_uncomplementary_ureg_has_no_companion_in_simd(self):
+    def test_type14a_uncomplementary_ureg_store_writes_both_locations_in_simd(self):
+        # PRM Table 4-22: a move from a UREG without a SIMD complement to a
+        # complementary destination "executes move in each PE (and/or
+        # memory) ... Ureg is source for each move". A store of I0 writes
+        # I0 at the explicit and the implicit (+1 normal word) address.
         fields = {
             "addr[31:16]": 0x3000,
             "addr[15:0]": 0x1000,
@@ -296,13 +300,38 @@ class SimdMemoryCompanionTest(TraceHelpers):
         state = self.run_one(
             T.State(
                 1,
-                {16: T.Const(1), T.UREG_CODES["MODE1"]: T.Const(1 << 21)},
+                {16: T.Const(7), T.UREG_CODES["MODE1"]: T.Const(1 << 21)},
                 concrete=loader_memory(),
                 assume_nw32=True,
             ),
             insn("14a", fields, 6),
         )
-        self.assertFalse(any(e["action"] == "store-pey" for e in state.trace))
+        pey = [e for e in state.trace if e["action"] == "store-pey"]
+        self.assertEqual([e["ureg"] for e in pey], ["I0"])
+        self.assertEqual(T._dm_read(state, 0x30001000, 4), T.Const(7))
+        self.assertEqual(T._dm_read(state, 0x30001004, 4), T.Const(7))
+
+    def test_type14a_uncomplementary_ureg_load_has_no_companion_in_simd(self):
+        # Table 4-22: a move to an uncomplementary register has no implicit
+        # move, so a load of I0 reads only the explicit address.
+        fields = {
+            "addr[31:16]": 0x3000,
+            "addr[15:0]": 0x1000,
+            "g": 0,
+            "d": 0,
+            "l": 0,
+            "ureg[6:0]": 16,  # I0: no SIMD complement
+        }
+        load_state = T.State(
+            1,
+            {T.UREG_CODES["MODE1"]: T.Const(1 << 21)},
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(load_state, 0x30001000, 4, T.Const(0xAAAA)))
+        loaded = self.run_one(load_state, insn("14a", fields, 6))
+        self.assertEqual(loaded.uregs[16], T.Const(0xAAAA))
+        self.assertFalse(any(e["action"] == "load-pey" for e in loaded.trace))
 
     def test_type14a_unresolved_mode1_stores_once_without_stopping(self):
         fields = {
@@ -352,9 +381,9 @@ class SimdMemoryCompanionTest(TraceHelpers):
         pey = [e for e in state.trace if e["action"] == "store-pey"]
         self.assertEqual(pey[0]["address"], 0x30001004)
 
-    def test_type3b_byte_access_with_complementary_ureg_stops_in_simd(self):
-        # PRM pp.222-223's byte-space SIMD companion rule is not modelled;
-        # this must stop rather than silently transfer only PEx's half.
+    def test_type3b_byte_store_companion_is_the_next_byte(self):
+        # PRM p.7-5, "Byte Access in SIMD Mode": the SIMD pair "is updated
+        # with the content of the explicit address + 1-byte memory location".
         fields = {
             "i[2:0]": 1,
             "m[2:0]": 2,
@@ -370,15 +399,149 @@ class SimdMemoryCompanionTest(TraceHelpers):
         regs = {
             17: T.Const(0x30001000),
             34: T.Const(4),
-            2: T.Const(1),
+            2: T.Const(0x11),
+            82: T.Const(0x22),
             T.UREG_CODES["MODE1"]: T.Const(1 << 21),
         }
         state = self.run_one(
             T.State(1, regs, concrete=loader_memory(), assume_nw32=True),
             insn("3b", fields),
         )
+        self.assertIsNone(state.stopped)
+        self.assertEqual(T._dm_read(state, 0x30001000, 2), T.Const(0x2211))
+
+    def test_type3b_byte_access_outside_byte_space_stops_in_simd(self):
+        # Without assume_nw32 (word space) a byte access has no defined
+        # companion here; it must stop rather than move only PEx's half.
+        fields = {
+            "i[2:0]": 1,
+            "m[2:0]": 2,
+            "g": 0,
+            "d": 1,
+            "u": 1,
+            "l": 0,
+            "x": 0,
+            "w": 0,
+            "ureg[6:0]": 2,
+            "cond[4:0]": 31,
+        }
+        regs = {
+            17: T.Const(0x30001000),
+            34: T.Const(4),
+            2: T.Const(1),
+            T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+        }
+        state = self.run_one(
+            T.State(1, regs, concrete=loader_memory()), insn("3b", fields)
+        )
         self.assertIsNotNone(state.stopped)
         self.assertIn("unsupported SIMD companion access width", state.stopped)
+
+    def test_type4d_short_word_copy_moves_both_halves(self):
+        # FUN_1c2b24's flag-mask copy (sw 0x1c2c7c/0x1c2c7f), in SIMD mode:
+        # "R2 = DM(I4, 2) (swse)" then "DM(I5, 2) = R2 (sw)", post-modify.
+        # PRM p.13-33: PEy reads "the 2-bytes addressed by I0+2".
+        load = {
+            "cond[4:0]": 31,
+            "d": 0,
+            "data[4:0]": 2,
+            "data[5:5]": 0,
+            "dreg[3:0]": 2,
+            "g": 0,
+            "i[2:0]": 4,
+            "l": 1,
+            "u": 1,
+            "w": 0,
+            "x": 1,
+        }
+        state = T.State(
+            1,
+            {
+                20: T.Const(0x30001000),
+                21: T.Const(0x30002000),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, 0x30001000, 4, T.Const(0x0004FFFE)))
+        state = self.run_one(state, insn("4d", load, 6))
+        self.assertEqual(state.uregs[2], T.Const(0xFFFFFFFE))  # swse
+        self.assertEqual(state.uregs[82], T.Const(0x4))
+        self.assertEqual(state.uregs[20], T.Const(0x30001004))
+        store = {**load, "d": 1, "i[2:0]": 5, "x": 0}
+        state = self.run_one(state, insn("4d", store, 6))
+        self.assertEqual(T._dm_read(state, 0x30002000, 4), T.Const(0x0004FFFE))
+        self.assertEqual(state.uregs[21], T.Const(0x30002004))
+
+    def test_type3d_byte_latch_copies_both_voices_and_m13_clears_both(self):
+        # FUN_1c642a's end-of-frame loop (sw 0x1c7194-0x1c71a6) in SIMD mode:
+        # "R2 = DM(I4, M5)" and "DM(I4, M4) = R2" are Type 3d byte accesses
+        # ((l, x, w) = (0, 0, 0)); PRM p.13-20 (Type 3d SIMD) and p.7-5
+        # put PEy's S2 at the next byte. "DM(I4, M3) = M13" stores the
+        # uncomplementary M13 at both bytes (PRM Table 4-22).
+        base = {
+            "cond[4:0]": 31,
+            "ex": 0,
+            "g": 0,
+            "i[2:0]": 4,
+            "l": 0,
+            "u": 0,
+            "w": 0,
+            "x": 0,
+        }
+        state = T.State(
+            1,
+            {
+                20: T.Const(0x30001000),
+                36: T.Const(0x20),
+                37: T.Const(0),
+                35: T.Const(0x40),
+                45: T.Const(0),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, 0x30001000, 2, T.Const(0x0101)))
+        self.assertTrue(T._dm_write(state, 0x30001040, 2, T.Const(0x0101)))
+        load = {**base, "d": 0, "m[2:0]": 5, "ureg[6:0]": 2}
+        state = self.run_one(state, insn("3d", load, 6))
+        self.assertEqual(state.uregs[2], T.Const(1))
+        self.assertEqual(state.uregs[82], T.Const(1))
+        store = {**base, "d": 1, "m[2:0]": 4, "ureg[6:0]": 2}
+        state = self.run_one(state, insn("3d", store, 6))
+        self.assertEqual(T._dm_read(state, 0x30001020, 2), T.Const(0x0101))
+        clear = {**base, "d": 1, "m[2:0]": 3, "ureg[6:0]": 45}  # M13
+        state = self.run_one(state, insn("3d", clear, 6))
+        self.assertEqual(T._dm_read(state, 0x30001040, 2), T.Const(0))
+
+    def test_type4b_normal_word_companion(self):
+        # PRM p.13-30: in SIMD mode the Y element uses Ia + one normal word.
+        fields = {
+            "cond[4:0]": 31,
+            "d": 0,
+            "data[4:0]": 1,
+            "data[5:5]": 0,
+            "dreg[3:0]": 2,
+            "g": 0,
+            "i[2:0]": 4,
+            "l": 1,
+            "u": 0,
+            "w": 1,
+            "x": 1,
+        }
+        state = T.State(
+            1,
+            {20: T.Const(0x30001000), T.UREG_CODES["MODE1"]: T.Const(1 << 21)},
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, 0x30001004, 4, T.Const(0xAAAA)))
+        self.assertTrue(T._dm_write(state, 0x30001008, 4, T.Const(0xBBBB)))
+        state = self.run_one(state, insn("4b", fields))
+        self.assertEqual(state.uregs[2], T.Const(0xAAAA))
+        self.assertEqual(state.uregs[82], T.Const(0xBBBB))
 
     def test_type3b_long_word_never_gets_a_companion_even_in_simd(self):
         # PRM p.13-17: "(LW) ... override[s] SIMD mode, so these loads
@@ -407,6 +570,82 @@ class SimdMemoryCompanionTest(TraceHelpers):
         )
         self.assertIsNone(state.stopped)
         self.assertFalse(any(e["action"] == "store-pey" for e in state.trace))
+
+    def test_type4a_post_modify_load_and_store_companions(self):
+        # FUN_1c403c's SIMD page copy: R2 = DM(I5), post-modify + 2, then
+        # DM(I4) = R2, post-modify + 2 (sw 0x1c405d/0x1c4060).
+        fields = {
+            "i[2:0]": 5,
+            "g": 0,
+            "d": 0,
+            "u": 1,
+            "data[4:0]": 2,
+            "data[5:5]": 0,
+            "dreg[3:0]": 2,
+            "cond[4:0]": 31,
+            "compute[15:0]": 0,
+            "compute[22:16]": 0,
+        }
+        load_state = T.State(
+            1,
+            {21: T.Const(0x30001000), T.UREG_CODES["MODE1"]: T.Const(1 << 21)},
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(load_state, 0x30001000, 4, T.Const(0xAAAA)))
+        self.assertTrue(T._dm_write(load_state, 0x30001004, 4, T.Const(0xBBBB)))
+        loaded = self.run_one(load_state, insn("4a", fields, 6))
+        self.assertIsNone(loaded.stopped)
+        self.assertEqual(loaded.uregs[2], T.Const(0xAAAA))
+        self.assertEqual(loaded.uregs[82], T.Const(0xBBBB))
+        self.assertEqual(loaded.uregs[21], T.Const(0x30001008))
+
+        store_fields = {**fields, "i[2:0]": 4, "d": 1}
+        store_state = T.State(
+            1,
+            {
+                20: T.Const(0x30002000),
+                2: T.Const(0x11111111),
+                82: T.Const(0x22222222),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        stored = self.run_one(store_state, insn("4a", store_fields, 6))
+        self.assertEqual(T._dm_read(stored, 0x30002000, 4), T.Const(0x11111111))
+        self.assertEqual(T._dm_read(stored, 0x30002004, 4), T.Const(0x22222222))
+        pey = [e for e in stored.trace if e["action"] == "store-pey"]
+        self.assertEqual(pey[0]["ureg"], "S2")
+
+    def test_type4a_sisd_has_no_companion(self):
+        fields = {
+            "i[2:0]": 4,
+            "g": 0,
+            "d": 1,
+            "u": 1,
+            "data[4:0]": 1,
+            "data[5:5]": 0,
+            "dreg[3:0]": 2,
+            "cond[4:0]": 31,
+            "compute[15:0]": 0,
+            "compute[22:16]": 0,
+        }
+        state = self.run_one(
+            T.State(
+                1,
+                {
+                    20: T.Const(0x30002000),
+                    2: T.Const(5),
+                    T.UREG_CODES["MODE1"]: T.Const(0),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("4a", fields, 6),
+        )
+        self.assertFalse(any(e["action"] == "store-pey" for e in state.trace))
+        self.assertIsNone(T._dm_read(state, 0x30002004, 4))
 
     def test_type15a_store_companion(self):
         fields = {

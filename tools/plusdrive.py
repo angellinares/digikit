@@ -7,11 +7,15 @@ absolute sector numbers -- the ``MmcFs`` project/sound/kit pools (untouched
 here) and a separate, real, path-addressable filesystem (128-byte metadata
 records, extent-mapped 32 KiB content pages, hierarchical directories) that
 sample files live in. This tool only writes the second region: a header
-sector, an empty pool table, a root directory, and one file entry per input
+sector, an empty pool table, a root directory (with "." and "..", and the
+three index pages the firmware keeps per directory), and one file per input
 WAV, all under the root.
 
     uv run python tools/plusdrive.py build samples/ -o out/plusdrive/dt2.img
     uv run python tools/plusdrive.py ls out/plusdrive/dt2.img
+
+``tools/plusdrive_check.py`` runs the firmware's own mount, directory,
+reference, project-decode and sample-loader code on a built image.
 
 ``build`` also doubles as the only writer of this format, and ``ls`` as a
 reader for any card image in it (including one dumped from a real firmware
@@ -24,17 +28,28 @@ runners that expose it); both construct the card via
 emulation go to the in-RAM overlay (already how snapshots capture +Drive
 writes; see ``Esdhc.checkpoint_state``), and this file is never modified.
 
+Samples are stored in the drive's native format, the one the sampler's
+"save recording" writer (``FUN_40153994``) produces and the sample loader
+(``FUN_40154540``) reads: a 64-byte header, big-endian 16-bit PCM at 48 kHz
+(L/R interleaved when stereo), and a 16-byte trailer. Input WAVs are
+converted and resampled (see ``wav_to_native``). Each file record carries
+the firmware's content hash (``content_hash``) at +0x0C with bit 0 set, and
+the same word goes into the hash table at sector 0x5EE980, as
+``FUN_4015af0c`` does after a recording is closed.
+
+With ``--main-os`` (default: ``out/sections/dt2-1.16/section_3_MAIN_OS.bin``
+when present), ``build`` also writes the active-project record at sectors
+0x40000/0x48000: the COKi header plus the firmware's own built-in project,
+depacked from that image at build time, with every sample reference pointed
+at the first input file. At boot the firmware decodes that project, mounts
+the drive and its "Load all samples" job streams the sample to the DSP, with
+no UI. Nothing from the firmware is stored in this repository.
+
 Open questions the finding doc flags, most relevant to this tool:
 
-* The exact attribute-byte values at record offsets 0x00/0x01/0x0c for
-  "regular file" vs "directory" are inferred, not proven (see ATTR_* below).
-* Sample payload bytes are stored verbatim (whole input WAV file, including
-  its RIFF header) -- this is the only choice consistent with the proven
-  "write path does no interpretation" finding, not a confirmed fact about
-  what the browser/loader expects to unpack.
-* The 0x10000 (name-hash) and 0x10002 (id-sorted) auxiliary index pages are
-  deliberately NOT written -- believed unnecessary for on-device browsing
-  and loading (as opposed to by-path MIDI RPC access), unconfirmed.
+* Record offset 0x01's meaning is not pinned down (see ATTR_* below); 0x00
+  = 1 marks a directory (FUN_40155ed6 sets it on every new directory).
+* A directory is limited to one content page, a file to eight extents.
 
 This tool also writes the real filesystem's superblock at sector 0x5D8000
 (``FUN_4015a450``'s mount check; see docs/findings/14-plus-drive-format.md's
@@ -53,6 +68,10 @@ paths -- see ``tests/test_plusdrive.py``.
 """
 
 import argparse
+import array
+import hashlib
+import math
+import operator
 import os
 import struct
 import sys
@@ -129,17 +148,33 @@ PAGE_BITMAP_SECTOR_END = 0x5D8180
 RECORD_AREA_SECTOR = 0x5D8180
 CONTENT_AREA_SECTOR = 0x5EE180
 
+# Content hash table: one BE u32 per record id, `hash | 1` (0 = none), 0x2000
+# ids per 32 KiB page, 44 pages from sector 0x5EE980 (content pages
+# 0x20-0x4B). FUN_4015af0c writes word `id & 0x1fff` of page `id >> 13`;
+# FUN_4015ae12 (mount) scans exactly [0x5EE980, 0x5EF480) into the RAM hash
+# index that FUN_4015a94c binary-searches.
+HASH_TABLE_SECTOR = 0x5EE980
+HASH_TABLE_END_SECTOR = 0x5EF480
+# The format (FUN_4015a164) reserves content pages 0x00-0x1F
+# (FUN_40155698(0x20,...)), then two 44-page runs, 0x20-0x4B (the hash
+# table) and 0x4C-0x77 (zero-filled, purpose unknown). The first page it
+# can hand out afterwards is 0x78; file and directory pages start there.
+RESERVED_PAGES = 0x78
+FIRST_FILE_PAGE = RESERVED_PAGES
+# FUN_4015b4f0 (format) sets ids 0 and 1 in the id bitmap before the root
+# (id 2) is allocated, so the allocator never hands them out.
+RESERVED_IDS = (0, 1)
+
 # Region 2's superblock: FUN_4015a450 (mount) and FUN_4015a164 (format
 # writer), see docs/findings/14-plus-drive-format.md. Sector-relative field
 # values (0x14/0x18/0x1c/0x20) are each `<region-start-sector> - SUPERBLOCK_SECTOR`,
 # confirmed by exact arithmetic against the sector constants above. Fields
 # 0x2c/0x30 are two runtime-allocated physical sectors (each the start of a
-# 44-page run reserved by FUN_40155698(0x2c,...), called twice); their
-# consumer, FUN_4015ae12 (run at both format- and mount-time), scans exactly
-# the sector range [0x5ee980, 0x5eff80) -- 88 pages, i.e. two consecutive
-# 44-page runs starting at 0x5ee980 and 0x5ef480 -- so those are the literal
-# values, not free choices; nothing here has confirmed what that scan is for
-# (an RAM-resident record/page cache seed, per finding 14's open questions).
+# 44-page run reserved by FUN_40155698(0x2c,...), called twice; the format
+# zero-fills [0x5ee980, 0x5ef480) and [0x5ef480, 0x5eff80)). The first run is
+# the content hash table (HASH_TABLE_SECTOR below): FUN_4015ae12 scans only
+# [0x5ee980, 0x5ef480), 44 pages of 0x2000 words, one per record id. What
+# the second run holds is not known.
 # Fields 0x24/0x28 are literal constants in the writer, not derived from a
 # call: 0x24 = PAGE/SECTOR (sectors per 32 KiB page); 0x28 is the argument
 # the writer itself passes to one FUN_40155698 call (a page-count request),
@@ -156,10 +191,16 @@ SUPERBLOCK_CHECKSUM_OFFSET = 0x1FC  # last 4 bytes of the 512-byte sector
 ROOT_ID = 2
 ROOT_PARENT = 2  # the root is its own parent; nothing reads this for id 2
 
-# Reserved logical pages inside a directory's own extent list.
-LOGICAL_INDEX_PAGE = 0x10001  # readdir's "jump to entry N" index; required
-# LOGICAL_HASH_PAGE = 0x10000   # by-name binary search; not written here
-# LOGICAL_ID_PAGE   = 0x10002   # id-sorted index; not written here
+# Reserved logical pages inside a directory's own extent list. A new
+# directory (FUN_40155ed6) gets content page 0 and these three index pages
+# as one 0x18000-byte allocation at byte offset 0x80000000 (logical page
+# 0x10000). Each index page is u16 count at 0, then 8-byte entries from
+# offset 8: {u32 key, u32 position}, position = content page * 0x8000 +
+# byte offset of the entry (FUN_40156334 writes all three; the readers index
+# them as `(ushort *)page + i * 4 + 6`, i.e. byte 8 * i + 12).
+LOGICAL_HASH_PAGE = 0x10000  # key: name_hash(name), sorted; FUN_401572e0 (by name)
+LOGICAL_INDEX_PAGE = 0x10001  # key: first 4 name bytes, listing order; FUN_40157072
+LOGICAL_ID_PAGE = 0x10002  # key: record id, sorted; FUN_401574e2 (path from id)
 
 # Record offset 0x00 / 0x01 bit-0 semantics are not disambiguated in the
 # finding (candidates: is-directory, protected/read-only, a third flag).
@@ -172,6 +213,71 @@ ATTR_FILE = 0x00
 DEFAULT_OFFSET01 = 0x02
 
 DEFAULT_CAPACITY_BLOCKS = 0x00760000  # matches emu/esdhc.py's Card default
+
+# Native sample file (FUN_40153994 writes it, FUN_40154540 reads it):
+#   0x00       0
+#   0x01       1 = stereo (L/R interleaved), 0 = mono
+#   0x04  u32  PCM data length in bytes
+#   0x08  u32  sample rate, always 48000 from the writer
+#   0x14       0x7F
+#   rest of the 64 bytes 0
+#   0x40..     signed 16-bit big-endian PCM (FUN_400cce2c sends each
+#              16-bit half low byte first, so the DSP receives it as
+#              little-endian int16)
+#   end        16 bytes copied from 0x405a50a0, which nothing else in the
+#              image references (tools/refscan.py): zero
+# File size = data length + 0x50 (FUN_40158534(file, 0, len + 0x50)).
+NATIVE_HEADER_SIZE = 0x40
+NATIVE_TRAILER_SIZE = 0x10
+NATIVE_RATE = 48000
+NATIVE_HEADER_0x14 = 0x7F
+# FUN_4015af0c seeds its streaming hashlittle state a = b = c = 0x43FA243A
+# before hashing the whole file (header, PCM and trailer). hashlittle()
+# below takes `initval` and adds 0xDEADBEEF itself.
+CONTENT_HASH_STATE = 0x43FA243A
+
+# Active-project record (FUN_400f0628 reads it at every boot): a 0x110-byte
+# COKi header, then the project container that FUN_400c0c2c decodes, read as
+# one 0xDD9714-byte block from sector 0x40000 (0x48000 if the first header
+# fails its check).
+PROJECT_RECORD_SIZE = 0xDD9714
+PROJECT_HEADER_SIZE = 0x110
+PROJECT_CONTAINER_SIZE = PROJECT_RECORD_SIZE - PROJECT_HEADER_SIZE  # 0xDD9604
+# COKi header word at +0x104 (0x4099d68c at run time) is the filesystem's
+# record sequence counter: FUN_4015b7ac sets a new record's +0x10 to
+# ++counter. +0x18 (0x4099d5a0) receives the superblock version at mount
+# (FUN_400c0eea).
+PROJECT_HEADER_SEQ_OFFSET = 0x104
+PROJECT_HEADER_FS_VERSION_OFFSET = 0x18
+
+# The built-in project in DT2 1.16's MAIN OS (depacked on factory reset,
+# FUN_400c0c2c's flags & 6): an ELZ-packed projectStorage v3 container. The
+# decoder upgrades v3 -> v4 -> v5 in place (FUN_400e0c26).
+MAIN_OS_BASE = 0x40000400
+MAIN_OS_116_SHA256 = "57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d"
+DEFAULT_MAIN_OS = os.path.join("out", "sections", "dt2-1.16", "section_3_MAIN_OS.bin")
+BUILTIN_PROJECT_ADDR = 0x4025F1D8
+CONTAINER_MAGIC = 0xBEEFBACE
+CONTAINER_END_MAGIC = 0xBACEF00C
+V3_SIZE = 0xC3F424
+V3_END_MARKER = 0xC3E400  # word 0x30f900, checked by FUN_400dedb6
+V3_REF_TABLE = 0xC2D6FB  # 1024 x {id, hash|1, size, seq}, packed BE
+V3_REF_COUNT = 0x400
+V3_EMPTY_REF = struct.pack(">IIII", 0xFFFFFFFF, 0, 0, 0)
+# v3 kits: 129 x 0x2800 from 0xAE0200 (FUN_400dedb6's loop); 16 tracks of
+# 0x155 bytes from kit + 0x3C (FUN_400dea22). In a track: int16 sample slot
+# at +0x64, and a copy of that slot's 16-byte reference at +0x129.
+V3_KITS = 0xAE0200
+V3_KIT_SIZE = 0x2800
+V3_KIT_COUNT = 129
+V3_TRACK0 = 0x3C
+V3_TRACK_SIZE = 0x155
+V3_TRACK_SLOT = 0x64
+V3_TRACK_REF = 0x129
+# The kit the built-in project decodes as active: FUN_4004e598 (the slot
+# list "Load all samples" walks) run on the decoded project lists kit 0's
+# track slots first (7, 1, 3, 8, ...), tools/plusdrive_check.py.
+ACTIVE_KIT = 0
 
 
 def _u16(v):
@@ -321,11 +427,23 @@ def build_boot_config_record():
     -- no payload beyond the header is written or needed for a boot that
     only checks validity, not content.
     """
-    buf = bytearray(SECTOR // 2)  # 256 bytes; FUN_400f0628 reads exactly this
+    return build_project_header(SECTOR // 2)
+
+
+def build_project_header(size=PROJECT_HEADER_SIZE, seq=0, fs_version=0):
+    """-> the COKi header, `size` bytes (256 for the check alone, 0x110 in
+    front of a project container). The checksum covers words 2 and 3 only
+    (length field 0), so `seq` (+0x104) and `fs_version` (+0x18) do not
+    change it. Word +0x14 stays 0: bit 0 or 1 set there makes FUN_400f0628
+    skip reading the project container."""
+    buf = bytearray(size)
     struct.pack_into(">I", buf, 0x00, BOOT_CONFIG_MAGIC)
     struct.pack_into(">I", buf, 0x0C, 0)  # length field, must be < 0xF1
     checksum = (1 ^ 0) + (2 ^ 0)  # words at offsets 8 and 12, both 0
     struct.pack_into(">I", buf, 0x04, checksum)
+    if size > PROJECT_HEADER_SEQ_OFFSET:
+        struct.pack_into(">I", buf, PROJECT_HEADER_SEQ_OFFSET, seq)
+    struct.pack_into(">I", buf, PROJECT_HEADER_FS_VERSION_OFFSET, fs_version)
     return bytes(buf)
 
 
@@ -407,6 +525,353 @@ def build_factory_table_record():
     return bytes(buf)
 
 
+def content_hash(data):
+    """-> the content hash FUN_4015af0c stores (before `| 1`) in a file's
+    record at +0x0C and in the hash table: hashlittle over the whole file,
+    state seeded a = b = c = CONTENT_HASH_STATE. The firmware streams the
+    file through FUN_4015aa20 in 32 KiB reads; hashing it in one piece gives
+    the same value (checked against FUN_4015af0c itself, see
+    tools/plusdrive_check.py)."""
+    return hashlittle(data, (CONTENT_HASH_STATE - 0xDEADBEEF) & _MASK32)
+
+
+def name_hash(name):
+    """FUN_40155f96(name, len): the key of a directory's 0x10000 index,
+    transliterated from its disassembly (bytes unsigned, muls.l, and the
+    `bpl` fold into 31 bits)."""
+    cur, prev = 0x12A3FE2D, 0x37ABE8F9
+    for b in name:
+        v = (((b * 0x6D22F5) ^ cur) + prev) & _MASK32
+        if v & 0x80000000:
+            v = (v + 0x80000001) & _MASK32
+        prev, cur = cur, v
+    return (cur * 2) & _MASK32
+
+
+def _name_cmp(a, b):
+    """Listing order of names, after FUN_40135df2: case-insensitive, digit
+    runs compared by value. Approximate (its digit-run branch is only
+    matched for plain numbers); it only orders the 0x10001 listing."""
+    i = j = 0
+    while True:
+        if i == len(a):
+            return -1 if j < len(b) else 0
+        if j == len(b):
+            return 1
+        if a[i : i + 1].isdigit() and b[j : j + 1].isdigit():
+            i2, j2 = i, j
+            while i2 < len(a) and a[i2 : i2 + 1].isdigit():
+                i2 += 1
+            while j2 < len(b) and b[j2 : j2 + 1].isdigit():
+                j2 += 1
+            na, nb = int(a[i:i2]), int(b[j:j2])
+            if na != nb:
+                return -1 if na < nb else 1
+            i, j = i2, j2
+            continue
+        ca, cb = a[i : i + 1].lower(), b[j : j + 1].lower()
+        if ca != cb:
+            return -1 if ca < cb else 1
+        i += 1
+        j += 1
+
+
+def build_directory(dir_id, parent_id, children):
+    """-> (content page, 0x10000 page, 0x10001 page, 0x10002 page) for a
+    directory holding "." (dir_id), ".." (parent_id) and `children`, a list
+    of (name bytes, record id, type byte), laid out as FUN_40156334 leaves
+    them after linking each in turn: entries back to back, each
+    `(8 + name length)` rounded up to 4 bytes, the last one's slot length
+    running to the end of the page. One content page only."""
+    import functools
+
+    entries = [(b".", dir_id, ATTR_DIR), (b"..", parent_id, ATTR_DIR)] + list(children)
+    content = bytearray(PAGE)
+    positions = []
+    pos = 0
+    for n, (name, rid, kind) in enumerate(entries):
+        used = (len(name) + 0xB) & ~3
+        if pos + used > PAGE:
+            raise ValueError("directory exceeds one 32 KiB page (unimplemented)")
+        slot = PAGE - pos if n == len(entries) - 1 else used
+        struct.pack_into(">IHBB", content, pos, rid, slot, len(name), kind)
+        content[pos + 8 : pos + 8 + len(name)] = name
+        positions.append(pos)
+        pos += used
+
+    def index(keys):
+        page = bytearray(8 + 8 * len(keys))
+        struct.pack_into(">H", page, 0, len(keys))
+        for i, (key, where) in enumerate(keys):
+            struct.pack_into(">II", page, 8 + 8 * i, key, where)
+        return bytes(page)
+
+    by_hash = sorted(
+        ((name_hash(e[0]), p) for e, p in zip(entries, positions, strict=True)),
+        key=lambda kp: kp[0],
+    )
+    dirs_first = sorted(
+        range(2, len(entries)),
+        key=functools.cmp_to_key(
+            lambda x, y: (
+                (entries[y][2] == ATTR_DIR) - (entries[x][2] == ATTR_DIR)
+                or _name_cmp(entries[x][0], entries[y][0])
+            )
+        ),
+    )
+    listing = [
+        (struct.unpack(">I", entries[k][0][:4].ljust(4, b"\0"))[0], positions[k])
+        for k in [0, 1] + dirs_first
+    ]
+    by_id = sorted(
+        ((e[1], p) for e, p in zip(entries, positions, strict=True)),
+        key=lambda kp: kp[0],
+    )
+    return bytes(content), index(by_hash), index(listing), index(by_id)
+
+
+# -- WAV input ---------------------------------------------------------------
+
+_WAVE_PCM = 1
+_WAVE_FLOAT = 3
+_WAVE_EXTENSIBLE = 0xFFFE
+
+
+def read_wav(data):
+    """-> (rate, channels): `channels` is a list of per-channel lists of
+    floats in [-1, 1). Accepts PCM 8/16/24/32-bit, IEEE float 32/64, and
+    WAVE_FORMAT_EXTENSIBLE wrapping either."""
+    if data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("not a RIFF/WAVE file")
+    pos = 12
+    fmt = None
+    pcm = None
+    while pos + 8 <= len(data):
+        tag = data[pos : pos + 4]
+        (size,) = struct.unpack_from("<I", data, pos + 4)
+        body = data[pos + 8 : pos + 8 + size]
+        if tag == b"fmt ":
+            fmt = body
+        elif tag == b"data":
+            pcm = body
+        pos += 8 + size + (size & 1)
+    if fmt is None or pcm is None:
+        raise ValueError("WAV has no fmt or data chunk")
+    tag, n_ch, rate, _, block, bits = struct.unpack_from("<HHIIHH", fmt, 0)
+    if tag == _WAVE_EXTENSIBLE:
+        (tag,) = struct.unpack_from("<H", fmt, 24)  # SubFormat GUID's first field
+    if n_ch < 1 or block != n_ch * bits // 8:
+        raise ValueError("unsupported WAV layout (%d ch, block %d)" % (n_ch, block))
+    n = len(pcm) // block * n_ch
+    pcm = pcm[: n * (bits // 8)]
+    if tag == _WAVE_PCM and bits == 8:
+        vals = [(b - 128) / 128.0 for b in pcm]
+    elif tag == _WAVE_PCM and bits in (16, 24, 32):
+        # Widen every sample to a native int32 with the value in the top
+        # bits, then scale.
+        width = bits // 8
+        wide = bytearray(n * 4)
+        for i in range(width):
+            wide[4 - width + i :: 4] = pcm[i::width]
+        words = array.array("i", bytes(wide))
+        if sys.byteorder == "big":
+            words.byteswap()
+        vals = [w / 2147483648.0 for w in words]
+    elif tag == _WAVE_FLOAT and bits in (32, 64):
+        floats = array.array("f" if bits == 32 else "d", pcm)
+        if sys.byteorder == "big":
+            floats.byteswap()
+        vals = list(floats)
+    else:
+        raise ValueError("unsupported WAV encoding (tag %#x, %d bits)" % (tag, bits))
+    return rate, [vals[c::n_ch] for c in range(n_ch)]
+
+
+def _bessel_i0(x):
+    total = term = 1.0
+    k = 1
+    while term > 1e-12 * total:
+        term *= (x / (2.0 * k)) ** 2
+        total += term
+        k += 1
+    return total
+
+
+def resample(samples, src_rate, dst_rate, half_taps=32, rolloff=0.95, beta=8.6):
+    """Band-limited rational resampling of one channel (list of floats):
+    a Kaiser-windowed sinc, `half_taps` input samples each side, cut off at
+    `rolloff` x the lower Nyquist frequency. Deterministic (no dither)."""
+    if src_rate == dst_rate:
+        return list(samples)
+    g = math.gcd(src_rate, dst_rate)
+    up, down = dst_rate // g, src_rate // g
+    fc = min(1.0, dst_rate / src_rate) * rolloff
+    i0_beta = _bessel_i0(beta)
+    width = 2 * half_taps
+    phases = []
+    for p in range(up):
+        taps = []
+        for k in range(width):
+            t = p / up + (half_taps - 1 - k)
+            x = fc * t
+            sinc = 1.0 if x == 0 else math.sin(math.pi * x) / (math.pi * x)
+            r = t / half_taps
+            win = (
+                _bessel_i0(beta * math.sqrt(1.0 - r * r)) / i0_beta if r * r < 1 else 0
+            )
+            taps.append(fc * sinc * win)
+        phases.append(taps)
+    padded = [0.0] * half_taps + list(samples) + [0.0] * half_taps
+    n_out = (len(samples) * up + down - 1) // down
+    out = []
+    mul = operator.mul
+    for n in range(n_out):
+        i, p = divmod(n * down, up)
+        # taps[k] weighs input sample i - half_taps + 1 + k, i.e.
+        # padded[i + 1 + k].
+        out.append(sum(map(mul, phases[p], padded[i + 1 : i + 1 + width])))
+    return out
+
+
+def _to_int16_be(channels):
+    """Interleave float channels into big-endian int16 bytes (round to
+    nearest, clip)."""
+    n = len(channels[0])
+    out = array.array("h", bytes(2 * n * len(channels)))
+    for c, chan in enumerate(channels):
+        step = len(channels)
+        for i, v in enumerate(chan):
+            s = round(v * 32768.0)
+            out[i * step + c] = 32767 if s > 32767 else (-32768 if s < -32768 else s)
+    if sys.byteorder == "little":
+        out.byteswap()
+    return out.tobytes()
+
+
+def build_native_sample(pcm_be16, stereo):
+    """-> a native sample file around already-converted PCM (big-endian
+    int16, L/R interleaved when stereo), laid out as FUN_40153994 writes
+    it."""
+    header = bytearray(NATIVE_HEADER_SIZE)
+    header[0x01] = 1 if stereo else 0
+    struct.pack_into(">I", header, 0x04, len(pcm_be16))
+    struct.pack_into(">I", header, 0x08, NATIVE_RATE)
+    header[0x14] = NATIVE_HEADER_0x14
+    return bytes(header) + pcm_be16 + bytes(NATIVE_TRAILER_SIZE)
+
+
+def wav_to_native(wav_bytes):
+    """-> (native file bytes, info dict). Converts any supported WAV to what
+    the loader expects: 48 kHz (band-limited resampling when the source rate
+    differs), 16-bit big-endian, mono or stereo (more than two channels are
+    rejected)."""
+    rate, channels = read_wav(wav_bytes)
+    if len(channels) > 2:
+        raise ValueError("%d-channel WAV: only mono or stereo" % len(channels))
+    converted = [resample(ch, rate, NATIVE_RATE) for ch in channels]
+    pcm = _to_int16_be(converted)
+    info = {
+        "src_rate": rate,
+        "channels": len(channels),
+        "src_frames": len(channels[0]),
+        "frames": len(converted[0]),
+        "data_len": len(pcm),
+    }
+    return build_native_sample(pcm, len(channels) == 2), info
+
+
+def parse_native_header(data):
+    """-> (stereo, data_len, rate) as FUN_40154540 reads them."""
+    stereo = data[0x01] == 1
+    data_len, rate = struct.unpack_from(">II", data, 0x04)
+    return stereo, data_len, rate
+
+
+# -- Active-project record ---------------------------------------------------
+
+
+def builtin_project(main_os):
+    """-> the depacked v3 built-in project container from a DT2 1.16 MAIN OS
+    image (bytes). Refuses any other image: every offset here is 1.16's."""
+    from dt2.elz import depack_section
+
+    digest = hashlib.sha256(main_os).hexdigest()
+    if digest != MAIN_OS_116_SHA256:
+        raise ValueError(
+            "MAIN OS sha256 %s is not DT2 1.16's (%s)" % (digest, MAIN_OS_116_SHA256)
+        )
+    container = depack_section(main_os[BUILTIN_PROJECT_ADDR - MAIN_OS_BASE :])
+    magic, version = struct.unpack_from(">II", container, 0)
+    (end,) = struct.unpack_from(">I", container, V3_END_MARKER)
+    if (len(container), magic, version, end) != (
+        V3_SIZE,
+        CONTAINER_MAGIC,
+        3,
+        CONTAINER_END_MAGIC,
+    ):
+        raise ValueError("built-in project is not the expected v3 container")
+    return container
+
+
+def container_refs(container):
+    """-> list of (slot, 16-byte ref) for every non-empty slot of a v3
+    container's reference table."""
+    out = []
+    for slot in range(V3_REF_COUNT):
+        off = V3_REF_TABLE + slot * 16
+        ref = bytes(container[off : off + 16])
+        if ref != V3_EMPTY_REF and ref != bytes(16):
+            out.append((slot, ref))
+    return out
+
+
+def kit_track_slot(container, kit, track):
+    """-> the int16 sample slot of `track` (0-based) in v3 kit `kit`."""
+    off = V3_KITS + kit * V3_KIT_SIZE + V3_TRACK0 + track * V3_TRACK_SIZE
+    return struct.unpack_from(">h", container, off + V3_TRACK_SLOT)[0]
+
+
+def point_refs_at(container, ref):
+    """Replace every non-empty reference in the slot table with `ref` (16
+    bytes), and every other copy of an old reference anywhere in the
+    container (each kit track carries one at +0x129). -> (container,
+    slots replaced, extra copies replaced)."""
+    buf = bytearray(container)
+    old = container_refs(buf)
+    copies = 0
+    for slot, _ in old:
+        buf[V3_REF_TABLE + slot * 16 : V3_REF_TABLE + slot * 16 + 16] = ref
+    for old_ref in sorted({r for _, r in old}):
+        pos = buf.find(old_ref)
+        while pos >= 0:
+            buf[pos : pos + 16] = ref
+            copies += 1
+            pos = buf.find(old_ref, pos + 16)
+    return bytes(buf), len(old), copies
+
+
+def build_project_record(main_os, ref, seq=0):
+    """-> (record, summary). record: the PROJECT_RECORD_SIZE-byte
+    active-project record, COKi header (0x110 bytes, sequence counter `seq`)
+    + the built-in v3 container with every sample reference replaced by
+    `ref`, zero-padded to the size FUN_400f0628 reads. The v3 container is
+    what the factory-reset path itself depacks into the same buffer.
+    summary: slots and extra copies replaced, and the active kit's track
+    slots."""
+    source = builtin_project(main_os)
+    container, slots, copies = point_refs_at(source, ref)
+    header = build_project_header(
+        PROJECT_HEADER_SIZE, seq=seq, fs_version=SUPERBLOCK_VERSION
+    )
+    record = header + container
+    summary = {
+        "slots": slots,
+        "copies": copies,
+        "track_slots": [kit_track_slot(source, ACTIVE_KIT, t) for t in range(16)],
+    }
+    return record + bytes(PROJECT_RECORD_SIZE - len(record)), summary
+
+
 class Image:
     """An in-progress (or already-built) +Drive card image, as a sparse file.
 
@@ -438,15 +903,26 @@ class Image:
     def set_bits(self, base_sector, bit_indices):
         """OR the given bit numbers into a bitmap starting at base_sector.
 
-        All the bit numbers this tool ever sets are tiny (single digits),
-        so they land in the first word of the first page; a real 32 KiB
-        bitmap page is still allocated (zero-filled by the sparse-file
-        default) so the read side sees a well-formed page, not a hole.
+        The firmware's bitmaps are arrays of big-endian u32 words: bit n is
+        `1 << (n & 31)` of word `n >> 5` (FUN_4015b93e and FUN_4015b7ac for
+        record ids, FUN_40155698 for content pages). Bit 0 is therefore in
+        byte 3, not byte 0. A whole 32 KiB page is written so the read side
+        sees a page, not a hole.
         """
-        page = bytearray(self.read(base_sector, PAGE))
+        top = max(bit_indices) if bit_indices else 0
+        length = max(PAGE, ((top >> 5) + 1) * 4)
+        buf = bytearray(self.read(base_sector, length))
         for bit in bit_indices:
-            page[bit >> 3] |= 1 << (bit & 7)
-        self.write(base_sector, bytes(page))
+            off = (bit >> 5) * 4
+            (word,) = struct.unpack_from(">I", buf, off)
+            struct.pack_into(">I", buf, off, word | (1 << (bit & 31)))
+        self.write(base_sector, bytes(buf))
+
+    def write_hash(self, record_id, value):
+        """Store `value` (already `| 1`) as record_id's hash-table word."""
+        sector = HASH_TABLE_SECTOR + (record_id >> 13) * (PAGE // SECTOR)
+        self._f.seek(sector * SECTOR + (record_id & 0x1FFF) * 4)
+        self._f.write(struct.pack(">I", value))
 
 
 def _record_offset(record_id):
@@ -454,8 +930,14 @@ def _record_offset(record_id):
     return (RECORD_AREA_SECTOR + group * (PAGE // SECTOR)) * SECTOR + slot * RECORD_SIZE
 
 
-def _write_record(img, record_id, attr0, size, parent, extents):
-    """extents: list of (logical_start_page, length_pages, physical_page)."""
+def _write_record(
+    img, record_id, attr0, size, parent, extents, hash_word=0, seq=None, links=1
+):
+    """extents: list of (logical_start_page, length_pages, physical_page).
+    hash_word: record +0x0C, `content_hash | 1` for a sample file (bit 0 is
+    what FUN_4015ab5c requires), 0 for a directory. seq: record +0x10, a
+    sample reference's fourth word must equal it for FUN_4015b178's exact
+    match (defaults to the id)."""
     if len(extents) > 8:
         raise ValueError(
             "more than 8 extents needs the indirect-page format (unimplemented)"
@@ -463,11 +945,11 @@ def _write_record(img, record_id, attr0, size, parent, extents):
     rec = bytearray(RECORD_SIZE)
     rec[0x00] = attr0
     rec[0x01] = DEFAULT_OFFSET01
-    struct.pack_into(">H", rec, 0x02, 1)  # link count
+    struct.pack_into(">H", rec, 0x02, links)  # link count
     struct.pack_into(">I", rec, 0x04, size)
     struct.pack_into(">I", rec, 0x08, parent)
-    struct.pack_into(">I", rec, 0x0C, 0)
-    struct.pack_into(">I", rec, 0x10, record_id)  # sequence number, any unique value
+    struct.pack_into(">I", rec, 0x0C, hash_word)
+    struct.pack_into(">I", rec, 0x10, record_id if seq is None else seq)
     struct.pack_into(">H", rec, 0x1E, len(extents))
     for i, (logical, length, phys) in enumerate(extents):
         off = 0x20 + i * 12
@@ -488,10 +970,10 @@ def _write_page(img, page_id, data):
     img._f.write(data)
 
 
-def build(samples_dir, out_path, capacity_blocks=DEFAULT_CAPACITY_BLOCKS):
-    """Build a +Drive card image at out_path from every file directly under
-    samples_dir (non-recursive; anything other than .wav is skipped with a
-    warning). -> list of (name, size) written."""
+def load_samples(samples_dir):
+    """-> list of (name, native bytes, info) for every .wav directly under
+    samples_dir (non-recursive), converted with wav_to_native. The stored
+    name drops the .wav extension: the file is no longer a WAV."""
     entries = []
     for name in sorted(os.listdir(samples_dir)):
         if not name.lower().endswith(".wav"):
@@ -500,10 +982,24 @@ def build(samples_dir, out_path, capacity_blocks=DEFAULT_CAPACITY_BLOCKS):
         if not os.path.isfile(path):
             continue
         with open(path, "rb") as f:
-            data = f.read()
-        entries.append((name, data))
+            native, info = wav_to_native(f.read())
+        entries.append((os.path.splitext(name)[0], native, info))
     if not entries:
         raise ValueError("no .wav files found directly under %r" % samples_dir)
+    return entries
+
+
+def build(samples_dir, out_path, capacity_blocks=DEFAULT_CAPACITY_BLOCKS, main_os=None):
+    """Build a +Drive card image at out_path from every .wav directly under
+    samples_dir. With `main_os` (the DT2 1.16 MAIN OS image bytes) the
+    active-project record points every sample reference at the first file;
+    without it only the 256-byte COKi header is written, as before.
+
+    -> list of dicts, one per file: name, id, size, hash (record +0x0C),
+    seq, pages (first, count), ref (the 16-byte sample reference), info
+    (conversion details); plus, on the first, project (slot/copy counts)
+    when a project record was written."""
+    entries = load_samples(samples_dir)
 
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     img = Image(out_path, capacity_blocks)
@@ -523,47 +1019,38 @@ def build(samples_dir, out_path, capacity_blocks=DEFAULT_CAPACITY_BLOCKS):
         # docs/findings/07-emulator.md's std::logic_error section.
         img.write(SUPERBLOCK_SECTOR, build_superblock())
 
-        # Unrelated third structure: without this, every boot (regardless of
-        # +Drive/mount content) falls into FUN_400f0628's ~13.85 MiB
-        # internal-flash "repair" path and the boot task ends up pending
-        # forever on an unposted semaphore -- see BOOT_CONFIG_SECTOR's
-        # comment and docs/findings/14-plus-drive-format.md.
-        boot_config = build_boot_config_record()
-        img.write(BOOT_CONFIG_SECTOR, boot_config)
-        img.write(BOOT_CONFIG_SECTOR_2, boot_config)
-
         # Unrelated fourth structure: without this, mount (FUN_4015a450, via
         # FUN_4015a124 -> FUN_4002cd6a) fails cleanly even once the
         # superblock and boot-config checks both pass -- see
         # FACTORY_TABLE_SECTOR's comment above.
         img.write(FACTORY_TABLE_SECTOR, build_factory_table_record())
 
-        # Region 2: allocate physical pages up front -- page 0 is the root
-        # directory's content (the child listing), page 1 is its 0x10001
-        # enumeration index, then each sample gets ceil(size/32KiB)
-        # contiguous pages so a single inline extent covers it.
-        next_page = 0
+        # Region 2: pages below FIRST_FILE_PAGE belong to the format's own
+        # reserved runs (see RESERVED_PAGES). Then the root directory's
+        # content page and its three index pages (logical 0x10000-0x10002,
+        # contiguous, as FUN_40155ed6 allocates them), then each sample in
+        # ceil(size/32KiB) contiguous pages so one inline extent covers it.
+        next_page = FIRST_FILE_PAGE
         root_content_page = next_page
         next_page += 1
-        root_index_page = next_page
-        next_page += 1
+        root_index_pages = next_page
+        next_page += 3
 
-        dir_content = bytearray()
-        file_records = []  # (id, name, size)
+        children = []
+        written = []
         next_id = ROOT_ID + 1
-        for name, data in entries:
-            name_bytes = name.encode("ascii", "replace")
-            if len(name_bytes) > 0xFF:
-                name_bytes = name_bytes[:0xFF]
+        for name, data, info in entries:
+            name_bytes = name.encode("ascii", "replace")[:0xFF]
             n_pages = max(1, (len(data) + PAGE - 1) // PAGE)
             start_page = next_page
             next_page += n_pages
             for i in range(n_pages):
-                chunk = data[i * PAGE : (i + 1) * PAGE]
-                _write_page(img, start_page + i, chunk)
+                _write_page(img, start_page + i, data[i * PAGE : (i + 1) * PAGE])
 
             record_id = next_id
             next_id += 1
+            hash_word = content_hash(data) | 1
+            seq = record_id
             _write_record(
                 img,
                 record_id,
@@ -571,48 +1058,65 @@ def build(samples_dir, out_path, capacity_blocks=DEFAULT_CAPACITY_BLOCKS):
                 len(data),
                 ROOT_ID,
                 [(0, n_pages, start_page)],
+                hash_word=hash_word,
+                seq=seq,
+            )
+            img.write_hash(record_id, hash_word)
+
+            children.append((name_bytes, record_id, ATTR_FILE))
+            written.append(
+                {
+                    "name": name,
+                    "id": record_id,
+                    "size": len(data),
+                    "hash": hash_word,
+                    "seq": seq,
+                    "pages": (start_page, n_pages),
+                    "ref": struct.pack(">IIII", record_id, hash_word, len(data), seq),
+                    "info": info,
+                }
             )
 
-            slot_len = 8 + len(name_bytes)
-            entry = bytearray(slot_len)
-            struct.pack_into(">I", entry, 0x00, record_id)
-            struct.pack_into(">H", entry, 0x04, slot_len)
-            entry[0x06] = len(name_bytes)
-            entry[0x07] = ATTR_FILE
-            entry[0x08 : 0x08 + len(name_bytes)] = name_bytes
-            file_records.append((record_id, name, len(data), len(dir_content)))
-            dir_content += entry
-
-        _write_page(img, root_content_page, bytes(dir_content))
-
-        index_page = bytearray(6 + 4 * len(file_records))
-        struct.pack_into(">H", index_page, 0x00, len(file_records))
-        for i, (_, _, _, byte_offset) in enumerate(file_records):
-            if byte_offset >= PAGE:
-                raise ValueError(
-                    "root directory content exceeds one 32 KiB page (unimplemented)"
-                )
-            packed = byte_offset & 0x7FFF  # page field 0 (all entries on page 0)
-            struct.pack_into(">I", index_page, 6 + i * 4, packed)
-        _write_page(img, root_index_page, bytes(index_page))
-
+        content, by_hash, listing, by_id = build_directory(ROOT_ID, ROOT_ID, children)
+        _write_page(img, root_content_page, content)
+        _write_page(img, root_index_pages, by_hash)
+        _write_page(img, root_index_pages + 1, listing)
+        _write_page(img, root_index_pages + 2, by_id)
+        # A directory's size is whole content pages (FUN_40156334 grows it
+        # by 0x8000); "." and ".." each add one link to the root.
         _write_record(
             img,
             ROOT_ID,
             ATTR_DIR,
-            len(dir_content),
+            PAGE,
             ROOT_PARENT,
-            [(0, 1, root_content_page), (LOGICAL_INDEX_PAGE, 1, root_index_page)],
+            [(0, 1, root_content_page), (LOGICAL_HASH_PAGE, 3, root_index_pages)],
+            links=2,
         )
 
         img.set_bits(
-            ID_BITMAP_SECTOR, [ROOT_ID] + [rid for rid, _, _, _ in file_records]
+            ID_BITMAP_SECTOR,
+            list(RESERVED_IDS) + [ROOT_ID] + [w["id"] for w in written],
         )
         img.set_bits(PAGE_BITMAP_SECTOR, list(range(next_page)))
+
+        # The COKi header (and, with main_os, the active project) at
+        # 0x40000/0x48000. Without a valid header every boot falls into
+        # FUN_400f0628's ~13.85 MiB internal-flash "repair" path and the boot
+        # task pends forever -- see BOOT_CONFIG_SECTOR's comment. The
+        # header's sequence counter continues after the ids used here.
+        if main_os is not None:
+            record, written[0]["project"] = build_project_record(
+                main_os, written[0]["ref"], seq=next_id
+            )
+        else:
+            record = build_boot_config_record()
+        img.write(BOOT_CONFIG_SECTOR, record)
+        img.write(BOOT_CONFIG_SECTOR_2, record)
     finally:
         img.close()
 
-    return [(name, len(data)) for name, data in entries]
+    return written
 
 
 def _read_record(img, record_id):
@@ -670,6 +1174,9 @@ def ls(image_path):
             name_len = content[pos + 6]
             attr = content[pos + 7]
             name = content[pos + 8 : pos + 8 + name_len].decode("ascii", "replace")
+            if name in (".", ".."):
+                pos += slot_len
+                continue
             rec = _read_record(img, record_id)
             out.append(
                 {
@@ -709,19 +1216,73 @@ def main(argv=None):
     b.add_argument(
         "--capacity-blocks", type=lambda s: int(s, 0), default=DEFAULT_CAPACITY_BLOCKS
     )
+    b.add_argument(
+        "--main-os",
+        default=DEFAULT_MAIN_OS,
+        help="DT2 1.16 MAIN OS image to take the built-in project from "
+        "(default: %(default)s)",
+    )
+    b.add_argument(
+        "--no-project",
+        action="store_true",
+        help="write only the COKi header, no project (the old behaviour)",
+    )
 
     lsp = sub.add_parser("ls", help="list a +Drive image's root directory")
     lsp.add_argument("image")
 
     args = p.parse_args(argv)
     if args.cmd == "build":
-        entries = build(args.samples_dir, args.out, args.capacity_blocks)
+        main_os = None
+        if not args.no_project:
+            if not os.path.exists(args.main_os):
+                p.error(
+                    "no MAIN OS image at %s: extract DT2 1.16 with "
+                    "`uv run python -m emu.extract SYX -o out/sections/dt2-1.16`, "
+                    "pass --main-os, or build without a project (--no-project)"
+                    % args.main_os
+                )
+            with open(args.main_os, "rb") as f:
+                main_os = f.read()
+        entries = build(args.samples_dir, args.out, args.capacity_blocks, main_os)
         print(
             "wrote %s (%d bytes logical) with %d sample(s):"
             % (args.out, args.capacity_blocks * SECTOR, len(entries))
         )
-        for name, size in entries:
-            print("  %-32s %d bytes" % (name, size))
+        for e in entries:
+            info = e["info"]
+            print(
+                "  %-24s id=%d %d bytes, hash|1=%#010x, pages %#x+%d, "
+                "%d ch %d Hz %d frames -> 48000 Hz %d frames"
+                % (
+                    e["name"],
+                    e["id"],
+                    e["size"],
+                    e["hash"],
+                    e["pages"][0],
+                    e["pages"][1],
+                    info["channels"],
+                    info["src_rate"],
+                    info["src_frames"],
+                    info["frames"],
+                )
+            )
+        if main_os is not None:
+            proj = entries[0]["project"]
+            print(
+                "project record at %#x/%#x: %d slot references and %d track "
+                "copies -> %s (%s); active kit %d track slots %s"
+                % (
+                    BOOT_CONFIG_SECTOR,
+                    BOOT_CONFIG_SECTOR_2,
+                    proj["slots"],
+                    proj["copies"],
+                    entries[0]["name"],
+                    entries[0]["ref"].hex(),
+                    ACTIVE_KIT,
+                    proj["track_slots"],
+                )
+            )
     elif args.cmd == "ls":
         entries = ls(args.image)
         if not entries:

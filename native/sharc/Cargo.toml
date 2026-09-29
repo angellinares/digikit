@@ -1,0 +1,32 @@
+[package]
+name = "sharc-native"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Native SHARC+ core generated from tools/sharc_core (tools/sharc_transpile.py, tools/sharc_rsgen.py)"
+
+# std only: no crate dependencies.
+[dependencies]
+
+[lib]
+name = "sharc_native"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "sharc-check"
+path = "src/bin/sharc_check.rs"
+
+[profile.release]
+opt-level = 3
+# Generated regions are large functions: more units, more parallel LLVM.
+codegen-units = 64
+debug = false
+panic = "abort"
+incremental = false
+
+[profile.dev]
+panic = "abort"
+
+[[bin]]
+name = "sharc-frames"
+path = "src/bin/sharc_frames.rs"

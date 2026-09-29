@@ -528,23 +528,22 @@ class CollectAllFrameRunTest(unittest.TestCase):
         self.assertEqual(last.category, "frame-returned")
         self.assertEqual(last.pc, milestone["pc_sw"])
 
-    def test_without_patch_table_finds_several_distinct_forks_then_the_same_blocker(
-        self,
-    ):
+    def test_without_patch_table_is_the_same_single_stop(self):
         result = sv.run_collect_all(
             self._fresh_call(), {}, max_steps=4_000_000, img=self.img
         )
-        # Every fork this lane's own FRAME_PATCH_TABLE hand-resolves, plus a
-        # handful more a bare not-taken default has to guess through, ending
-        # at the same FRAME_MILESTONE stop a hand-patched run reaches (a
-        # "frame-returned" category -- see the sibling test above).
-        self.assertGreater(result.guesses, 5)
+        # 2026-09-28 re-pin, "more than 5 guesses" -> none: every fork this
+        # run used to guess through came from tools/sharc_core bugs fixed
+        # since (ShiftImm 0x19 read as BITEXT gave Unknown operands to
+        # FUN_1c4914's fcomp, the reason FRAME_PATCH_TABLE had its last
+        # entry; Type4b/(lw)/MODIFY addressing). FRAME_PATCH_TABLE is empty
+        # and the bare run is the same single FRAME_MILESTONE stop.
+        self.assertEqual(result.guesses, 0)
         milestone = self.h.FRAME_MILESTONE
+        self.assertEqual(len(result.stops), 1)
+        self.assertEqual(result.instructions, milestone["instructions"])
         self.assertEqual(result.stops[-1].category, "frame-returned")
         self.assertEqual(result.stops[-1].pc, milestone["pc_sw"])
-        # A recurring fork (a loop) is recorded once, not once per iteration.
-        pcs = [s.pc for s in result.stops]
-        self.assertEqual(len(pcs), len(set(pcs)))
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ probe); these vectors are the durable record of that run, per this repo's
 would need a snapshot and is not needed to trust these numbers again.
 """
 
+import math
 import os
 import struct
 import sys
@@ -131,6 +132,27 @@ def _rand_bytes(seed, n):
     return bytes(rng.randrange(256) for _ in range(n))
 
 
+def _wav_bytes(rate, channels, samples, bits=16, extensible=False):
+    """-> a PCM WAV file: `samples` are interleaved ints at `bits` width."""
+    width = bits // 8
+    pcm = b"".join(v.to_bytes(width, "little", signed=True) for v in samples)
+    tag = 0xFFFE if extensible else 1
+    fmt = struct.pack(
+        "<HHIIHH", tag, channels, rate, rate * channels * width, channels * width, bits
+    )
+    if extensible:
+        guid = struct.pack("<H", 1) + bytes.fromhex("000000001000800000aa00389b71")
+        fmt += struct.pack("<HHI", 22, bits, 3) + guid
+    body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt
+    body += b"data" + struct.pack("<I", len(pcm)) + pcm
+    return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+def _write_wav(path, rate, channels, samples, bits=16):
+    with open(path, "wb") as f:
+        f.write(_wav_bytes(rate, channels, samples, bits))
+
+
 class HashlittleGoldenTest(unittest.TestCase):
     """These specific 17 vectors were captured from real firmware execution
     (see module docstring) and are frozen exactly as captured -- lengths
@@ -242,8 +264,7 @@ class BuildWritesSuperblockTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             samples_dir = os.path.join(tmp, "samples")
             os.makedirs(samples_dir)
-            with open(os.path.join(samples_dir, "hat.wav"), "wb") as f:
-                f.write(b"RIFF" + b"\0" * 100)
+            _write_wav(os.path.join(samples_dir, "hat.wav"), 48000, 1, [0] * 50)
             out_path = os.path.join(tmp, "dt2.img")
             pd.build(samples_dir, out_path)
 
@@ -301,8 +322,7 @@ class CardCapacityCoversImageTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             samples_dir = os.path.join(tmp, "samples")
             os.makedirs(samples_dir)
-            with open(os.path.join(samples_dir, "hat.wav"), "wb") as f:
-                f.write(b"RIFF" + os.urandom(4096))
+            _write_wav(os.path.join(samples_dir, "hat.wav"), 48000, 2, [1, -1] * 1024)
             out_path = os.path.join(tmp, "dt2.img")
             pd.build(samples_dir, out_path)
 
@@ -347,6 +367,282 @@ class CardCapacityCoversImageTest(unittest.TestCase):
             # sector plusdrive.py could possibly have written is covered.
             highest_possible_sector = size // pd.SECTOR - 1
             self.assertGreater(dat_44e3fea0, highest_possible_sector)
+
+
+class NativeSampleTest(unittest.TestCase):
+    """The file layout FUN_40153994 writes and FUN_40154540 reads."""
+
+    def test_header_pcm_and_trailer(self):
+        pcm = struct.pack(">4h", 1, -2, 300, -32768)
+        data = pd.build_native_sample(pcm, stereo=True)
+        self.assertEqual(len(data), len(pcm) + 0x50)
+        self.assertEqual(data[0], 0)
+        self.assertEqual(data[1], 1)
+        self.assertEqual(struct.unpack_from(">I", data, 4)[0], len(pcm))
+        self.assertEqual(struct.unpack_from(">I", data, 8)[0], 48000)
+        self.assertEqual(struct.unpack_from(">I", data, 0x0C)[0], 0)
+        self.assertEqual(struct.unpack_from(">I", data, 0x10)[0], 0)
+        self.assertEqual(data[0x14], 0x7F)
+        self.assertEqual(data[0x15:0x40], bytes(0x2B))
+        self.assertEqual(data[0x40 : 0x40 + len(pcm)], pcm)
+        self.assertEqual(data[-16:], bytes(16))
+        self.assertEqual(pd.parse_native_header(data), (True, len(pcm), 48000))
+
+    def test_mono_flag(self):
+        data = pd.build_native_sample(b"\0\1", stereo=False)
+        self.assertEqual(pd.parse_native_header(data), (False, 2, 48000))
+
+
+class WavConversionTest(unittest.TestCase):
+    def test_48k_16bit_mono_passes_through_big_endian(self):
+        samples = [0, 1, -1, 32767, -32768, 1234]
+        native, info = pd.wav_to_native(_wav_bytes(48000, 1, samples))
+        self.assertEqual(info["frames"], len(samples))
+        self.assertEqual(native[1], 0)
+        self.assertEqual(native[0x40:-16], struct.pack(">6h", *samples))
+
+    def test_48k_24bit_extensible_stereo_keeps_top_16_bits(self):
+        frames = [(0x123456, -0x123456), (0x7FFF00, -0x800000)]
+        flat = [v for f in frames for v in f]
+        native, info = pd.wav_to_native(_wav_bytes(48000, 2, flat, 24, True))
+        self.assertEqual(info["channels"], 2)
+        self.assertEqual(native[1], 1)
+        got = struct.unpack(">4h", native[0x40:-16])
+        # round(v / 256): 0x123456 -> 0x1234 (0x56 < 0x80), 0x7fff00 -> 0x7fff
+        self.assertEqual(got, (0x1234, -0x1234, 0x7FFF, -0x8000))
+
+    def test_resample_44k1_length_and_tone(self):
+        n = 4410
+        tone = [
+            round(16384 * math.sin(2 * math.pi * 1000 * i / 44100)) for i in range(n)
+        ]
+        native, info = pd.wav_to_native(_wav_bytes(44100, 1, tone))
+        self.assertEqual(info["src_rate"], 44100)
+        self.assertEqual(info["frames"], -(-n * 160 // 147))  # ceil(n * 48000/44100)
+        out = struct.unpack(">%dh" % info["frames"], native[0x40:-16])
+        # Away from the edges the 1 kHz tone keeps its amplitude and phase.
+        for i in range(200, 4600, 97):
+            want = 16384 * math.sin(2 * math.pi * 1000 * i / 48000)
+            self.assertLess(abs(out[i] - want), 60, "output frame %d" % i)
+
+    def test_rejects_more_than_two_channels(self):
+        with self.assertRaises(ValueError):
+            pd.wav_to_native(_wav_bytes(48000, 3, [0, 0, 0]))
+
+    def test_rejects_non_wav(self):
+        with self.assertRaises(ValueError):
+            pd.wav_to_native(b"RIFF" + bytes(100))
+
+
+class ContentHashTest(unittest.TestCase):
+    def test_seed_is_fun_4015af0c_state(self):
+        # hashlittle() seeds a = b = c = initval + 0xDEADBEEF; FUN_4015af0c
+        # stores 0x43fa243a straight into all three.
+        initval = (pd.CONTENT_HASH_STATE - 0xDEADBEEF) & 0xFFFFFFFF
+        self.assertEqual((initval + 0xDEADBEEF) & 0xFFFFFFFF, 0x43FA243A)
+        data = _rand_bytes(9, 1000)
+        self.assertEqual(pd.content_hash(data), pd.hashlittle(data, initval))
+
+
+class BuildLayoutTest(unittest.TestCase):
+    """What build() writes for one sample, without the firmware."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        samples_dir = os.path.join(cls.tmp.name, "samples")
+        os.makedirs(samples_dir)
+        tone = [round(8000 * math.sin(i / 7)) for i in range(40000)]
+        _write_wav(os.path.join(samples_dir, "hat.wav"), 48000, 2, tone)
+        cls.path = os.path.join(cls.tmp.name, "dt2.img")
+        cls.entries = pd.build(samples_dir, cls.path)
+        cls.f = open(cls.path, "rb")  # noqa: SIM115 -- closed in tearDownClass
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.f.close()
+        cls.tmp.cleanup()
+
+    def read(self, offset, n):
+        self.f.seek(offset)
+        return self.f.read(n)
+
+    def test_record_hash_word_and_hash_table(self):
+        e = self.entries[0]
+        self.assertEqual(e["name"], "hat")
+        rec = self.read(pd._record_offset(e["id"]), pd.RECORD_SIZE)
+        size, parent, hash_word, seq = struct.unpack_from(">IIII", rec, 4)
+        self.assertEqual(size, e["size"])
+        self.assertEqual(parent, pd.ROOT_ID)
+        self.assertEqual(hash_word & 1, 1)  # FUN_4015ab5c's bit-0 check
+        self.assertEqual(seq, e["seq"])
+        self.assertEqual(e["ref"], struct.pack(">IIII", e["id"], hash_word, size, seq))
+        data = self.read(pd._page_offset(e["pages"][0]), size)
+        self.assertEqual(hash_word, pd.content_hash(data) | 1)
+        table = pd.HASH_TABLE_SECTOR * pd.SECTOR + e["id"] * 4
+        self.assertEqual(struct.unpack(">I", self.read(table, 4))[0], hash_word)
+        self.assertEqual(pd.parse_native_header(data), (True, size - 0x50, 48000))
+
+    def test_pages_clear_of_reserved_runs(self):
+        root = pd._read_record(pd._ReadOnlyImage(self.f), pd.ROOT_ID)
+        pages = [phys for _, _, phys in root["extents"]]
+        pages.append(self.entries[0]["pages"][0])
+        self.assertGreaterEqual(min(pages), pd.FIRST_FILE_PAGE)
+        self.assertEqual(pd.FIRST_FILE_PAGE, 0x78)
+
+    def test_bitmaps_are_big_endian_words(self):
+        ids = self.read(pd.ID_BITMAP_SECTOR * pd.SECTOR, 4)
+        # ids 0, 1 (reserved), 2 (root), 3 (hat): bits 0-3 of BE word 0.
+        self.assertEqual(ids, b"\x00\x00\x00\x0f")
+        start, count = self.entries[0]["pages"]
+        used = start + count
+        words = self.read(pd.PAGE_BITMAP_SECTOR * pd.SECTOR, ((used + 8) // 32 + 1) * 4)
+        for page in range(used + 8):
+            word = struct.unpack_from(">I", words, (page >> 5) * 4)[0]
+            self.assertEqual(bool(word >> (page & 31) & 1), page < used, page)
+
+    def test_boot_config_without_project(self):
+        rec = self.read(pd.BOOT_CONFIG_SECTOR * pd.SECTOR, 0x100)
+        self.assertEqual(rec, pd.build_boot_config_record())
+
+    def test_root_directory_layout(self):
+        root = pd._read_record(pd._ReadOnlyImage(self.f), pd.ROOT_ID)
+        self.assertEqual(root["attr0"], pd.ATTR_DIR)
+        self.assertEqual(root["size"], pd.PAGE)  # whole content pages
+        (_, _, content_page), (logical, count, index0) = root["extents"]
+        self.assertEqual((logical, count, index0), (0x10000, 3, content_page + 1))
+        content = self.read(pd._page_offset(content_page), pd.PAGE)
+        entries, pos = [], 0
+        while pos < pd.PAGE:
+            rid, slot, n, kind = struct.unpack_from(">IHBB", content, pos)
+            entries.append((content[pos + 8 : pos + 8 + n], rid, kind, pos))
+            pos += slot
+        self.assertEqual(pos, pd.PAGE)  # the last slot runs to the page end
+        e = self.entries[0]
+        self.assertEqual(
+            [x[:3] for x in entries],
+            [(b".", 2, 1), (b"..", 2, 1), (b"hat", e["id"], 0)],
+        )
+        # FUN_40155ea8: the parent is the id at content byte 0x0C ("..").
+        self.assertEqual(struct.unpack_from(">I", content, 0x0C)[0], pd.ROOT_ID)
+        where = {x[0]: x[3] for x in entries}
+
+        def index(page):
+            data = self.read(pd._page_offset(index0 + page), pd.PAGE)
+            (n,) = struct.unpack_from(">H", data, 0)
+            return [struct.unpack_from(">II", data, 8 + 8 * i) for i in range(n)]
+
+        self.assertEqual(
+            index(0),
+            sorted((pd.name_hash(n), where[n]) for n in (b".", b"..", b"hat")),
+        )
+        self.assertEqual(
+            [p for _, p in index(1)], [where[b"."], where[b".."], where[b"hat"]]
+        )
+        self.assertEqual(
+            index(2),
+            [(2, where[b"."]), (2, where[b".."]), (e["id"], where[b"hat"])],
+        )
+        self.assertEqual([x["name"] for x in pd.ls(self.path)], ["hat"])
+
+
+class NameHashTest(unittest.TestCase):
+    # Values returned by the firmware's own FUN_40155f96 for these names
+    # (tools/plusdrive_check.py, check_directory, on DT2 1.16).
+    FIRMWARE = {b".": 1909931592, b"..": 2084022942, b"hat": 1964773430}
+
+    def test_matches_firmware(self):
+        for name, value in self.FIRMWARE.items():
+            self.assertEqual(pd.name_hash(name), value, name)
+
+    def test_listing_order_puts_directories_first(self):
+        content, _, listing, _ = pd.build_directory(
+            2, 2, [(b"b10", 5, 0), (b"B9", 4, 0), (b"sub", 6, 1), (b"a", 3, 0)]
+        )
+        (n,) = struct.unpack_from(">H", listing, 0)
+        names = []
+        for i in range(n):
+            (where,) = struct.unpack_from(">I", listing, 12 + 8 * i)
+            length = content[where + 6]
+            names.append(content[where + 8 : where + 8 + length])
+        self.assertEqual(names, [b".", b"..", b"sub", b"a", b"B9", b"b10"])
+
+
+def _coki_ok(header):
+    """FUN_400c0e54: magic, word 3 < 0xF1, FUN_400c0d3a checksum."""
+    words = struct.unpack(">64I", header[:0x100])
+    total = 0
+    for i in range((words[3] + 8) >> 2):
+        total += (i + 1) ^ words[2 + i]
+    return words[0] == 0x434F4B69 and words[3] < 0xF1 and total & 0xFFFFFFFF == words[1]
+
+
+class ProjectHeaderTest(unittest.TestCase):
+    def test_header_passes_coki_check_and_keeps_flags_clear(self):
+        h = pd.build_project_header(seq=0x1234, fs_version=4)
+        self.assertEqual(len(h), 0x110)
+        self.assertTrue(_coki_ok(h))
+        self.assertEqual(struct.unpack_from(">I", h, 0x14)[0] & 3, 0)
+        self.assertEqual(struct.unpack_from(">I", h, 0x104)[0], 0x1234)
+        self.assertTrue(_coki_ok(pd.build_boot_config_record()))
+
+
+_MAIN_OS = os.environ.get("DT2_MAIN_IMG", pd.DEFAULT_MAIN_OS)
+
+
+@unittest.skipUnless(os.path.exists(_MAIN_OS), "needs the DT2 1.16 MAIN OS image")
+class BuiltinProjectTest(unittest.TestCase):
+    """The built-in project from the extracted 1.16 sections."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(_MAIN_OS, "rb") as f:
+            cls.main_os = f.read()
+        cls.container = pd.builtin_project(cls.main_os)
+
+    def test_reference_table(self):
+        refs = pd.container_refs(self.container)
+        self.assertEqual(len(refs), 297)
+        self.assertEqual(
+            self.container[pd.V3_REF_TABLE : pd.V3_REF_TABLE + 16], pd.V3_EMPTY_REF
+        )
+        for _, ref in refs:
+            self.assertEqual(struct.unpack_from(">I", ref, 4)[0] & 1, 1)
+
+    def test_active_kit_track_slots(self):
+        slots = [pd.kit_track_slot(self.container, pd.ACTIVE_KIT, t) for t in range(16)]
+        self.assertEqual(slots[:3], [7, 1, 3])
+        # Each track carries a copy of its slot's reference at +0x129.
+        table = dict(pd.container_refs(self.container))
+        for t, slot in enumerate(slots):
+            off = pd.V3_KITS + pd.V3_TRACK0 + t * pd.V3_TRACK_SIZE + pd.V3_TRACK_REF
+            self.assertEqual(self.container[off : off + 16], table[slot], t)
+
+    def test_point_refs_at(self):
+        ref = struct.pack(">IIII", 3, 0x12345679, 0x1000, 3)
+        out, slots, copies = pd.point_refs_at(self.container, ref)
+        self.assertEqual(len(out), len(self.container))
+        self.assertEqual(slots, 297)
+        self.assertGreaterEqual(copies, 16)
+        self.assertEqual({r for _, r in pd.container_refs(out)}, {ref})
+        for _, old in pd.container_refs(self.container):
+            self.assertEqual(out.find(old), -1)
+
+    def test_project_record(self):
+        ref = struct.pack(">IIII", 3, 0x12345679, 0x1000, 3)
+        record, summary = pd.build_project_record(self.main_os, ref, seq=4)
+        self.assertEqual(len(record), pd.PROJECT_RECORD_SIZE)
+        self.assertTrue(_coki_ok(record))
+        body = record[pd.PROJECT_HEADER_SIZE :]
+        self.assertEqual(struct.unpack_from(">II", body, 0), (0xBEEFBACE, 3))
+        self.assertEqual(
+            struct.unpack_from(">I", body, pd.V3_END_MARKER)[0], 0xBACEF00C
+        )
+        self.assertEqual(summary["track_slots"][0], 7)
+
+    def test_rejects_other_images(self):
+        with self.assertRaises(ValueError):
+            pd.builtin_project(self.main_os[:-1] + bytes([self.main_os[-1] ^ 1]))
 
 
 if __name__ == "__main__":

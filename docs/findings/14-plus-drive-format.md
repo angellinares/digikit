@@ -281,6 +281,14 @@ offset 6): `count:u16` at 0, 4 reserved bytes, then `count` x 4-byte packed
 content pages. **[D]**, not independently cross-checked against a real
 populated directory (none was available to capture).
 
+> **Corrected 2026-09-28 [C][V].** Wrong. All three index pages (`0x10000`,
+> `0x10001`, `0x10002`) hold 8-byte entries from byte 8, `{u32 key, u32
+> page * 0x8000 + offset}`; the readers address them as `(ushort *)p + i*4 +
+> 6`. The old one-file image worked by accident (the pointer read as 0 =
+> offset 0). A directory also needs "." and ".." as its first two entries
+> and all three index pages. See "Native sample files and a boot project"
+> at the end of this file.
+
 ### Directory content-page entry format (variable length)
 
 Confirmed from both the reader (`FUN_40155cfa`) and the writer
@@ -339,6 +347,12 @@ header)** — the only choice consistent with the proven write-path behaviour,
 and the one to falsify or confirm with an emulator run against a real SRC
 browser/loader trace.
 
+> **Corrected 2026-09-28 [C][V].** Answered: the loader reads a native
+> format (64-byte header, big-endian int16 PCM, 16-byte trailer), written
+> by the sampler's own "Save recording" path. A WAV stored verbatim fails
+> the loader's key check and is read as garbage. See "Native sample files
+> and a boot project" at the end of this file.
+
 ## What `tools/plusdrive.py` builds
 
 Given the above, a minimal image that should make the root directory
@@ -375,6 +389,13 @@ attribute-byte values for "regular file" vs "directory" at record offsets
 0x00/0x01/0x0c (table above) are also inferred, not proven — if the browser
 misclassifies our sample entries, trace `FileSystemDirectory::vfunc_7/9/14`
 (`0x40159380`/`0x40159466`/`0x401594ce`) against a value sweep.
+
+> **Corrected 2026-09-28 [C][V].** Superseded. The bitmaps are big-endian
+> u32 words (items 3-4 set the wrong bits: the firmware saw ids 26/27
+> instead of 2/3), the directory needs ".", ".." and all three index pages,
+> file content must start at page `0x78`, and samples are converted to the
+> native format. See "Native sample files and a boot project" at the end of
+> this file.
 
 ## Region 2 has a third, undocumented on-disk structure: a superblock at sector 0x5D8000 **[V]**
 
@@ -493,6 +514,12 @@ getting them wrong cannot fail a mount -- they're written for fidelity to
 the real format, not because mount depends on them. **[V]** for what reads
 them and where the values come from; **[O]** still for what the
 `FUN_4015ae12` scan's cached table is actually used for downstream.
+
+> **Corrected 2026-09-28 [C][V].** `FUN_4015ae12` scans only the first
+> 44-page run, `[0x5ee980, 0x5ef480)` (pages `0x20`-`0x4B`), not 88 pages.
+> It is the content-hash index (`hash|1` per record id, see "Native sample
+> files and a boot project" below). The second run (`0x4C`-`0x77`) is
+> reserved and zero-filled by the format; its use is **[O]**.
 
 ## The capacity bound fixed: `FUN_4015a450` genuinely mounts on a cold boot **[V][C]**
 
@@ -648,7 +675,9 @@ nothing about mount state; readdir only happens on actual navigation
 
 - Exact semantics of record offsets 0x00 bit0, 0x01 bit0, 0x0c bit0
   (candidates: is-directory, protected/read-only, some third flag) — not
-  disambiguated from MAIN_OS code alone.
+  disambiguated from MAIN_OS code alone. *2026-09-28:* word +0x0C is the
+  content hash with bit 0 set (`hash|1`); the loader's key check needs bit
+  0 **[V]**.
 - The RAM-resident record ids (`0x1000000`-`0x1000800`, table at
   `0x47d73ed0`) and RAM-resident page ids (same range for pages, table at
   `0x46f63ed0`) — not traced; unclear if they're a boot-time cache of disk
@@ -658,7 +687,8 @@ nothing about mount state; readdir only happens on actual navigation
   unresolved.
 - `0x10001` index page's exact byte layout beyond the count field and the
   4-byte-per-entry packed pointer array — inferred from the read pattern,
-  not cross-checked against a real populated directory.
+  not cross-checked against a real populated directory. *Answered
+  2026-09-28 [C][V]: 8-byte entries from byte 8, see the last section.*
 - The RPC-opcode dispatcher connecting `elektron::MidiRpcFsSample
   WriteFileV1/V2`/`CreateDir` (whose own vfuncs are ctor/dtor boilerplate)
   to the generic `File`/`FileSystemDirectory` layer — not located; doesn't
@@ -668,6 +698,7 @@ nothing about mount state; readdir only happens on actual navigation
   load time) — the single biggest open question; needs an emulator trace of
   an actual "load sample from browser into track" action, or the untraced
   `SampleManager::vfunc_30`-`vfunc_45` / `SampleLoaderBgWorker` read path.
+  *Answered 2026-09-28 [C][V]: the native format, see the last section.*
 - Whether firmware ever re-validates the two filesystem bitmaps
   (`0x5d8040`, `0x5d80c0`-`0x5d8180`) against record/extent data outside the
   allocator (a mount-time consistency check) — not searched for.
@@ -904,3 +935,146 @@ nothing about mount state; readdir only happens on actual navigation
   this screen; a direct RAM read of the mounted `Directory` object
   (bypassing the browser UI) remains the open path to confirming `hat.wav`
   is listed.
+
+## Native sample files and a boot project (1.16) **[V][D][C]**
+
+2026-09-28. `tools/plusdrive.py` now writes samples in the firmware's own
+format and a boot project whose slots reference them, and
+`tools/plusdrive_check.py` checks an image with bounded calls of the
+firmware's own functions. Marks: **[V]** re-read against the image bytes by
+a second agent (verification lane, 2026-09-28); **[D]** read or executed
+once. How the loader streams a file to the SHARC is in finding 04 ("Sample
+data crosses FlexBus to link port 0 on 1.16") and
+[15](15-sharc-sample-path.md).
+
+    uv run python tools/plusdrive.py build samples -o out/plusdrive/native/dt2.img
+    DT2_SYX=Digitakt_II_OS1.16.syx uv run python tools/plusdrive_check.py out/plusdrive/native/dt2.img   # ~80 s
+
+### The native sample file **[V]**
+
+Writer: the sampler's "Save recording" job, `FUN_400213f4` ->
+`FUN_4001f8b0` -> `FUN_40153994`.
+
+| offset | value |
+|---|---|
+| `0x00` | 0 |
+| `0x01` | 1 = stereo (interleaved L/R), 0 = mono |
+| `0x04` | u32 BE: PCM data length in bytes |
+| `0x08` | u32 BE: sample rate (48000) |
+| `0x14` | byte `0x7F` |
+| rest of `0x40` | 0 |
+| `0x40`.. | big-endian int16 PCM (from the wire byte swap, finding 04) |
+| last 16 bytes | copied from `0x405a50a0` |
+
+File size = data + 0x50. `0x405a50a0` is referenced only inside
+`FUN_40153994`; the trailer's content is **[O]** (plusdrive writes zeros).
+The loader reads byte 1, +4 and +8 of the header (finding 04).
+
+**Content hash [D].** After close, `FUN_4015b0ce` -> `FUN_4015af0c`
+computes a hash over the file (seeds `0x43fa243a` x3, `FUN_4015aa20` /
+`FUN_4015a6dc`) and stores `hash|1` in record word +0x0C and in the hash
+table at sector `0x5ee980 + (id >> 13) * 0x40`, word `id & 0x1fff`.
+`tools/plusdrive.py` computes the same value (the firmware's own
+`FUN_4015af0c` rewrote hat's entry with the image's value).
+
+### References and ids
+
+- A sample reference is 16 bytes `{u32 id, u32 hash|1, u32 size, u32 seq}`
+  (the loader's key built by `FUN_4015ab5c` from record +0x0C, +0x04,
+  +0x10) **[V]**. `FUN_4015ab5c` returns -1 unless record +0x0C bit 0 is set
+  **[V]**.
+- `FUN_4015b178` resolves a ref: a valid id with matching seq, hash and size
+  -> 1; seq mismatch but hash and size match -> 3; an invalid id (such as
+  0) -> binary search of the hash index built at mount by `FUN_4015ae12`
+  -> 4 **[D]**.
+- `FUN_4015b4f0` reserves record ids 0-1; `FUN_4015a164` reserves content
+  pages `0x00`-`0x77` (`0x00`-`0x1F`, then the two 44-page runs). File and
+  directory pages start at `0x78` **[V]**.
+- **[C]** The id and page bitmaps are arrays of big-endian u32 words, bit n
+  = `1 << (n & 31)` of word `n >> 5` (`FUN_4015b93e`, `FUN_4015b7ac`,
+  `FUN_40155698`) **[V]**. The old `set_bits` (byte `n >> 3`, bit `n & 7`)
+  made the firmware see ids 26 and 27 instead of 2 and 3.
+
+### Directories **[V][D]**
+
+- **[C]** All three index pages `0x10000` (name hash), `0x10001` (order)
+  and `0x10002` (id) hold 8-byte entries from byte 8, `{u32 key, u32
+  page * 0x8000 + offset}` **[V]**. The `0x10001` key is the first four name
+  bytes and the listing comparator (`FUN_40135df2`, approximately
+  case-insensitive with digit runs by value) only affects order **[D]**.
+- **[C]** A directory needs "." and ".." as its first two entries; the
+  parent is the id at content byte 0x0C (`FUN_40155ea8`). `FUN_401575f6`
+  (path of an id, used by the loader for the slot name) needs ".." and the
+  `0x10002` page and returns NULL without them **[V]** (the loader then reads
+  the name from address 0). `FUN_40156334` (link) uses the `0x10000` page
+  unconditionally, and the mount links "factory" (id `0x1000000`) into the
+  root every time **[D]**.
+- A directory's size is whole pages (0x8000 each); the last entry's slot
+  length runs to the page end **[D]**.
+
+### The boot project **[V][D]**
+
+- `FUN_400cc864` (boot task) -> `FUN_400f0628` reads 0x100 bytes from
+  sector `0x40000` (fallback `0x48000`, table `0x40215d24`) into
+  `0x4099d588` and checks the COKi header (magic `0x434F4B69`). If the flag
+  word `0x4029e9b0 & 3 == 0` it reads `0xDD9714` bytes: a 0x110-byte header
+  and the active project container at `0x4099d698` **[V]**.
+- `FUN_400c0c2c` (called at `0x400ccbd6`) decodes it (`FUN_400e0fdc` ->
+  `FUN_400e0c26`, magic `0xBEEFBACE`, upgraders v1..v5; end marker
+  `0xBACEF00C` **[V]**). On failure it creates a new project **[D]**. The
+  mount follows (`0x400ccc00`), then Main OS queues "Load all samples".
+- The firmware holds a valid container: the built-in project at
+  `0x4025f1d8` (and a byte-identical copy at `0x4027989c`) depacks to
+  0xC3F424 bytes, `BE EF BA CE 00 00 00 03` (v3). At container offset
+  `0xC2D6FB` (unaligned) is the 1024 x 16-byte reference table: entry 0 =
+  `{0xFFFFFFFF, 0, 0, 0}`, 297 non-empty entries **[V]**; 286 with factory
+  ids `0x1000000`-`0x10007FF`, 11 with id 0 **[D]**.
+- COKi header **[D]**: +0x104 is the record sequence counter
+  (`FUN_4015b7ac`), +0x18 is set to the superblock version at mount
+  (`FUN_400c0eea` -> `FUN_400c0ec8`), +0x14 bit 1 -> flags `|= 0x92`, bit 0
+  -> `|= 2`, and the container is read only if flags & 3 == 0
+  (`FUN_400f0628`). Bytes 0x10-0x110 otherwise are **[O]** (plusdrive
+  writes zeros).
+- In the v3 kit, a track's int16 slot is at `+0x3C + t*0x155 + 0x64` and a
+  copy of the slot's reference at `+0x129`. Kit 0 ("KIT 1") is active; its
+  track 1 uses slot 7 **[D]**.
+
+### What `tools/plusdrive.py` builds now **[D]**
+
+For `samples/hat.wav` (24-bit stereo 44.1 kHz, 302,401 frames): 24 -> 16
+bit by rounding, 44.1 -> 48 kHz by a Kaiser-windowed sinc (beta 8.6, 32
+taps each side), 329,144 frames, no clipping; a 1,316,656-byte native file,
+record id 3, name "hat", content pages `0x7C`-`0xA4`, record +0x0C =
+`0x7AFE4EDD`, seq 3. Root directory: content page `0x78`, index pages
+`0x79`-`0x7B`. Project record at `0x40000` and `0x48000`: a 0x110-byte COKi
+header (+0x104 = 4, +0x18 = 4, +0x14 = 0) and the built-in container
+(depacked at build time from `out/sections/dt2-1.16/`, never committed)
+with all 297 slot references and 1,471 track copies replaced by hat's,
+padded to 0xDD9714 bytes. `--no-project` and `--main-os` exist.
+
+`tools/plusdrive_check.py` on that image (bounded calls on
+`snapshots/dt2-1.16/running.snap`; eMMC reads served from the image, writes
+to an overlay, mutexes no-ops, `FUN_400cd638` and `FUN_40153622` recorded):
+
+| check | result |
+|---|---|
+| mount `FUN_4015a450(0)` | D0 0, mount flag 1 |
+| id bitmap `FUN_4015b93e(3)`, hash index (`FUN_4015ae12`, `FUN_4015a94c`) | valid; one entry `{0x7afe4edd, 3}` |
+| readdir `FUN_40157072`, lookup `FUN_401572e0(2, "hat")`, name hash `FUN_40155f96`, path `FUN_401575f6(3)` | ".", "..", "factory", "hat"; id 3; hashes equal Python's; "/hat" |
+| resolve `FUN_4015b178`, key `FUN_4015abe6` | 1 (exact), id 3; key = the ref |
+| COKi check and decode `FUN_400c0c2c(0)` | valid, no new project; container upgraded v3 -> v5 |
+| slot list `FUN_4004e598` | 7, 1, 3, 8, 9, 12, 4, ...; the 16 tracks' (machine, slot) as in finding 04 |
+| `FUN_40154540(ref, 7)` | 322 data pages; headers `{7, 0xfffffc00, 0xfffffc00, 0, 0}` then `{7, 0x20, 0xa1020, 48000, 0xa0b70}`; L and R PCM equal the file |
+| `FUN_40154540(ref, 1)` | alias: header only |
+| `FUN_4015af0c(3)` | rewrites `0x7afe4edd`, the image's value |
+
+`tests/test_plusdrive_firmware.py` (slow, needs `DT2_SYX` and
+`snapshots/dt2-1.16/running.snap`) runs the same checks on a synthetic
+stereo WAV and pins track 1 = (ONESHOT, slot 7). A cold boot with this
+image loads the sample (finding 07, "A +Drive cold boot loads a sample end
+to end").
+
+Open **[O]**: the 16-byte trailer; COKi header bytes 0x10-0x110; whether UI
+or save code dislikes 297 identical references; one content page per
+directory and one extent per file (fine for a few hundred files; larger
+inputs raise).

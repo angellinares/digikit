@@ -13,21 +13,34 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TYPED = [
+    "emu/livesharc.py",
     "emu/sharc_peer.py",
+    "tools/cf.py",
+    "tools/cf_names.py",
+    "tools/cfdb.py",
+    "tools/live_audio.py",
+    "tools/live_gui_check.py",
     "tools/sharc.py",
     "tools/sharc_core",
     "tools/sharc_dac.py",
+    "tools/sharc_diff.py",
     "tools/sharc_disasm.py",
     "tools/sharc_framemap.py",
     "tools/sharc_harness.py",
     "tools/sharc_inputs.py",
     "tools/sharc_proc.py",
+    "tools/sharc_rsgen.py",
     "tools/sharc_run.py",
+    "tools/sharc_subset_lint.py",
     "tools/sharc_survey.py",
     "tools/sharc_symbols.py",
     "tools/sharc_trace.py",
+    "tools/sharc_transpile.py",
+    "tools/sharc_transpile_infer.py",
+    "tools/sharc_transpile_run.py",
     "tools/sharc_widthaudit.py",
     "tools/sharcldr.py",
+    "tools/snapread.py",
 ]
 
 

@@ -48,10 +48,12 @@ from sharc_disasm import Instruction
 from .compute_alu import ALU_OPS, dual_add_subtract
 from .compute_mult import (
     MR_DATAMOVE_REGISTERS,
+    MULT_FIXED_OPS,
     MULT_OPS,
+    MULTIPLY_ACCUMULATE_MRF,
+    MULTIPLY_ADD_MRF,
     _mr_data_move,
-    multiply_accumulate_mrf,
-    multiply_add_mrf,
+    mult_fixed,
 )
 from .compute_multi import (
     MULTIFN_MUL_ALU_OPS,
@@ -69,15 +71,28 @@ from .encoding import (
     UREG_CODES,
     _field,
 )
-from .flags import _astatx_define, _astatx_forget
-from .state import MR, State, _event, _json_value, _simd_active, _ureg, _ureg_raw
+from .flags import _astatx_define
+from .state import (
+    MR,
+    State,
+    _event,
+    _json_value,
+    _pey_special,
+    _pey_view,
+    _simd_active,
+    _ureg,
+    _ureg_raw,
+)
 from .values import (
     ComputeDest,
     ComputeValue,
+    FlagUpdate,
     Operand,
     Unknown,
     Value,
+    _apply_flag_update,
     _astatx_known_bit,
+    _flags_forget,
 )
 
 # MULT_OPS handlers may return a full 80-bit MR value (state.py, a layer
@@ -85,7 +100,7 @@ from .values import (
 # import MR without an import cycle), so this module's own dispatch/apply
 # functions use this locally widened result type instead of values.py's
 # ComputeResult for every compute unit they handle, not just cu=1.
-Result = tuple[ComputeDest, "ComputeValue | MR", str, "Callable[[Value], Value]"]
+Result = tuple[ComputeDest, "ComputeValue | MR", str, FlagUpdate]
 
 __all__ = [
     "MR_DATAMOVE_REGISTERS",
@@ -131,26 +146,31 @@ __all__ = [
 #     (0x1c32b4) -- a cluster worth treating as "possibly a table read
 #     through the instruction stream, not real compute" in a future lane,
 #     not chased further here.
-def _make_reserved_cu3(opcode: int) -> Callable:
-    def handler(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
-        label = (
-            "reserved compute unit cu=3 opcode=%#x R%d, R%d "
-            "(PRM: cu=11 not used by SINGLEFN; not the SC58x/2158x PRM's "
-            "64-bit float ops either, which live at cu=0/cu=1)" % (opcode, rx, ry)
-        )
-        return (
-            rn,
-            Unknown(label),
-            "compute-reserved-cu3",
-            lambda astatx: _astatx_forget(astatx, ALU_FLAGS_MASK | SHIFT_FLAGS_MASK),
-        )
+def _reserved_cu3(opcode: int, rn: int, rx: int, ry: int) -> tuple:
+    label = (
+        "reserved compute unit cu=3 opcode=%#x R%d, R%d "
+        "(PRM: cu=11 not used by SINGLEFN; not the SC58x/2158x PRM's "
+        "64-bit float ops either, which live at cu=0/cu=1)" % (opcode, rx, ry)
+    )
+    return (
+        rn,
+        Unknown(label),
+        "compute-reserved-cu3",
+        _flags_forget(ALU_FLAGS_MASK | SHIFT_FLAGS_MASK),
+    )
 
-    return handler
+
+def _reserved_cu3_d6(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+    return _reserved_cu3(0xD6, rn, rx, ry)
+
+
+def _reserved_cu3_e0(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+    return _reserved_cu3(0xE0, rn, rx, ry)
 
 
 CU3_OPS: dict[int, Callable] = {
-    0xD6: _make_reserved_cu3(0xD6),
-    0xE0: _make_reserved_cu3(0xE0),
+    0xD6: _reserved_cu3_d6,
+    0xE0: _reserved_cu3_e0,
 }
 
 # REGF_STKYX/REGF_STKYY sticky bit positions this module latches for
@@ -192,20 +212,17 @@ def _apply_mult_sticky(
     sticky bits are purely a function of its own new ASTATX bits, so no
     extra threading through the (Dest, Value, operation, astatx_update)
     ``ComputeResult`` contract every compute handler returns is needed."""
+    code = UREG_CODES[stky_name]
     if operation == "float-multiply":
-        bits = {
-            _MUS_BIT: _astatx_known_bit(astatx, MU_BIT),
-            _MVS_BIT: _astatx_known_bit(astatx, MV_BIT),
-            _MIS_BIT: _astatx_known_bit(astatx, MI_BIT),
-        }
+        value = _ureg_raw(state.uregs, code)
+        value = _sticky_set(value, _MUS_BIT, _astatx_known_bit(astatx, MU_BIT))
+        value = _sticky_set(value, _MVS_BIT, _astatx_known_bit(astatx, MV_BIT))
+        value = _sticky_set(value, _MIS_BIT, _astatx_known_bit(astatx, MI_BIT))
     elif operation in _MULT_MOS_OPERATIONS:
-        bits = {_MOS_BIT: _astatx_known_bit(astatx, MV_BIT)}
+        value = _ureg_raw(state.uregs, code)
+        value = _sticky_set(value, _MOS_BIT, _astatx_known_bit(astatx, MV_BIT))
     else:
         return
-    code = UREG_CODES[stky_name]
-    value = _ureg_raw(state.uregs, code)
-    for bit, trigger in bits.items():
-        value = _sticky_set(value, bit, trigger)
     state.uregs[code] = value
 
 
@@ -258,13 +275,11 @@ def _compute(
     if not short and ((field >> 20) & 3) == 1 and ((field >> 12) & 0xFF) == 0xB4:
         rx, ry = (field >> 4) & 0xF, field & 0xF
         left, right = _ureg(values, rx), _ureg(values, ry)
-        return multiply_accumulate_mrf(
-            0, rx, ry, left, right, values, special, approx_recips
-        )
+        return mult_fixed(MULTIPLY_ACCUMULATE_MRF, 0, rx, ry, left, right, special)
     if not short and ((field >> 20) & 3) == 1 and ((field >> 12) & 0xFF) == 0xB0:
         rn, rx, ry = (field >> 8) & 0xF, (field >> 4) & 0xF, field & 0xF
         left, right = _ureg(values, rx), _ureg(values, ry)
-        return multiply_add_mrf(rn, rx, ry, left, right, values, special, approx_recips)
+        return mult_fixed(MULTIPLY_ADD_MRF, rn, rx, ry, left, right, special)
     if short:
         opcode, rn, rx = (field >> 8) & 0xF, (field >> 4) & 0xF, field & 0xF
         left, right = _ureg(values, rn), _ureg(values, rx)
@@ -314,6 +329,10 @@ def _compute(
         float_form = (opcode >> 4) == 0xF
         rs = opcode & 0xF
         return dual_add_subtract(rn, rs, rx, ry, left, right, float_form)
+    if cu == 1:
+        spec = MULT_FIXED_OPS.get(opcode)
+        if spec is not None:
+            return mult_fixed(spec, rn, rx, ry, left, right, special)
     table = _SINGLE_FUNCTION_TABLES.get(cu)
     single_handler = table.get(opcode) if table else None
     if single_handler is None:
@@ -328,7 +347,7 @@ def _apply_compute(
 ) -> None:
     rn, value, operation, astatx_update = result
     astatx_code = UREG_CODES["ASTATX"]
-    new_astatx = astatx_update(_ureg_raw(state.uregs, astatx_code))
+    new_astatx = _apply_flag_update(_ureg_raw(state.uregs, astatx_code), astatx_update)
     state.uregs[astatx_code] = new_astatx
     _apply_mult_sticky(state, "STKYX", new_astatx, operation)
     if isinstance(rn, str):
@@ -357,13 +376,14 @@ def _apply_compute(
         # special-dict slot (as in the single-string case above); an int is
         # an ordinary register.
         assert isinstance(value, tuple), "tuple RN without tuple value"
-        names = [reg if isinstance(reg, str) else "R%d" % reg for reg in rn]
         _event(
             state,
             insn,
             "compute",
             operation=operation,
-            result_register=names,
+            result_register=[
+                reg if isinstance(reg, str) else "R%d" % reg for reg in rn
+            ],
             value=[_json_value(v) for v in value],
         )
         for reg, val in zip(rn, value, strict=True):
@@ -405,10 +425,7 @@ def _compute_pey_values(values: Mapping[int, Value]) -> dict[int, Value]:
     */" -- the PEy compute is decoded from the *same* instruction bits as
     PEx, just re-targeted at the S file, so re-running _compute unchanged
     against a shifted register map is exactly this rule)."""
-    shifted = dict(values)
-    for code in range(16):
-        shifted[code] = values.get(80 + code, Unknown("uninitialized S%d" % code))
-    return shifted
+    return _pey_view(values)
 
 
 def _compute_pey(
@@ -430,7 +447,7 @@ def _compute_pey(
     in so that accumulator read is correct, and _apply_compute_pey below
     undoes the disguise on the way out.
     """
-    pey_special = {"MRF": (special or {}).get("MSF", Unknown("uninitialized MSF"))}
+    pey_special = _pey_special(special)
     return _compute(
         f,
         short,
@@ -451,7 +468,7 @@ def _apply_compute_pey(
     per-PE computation-status register pairs)."""
     rn, value, operation, astatx_update = result
     astaty_code = UREG_CODES["ASTATY"]
-    new_astaty = astatx_update(_ureg_raw(state.uregs, astaty_code))
+    new_astaty = _apply_flag_update(_ureg_raw(state.uregs, astaty_code), astatx_update)
     state.uregs[astaty_code] = new_astaty
     _apply_mult_sticky(state, "STKYY", new_astaty, operation)
     if isinstance(rn, str):

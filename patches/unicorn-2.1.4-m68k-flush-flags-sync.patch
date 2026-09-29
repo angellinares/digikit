@@ -1,0 +1,47 @@
+--- a/qemu/target/m68k/translate.c
++++ b/qemu/target/m68k/translate.c
+@@ -615,6 +615,7 @@
+         tcg_temp_free(tcg_ctx, t0);
+         tcg_gen_andc_i32(tcg_ctx, QREG_CC_V, t1, QREG_CC_V);
+         tcg_temp_free(tcg_ctx, t1);
++        s->cc_op_synced = 0;
+         break;
+ 
+     case CC_OP_SUBB:
+@@ -632,6 +633,7 @@
+         tcg_temp_free(tcg_ctx, t0);
+         tcg_gen_and_i32(tcg_ctx, QREG_CC_V, QREG_CC_V, t1);
+         tcg_temp_free(tcg_ctx, t1);
++        s->cc_op_synced = 0;
+         break;
+ 
+     case CC_OP_CMPB:
+@@ -647,12 +649,14 @@
+         tcg_gen_and_i32(tcg_ctx, QREG_CC_V, QREG_CC_V, t0);
+         tcg_temp_free(tcg_ctx, t0);
+         tcg_gen_mov_i32(tcg_ctx, QREG_CC_N, QREG_CC_Z);
++        s->cc_op_synced = 0;
+         break;
+ 
+     case CC_OP_LOGIC:
+         tcg_gen_mov_i32(tcg_ctx, QREG_CC_Z, QREG_CC_N);
+         tcg_gen_movi_i32(tcg_ctx, QREG_CC_C, 0);
+         tcg_gen_movi_i32(tcg_ctx, QREG_CC_V, 0);
++        s->cc_op_synced = 0;
+         break;
+ 
+     case CC_OP_DYNAMIC:
+@@ -668,7 +672,12 @@
+         break;
+     }
+ 
+-    /* Note that flush_flags also assigned to env->cc_op.  */
++    /*
++     * The helper cases assigned env->cc_op = CC_OP_FLAGS.  The inline cases
++     * did not, and env->cc_op may already hold the old lazy op (Unicorn's
++     * code-hook update_cc_op stores it mid-TB), so they mark it stale above
++     * and the next update_cc_op stores CC_OP_FLAGS.
++     */
+     s->cc_op = CC_OP_FLAGS;
+ }
+ 

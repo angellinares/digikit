@@ -435,9 +435,10 @@ SHIFTOP = [
     ("01001000", "010010", "RN = fext RX by RY|BIT6:LEN6 (se)"),
     ("01001100", "010011", "RN = fdep RX by RY|BIT6:LEN6 (se)"),
     ("01010000", "010100", "RN = bitext RX|BITLEN12"),
-    ("01011000", "011001", "RN = bitext RX|BITLEN12 (nu)"),
-    ("01100100", "011011", "RN = RN or fdep RX by RY|BIT6:LEN6"),
-    ("01101100", "011101", "RN = RN or fdep RX by RY|BIT6:LEN6 (se)"),
+    ("01011000", "010110", "RN = bitext RX|BITLEN12 (nu)"),
+    ("01100100", "011001", "RN = RN or fdep RX by RY|BIT6:LEN6"),
+    ("01101100", "011011", "RN = RN or fdep RX by RY|BIT6:LEN6 (se)"),
+    ("01110100", "011101", "BITDEP RX by RY|BITLEN12"),
     ("01110000", None, "RN = bffwrp"),
     ("01111100", "011111", "bffwrp = RN|DATA7"),
     ("11000000", "110000", "RN = bset RX by RY|BITLEN12"),
@@ -565,7 +566,15 @@ def build():
                              "PGR row. PGR is missing 'bffwrp=RN' / EXP(ex) / LEFTZ / LEFTO / FPACK / "
                              "FUNPACK's shiftimm forms because those don't have Type-6a immediate forms "
                              "(shiftimm column left None here); PGR also omits BITDEP entirely -- may be a "
-                             "214xx-only op per PGR's own footnote."),
+                             "214xx-only op per PGR's own footnote."
+                             " Correction (2026-09-28): the 6-bit values of bitext (nu), or fdep and or "
+                             "fdep (se) had been copied from PRM Table 17-9's shiftimm column, which is off "
+                             "by one row for those three rows (it prints 011001/011011/011101). They are now "
+                             "the upper 6 bits of the 8-bit values, per PGR Table 12-11 (pp.12-10/12-11: "
+                             "'for shift immediate (type 6 instructions) the upper 6 MSBs represent valid "
+                             "bits'): 010110/011001/011011. The firmware agrees: DT2 1.16 uses 011001 only "
+                             "with BIT6:LEN6 fields such as 23:8 and 31:1 in its float-conversion helpers. "
+                             "PGR does list BITDEP (0111 0100, footnote: 214xx only); added as 011101."),
             "rows": [{"shiftop_8bit": op, "shiftimm_6bit": si, "syntax": s} for op, si, s in SHIFTOP],
         },
         "dual_add_subtract": {
