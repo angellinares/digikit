@@ -77,6 +77,22 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
    - the registers the Python emulator leaves as RAM (INTC force/mask, DTIM1, eDMA CERQ, DSPI2 MCR, DN2 edge port).
 6. Later: resume the SHARC JIT (P2, method above), then the browser (P6) and DSP patching (P7).
 
+### Progress after the hand-off (2026-09-29)
+
+- Task 1: the `0x401768a6` divergence in `snapshots/boot280M.snap` is
+  Unicorn's MVZ N-flag defect, not a Rust core error. The bounded exemption
+  permits 30,000-instruction DT2 windows; DN2 still exits the harness at an
+  unmapped/exception boundary after 1,477 instructions. Broader windows of
+  both images remain to be checked. See finding 07.
+- Task 2: the interpreter's tagged direct-mapped decode-page cache passes
+  the real-mix floor at 80.8–82.2M useful instructions/s (formerly 47.0M),
+  with the same `0x0bb544e65d49266b` state hash. A full native machine and
+  browser benchmarks are **not** covered by this gate. Next: task 3 and P5.
+- The available boot MMIO traces start from late snapshots; they contain
+  GPIO/eSDHC traffic but not a complete cold-boot GPIO/card-init gate. Do not
+  treat their replay as proof of complete card behavior. Record an earlier
+  bounded oracle window before implementing that gate.
+
 ## Where we are
 
 | Part | State |

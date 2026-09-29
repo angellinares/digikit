@@ -126,6 +126,39 @@ fn memory_moves_and_calls() {
 }
 
 #[test]
+fn decoded_code_is_invalidated_by_cpu_write() {
+    // moveq #1,d0 ; move.w #0x7002,(a0), with a0 = 0x1000.
+    // The first step caches moveq. The MOVE then overwrites it through the
+    // CPU bus path, so returning to 0x1000 must decode moveq #2, not reuse
+    // the old cached record.
+    let (mut cpu, mut ram) = machine(&[0x7001, 0x30bc, 0x7002]);
+    cpu.a[0] = 0x1000;
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.d[0], 1);
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(ram.read16(0x1000).unwrap(), 0x7002);
+    cpu.pc = 0x1000;
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.d[0], 2);
+}
+
+#[test]
+fn colliding_decode_pages_never_reuse_the_wrong_opcode() {
+    let (mut cpu, mut ram) = machine(&[0x7001]); // moveq #1,d0
+    // Pages 0x1000 and 0x101000 have the same direct-mapped cache index.
+    ram.0.resize(0x102000, 0);
+    ram.words(0x101000, &[0x7002]); // moveq #2,d0
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.d[0], 1);
+    cpu.pc = 0x101000;
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.d[0], 2);
+    cpu.pc = 0x1000;
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.d[0], 1);
+}
+
+#[test]
 fn link_unlk() {
     // link.w a6,#-8 ; unlk a6
     let (mut cpu, mut ram) = machine(&[0x4e56, 0xfff8, 0x4e5e]);

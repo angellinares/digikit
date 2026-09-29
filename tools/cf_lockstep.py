@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import importlib
 import random
 import struct
 import subprocess
@@ -226,8 +227,9 @@ class Core:
 
 
 def unicorn_machine():
-    from unicorn import UC_ARCH_M68K, UC_MODE_BIG_ENDIAN, Uc
+    from unicorn import UC_ARCH_M68K, UC_MODE_BIG_ENDIAN
     from unicorn import m68k_const as K
+    from unicorn.unicorn import Uc
 
     uc = Uc(UC_ARCH_M68K, UC_MODE_BIG_ENDIAN)
     uc.ctl_set_cpu_model(K.UC_CPU_M68K_CFV4E)
@@ -306,7 +308,7 @@ class StepTrace:
 
 
 def run_uc_step(uc, K, trace: StepTrace, pc: int) -> StepTrace:
-    from unicorn import UcError
+    from unicorn.unicorn import UcError
 
     trace.reset()
     try:
@@ -334,6 +336,24 @@ def diff_regs(expected: CfRegs, actual: CfRegs) -> list[str]:
         if ev != av:
             out.append("%s: expected 0x%x, got 0x%x" % (f, int(ev), int(av)))  # type: ignore[arg-type]
     return out
+
+
+def is_unicorn_mvz_n_defect(
+    core: Core, pc: int, expected: CfRegs, actual: CfRegs
+) -> bool:
+    """Whether this is Unicorn's known MVZ N-flag defect, and nothing else.
+
+    CFPRM p.125 says MVZ always clears N.  This Unicorn's ColdFire model sets
+    it for a nonzero byte result instead.  Keep the exemption opcode-specific
+    and require the otherwise-identical SR, so it cannot hide a core defect.
+    """
+    raw = core.read_mem(pc, 2)
+    if raw is None:
+        return False
+    opword = int.from_bytes(raw, "big")
+    is_mvz = opword & 0xF180 == 0x7180  # 0111 ddd1 1smm mrrr, CFPRM p.125
+    sr_diff = int(expected.sr) ^ int(actual.sr)
+    return is_mvz and sr_diff == 0x0008 and not int(actual.sr) & 0x0008
 
 
 def run_window(
@@ -393,6 +413,17 @@ def run_window(
                 "%d memory read(s) our core never made (Unicorn read something ours did not)"
                 % pending
             )
+        if (
+            len(bad) == 1
+            and bad[0].startswith("sr: ")
+            and is_unicorn_mvz_n_defect(core, pc, expected, actual)
+        ):
+            # Repair only Unicorn's bad N bit before the next instruction;
+            # leaving it set would turn every following comparison into the
+            # same known oracle defect and could change a later branch.  Never
+            # suppress a simultaneous memory or register mismatch.
+            uc.reg_write(K.UC_M68K_REG_SR, int(actual.sr))
+            bad = []
         if bad:
             msg = "divergence after %d instructions at pc=0x%08x:\n  " % (
                 n,
@@ -427,7 +458,7 @@ def cmd_snap(args) -> int:
     core.set_regs(r)
     import contextlib
 
-    from unicorn import UcError
+    from unicorn.unicorn import UcError
 
     for base in snap.mapped_bases:
         data = snap.read(base, 0x100000)
@@ -458,7 +489,9 @@ def cmd_fuzz(args) -> int:
     _cfisa = str(ROOT / "tools" / "cfisa")
     if _cfisa not in sys.path:
         sys.path.insert(0, _cfisa)
-    import oracle  # tools/cfisa/oracle.py: image_paths/load_base/listing
+    oracle = importlib.import_module(
+        "oracle"
+    )  # tools/cfisa/oracle.py: image_paths/load_base/listing
 
     image_path, dump = oracle.image_paths(args.image)
     if not image_path.exists() or not dump.exists():

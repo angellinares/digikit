@@ -2508,3 +2508,30 @@ boundaries, so coalescing (few boundaries) under-reads it.
   over unchanged to a native or WASM core, which can also stop at idle
   entry because it knows its own instruction count. SSI0 coalescing only
   works around Python boundary costs and would not.
+
+## Native ColdFire real-mix gate (2026-09-29)
+
+- **[D]** The pure Rust interpreter (`native/coldfire`) now uses 256 tagged,
+  direct-mapped decode pages instead of a per-hit `HashMap` lookup. With the
+  same `boot280M.cfdump` (100M instructions, no idle passes), uninstrumented
+  `cfrealmix` rose from 47.0M to 80.8–82.2M useful instructions/s; an
+  independent final run measured 81.9M/s. All runs ended with state hash
+  `0x0bb544e65d49266b`. This passes the plan's 62M/s **interpreter floor**;
+  it does not yet establish 1.0x for a wired machine, or browser performance.
+  DT2 boot280M lockstep compared 30,000 instructions and both-image seed-42
+  fuzz agreed on all supported cases (DT2 1,927/2,000; DN2 1,937/2,000).
+  CPU-originated writes invalidate matching cached code; writes from external
+  DMA still need explicit invalidation when the machine bus is integrated.
+
+- **[V]** `snapshots/boot280M.snap` has word `0x7381` at `0x401768a6`
+  (independently read with `tools/snapread.py`; the drive3 boot280M snapshot
+  instead has `0x4e75` there). `0x7381` decodes as `mvz.b d1,d1`;
+  CFPRM p.125 specifies that MVZ **always clears N**. **[D]** At this
+  instruction patched Unicorn returned SR `0x2008`, while the Rust core
+  returned `0x2000` and both returned D1 `0x00000085` from `0xffffff85`.
+  `tools/cf_lockstep.py` now corrects only this opcode's isolated N-bit
+  oracle discrepancy before continuing. This is a flag defect, not the
+  MVZ/MVS *decode* bug ruled out earlier in this finding. The DT2 boot280M
+  window then compared 30,000 instructions; the DN2 window stopped after
+  1,477 at the harness's existing unmapped/exception boundary, so it does
+  not establish longer DN2 lockstep parity.

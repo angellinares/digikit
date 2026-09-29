@@ -137,6 +137,10 @@ const DC_PAGE_BITS: u32 = 12;
 const DC_PAGE_SIZE: u32 = 1 << DC_PAGE_BITS;
 const DC_PAGE_MASK: u32 = DC_PAGE_SIZE - 1;
 const DC_SLOTS: usize = (DC_PAGE_SIZE / 2) as usize;
+/// A direct-mapped page cache avoids a hash lookup on every decoded-instruction
+/// cache hit. Collisions only discard a cached page, so they can cost a decode
+/// but cannot make execution observe an instruction from another address.
+const DC_CACHE_PAGES: usize = 256;
 
 #[derive(Clone, Debug, PartialEq)]
 struct DecodePage {
@@ -151,24 +155,44 @@ impl DecodePage {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct DecodeCache {
-    pages: std::collections::HashMap<u32, DecodePage>,
+    pages: Box<[Option<(u32, DecodePage)>]>,
+}
+
+impl Default for DecodeCache {
+    fn default() -> Self {
+        Self {
+            pages: (0..DC_CACHE_PAGES).map(|_| None).collect(),
+        }
+    }
 }
 
 impl DecodeCache {
     #[inline]
+    fn page_index(page: u32) -> usize {
+        ((page >> DC_PAGE_BITS) as usize) & (DC_CACHE_PAGES - 1)
+    }
+
+    #[inline]
     fn get(&self, pc: u32) -> Option<Insn> {
         let page = pc & !DC_PAGE_MASK;
         let slot = ((pc & DC_PAGE_MASK) >> 1) as usize;
-        self.pages.get(&page).and_then(|p| p.slots[slot])
+        match &self.pages[Self::page_index(page)] {
+            Some((tag, entries)) if *tag == page => entries.slots[slot],
+            _ => None,
+        }
     }
 
     #[inline]
     fn insert(&mut self, pc: u32, insn: Insn) {
         let page = pc & !DC_PAGE_MASK;
         let slot = ((pc & DC_PAGE_MASK) >> 1) as usize;
-        self.pages.entry(page).or_insert_with(DecodePage::new).slots[slot] = Some(insn);
+        let entry = &mut self.pages[Self::page_index(page)];
+        if !matches!(entry, Some((tag, _)) if *tag == page) {
+            *entry = Some((page, DecodePage::new()));
+        }
+        entry.as_mut().unwrap().1.slots[slot] = Some(insn);
     }
 
     /// Evict every decoded instruction in the 4 KiB page(s) a write of
@@ -177,15 +201,18 @@ impl DecodeCache {
     /// straddles a page boundary.
     #[inline]
     fn invalidate(&mut self, addr: u32, len: u32) {
-        if self.pages.is_empty() {
-            return;
-        }
         let last = addr.wrapping_add(len - 1);
         let p0 = addr & !DC_PAGE_MASK;
         let p1 = last & !DC_PAGE_MASK;
-        self.pages.remove(&p0);
+        let i0 = Self::page_index(p0);
+        if matches!(&self.pages[i0], Some((tag, _)) if *tag == p0) {
+            self.pages[i0] = None;
+        }
         if p1 != p0 {
-            self.pages.remove(&p1);
+            let i1 = Self::page_index(p1);
+            if matches!(&self.pages[i1], Some((tag, _)) if *tag == p1) {
+                self.pages[i1] = None;
+            }
         }
     }
 }
