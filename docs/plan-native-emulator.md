@@ -101,8 +101,10 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
   windows now replay with zero mismatches, including the GPIO/eSDHC gates.
   The early eSDHC register slice checks 74 accesses and 111 host writes per
   image; pure eMMC and bounded channel-59 CMD8/18/25 transfer effects build
-  for WASM. Late guest RAM/card window wiring, live TCD writeback, DMA
-  completion delivery, and UART/panel/display remain. See finding 07.
+  for WASM. A machine-facing adapter also joins the real card, caller-owned
+  RAM, staging and live TCD writeback under synthetic tests. Late SERQ59
+  dispatch, physical RAM mapping, DMA completion delivery, and
+  UART/panel/display remain. See finding 07.
 
 ## Where we are
 

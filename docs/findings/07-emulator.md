@@ -2611,8 +2611,14 @@ boundaries, so coalescing (few boundaries) under-reads it.
   32-KiB transfers and a real `Card` media/overlay round-trip. The first
   512-byte `_dma_out` at clock 70562053 in the DT2 late trace is **CMD18**
   (XFERTYP `0x123a0036`), not evidence of CMD8 merely because of its size.
+- **[D]** The new `native/card/src/dma.rs` adapter takes a caller-owned guest
+  RAM window, reusable bounded staging buffer and live eDMA register bank.
+  It selects real card CMD8/18/25 data, transfers via the pure helper, and
+  applies the TCD writeback only after a successful operation. A synthetic
+  backed read, overlay write/readback, failure atomicity and zero-CITER
+  tests pass on the real `Card`; its library also checks for WASM.
 - **[O]** A native machine still needs to arm channel 59 on SERQ, select the
-  card window, map guest RAM, apply these effects to its live eDMA bank and
-  deliver completion. There is no independent full late boot DMA payload
+  already-armed adapter on the firmware's command, map its guest RAM window,
+  and deliver completion. There is no independent full late boot DMA payload
   replay or native ISR parity gate yet. Old v1 late traces have separate
   vector-208 timing residues; do not call that timer parity.

@@ -190,4 +190,28 @@ fn rejects_bounded_and_out_of_range_requests_without_mutating_buffers() {
     );
     assert_eq!(last_byte, [0xA5]);
     assert_eq!(card_byte, [0x5A]);
+
+    let mut crossing_guest = [0xA5; 32];
+    let mut crossing_card = [0x5A; 32];
+    let crossing = transfer_dma59(
+        25,
+        TcdSnapshot {
+            saddr: 0xffff_fff0,
+            ..tcd(1, 32)
+        },
+        &mut DmaBuffers {
+            guest_base: 0xffff_fff0,
+            guest: &mut crossing_guest,
+            card: &mut crossing_card,
+        },
+    );
+    assert_eq!(
+        crossing,
+        Err(DmaError::AddressOverflow {
+            address: 0xffff_fff0,
+            bytes: 32
+        })
+    );
+    assert_eq!(crossing_guest, [0xA5; 32]);
+    assert_eq!(crossing_card, [0x5A; 32]);
 }

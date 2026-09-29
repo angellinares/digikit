@@ -91,6 +91,12 @@ pub struct DmaBuffers<'a> {
 
 impl DmaBuffers<'_> {
     fn guest_range(&self, address: u32, bytes: usize) -> Result<usize, DmaError> {
+        // A caller-owned slice may span more address space than a 32-bit
+        // guest pointer can name. Reject that range before touching either
+        // guest or card data (notably the strided CMD25 source path).
+        if address.checked_add(bytes as u32).is_none() {
+            return Err(DmaError::AddressOverflow { address, bytes });
+        }
         let Some(offset) = address.checked_sub(self.guest_base) else {
             return Err(DmaError::GuestOutOfRange { address, bytes });
         };
@@ -263,6 +269,12 @@ impl<P: CardPort> Esdhc<P> {
             pattern: 0,
             host_writes: VecDeque::new(),
         }
+    }
+
+    /// Give a machine owner the same attached card for its fallible eDMA
+    /// payload transfer; command/identity behavior remains in this core.
+    pub fn card_mut(&mut self) -> &mut P {
+        &mut self.card
     }
 
     pub fn owns(addr: u32) -> bool {

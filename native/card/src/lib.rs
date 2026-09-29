@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 
 use periph::esdhc::CardPort;
 
+pub mod dma;
+
 /// Bytes in one sector for the sector-addressed commands modelled here.
 pub const SECTOR_SIZE: usize = 512;
 /// Largest data transfer accepted by one card call.
