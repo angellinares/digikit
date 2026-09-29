@@ -1,7 +1,13 @@
 //! Replay a `DT2MMIO` trace (`emu/mmiotrace.py`) against this crate's
 //! timer/INTC models and report the first mismatch, with context.
 //!
-//! Usage: `mmio-replay <trace-file> [--limit N] [--verbose]`
+//! Usage: `mmio-replay <trace-file> [--limit N] [--verbose] [--gpio-gate-only N]`
+//!
+//! `--gpio-gate-only N` is an explicit focused verdict: it requires exactly
+//! N gate writes, N gate reads, and N GPIO read-hook writes, plus a clean END
+//! record. It reports (but deliberately does not fail for) unrelated replay
+//! mismatches such as the known vector-207 timer discrepancy. Without that
+//! flag the normal full-trace verdict remains unchanged.
 //!
 //! Method (see `docs/plan-native-emulator.md` P4, and `machine.rs`'s module
 //! docs for the interface this drives):
@@ -82,6 +88,7 @@ use std::collections::VecDeque;
 use std::env;
 use std::process::ExitCode;
 
+use periph::gpio::{PPDSDR_C, SdGate};
 use periph::spilink::{DmaLink, SerqEffect};
 use periph::trace::{self, Reader, Record};
 use periph::{Raised, Timers, dsp};
@@ -129,6 +136,12 @@ struct Counters {
     /// 0 or 1, not hardcoded to one trace's exact clock).
     dspi2_frames: u64,
     dspi2_trig_frames: u64,
+    /// SD continuity-gate guest writes, reads, and read-hook writes.
+    gpio_wr_checked: u64,
+    gpio_rd_checked: u64,
+    gpio_rd_mismatch: u64,
+    gpio_hwr_checked: u64,
+    gpio_hwr_mismatch: u64,
 }
 
 impl Counters {
@@ -154,6 +167,11 @@ impl Counters {
             edma155_unordered: 0,
             dspi2_frames: 0,
             dspi2_trig_frames: 0,
+            gpio_wr_checked: 0,
+            gpio_rd_checked: 0,
+            gpio_rd_mismatch: 0,
+            gpio_hwr_checked: 0,
+            gpio_hwr_mismatch: 0,
         }
     }
     fn total_mismatches(&self) -> u64 {
@@ -165,7 +183,75 @@ impl Counters {
             + self.dma_rd_mismatch
             + self.dma_hwr_mismatch
             + self.dma_capture_mismatch
+            + self.gpio_rd_mismatch
+            + self.gpio_hwr_mismatch
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EndStatus {
+    Missing,
+    Invalid(String),
+    Complete {
+        errors: u64,
+        first_error: Option<String>,
+    },
+}
+
+fn end_status(data: &[u8]) -> EndStatus {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(data) else {
+        return EndStatus::Invalid("END is not valid JSON".to_string());
+    };
+    let Some(errors) = value.get("errors").and_then(serde_json::Value::as_u64) else {
+        return EndStatus::Invalid("END has no integer errors field".to_string());
+    };
+    let first_error = value
+        .get("first_error")
+        .and_then(|v| (!v.is_null()).then(|| v.to_string()));
+    EndStatus::Complete {
+        errors,
+        first_error,
+    }
+}
+
+fn end_failure(end: &EndStatus) -> Option<String> {
+    match end {
+        EndStatus::Missing => Some("missing END record".to_string()),
+        EndStatus::Invalid(reason) => Some(format!("invalid END record: {reason}")),
+        EndStatus::Complete {
+            errors,
+            first_error,
+        } if *errors > 0 => Some(format!(
+            "recorder END errors={errors}, first_error={}",
+            first_error.as_deref().unwrap_or("null")
+        )),
+        EndStatus::Complete { .. } => None,
+    }
+}
+
+fn gpio_gate_failure(counters: &Counters, expected: u64, end: &EndStatus) -> Option<String> {
+    if expected == 0 {
+        return Some("GPIO gate expected count must be positive".to_string());
+    }
+    if let Some(reason) = end_failure(end) {
+        return Some(reason);
+    }
+    if counters.gpio_wr_checked != expected
+        || counters.gpio_rd_checked != expected
+        || counters.gpio_hwr_checked != expected
+    {
+        return Some(format!(
+            "GPIO gate count mismatch: expected WR/RD/HWR={expected}/{expected}/{expected}, got {}/{}/{}",
+            counters.gpio_wr_checked, counters.gpio_rd_checked, counters.gpio_hwr_checked
+        ));
+    }
+    if counters.gpio_rd_mismatch != 0 || counters.gpio_hwr_mismatch != 0 {
+        return Some(format!(
+            "GPIO gate mismatches: RD={}, HWR={}",
+            counters.gpio_rd_mismatch, counters.gpio_hwr_mismatch
+        ));
+    }
+    None
 }
 
 fn report(first: &mut Option<String>, n: &mut u64, ctx: String, verbose: bool) {
@@ -216,6 +302,7 @@ fn parse_next_pending(source: &serde_json::Value) -> ([Option<f64>; 4], [bool; 4
 fn apply_state(
     timers: &mut Timers,
     dma: &mut DmaLink,
+    gpio: &mut SdGate,
     data: &[u8],
     counters: &mut Counters,
     verbose: bool,
@@ -240,6 +327,12 @@ fn apply_state(
                 dma.set_forced(addr, value as u32);
             }
         }
+    }
+    if let Some(driven) = v
+        .pointer("/models/sdgate/driven")
+        .and_then(serde_json::Value::as_u64)
+    {
+        gpio.load_state(driven != 0);
     }
     let Some(tstate) = v.pointer("/components/timers") else {
         return;
@@ -342,7 +435,7 @@ fn apply_mark(timers: &mut Timers, data: &[u8]) {
     }
 }
 
-fn apply_page(timers: &mut Timers, dma: &mut DmaLink, base: u32, data: &[u8]) {
+fn apply_page(timers: &mut Timers, dma: &mut DmaLink, gpio: &mut SdGate, base: u32, data: &[u8]) {
     if timers.pit.load_page(base, data) {
         return;
     }
@@ -352,18 +445,25 @@ fn apply_page(timers: &mut Timers, dma: &mut DmaLink, base: u32, data: &[u8]) {
     if timers.intc.load_page(base, data) {
         return;
     }
+    if gpio.load_page(base, data) {
+        return;
+    }
     let _ = dma.load_page(base, data);
 }
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("usage: {} <trace-file> [--limit N] [--verbose]", args[0]);
+        eprintln!(
+            "usage: {} <trace-file> [--limit N] [--verbose] [--gpio-gate-only N]",
+            args[0]
+        );
         return ExitCode::FAILURE;
     }
     let path = &args[1];
     let mut limit: Option<u64> = None;
     let mut verbose = false;
+    let mut gpio_gate_only: Option<u64> = None;
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
@@ -372,6 +472,14 @@ fn main() -> ExitCode {
                 limit = args.get(i).and_then(|s| s.parse().ok());
             }
             "--verbose" => verbose = true,
+            "--gpio-gate-only" => {
+                i += 1;
+                gpio_gate_only = args.get(i).and_then(|s| s.parse().ok());
+                if gpio_gate_only.is_none_or(|n| n == 0) {
+                    eprintln!("--gpio-gate-only requires a positive count");
+                    return ExitCode::FAILURE;
+                }
+            }
             other => {
                 eprintln!("unknown argument: {other}");
                 return ExitCode::FAILURE;
@@ -390,6 +498,7 @@ fn main() -> ExitCode {
 
     let mut timers = Timers::default();
     let mut dma = DmaLink::default();
+    let mut gpio = SdGate::default();
     let mut counters = Counters::new();
     let mut first_mismatch: Option<String> = None;
 
@@ -405,6 +514,7 @@ fn main() -> ExitCode {
     // substitute").
     let mut pending_capture: Option<SerqEffect> = None;
     let mut n_records: u64 = 0;
+    let mut end = EndStatus::Missing;
 
     // See the module docs' "scheduler-trap SR" note: this crate reconstructs
     // SR/IPL from IRQ.frame_sr and RTE.sr. Vector 32 is not a real interrupt
@@ -564,6 +674,11 @@ fn main() -> ExitCode {
                 let size = rec.u8(3);
                 if Timers::owns(addr) {
                     timers.write(addr, size, value);
+                } else if SdGate::owns(addr) {
+                    gpio.write(addr, size, value);
+                    if matches!(addr, periph::gpio::PPDSDR_D | periph::gpio::PCLRR_D) {
+                        counters.gpio_wr_checked += 1;
+                    }
                 } else if DmaLink::owns(addr) {
                     let (_, effect, hw) = dma.write(addr, size, value);
                     if effect != SerqEffect::None {
@@ -587,6 +702,18 @@ fn main() -> ExitCode {
                             &mut counters.rd_mismatch,
                             format!(
                                 "RD mismatch addr={addr:#010x} size={size} pc={pc:#010x} clock={clock}: trace={value:#x} model={expected:#x}"
+                            ),
+                            verbose,
+                        );
+                    }
+                } else if let Some(expected) = gpio.read(addr, size) {
+                    counters.gpio_rd_checked += 1;
+                    if expected != value {
+                        report(
+                            &mut first_mismatch,
+                            &mut counters.gpio_rd_mismatch,
+                            format!(
+                                "GPIO RD mismatch addr={addr:#010x} size={size} pc={pc:#010x} clock={clock}: trace={value:#x} model={expected:#x}"
                             ),
                             verbose,
                         );
@@ -701,7 +828,21 @@ fn main() -> ExitCode {
                 let src_id = rec.u16(0) as u16;
                 let addr = rec.u32(1);
                 let name = reader.sources.get(&src_id).cloned().unwrap_or_default();
-                if (name.starts_with("emu.dtim") || name.starts_with("emu.pit"))
+                if name.starts_with("emu.gpio.SdGate") && addr == PPDSDR_C && rec.data.len() == 1 {
+                    counters.gpio_hwr_checked += 1;
+                    let expected = gpio.sense();
+                    if rec.data[0] != expected {
+                        report(
+                            &mut first_mismatch,
+                            &mut counters.gpio_hwr_mismatch,
+                            format!(
+                                "GPIO HWR mismatch addr={addr:#010x} clock={clock} source={name}: trace byte={:#04x} model={expected:#04x}",
+                                rec.data[0]
+                            ),
+                            verbose,
+                        );
+                    }
+                } else if (name.starts_with("emu.dtim") || name.starts_with("emu.pit"))
                     && rec.data.len() == 1
                 {
                     counters.hwr_checked += 1;
@@ -796,6 +937,7 @@ fn main() -> ExitCode {
                 apply_state(
                     &mut timers,
                     &mut dma,
+                    &mut gpio,
                     &rec.data,
                     &mut counters,
                     verbose,
@@ -804,7 +946,7 @@ fn main() -> ExitCode {
             }
             trace::PAGE => {
                 let base = rec.u32(0);
-                apply_page(&mut timers, &mut dma, base, &rec.data);
+                apply_page(&mut timers, &mut dma, &mut gpio, base, &rec.data);
             }
             trace::MARK => {
                 apply_mark(&mut timers, &rec.data);
@@ -812,6 +954,9 @@ fn main() -> ExitCode {
             trace::RATE => {
                 let ips = rec.fields[0] as f64;
                 timers.rescale(clock as f64, ips);
+            }
+            trace::END => {
+                end = end_status(&rec.data);
             }
             _ => {}
         }
@@ -854,6 +999,14 @@ fn main() -> ExitCode {
         counters.state_drift,
     );
     println!(
+        "  GPIO gate WR checked={} RD checked={} (mismatch {}), HWR checked={} (mismatch {})",
+        counters.gpio_wr_checked,
+        counters.gpio_rd_checked,
+        counters.gpio_rd_mismatch,
+        counters.gpio_hwr_checked,
+        counters.gpio_hwr_mismatch,
+    );
+    println!(
         "  DMA RD checked={} (mismatch {}), DMA HWR checked={} (mismatch {}), capture mismatches={}, edma vec155 seen={} (unordered {}), DSPI2 TX frames={} (trig-mask {})",
         counters.dma_rd_checked,
         counters.dma_rd_mismatch,
@@ -868,11 +1021,68 @@ fn main() -> ExitCode {
     if let Some(ctx) = &first_mismatch {
         println!("FIRST MISMATCH: {ctx}");
     }
-    if total == 0 {
+    if let Some(expected) = gpio_gate_only {
+        println!(
+            "GPIO GATE-ONLY verdict (explicit): expects WR/RD/HWR={expected}/{expected}/{expected}; unrelated full-replay mismatches remain reported but do not decide this mode"
+        );
+        if let Some(reason) = gpio_gate_failure(&counters, expected, &end) {
+            println!("GPIO GATE-ONLY FAIL: {reason}");
+            ExitCode::FAILURE
+        } else {
+            println!(
+                "GPIO GATE-ONLY PASS: clean END and matching GPIO counts/mismatches; ignored unrelated full-replay mismatches={total}"
+            );
+            ExitCode::SUCCESS
+        }
+    } else if let Some(reason) = end_failure(&end) {
+        println!("END VALIDATION FAIL: {reason}");
+        ExitCode::FAILURE
+    } else if total == 0 {
         println!("0 mismatches ({} sr-exempt)", counters.irq_sr_exempt);
         ExitCode::SUCCESS
     } else {
         println!("{total} mismatches");
         ExitCode::FAILURE
+    }
+}
+
+#[cfg(test)]
+mod verdict_tests {
+    use super::*;
+
+    fn clean_end() -> EndStatus {
+        end_status(br#"{"errors": 0, "first_error": null}"#)
+    }
+
+    #[test]
+    fn gpio_gate_only_rejects_absent_counts() {
+        let counters = Counters::new();
+        assert!(
+            gpio_gate_failure(&counters, 20, &clean_end())
+                .unwrap()
+                .contains("count mismatch")
+        );
+        assert!(gpio_gate_failure(&counters, 0, &clean_end()).is_some());
+    }
+
+    #[test]
+    fn gpio_gate_only_rejects_missing_end() {
+        let mut counters = Counters::new();
+        counters.gpio_wr_checked = 20;
+        counters.gpio_rd_checked = 20;
+        counters.gpio_hwr_checked = 20;
+        assert_eq!(
+            gpio_gate_failure(&counters, 20, &EndStatus::Missing),
+            Some("missing END record".to_string())
+        );
+    }
+
+    #[test]
+    fn end_validation_rejects_recorder_errors() {
+        let end = end_status(br#"{"errors": 1, "first_error": "dropped event"}"#);
+        assert_eq!(
+            end_failure(&end),
+            Some("recorder END errors=1, first_error=\"dropped event\"".to_string())
+        );
     }
 }

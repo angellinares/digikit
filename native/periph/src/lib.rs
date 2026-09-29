@@ -18,6 +18,7 @@ pub mod dsp;
 pub mod dspi;
 pub mod dtim;
 pub mod edma;
+pub mod gpio;
 pub mod intc;
 pub mod machine;
 pub mod pit;

@@ -2535,3 +2535,26 @@ boundaries, so coalescing (few boundaries) under-reads it.
   window then compared 30,000 instructions; the DN2 window stopped after
   1,477 at the harness's existing unmapped/exception boundary, so it does
   not establish longer DN2 lockstep parity.
+
+## Native GPIO SD gate, bounded oracle replay (2026-09-29)
+
+- **[D]** The existing Python `emu/gpio.py` and `emu/esdhc.py` remain the
+  oracles. `native/periph/src/gpio.rs` implements only the board continuity
+  loopback: write D4 high through `PPDSDR_D` (`0xec09401b`), clear it through
+  `PCLRR_D` (`0xec094027`), and sense C3 through `PPDSDR_C` (`0xec09401a`).
+  The rest of GPIO remains a register file. The late boot/ready MMIO traces
+  miss this gate, so new *ignored*, firmware-derived traces were recorded
+  from 24M-instruction checkpoints: DT2 for 30M more instructions and DN2
+  for 80M more. On **each** trace the focused `mmio-replay TRACE
+  --gpio-gate-only 20` checks 20 guest gate writes, 20 read-hook memory
+  writes, and 20 guest sensed reads, with zero GPIO mismatches and a clean
+  recorder END. Recorded and unrecorded runs of the same window have
+  identical guest state under `tools/snapeq.py` (DT2: 134 mapped pages;
+  DN2: 110). Rust peripheral tests pass; the core builds for
+  `wasm32-unknown-unknown` with default features disabled.
+- **[O]** Whole-trace replay still returns nonzero: DT2 has two, DN2 three
+  *unexpected vector-207 IRQ predictions* in these earlier windows. Focused
+  GPIO mode explicitly reports but does not gate on unrelated IRQ mismatch
+  totals. This is **not** full peripheral parity. eSDHC/card, other GPIO,
+  UART, panel, and display remain native-model work; an isolated full-card
+  trace/replay gate has not been established.

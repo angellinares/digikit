@@ -88,10 +88,16 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
   the real-mix floor at 80.8–82.2M useful instructions/s (formerly 47.0M),
   with the same `0x0bb544e65d49266b` state hash. A full native machine and
   browser benchmarks are **not** covered by this gate. Next: task 3 and P5.
-- The available boot MMIO traces start from late snapshots; they contain
+- The original boot MMIO traces start from late snapshots; they contain
   GPIO/eSDHC traffic but not a complete cold-boot GPIO/card-init gate. Do not
   treat their replay as proof of complete card behavior. Record an earlier
   bounded oracle window before implementing that gate.
+- Task 3 (partial): early 24M checkpoints now supply bounded DT2/DN2 traces
+  through the GPIO SD gate and initial eSDHC access. `native/periph` matches
+  all 20 gate writes, 20 read-hook writes and 20 reads per image in its
+  explicit focused replay mode; whole-trace replay still reports 2/3
+  unexpected vector-207 IRQ predictions. Continue with that timing issue,
+  eSDHC/card, then UART/panel/display. See finding 07.
 
 ## Where we are
 
