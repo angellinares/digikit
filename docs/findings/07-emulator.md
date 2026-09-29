@@ -2745,3 +2745,34 @@ boundaries, so coalescing (few boundaries) under-reads it.
   component state, Device interrupt delivery and a provenance-verified late
   CPU/effects gate remain to be integrated and independently checked. Do not
   extrapolate this 1,000-step RAM-write result to those effects or full boot.
+
+### Local checkpoint chain at the first MMIO window
+
+- **[D]** `tools/checkpointchain.py` roots local captures in a source-hash and
+  complete-loaded-image-checked 24M snapshot. Each ignored receipt records a
+  private copied parent snapshot, source/section hashes, trace/snapshot hashes,
+  and the *actual* completed instruction count; `--limit` is a floor, with a
+  120-second subprocess cap. Changed code in MAIN OS is accepted only with
+  `--control`: a second no-record replay from the same private input must
+  match guest state, host components, manifest and completion count. The
+  receipts provide **local integrity and reproducibility, not authentication**
+  of arbitrary pickle snapshots or independent hardware verification.
+- **[D]** Reproduce a window near the first observed MMIO activity by running
+  `anchor dt2 --syx Digitakt_II_OS1.16.syx`, then `capture <returned-chain.json>
+  --syx Digitakt_II_OS1.16.syx --limit 8000000 --control`; for DN2 use
+  `anchor dn2 --syx Digitone_II_OS1.11.syx` and `capture <returned-chain.json>
+  --syx Digitone_II_OS1.11.syx --limit 2000000 --control`. Prefix each command
+  with `uv run python tools/checkpointchain.py`. Check `done` in each receipt:
+  a timer interval can overshoot either requested floor. A one-million-step
+  recorded *next* window from each local pre-event capture observed **91 guest
+  MMIO reads, 238 guest MMIO writes and six IRQ records** on each product.
+  These are oracle captures, not native parity. All snapshots, traces, receipts
+  and derived portable states stay ignored under `out/native/checkpoint-chain/`.
+- **[D]** `portable <returned-chain.json> --syx <same-source>` validates the
+  chain and copies/re-hashes the local snapshot before conversion to MSTATE.
+  The converter narrowly maps `manifest.unblock_except` address tuples to
+  arrays and sparse eSDHC overlay integer offsets to decimal string keys;
+  unrelated non-JSON values remain rejected. DT2 +8M and DN2 +2M local
+  checkpoints converted, but **native `Machine::apply_state` still rejects
+  their nonempty host components**. A native CPU/MMIO first-divergence result
+  has not yet been produced.

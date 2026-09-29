@@ -104,12 +104,52 @@ def _timer_component(value):
     return _json_value(result, "components.timers")
 
 
+def _esdhc_component(value):
+    """Preserve the Python card overlay's byte offsets without stringifying others."""
+    name = "components.esdhc"
+    if not isinstance(value, dict) or value.get("type") != "Esdhc":
+        raise ValueError("%s is not an Esdhc checkpoint" % name)
+    overlay = value.get("card_overlay")
+    if not isinstance(overlay, dict):
+        raise ValueError("%s.card_overlay must be a dictionary" % name)
+    converted = {}
+    for offset, byte in overlay.items():
+        if type(offset) is not int or not 0 <= offset <= 0xFFFFFFFFFFFFFFFF:
+            raise ValueError("%s.card_overlay offset is not a u64" % name)
+        if type(byte) is not int or not 0 <= byte <= 0xFF:
+            raise ValueError("%s.card_overlay value is not a byte" % name)
+        converted[str(offset)] = byte
+    result = dict(value)
+    result["card_overlay"] = converted
+    return _json_value(result, name)
+
+
+def _manifest(value):
+    """Convert only longrun's known tuple of excluded unblock addresses."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return _json_value(value, "manifest")
+    result = dict(value)
+    if "unblock_except" in result:
+        addresses = result["unblock_except"]
+        if not isinstance(addresses, (tuple, list)) or any(
+            type(address) is not int or not 0 <= address <= 0xFFFFFFFF
+            for address in addresses
+        ):
+            raise ValueError("manifest.unblock_except must be u32 addresses")
+        result["unblock_except"] = list(addresses)
+    return _json_value(result, "manifest")
+
+
 def _components(value):
     if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
         return _json_value(value, "components")
     result = dict(value)
     if "timers" in result:
         result["timers"] = _timer_component(result["timers"])
+    if "esdhc" in result:
+        result["esdhc"] = _esdhc_component(result["esdhc"])
     return _json_value(result, "components")
 
 
@@ -147,7 +187,7 @@ def convert_blob(blob, clock=0):
         "ctlregs": _address_map(blob["ctlregs"], "ctlregs"),
         "ff1_count": blob["ff1_count"],
         "format_version": 1,
-        "manifest": _json_value(blob.get("manifest"), "manifest"),
+        "manifest": _manifest(blob.get("manifest")),
         "mapped_bases": mapped,
         "mmio_forced": _address_map(blob["mmio"], "mmio"),
         "movec_count": blob["movec_count"],

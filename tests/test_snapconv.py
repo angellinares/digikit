@@ -7,6 +7,8 @@ import sys
 import zlib
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "tools"
 if str(ROOT) not in sys.path:
@@ -103,6 +105,35 @@ def test_timer_component_normalizes_tuple_channels_and_counter_keys():
     assert timers["sources"][0]["pending"] == [1, 1]
     assert timers["sources"][1]["pending"] == [0, 0]
     assert timers["sources"][1]["stale"] == [0, 0, 2]
+
+
+def test_longrun_manifest_and_card_overlay_have_narrow_json_normalization():
+    source = blob()
+    source["manifest"] = {"protocol": 1, "unblock_except": (0x1000, 0x2000)}
+    source["components"] = {
+        "esdhc": {
+            "type": "Esdhc",
+            "version": 1,
+            "pattern": 0,
+            "armed": None,
+            "dma_bytes": 0,
+            "card_blocks": 1024,
+            "card_rca": 0,
+            "card_selected": False,
+            "card_overlay": {0: 0, 512: 255},
+        }
+    }
+    encoded = snapconv.convert_blob(source)
+    length = struct.unpack("<I", encoded[8:12])[0]
+    header = json.loads(encoded[12 : 12 + length])
+    assert header["manifest"]["unblock_except"] == [0x1000, 0x2000]
+    assert header["components"]["esdhc"]["card_overlay"] == {
+        "0": 0,
+        "512": 255,
+    }
+    source["components"]["esdhc"]["card_overlay"] = {True: 1}
+    with pytest.raises(ValueError, match="card_overlay"):
+        snapconv.convert_blob(source)
 
 
 def test_rejects_opaque_integer_outside_portable_range():
