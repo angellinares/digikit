@@ -88,6 +88,7 @@ use std::collections::VecDeque;
 use std::env;
 use std::process::ExitCode;
 
+use periph::esdhc::{CardPort, Esdhc, RegisterPolicy};
 use periph::gpio::{PPDSDR_C, SdGate};
 use periph::spilink::{DmaLink, SerqEffect};
 use periph::trace::{self, Reader, Record};
@@ -142,6 +143,13 @@ struct Counters {
     gpio_rd_mismatch: u64,
     gpio_hwr_checked: u64,
     gpio_hwr_mismatch: u64,
+    /// eSDHC accesses evaluated by the explicit early-only gate.
+    esdhc_events: u64,
+    esdhc_rd_checked: u64,
+    esdhc_rd_mismatch: u64,
+    /// eSDHC has no host-memory writes in this early register-only scope.
+    esdhc_hwr_checked: u64,
+    esdhc_unmodeled: u64,
 }
 
 impl Counters {
@@ -172,6 +180,11 @@ impl Counters {
             gpio_rd_mismatch: 0,
             gpio_hwr_checked: 0,
             gpio_hwr_mismatch: 0,
+            esdhc_events: 0,
+            esdhc_rd_checked: 0,
+            esdhc_rd_mismatch: 0,
+            esdhc_hwr_checked: 0,
+            esdhc_unmodeled: 0,
         }
     }
     fn total_mismatches(&self) -> u64 {
@@ -227,6 +240,60 @@ fn end_failure(end: &EndStatus) -> Option<String> {
         )),
         EndStatus::Complete { .. } => None,
     }
+}
+
+fn esdhc_gate_failure(counters: &Counters, expected: u64, end: &EndStatus) -> Option<String> {
+    if expected == 0 {
+        return Some("eSDHC gate expected count must be positive".to_string());
+    }
+    if let Some(reason) = end_failure(end) {
+        return Some(reason);
+    }
+    if counters.esdhc_events != expected {
+        return Some(format!(
+            "eSDHC gate event count mismatch: expected {expected}, got {}",
+            counters.esdhc_events
+        ));
+    }
+    if counters.esdhc_rd_checked == 0 {
+        return Some("eSDHC gate saw no read values to check".to_string());
+    }
+    if counters.esdhc_rd_mismatch != 0 || counters.esdhc_unmodeled != 0 {
+        return Some(format!(
+            "eSDHC gate failures: RD mismatches={}, unmodeled operations={}",
+            counters.esdhc_rd_mismatch, counters.esdhc_unmodeled
+        ));
+    }
+    None
+}
+
+/// Replay-only generic eMMC port matching `emu.esdhc.Card`'s public early
+/// command contract. It contains no firmware data or storage image.
+#[derive(Default)]
+struct EarlyCard {
+    rca: u16,
+}
+impl CardPort for EarlyCard {
+    fn command(&mut self, idx: u8, arg: u32) -> [u32; 4] {
+        match idx {
+            0 => [0; 4],
+            1 => [0xC0FF_8080, 0, 0, 0],
+            2 | 10 => [0, 0x4530_0000, 0x3030_3447, 0x0011_0000],
+            9 => [0, 0xAFC0_0380, 0x0000_0A03, 0],
+            3 => {
+                self.rca = (arg >> 16) as u16;
+                [0x900, 0, 0, 0]
+            }
+            _ => [0x900, 0, 0, 0],
+        }
+    }
+    fn read_word(&mut self, idx: u8, pattern: u32) -> u32 {
+        if idx == 14 { !pattern } else { 0 }
+    }
+    fn data_for(&mut self, _idx: u8, _arg: u32, _len: usize) -> Option<Vec<u8>> {
+        None
+    }
+    fn write_data(&mut self, _idx: u8, _arg: u32, _payload: &[u8]) {}
 }
 
 fn gpio_gate_failure(counters: &Counters, expected: u64, end: &EndStatus) -> Option<String> {
@@ -435,7 +502,14 @@ fn apply_mark(timers: &mut Timers, data: &[u8]) {
     }
 }
 
-fn apply_page(timers: &mut Timers, dma: &mut DmaLink, gpio: &mut SdGate, base: u32, data: &[u8]) {
+fn apply_page(
+    timers: &mut Timers,
+    dma: &mut DmaLink,
+    gpio: &mut SdGate,
+    esdhc: &mut Esdhc<EarlyCard>,
+    base: u32,
+    data: &[u8],
+) {
     if timers.pit.load_page(base, data) {
         return;
     }
@@ -448,6 +522,9 @@ fn apply_page(timers: &mut Timers, dma: &mut DmaLink, gpio: &mut SdGate, base: u
     if gpio.load_page(base, data) {
         return;
     }
+    if esdhc.load_page(base, data) {
+        return;
+    }
     let _ = dma.load_page(base, data);
 }
 
@@ -455,7 +532,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!(
-            "usage: {} <trace-file> [--limit N] [--verbose] [--gpio-gate-only N]",
+            "usage: {} <trace-file> [--limit N] [--verbose] [--gpio-gate-only N] [--esdhc-early-only N]",
             args[0]
         );
         return ExitCode::FAILURE;
@@ -464,6 +541,7 @@ fn main() -> ExitCode {
     let mut limit: Option<u64> = None;
     let mut verbose = false;
     let mut gpio_gate_only: Option<u64> = None;
+    let mut esdhc_early_only: Option<u64> = None;
     let mut i = 2;
     while i < args.len() {
         match args[i].as_str() {
@@ -477,6 +555,14 @@ fn main() -> ExitCode {
                 gpio_gate_only = args.get(i).and_then(|s| s.parse().ok());
                 if gpio_gate_only.is_none_or(|n| n == 0) {
                     eprintln!("--gpio-gate-only requires a positive count");
+                    return ExitCode::FAILURE;
+                }
+            }
+            "--esdhc-early-only" => {
+                i += 1;
+                esdhc_early_only = args.get(i).and_then(|s| s.parse().ok());
+                if esdhc_early_only.is_none_or(|n| n == 0) {
+                    eprintln!("--esdhc-early-only requires a positive count");
                     return ExitCode::FAILURE;
                 }
             }
@@ -499,6 +585,7 @@ fn main() -> ExitCode {
     let mut timers = Timers::default();
     let mut dma = DmaLink::default();
     let mut gpio = SdGate::default();
+    let mut esdhc = Esdhc::with_policy(EarlyCard::default(), RegisterPolicy::Oracle);
     let mut counters = Counters::new();
     let mut first_mismatch: Option<String> = None;
 
@@ -515,6 +602,9 @@ fn main() -> ExitCode {
     let mut pending_capture: Option<SerqEffect> = None;
     let mut n_records: u64 = 0;
     let mut end = EndStatus::Missing;
+    // HWR hooks run before the guest WR record that triggers a command, so
+    // compare these after the stream against the controller's ordered effects.
+    let mut esdhc_hwr: Vec<(u32, Vec<u8>)> = Vec::new();
 
     // See the module docs' "scheduler-trap SR" note: this crate reconstructs
     // SR/IPL from IRQ.frame_sr and RTE.sr. Vector 32 is not a real interrupt
@@ -674,6 +764,11 @@ fn main() -> ExitCode {
                 let size = rec.u8(3);
                 if Timers::owns(addr) {
                     timers.write(addr, size, value);
+                } else if Esdhc::<EarlyCard>::owns(addr) {
+                    counters.esdhc_events += 1;
+                    if !esdhc.write(addr, size, value) {
+                        counters.esdhc_unmodeled += 1;
+                    }
                 } else if SdGate::owns(addr) {
                     gpio.write(addr, size, value);
                     if matches!(addr, periph::gpio::PPDSDR_D | periph::gpio::PCLRR_D) {
@@ -705,6 +800,22 @@ fn main() -> ExitCode {
                             ),
                             verbose,
                         );
+                    }
+                } else if Esdhc::<EarlyCard>::owns(addr) {
+                    counters.esdhc_events += 1;
+                    match esdhc.read(addr, size) {
+                        Some(expected) => {
+                            counters.esdhc_rd_checked += 1;
+                            if expected != value {
+                                counters.esdhc_rd_mismatch += 1;
+                                if verbose {
+                                    eprintln!(
+                                        "eSDHC RD mismatch addr={addr:#010x} size={size} pc={pc:#010x} clock={clock}: trace={value:#x} model={expected:#x}"
+                                    );
+                                }
+                            }
+                        }
+                        None => counters.esdhc_unmodeled += 1,
                     }
                 } else if let Some(expected) = gpio.read(addr, size) {
                     counters.gpio_rd_checked += 1;
@@ -828,7 +939,12 @@ fn main() -> ExitCode {
                 let src_id = rec.u16(0) as u16;
                 let addr = rec.u32(1);
                 let name = reader.sources.get(&src_id).cloned().unwrap_or_default();
-                if name.starts_with("emu.gpio.SdGate") && addr == PPDSDR_C && rec.data.len() == 1 {
+                if Esdhc::<EarlyCard>::owns(addr) {
+                    esdhc_hwr.push((addr, rec.data.clone()));
+                } else if name.starts_with("emu.gpio.SdGate")
+                    && addr == PPDSDR_C
+                    && rec.data.len() == 1
+                {
                     counters.gpio_hwr_checked += 1;
                     let expected = gpio.sense();
                     if rec.data[0] != expected {
@@ -946,7 +1062,14 @@ fn main() -> ExitCode {
             }
             trace::PAGE => {
                 let base = rec.u32(0);
-                apply_page(&mut timers, &mut dma, &mut gpio, base, &rec.data);
+                apply_page(
+                    &mut timers,
+                    &mut dma,
+                    &mut gpio,
+                    &mut esdhc,
+                    base,
+                    &rec.data,
+                );
             }
             trace::MARK => {
                 apply_mark(&mut timers, &rec.data);
@@ -961,6 +1084,26 @@ fn main() -> ExitCode {
             _ => {}
         }
     }
+    // HWR hooks precede their triggering guest write in this trace format;
+    // compare their real byte values once all command effects are available.
+    for (addr, data) in esdhc_hwr {
+        if data.len() % 4 != 0 {
+            counters.esdhc_unmodeled += 1;
+            continue;
+        }
+        for (word, got) in data.chunks_exact(4).enumerate() {
+            counters.esdhc_hwr_checked += 1;
+            match esdhc.take_host_write() {
+                Some((expected_addr, expected))
+                    if expected_addr == addr + (word as u32 * 4) && expected == got => {}
+                _ => counters.esdhc_unmodeled += 1,
+            }
+        }
+    }
+    while esdhc.take_host_write().is_some() {
+        counters.esdhc_unmodeled += 1;
+    }
+
     // Drain any leftover expectation at end of stream.
     check_boundary_carryover!(last_boundary.unwrap_or(0));
     if let Some(effect) = pending_capture {
@@ -1007,6 +1150,14 @@ fn main() -> ExitCode {
         counters.gpio_hwr_mismatch,
     );
     println!(
+        "  eSDHC early events={} RD checked={} (mismatch {}), HWR checked={} (register-only prediction), unmodeled operations={}",
+        counters.esdhc_events,
+        counters.esdhc_rd_checked,
+        counters.esdhc_rd_mismatch,
+        counters.esdhc_hwr_checked,
+        counters.esdhc_unmodeled,
+    );
+    println!(
         "  DMA RD checked={} (mismatch {}), DMA HWR checked={} (mismatch {}), capture mismatches={}, edma vec155 seen={} (unordered {}), DSPI2 TX frames={} (trig-mask {})",
         counters.dma_rd_checked,
         counters.dma_rd_mismatch,
@@ -1021,7 +1172,20 @@ fn main() -> ExitCode {
     if let Some(ctx) = &first_mismatch {
         println!("FIRST MISMATCH: {ctx}");
     }
-    if let Some(expected) = gpio_gate_only {
+    if let Some(expected) = esdhc_early_only {
+        println!(
+            "eSDHC EARLY-ONLY verdict (explicit): expects exactly {expected} eSDHC RD/WR events; unrelated full-replay mismatches remain reported but do not decide this mode"
+        );
+        if let Some(reason) = esdhc_gate_failure(&counters, expected, &end) {
+            println!("eSDHC EARLY-ONLY FAIL: {reason}");
+            ExitCode::FAILURE
+        } else {
+            println!(
+                "eSDHC EARLY-ONLY PASS: clean END, matching read values, and no unmodeled eSDHC operations; ignored unrelated full-replay mismatches={total}"
+            );
+            ExitCode::SUCCESS
+        }
+    } else if let Some(expected) = gpio_gate_only {
         println!(
             "GPIO GATE-ONLY verdict (explicit): expects WR/RD/HWR={expected}/{expected}/{expected}; unrelated full-replay mismatches remain reported but do not decide this mode"
         );
