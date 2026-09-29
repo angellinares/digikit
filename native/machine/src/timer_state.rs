@@ -234,12 +234,10 @@ fn counters(object: &Map<String, Value>, name: &str) -> Result<[u64; 4], TimerSt
         if channel.to_string() != *key {
             return Err(TimerStateError::Invalid);
         }
-        counters[channel] = u64::from(
-            count
-                .as_u64()
-                .filter(|count| *count <= u64::from(u32::MAX))
-                .ok_or(TimerStateError::Invalid)?,
-        );
+        counters[channel] = count
+            .as_u64()
+            .filter(|count| *count <= u64::from(u32::MAX))
+            .ok_or(TimerStateError::Invalid)?;
     }
     Ok(counters)
 }

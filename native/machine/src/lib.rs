@@ -1,6 +1,7 @@
 //! Firmware-agnostic native board seam: sparse guest RAM, MMIO, and eMMC DMA59.
 
 pub mod board;
+mod host_state;
 pub mod state;
 pub mod time;
 pub mod timer_state;

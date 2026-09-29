@@ -243,6 +243,18 @@ impl DtimBank {
     /// Advance to instruction count `done`. -> (vectors raised, in delivery
     /// order with their ICR level; host writes performed, `(addr, byte)`).
     pub fn service(&mut self, done: u64, intc: &IntcBank, sr: &mut SrTracker) -> DtimServiceResult {
+        self.service_with(done, intc, sr, |_, _| true)
+    }
+
+    /// Offer due DTIM interrupts atomically to a CPU owner. A declined offer
+    /// leaves the tick pending; the timer's REF host write still occurred.
+    pub fn service_with(
+        &mut self,
+        done: u64,
+        intc: &IntcBank,
+        sr: &mut SrTracker,
+        mut offer: impl FnMut(u16, u8) -> bool,
+    ) -> DtimServiceResult {
         if self.held {
             return (Vec::new(), Vec::new());
         }
@@ -301,6 +313,9 @@ impl DtimBank {
                 continue;
             };
             if sr.ipl() >= lvl {
+                continue;
+            }
+            if !offer(vec, lvl) {
                 continue;
             }
             sr.on_taken(Some(lvl), 0);

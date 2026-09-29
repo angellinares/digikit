@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -165,6 +166,14 @@ def _validate_derived_payload(entry: dict, snapshot: Path, trace: Path) -> None:
         or header.get("main_image", {}).get("sha256") != entry["image_sha256"]
         or header.get("snapshot", {}).get("sha256") != entry["input_snapshot_sha256"]
         or header.get("instrs") != entry["limit"]
+        or (
+            "icount" in entry
+            and (
+                type(entry["icount"]) is not bool
+                or header.get("clock_resolution")
+                != ("instruction" if entry["icount"] else "step")
+            )
+        )
         or not _same_json(header.get("manifest"), saved.get("manifest"))
         or bool(header.get("build", {}).get("slc")) != (entry["product"] == "dn2")
     ):
@@ -239,7 +248,12 @@ def verify(ledger: Path, syx: Path, *, _depth: int = 0) -> dict:
 
 
 def capture(
-    parent_ledger: Path, syx: Path, limit: int, *, control: bool = False
+    parent_ledger: Path,
+    syx: Path,
+    limit: int,
+    *,
+    control: bool = False,
+    icount: bool = False,
 ) -> Path:
     """Advance a source-verified parent via the existing bounded recorder."""
     if type(limit) is not int or not 1 <= limit <= MAX_LIMIT:
@@ -278,6 +292,8 @@ def capture(
     ]
     if product == "dn2":
         args.append("--slc")
+    if icount:
+        args.append("--icount")
     subprocess.run(args, cwd=ROOT, check=True, timeout=CAPTURE_TIMEOUT_S)
     control_file = directory / "control.snap"
     if control:
@@ -305,6 +321,7 @@ def capture(
         "trace_sha256": sha256(trace),
         "limit": limit,
         "done": ends[0][1]["done"],
+        "icount": icount,
     }
     if control:
         entry["control_sha256"] = sha256(control_file)
@@ -315,7 +332,7 @@ def capture(
     return ledger
 
 
-def portable(ledger: Path, syx: Path) -> Path:
+def portable(ledger: Path, syx: Path, *, output: Path | None = None) -> Path:
     """Convert one integrity-checked local snapshot; never parse pickle in Rust."""
     entry = verify(ledger, syx)
     path = (
@@ -332,11 +349,129 @@ def portable(ledger: Path, syx: Path) -> Path:
             private, entry["snapshot_sha256"], "private portable input snapshot"
         )
         data = snapconv.convert_blob(Snapshot(str(private))._blob)
-    output = _under_chain(ledger.parent / "portable.mstate")
+    output = _under_chain(output or ledger.parent / "portable.mstate")
     temporary = output.with_suffix(".mstate.tmp")
     temporary.write_bytes(data)
     temporary.replace(output)
     return output
+
+
+def first_events(
+    ledger: Path, syx: Path, count: int, *, output: Path | None = None
+) -> Path:
+    """Extract a small, instruction-clock MMIO gate from a checked local trace.
+
+    The JSON contains firmware-derived addresses/values and stays ignored.
+    This is Oracle evidence, not native execution or a parity result.
+    """
+    if type(count) is not int or not 2 <= count <= 64:
+        raise ValueError("first event count must be between 2 and 64")
+    entry = verify(ledger, syx)
+    if entry["kind"] != "derived" or entry.get("icount") is not True:
+        raise ValueError("first events require an instruction-accurate derived capture")
+    start = None
+    seen = {"RD": 0, "WR": 0}
+    events = []
+    with tempfile.TemporaryDirectory(prefix="events-", dir=_directory()) as scratch:
+        private = Path(scratch) / "trace.mmio"
+        shutil.copyfile(_under_chain(ledger.parent / "capture.mmio"), private)
+        checkpointprep.require_hash(
+            private, entry["trace_sha256"], "private event trace"
+        )
+        reader = mmiotrace.Reader(str(private))
+        if reader.header.get("clock_resolution") != "instruction":
+            raise ValueError("first events require instruction-accurate trace clocks")
+        for rec in reader:
+            if rec.tag == mmiotrace.TIME and start is None:
+                start = rec.clock
+            if rec.tag not in (mmiotrace.RD, mmiotrace.WR):
+                continue
+            if start is None or not start <= rec.clock < start + entry["done"]:
+                raise ValueError(
+                    "MMIO event lies outside the completed instruction window"
+                )
+            kind = "RD" if rec.tag == mmiotrace.RD else "WR"
+            seen[kind] += 1
+            if len(events) < count:
+                addr, value, pc, size = rec.fields
+                events.append(
+                    {
+                        "kind": kind,
+                        "step": rec.clock - start,
+                        "address": addr,
+                        "value": value,
+                        "pc": pc,
+                        "size": size,
+                    }
+                )
+    if (
+        seen["RD"] == 0
+        or seen["WR"] == 0
+        or len(events) < count
+        or {event["kind"] for event in events} != {"RD", "WR"}
+    ):
+        raise ValueError("first event window lacks both guest MMIO reads and writes")
+    output = _under_chain(output or ledger.parent / "first-events.json")
+    temporary = output.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(
+            {
+                "format_version": 1,
+                "count": count,
+                "window_done": entry["done"],
+                "coverage": seen,
+                "events": events,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    temporary.replace(output)
+    return output
+
+
+def first_mmio_gate(parent: Path, derived: Path, syx: Path, count: int) -> None:
+    """Run the bounded native Oracle comparison on source-checked private inputs.
+
+    A passing test covers only the extracted, ordered accesses; it does not
+    assert full CPU/RAM parity, Device parity, or artifact authentication.
+    """
+    parent = _under_chain(parent)
+    derived = _under_chain(derived)
+    entry = verify(derived, syx)
+    if entry["kind"] != "derived" or _under_chain(Path(entry["parent"])) != parent:
+        raise ValueError("event capture is not a direct child of checkpoint parent")
+    product = entry["product"]
+    if product not in checkpointprep.PRODUCTS:
+        raise ValueError("unsupported firmware product")
+    with tempfile.TemporaryDirectory(prefix="first-mmio-", dir=_directory()) as scratch:
+        state = portable(parent, syx, output=Path(scratch) / "input.mstate")
+        events = first_events(derived, syx, count, output=Path(scratch) / "events.json")
+        env = os.environ.copy()
+        # Optional one-off CPU samples have no verified receipt: they cannot
+        # silently enter this source-wrapped MMIO gate.
+        env.pop("DT2_CPU_SPARSE", None)
+        env.pop("DN2_CPU_SPARSE", None)
+        env[f"{product.upper()}_LOCAL_MSTATE"] = str(state)
+        env[f"{product.upper()}_LOCAL_EVENTS"] = str(events)
+        subprocess.run(
+            [
+                "cargo",
+                "test",
+                "--manifest-path",
+                "native/machine/Cargo.toml",
+                "--test",
+                "first_mmio",
+                f"first_guest_mmio_mismatch_{product}",
+                "--",
+                "--ignored",
+                "--nocapture",
+            ],
+            cwd=ROOT,
+            env=env,
+            timeout=120,
+            check=True,
+        )
 
 
 def main() -> None:
@@ -350,6 +485,9 @@ def main() -> None:
     follow.add_argument("--syx", type=Path, required=True)
     follow.add_argument("--limit", type=int, required=True)
     follow.add_argument(
+        "--icount", action="store_true", help="record instruction-accurate event clocks"
+    )
+    follow.add_argument(
         "--control",
         action="store_true",
         help="require a matching no-record run for changed MAIN OS and host state",
@@ -360,13 +498,29 @@ def main() -> None:
     convert = commands.add_parser("portable")
     convert.add_argument("ledger", type=Path)
     convert.add_argument("--syx", type=Path, required=True)
+    events = commands.add_parser("first-events")
+    events.add_argument("ledger", type=Path)
+    events.add_argument("--syx", type=Path, required=True)
+    events.add_argument("--count", type=int, default=16)
+    gate = commands.add_parser("first-mmio")
+    gate.add_argument("parent", type=Path)
+    gate.add_argument("derived", type=Path)
+    gate.add_argument("--syx", type=Path, required=True)
+    gate.add_argument("--count", type=int, default=6)
     args = parser.parse_args()
     if args.command == "anchor":
         result = anchor(args.product, args.syx)
     elif args.command == "capture":
-        result = capture(args.parent, args.syx, args.limit, control=args.control)
+        result = capture(
+            args.parent, args.syx, args.limit, control=args.control, icount=args.icount
+        )
     elif args.command == "portable":
         result = portable(args.ledger, args.syx)
+    elif args.command == "first-events":
+        result = first_events(args.ledger, args.syx, args.count)
+    elif args.command == "first-mmio":
+        first_mmio_gate(args.parent, args.derived, args.syx, args.count)
+        result = args.derived
     else:
         verify(args.ledger, args.syx)
         result = args.ledger
@@ -374,6 +528,8 @@ def main() -> None:
         "anchor": "local integrity checked",
         "capture": "local capture recorded",
         "portable": "local portable state generated",
+        "first-events": "local instruction-clock events extracted",
+        "first-mmio": "native compared bounded Oracle MMIO events (not full parity)",
         "verify": "local integrity checked",
     }[args.command]
     print(f"checkpoint-chain {label}: {result}")

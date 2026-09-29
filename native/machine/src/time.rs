@@ -1,11 +1,22 @@
-//! Oracle-compatible PIT/INTC timing seam for a native machine loop.
+//! Oracle-compatible PIT/DTIM/INTC timing seam for a native machine loop.
 //!
 //! This deliberately composes the peripheral banks rather than interpreting
 //! their registers itself. `PitBank` owns PIT timing, pending-state, and PIF
 //! write-one-to-clear; `IntcBank` owns oracle register passthrough and masking;
 //! and `SrTracker` is updated by `PitBank::service` when an interrupt is taken.
 
-use periph::{intc::IntcBank, pit::PitBank, sr::SrTracker};
+use periph::{
+    dtim::DtimBank,
+    intc::IntcBank,
+    machine::{HostWrite, Timers},
+    pit::PitBank,
+    sr::SrTracker,
+};
+
+use crate::{
+    MachineState,
+    timer_state::{TimerStateError, import_timers},
+};
 
 /// Selects the timer delivery contract.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -24,29 +35,62 @@ pub enum TimeError {
     DeviceInterruptDeliveryUnsupported,
 }
 
-/// PIT/INTC register facade and guest-clock timing composition.
+/// PIT/DTIM/INTC register facade and guest-clock timing composition.
 pub struct Time {
     pit: PitBank,
+    dtim: DtimBank,
     intc: IntcBank,
     sr: SrTracker,
     policy: TimerPolicy,
+    host_writes: Vec<HostWrite>,
 }
 
 impl Time {
     /// Build an oracle-compatible PIT bank with the supplied active channels
     /// and guest instructions-per-second clock.
     pub fn new(policy: TimerPolicy, pit_channels: Vec<usize>, ips: f64) -> Self {
+        Self::with_dtims(policy, pit_channels, vec![], ips)
+    }
+
+    /// Construct a complete Python `Timers` topology. A checkpoint import
+    /// must validate the saved channel order and IPS against these settings.
+    pub fn with_dtims(
+        policy: TimerPolicy,
+        pit_channels: Vec<usize>,
+        dtim_channels: Vec<usize>,
+        ips: f64,
+    ) -> Self {
         Self {
             pit: PitBank::new(pit_channels, ips, false),
+            dtim: DtimBank::new(dtim_channels, ips, false),
             intc: IntcBank::new(),
             sr: SrTracker::new(),
             policy,
+            host_writes: Vec::new(),
         }
     }
 
-    /// True when this seam owns a PIT or INTC MMIO address.
+    /// Apply validated Python v1 scheduling state without losing already
+    /// loaded PIT/DTIM/INTC register pages. Failed validation changes none of
+    /// these banks (`import_timers` validates both sources before mutation).
+    pub fn restore_timer_component(&mut self, state: &MachineState) -> Result<(), TimerStateError> {
+        let mut lane = Timers {
+            pit: std::mem::take(&mut self.pit),
+            dtim: std::mem::take(&mut self.dtim),
+            intc: std::mem::take(&mut self.intc),
+            sr: std::mem::take(&mut self.sr),
+        };
+        let result = import_timers(state, &mut lane);
+        self.pit = lane.pit;
+        self.dtim = lane.dtim;
+        self.intc = lane.intc;
+        self.sr = lane.sr;
+        result
+    }
+
+    /// True when this seam owns a PIT, DTIM or INTC MMIO address.
     pub fn owns(addr: u32) -> bool {
-        PitBank::owns(addr) || IntcBank::owns(addr)
+        PitBank::owns(addr) || DtimBank::owns(addr) || IntcBank::owns(addr)
     }
 
     fn owns_access(addr: u32, size: u8) -> bool {
@@ -67,6 +111,7 @@ impl Time {
         Self::owns_access(addr, size).then(|| {
             self.pit
                 .read(addr, size)
+                .or_else(|| self.dtim.read(addr, size))
                 .or_else(|| self.intc.read(addr, size))
         })?
     }
@@ -74,12 +119,16 @@ impl Time {
     /// Write an oracle PIT or INTC register. PIT handles PCSR PIF clearing.
     pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
         Self::owns_access(addr, size)
-            && (self.pit.write(addr, size, value) || self.intc.write(addr, size, value))
+            && (self.pit.write(addr, size, value)
+                || self.dtim.write(addr, size, value)
+                || self.intc.write(addr, size, value))
     }
 
     /// Load one complete PIT-channel or INTC register page.
     pub fn load_page(&mut self, base: u32, data: &[u8]) -> bool {
-        self.pit.load_page(base, data) || self.intc.load_page(base, data)
+        self.pit.load_page(base, data)
+            || self.dtim.load_page(base, data)
+            || self.intc.load_page(base, data)
     }
 
     /// Current timer delivery contract.
@@ -92,9 +141,12 @@ impl Time {
         self.sr.seed(sr);
     }
 
-    /// Return the next PIT deadline, arming newly enabled timers at `done`.
+    /// Return the first PIT/DTIM deadline, arming enabled timers at `done`.
     pub fn deadline(&mut self, done: u64) -> Option<u64> {
-        self.pit.deadline(done)
+        match (self.pit.deadline(done), self.dtim.deadline(done)) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// Service PIT at the exact guest instruction boundary `done`.
@@ -106,7 +158,7 @@ impl Time {
         if self.policy == TimerPolicy::Device {
             return Err(TimeError::DeviceInterruptDeliveryUnsupported);
         }
-        Ok(self.pit.service(done, &self.intc, &mut self.sr))
+        self.service_with(done, |_, _| true)
     }
 
     /// Service Oracle PIT at a boundary, retaining pending vectors declined by
@@ -114,11 +166,29 @@ impl Time {
     pub fn service_with(
         &mut self,
         done: u64,
-        offer: impl FnMut(u16, u8) -> bool,
+        mut offer: impl FnMut(u16, u8) -> bool,
     ) -> Result<Vec<(u16, u8)>, TimeError> {
         if self.policy == TimerPolicy::Device {
             return Err(TimeError::DeviceInterruptDeliveryUnsupported);
         }
-        Ok(self.pit.service_with(done, &self.intc, &mut self.sr, offer))
+        let mut raised = self
+            .pit
+            .service_with(done, &self.intc, &mut self.sr, &mut offer);
+        let (dtim_raised, writes) = self
+            .dtim
+            .service_with(done, &self.intc, &mut self.sr, offer);
+        raised.extend(dtim_raised);
+        self.host_writes.extend(
+            writes
+                .into_iter()
+                .map(|(addr, byte)| HostWrite { addr, byte }),
+        );
+        Ok(raised)
+    }
+
+    /// DTIM REF writes made while servicing the last boundary. The CPU owner
+    /// must apply these as host writes, never as guest W1C register writes.
+    pub fn take_host_writes(&mut self) -> Vec<HostWrite> {
+        std::mem::take(&mut self.host_writes)
     }
 }

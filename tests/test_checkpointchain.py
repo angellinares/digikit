@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -99,6 +100,127 @@ def test_portable_rechecks_private_input_after_copy(local_source, monkeypatch):
     assert not (ledger.parent / "portable.mstate").exists()
 
 
+def test_first_events_requires_instruction_clock_and_nonzero_read_write(
+    local_source, monkeypatch
+):
+    syx, snapshot, _ = local_source
+    ledger = checkpointchain.anchor("dt2", syx, snapshot)
+    trace = ledger.parent / "capture.mmio"
+    trace.write_bytes(b"synthetic trace")
+    monkeypatch.setattr(
+        checkpointchain,
+        "verify",
+        lambda *_args: {
+            "kind": "derived",
+            "done": 8,
+            "icount": True,
+            "parent": str(ledger),
+            "trace_sha256": checkpointchain.sha256(trace),
+        },
+    )
+
+    class Reader:
+        header = {"clock_resolution": "instruction"}
+
+        def __init__(self, _path):
+            pass
+
+        def __iter__(self):
+            return iter(
+                [
+                    SimpleNamespace(tag=checkpointchain.mmiotrace.TIME, clock=8),
+                    SimpleNamespace(
+                        tag=checkpointchain.mmiotrace.RD,
+                        clock=11,
+                        fields=(0xFC08C000, 0x1234, 0x40001000, 2),
+                    ),
+                    SimpleNamespace(
+                        tag=checkpointchain.mmiotrace.WR,
+                        clock=12,
+                        fields=(0xFC08C000, 0x56, 0x40001002, 1),
+                    ),
+                ]
+            )
+
+    monkeypatch.setattr(checkpointchain.mmiotrace, "Reader", Reader)
+    output = checkpointchain.first_events(ledger, syx, 2)
+    values = checkpointchain.json.loads(output.read_text())
+    assert [(event["kind"], event["step"]) for event in values["events"]] == [
+        ("RD", 3),
+        ("WR", 4),
+    ]
+    original_iter = Reader.__iter__
+
+    def two_reads_before_write(self):
+        records = list(original_iter(self))
+        records.insert(2, records[1])
+        return iter(records)
+
+    monkeypatch.setattr(Reader, "__iter__", two_reads_before_write)
+    with pytest.raises(ValueError, match="first event window lacks both"):
+        checkpointchain.first_events(ledger, syx, 2)
+    monkeypatch.setattr(Reader, "__iter__", original_iter)
+    Reader.header["clock_resolution"] = "step"
+    with pytest.raises(ValueError, match="instruction-accurate"):
+        checkpointchain.first_events(ledger, syx, 2)
+    Reader.header["clock_resolution"] = "instruction"
+    monkeypatch.setattr(
+        checkpointchain.shutil,
+        "copyfile",
+        lambda _source, destination: destination.write_bytes(b"replaced during copy"),
+    )
+    with pytest.raises(ValueError, match="private event trace SHA-256 mismatch"):
+        checkpointchain.first_events(ledger, syx, 2)
+
+
+def test_native_mmio_gate_binds_parent_and_private_outputs(local_source, monkeypatch):
+    syx, snapshot, _ = local_source
+    parent = checkpointchain.anchor("dt2", syx, snapshot)
+    derived = parent.parent / "derived.json"
+    calls = []
+
+    def checked(ledger, _syx):
+        return {
+            "kind": "derived",
+            "product": "dt2",
+            "parent": str(parent if ledger == derived else derived),
+        }
+
+    def make_state(_ledger, _syx, *, output):
+        output.write_bytes(b"private state")
+        return output
+
+    def make_events(_ledger, _syx, _count, *, output):
+        output.write_bytes(b"private events")
+        return output
+
+    def native_run(command, *, cwd, env, timeout, check):
+        assert cwd == checkpointchain.ROOT
+        assert timeout <= 120 and check
+        assert "--ignored" in command
+        state = Path(env["DT2_LOCAL_MSTATE"])
+        events = Path(env["DT2_LOCAL_EVENTS"])
+        assert state.read_bytes() == b"private state"
+        assert events.read_bytes() == b"private events"
+        assert state.parent == events.parent
+        calls.append(command)
+
+    monkeypatch.setattr(checkpointchain, "verify", checked)
+    monkeypatch.setattr(checkpointchain, "portable", make_state)
+    monkeypatch.setattr(checkpointchain, "first_events", make_events)
+    monkeypatch.setattr(checkpointchain.subprocess, "run", native_run)
+    checkpointchain.first_mmio_gate(parent, derived, syx, 6)
+    assert len(calls) == 1
+
+    def wrong_parent(_ledger, _syx):
+        return {"kind": "derived", "product": "dt2", "parent": str(derived)}
+
+    monkeypatch.setattr(checkpointchain, "verify", wrong_parent)
+    with pytest.raises(ValueError, match="not a direct child"):
+        checkpointchain.first_mmio_gate(parent, derived, syx, 6)
+    assert len(calls) == 1
+
+
 def test_verify_refuses_forged_child_before_parsing_snapshot(local_source, monkeypatch):
     syx, snapshot, _ = local_source
     parent = checkpointchain.anchor("dt2", syx, snapshot)
@@ -161,6 +283,7 @@ def test_capture_passes_a_verified_private_input_to_the_recorder(
 
     def inspect(args, **_kwargs):
         copied = checkpointchain.Path(args[3])
+        assert "--icount" in args
         assert copied != snapshot
         assert copied.is_relative_to(checkpointchain._directory())
         assert copied.read_bytes() == snapshot.read_bytes()
@@ -168,7 +291,7 @@ def test_capture_passes_a_verified_private_input_to_the_recorder(
 
     monkeypatch.setattr(checkpointchain.subprocess, "run", inspect)
     with pytest.raises(RecorderCalled):
-        checkpointchain.capture(parent, syx, 1000)
+        checkpointchain.capture(parent, syx, 1000, icount=True)
 
 
 def test_derived_image_check_rejects_modified_main_os(local_source):
@@ -203,6 +326,7 @@ def test_timer_step_may_exceed_idle_interval(monkeypatch, tmp_path):
             "instrs": 1000,
             "manifest": {},
             "build": {"slc": False},
+            "clock_resolution": "instruction",
         }
 
         def __init__(self, _path):
@@ -212,18 +336,25 @@ def test_timer_step_may_exceed_idle_interval(monkeypatch, tmp_path):
             return iter([(0, {"stop": "limit", "done": actual, "errors": 0})])
 
     monkeypatch.setattr(checkpointchain.mmiotrace, "Reader", Reader)
+    entry = {
+        "product": "dt2",
+        "source_sha256": "source",
+        "image_sha256": "image",
+        "input_snapshot_sha256": "parent",
+        "limit": 1000,
+        "done": actual,
+        "icount": True,
+    }
     checkpointchain._validate_derived_payload(
-        {
-            "product": "dt2",
-            "source_sha256": "source",
-            "image_sha256": "image",
-            "input_snapshot_sha256": "parent",
-            "limit": 1000,
-            "done": actual,
-        },
+        entry,
         tmp_path / "snapshot",
         tmp_path / "trace",
     )
+    Reader.header["clock_resolution"] = "step"
+    with pytest.raises(ValueError, match="capture header/source manifest mismatch"):
+        checkpointchain._validate_derived_payload(
+            entry, tmp_path / "snapshot", tmp_path / "trace"
+        )
 
 
 def test_changed_main_image_requires_equal_clock_control(

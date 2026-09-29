@@ -1,11 +1,12 @@
 use emmc_card::{
-    Card, CardError, DEFAULT_CAPACITY_BLOCKS, MAX_TRANSFER_BYTES, RandomAccessRead,
+    Card, CardCheckpoint, CardError, DEFAULT_CAPACITY_BLOCKS, MAX_TRANSFER_BYTES, RandomAccessRead,
     SMALL_CAPACITY_BLOCKS,
 };
 use periph::{
     edma::TcdSnapshot,
     esdhc::{self, DmaBuffers, Esdhc, transfer_dma59},
 };
+use std::collections::BTreeMap;
 
 struct TinyBacking(Vec<u8>);
 
@@ -219,6 +220,42 @@ fn overlapping_partial_and_full_sectors_preserve_backing_and_zero_writes() {
         assert_eq!(output.as_slice(), &expected[start..start + output.len()]);
     }
     assert_eq!(card.overlay_len(), covered.iter().filter(|&&b| b).count());
+}
+
+#[test]
+fn restore_python_byte_overlay_and_card_identity_atomically() {
+    let mut card = Card::with_backing(
+        DEFAULT_CAPACITY_BLOCKS,
+        Some(Box::new(TinyBacking(vec![0xa5; 1024]))),
+    )
+    .unwrap();
+    card.write_data(25, 0, &[0x13]).unwrap();
+    let checkpoint = CardCheckpoint {
+        blocks: DEFAULT_CAPACITY_BLOCKS,
+        rca: 0x1234,
+        selected: true,
+        overlay: BTreeMap::from([(0, 0), (513, 0x5a)]),
+    };
+    let mut wrong_capacity = checkpoint.clone();
+    wrong_capacity.blocks = SMALL_CAPACITY_BLOCKS;
+    assert_eq!(
+        card.restore_checkpoint(&wrong_capacity),
+        Err(CardError::CheckpointCapacityMismatch {
+            expected: DEFAULT_CAPACITY_BLOCKS,
+            actual: SMALL_CAPACITY_BLOCKS,
+        })
+    );
+    assert_eq!(card.overlay_len(), 1);
+    assert!(!card.selected());
+    card.restore_checkpoint(&checkpoint).unwrap();
+    assert_eq!(card.rca(), 0x1234);
+    assert!(card.selected());
+    assert_eq!(card.overlay_len(), 2);
+    assert_eq!(card.data_for(18, 0, 2).unwrap().unwrap(), [0, 0xa5]);
+    assert_eq!(
+        card.data_for(18, 1, 3).unwrap().unwrap(),
+        [0xa5, 0x5a, 0xa5]
+    );
 }
 
 #[test]

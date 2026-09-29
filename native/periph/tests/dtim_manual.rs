@@ -114,6 +114,25 @@ fn ref_write_one_clear_discards_pending_before_delivery() {
 }
 
 #[test]
+fn declined_oracle_offer_keeps_dtim_pending_after_ref_host_write() {
+    let intc = intc_with_level(VECTORS[3], 2);
+    let mut sr = SrTracker::new();
+    let mut bank = DtimBank::new(vec![3], F_BUS, false);
+    write_dtmr_dtrr(&mut bank, 3, 0x001d, 0x00, 100);
+    bank.deadline(0);
+    let due = bank.next_deadline(3).unwrap().ceil() as u64;
+    let (raised, writes) = bank.service_with(due, &intc, &mut sr, |_, _| false);
+    assert!(raised.is_empty());
+    assert_eq!(writes.len(), 1);
+    assert!(bank.pending(3));
+    assert_eq!(sr.ipl(), 0);
+    let (raised, writes) = bank.service_with(due, &intc, &mut sr, |_, _| true);
+    assert_eq!(raised, vec![(VECTORS[3], 2)]);
+    assert!(writes.is_empty());
+    assert!(!bank.pending(3));
+}
+
+#[test]
 fn highest_source_first_dtim3_before_dtim1() {
     // RM SS17.3.1 (Table 17-19): highest source number first within a
     // level. DTIM3 is INTC0 source 35, DTIM1 is source 33. Taking DTIM3's

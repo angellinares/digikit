@@ -53,6 +53,18 @@ pub enum CardError {
     UnsupportedCapacity(u32),
     /// A caller requested a transfer larger than [`MAX_TRANSFER_BYTES`].
     TransferTooLarge { requested: usize, maximum: usize },
+    /// Saved card state belongs to a different reported capacity.
+    CheckpointCapacityMismatch { expected: u32, actual: u32 },
+}
+
+/// Host-only card state from Python's `Esdhc` v1 checkpoint. The sparse
+/// overlay maps absolute byte offsets, not whole sectors or backing bytes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CardCheckpoint {
+    pub blocks: u32,
+    pub rca: u16,
+    pub selected: bool,
+    pub overlay: BTreeMap<u64, u8>,
 }
 
 /// One sparse card sector. Unwritten bytes still come from the backing;
@@ -172,6 +184,32 @@ impl Card {
     /// Number of bytes retained in the sparse write overlay.
     pub fn overlay_len(&self) -> usize {
         self.overlay_bytes
+    }
+
+    /// Restore host card identity and sparse writes without modifying media.
+    /// Capacity is checked before touching the current card. In particular a
+    /// written zero byte must mask a nonzero backing byte after restoration.
+    pub fn restore_checkpoint(&mut self, state: &CardCheckpoint) -> Result<(), CardError> {
+        if self.blocks != state.blocks {
+            return Err(CardError::CheckpointCapacityMismatch {
+                expected: self.blocks,
+                actual: state.blocks,
+            });
+        }
+        let mut overlay = BTreeMap::<u64, Box<OverlaySector>>::new();
+        for (&offset, &byte) in &state.overlay {
+            let sector = offset / SECTOR_SIZE as u64;
+            let position = (offset % SECTOR_SIZE as u64) as usize;
+            overlay
+                .entry(sector)
+                .or_insert_with(|| Box::new(OverlaySector::new()))
+                .write(position, &[byte]);
+        }
+        self.overlay = overlay;
+        self.overlay_bytes = state.overlay.len();
+        self.rca = state.rca;
+        self.selected = state.selected;
+        Ok(())
     }
 
     /// Execute the minimal identity/selection command set and return RSP0..3.

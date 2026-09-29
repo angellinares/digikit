@@ -66,3 +66,11 @@ fn xfertyp_write_issues_command_and_marks_data_ready() {
         0x23
     );
 }
+
+#[test]
+fn restored_datport_pattern_drives_next_bus_test_without_guest_write() {
+    let mut h = Esdhc::new(Card::default());
+    h.restore_pattern(0x1234_5678);
+    h.write(esdhc::BASE + esdhc::XFERTYP, 4, 0x0E3A_0010);
+    assert_eq!(h.read(esdhc::BASE + esdhc::DATPORT, 4), Some(!0x1234_5678));
+}

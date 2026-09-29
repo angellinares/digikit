@@ -277,6 +277,12 @@ impl<P: CardPort> Esdhc<P> {
         &mut self.card
     }
 
+    /// Restore the DATPORT bus-test word retained by Python `Esdhc` v1.
+    /// Register pages are loaded separately; this is host-only state.
+    pub fn restore_pattern(&mut self, pattern: u32) {
+        self.pattern = pattern;
+    }
+
     pub fn owns(addr: u32) -> bool {
         (BASE..BASE + SIZE).contains(&addr)
     }

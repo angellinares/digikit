@@ -3,18 +3,20 @@ use std::collections::BTreeMap;
 
 use coldfire::{Bus, BusError};
 use emmc_card::{
-    Card,
+    Card, CardError,
     dma::{StorageDmaError, service_dma59},
 };
 use periph::{
-    DmaLink, edma,
+    DmaLink,
+    dtim::{BASES as DTIM_BASES, DtimBank},
+    edma,
     esdhc::{self, DmaCompletion, Esdhc, RegisterPolicy},
     intc::BASES as INTC_BASES,
     pit::BASES as PIT_BASES,
     regfile::SLOT_SIZE,
 };
 
-use crate::time::Time;
+use crate::{host_state::HostState, time::Time};
 
 const PAGE_SIZE: usize = 1024 * 1024;
 const PAGE_SHIFT: u32 = 20;
@@ -67,6 +69,18 @@ pub struct GuestAccess {
     pub value: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GuestAccessKind {
+    Read,
+    Write,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GuestBusAccess {
+    pub kind: GuestAccessKind,
+    pub access: GuestAccess,
+}
+
 /// Caller-mapped 1 MiB RAM pages.  The tagged 4096-entry table is indexed by
 /// address bits 31:20, so ordinary 1/2/4-byte RAM accesses take one table
 /// lookup.  MMIO is always dispatched before this table.
@@ -91,6 +105,11 @@ pub struct Board {
     capture_guest_accesses: bool,
     guest_reads: Vec<GuestAccess>,
     guest_writes: Vec<GuestAccess>,
+    guest_ordered: Vec<GuestBusAccess>,
+    /// Python's unmapped-memory callback zero-maps pages on first touch.
+    /// Opt-in and SDRAM-only here; never treat missing MMIO as RAM.
+    oracle_sdram_faults: bool,
+    oracle_fault_pages: u8,
 }
 impl Board {
     pub fn new(card: Card, semaphores: SemaphoreAddresses, policy: CompletionPolicy) -> Self {
@@ -115,6 +134,9 @@ impl Board {
             capture_guest_accesses: false,
             guest_reads: vec![],
             guest_writes: vec![],
+            guest_ordered: vec![],
+            oracle_sdram_faults: false,
+            oracle_fault_pages: 0,
         }
     }
 
@@ -135,6 +157,15 @@ impl Board {
     pub fn restore_time(&mut self, time: Time) {
         debug_assert!(self.time.is_none());
         self.time = Some(time);
+    }
+
+    /// Restore validated host-only storage state after checkpoint pages load.
+    /// Guest register files and eDMA TCDs come from the mapped MSTATE pages.
+    pub(crate) fn restore_storage_state(&mut self, state: &HostState) -> Result<(), CardError> {
+        self.esdhc.card_mut().restore_checkpoint(&state.card)?;
+        self.esdhc.restore_pattern(state.pattern);
+        self.armed_dma59 = state.armed_dma59;
+        Ok(())
     }
 
     fn owned_mmio(addr: u32) -> bool {
@@ -208,12 +239,30 @@ impl Board {
         // slots. Restore a slot at its address within the page, not only when
         // the MSTATE page base happens to equal the peripheral base.
         if let Some(time) = self.time.as_mut() {
-            for slot in PIT_BASES.iter().chain(INTC_BASES.iter()) {
+            for slot in PIT_BASES
+                .iter()
+                .chain(DTIM_BASES.iter())
+                .chain(INTC_BASES.iter())
+            {
                 if *slot & !PAGE_MASK == addr {
                     let offset = (*slot & PAGE_MASK) as usize;
                     let _ = time.load_page(*slot, &data[offset..offset + SLOT_SIZE]);
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Apply a DTIM-generated REF byte to the guest backing page without
+    /// routing it through the guest's W1C MMIO write hook. The timer bank has
+    /// already updated its own register before returning this host write.
+    pub fn apply_timer_host_write(&mut self, addr: u32, byte: u8) -> Result<(), BusError> {
+        if !DtimBank::owns(addr) {
+            return Err(Self::bus_error(addr, true));
+        }
+        self.map_zeroed_ram_page(addr & !PAGE_MASK)?;
+        if !self.ram_write(addr, 1, u32::from(byte)) {
+            return Err(Self::bus_error(addr, true));
         }
         Ok(())
     }
@@ -270,6 +319,24 @@ impl Board {
     pub fn clear_guest_accesses(&mut self) {
         self.guest_reads.clear();
         self.guest_writes.clear();
+        self.guest_ordered.clear();
+    }
+    fn record_guest_access(&mut self, kind: GuestAccessKind, access: GuestAccess) {
+        self.guest_ordered.push(GuestBusAccess { kind, access });
+        match kind {
+            GuestAccessKind::Read => self.guest_reads.push(access),
+            GuestAccessKind::Write => self.guest_writes.push(access),
+        }
+    }
+    /// Return interleaved, instruction-local read/write order for parity gates.
+    pub fn take_guest_accesses(&mut self) -> Vec<GuestBusAccess> {
+        std::mem::take(&mut self.guest_ordered)
+    }
+    /// Reproduce the Oracle's first-touch zero-fill for absent SDRAM pages,
+    /// bounded to 16 new pages. Device semantics and peripheral holes differ.
+    pub fn enable_oracle_sdram_faults(&mut self) {
+        assert_eq!(self.policy, CompletionPolicy::Oracle);
+        self.oracle_sdram_faults = true;
     }
     /// Return ordered successful Bus reads since the last clear/take.
     pub fn take_guest_reads(&mut self) -> Vec<GuestAccess> {
@@ -304,6 +371,28 @@ impl Board {
     #[inline]
     fn page_mut(&mut self, addr: u32) -> Option<&mut RamPage> {
         self.pages[Self::page_index(addr)].as_mut()
+    }
+    fn ensure_oracle_sdram(&mut self, addr: u32, size: u8) -> bool {
+        if !self.oracle_sdram_faults {
+            return true;
+        }
+        let Some(end) = addr.checked_add(u32::from(size)) else {
+            return false;
+        };
+        if addr < 0x4000_0000 || end > 0x4800_0000 {
+            return true;
+        }
+        let first = addr & !PAGE_MASK;
+        let last = (end - 1) & !PAGE_MASK;
+        for base in [first, last] {
+            if self.page(base).is_none() {
+                if self.oracle_fault_pages >= 16 || self.map_ram_page(base).is_err() {
+                    return false;
+                }
+                self.oracle_fault_pages += 1;
+            }
+        }
+        true
     }
     fn ram_read(&self, addr: u32, size: u8) -> Option<u32> {
         let end = addr.checked_add(size as u32)?;
@@ -565,6 +654,9 @@ impl Board {
             self.drain_esdhc_host_writes();
             return Ok(value);
         }
+        if !self.ensure_oracle_sdram(addr, size) {
+            return Err(Self::bus_error(addr, false));
+        }
         self.ram_read(addr, size)
             .ok_or(Self::bus_error(addr, false))
     }
@@ -584,6 +676,9 @@ impl Board {
             return Ok(());
         }
         if !Esdhc::<Card>::owns(addr) {
+            if !self.ensure_oracle_sdram(addr, size) {
+                return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));
+            }
             return self
                 .ram_write(addr, size, value)
                 .then_some(())
@@ -659,11 +754,14 @@ impl Bus for Board {
         if self.capture_guest_accesses
             && let Ok(value) = result
         {
-            self.guest_reads.push(GuestAccess {
-                address: addr,
-                size: 1,
-                value: u32::from(value),
-            });
+            self.record_guest_access(
+                GuestAccessKind::Read,
+                GuestAccess {
+                    address: addr,
+                    size: 1,
+                    value: u32::from(value),
+                },
+            );
         }
         result
     }
@@ -672,11 +770,14 @@ impl Bus for Board {
         if self.capture_guest_accesses
             && let Ok(value) = result
         {
-            self.guest_reads.push(GuestAccess {
-                address: addr,
-                size: 2,
-                value: u32::from(value),
-            });
+            self.record_guest_access(
+                GuestAccessKind::Read,
+                GuestAccess {
+                    address: addr,
+                    size: 2,
+                    value: u32::from(value),
+                },
+            );
         }
         result
     }
@@ -689,11 +790,14 @@ impl Bus for Board {
         if self.capture_guest_accesses
             && let Ok(value) = result
         {
-            self.guest_reads.push(GuestAccess {
-                address: addr,
-                size: 4,
-                value,
-            });
+            self.record_guest_access(
+                GuestAccessKind::Read,
+                GuestAccess {
+                    address: addr,
+                    size: 4,
+                    value,
+                },
+            );
         }
         result
     }
@@ -703,11 +807,14 @@ impl Bus for Board {
             Self::bus_error(addr, true)
         });
         if self.capture_guest_accesses && result.is_ok() {
-            self.guest_writes.push(GuestAccess {
-                address: addr,
-                size: 1,
-                value: u32::from(value),
-            });
+            self.record_guest_access(
+                GuestAccessKind::Write,
+                GuestAccess {
+                    address: addr,
+                    size: 1,
+                    value: u32::from(value),
+                },
+            );
         }
         result
     }
@@ -717,11 +824,14 @@ impl Bus for Board {
             Self::bus_error(addr, true)
         });
         if self.capture_guest_accesses && result.is_ok() {
-            self.guest_writes.push(GuestAccess {
-                address: addr,
-                size: 2,
-                value: u32::from(value),
-            });
+            self.record_guest_access(
+                GuestAccessKind::Write,
+                GuestAccess {
+                    address: addr,
+                    size: 2,
+                    value: u32::from(value),
+                },
+            );
         }
         result
     }
@@ -731,11 +841,14 @@ impl Bus for Board {
             Self::bus_error(addr, true)
         });
         if self.capture_guest_accesses && result.is_ok() {
-            self.guest_writes.push(GuestAccess {
-                address: addr,
-                size: 4,
-                value,
-            });
+            self.record_guest_access(
+                GuestAccessKind::Write,
+                GuestAccess {
+                    address: addr,
+                    size: 4,
+                    value,
+                },
+            );
         }
         result
     }
@@ -752,6 +865,72 @@ mod tests {
     const AS: u32 = RAM + 0x104;
     const CS: u32 = RAM + 0x108;
     const ST: u32 = RAM + 0x10c;
+
+    #[test]
+    fn dtim_host_ref_byte_updates_backing_without_guest_mmio_dispatch() {
+        let mut board = Board::new(
+            Card::default(),
+            SemaphoreAddresses::default(),
+            CompletionPolicy::Oracle,
+        );
+        let ref_addr = DTIM_BASES[3] + 3;
+        assert_eq!(board.ram_read(ref_addr, 1), None);
+        board.apply_timer_host_write(ref_addr, 0x02).unwrap();
+        assert_eq!(board.ram_read(ref_addr, 1), Some(0x02));
+        assert!(board.apply_timer_host_write(0x4000_0000, 0x02).is_err());
+    }
+
+    #[test]
+    fn guest_access_capture_retains_mixed_read_write_order() {
+        let mut board = Board::new(
+            Card::default(),
+            SemaphoreAddresses::default(),
+            CompletionPolicy::Oracle,
+        );
+        board.map_ram_page(RAM).unwrap();
+        board.set_guest_access_capture(true);
+        board.write8(RAM, 0x12).unwrap();
+        assert_eq!(board.read8(RAM).unwrap(), 0x12);
+        board.write8(RAM + 1, 0x34).unwrap();
+        let captured = board.take_guest_accesses();
+        assert_eq!(
+            captured
+                .iter()
+                .map(|access| access.kind)
+                .collect::<Vec<_>>(),
+            [
+                GuestAccessKind::Write,
+                GuestAccessKind::Read,
+                GuestAccessKind::Write
+            ]
+        );
+        assert!(board.take_guest_accesses().is_empty());
+    }
+
+    #[test]
+    fn oracle_sdram_faults_are_opt_in_and_restricted_to_sdram() {
+        let mut board = Board::new(
+            Card::default(),
+            SemaphoreAddresses::default(),
+            CompletionPolicy::Oracle,
+        );
+        let missing = 0x4660_0000;
+        assert!(board.write32(missing, 0x1234_5678).is_err());
+        board.enable_oracle_sdram_faults();
+        assert_eq!(board.read32(missing).unwrap(), 0);
+        board.write32(missing, 0x1234_5678).unwrap();
+        assert_eq!(board.read32(missing).unwrap(), 0x1234_5678);
+        assert!(board.read32(0x3000_0000).is_err());
+        assert!(board.write32(0x8000_0000, 0).is_err());
+        for index in 0..15 {
+            assert_eq!(
+                board.read8(0x4400_0000 + index * PAGE_SIZE as u32).unwrap(),
+                0
+            );
+        }
+        assert!(board.read8(0x44f0_0000).is_err());
+    }
+
     fn board(policy: CompletionPolicy) -> Board {
         let mut b = Board::new(
             Card::new(DEFAULT_CAPACITY_BLOCKS).unwrap(),

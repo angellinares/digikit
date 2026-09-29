@@ -8,6 +8,7 @@ use machine::{
     state::{PAGE_SIZE, Page, Registers},
 };
 use periph::{
+    dtim::{BASES as DTIM_BASES, VECTORS as DTIM_VECTORS},
     intc::{BASES as INTC_BASES, VECTOR_BASE},
     pit::{BASES as PIT_BASES, F_BUS, VECTORS},
 };
@@ -79,6 +80,23 @@ fn apply_state_maps_zero_pages_and_keeps_known_and_unknown_ctlregs() {
 }
 
 #[test]
+fn imported_mstate_page_restores_dtim_registers_inside_the_one_megabyte_page() {
+    let mut machine = machine();
+    machine.board.attach_time(Time::with_dtims(
+        TimerPolicy::Oracle,
+        vec![],
+        vec![3],
+        F_BUS,
+    ));
+    let page_base = DTIM_BASES[3] & !(PAGE_SIZE as u32 - 1);
+    let mut page = vec![0; PAGE_SIZE];
+    let slot = (DTIM_BASES[3] - page_base) as usize;
+    page[slot + 3] = 0x34;
+    machine.board.import_ram_page(page_base, &page).unwrap();
+    assert_eq!(machine.board.read8(DTIM_BASES[3] + 3).unwrap(), 0x34);
+}
+
+#[test]
 fn apply_state_rejects_conflicting_rambar_aliases_component_and_invalid_maps_atomically() {
     let mut machine = machine();
     let mut aliases = state();
@@ -129,7 +147,8 @@ fn apply_state_installs_big_endian_forced_read_words_without_changing_writes() {
     assert!(machine.board.read16(edge + 3).is_err());
 
     let mut owned = state();
-    owned.mmio_forced.insert(PIT_BASES[0] - 1, 1);
+    // DTIM3 abuts PIT0, so their shared boundary is no longer unowned.
+    owned.mmio_forced.insert(PIT_BASES[3] + 0x3fff, 1);
     assert_eq!(
         Machine::new(
             Cpu::new(),
@@ -174,6 +193,68 @@ fn timed_oracle_step_delivers_due_pit_at_boundary() {
     machine.step_timed().unwrap();
     assert_eq!(machine.clock, 1);
     assert_eq!(machine.cpu.pc, RAM + 0x100);
+}
+
+#[test]
+fn timed_oracle_step_applies_dtim_ref_as_host_not_guest_write() {
+    let mut machine = machine();
+    machine.board.map_ram_page(RAM).unwrap();
+    machine.board.write16(RAM, 0x4e71).unwrap(); // NOP
+    machine.cpu.pc = RAM;
+    machine.cpu.sr = 0x2000;
+    let dtim3 = DTIM_BASES[3];
+    let mut time = Time::with_dtims(TimerPolicy::Oracle, vec![], vec![3], F_BUS);
+    time.write(dtim3, 2, 0x001b); // bus clock, period 1 instruction
+    time.write(dtim3 + 4, 4, 0);
+    machine.board.attach_time(time);
+    machine.step_timed().unwrap();
+    assert_eq!(machine.clock, 1);
+    assert_eq!(machine.board.read8(dtim3 + 3).unwrap() & 0x02, 0x02);
+    assert!(
+        machine
+            .board
+            .time_mut()
+            .unwrap()
+            .take_host_writes()
+            .is_empty()
+    );
+}
+
+#[test]
+fn timed_missing_dtim_handler_retains_pending_and_retries_once() {
+    let mut machine = machine();
+    machine.board.map_ram_page(RAM).unwrap();
+    machine.board.write16(RAM, 0x4e71).unwrap();
+    machine.board.write16(RAM + 2, 0x4e71).unwrap();
+    machine.cpu.pc = RAM;
+    machine.cpu.ctrl.vbr = RAM;
+    machine.cpu.a[7] = RAM + 0x8000;
+    machine.cpu.sr = 0x2000;
+    let dtim3 = DTIM_BASES[3];
+    let vector = DTIM_VECTORS[3];
+    let mut time = Time::with_dtims(TimerPolicy::Oracle, vec![], vec![3], F_BUS);
+    time.write(dtim3, 2, 0x001b); // period 1 instruction
+    time.write(dtim3 + 4, 4, 0);
+    let source = u32::from(vector - VECTOR_BASE[0]);
+    let base = INTC_BASES[0];
+    time.write(base + 0x40 + source, 1, 2);
+    let mask = time.read(base + 0x08, 4).unwrap();
+    time.write(base + 0x08, 4, mask & !(1 << (source % 32)));
+    machine.board.attach_time(time);
+    assert_eq!(
+        machine.step_timed(),
+        Err(TimedStepError::MissingOracleHandler {
+            vector: vector as u8
+        })
+    );
+    assert_eq!(machine.board.read8(dtim3 + 3).unwrap() & 0x02, 0x02);
+    machine
+        .board
+        .write32(RAM + 4 * u32::from(vector), RAM + 0x100)
+        .unwrap();
+    machine.step_timed().unwrap();
+    assert_eq!(machine.cpu.pc, RAM + 0x100);
+    assert_eq!(machine.cpu.sr & 0x0700, 0x0200);
 }
 
 #[test]

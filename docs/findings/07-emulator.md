@@ -2776,3 +2776,53 @@ boundaries, so coalescing (few boundaries) under-reads it.
   checkpoints converted, but **native `Machine::apply_state` still rejects
   their nonempty host components**. A native CPU/MMIO first-divergence result
   has not yet been produced.
+
+### Native import of the local pre-MMIO host state
+
+- **[C]** The earlier claim that `Machine::apply_state` rejects **all**
+  nonempty components described the previous implementation. The native
+  machine now accepts a sole validated Python-v1 `timers` component when a
+  matching Oracle `Time` facade is attached. It also accepts the exact
+  four-component longrun set (`timers`, `esdhc`, `edma_tx`, `uart_in`) when
+  UART input and TX state are dormant and the eSDHC DMA byte count is zero.
+  Active, unmodelled UART/TX state and unknown components still fail closed;
+  this does **not** establish full late-state restoration.
+- **[D]** The `Time` facade now routes PIT, DTIM and INTC register pages and
+  offers due Oracle vectors to the CPU while retaining declined DTIM ticks.
+  A DTIM REF host write bypasses guest W1C dispatch and updates the backing
+  page. The card importer restores RCA, selection and sparse absolute-byte
+  overlays, including written zeroes that mask backing media. Tests cover
+  component mismatches, timer topology, refused-vector retry, card capacity,
+  and malformed/active host fields. **Device timer delivery is still
+  unsupported** and no Python schedule is treated as proof of hardware timing.
+- **[D]** After re-running `checkpointchain.py portable` for both local,
+  source-checked pre-event chains, an ignored native test parsed and imported
+  the resulting DT2 +8M and DN2 +2M MSTATE files. Rust's direct test alone
+  does not authenticate its caller-supplied paths; the local Python source
+  checks preceded it. This proves only that these **particular dormant-host
+  checkpoints load**, not that subsequent CPU instructions, MMIO effects,
+  interrupts or audio match the Oracle. Bounded first-divergence execution
+  and restoration of active UART/TX/card host state remain **[O]**.
+- **[D]** A bounded **Oracle first-MMIO gate** now starts at those imported
+  checkpoints. Run `uv run python tools/checkpointchain.py first-mmio PARENT
+  DERIVED --syx SOURCE --count 6` with a direct-child instruction-clock
+  capture: the wrapper rechecks the source, loaded MAIN OS, parent and trace
+  receipts, then privately converts the snapshot and extracts ordered events
+  before invoking the ignored native test. Both local DT2 1.16 and DN2 1.11
+  gates passed their **first six ordered guest accesses** (one read, five
+  writes, including instruction offset, address, value, size and PC); their
+  last compared offsets were 360079 and 242626 respectively. A direct Rust
+  invocation has no provenance checks. These receipts demonstrate local
+  integrity/reproducibility, **not authentication** of pickles or Device
+  behavior. The gate compares neither all later accesses nor guest RAM.
+- **[D]** The initial native pre-MMIO exception on DN2 was isolated with a
+  locally verified, ignored Oracle CPU-sample probe: the first sampled
+  discrepancy was at offset 54785, where the native core raised access error
+  on a MOVEM store to an absent SDRAM page. Python's `Machine._fault` lazily
+  zero-maps that page. The native Board now has an **opt-in, Oracle-only,
+  SDRAM-range, 16-new-page-limited** first-touch mapping for this gate; it is
+  not a claim about device memory. The focused sample at offsets 54000–55000
+  then passed DN2 D/A/PC/SR comparisons, but that one-off sample is not bound
+  to the source-verified gate and does not prove CPU-state parity over the
+  whole window. RAM write comparison after these late checkpoints and
+  integrated DSP playback remain **[O]**.

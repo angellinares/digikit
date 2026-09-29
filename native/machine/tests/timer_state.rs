@@ -1,5 +1,9 @@
+use coldfire::Cpu;
+use emmc_card::Card;
 use machine::MachineState;
 use machine::timer_state::{TimerStateError, import_timers};
+use machine::{Board, CompletionPolicy, Machine, SemaphoreAddresses, StateApplyError};
+use machine::{Time, TimerPolicy};
 use periph::machine::Timers;
 use serde_json::json;
 
@@ -54,6 +58,58 @@ fn imports_timer_component_with_checkpoint_relative_deadlines() {
     assert_eq!(timers.dtim.missed(3), 8);
     assert_eq!(timers.dtim.cleared(3), 9);
     assert_eq!(timers.dtim.stale(), &[3]);
+}
+
+#[test]
+fn time_facade_imports_both_sources_without_discarding_loaded_registers() {
+    let mut time = Time::with_dtims(TimerPolicy::Oracle, vec![3, 2, 0], vec![3], 4_680_000.0);
+    let dtim3 = periph::dtim::BASES[3];
+    time.write(dtim3, 2, 0x001d);
+    time.restore_timer_component(&state(component())).unwrap();
+    assert_eq!(time.read(dtim3, 2), Some(0x001d));
+    let mut wrong_topology = Time::new(TimerPolicy::Oracle, vec![3, 2, 0], 4_680_000.0);
+    assert_eq!(
+        wrong_topology.restore_timer_component(&state(component())),
+        Err(TimerStateError::Configuration)
+    );
+}
+
+#[test]
+fn machine_imports_timer_component_before_running_guest_instructions() {
+    let mut unattached = Machine::new(
+        Cpu::new(),
+        Board::new(
+            Card::default(),
+            SemaphoreAddresses::default(),
+            CompletionPolicy::Oracle,
+        ),
+    );
+    assert_eq!(
+        unattached.apply_state(&state(component())),
+        Err(StateApplyError::TimerNotAttached)
+    );
+    let mut machine = Machine::new(
+        Cpu::new(),
+        Board::new(
+            Card::default(),
+            SemaphoreAddresses::default(),
+            CompletionPolicy::Oracle,
+        ),
+    );
+    let mut time = Time::with_dtims(TimerPolicy::Oracle, vec![3, 2, 0], vec![3], 4_680_000.0);
+    let dtim3 = periph::dtim::BASES[3];
+    time.write(dtim3, 2, 0x001b);
+    time.write(dtim3 + 4, 4, 10);
+    machine.board.attach_time(time);
+    machine.apply_state(&state(component())).unwrap();
+    assert_eq!(machine.board.time_mut().unwrap().deadline(0), Some(30));
+
+    let mut wrong_source = component();
+    wrong_source["sources"][1]["channels"] = json!([2]);
+    assert_eq!(
+        machine.apply_state(&state(wrong_source)),
+        Err(StateApplyError::TimerState(TimerStateError::Configuration))
+    );
 }
 
 #[test]

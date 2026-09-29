@@ -1,11 +1,9 @@
-#[path = "../src/time.rs"]
-mod time;
-
+use machine::{Time, TimeError, TimerPolicy};
 use periph::{
+    dtim::{BASES as DTIM_BASES, VECTORS as DTIM_VECTORS},
     intc::{BASES as INTC_BASES, VECTOR_BASE},
     pit::{BASES as PIT_BASES, F_BUS, VECTORS},
 };
-use time::{Time, TimeError, TimerPolicy};
 
 fn enable_pit0(time: &mut Time) {
     time.write(PIT_BASES[0], 2, 0x000b); // EN|RLD|PIE, PRE=0
@@ -87,6 +85,25 @@ fn facade_owns_loads_pages_and_returns_pit_deadline() {
 
     assert!(time.load_page(INTC_BASES[2], &[0x5a]));
     assert_eq!(time.read(INTC_BASES[2], 1), Some(0x5a));
+}
+
+#[test]
+fn dtim_oracle_offer_preserves_host_write_and_declined_tick() {
+    let mut time = Time::with_dtims(TimerPolicy::Oracle, vec![], vec![3], F_BUS);
+    assert!(Time::owns(DTIM_BASES[3]));
+    time.write(DTIM_BASES[3], 2, 0x001d);
+    time.write(DTIM_BASES[3] + 4, 4, 100);
+    let vector = DTIM_VECTORS[3];
+    let source = u32::from(vector - VECTOR_BASE[0]);
+    let base = INTC_BASES[0];
+    time.write(base + 0x40 + source, 1, 2);
+    let mask = time.read(base + 0x08, 4).unwrap();
+    time.write(base + 0x08, 4, mask & !(1 << (source % 32)));
+    let due = time.deadline(0).unwrap();
+    assert!(time.service_with(due, |_, _| false).unwrap().is_empty());
+    assert_eq!(time.take_host_writes().len(), 1);
+    assert_eq!(time.service_with(due, |_, _| true).unwrap(), [(vector, 2)]);
+    assert!(time.take_host_writes().is_empty());
 }
 
 #[test]

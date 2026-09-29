@@ -9,8 +9,10 @@ use coldfire::{Bus, Cpu, InterruptPolicy, Stop};
 
 use crate::{
     Board, CompletionEvent, CompletionPolicy, MachineState,
+    host_state::{self, HostStateError},
     state::{MAX_MAPPED_PAGES, PAGE_SIZE},
     time::{TimeError, TimerPolicy},
+    timer_state::TimerStateError,
 };
 
 /// Why a checkpoint cannot be applied to a fresh native machine.
@@ -19,6 +21,11 @@ pub enum StateApplyError {
     StatusRegisterOutOfRange { value: u32 },
     ConflictingRambarAliases { c04: u32, c05: u32 },
     UnsupportedComponents,
+    InvalidComponents,
+    OracleHostStateRequired,
+    CardCapacityMismatch { expected: u32, actual: u32 },
+    TimerNotAttached,
+    TimerState(TimerStateError),
     InvalidMappedInput,
     ForcedMmioOverlapsOwned,
     Ram,
@@ -30,6 +37,9 @@ pub enum TimedStepError {
     Stop(Stop),
     DeviceTimingUnsupported,
     TimerNotAttached,
+    TimerHostWriteUnavailable {
+        address: u32,
+    },
     VectorOutOfRange {
         vector: u16,
     },
@@ -79,23 +89,15 @@ impl Machine {
 
     /// Apply portable checkpoint state to a newly constructed machine.
     ///
-    /// Component and forced-MMIO snapshots are deliberately rejected in this
-    /// stage: the board has no equivalent facade from which to restore them.
-    /// In particular, accepting timer component state would silently lose PIT
-    /// scheduling state even when a [`crate::Time`] is attached.
+    /// A sole timer component or a validated Python-v1 longrun set with
+    /// dormant UART/TX host state can be imported. Nonempty UART/TX queues,
+    /// unrepresented host counters and unknown components are rejected.
+    /// Failed application leaves this newly built machine unusable; discard it.
     pub fn apply_state(&mut self, state: &MachineState) -> Result<(), StateApplyError> {
         if state.regs.sr > u32::from(u16::MAX) {
             return Err(StateApplyError::StatusRegisterOutOfRange {
                 value: state.regs.sr,
             });
-        }
-        if !state.components.is_null()
-            && state
-                .components
-                .as_object()
-                .is_none_or(|components| !components.is_empty())
-        {
-            return Err(StateApplyError::UnsupportedComponents);
         }
         let c04 = state.ctlregs.get(&0xc04).copied();
         let c05 = state.ctlregs.get(&0xc05).copied();
@@ -123,6 +125,46 @@ impl Machine {
         {
             return Err(StateApplyError::InvalidMappedInput);
         }
+        let (has_timers, host_state) = match &state.components {
+            serde_json::Value::Null => (false, None),
+            serde_json::Value::Object(components) if components.is_empty() => (false, None),
+            serde_json::Value::Object(components)
+                if components.len() == 1 && components.contains_key("timers") =>
+            {
+                (true, None)
+            }
+            serde_json::Value::Object(components) if components.len() == 4 => {
+                let parsed = host_state::parse(&state.components).map_err(|error| match error {
+                    HostStateError::Invalid => StateApplyError::InvalidComponents,
+                    HostStateError::Unsupported => StateApplyError::UnsupportedComponents,
+                })?;
+                (true, Some(parsed))
+            }
+            _ => return Err(StateApplyError::UnsupportedComponents),
+        };
+        if let Some(host) = &host_state {
+            let expected = self.board.esdhc.card_mut().blocks();
+            if expected != host.card.blocks {
+                return Err(StateApplyError::CardCapacityMismatch {
+                    expected,
+                    actual: host.card.blocks,
+                });
+            }
+        }
+        if has_timers {
+            if self.board.completion_policy() != CompletionPolicy::Oracle {
+                return Err(StateApplyError::OracleHostStateRequired);
+            }
+            let time = self
+                .board
+                .time_mut()
+                .ok_or(StateApplyError::TimerNotAttached)?;
+            if time.policy() != TimerPolicy::Oracle {
+                return Err(StateApplyError::OracleHostStateRequired);
+            }
+            time.restore_timer_component(state)
+                .map_err(StateApplyError::TimerState)?;
+        }
         self.board
             .install_forced_mmio(state.mmio_forced.clone())
             .map_err(|_| StateApplyError::ForcedMmioOverlapsOwned)?;
@@ -137,6 +179,11 @@ impl Machine {
             self.board
                 .import_ram_page(page.base, &page.data)
                 .map_err(|_| StateApplyError::Ram)?;
+        }
+        if let Some(host) = &host_state {
+            self.board
+                .restore_storage_state(host)
+                .map_err(|_| StateApplyError::InvalidComponents)?;
         }
 
         self.cpu.d = state.regs.d;
@@ -298,7 +345,15 @@ impl Machine {
                 }
             }
         });
+        let host_writes = time.take_host_writes();
         self.board.restore_time(time);
+        for write in host_writes {
+            self.board
+                .apply_timer_host_write(write.addr, write.byte)
+                .map_err(|_| TimedStepError::TimerHostWriteUnavailable {
+                    address: write.addr,
+                })?;
+        }
         service.map_err(|TimeError::DeviceInterruptDeliveryUnsupported| {
             TimedStepError::DeviceTimingUnsupported
         })?;
