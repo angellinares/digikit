@@ -32,6 +32,13 @@ class FakeAudio:
         self.pushed.append(frame)
 
 
+def test_live_pack_init_limit_is_enforced_before_loading_an_image():
+    import sharc_transpile_run as tr
+
+    with pytest.raises(ValueError, match="init instruction limit must be positive"):
+        tr.armed_start("absent-image", None, init_limit=0)
+
+
 def test_the_peer_queues_wire_bytes_unchanged_and_replies_zeros():
     audio = FakeAudio()
     peer = livesharc.LiveFramePeer(audio)

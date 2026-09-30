@@ -2800,9 +2800,10 @@ boundaries, so coalescing (few boundaries) under-reads it.
   the resulting DT2 +8M and DN2 +2M MSTATE files. Rust's direct test alone
   does not authenticate its caller-supplied paths; the local Python source
   checks preceded it. This proves only that these **particular dormant-host
-  checkpoints load**, not that subsequent CPU instructions, MMIO effects,
-  interrupts or audio match the Oracle. Bounded first-divergence execution
-  and restoration of active UART/TX/card host state remain **[O]**.
+  checkpoints load**, not by itself that subsequent CPU instructions, MMIO
+  effects, interrupts or audio match the Oracle. The later bounded checks
+  below cover only their named windows; restoration of active UART/TX/card
+  host state remains **[O]**.
 - **[D]** A bounded **Oracle first-MMIO gate** now starts at those imported
   checkpoints. Run `uv run python tools/checkpointchain.py first-mmio PARENT
   DERIVED --syx SOURCE --count 6` with a direct-child instruction-clock
@@ -2824,5 +2825,47 @@ boundaries, so coalescing (few boundaries) under-reads it.
   not a claim about device memory. The focused sample at offsets 54000–55000
   then passed DN2 D/A/PC/SR comparisons, but that one-off sample is not bound
   to the source-verified gate and does not prove CPU-state parity over the
-  whole window. RAM write comparison after these late checkpoints and
-  integrated DSP playback remain **[O]**.
+  whole window. The bounded late CPU/RAM comparison below does not cover
+  later timer/IRQ execution; integrated DSP playback remains **[O]**.
+- **[D]** An ignored **DSP-only headless audio gate** in
+  `native/live/src/sharc_capture_tests.rs` takes explicit absolute
+  `LIVE_SHARC_PACK` and `SHARC_NATIVE_LIB` paths under ignored `out/`. It
+  checks native core source compatibility **only for v3 packs** (older local
+  packs lack that field), renders 160 frames (5120 stereo samples) through
+  `LivePlayer::offline` twice from fresh cores, requires clean and non-silent
+  frames, and compares canonical interleaved signed-Q31
+  PCM FNV-1a fingerprints. It prints each run's elapsed time and bounds the
+  test's wait on a separate render worker to 30 seconds (the native core
+  cannot be cancelled in-process); this is not a real-time throughput claim.
+  The original local capture passed twice using a legacy v1 pack, without a
+  core-source compatibility check. A fresh v3 pack was then built into ignored
+  `out/native/live/v3/` from the same captured frames and LP0 log with
+  `tools/sharc_transpile_run.py live-pack --limit 2000000`; that limit bounds
+  initialization, while LP0 callbacks are separately bounded. The selected
+  DT2 sections' source SHA-256 matched the local `.syx`, the pack's image
+  bytes matched those sections, and the rebuilt pack body was byte-identical
+  to the legacy pack body. Its v3 core-source hash matched both the current
+  `tools/sharc_core` and the selected generated native library. Two fresh
+  v3 debug renders again each produced 160 clean frames and 5120 stereo
+  samples with FNV-1a64 `e89d808cd7de9585`. These checks establish local
+  source compatibility and repeatability, **not authentication** of the
+  firmware/capture, Device audio, ColdFire-generated frames, or integrated
+  playback **[O]**.
+- **[D]** `tools/checkpointchain.py first-cpu-ram PARENT DERIVED --syx
+  SOURCE --count 6` now re-verifies the local source/receipt chain, privately
+  copies and hashes the parent snapshot and firmware source, and rejects an
+  event window that crosses a timer STEP or IRQ. Its separate bounded Unicorn
+  probe samples D/A/PC/SR (including both interval ends) and records one
+  interleaved stream of guest writes **below 0x80000000** and MMIO reads/writes
+  in the recorder's ranges. It verifies MMIO markers against the checked trace
+  before using its read values. The native gate compares this unified order
+  and stops at the first observed difference. ColdFire's
+  lazy NZV state is resolved before SR comparisons. The local DT2 gate passed
+  353 sampled CPU boundaries, 359992 ordered guest writes and six MMIO
+  accesses through instruction offset 360079; DN2 passed 238 boundaries,
+  242540 guest writes and six accesses through offset 242626. These bounds
+  stop **before** the first timer IRQ in each window. The unchanged ignored
+  trace artifacts and local source receipts remain under `out/`; this is
+  Oracle agreement only, not unobserved CPU boundaries, all address ranges,
+  ISR/Device behavior, integrated playback, or authentication of arbitrary
+  pickle files.

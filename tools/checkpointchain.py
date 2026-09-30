@@ -33,7 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from emu import mmiotrace  # noqa: E402
-from tools import checkpointprep, snapconv, snapeq  # noqa: E402
+from tools import checkpointcpu, checkpointprep, snapconv, snapeq  # noqa: E402
 from tools.snapread import Snapshot  # noqa: E402
 
 MAX_LIMIT = 10_000_000
@@ -430,7 +430,96 @@ def first_events(
     return output
 
 
-def first_mmio_gate(parent: Path, derived: Path, syx: Path, count: int) -> None:
+def cpu_ram_reference(
+    parent: Path, syx: Path, limit: int, every: int, *, events: Path, output: Path
+) -> Path:
+    """Observe a privately restored parent for exactly one timer STEP.
+
+    The caller must also check that the event window ends before its first
+    asynchronous IRQ. A longrun build restores host models, but this driver
+    does not advance timer services between Unicorn instructions.
+    """
+    from unicorn import m68k_const
+
+    from emu.longrun import build
+
+    if type(limit) is not int or not 1 <= limit <= checkpointcpu.MAX_STEPS:
+        raise ValueError("CPU/RAM window must be 1..1000000 instructions")
+    if type(every) is not int or not 1 <= every <= limit:
+        raise ValueError("CPU sample interval is invalid")
+    parent = _under_chain(parent)
+    entry = verify(parent, syx)
+    product = entry["product"]
+    original = (
+        Path(entry["snapshot"])
+        if entry["kind"] == "anchor"
+        else _under_chain(parent.parent / "final.snap")
+    )
+    with tempfile.TemporaryDirectory(prefix="cpu-ram-", dir=_directory()) as scratch:
+        snapshot = Path(scratch) / "input.snap"
+        source = Path(scratch) / "source.syx"
+        shutil.copyfile(original, snapshot)
+        checkpointprep.require_hash(
+            snapshot, entry["snapshot_sha256"], "private CPU/RAM input snapshot"
+        )
+        shutil.copyfile(syx, source)
+        checkpointprep.require_hash(
+            source, entry["source_sha256"], "private CPU/RAM firmware source"
+        )
+        sections = str(ROOT / checkpointprep.PRODUCTS[product].section_dir)
+        previous_sections = os.environ.get("DT2_SECTIONS")
+        os.environ["DT2_SECTIONS"] = sections
+        try:
+            machine, ev, _state, pc, _inq, _at = build(
+                str(snapshot),
+                syx=str(source),
+                unblock=True,
+                softfloat=True,
+                bitmap=True,
+                dsp=True,
+                slc=product == "dn2",
+                deferred_components=("timers",),
+            )
+            try:
+                if ev["restore_checkpoint_timers"]() is None:
+                    raise ValueError("CPU/RAM parent lacks restored timer component")
+                if ev["checkpoint_manifest"]["main_sha256"] != entry["image_sha256"]:
+                    raise ValueError("CPU/RAM loaded MAIN OS SHA-256 mismatch")
+                observed = checkpointcpu.capture_window(
+                    machine.uc,
+                    pc,
+                    limit,
+                    every,
+                    lambda uc: checkpointprep._regs(uc, m68k_const),
+                )
+            finally:
+                machine.close()
+        finally:
+            if previous_sections is None:
+                os.environ.pop("DT2_SECTIONS", None)
+            else:
+                os.environ["DT2_SECTIONS"] = previous_sections
+        checkpointprep.require_hash(
+            source, entry["source_sha256"], "private CPU/RAM firmware source"
+        )
+    expected = json.loads(_under_chain(events).read_text())["events"]
+    checkpointcpu.bind_recorded_mmio(observed["effects"], expected)
+    output = _under_chain(output)
+    temporary = output.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(
+            {"format_version": 1, "product": product, **observed},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    temporary.replace(output)
+    return output
+
+
+def first_mmio_gate(
+    parent: Path, derived: Path, syx: Path, count: int, *, cpu_ram: bool = False
+) -> None:
     """Run the bounded native Oracle comparison on source-checked private inputs.
 
     A passing test covers only the extracted, ordered accesses; it does not
@@ -447,13 +536,58 @@ def first_mmio_gate(parent: Path, derived: Path, syx: Path, count: int) -> None:
     with tempfile.TemporaryDirectory(prefix="first-mmio-", dir=_directory()) as scratch:
         state = portable(parent, syx, output=Path(scratch) / "input.mstate")
         events = first_events(derived, syx, count, output=Path(scratch) / "events.json")
+        reference = None
+        if cpu_ram:
+            limit = json.loads(events.read_text())["events"][-1]["step"] + 1
+            if limit > checkpointcpu.MAX_STEPS:
+                raise ValueError(
+                    "CPU/RAM event window exceeds native instruction bound"
+                )
+            # Only a single uninterrupted Unicorn STEP has the same timing
+            # semantics as our bounded one-call CPU/RAM Oracle observation.
+            with tempfile.TemporaryDirectory(
+                prefix="cpu-clock-", dir=_directory()
+            ) as clock_dir:
+                private_trace = Path(clock_dir) / "trace.mmio"
+                shutil.copyfile(
+                    _under_chain(derived.parent / "capture.mmio"), private_trace
+                )
+                checkpointprep.require_hash(
+                    private_trace, entry["trace_sha256"], "private CPU/RAM clock trace"
+                )
+                steps = [
+                    rec
+                    for rec in mmiotrace.Reader(str(private_trace))
+                    if rec.tag == mmiotrace.STEP
+                ]
+                if len(steps) != 1 or steps[0].fields[1] < limit:
+                    raise ValueError("CPU/RAM gate requires one covering timer STEP")
+                start = steps[0].clock
+                reader = mmiotrace.Reader(str(private_trace))
+                if any(
+                    rec.tag == mmiotrace.IRQ and start <= rec.clock < start + limit
+                    for rec in reader
+                ):
+                    raise ValueError("CPU/RAM gate crosses a timer interrupt")
+            reference = cpu_ram_reference(
+                parent,
+                syx,
+                limit,
+                1024,
+                events=events,
+                output=Path(scratch) / "cpu-ram.json",
+            )
         env = os.environ.copy()
         # Optional one-off CPU samples have no verified receipt: they cannot
         # silently enter this source-wrapped MMIO gate.
         env.pop("DT2_CPU_SPARSE", None)
         env.pop("DN2_CPU_SPARSE", None)
+        env.pop("DT2_LOCAL_CPU_RAM", None)
+        env.pop("DN2_LOCAL_CPU_RAM", None)
         env[f"{product.upper()}_LOCAL_MSTATE"] = str(state)
         env[f"{product.upper()}_LOCAL_EVENTS"] = str(events)
+        if reference is not None:
+            env[f"{product.upper()}_LOCAL_CPU_RAM"] = str(reference)
         subprocess.run(
             [
                 "cargo",
@@ -507,6 +641,11 @@ def main() -> None:
     gate.add_argument("derived", type=Path)
     gate.add_argument("--syx", type=Path, required=True)
     gate.add_argument("--count", type=int, default=6)
+    cpu_gate = commands.add_parser("first-cpu-ram")
+    cpu_gate.add_argument("parent", type=Path)
+    cpu_gate.add_argument("derived", type=Path)
+    cpu_gate.add_argument("--syx", type=Path, required=True)
+    cpu_gate.add_argument("--count", type=int, default=6)
     args = parser.parse_args()
     if args.command == "anchor":
         result = anchor(args.product, args.syx)
@@ -521,6 +660,9 @@ def main() -> None:
     elif args.command == "first-mmio":
         first_mmio_gate(args.parent, args.derived, args.syx, args.count)
         result = args.derived
+    elif args.command == "first-cpu-ram":
+        first_mmio_gate(args.parent, args.derived, args.syx, args.count, cpu_ram=True)
+        result = args.derived
     else:
         verify(args.ledger, args.syx)
         result = args.ledger
@@ -530,6 +672,7 @@ def main() -> None:
         "portable": "local portable state generated",
         "first-events": "local instruction-clock events extracted",
         "first-mmio": "native compared bounded Oracle MMIO events (not full parity)",
+        "first-cpu-ram": "native compared bounded Oracle CPU, guest RAM writes and MMIO events",
         "verify": "local integrity checked",
     }[args.command]
     print(f"checkpoint-chain {label}: {result}")

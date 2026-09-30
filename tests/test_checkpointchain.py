@@ -221,6 +221,93 @@ def test_native_mmio_gate_binds_parent_and_private_outputs(local_source, monkeyp
     assert len(calls) == 1
 
 
+def test_cpu_ram_reference_uses_private_verified_inputs(local_source, monkeypatch):
+    syx, snapshot, _ = local_source
+    parent = checkpointchain.anchor("dt2", syx, snapshot)
+    seen = []
+
+    class Machine:
+        uc = object()
+
+        def close(self):
+            seen.append("closed")
+
+    def fake_build(private_snapshot, *, syx, **kwargs):
+        assert Path(private_snapshot).read_bytes() == b"toy checkpoint"
+        assert Path(syx).read_bytes() == b"toy source"
+        assert Path(private_snapshot) != snapshot
+        assert Path(syx) != local_source[0]
+        assert checkpointchain.os.environ["DT2_SECTIONS"].endswith("out/sections/toy")
+        assert kwargs["deferred_components"] == ("timers",)
+        seen.append("built")
+        ev = {
+            "restore_checkpoint_timers": lambda: object(),
+            "checkpoint_manifest": {"main_sha256": digest(b"toy image")},
+        }
+        return Machine(), ev, None, 0x4000, None, None
+
+    monkeypatch.setattr("emu.longrun.build", fake_build)
+    monkeypatch.setattr(
+        checkpointchain.checkpointcpu,
+        "capture_window",
+        lambda _uc, pc, limit, every, _regs: {
+            "limit": limit,
+            "every": every,
+            "samples": [{"step": 0, "regs": {"pc": pc}}],
+            "effects": [],
+        },
+    )
+    monkeypatch.setenv("DT2_SECTIONS", "previous value")
+    events = parent.parent / "first-events.json"
+    events.write_text('{"events":[]}')
+    output = checkpointchain.cpu_ram_reference(
+        parent, syx, 4, 2, events=events, output=parent.parent / "cpu-ram.json"
+    )
+    assert seen == ["built", "closed"]
+    assert checkpointchain.os.environ["DT2_SECTIONS"] == "previous value"
+    assert json.loads(output.read_text())["product"] == "dt2"
+
+
+def test_cpu_ram_reference_rehashes_copied_snapshot(local_source, monkeypatch):
+    syx, snapshot, _ = local_source
+    parent = checkpointchain.anchor("dt2", syx, snapshot)
+    events = parent.parent / "first-events.json"
+    events.write_text('{"events":[]}')
+    monkeypatch.setattr(
+        checkpointchain.shutil,
+        "copyfile",
+        lambda _source, destination: destination.write_bytes(b"replaced during copy"),
+    )
+    with pytest.raises(
+        ValueError, match="private CPU/RAM input snapshot SHA-256 mismatch"
+    ):
+        checkpointchain.cpu_ram_reference(
+            parent, syx, 4, 2, events=events, output=parent.parent / "cpu-ram.json"
+        )
+    assert not (parent.parent / "cpu-ram.json").exists()
+
+
+def test_cpu_ram_reference_rejects_unbounded_limit_before_restore(
+    local_source, monkeypatch
+):
+    syx, snapshot, _ = local_source
+    parent = checkpointchain.anchor("dt2", syx, snapshot)
+    events = parent.parent / "first-events.json"
+    events.write_text('{"events":[]}')
+    monkeypatch.setattr(
+        "emu.longrun.build", lambda *_args, **_kwargs: pytest.fail("must not restore")
+    )
+    with pytest.raises(ValueError, match="CPU/RAM window"):
+        checkpointchain.cpu_ram_reference(
+            parent,
+            syx,
+            checkpointchain.checkpointcpu.MAX_STEPS + 1,
+            1024,
+            events=events,
+            output=parent.parent / "cpu-ram.json",
+        )
+
+
 def test_verify_refuses_forged_child_before_parsing_snapshot(local_source, monkeypatch):
     syx, snapshot, _ = local_source
     parent = checkpointchain.anchor("dt2", syx, snapshot)

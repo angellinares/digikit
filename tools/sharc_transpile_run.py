@@ -1261,15 +1261,20 @@ def live_key(
     return h.hexdigest()[:24]
 
 
-def armed_start(image: str, lp0: str | None) -> tuple[sr.Runner, LoadedMemory]:
+def armed_start(
+    image: str, lp0: str | None, *, init_limit: int = 2_000_000
+) -> tuple[sr.Runner, LoadedMemory]:
     """sharc_replay.replay_armed_voice's state before its first frame:
     run_init, the frame DMA set-up (ring flag 0), then the LP0 feed of the
     real FlexBus log. No test tone and no voice set-up (frame_start's
-    replay path has both)."""
+    replay path has both). INIT_LIMIT bounds run_init; LP0 arm and each
+    finite-log transfer have separate instruction caps in sharc_lp0."""
     import sharc_harness as h
 
+    if init_limit <= 0:
+        raise ValueError("init instruction limit must be positive")
     memory = h.load_image_memory(image)
-    init = h.run_init(memory, image)
+    init = h.run_init(memory, image, max_steps=init_limit)
     if not init.ran:
         raise SystemExit("run_init failed: %s" % init.error)
     runner = h.new_runner(memory, image, init=init)
@@ -1291,6 +1296,7 @@ def live_pack(
     out_dir: str = LIVE_DIR,
     voices: Sequence[int] = (0, 1),
     rebuild: bool = False,
+    init_limit: int = 2_000_000,
 ) -> dict:
     """The pack native/live plays: the SHFP frame pack (pack_frames'
     format, so sharc-frames reads it too) from armed_start's state, with
@@ -1319,7 +1325,7 @@ def live_pack(
         return {"path": path, "key": key, "cached": True, "seconds": 0.0}
     t0 = time.perf_counter()
     cap = sharc_capture.load(capture) if capture else None
-    runner, _ = armed_start(image, lp0)
+    runner, _ = armed_start(image, lp0, init_limit=init_limit)
     state = h._clone_state(runner.state)
     fields = sd.export_state(state, page_hash=False)
     fields["memory_ranges"] = _overlay_ranges(state.overlay)
@@ -1505,6 +1511,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         pv.add_argument("--out-dir", default=LIVE_DIR)
         if name == "live-pack":
             pv.add_argument("--rebuild", action="store_true")
+            pv.add_argument(
+                "--limit",
+                type=int,
+                default=2_000_000,
+                help="init instruction cap (LP0 callbacks have separate finite limits)",
+            )
         else:
             pv.add_argument("--frames", type=int, default=16)
     args = p.parse_args(argv)
@@ -1523,6 +1535,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             start_frame=args.start_frame,
             out_dir=args.out_dir,
             rebuild=args.rebuild,
+            init_limit=args.limit,
         )
         print(json.dumps(info))
         return 0
