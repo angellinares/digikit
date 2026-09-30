@@ -1,0 +1,10 @@
+{
+  "name": "digitakt2",
+  "private": true,
+  "packageManager": "pnpm@12.8.2",
+  "scripts": {
+    "dev": "pnpm --filter @digi/web dev",
+    "build": "pnpm --filter @digi/web build",
+    "check": "pnpm --filter @digi/web check"
+  }
+}

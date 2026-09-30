@@ -670,6 +670,521 @@ class SimdMemoryCompanionTest(TraceHelpers):
         self.assertEqual(T._dm_read(state, 0x30002000, 4), T.Const(0xDEAD))
         self.assertEqual(T._dm_read(state, 0x30002004, 4), T.Const(0xBEEF))
 
+    def test_type15b_indexed_normal_word_companion_load_store_and_sisd(self):
+        """Type15b non-(LW) follows Table 6-10 without modifying I2."""
+        fields = {
+            "i[2:0]": 2,
+            "g": 0,
+            "d": 0,
+            "l": 0,
+            "ureg[6:0]": 12,
+            "data[6:0]": 8,
+        }
+        base = 0x30002000
+        explicit = base + 8 * 4
+        active = T.State(
+            1,
+            {
+                18: T.Const(base),
+                92: T.Const(0xDEADBEEF),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(active, explicit, 4, T.Const(0x25F680)))
+        self.assertTrue(T._dm_write(active, explicit + 4, 4, T.Const(0x25F700)))
+        loaded = self.run_one(active, insn("15b", fields, 4))
+        self.assertEqual(loaded.uregs[12], T.Const(0x25F680))
+        self.assertEqual(loaded.uregs[92], T.Const(0x25F700))
+        self.assertEqual(loaded.uregs[18], T.Const(base))
+        self.assertEqual(
+            [
+                (e["ureg"], e["address"])
+                for e in loaded.trace
+                if e["action"] == "load-pey"
+            ],
+            [("S12", explicit + 4)],
+        )
+
+        stored = self.run_one(
+            T.State(
+                1,
+                {
+                    18: T.Const(base),
+                    12: T.Const(0x11111111),
+                    92: T.Const(0x22222222),
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("15b", {**fields, "d": 1}, 4),
+        )
+        self.assertEqual(T._dm_read(stored, explicit, 4), T.Const(0x11111111))
+        self.assertEqual(T._dm_read(stored, explicit + 4, 4), T.Const(0x22222222))
+        self.assertEqual(stored.uregs[18], T.Const(base))
+
+        sisd = self.run_one(
+            T.State(
+                1,
+                {
+                    18: T.Const(base),
+                    92: T.Const(0xA5A5A5A5),
+                    T.UREG_CODES["MODE1"]: T.Const(0),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("15b", fields, 4),
+        )
+        self.assertEqual(sisd.uregs[92], T.Const(0xA5A5A5A5))
+        self.assertFalse(any(e["action"] == "load-pey" for e in sisd.trace))
+
+    def test_type15b_uncomplementary_load_has_no_implicit_destination(self):
+        state = self.run_one(
+            T.State(
+                1,
+                {16: T.Const(0x30002000), T.UREG_CODES["MODE1"]: T.Const(1 << 21)},
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn(
+                "15b",
+                {"i[2:0]": 0, "g": 0, "d": 0, "l": 0, "ureg[6:0]": 32, "data[6:0]": 0},
+                4,
+            ),
+        )
+        self.assertFalse(any(e["action"] == "load-pey" for e in state.trace))
+
+    def test_type3c_normal_word_companion_and_i1_broadcast(self):
+        base = 0x30002000
+        fields = {"dmi[2:0]": 4, "dmm[2:0]": 5, "d": 0, "dreg[3:0]": 6}
+        state = T.State(
+            1,
+            {
+                20: T.Const(base),
+                37: T.Const(1),
+                86: T.Const(0),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, base, 4, T.Const(0x11111111)))
+        self.assertTrue(T._dm_write(state, base + 4, 4, T.Const(0x22222222)))
+        loaded = self.run_one(state, insn("3c", fields, 2))
+        self.assertEqual(loaded.uregs[6], T.Const(0x11111111))
+        self.assertEqual(loaded.uregs[86], T.Const(0x22222222))
+        self.assertEqual(loaded.uregs[20], T.Const(base + 4))
+
+        stored = self.run_one(
+            T.State(
+                1,
+                {
+                    20: T.Const(base),
+                    37: T.Const(1),
+                    6: T.Const(0x33333333),
+                    86: T.Const(0x44444444),
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("3c", {**fields, "d": 1}, 2),
+        )
+        self.assertEqual(T._dm_read(stored, base, 4), T.Const(0x33333333))
+        self.assertEqual(T._dm_read(stored, base + 4, 4), T.Const(0x44444444))
+        self.assertEqual(stored.uregs[20], T.Const(base + 4))
+
+        broadcast_fields = {"dmi[2:0]": 1, "dmm[2:0]": 1, "d": 0, "dreg[3:0]": 6}
+        for pey in (0, 1 << 21):
+            with self.subTest(pey=pey):
+                state = T.State(
+                    1,
+                    {
+                        17: T.Const(base),
+                        33: T.Const(1),
+                        86: T.Const(0),
+                        T.UREG_CODES["MODE1"]: T.Const((1 << 23) | pey),
+                    },
+                    concrete=loader_memory(),
+                    assume_nw32=True,
+                )
+                self.assertTrue(T._dm_write(state, base, 4, T.Const(0x55555555)))
+                self.assertTrue(T._dm_write(state, base + 4, 4, T.Const(0x66666666)))
+                out = self.run_one(state, insn("3c", broadcast_fields, 2))
+                self.assertEqual(out.uregs[86], T.Const(0x55555555))
+        stored = self.run_one(
+            T.State(
+                1,
+                {
+                    17: T.Const(base),
+                    33: T.Const(1),
+                    6: T.Const(0x77777777),
+                    86: T.Const(0x88888888),
+                    T.UREG_CODES["MODE1"]: T.Const((1 << 21) | (1 << 23)),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("3c", {**broadcast_fields, "d": 1}, 2),
+        )
+        self.assertEqual(T._dm_read(stored, base, 4), T.Const(0x77777777))
+        self.assertEqual(T._dm_read(stored, base + 4, 4), T.Const(0x88888888))
+
+    def test_type1a_dm_simd_and_broadcast_companions(self):
+        fields = {
+            "compute[15:0]": 0,
+            "compute[22:16]": 0,
+            "dmd": 0,
+            "dmdreg[3:0]": 6,
+            "dmi[2:0]": 1,
+            "dmm[2:0]": 1,
+            "pmd": 0,
+            "pmdreg[3:0]": 0,
+            "pmi[1:0]": 0,
+            "pmi[2:2]": 0,
+            "pmm[2:0]": 0,
+        }
+        base = 0x30002000
+        for mode, companion_address in ((1 << 21, base + 4), (1 << 23, base)):
+            with self.subTest(mode=mode):
+                state = T.State(
+                    1,
+                    {
+                        17: T.Const(base),
+                        33: T.Const(1),
+                        86: T.Const(0),
+                        T.UREG_CODES["MODE1"]: T.Const(mode),
+                    },
+                    concrete=loader_memory(),
+                    assume_nw32=True,
+                )
+                self.assertTrue(T._dm_write(state, base, 4, T.Const(0x11111111)))
+                self.assertTrue(T._dm_write(state, base + 4, 4, T.Const(0x22222222)))
+                out = self.run_one(state, insn("1a", fields, 6))
+                self.assertEqual(out.uregs[6], T.Const(0x11111111))
+                self.assertEqual(
+                    out.uregs[86],
+                    T.Const(0x11111111 if companion_address == base else 0x22222222),
+                )
+                self.assertEqual(out.uregs[17], T.Const(base + 4))
+
+        stored = self.run_one(
+            T.State(
+                1,
+                {
+                    17: T.Const(base),
+                    33: T.Const(1),
+                    6: T.Const(3),
+                    86: T.Const(4),
+                    T.UREG_CODES["MODE1"]: T.Const((1 << 21) | (1 << 23)),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("1a", {**fields, "dmd": 1}, 6),
+        )
+        self.assertEqual(T._dm_read(stored, base, 4), T.Const(3))
+        self.assertEqual(T._dm_read(stored, base + 4, 4), T.Const(4))
+
+    def test_type15_broadcast_loads_use_encoded_i1(self):
+        base = 0x30003000
+        cases = (
+            (
+                "15a",
+                {
+                    "i[2:0]": 1,
+                    "g": 0,
+                    "d": 0,
+                    "l": 0,
+                    "ureg[6:0]": 6,
+                    "addr[31:16]": 0,
+                    "addr[15:0]": 0,
+                },
+                6,
+            ),
+            (
+                "15b",
+                {"i[2:0]": 1, "g": 0, "d": 0, "l": 0, "ureg[6:0]": 6, "data[6:0]": 0},
+                4,
+            ),
+        )
+        for form, fields, length in cases:
+            for pey in (0, 1 << 21):
+                with self.subTest(form=form, pey=pey):
+                    state = T.State(
+                        1,
+                        {
+                            17: T.Const(base),
+                            33: T.Const(1),
+                            86: T.Const(0),
+                            T.UREG_CODES["MODE1"]: T.Const((1 << 23) | pey),
+                        },
+                        concrete=loader_memory(),
+                        assume_nw32=True,
+                    )
+                    self.assertTrue(T._dm_write(state, base, 4, T.Const(0x12345678)))
+                    self.assertTrue(
+                        T._dm_write(state, base + 4, 4, T.Const(0x87654321))
+                    )
+                    out = self.run_one(state, insn(form, fields, length))
+                    self.assertEqual(out.uregs[86], T.Const(0x12345678))
+
+    def test_broadcast_bit_does_not_pair_wrong_index_or_stores(self):
+        base = 0x30004000
+        fields = {
+            "i[2:0]": 0,
+            "g": 0,
+            "d": 0,
+            "l": 0,
+            "ureg[6:0]": 6,
+            "data[6:0]": 0,
+        }
+        state = T.State(
+            1,
+            {
+                16: T.Const(base),
+                86: T.Const(0xA5),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 23),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, base, 4, T.Const(1)))
+        self.assertTrue(T._dm_write(state, base + 4, 4, T.Const(2)))
+        self.assertEqual(
+            self.run_one(state, insn("15b", fields, 4)).uregs[86], T.Const(0xA5)
+        )
+        stored = self.run_one(
+            T.State(
+                1,
+                {
+                    17: T.Const(base),
+                    33: T.Const(1),
+                    6: T.Const(3),
+                    86: T.Const(4),
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 23),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("15b", {**fields, "i[2:0]": 1, "d": 1}, 4),
+        )
+        self.assertEqual(T._dm_read(stored, base + 4, 4), None)
+
+    def test_type15_i9_bdcst9_and_wrong_bit(self):
+        base = 0x30005000
+        for form, fields, length in (
+            (
+                "15a",
+                {
+                    "i[2:0]": 1,
+                    "g": 1,
+                    "d": 0,
+                    "l": 0,
+                    "ureg[6:0]": 6,
+                    "addr[31:16]": 0,
+                    "addr[15:0]": 0,
+                },
+                6,
+            ),
+            (
+                "15b",
+                {"i[2:0]": 1, "g": 1, "d": 0, "l": 0, "ureg[6:0]": 6, "data[6:0]": 0},
+                4,
+            ),
+        ):
+            for pey in (0, 1 << 21):
+                state = T.State(
+                    1,
+                    {
+                        25: T.Const(base),
+                        86: T.Const(0),
+                        T.UREG_CODES["MODE1"]: T.Const((1 << 22) | pey),
+                    },
+                    concrete=loader_memory(),
+                    assume_nw32=True,
+                )
+                sentinel = T.Const(0xA5A5A5A5)
+                self.assertTrue(T._dm_write(state, base, 4, sentinel))
+                out = self.run_one(state, insn(form, fields, length))
+                self.assertIsInstance(
+                    out.uregs[86], T.Unknown
+                )  # PM has no concrete backing.
+                self.assertEqual(T._dm_read(out, base, 4), sentinel)
+        wrong = self.run_one(
+            T.State(
+                1,
+                {
+                    25: T.Const(base),
+                    86: T.Const(7),
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 23),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn(
+                "15b",
+                {"i[2:0]": 1, "g": 1, "d": 0, "l": 0, "ureg[6:0]": 6, "data[6:0]": 0},
+                4,
+            ),
+        )
+        self.assertEqual(wrong.uregs[86], T.Const(7))
+
+    def test_type15b_pm_normal_and_long_word_leave_dm_immutable(self):
+        base = 0x30005500
+        sentinel = T.Const(0xA5A5A5A5)
+        for long_word, store in ((0, 0), (0, 1), (1, 0), (1, 1)):
+            with self.subTest(long_word=long_word, store=store):
+                state = T.State(
+                    1,
+                    {
+                        25: T.Const(base),
+                        6: T.Const(0x11111111),
+                        7: T.Const(0x22222222),
+                        86: T.Const(0x33333333),
+                        T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+                    },
+                    concrete=loader_memory(),
+                    assume_nw32=True,
+                )
+                self.assertTrue(T._dm_write(state, base, 4, sentinel))
+                self.assertTrue(T._dm_write(state, base + 4, 4, sentinel))
+                out = self.run_one(
+                    state,
+                    insn(
+                        "15b",
+                        {
+                            "i[2:0]": 1,
+                            "g": 1,
+                            "d": store,
+                            "l": long_word,
+                            "ureg[6:0]": 6,
+                            "data[6:0]": 0,
+                        },
+                        4,
+                    ),
+                )
+                self.assertEqual(T._dm_read(out, base, 4), sentinel)
+                self.assertEqual(T._dm_read(out, base + 4, 4), sentinel)
+                event = next(e for e in out.trace if e["action"] in {"load", "store"})
+                self.assertEqual(event["space"], "PM")
+                if not store:
+                    self.assertIsInstance(out.uregs[6], T.Unknown)
+                    if long_word:
+                        self.assertIsInstance(out.uregs[7], T.Unknown)
+
+    def test_type1a_pm_bdcst9_unknown_and_snapshot_collision(self):
+        fields = {
+            "compute[15:0]": 0,
+            "compute[22:16]": 0,
+            "dmd": 0,
+            "dmdreg[3:0]": 6,
+            "dmi[2:0]": 0,
+            "dmm[2:0]": 0,
+            "pmd": 1,
+            "pmdreg[3:0]": 6,
+            "pmi[1:0]": 1,
+            "pmi[2:2]": 0,
+            "pmm[2:0]": 0,
+        }
+        state = T.State(
+            1,
+            {
+                16: T.Const(0x30006000),
+                32: T.Const(1),
+                25: T.Const(0x4000),
+                40: T.Const(1),
+                6: T.Const(0x55),
+                86: T.Const(0),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 22),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, 0x30006000, 4, T.Const(0x99)))
+        out = self.run_one(state, insn("1a", fields, 6))
+        self.assertEqual(out.uregs[6], T.Const(0x99))
+        self.assertEqual(out.uregs[25], T.Const(0x4004))
+        pm_store = next(
+            e for e in out.trace if e["action"] == "store" and e["space"] == "PM"
+        )
+        self.assertEqual(pm_store["value"], 0x55)
+        self.assertTrue(
+            not any(e["action"] == "load-pey" and e["space"] == "PM" for e in out.trace)
+        )
+        pm_load = self.run_one(
+            T.State(
+                1,
+                {
+                    16: T.Const(0x30006000),
+                    32: T.Const(1),
+                    25: T.Const(0x4000),
+                    40: T.Const(1),
+                    86: T.Const(0),
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 22),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("1a", {**fields, "dmd": 1, "pmd": 0}, 6),
+        )
+        self.assertIsInstance(pm_load.uregs[86], T.Unknown)
+        self.assertTrue(
+            any(e["action"] == "load-pey" and e["space"] == "PM" for e in pm_load.trace)
+        )
+
+    def test_type15_uncomplementary_store_does_not_write_a_neighbor_word(self):
+        """Type15a/b only duplicate Cureg transfers in SIMD mode."""
+        base = 0x30002000
+        sentinel = T.Const(0xA5A5A5A5)
+        forms = (
+            (
+                "15a",
+                {
+                    "i[2:0]": 0,
+                    "g": 0,
+                    "d": 1,
+                    "l": 0,
+                    "ureg[6:0]": 32,
+                    "addr[31:16]": 0,
+                    "addr[15:0]": 0,
+                },
+                6,
+            ),
+            (
+                "15b",
+                {
+                    "i[2:0]": 0,
+                    "g": 0,
+                    "d": 1,
+                    "l": 0,
+                    "ureg[6:0]": 32,
+                    "data[6:0]": 0,
+                },
+                4,
+            ),
+        )
+        for form, fields, length in forms:
+            with self.subTest(form=form):
+                state = T.State(
+                    1,
+                    {
+                        16: T.Const(base),
+                        32: T.Const(0x11223344),
+                        T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+                    },
+                    concrete=loader_memory(),
+                    assume_nw32=True,
+                )
+                self.assertTrue(T._dm_write(state, base + 4, 4, sentinel))
+                stored = self.run_one(state, insn(form, fields, length))
+                self.assertEqual(T._dm_read(stored, base, 4), T.Const(0x11223344))
+                self.assertEqual(T._dm_read(stored, base + 4, 4), sentinel)
+                self.assertFalse(any(e["action"] == "store-pey" for e in stored.trace))
+
 
 class SimdBranchPredicateTest(TraceHelpers):
     """SHARC+ PRM p.4-54, Table 4-22: a branch/call/return ANDs PEx's and

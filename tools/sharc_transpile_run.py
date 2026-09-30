@@ -280,6 +280,10 @@ class NativeCore(sd.NativeEngine):
             fn = getattr(self._lib, name)
             fn.argtypes = argtypes
             fn.restype = restype
+        self._get_pc = getattr(self._lib, "sharc_native_get_pc", None)
+        if self._get_pc is not None:
+            self._get_pc.argtypes = [ctypes.c_void_p]
+            self._get_pc.restype = ctypes.c_int64
         check_build_info(self.info(), library_path)
 
     def export_state(self, **_kwargs: Any) -> dict:
@@ -352,6 +356,22 @@ class NativeCore(sd.NativeEngine):
         if mask == 0:
             return st.Unknown("native")
         return st.PartialConst(mask, bits)
+
+    def pc(self) -> int:
+        """The native engine's next architectural ``pc_sw``.
+
+        Libraries built before ``sharc_native_get_pc`` remain loadable, but
+        this diagnostic accessor deliberately does not fall back to a full
+        canonical-state export per instruction.
+        """
+        if self._get_pc is None:
+            raise RuntimeError(
+                "native library lacks sharc_native_get_pc; no full-state fallback"
+            )
+        pc = self._get_pc(self._handle)
+        if pc < 0:
+            raise RuntimeError("sharc_native_get_pc rejected the native handle")
+        return int(pc)
 
     def poke(self, address: int, data: bytes, width: int = 1) -> int:
         return self._lib.sharc_native_poke(

@@ -63,7 +63,12 @@ impl Time {
         Self {
             pit: PitBank::new(pit_channels, ips, false),
             dtim: DtimBank::new(dtim_channels, ips, false),
-            intc: IntcBank::new(),
+            // Fresh unknown MMIO is zero-mapped by the Python oracle. Keep
+            // the hardware-reset IntcBank default for Device construction.
+            intc: match policy {
+                TimerPolicy::Oracle => IntcBank::oracle_zeroed(),
+                TimerPolicy::Device => IntcBank::new(),
+            },
             sr: SrTracker::new(),
             policy,
             host_writes: Vec::new(),

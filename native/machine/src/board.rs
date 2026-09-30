@@ -11,6 +11,7 @@ use periph::{
     dtim::{BASES as DTIM_BASES, DtimBank},
     edma,
     esdhc::{self, DmaCompletion, Esdhc, RegisterPolicy},
+    gpio::{GPIO_BASE, PPDSDR_C, SdGate},
     intc::BASES as INTC_BASES,
     pit::BASES as PIT_BASES,
     regfile::SLOT_SIZE,
@@ -23,6 +24,9 @@ const PAGE_SIZE: usize = 1024 * 1024;
 const PAGE_SHIFT: u32 = 20;
 const PAGE_COUNT: usize = 4096;
 const PAGE_MASK: u32 = PAGE_SIZE as u32 - 1;
+/// The console TX descriptor is a 4 KiB modulo ring. Keep host collection
+/// bounded even when a malformed descriptor requests a larger transfer.
+const TX35_MAX_BYTES: usize = 4096;
 type RamPage = Box<[u8]>;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -113,6 +117,12 @@ pub struct Board {
     /// Opt-in and SDRAM-only here; never treat missing MMIO as RAM.
     oracle_sdram_faults: bool,
     oracle_fault_pages: u8,
+    /// Optional board-only SD continuity wiring. GPIO remains sparse RAM;
+    /// this only mirrors the three Python hook side effects into it.
+    sd_gate: Option<SdGate>,
+    /// Bytes drained by the eDMA35 UART8-TX model. This is host observation
+    /// only; UART RX and peripheral responses remain outside this Board seam.
+    uart_tx: Vec<u8>,
 }
 impl Board {
     pub fn new(card: Card, semaphores: SemaphoreAddresses, policy: CompletionPolicy) -> Self {
@@ -141,7 +151,26 @@ impl Board {
             guest_ordered: vec![],
             oracle_sdram_faults: false,
             oracle_fault_pages: 0,
+            sd_gate: None,
+            uart_tx: vec![],
         }
+    }
+
+    /// Enable the board's port-D4-to-port-C3 SD continuity gate. The caller
+    /// supplies the hook state separately from checkpoint GPIO bytes, as the
+    /// Python oracle does. GPIO itself remains backed by sparse RAM.
+    pub fn enable_sd_gate(&mut self, driven: bool) -> Result<(), BusError> {
+        let page_base = GPIO_BASE & !PAGE_MASK;
+        self.map_zeroed_ram_page(page_base)?;
+        let offset = (GPIO_BASE & PAGE_MASK) as usize;
+        let mut gate = SdGate::default();
+        gate.load_page(
+            GPIO_BASE,
+            &self.page(page_base).expect("page just mapped")[offset..offset + SLOT_SIZE],
+        );
+        gate.load_state(driven);
+        self.sd_gate = Some(gate);
+        Ok(())
     }
 
     /// Route PIT and INTC MMIO through the supplied timer facade.
@@ -281,6 +310,12 @@ impl Board {
                 let _ = self.dma.load_page(slot, &data[offset..offset + SLOT_SIZE]);
             }
         }
+        if let Some(gate) = self.sd_gate.as_mut()
+            && GPIO_BASE & !PAGE_MASK == addr
+        {
+            let offset = (GPIO_BASE & PAGE_MASK) as usize;
+            gate.load_page(GPIO_BASE, &data[offset..offset + SLOT_SIZE]);
+        }
         Ok(())
     }
 
@@ -340,6 +375,15 @@ impl Board {
     /// instruction fetch; only successful card-to-guest transfers appear.
     pub fn take_dma_written_ranges(&mut self) -> Vec<(u32, usize)> {
         std::mem::take(&mut self.dma_written)
+    }
+    /// Return UART8 TX bytes drained by eDMA channel 35 since the prior call.
+    pub fn take_uart_tx(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.uart_tx)
+    }
+    /// Consume one eDMA35 completion after a host has successfully offered
+    /// its verified vector to the CPU.
+    pub fn consume_tx35_pending(&mut self) -> bool {
+        self.dma.tx35.consume_pending()
     }
     pub fn last_write_error(&self) -> Option<&BoardWriteError> {
         self.last_error.as_ref()
@@ -720,6 +764,55 @@ impl Board {
         Ok(source)
     }
 
+    /// Read eDMA35's UART8 source exactly as `emu.edma.TxChannel.run` does:
+    /// every byte advances by SOFF and source modulo is applied per byte.
+    /// This preflights all guest reads before the SERQ write mutates the TCD.
+    fn tx35_source(&mut self) -> Result<Vec<u8>, BoardWriteError> {
+        let (mask, tcd) = {
+            let view = edma::TcdView::new(&mut self.dma.edma_regs, self.dma.tx35.chan);
+            (view.smod_mask(), view.snapshot())
+        };
+        let nbytes = tcd.nbytes as usize;
+        let len = (tcd.citer as usize)
+            .checked_mul(nbytes)
+            .ok_or(BoardWriteError::DspiDma {
+                address: tcd.saddr,
+                bytes: usize::MAX,
+            })?;
+        if len > TX35_MAX_BYTES {
+            return Err(BoardWriteError::DspiDma {
+                address: tcd.saddr,
+                bytes: len,
+            });
+        }
+        let base = tcd.saddr & !mask;
+        let mut source = Vec::with_capacity(len);
+        let mut addr = tcd.saddr;
+        for _ in 0..len {
+            if Self::owned_mmio(addr) {
+                return Err(BoardWriteError::DspiDma {
+                    address: addr,
+                    bytes: len,
+                });
+            }
+            source.push(self.ram_read(addr, 1).ok_or(BoardWriteError::DspiDma {
+                address: addr,
+                bytes: len,
+            })? as u8);
+            let soff = i32::try_from(tcd.soff).expect("eDMA SOFF is signed 16-bit");
+            addr = addr
+                .checked_add_signed(soff)
+                .ok_or(BoardWriteError::DspiDma {
+                    address: addr,
+                    bytes: len,
+                })?;
+            if mask != 0 {
+                addr = base | (addr & mask);
+            }
+        }
+        Ok(source)
+    }
+
     /// `DeliverWrite` holds contiguous bytes. Refuse a non-contiguous RX
     /// descriptor before the peripheral exchanges the frame and advances it.
     fn preflight_dspi2_rx(&mut self, tx_len: Option<usize>) -> Result<(), BoardWriteError> {
@@ -822,6 +915,15 @@ impl Board {
             self.drain_esdhc_host_writes();
             return Ok(value);
         }
+        if addr == PPDSDR_C
+            && size == 1
+            && let Some(gate) = self.sd_gate.as_mut()
+        {
+            let sensed = gate.sense();
+            let wrote = self.ram_write(addr, 1, u32::from(sensed));
+            debug_assert!(wrote);
+            return Ok(u32::from(sensed));
+        }
         if !self.ensure_oracle_sdram(addr, size) {
             return Err(Self::bus_error(addr, false));
         }
@@ -839,6 +941,12 @@ impl Board {
             return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));
         }
         if DmaLink::owns(addr) {
+            let tx35_citer =
+                edma::TcdView::new(&mut self.dma.edma_regs, self.dma.tx35.chan).citer();
+            let is_tx35_serq = addr == edma::SERQ
+                && (value as u8 & 0x40 != 0 || (value as u8 & 0x3f) as usize == self.dma.tx35.chan)
+                && tx35_citer != 0;
+            let tx35_source = is_tx35_serq.then(|| self.tx35_source()).transpose()?;
             let is_tx_serq = addr == edma::SERQ
                 && size == 1
                 && value as u8 & 0x80 == 0
@@ -870,6 +978,14 @@ impl Board {
             }
             let (owned, effect, mut host_write) = self.dma.write(addr, size, value);
             debug_assert!(owned);
+            // SAER (SERQ bit 6) reaches Python's independent UART35 and
+            // DSPI2 hooks. DmaLink reports only one capture effect, so the
+            // preflighted TX35 lane must complete independently when DSPI2
+            // also claims that write.
+            if let Some(source) = tx35_source.as_deref() {
+                self.dma.finish_tx35_capture(source);
+                self.uart_tx.extend_from_slice(source);
+            }
             if effect == SerqEffect::Dspi2Capture {
                 self.dma.finish_dspi2_capture(
                     dspi_source
@@ -890,10 +1006,20 @@ impl Board {
             if !self.ensure_oracle_sdram(addr, size) {
                 return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));
             }
-            return self
+            let wrote = self
                 .ram_write(addr, size, value)
                 .then_some(())
                 .ok_or(BoardWriteError::Bus(Self::bus_error(addr, true)));
+            if wrote.is_ok()
+                && addr >= GPIO_BASE
+                && addr
+                    .checked_add(u32::from(size))
+                    .is_some_and(|end| end <= GPIO_BASE + SLOT_SIZE as u32)
+                && let Some(gate) = self.sd_gate.as_mut()
+            {
+                gate.write(addr, size, value);
+            }
+            return wrote;
         }
         let xfer = (addr == esdhc::BASE + esdhc::XFERTYP && size == 4).then_some(value);
         let command = xfer.map(|v| ((v >> 24) & 0x3f) as u8);
@@ -1157,6 +1283,48 @@ mod tests {
         b.write32(ST, u32::MAX).unwrap();
         b
     }
+
+    #[test]
+    fn sd_gate_is_opt_in_and_keeps_gpio_bytes_in_board_ram() {
+        let mut b = board(CompletionPolicy::Oracle);
+        let gpio_page = GPIO_BASE & !PAGE_MASK;
+        b.map_ram_page(gpio_page).unwrap();
+        b.write8(PPDSDR_C, 0xa5).unwrap();
+        b.write8(periph::gpio::PPDSDR_D, 0x10).unwrap();
+        assert_eq!(b.read8(PPDSDR_C).unwrap(), 0xa5);
+
+        b.enable_sd_gate(false).unwrap();
+        b.write8(periph::gpio::PPDSDR_D, 0x10).unwrap();
+        assert_eq!(b.read8(PPDSDR_C).unwrap(), 0xad);
+        b.write8(periph::gpio::PCLRR_D, 0xef).unwrap();
+        assert_eq!(b.read8(PPDSDR_C).unwrap(), 0xa5);
+    }
+
+    #[test]
+    fn sd_gate_seeds_checkpoint_gpio_bytes_and_explicit_state() {
+        let mut b = board(CompletionPolicy::Oracle);
+        let gpio_page = GPIO_BASE & !PAGE_MASK;
+        let mut page = vec![0; PAGE_SIZE];
+        page[(PPDSDR_C & PAGE_MASK) as usize] = 0x40;
+        b.import_ram_page(gpio_page, &page).unwrap();
+
+        b.enable_sd_gate(true).unwrap();
+        assert_eq!(b.read8(PPDSDR_C).unwrap(), 0x48);
+
+        let mut exported = vec![0; PAGE_SIZE];
+        b.read_ram_page(gpio_page, &mut exported).unwrap();
+        assert_eq!(exported[(PPDSDR_C & PAGE_MASK) as usize], 0x48);
+    }
+
+    #[test]
+    fn sd_gate_ignores_slot_overflow_accesses_without_panicking() {
+        let mut b = board(CompletionPolicy::Oracle);
+        b.enable_sd_gate(false).unwrap();
+        let overflow = GPIO_BASE + SLOT_SIZE as u32 - 1;
+        b.write32(overflow, 0x1234_5678).unwrap();
+        assert_eq!(b.read32(overflow).unwrap(), 0x1234_5678);
+    }
+
     fn tcd(b: &mut Board, s: u32, d: u32, n: u32, c: u16) {
         let x = edma::TCD_BASE + 59 * 0x20;
         b.write32(x + edma::SADDR as u32, s).unwrap();

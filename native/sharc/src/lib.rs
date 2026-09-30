@@ -755,6 +755,22 @@ pub unsafe extern "C" fn sharc_native_get_reg(handle: *mut Engine, code: u32) ->
     ((v.m as u64) << 32) | v.b as u64
 }
 
+/// The architectural software PC. Returns -1 for a null HANDLE.
+///
+/// Unlike UREG `PC`, which is a separately modelled register slot, this is
+/// `State.pc_sw`, the address the single-step dispatcher will execute next.
+///
+/// # Safety
+/// HANDLE from sharc_native_create, or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_get_pc(handle: *mut Engine) -> i64 {
+    if handle.is_null() {
+        return -1;
+    }
+    // SAFETY: checked non-null HANDLE is from sharc_native_create.
+    unsafe { (&*handle).s.pc_sw as i64 }
+}
+
 /// memory._dm_write(state, ADDRESS + i, 1, byte) for each byte (a host
 /// poke, as sharc_harness._poke does). Returns how many took effect.
 ///

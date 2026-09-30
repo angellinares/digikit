@@ -36,7 +36,7 @@ fn blocked_pit_tick_is_retained_then_delivered_once() {
 }
 
 #[test]
-fn intc_masked_pit_tick_is_retained_then_delivered_once_after_unmask() {
+fn fresh_oracle_intc_delivers_pit_after_firmware_icr_setup_without_imr_write() {
     let mut time = Time::new(TimerPolicy::Oracle, vec![0], F_BUS);
     enable_pit0(&mut time);
     let vector = VECTORS[0];
@@ -45,13 +45,20 @@ fn intc_masked_pit_tick_is_retained_then_delivered_once_after_unmask() {
     time.write(base + 0x40 + source, 1, 1); // enable source at level 1
     assert_eq!(time.deadline(0), Some(132));
 
-    assert_eq!(time.service(132).unwrap(), []); // reset IMRL still masks it
-    let imrl = base + 0x0c;
-    let mask = time.read(imrl, 4).unwrap();
-    time.write(imrl, 4, mask & !(1 << source));
-
     assert_eq!(time.service(132).unwrap(), vec![(vector, 1)]);
     assert_eq!(time.service(132).unwrap(), []);
+}
+
+#[test]
+fn time_constructor_keeps_device_intc_hardware_reset_masks() {
+    let oracle = Time::new(TimerPolicy::Oracle, vec![], F_BUS);
+    let device = Time::new(TimerPolicy::Device, vec![], F_BUS);
+    for base in INTC_BASES {
+        assert_eq!(oracle.read(base + 0x08, 4), Some(0));
+        assert_eq!(oracle.read(base + 0x0c, 4), Some(0));
+        assert_eq!(device.read(base + 0x08, 4), Some(u32::MAX));
+        assert_eq!(device.read(base + 0x0c, 4), Some(u32::MAX));
+    }
 }
 
 #[test]

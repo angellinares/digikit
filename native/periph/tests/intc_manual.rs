@@ -58,6 +58,18 @@ fn imr_resets_all_masked() {
 }
 
 #[test]
+fn oracle_zeroed_bank_differs_from_hardware_reset_only_at_construction() {
+    let reset = IntcBank::new();
+    let oracle = IntcBank::oracle_zeroed();
+    for base in BASES {
+        assert_eq!(reset.read(base + 0x08, 4), Some(0xFFFF_FFFF));
+        assert_eq!(reset.read(base + 0x0c, 4), Some(0xFFFF_FFFF));
+        assert_eq!(oracle.read(base + 0x08, 4), Some(0));
+        assert_eq!(oracle.read(base + 0x0c, 4), Some(0));
+    }
+}
+
+#[test]
 fn icr_level_zero_disables_regardless_of_mask() {
     let mut intc = IntcBank::new();
     // Unmask source 13 (PIT0, INTC2) but leave ICR at reset (0).

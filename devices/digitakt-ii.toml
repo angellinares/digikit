@@ -26,6 +26,13 @@ filename = "Digitakt_II_OS1.15C.syx"
 version = "1.16"
 sha256 = "278541e466edcd77d6b3e018a91fb90185932d3c7de224dd3e68294dddf3a9ec"
 filename = "Digitakt_II_OS1.16.syx"
+# This identifies the existing explicit Oracle MAIN diagnostic contract. It
+# does not describe hardware topology; that needs separate evidence.
+main_sha256 = "57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d"
+boot_contract = "main-os-oracle-v1"
+symbol_profile = "elektron-rtos-v1"
+plusdrive_project_contract = "dt2-v3-default-1.16"
+readiness_contract = "main-panel-fs-check-v1"
 
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.

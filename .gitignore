@@ -44,3 +44,11 @@ samples/*.wav
 
 # Rust build output for native/
 native/**/target/
+
+# JavaScript build artifacts
+node_modules/
+.astro/
+dist/
+
+# Temporary local agent worktrees.
+.claude/worktrees/

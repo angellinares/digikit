@@ -1,0 +1,17 @@
+[package]
+name = "device-profile"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+description = "Embedded, hash-bound Elektron device and firmware identity registry"
+
+[lib]
+name = "device_profile"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+toml = "0.9.12"

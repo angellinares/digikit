@@ -1,6 +1,7 @@
 # Plan: a firmware-agnostic native emulator (desktop and browser)
 
-Status 2026-09-29, base commit `95d92de` on `work/sharc-emulator`.
+Status 2026-09-30, current HEAD `39f8f20`; the original plan base was
+`95d92de` on `work/sharc-emulator`.
 
 ## Goal
 
@@ -49,9 +50,9 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
 | Live play (desktop) | Works: a TRIG in the GUI plays through the ahead-of-time SHARC core. The ColdFire (Unicorn + Python) runs at 0.22x, so the UI and sequencer are slow. | `uv run python tools/dt2gui.py --live-audio`; finding 15 |
 | SHARC, ahead of time | 411-467 us per frame of 667, exact vs Python. The library carries a `sharc_core` hash and refuses a stale build. | `native/sharc`; rebuild command = `REGENERATE_HINT` in `tools/sharc_transpile_run.py` |
 | SHARC JIT (P2) | Paused. Correct (91/91 drive3 frames) and deterministic, but 2.5-3.3 ms/frame under wasmtime. On resume: diff its WebAssembly for one hot loop against the ahead-of-time code compiled to wasm32 (630-720 us/frame), fix the differences, and measure with counters (region entries/frame, bytes/instruction, spills). | `native/sharc-jit` (build with `SHARC_GEN_DIR=$PWD/out/native/opt/gen-final`) |
-| ColdFire core (P3) | All 101 used forms; lockstep vs patched Unicorn clean on fuzz and EMAC. **47.7M instr/s** on real code (target at least 62M useful). **Open divergence at pc 0x401768a6** in the boot280M snap lockstep; it predates the speed work and is uncharacterised. | `native/coldfire`; `tools/cf_lockstep.py {snap,fuzz,emac}` |
-| Peripherals (P4) | Timers, INTC, eDMA, SSI0, DSPI, DSP FIFO replay the traces with 0 register mismatches. The two boot traces keep about 20 vector-208 timing differences each. Missing: eSDHC + card, GPIO, UART, panel, display. | `native/periph` (`mmio-replay <trace> [--limit N] [--verbose]`); traces in `out/mmio-trace/` from `tools/mmio_record.py` |
-| Machine (P5) | Designed, not built. | `docs/design/p5-machine.md` (ten steps, oracle vs device mode) |
+| ColdFire core (P3) | All 101 used forms; fuzz and EMAC lockstep pass, and bounded DT2 snapshot windows pass under the known Unicorn MVZ-N exemption. The decode cache reaches **80.8–82.2M useful instr/s** with the accepted state hash. Broader windows, DN2 exception boundaries and oracle-exempt EMAC behavior remain open. | `native/coldfire`; `tools/cf_lockstep.py {snap,fuzz,emac}` |
+| Peripherals (P4) | Timers, INTC, eDMA, SSI0, DSPI and DSP FIFO have replay gates; focused early GPIO/eSDHC/card traces and bounded channel-59 transfer effects also pass. Broad peripheral coverage and real trace gates remain for late DMA delivery, UART, panel and display. | `native/periph` (`mmio-replay <trace> [--limit N] [--verbose]`); traces in `out/mmio-trace/` from `tools/mmio_record.py` |
+| Machine (P5) | Partial: `native/machine` has `Board`/`Time`/`Runner` Oracle-replay probes. Autonomous Device timer delivery is deliberately rejected, and the crate has no SHARC/live-audio integration yet. | `native/machine`; `docs/design/p5-machine.md` |
 | Unicorn oracle | 5 patches installed (`tools/install-patched-unicorn.sh`). Four known EMAC defects outside the firmware's MACSR modes (0x00, 0x20) are not patched, and the MVZ N flag is wrong; `cf_lockstep` treats these as oracle-exempt. | `patches/README.md` |
 
 ### Benchmarks and gates
@@ -66,6 +67,9 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
 - Tests: `uv run python -m pytest tests -q` (add `--slow` before a commit; the SHARC slow tests need splitting into groups under 10 minutes) and `cargo test --release` in each crate.
 
 ### Next tasks, in order
+
+This is the 2026-09-29 hand-off list; completed items are superseded by the
+progress and migration gates below.
 
 1. **ColdFire divergence at 0x401768a6** (oracle-driven; Sonnet or GPT). Find which side is wrong using the manual, fix it, then run `snap` lockstep over more windows of both images (the drive3/auto snapshots and `snapshots/dn2-1.11/`) until they are clean or every exemption is explained.
 2. **ColdFire handler dispatch** (Sonnet or GPT): one handler per decoded form with pre-extracted operands, no `Result`/`dyn` on the hot path. Gate: at least 62M instructions/s on `cfrealmix`, hash unchanged, lockstep unchanged. If it falls short, profile before considering a ColdFire JIT.
@@ -106,14 +110,43 @@ Always `DT2_SYX=Digitakt_II_OS1.16.syx`.
   dispatch, physical RAM mapping, DMA completion delivery, and
   UART/panel/display remain. See finding 07.
 
+### Migration gates (2026-09-30)
+
+1. Preserve the accepted native/Oracle replay gates while resolving sustained
+   native SHARC state and control correctness. Recorded AOT SHARC performance
+   is not a claim about JIT misses or browser execution.
+2. Validate a native Device timer/IRQ delivery contract before enabling it.
+   `TimerPolicy::Device` is reserved (`native/machine/src/time.rs:21-36`) and
+   rejected by `Runner::step_timed` (`native/machine/src/runner.rs:278-289`);
+   Python callback-entry counts are not its oracle.
+3. Integrate the native path in order: ColdFire frame production, DSPI wire,
+   rendered inputs, SHARC, then PCM. Gate each seam against its recorded
+   inputs and state before claiming integrated audio.
+4. Keep an independent wasm32 compilation gate for the native cores and
+   machine. The locked offline checks now pass for `coldfire`, `periph`
+   (without default features), `emmc-card` and `machine` when Cargo uses the
+   rustup toolchain that supplies wasm32 std; this is not a linked, runnable
+   browser module or full emulator. The generated AOT SHARC wasm-frame module
+   also passes this compile gate on the latest sources: 12,197,477 bytes,
+   SHA-256 `720efe510b9ef028a32e8831bdbbbce91e6ab20c0ebd86dbb6e7b4a40858493d`,
+   built in 45.45 seconds with the rustup 1.98.1 toolchain,
+   `DYLD_FALLBACK_LIBRARY_PATH` set to its `lib`, `SHARC_GEN_DIR` set to
+   `out/native/opt/gen-final`, and wasm flags `-C link-arg=-zstack-size=8388608`
+   and `-C target-feature=+simd128`. This is an AOT/generated frame module,
+   not a SHARC JIT performance result or integrated browser emulator.
+5. **Browser shell:** the user-provided Astro/Solid/pnpm single-page
+   faceplate design is accepted and its shell is implemented. Its runtime is
+   not connected. Firmware boot in a browser, AudioWorklet/realtime behavior,
+   and browser JIT remain separate gates.
+
 ## Where we are
 
 | Part | State |
 |---|---|
-| SHARC semantics | `tools/sharc_core` (Python), the single source; exact against real frames. |
-| Native SHARC | `native/sharc`: transpiled handlers plus runtime, and a per-block ahead-of-time (AOT) generator. 1.9 ns/instruction, 411 us per frame (budget 667 us). The generated blocks embed the firmware, so they are built locally under `out/`, and each image needs a rebuild (about 80 s). |
+| SHARC semantics | `tools/sharc_core` is the source of truth. Current bounded state-pack gates require regenerating the initial pack after a semantic change. |
+| Native SHARC | The current 204/256 bounded replays are exact state/stop gates, not full instruction-parity or realtime claims. Historical AOT timing and compile-only modules remain separately qualified. |
 | Live audio | `native/live` (cpal); `emu/gui.py --live-audio` plays TRIGs live. |
-| ColdFire | Unicorn with 5 patches plus about 30 Python peripheral models and hooks. 0.22x real time with the audio clock running; about 0.4x is the ceiling of this design. |
+| Current live ColdFire path | Unicorn with 5 patches plus about 30 Python peripheral models and hooks. 0.22x real time with the audio clock running; about 0.4x is the ceiling of this design. The Rust ColdFire core and native-machine probes are recorded separately in the current status table; they are not yet wired into this live path. |
 | Oracles available | Python SHARC core, `tools/sharc_diff.py` lockstep harness, patched Unicorn, the Python machine, `.snap` snapshots, `tools/snapeq.py`, `.dt2cap` captures, the FlexBus log. |
 
 ## Lessons from this round
@@ -323,3 +356,133 @@ Keep workflows under about 10 agents; each lane has a single owner per crate.
 3. **UI:** one HTML canvas UI for desktop and browser.
 4. **Python emulator:** kept as the frozen oracle and not extended further,
    except for the recorders the oracles need.
+
+## Native host checkpoint (2026-09-30)
+
+### Device identity and runner contracts
+
+`devices/digitakt-ii.toml` and `devices/digitone-ii.toml` are the canonical
+product identity, release hash, and physical-panel records. The portable
+`native/device-profile` crate embeds and validates those documents for native
+and wasm runners; the browser parses the same raw TOML. Its optional boot
+contract is hash-bound to a MAIN image and names the existing explicit Oracle
+MAIN diagnostic contract. It does not claim hardware accuracy or describe
+hardware topology. A future topology reference must remain separate and add
+only independently evidenced fields. Firmware-specific names and guest
+addresses continue to be signature-resolved from the selected image.
+
+`native/loader` now provides a dependency-free, wasm32-compilable SysEx/ELE3
+loader. `native/host` is an offline CLI that consumes it: `--syx` decodes
+ELE3 section 3 (`MAIN_OS`, destination `0x40000400`) and requires its hash to
+match the existing checkpoint profile; `--main` remains available for the
+same gate. Section 2 is the bootstrap, not MAIN_OS, and this command does not
+cold boot or stage an ELE3 flash image.
+
+The host accepts only recorded Oracle events and `--timer oracle`; Device
+timing is explicitly unsupported. `--out` is an absolute, explicit destination
+directory for its JSON and WAV; all inputs are validated before it creates that
+directory, and an existing file passed as `--out` is rejected. The validated
+DT2 1.16 invocation below produced 68 wire TX frames, 204 clean SHARC renders
+(three per TX), zero SHARC stops, the expected wire stream, and identical PCM
+for `--main` and `--syx`:
+
+```sh
+cd native/host
+CARGO_TARGET_DIR=/private/tmp/dt2-native-integration-target cargo build --release --offline
+DYLD_FALLBACK_LIBRARY_PATH=/path/to/sharc-lib-dir \
+  /private/tmp/dt2-native-integration-target/release/dt2-native-host --timer oracle \
+  --events "$PWD/../../out/native/integrated-auto-smoke/fast-offers-sixtyeight.json" \
+  --profile "$PWD/../../out/native/integrated-auto-smoke/frame-profile.json" \
+  --mstate "$PWD/../../out/native/integrated-auto-smoke/ready-v2.mstate" \
+  --card "$PWD/../../out/plusdrive/native/dt2.img" --syx "$PWD/../../Digitakt_II_OS1.16.syx" \
+  --pack "$PWD/../../out/native/live/state-82cf380735390258438540a4.pack" \
+  --sharc-lib /path/to/libsharc_native.dylib \
+  --expected-wire "$PWD/../../out/native/integrated-auto-smoke/fast-offers-sixtyeight.dtfr" \
+  --out "$PWD/../../out/native/host-syx" --frames 68 --limit 20000000 --render-frames 3
+```
+
+This is a bounded checkpoint replay with synthetic queue cadence. It does not
+establish autonomous firmware scheduling, sustained GUI execution, a zero-stop
+full emulator, or browser integration.
+
+## Current bounded gates (2026-09-30)
+
+The frozen current SHARC core is
+`4b25379c9ea67fc5933d9e194ba1d4d13ace66c57c5b5e1919a57fd66f34fd7f`.
+The locally generated, exact-provenance artifacts are the native library
+`/private/tmp/dt2-sharc-completion/target/release/libsharc_native.dylib`
+(SHA-256 `7e1bf5897ed4634df2d02fcee3c6dbf28576a9677a4f70f5ae22ca4b488b402a`)
+and initial state pack
+`/private/tmp/dt2-sharc-completion/state-pack/state-e39d3187ee0fcd5fb5cfbc2c.pack`
+(SHA-256 `52ff0b9bf05a5efaae963a8a83b4afc395b7a37902d739ee1379600ca018fa39`).
+Regenerate both after any SHARC semantic change; saved checkpoint-198 and
+old-pack ordinal-187 traps are historical diagnostics, not current gates.
+
+| Gate | Result and limit |
+|---|---|
+| Fresh native replay | 204 inputs: 43,828,934 instructions and final canonical SHA `794efcf929c23633dda872cc82b5c7fbcd52262fef361e739638bbf6a96ab83d`; 256 inputs: 54,247,701 instructions and final SHA `4b840c3c…a891`. Both use the accepted return at `0x1c75d3`; they do not establish full instruction parity. |
+| Firmware-free WASM interpreter | Generic transpile output has four semantic files and no `image.rs`. Its Node/V8 run used the pack image at runtime, completed the 204 replay in 4.404s at 43,828,934 instructions with no JIT requests, and reached the same final SHA. The module is 579,724 bytes, SHA-256 `98669a1372d8bcfb325af20d9f2d0d461543f8635aff33e7bfa5e082c7194742`. This is neither browser nor realtime execution. |
+| Native host checkpoint | Fresh `--main` and `--syx` runs deliver 68 TX frames, 204 clean renders, zero stops and zero DMA failures. Their exact wire SHA is `e21cb015102bd6c1222b7c733238ddf7402a725ee7e63b0fb8313d00fd1f8e8b`, PCM SHA `b7f12d308007e0d4b746cae09136d758cb808dfdbd666d0f1e098befaec73b97`, and WAV SHA `4771ca619239a277cffcb8008095d6c087321607d83cc5e58fad3f33494a0f9e`; reports include `host-main.wav` and `host-syx.wav`. The host returns failure after writing reports for stops, DMA failure, incomplete work, or a wire mismatch. `--rendered-input-log` is optional and accepts renders of at most 4096 bytes. |
+
+The runner recipe is `fresh_call(dma_callback, -1)`, set R8, step 64,
+then `fresh_call(handler, -1)` and step 500,000. An earlier scratch run set
+R8 after the DMA step and therefore observed idle handlers; that was corrected
+as a runner-ordering mistake, not a SHARC core defect.
+
+The corrected Type15b evidence cites the *SHARC+ Core Programming Reference*
+(SC58x/2158x Rev. 1.5), printed pp. 16-8--16-12 (extracted pp. 0391--0395);
+Type3c is extracted pp. 0323--0324. In the historical ordinal-187 probe,
+`0xb829eb` is the software PC and `0x3106fc64` is the attempted address.
+
+Rust GPIO has an optional hook; Oracle INTC uses zero masks with Device reset
+preserved, and `+14` applies to INTFRCL rather than IMRL. Board capture owns
+pending/outbound TX through `take`; both TX35 and DSPI use SERQ-all. The
+full-machine gate reports 83 passing and 13 ignored tests plus its wasm check.
+
+`native/boot` promotes the bounded Oracle cold-boot diagnostic. It requires
+an embedded-registry SYX/MAIN identity, resolves its signatures from the
+selected image, and writes reports only to an explicit empty absolute output
+directory. Its compatibility services (zero pages, forced status reads, flash
+HLE, timers, idle interrupts, and TX35) require `--diagnostic-services`:
+
+```sh
+cargo run --manifest-path native/boot/Cargo.toml --offline -- \
+  --syx "$PWD/Digitakt_II_OS1.16.syx" --out /private/tmp/dt2-boot \
+  --mode oracle-diagnostic --limit 1000000 --stop-at limit --diagnostic-services
+```
+
+This is a bounded diagnostic observation with completed firmware panel-frame
+capture, not a hardware model, DSP boot, panel input implementation, or
+resumable checkpoint. Full Device/autonomous DT2/DN2 boot, UART RX/panel
+input wiring, audio, realtime JIT, and browser runtime remain unfinished.
+
+For a reproducible invocation, `mise run boot -- FIRMWARE.syx` builds the
+native diagnostic offline, enables its explicit Oracle diagnostic bundle, and
+writes a fresh report directory under `out/native/boot/`. Pass `--out DIR`,
+`--card-image FILE`, `--limit N`, or `--stop-at ready|limit` to set runner
+inputs; relative paths are resolved from the caller's directory. A card image
+must be a readable regular file whose exact 512-byte-sector capacity is one of
+the two supported eMMC identities; it is mounted read-only beneath the guest's
+sparse write overlay and its streaming SHA-256 is recorded in the report.
+With `--diagnostic-services`, the runner derives the eSDHC bring-up completion
+words from the loaded MAIN image and records them in `resolved-profile.json`;
+this is an Oracle synchronous-completion diagnostic, not a Device ISR model.
+
+`mise run plusdrive -- build SAMPLES -o NEW_IMAGE` creates a sparse sample-only
+image. Add `--syx DT2_1.16.syx` to seed the verified DT2 1.16 default project;
+`mise run plusdrive -- ls IMAGE` lists root entries. Reusable bounded commands
+are:
+
+```sh
+mise run plusdrive -- build SAMPLES -o out/plusdrive/dt2.img --syx DT2_1.16.syx
+mise run plusdrive -- ls out/plusdrive/dt2.img
+mise run boot -- DT2_1.16.syx --card-image out/plusdrive/dt2.img --limit 1000000000 --stop-at ready
+```
+
+For DN2 main-panel observation, omit `--syx` when building the sample-only
+card, then use the same boot form with the DN2 SYX and that card. These
+commands remain Oracle diagnostics, not claims of Device interrupts, audio,
+SHARC completion, or browser runtime. DT2 `VERIFIED_READY` covers its
+image-resolved filesystem check and main panel; DN2 `VERIFIED_READY` covers
+the main panel only. Full hardware, audio, input, GUI, and WASM bridge work
+remain pending.

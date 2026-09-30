@@ -1,3 +1,12 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
 [tools]
 rust = "1.98.1"
+pnpm = "12.8.2"
+
+[tasks.boot]
+run = "tools/native_boot.sh"
+description = "Run the bounded native Oracle boot diagnostic"
+
+[tasks.plusdrive]
+run = "tools/native_plusdrive.sh"
+description = "Build or inspect a standalone +Drive image"

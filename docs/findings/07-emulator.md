@@ -1,5 +1,20 @@
 # Emulator
 
+## Native loader and host checkpoint (2026-09-30) **[V]**
+
+`native/loader` decodes the SysEx 8-in-7 transport, ELE3 entries and ELZ
+sections without filesystem APIs. Its decoded DT2 1.16 and DN2 1.11 sections
+byte-match `dt2/elz.py`; its library also compiles for `wasm32-unknown-unknown`.
+The native host's `--syx` input selects section 3, the MAIN_OS at
+`0x40000400`, rather than section 2, which is the bootstrap/version record.
+
+The bounded DT2 1.16 Oracle host checkpoint accepts only recorded force/feed
+events and `--timer oracle`. With 68 TX frames and three offline renders per
+TX it matched the recorded wire stream, rendered 204 clean SHARC frames with
+zero stops, and produced the same PCM hash through `--main` and `--syx`.
+It is not cold boot evidence, autonomous Device cadence, sustained GUI proof,
+or a browser runtime result.
+
 Bringing the ColdFire emulation up: display, DSP bring-up, making it run, the performance work, correct-speed playback, the serial console and boot.
 
 ## The emulator boots Digitakt II 1.16 **[V][D][O]**
@@ -3144,3 +3159,348 @@ rerunning the GUI.
 An independent Python SHARC replay of all 199 recorded inputs was
 interrupted after about five minutes and ~5 GB RAM, before producing a
 comparison; it is **not** a parity result.
+
+**[C] [D]** A subsequent, unintegrated force-credit diagnostic's first
+reported Python "counted" offer clocks (`925816`, `1135800`) must **not**
+be treated as an exact-counted reference. The diagnostic enabled
+`IdleSpin.stop_on_entry` during counted execution; `IdleSpin.on_spin`
+then stops Unicorn early, but `emu.longrun.spin`'s counted branch still
+credits the entire requested `step`. Thus those numbers include unexecuted
+work and do not establish a counted-versus-fast observation-boundary cause.
+The diagnostic is being corrected before integration. The earlier native
+actual/fast-estimated offer-2 difference remains an observation, not a
+proven clock-policy defect. No `Board`/`Time` scheduling change is justified
+by the rejected counted result.
+
+**[D]** A disposable, **unchanged-fast-trajectory** shadow ledger under
+ignored `out/native/force-credit-lane/` subsequently passed its narrow
+control-versus-observed gate. Both runs preserve force clocks `20014` and
+`228381`, callback PC `0x400cccd8`, post-force PC `0x4002dd0c`, the single
+available ordered TX frame's bytes/digest, and terminal PC. The diagnostic
+stops immediately after force 2's original callback returns; it does **not**
+render the second TX frame. Instrumentation adds no SR reads and delegates
+each wrapped fast run, idle skip, and vector request exactly once. Its
+**44,417 instruction-entry callbacks** are observed Unicorn entries, **not**
+retired/native instructions. Neither the 1.2M-entry, 4,096-record nor the
+90-second-per-run watchdog fired; the ledger has 39 records. The checked
+report `shadow-ledger.json` has local SHA-256
+`5ca8434442208af0319cf6684772d9b305012cdf66366bb37b3783326e04d625`.
+
+At the Python yield-9-associated idle return, the existing fast callback
+clock is **208,368**, below due `220014` by **11,646 credits**. The preceding
+actual fast-run return values sum to **28,386**, and idle-skip return values
+to **179,982**; their sum is `208368`. Idle-only phases add no stale block
+credit. This establishes Python accounting at that observed phase, not
+architectural alignment with the native idle-entry boundary, CPU semantic
+parity or Device time. Corrected stock-counted callback clocks `925816`
+and `1135800` remain a separate-cadence observation; the original method
+was invalid, not proof those numeric clocks can never occur. The growing
+permanent force-credit probe candidate was **not integrated**: its bounds
+and stale fast-block telemetry were insufficient to support its claims.
+
+**[D] [O]** The first native pre-trap instrumentation candidate was also
+**not integrated**. It disabled block dispatch for instruction-accurate
+PC/M1 observation, but its lane-local generated library stopped at rendered
+ordinal **0**, `0x1c77b4` (`no decoded instruction`), instead of the accepted
+original library's ordinal-198 stop. A matching generated core/image hash
+alone did not establish equivalent execution coverage. No read/writer event
+from that engine proves failing-path provenance. The original-library
+blocks-on/off and late full-overlay restart gates below subsequently passed;
+the failed instrumentation library remains rejected. A Python suffix would
+diagnose execution from supplied native state, not establish independent
+Python prefix or Device parity.
+
+**[D]** No-rebuild gates using the original native library (local SHA-256
+`13d3788d6988f7218232da5cdab3a5563e533bd6d21298a9492fd8b36d188514`)
+reproduced all checked inputs 0..198 with block dispatch both enabled and
+disabled. Both runs have 198 clean frames, the same ordinal-198 stop at
+`0x1c1cd7`, the same **147,896** failing-frame instruction delta, and
+**41,661,645** cumulative native instruction-stat counts. Every captured
+per-frame delta and input hash agrees. Disabled-mode `block_entries` and
+`block_instructions` are both zero. This excludes a difference between those
+dispatch modes for the measured input/terminal/count sequence, not a shared
+native-semantics defect, memory/PCM divergence, or a firmware/input problem.
+Both modes share generated semantics; neither is an independent Python or
+Device oracle. The complete mode measurement took 4.33 seconds, peak RSS
+564,019,200 macOS bytes. Its ignored report is
+`out/native/sharc-modes-lane/run-parent-fixes.json`, local SHA-256
+`a19e0b4fa32e32d14acedda780f1f854b31b94b6ec918e5bdae00c047ad1648d`.
+
+**[D]** The original engine also passed a bounded native/native restart
+gate at **41,513,749** native instructions, immediately before ordinal-198
+DMA injection. Full-overlay SHRD export (option 2) is canonical under the
+Python codec. Fresh native import, reapplication of all pack configuration
+options, actual special-presence mask **1**, and the same host/input context
+re-export the identical pre-frame bytes. Running input 198 then matches the
+uninterrupted terminal, PC, instruction delta, and full-overlay final SHRD
+bytes. Ignored artifacts in `out/native/sharc-checkpoint-lane/`:
+
+| SHRD pair | Bytes each | Local SHA-256 |
+|---|---:|---|
+| `checkpoint-before-198.shrd`, `restored-before-198.shrd` | 7,153,256 | `0e73bfc084d96193a995b5a29a3f646741e0d8c1ac63634caed605e6e9a68879` |
+| `uninterrupted-after-198.shrd`, `restored-after-198.shrd` | 7,153,284 | `97733b2f58591166647429b0f675000d0a97724b98ac992c1e2534cf666e4fa2` |
+
+`checkpoint-before-198.json` records the phase, next ordinal, pack options,
+special presence, host constants, original-library identity, input/source
+digests and raw-prefix digest. The complete measurement took 4.36 seconds,
+peak RSS 1,126,825,984 macOS bytes. Parent artifact/hash/canonical-state checks
+accept this checkpoint for **supplied-native-state suffix diagnostics only**.
+This is not general SHRD/configuration losslessness, independent Python-prefix
+agreement, Device state, or a fix for the stop; the zero-stop gate still fails.
+
+The diagnostic's initial parser and ordinal-0 DMA failures are excluded:
+trailer hashes are length-prefixed ASCII hex, and importing
+`tools.sharc_core.state.Const` supplied a different class from the native
+wrapper's `tr.st.Const`. Its setter silently selected Unknown for R8, causing
+an invalid first-frame fork. Corrected harnesses assert the native R8 readback
+before executing. Those failures were parent-recipe errors, not evidence of
+an original-library execution defect. No production semantics, clock policy,
+or generated library changed to pass these gates. Native failing-path writer
+provenance and the supplied-state Python suffix remain **[O]**.
+
+### Yield-9 fast-observed force attribution (2026-09-30)
+
+**[D]** A scratch-only, unchanged-trajectory state ledger at
+`/private/tmp/dt2-codex-timing-resume/out/native/force-entry-lane/entry_ledger_state.py`
+(SHA-256 `a3ef64f33721dd4e3bec75f6db3bda72464faa49982a3f5e3437499a829ae9f8`)
+captured the ninth Python idle return in
+`/private/tmp/dt2-codex-timing-resume/yield9-state-ledger.json` (SHA-256
+`c1d064f312b88ea4f3f4606c48e6024639dd0bb0cf57681e27eaa63ed4ab053e`).
+Removing its diagnostic state fields exactly matches the accepted entry ledger
+(SHA-256 `f7eb83178ed0227a07a9875bd6c1b01e643d1cdd46e05df448fd45b7f3e27c61`):
+force clocks `20014` and `228381`, terminal PC `0x4002dd0c`, and the ordered
+TX-frame SHA-256 are unchanged. At yield 9, PC is `0x400cccd8`, SR `0x2000`,
+force 1 has completed, and the clock is `208368` with force 2 due at `220014`.
+
+The observed second offer is host chunk cadence, not a CPU or Device-time
+claim. `spin` calls `IdleSpin.skip` before advancing `pits.now` or invoking
+`on_chunk` (`emu/longrun.py:1096-1128`); the next idle skip uses the next
+reschedule boundary (`emu/longrun.py:797-807`) and adds `19998`, so
+`208368 + 19998 = 228366`, already past due. Its following 15-credit fast run
+makes `228381` before `FrameForcer.on_chunk` can offer force 2
+(`emu/livesharc.py:125-138`). This explains that Python fast-observed boundary
+without aligning it to native actual cycles or validating a native
+`TimerPolicy::Device` contract. No regression test or clock/CPU semantic
+change was added.
+
+### Native suffix diagnostic PC accessor (2026-09-30)
+
+**[D]** `native/sharc` now exports the read-only
+`sharc_native_get_pc(handle) -> i64` diagnostic accessor. It returns the
+architectural next `pc_sw`, rather than the separately modelled UREG `PC`;
+null returns `-1`. `tools/sharc_transpile_run.NativeCore.pc()` binds it only
+when present, so the accepted original library remains loadable and a request
+against that legacy library fails explicitly without a full-state-export
+fallback. A scratch diagnostic rebuild used the accepted generated directory
+`out/native/opt/gen-final`, without regeneration; its SHA-256 was
+`450a2d270ae71dc2706a991d172e46476af20f6d3c44bb7579ba534398fd5dac`.
+The original library remains SHA-256
+`13d3788d6988f7218232da5cdab3a5563e533bd6d21298a9492fd8b36d188514`.
+
+Focused ABI probes passed: null maps to `-1`; an imported checkpoint's getter
+equals its canonical `pc_sw`; repeated reads leave native counters unchanged;
+and the accepted original library loads while `pc()` reports the missing
+accessor. The one authorized suffix completed in 40.06 seconds (peak RSS
+2,149,416,960 macOS bytes). Its scratch report and final SHRD are
+`/private/tmp/dt2-codex-sharc-resume/native-suffix.json` and
+`/private/tmp/dt2-codex-sharc-resume/native-after-198.shrd`. The diagnostic
+and original libraries exported identical checked pre-state bytes before
+execution. With blocks disabled, it completed the six-instruction DMA callback
+and 147,890 handler instructions, then stopped at the accepted unmodelled-MMR
+terminal `0x1c1cd7`; the 147,896 completed-instruction delta and final full
+canonical SHA-256 `97733b2f58591166647429b0f675000d0a97724b98ac992c1e2534cf666e4fa2`
+match the accepted uninterrupted state. Its 147,898 one-step requests include
+the non-credited callback return trap and terminal MMR trap.
+
+**[D]** The watched word at byte-space `0x28254d94` changed once, from
+`0x3120b419` to `0x31093de7`, immediately after native prePC `0x1c2c64`
+(form `14a`). The pre-instruction state had `R12=0x25f680`, `I0=0x25f190`,
+`M5=0`, and `MODE1=0x00200000`; this is the observed changed-value writer,
+not evidence about same-value writes. It is the same counterpart reported by
+the supplied-state Python suffix, not an earlier `0x1c2f04` attribution.
+Before the terminal form `3c` at `0x1c1cd7`, `I0=0x31093de7`, `M5=0`,
+`R12=0`, `MODE1=0x00200000`, and the watched word is `0x31093de7`.
+`forms_move._type_3c` takes its address from the old `I0` and advances `I0`
+by `M5 * 4` under `assume_nw32`; the reconstructed address is therefore
+`0x31093de7`, the unmodelled MMR in the terminal. This is a pre-execution
+register/rule reconstruction, not a post-trap probe or a native memory trace.
+This closes the failing-path writer-provenance question for the supplied-native-
+state suffix. Independent Python-prefix agreement, the semantic cause of the
+MMR stop, and the zero-stop gate remain open.
+
+### Type15b SIMD companion transfer (2026-09-30)
+
+**[D]** *SHARC+ Core Programming Reference* (SC58x/2158x Rev. 1.5), printed
+pp.16-8--16-12 (extracted pp.0391--0395), requires a non-(LW), normal-word Type15b DAG
+transfer in `MODE1.PEYEN` mode to perform both halves of the transfer. The
+explicit `R12 = DM(I2 + 8)` at `0x1c2c5a` reads `0x25f680` from `0x2fffe8`;
+the implicit PEy half reads `S12` from the next normal word, `0x2fffec`, whose
+value is `0x25f700`. The prior Type15b scalar path updated only R12. Type15a
+already used the common companion-transfer rule; the fix extends that same
+rule to Type15b's non-(LW) DM load/store path, preserving the existing `(LW)`
+register-pair path and non-SIMD behavior.
+
+**[D]** Updating the Type15 load metadata changed only the DT2 1.16
+`trace_voice` golden: its SHA-256 is now
+`207907476dcc3f3f7bb67ec885609e190a2d00cd71a6a7e047d2f1723286f3b5`.
+The structured trace difference contains 24 added `space: "DM"` fields in
+`last_events`; states, event values, and the other five golden hashes are
+unchanged.
+
+Focused Python and scratch-native counterexamples cover the indexed
+normal-word load/store pair, PEYEN off, unchanged I register, and an
+uncomplementary load. The corrected native checkpointed ordinal-198 suffix
+writes the watched PEy word `0x25f700` and no longer reaches the old
+`0x1c1cd7` MMR stop; it returns through the existing block-handler boundary
+at `0x1c75d3` after 219,827 handler steps. The full 256-input recorded GUI
+replay is still incomplete: its first new stop is ordinal 187 at unmodelled
+MMR `0xb829eb` after 190,499 instructions. This is a bounded emulator
+regression result, not autonomous GUI, boot, timing, or Device validation.
+
+**[D]** `0xb829eb` is the trapping software PC, not the attempted MMR
+address. A checkpoint immediately before ordinal 187 has canonical SHA-256
+`3537bd2d59fecf35bba0b499801ec8379226a594fcf9da298046e7a28be9348a`.
+Sparse pre-trap capture decodes the instruction there as confident Type3a,
+`R2 = DM(I2, M6)` with post-modify (`u=1`), normal-word DM access, `I2 =
+0x3106fc64`, and `M6 = 1`. Type3a uses the old I register as its post-modify
+address, so the unmodelled access is `0x3106fc64`; the post-modify value is
+not needed to explain the trap. The instruction belongs to
+`FUN_00b82994`. Its pointer provenance remains unmodelled and no additional
+ISA or memory semantics were added to continue this replay.
+
+### Fresh SHARC pack and firmware-free WASM gate (2026-09-30)
+
+**[D]** The current frozen core hash is
+`4b25379c9ea67fc5933d9e194ba1d4d13ace66c57c5b5e1919a57fd66f34fd7f`.
+The exact fresh library is SHA-256
+`7e1bf5897ed4634df2d02fcee3c6dbf28576a9677a4f70f5ae22ca4b488b402a` and
+its fresh initial pack is SHA-256
+`52ff0b9bf05a5efaae963a8a83b4afc395b7a37902d739ee1379600ca018fa39`.
+They are scratch artifacts under `/private/tmp/dt2-sharc-completion/`.
+The 204-input native replay completed at the accepted bounded return
+`0x1c75d3`, with 43,828,934 instructions and final canonical SHA-256
+`794efcf929c23633dda872cc82b5c7fbcd52262fef361e739638bbf6a96ab83d`.
+The 256-input replay completed with 54,247,701 instructions and final hash
+`4b840c3c…a891`. These are state/terminal gates, not full instruction-parity
+or realtime claims. Rebuild the initial pack after any semantic change.
+
+**[D]** A generic transpile produced only `core_g.rs`, `core_i.rs`, `syms.rs`,
+and `tables.rs`; it contains no `image.rs`. The resulting 579,724-byte WASM
+runtime (SHA-256 `98669a1372d8bcfb325af20d9f2d0d461543f8635aff33e7bfa5e082c7194742`)
+reports image `none` and decodes the SHFP pack image at runtime. Node replayed
+the exact 204 rendered inputs in 4.404 seconds, with 43,828,934 instructions,
+no JIT requests, and the same canonical final SHA. This is a firmware-free
+interpreter gate under Node, not browser or realtime execution.
+
+**[D]** The replay recipe enters the DMA callback, sets R8 to the host event,
+then steps the callback before entering the handler. A scratch runner that set
+R8 after stepping DMA produced idle handlers; the corrected ordering matched
+the native checkpoint states and counts. That was a runner-recipe error, not a
+core defect.
+
+**[D]** Type3c manual attribution is *SHARC+ Core Programming Reference*
+(SC58x/2158x Rev. 1.5), extracted pp.0323--0324. The old checkpoint-198 and
+old-pack ordinal-187 trap reports remain historical diagnostics: in the latter,
+`0xb829eb` is PC while `0x3106fc64` is the attempted address.
+
+### Native host and remaining integration boundary (2026-09-30)
+
+**[D]** Fresh host `--main` and `--syx` checkpoint runs each produced 68 TX
+frames, 204 clean SHARC renders, zero stops, and zero DMA failures. They share
+the exact wire SHA `e21cb015102bd6c1222b7c733238ddf7402a725ee7e63b0fb8313d00fd1f8e8b`,
+PCM SHA `b7f12d308007e0d4b746cae09136d758cb808dfdbd666d0f1e098befaec73b97`,
+and WAV SHA `4771ca619239a277cffcb8008095d6c087321607d83cc5e58fad3f33494a0f9e`;
+outputs include `host-main.wav` and `host-syx.wav`. The host
+writes its reports before returning failure for stops, DMA failures, incomplete
+work, or wire mismatch. Its optional `--rendered-input-log` accepts only
+rendered records of at most 4096 bytes. This remains an Oracle checkpoint,
+not cold boot, autonomous timing, or browser evidence.
+
+**[D]** Rust GPIO's hook is optional. Oracle INTC preserves Device reset with
+zero masks; the `+14` offset applies to INTFRCL, not IMRL. Board capture owns
+pending/outbound TX through `take`, and both TX35 and DSPI use SERQ-all. The
+current full-machine test set has 83 passing and 13 ignored tests, plus a WASM
+compile check. These gates do not establish Device scheduling.
+
+**[O]** Cold-boot scratch work uses explicit DTIM1 `[3,1]`, Oracle 132M IPS,
+zero-page compatibility, flash HLE, forced UART/DSPI/ZeroPeer, and idle
+handling. The historical 1B run without UART service left the console full
+ring stuck, with zero main-loop/job progress and DTIM3 despite PIT3 delivery
+and the early real-97 handler returning to sleep. A subsequent UART TX35
+diagnostic-service run reached the captured main UI described in the next
+section. Full Device/autonomous DT2/DN2 boot, UART RX, audio, realtime JIT,
+and browser runtime are unfinished.
+
+**[D]** `native/boot` is the promoted bounded Oracle diagnostic runner. It
+uses the embedded firmware registry and image-resolved marks before creating
+an output directory; `--diagnostic-services` explicitly enables its scratch
+compatibility bundle. Its JSON/progress artifacts describe a bounded
+observation and do not claim a complete checkpoint or hardware boot.
+
+### Native completed main-panel frames (2026-10-01)
+
+**[D]** Bounded Oracle diagnostic boot captures completed post-intro panel
+frames at the image-resolved panel-diff return boundary and attributes them to
+the owning main-loop TCB. Its shared readiness predicate requires a nonzero
+completed main-TCB frame, intro completion, main-loop and job-pump marks, and
+DTIM3; PIT3 and the progress/vector-208 handoff are diagnostics only. This
+permits the ordinary Digitone main-UI path, which need not use the
+maintenance-only progress handoff.
+
+The DT2 run in `/private/tmp/boot-dt2-panel-20261001/report.json` reached
+ready at instruction 825,549,963 and captured a completed main-TCB frame with
+SHA-256 `9afbef4eea20d8660ffc6d439a6c0dd5397ab1599985c8be28526553a57456c1`;
+its visible UI says `MMC NOT IN SLC MODE`. The corresponding DN2 run reached
+ready at instruction 842,205,907 with frame SHA-256
+`19f8d7cdd7db23c03c80e86b79f3fdb09a497288fbabf4aa53b12707cc3d73f0` and a
+LIGHTHOUSE main page without that warning. Both use the diagnostic Oracle
+bundle with a blank card and ZeroDSP. They prove the captured main UI under
+that bounded compatibility setup, not full hardware, audio, or interactive
+boot behavior.
+
+**[D]** The portable Rust +Drive builder matched Python byte-for-byte for the
+14-WAV PCM, float, and extensible fixture set: sample-only image SHA-256
+`44e68112018aa1b95c14d0148d554989915ccd46ccc6de6453dbca82a62e6613`;
+the DT2 1.16 seeded-project image SHA-256 was
+`1caf07515a81ae2f8fcf023f1d9b316359b809cffba165b76f7e1a3a4c44a4e3`.
+Both have logical length 3,959,422,976 bytes. The seeded record replaced 297
+table references and 1,471 other copies. These are format-builder parity
+results, not a claim about firmware storage behavior.
+
+**[D]** With a mounted generated image, the generic SD gate and image-resolved
+MMC completion words changed the bounded runs from zero storage commands in
+the earlier panel captures to real eSDHC traffic: DT2 reached ready at
+830,371,724 instructions with 3,151 commands and 34,287,616 DMA bytes; DN2
+reached ready at 847,307,251 with 2,983 commands and 26,898,432 DMA bytes.
+The runner's synchronous Oracle completion shortcut is not a Device ISR
+model. The first structural main UI still shows DT2's VERIFYING FILE SYSTEM
+modal and DN2's SLC advisory, so neither run establishes a fully usable or
+final boot. Full SHARC, audio, autonomous Device behavior, and browser
+execution remain unproven.
+
+**[D]** Readiness is profile-owned: DT2 1.16 uses a typed
+main-panel-fs-check-v1 contract whose startup checker entry and unique
+completion stores are image-resolved; a successful done-byte store and a later
+completed main-TCB frame are required. The earlier 40-byte
+0x400caac6 marker was sample verification, not filesystem verification.
+DN2 1.11 uses main-panel-v1, which does not claim unresolved
+filesystem-verification work.
+
+**[D]** Final bounded `mise run boot` observations reached `VERIFIED_READY`.
+The seeded DT2 run in
+`/private/tmp/boot-dt2-startup-fs-final-20261001/report.json` stopped at
+914,896,867 instructions: the scanner started and completed once,
+`success_result` was true, its last completion was at 914,789,367, and the
+later completed main-TCB frame at 914,873,310 has SHA-256
+`e6ee4f9326852a09ace5c899b103e3c951a774b13cbe43143bdeceb1368c699f`.
+It used the seeded image whose known full SHA-256 is
+`1caf07515a81ae2f8fcf023f1d9b316359b809cffba165b76f7e1a3a4c44a4e3`.
+The DN2 sample-only run in
+`/private/tmp/boot-dn2-contract-ready-20261001/report.json` stopped at
+847,307,251 instructions; its completed frame at 842,990,780 has SHA-256
+`52979c6ce5d3f29344f9699df61a22c071eb0bcd5cf13e9789610f691fc3d38d` and
+shows `MMC NOT IN SLC MODE`. DT2 evidence is limited to filesystem checking
+and the main panel. DN2 evidence is main-panel-only; filesystem-verification
+completion remains unresolved and is not claimed. Both remain Oracle
+diagnostic observations: full hardware, audio, input, GUI, and WASM bridge
+work remain pending.

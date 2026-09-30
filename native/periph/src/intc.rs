@@ -88,6 +88,16 @@ impl IntcBank {
         Self::default()
     }
 
+    /// Fresh unmodelled INTC backing as created by the Python oracle's
+    /// zero-mapped MMIO fault path. This deliberately differs from hardware
+    /// reset: the oracle starts with every register byte, including IMR,
+    /// clear until guest code writes it.
+    pub fn oracle_zeroed() -> Self {
+        Self {
+            ctrl: [RegFile::new(), RegFile::new(), RegFile::new()],
+        }
+    }
+
     /// -> (controller index, offset within its slot), or None if `addr` is
     /// outside all three controllers' 16 KiB slots.
     fn locate(addr: u32) -> Option<(usize, u32)> {

@@ -1,0 +1,29 @@
+[package]
+name = "plusdrive-format"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+description = "Portable +Drive metadata format primitives"
+
+[lib]
+name = "plusdrive_format"
+path = "src/lib.rs"
+
+[dependencies]
+emmc-card = { path = "../card" }
+device-profile = { path = "../device-profile" }
+dt2-firmware-loader = { path = "../loader" }
+sha2 = "0.10"
+
+[[example]]
+name = "wav-convert"
+path = "examples/wav-convert.rs"
+
+[[example]]
+name = "image-build"
+path = "examples/image-build.rs"
+
+[[bin]]
+name = "plusdrive"
+path = "src/bin/plusdrive.rs"

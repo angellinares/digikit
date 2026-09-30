@@ -231,3 +231,90 @@ fn board_reads_tx_elements_across_smod_wrap_in_guest_ram() {
     board.write8(edma::SERQ, dspi::RX_CHAN as u8).unwrap();
     assert_eq!(*accepted.borrow(), vec![vec![0x12, 0x34, 0x56, 0x78]]);
 }
+
+fn tx35_tcd(board: &mut Board, source: u32, citer: u16) {
+    let base = edma::TCD_BASE + 35 * 0x20;
+    board.write32(base + edma::SADDR as u32, source).unwrap();
+    board.write16(base + edma::ATTR as u32, 0).unwrap();
+    board.write16(base + edma::SOFF as u32, 1).unwrap();
+    board.write32(base + edma::NBYTES as u32, 1).unwrap();
+    board.write16(base + edma::CITER as u32, citer).unwrap();
+    board.write16(base + edma::BITER as u32, citer).unwrap();
+}
+
+#[test]
+fn set_all_serq_finalizes_tx35_and_dspi2_independently() {
+    let mut board = board();
+    board.map_ram_page(SRAM).unwrap();
+    tcd(&mut board, dspi::TX_CHAN, true);
+    tcd(&mut board, dspi::RX_CHAN, false);
+    tx35_tcd(&mut board, SRAM + 0x200, 3);
+    for (i, value) in [0x80, 0x01, 0x12, 0x34, 0x80, 0x01, 0x56, 0x78]
+        .into_iter()
+        .enumerate()
+    {
+        board.write8(TX_SOURCE + i as u32, value).unwrap();
+    }
+    for (i, value) in [0xa1, 0xa2, 0xa3].into_iter().enumerate() {
+        board.write8(SRAM + 0x200 + i as u32, value).unwrap();
+    }
+    let accepted = Rc::new(RefCell::new(Vec::new()));
+    board.dma.peer = Box::new(RecordingPeer(Rc::clone(&accepted)));
+
+    board.write8(edma::SERQ, 0x40).unwrap();
+
+    assert_eq!(board.take_uart_tx(), vec![0xa1, 0xa2, 0xa3]);
+    assert_eq!(board.dma.tx35.pending, 1);
+    assert_eq!(*accepted.borrow(), vec![vec![0x12, 0x34, 0x56, 0x78]]);
+    assert_eq!(board.dma.dspi2.frames, 1);
+    assert_eq!(board.take_dma_written_ranges(), vec![(RX_DEST, 4)]);
+}
+
+#[test]
+fn set_all_serq_preflights_both_sources_before_any_lane_mutates() {
+    for invalid_tx35 in [true, false] {
+        let mut board = board();
+        board.map_ram_page(SRAM).unwrap();
+        tcd(&mut board, dspi::TX_CHAN, true);
+        tcd(&mut board, dspi::RX_CHAN, false);
+        tx35_tcd(
+            &mut board,
+            if invalid_tx35 {
+                SRAM + 0x10_0000
+            } else {
+                SRAM + 0x200
+            },
+            2,
+        );
+        if invalid_tx35 {
+            for (i, value) in [0x80, 0x01, 0x12, 0x34, 0x80, 0x01, 0x56, 0x78]
+                .into_iter()
+                .enumerate()
+            {
+                board.write8(TX_SOURCE + i as u32, value).unwrap();
+            }
+        } else {
+            board.write8(SRAM + 0x200, 0xa1).unwrap();
+            board.write8(SRAM + 0x201, 0xa2).unwrap();
+            board
+                .write32(
+                    edma::TCD_BASE + (dspi::TX_CHAN * 0x20 + edma::SADDR) as u32,
+                    SRAM + 0x10_0000,
+                )
+                .unwrap();
+        }
+        let accepted = Rc::new(RefCell::new(Vec::new()));
+        board.dma.peer = Box::new(RecordingPeer(Rc::clone(&accepted)));
+
+        assert!(matches!(
+            board.write_guest(edma::SERQ, 1, 0x40),
+            Err(BoardWriteError::DspiDma { .. })
+        ));
+        assert!(board.take_uart_tx().is_empty());
+        assert_eq!(board.dma.tx35.bytes, 0);
+        assert_eq!(board.dma.tx35.pending, 0);
+        assert_eq!(board.dma.dspi2.frames, 0);
+        assert!(accepted.borrow().is_empty());
+        assert!(board.take_dma_written_ranges().is_empty());
+    }
+}

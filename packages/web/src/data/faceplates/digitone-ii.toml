@@ -1,0 +1,112 @@
+# Front-panel drawing for Digitone II, read by emu/faceplate.py.
+#
+# Positions are centres in millimetres from the panel's top-left corner.
+# Legends are the printed silkscreen; the firmware's own control names
+# still come from its factory-test table (emu/symbols.py). `code` is the
+# control code from ../digitone-ii.toml.
+
+[faceplate]
+device = "digitone-ii.toml"
+width = 215.0
+height = 176.0
+accent = "#6fc7d1"
+func_legend = "#2f7f88"
+wordmark = "Digiemu"
+
+[display]
+bezel = [31.1, 21.7, 105.0, 72.9]
+glass = [37.5, 28.3, 98.8, 62.0]
+wordmark = [37.3, 67.6]
+
+[leds]
+x = [186.0, 192.0, 197.9, 203.9]
+y = [96.0, 101.9]
+r = 1.5
+
+[controls]
+screws = [
+  { x = 9.7, y = 5.0 },
+  { x = 100.3, y = 5.0 },
+  { x = 205.1, y = 5.0 },
+  { x = 10.0, y = 171.0 },
+  { x = 116.3, y = 170.4 },
+  { x = 205.1, y = 171.0 },
+]
+# style: jack (connector labels), label, sub (accent), dim, icon
+texts = [
+  { text = "headphones", x = 15.2, y = 3.5, style = "icon" },
+  { text = "L ···· Out ···· R", x = 34.1, y = 3.5, style = "jack" },
+  { text = "L ···· In ···· R", x = 64.4, y = 3.5, style = "jack" },
+  { text = "MIDI In", x = 89.9, y = 3.5, style = "jack" },
+  { text = "MIDI Out", x = 110.0, y = 3.5, style = "jack" },
+  { text = "MIDI Thru", x = 130.0, y = 3.5, style = "jack" },
+  { text = "USB", x = 152.0, y = 3.5, style = "jack" },
+  { text = "DC In", x = 171.0, y = 3.5, style = "jack" },
+  { text = "Power", x = 193.0, y = 3.5, style = "jack" },
+  { text = "Track/Mute", x = 100.2, y = 146.5, style = "sub" },
+  { text = ":······", x = 43.7, y = 146.5, style = "dim" },
+  { text = "······:", x = 156.6, y = 146.5, style = "dim" },
+]
+# encoder: rotation code; push: its push-switch button code. No encoder
+# means a local-only knob (the volume pot is not on the panel link).
+knobs = [
+  { x = 16.6, y = 32.1, r = 7.0, marker = "dot", label = "Main Volume", label_y = 42.3 },
+  { encoder = 9, push = 49, x = 16.6, y = 57.5, r = 7.0, marker = "none", label = "Level/Data", label_y = 67.4, sub = "Preset Pool" },
+  { encoder = 1, push = 41, x = 118.5, y = 32.1, r = 6.5, marker = "none", label = "A", label_y = 42.3 },
+  { encoder = 2, push = 42, x = 145.1, y = 32.1, r = 6.5, marker = "none", label = "B", label_y = 42.3 },
+  { encoder = 3, push = 43, x = 171.9, y = 32.1, r = 6.5, marker = "none", label = "C", label_y = 42.3 },
+  { encoder = 4, push = 44, x = 198.6, y = 32.1, r = 6.5, marker = "none", label = "D", label_y = 42.3 },
+  { encoder = 5, push = 45, x = 118.5, y = 57.5, r = 6.5, marker = "none", label = "E", label_y = 67.4 },
+  { encoder = 6, push = 46, x = 145.1, y = 57.5, r = 6.5, marker = "none", label = "F", label_y = 67.4 },
+  { encoder = 7, push = 47, x = 171.9, y = 57.5, r = 6.5, marker = "none", label = "G", label_y = 67.4 },
+  { encoder = 8, push = 48, x = 198.6, y = 57.5, r = 6.5, marker = "none", label = "H", label_y = 67.4 },
+]
+# sub is the second-function label under the key, in the accent colour
+# (text up to a "/" in plain); sub_style = "plain" prints it all plain.
+keys = [
+  { code = 1, x = 117.9, y = 79.4, w = 11.0, h = 10.7, legend = "TRIG", sub = "Quantize", sub_y = 87.4 },
+  { code = 2, x = 133.9, y = 79.4, w = 11.0, h = 10.7, legend = "SYN", sub = "Machine", sub_y = 87.4 },
+  { code = 3, x = 150.0, y = 79.4, w = 11.0, h = 10.7, legend = "FLTR", sub = "Setup", sub_y = 87.4 },
+  { code = 4, x = 166.0, y = 79.4, w = 11.0, h = 10.7, legend = "AMP", sub = "Sequencer", sub_y = 87.4 },
+  { code = 5, x = 182.0, y = 79.4, w = 11.0, h = 10.7, legend = "FX", sub = "Send FX", sub_y = 87.4 },
+  { code = 6, x = 198.1, y = 79.4, w = 11.0, h = 10.7, legend = "MOD", sub = "Mixer", sub_y = 87.4 },
+  { code = 17, x = 19.6, y = 89.9, w = 16.9, h = 9.9, legend = "FUNC", style = "func" },
+  { code = 7, x = 43.7, y = 89.9, w = 11.0, h = 10.4, icon = "perform", sub = "Perform", sub_y = 97.9 },
+  { code = 8, x = 59.7, y = 89.9, w = 11.0, h = 10.4, icon = "settings", sub = "Save Proj", sub_y = 97.9 },
+  { code = 50, x = 75.9, y = 89.9, w = 11.0, h = 10.4, icon = "unison", sub = "Unison", sub_y = 97.9 },
+  { code = 9, x = 91.9, y = 89.9, w = 11.0, h = 10.4, icon = "tempo", sub = "Tap Tempo", sub_y = 97.9 },
+  { code = 18, x = 19.6, y = 105.7, w = 11.0, h = 10.4, icon = "keyboard", sub = "KB Setup", sub_y = 113.8 },
+  { code = 19, x = 46.6, y = 106.0, w = 16.9, h = 10.4, icon = "record", sub = "Copy", sub_y = 113.9 },
+  { code = 20, x = 67.8, y = 106.0, w = 16.9, h = 10.4, icon = "play", sub = "Clear", sub_y = 113.9 },
+  { code = 21, x = 88.9, y = 106.0, w = 16.9, h = 10.4, icon = "stop", sub = "Paste", sub_y = 113.9 },
+  { code = 10, x = 117.9, y = 98.1, w = 11.0, h = 10.4, legend = "YES", sub = "Save", sub_y = 105.8 },
+  { code = 12, x = 117.9, y = 114.2, w = 11.0, h = 10.4, legend = "NO", sub = "Reload", sub_y = 121.8 },
+  { code = 11, x = 150.0, y = 98.1, w = 11.0, h = 10.4, icon = "up", sub = "Trig Mode", sub_y = 105.8 },
+  { code = 13, x = 133.9, y = 114.2, w = 11.0, h = 10.4, icon = "left", sub = "µTime-", sub_y = 121.8, sub_style = "plain" },
+  { code = 14, x = 150.0, y = 114.2, w = 11.0, h = 10.4, icon = "down", sub = "Trig Mode", sub_y = 121.8 },
+  { code = 15, x = 166.0, y = 114.2, w = 11.0, h = 10.4, icon = "right", sub = "µTime+", sub_y = 121.8, sub_style = "plain" },
+  { code = 22, x = 195.0, y = 114.2, w = 16.9, h = 10.4, legend = "PAGE", sub = "Fill/Setup", sub_y = 121.8 },
+  { code = 16, x = 19.6, y = 124.1, w = 16.9, h = 10.4, legend = "TRK", sub = "Mute Mode", sub_y = 131.9 },
+  { code = 23, x = 19.6, y = 141.0, w = 16.9, h = 10.4, legend = "PTN", sub = "Bank", sub_y = 148.8 },
+  { code = 24, x = 19.6, y = 158.2, w = 16.9, h = 10.4, legend = "SONG", sub = "Song Edit", sub_y = 166.0 },
+  { code = 25, x = 43.5, y = 135.4, w = 11.3, h = 16.9, legend = "1", style = "trig" },
+  { code = 26, x = 59.7, y = 135.4, w = 11.3, h = 16.9, legend = "2", style = "trig" },
+  { code = 27, x = 75.9, y = 135.4, w = 11.3, h = 16.9, legend = "3", style = "trig" },
+  { code = 28, x = 92.0, y = 135.4, w = 11.3, h = 16.9, legend = "4", style = "trig" },
+  { code = 29, x = 108.2, y = 135.4, w = 11.3, h = 16.9, legend = "5", style = "trig" },
+  { code = 30, x = 124.3, y = 135.4, w = 11.3, h = 16.9, legend = "6", style = "trig" },
+  { code = 31, x = 140.6, y = 135.4, w = 11.3, h = 16.9, legend = "7", style = "trig" },
+  { code = 32, x = 156.7, y = 135.4, w = 11.3, h = 16.9, legend = "8", style = "trig" },
+  { code = 33, x = 43.5, y = 158.0, w = 11.3, h = 16.9, legend = "9", style = "trig" },
+  { code = 34, x = 59.7, y = 158.0, w = 11.3, h = 16.9, legend = "10", style = "trig" },
+  { code = 35, x = 75.9, y = 158.0, w = 11.3, h = 16.9, legend = "11", style = "trig" },
+  { code = 36, x = 92.0, y = 158.0, w = 11.3, h = 16.9, legend = "12", style = "trig" },
+  { code = 37, x = 108.2, y = 158.0, w = 11.3, h = 16.9, legend = "13", style = "trig" },
+  { code = 38, x = 124.3, y = 158.0, w = 11.3, h = 16.9, legend = "14", style = "trig" },
+  { code = 39, x = 140.6, y = 158.0, w = 11.3, h = 16.9, legend = "15", style = "trig" },
+  { code = 40, x = 156.7, y = 158.0, w = 11.3, h = 16.9, legend = "16", style = "trig" },
+  { code = 51, x = 177.3, y = 135.4, w = 11.0, h = 10.7, icon = "arp", sub = "Arpeggiator", sub_y = 143.3 },
+  { code = 52, x = 197.9, y = 135.4, w = 11.0, h = 10.7, icon = "plus", sub = "Transpose+", sub_y = 143.3 },
+  { code = 53, x = 177.3, y = 158.0, w = 11.0, h = 10.7, icon = "noteedit", sub = "Note Edit", sub_y = 165.7, sub_style = "plain" },
+  { code = 54, x = 197.9, y = 158.0, w = 11.0, h = 10.7, icon = "minus", sub = "Transpose-", sub_y = 165.7 },
+]

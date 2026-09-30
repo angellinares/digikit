@@ -1,0 +1,11 @@
+[package]
+name = "dt2-firmware-loader"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+
+[lib]
+name = "dt2_firmware_loader"
+path = "src/lib.rs"
+
+[dependencies]

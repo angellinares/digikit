@@ -1,0 +1,109 @@
+# Front-panel drawing for Digitakt II, read by emu/faceplate.py.
+#
+# Positions are centres in millimetres from the panel's top-left corner.
+# Legends are the printed silkscreen; the firmware's own control names
+# still come from its factory-test table (emu/symbols.py). `code` is the
+# control code from ../digitakt-ii.toml.
+
+[faceplate]
+device = "digitakt-ii.toml"
+width = 215.0
+height = 176.0
+accent = "#f3b52c"
+func_legend = "#9c6f0c"
+wordmark = "Digiemu"
+
+[display]
+bezel = [31.0, 21.7, 104.9, 73.1]
+glass = [39.4, 28.3, 98.6, 60.6]
+wordmark = [37.4, 67.6]
+
+[leds]
+x = [186.0, 192.0, 198.1, 204.1]
+y = [96.0, 102.0]
+r = 1.5
+
+[controls]
+screws = [
+  { x = 9.8, y = 5.0 },
+  { x = 99.8, y = 5.0 },
+  { x = 205.0, y = 5.0 },
+  { x = 9.8, y = 170.9 },
+  { x = 100.3, y = 170.9 },
+  { x = 205.0, y = 170.9 },
+]
+# style: jack (connector labels), label, sub (accent), dim, icon
+texts = [
+  { text = "headphones", x = 15.3, y = 3.6, style = "icon" },
+  { text = "L ···· Out ···· R", x = 34.6, y = 3.6, style = "jack" },
+  { text = "L ···· In ···· R", x = 64.3, y = 3.6, style = "jack" },
+  { text = "MIDI In", x = 90.0, y = 3.6, style = "jack" },
+  { text = "MIDI Out", x = 110.1, y = 3.6, style = "jack" },
+  { text = "MIDI Thru", x = 130.1, y = 3.6, style = "jack" },
+  { text = "USB", x = 152.1, y = 3.6, style = "jack" },
+  { text = "DC In", x = 171.1, y = 3.6, style = "jack" },
+  { text = "Power", x = 193.2, y = 3.6, style = "jack" },
+  { text = "↕ KB Octave", x = 167.1, y = 98.1, style = "label" },
+  { text = "Track/Mute", x = 121.0, y = 146.7, style = "sub" },
+  { text = ":······", x = 46.9, y = 146.7, style = "dim" },
+  { text = "······:", x = 195.1, y = 146.7, style = "dim" },
+]
+# encoder: rotation code; push: its push-switch button code. No encoder
+# means a local-only knob (the volume pot is not on the panel link).
+knobs = [
+  { x = 16.5, y = 32.2, r = 7.0, marker = "dot", label = "Main Volume", label_y = 42.4 },
+  { encoder = 9, push = 49, x = 16.5, y = 57.7, r = 7.0, marker = "none", label = "Level/Data", label_y = 67.6, sub = "Preset Pool" },
+  { encoder = 1, push = 41, x = 118.5, y = 32.2, r = 6.6, marker = "none", label = "A", label_y = 42.4 },
+  { encoder = 2, push = 42, x = 145.1, y = 32.2, r = 6.6, marker = "none", label = "B", label_y = 42.4 },
+  { encoder = 3, push = 43, x = 171.7, y = 32.2, r = 6.6, marker = "none", label = "C", label_y = 42.4 },
+  { encoder = 4, push = 44, x = 198.3, y = 32.2, r = 6.6, marker = "none", label = "D", label_y = 42.4 },
+  { encoder = 5, push = 45, x = 118.5, y = 57.5, r = 6.6, marker = "none", label = "E", label_y = 67.6 },
+  { encoder = 6, push = 46, x = 145.1, y = 57.5, r = 6.6, marker = "none", label = "F", label_y = 67.6 },
+  { encoder = 7, push = 47, x = 171.7, y = 57.5, r = 6.6, marker = "none", label = "G", label_y = 67.6 },
+  { encoder = 8, push = 48, x = 198.3, y = 57.5, r = 6.6, marker = "none", label = "H", label_y = 67.6 },
+]
+# sub is the second-function label under the key, in the accent colour
+# (text up to a "/" in plain); sub_style = "plain" prints it all plain.
+keys = [
+  { code = 1, x = 117.9, y = 79.8, w = 11.0, h = 10.7, legend = "TRIG", sub = "Quantize", sub_y = 87.5 },
+  { code = 2, x = 134.0, y = 79.8, w = 11.0, h = 10.7, legend = "SRC", sub = "Machine", sub_y = 87.5 },
+  { code = 3, x = 150.1, y = 79.8, w = 11.0, h = 10.7, legend = "FLTR", sub = "Setup", sub_y = 87.5 },
+  { code = 4, x = 166.2, y = 79.8, w = 11.0, h = 10.7, legend = "AMP", sub = "Sequencer", sub_y = 87.5 },
+  { code = 5, x = 182.3, y = 79.8, w = 11.0, h = 10.7, legend = "FX", sub = "Send FX", sub_y = 87.5 },
+  { code = 6, x = 198.3, y = 79.8, w = 11.0, h = 10.7, legend = "MOD", sub = "Mixer", sub_y = 87.5 },
+  { code = 17, x = 19.9, y = 90.2, w = 16.8, h = 9.9, legend = "FUNC", style = "func" },
+  { code = 7, x = 43.5, y = 90.2, w = 11.0, h = 10.2, icon = "perform", sub = "Perform", sub_y = 98.0 },
+  { code = 8, x = 59.8, y = 90.2, w = 11.0, h = 10.2, icon = "settings", sub = "Save Proj", sub_y = 98.0 },
+  { code = 50, x = 76.0, y = 90.2, w = 11.0, h = 10.2, icon = "samples", sub = "Samples", sub_y = 98.0 },
+  { code = 9, x = 92.4, y = 90.2, w = 11.0, h = 10.2, icon = "tempo", sub = "Tap Tempo", sub_y = 98.0 },
+  { code = 18, x = 19.9, y = 106.1, w = 11.0, h = 10.2, icon = "keyboard", sub = "KB Setup", sub_y = 114.0 },
+  { code = 19, x = 46.7, y = 106.5, w = 17.2, h = 10.4, icon = "record", sub = "Copy", sub_y = 114.1 },
+  { code = 20, x = 67.9, y = 106.5, w = 17.2, h = 10.4, icon = "play", sub = "Clear", sub_y = 114.1 },
+  { code = 21, x = 89.3, y = 106.5, w = 17.2, h = 10.4, icon = "stop", sub = "Paste", sub_y = 114.1 },
+  { code = 10, x = 117.9, y = 98.4, w = 11.0, h = 10.4, legend = "YES", sub = "Save", sub_y = 106.0 },
+  { code = 12, x = 117.9, y = 114.6, w = 11.0, h = 10.4, legend = "NO", sub = "Reload", sub_y = 122.0 },
+  { code = 11, x = 150.1, y = 98.4, w = 11.0, h = 10.4, icon = "up", sub = "Trig Mode", sub_y = 106.0 },
+  { code = 13, x = 134.0, y = 114.6, w = 11.0, h = 10.4, icon = "left", sub = "µTime-", sub_y = 122.0, sub_style = "plain" },
+  { code = 14, x = 150.1, y = 114.6, w = 11.0, h = 10.4, icon = "down", sub = "Trig Mode", sub_y = 122.0 },
+  { code = 15, x = 166.2, y = 114.6, w = 11.0, h = 10.4, icon = "right", sub = "µTime+", sub_y = 122.0, sub_style = "plain" },
+  { code = 22, x = 195.3, y = 114.6, w = 17.2, h = 10.4, legend = "PAGE", sub = "Fill/Setup", sub_y = 122.0 },
+  { code = 16, x = 19.9, y = 124.4, w = 17.2, h = 10.4, legend = "TRK", sub = "Mute Mode", sub_y = 132.0 },
+  { code = 23, x = 19.9, y = 141.4, w = 17.2, h = 10.4, legend = "PTN", sub = "Bank", sub_y = 148.9 },
+  { code = 24, x = 19.9, y = 158.5, w = 17.2, h = 10.4, legend = "SONG", sub = "Song Edit", sub_y = 166.0 },
+  { code = 25, x = 46.7, y = 135.5, w = 17.2, h = 17.4, legend = "1", style = "trig" },
+  { code = 26, x = 68.0, y = 135.5, w = 17.2, h = 17.4, legend = "2", style = "trig" },
+  { code = 27, x = 89.3, y = 135.5, w = 17.2, h = 17.4, legend = "3", style = "trig" },
+  { code = 28, x = 110.5, y = 135.5, w = 17.2, h = 17.4, legend = "4", style = "trig" },
+  { code = 29, x = 131.8, y = 135.5, w = 17.2, h = 17.4, legend = "5", style = "trig" },
+  { code = 30, x = 152.9, y = 135.5, w = 17.2, h = 17.4, legend = "6", style = "trig" },
+  { code = 31, x = 174.1, y = 135.5, w = 17.2, h = 17.4, legend = "7", style = "trig" },
+  { code = 32, x = 195.4, y = 135.5, w = 17.2, h = 17.4, legend = "8", style = "trig" },
+  { code = 33, x = 46.7, y = 157.9, w = 17.2, h = 17.4, legend = "9", style = "trig" },
+  { code = 34, x = 68.0, y = 157.9, w = 17.2, h = 17.4, legend = "10", style = "trig" },
+  { code = 35, x = 89.3, y = 157.9, w = 17.2, h = 17.4, legend = "11", style = "trig" },
+  { code = 36, x = 110.5, y = 157.9, w = 17.2, h = 17.4, legend = "12", style = "trig" },
+  { code = 37, x = 131.8, y = 157.9, w = 17.2, h = 17.4, legend = "13", style = "trig" },
+  { code = 38, x = 152.9, y = 157.9, w = 17.2, h = 17.4, legend = "14", style = "trig" },
+  { code = 39, x = 174.1, y = 157.9, w = 17.2, h = 17.4, legend = "15", style = "trig" },
+  { code = 40, x = 195.4, y = 157.9, w = 17.2, h = 17.4, legend = "16", style = "trig" },
+]

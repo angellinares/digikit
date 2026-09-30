@@ -26,6 +26,12 @@ filename = "Digitone_II_OS1.10E.syx"
 version = "1.11"
 sha256 = "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"
 filename = "Digitone_II_OS1.11.syx"
+# This identifies the existing explicit Oracle MAIN diagnostic contract. It
+# does not describe hardware topology; that needs separate evidence.
+main_sha256 = "57b06a7960b7c3dc9803bde6b31896b89a2fbdcc404a932ff503f3856d4d7a61"
+boot_contract = "main-os-oracle-v1"
+symbol_profile = "elektron-rtos-v1"
+readiness_contract = "main-panel-v1"
 
 [panel]
 # The wire carries (channel, bit); the firmware reports a control code.
