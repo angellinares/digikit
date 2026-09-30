@@ -2,7 +2,8 @@ use coldfire::Cpu;
 use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, SMALL_CAPACITY_BLOCKS};
 use machine::{
     Board, CompletionPolicy, Machine, MachineState, SemaphoreAddresses, StateApplyError, Time,
-    TimerPolicy, state::Registers,
+    TimerPolicy,
+    state::{OverlaySectorRecord, Registers},
 };
 use periph::esdhc;
 use serde_json::json;
@@ -41,6 +42,7 @@ fn source() -> MachineState {
         }),
         manifest: serde_json::Value::Null,
         pages: vec![],
+        overlay_sectors: None,
     }
 }
 
@@ -116,6 +118,36 @@ fn nonzero_diagnostic_counters_restore_without_pending_work() {
     assert_eq!(
         machine().apply_state(&input),
         Err(StateApplyError::InvalidComponents)
+    );
+}
+
+#[test]
+fn compact_card_overlay_restores_masked_bytes_without_dropping_host_counters() {
+    let mut input = source();
+    let mut sector = OverlaySectorRecord {
+        sector: 0,
+        written: [0; 64],
+        data: [0; 512],
+    };
+    sector.written[0] = (1 << 3) | (1 << 5);
+    sector.data[5] = 0xa5;
+    input.overlay_sectors = Some(vec![sector]);
+    let mut native = machine();
+    assert_eq!(
+        native.apply_state(&input),
+        Err(StateApplyError::InvalidComponents),
+        "v1 byte overlay cannot be silently discarded"
+    );
+    input.components["esdhc"]["card_overlay"] = json!({});
+    input.components["esdhc"]["dma_bytes"] = json!(512);
+    let mut native = machine();
+    native.apply_state(&input).unwrap();
+    assert_eq!(native.board.esdhc_dma_bytes(), 512);
+    let card = native.board.esdhc.card_mut();
+    assert_eq!(card.overlay_len(), 2);
+    assert_eq!(
+        card.data_for(18, 0, 6).unwrap().unwrap(),
+        [0, 0, 0, 0, 0, 0xa5]
     );
 }
 
@@ -244,6 +276,32 @@ fn locally_checked_auto_ready_counters_import() {
     native.apply_state(&state).unwrap();
     assert_eq!(native.clock, state.clock);
     assert_eq!(native.cpu.pc, state.regs.pc);
+    let sectors = state
+        .overlay_sectors
+        .as_ref()
+        .expect("compact v2 overlay required");
+    let written_bytes: usize = sectors
+        .iter()
+        .flat_map(|sector| &sector.written)
+        .map(|byte| byte.count_ones() as usize)
+        .sum();
+    assert!(written_bytes > 0);
+    assert_eq!(native.board.esdhc.card_mut().overlay_len(), written_bytes);
+    for record in [sectors.first().unwrap(), sectors.last().unwrap()] {
+        let block = u32::try_from(record.sector).unwrap();
+        let actual = native
+            .board
+            .esdhc
+            .card_mut()
+            .data_for(18, block, 512)
+            .unwrap()
+            .unwrap();
+        for (offset, &byte) in record.data.iter().enumerate() {
+            if record.written[offset >> 3] & (1 << (offset & 7)) != 0 {
+                assert_eq!(actual[offset], byte);
+            }
+        }
+    }
     for (value, actual) in [
         (
             &state.components["esdhc"]["dma_bytes"],

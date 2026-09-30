@@ -1,4 +1,4 @@
-//! Portable MSTATE version-1 snapshot parsing, without machine application.
+//! Portable MSTATE version-1/2 snapshot parsing, without machine application.
 //!
 //! Limits are deliberately browser-safe: headers are at most 1 MiB and at
 //! most 512 mapped (and therefore decoded) 1 MiB pages are accepted.  This
@@ -6,15 +6,20 @@
 
 use std::collections::BTreeMap;
 
+pub use emmc_card::CardOverlaySector as OverlaySectorRecord;
 use flate2::{Decompress, FlushDecompress, Status};
 use serde::Deserialize;
 use serde_json::Value;
 
 pub const MAGIC: &[u8; 8] = b"MSTATE\0\x01";
+pub const MAGIC_V2: &[u8; 8] = b"MSTATE\0\x02";
 pub const PAGE_SIZE: usize = 1024 * 1024;
 pub const MAX_HEADER_SIZE: usize = 1024 * 1024;
 pub const MAX_MAPPED_PAGES: usize = 512;
 pub const MAX_COMPRESSED_PAGE_SIZE: usize = 2 * 1024 * 1024;
+pub const OVERLAY_RECORD_SIZE: usize = 8 + 64 + 512;
+pub const MAX_OVERLAY_SECTORS: usize = 131_072;
+pub const MAX_COMPRESSED_OVERLAY_SIZE: usize = MAX_OVERLAY_SECTORS * OVERLAY_RECORD_SIZE;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MachineState {
@@ -29,6 +34,8 @@ pub struct MachineState {
     pub manifest: Value,
     /// Only nonzero mapped pages are stored on disk; absent mapped pages are zero.
     pub pages: Vec<Page>,
+    /// Only v2 snapshots have a compact overlay; a v1 empty overlay is None.
+    pub overlay_sectors: Option<Vec<OverlaySectorRecord>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +61,7 @@ pub enum StateError {
     InvalidLayout,
     LimitExceeded,
     InvalidPage,
+    InvalidOverlay,
 }
 
 #[derive(Deserialize)]
@@ -71,16 +79,26 @@ struct Header {
     movec_count: u32,
     components: Value,
     manifest: Value,
+    #[serde(default)]
+    overlay_encoding: Option<String>,
+    #[serde(default)]
+    overlay_sector_count: Option<u32>,
+    #[serde(default)]
+    overlay_written_bytes: Option<u64>,
+    #[serde(default)]
+    overlay_compressed_len: Option<u32>,
 }
 
-/// Parse an MSTATE v1 byte stream.  This does not restore CPU or Board state.
+/// Parse an MSTATE v1/v2 byte stream. This does not restore CPU or Board state.
 pub fn parse(input: &[u8]) -> Result<MachineState, StateError> {
     if input.len() < MAGIC.len() + 4 {
         return Err(StateError::Truncated);
     }
-    if &input[..MAGIC.len()] != MAGIC {
-        return Err(StateError::InvalidMagic);
-    }
+    let format_version = match &input[..MAGIC.len()] {
+        bytes if bytes == MAGIC => 1,
+        bytes if bytes == MAGIC_V2 => 2,
+        _ => return Err(StateError::InvalidMagic),
+    };
     let header_len = le_u32(&input[MAGIC.len()..MAGIC.len() + 4])? as usize;
     if header_len > MAX_HEADER_SIZE {
         return Err(StateError::HeaderTooLarge);
@@ -94,7 +112,7 @@ pub fn parse(input: &[u8]) -> Result<MachineState, StateError> {
         .ok_or(StateError::Truncated)?;
     let header: Header =
         serde_json::from_slice(header_bytes).map_err(|_| StateError::InvalidHeader)?;
-    validate_header(&header)?;
+    validate_header(&header, format_version)?;
     let regs = parse_regs(&header.regs)?;
     let ctlregs = parse_address_map(&header.ctlregs)?;
     let mmio_forced = parse_address_map(&header.mmio_forced)?;
@@ -134,6 +152,52 @@ pub fn parse(input: &[u8]) -> Result<MachineState, StateError> {
         previous = Some(base);
         pages.push(Page { base, data });
     }
+    let overlay_sectors = if format_version == 2 {
+        let count = header.overlay_sector_count.unwrap() as usize;
+        let compressed_len = header.overlay_compressed_len.unwrap() as usize;
+        let end = offset
+            .checked_add(compressed_len)
+            .ok_or(StateError::InvalidLayout)?;
+        let compressed = input.get(offset..end).ok_or(StateError::Truncated)?;
+        offset = end;
+        let raw = decompress_exact(
+            compressed,
+            count * OVERLAY_RECORD_SIZE,
+            StateError::InvalidOverlay,
+        )?;
+        let mut sectors = Vec::with_capacity(count);
+        let mut last = None;
+        let mut written_bytes = 0u64;
+        for record in raw.chunks_exact(OVERLAY_RECORD_SIZE) {
+            let sector = u64::from_le_bytes(record[..8].try_into().unwrap());
+            let written: [u8; 64] = record[8..72].try_into().unwrap();
+            let data: [u8; 512] = record[72..].try_into().unwrap();
+            if last.is_some_and(|previous| sector <= previous)
+                || !written.iter().any(|byte| *byte != 0)
+                || (0..512).any(|position| {
+                    written[position >> 3] & (1 << (position & 7)) == 0 && data[position] != 0
+                })
+            {
+                return Err(StateError::InvalidOverlay);
+            }
+            written_bytes += written
+                .iter()
+                .map(|bits| u64::from(bits.count_ones()))
+                .sum::<u64>();
+            last = Some(sector);
+            sectors.push(OverlaySectorRecord {
+                sector,
+                written,
+                data,
+            });
+        }
+        if written_bytes != header.overlay_written_bytes.unwrap() {
+            return Err(StateError::InvalidOverlay);
+        }
+        Some(sectors)
+    } else {
+        None
+    };
     if offset != input.len() {
         return Err(StateError::InvalidLayout);
     }
@@ -148,6 +212,7 @@ pub fn parse(input: &[u8]) -> Result<MachineState, StateError> {
         components: header.components,
         manifest: header.manifest,
         pages,
+        overlay_sectors,
     })
 }
 
@@ -157,9 +222,32 @@ fn le_u32(bytes: &[u8]) -> Result<u32, StateError> {
     ))
 }
 
-fn validate_header(header: &Header) -> Result<(), StateError> {
-    if header.format_version != 1 || header.clock_basis != "checkpoint_relative_zero" {
+fn validate_header(header: &Header, format_version: u32) -> Result<(), StateError> {
+    if header.format_version != format_version || header.clock_basis != "checkpoint_relative_zero" {
         return Err(StateError::InvalidHeader);
+    }
+    let overlay_fields = (
+        header.overlay_encoding.as_deref(),
+        header.overlay_sector_count,
+        header.overlay_written_bytes,
+        header.overlay_compressed_len,
+    );
+    match (format_version, overlay_fields) {
+        (1, (None, None, None, None)) => {}
+        (2, (Some("sector-bitmap-v1"), Some(count), Some(written), Some(compressed)))
+            if count as usize <= MAX_OVERLAY_SECTORS
+                && written <= u64::from(count) * 512
+                && compressed as usize <= MAX_COMPRESSED_OVERLAY_SIZE
+                && header
+                    .components
+                    .get("esdhc")
+                    .and_then(|card| card.get("card_overlay"))
+                    .and_then(Value::as_object)
+                    .is_some_and(serde_json::Map::is_empty) => {}
+        (2, (_, Some(count), _, _)) if count as usize > MAX_OVERLAY_SECTORS => {
+            return Err(StateError::LimitExceeded);
+        }
+        _ => return Err(StateError::InvalidHeader),
     }
     if header.mapped_bases.len() > MAX_MAPPED_PAGES
         || header.page_count as usize > MAX_MAPPED_PAGES
@@ -214,17 +302,25 @@ fn parse_address_map(values: &BTreeMap<String, u32>) -> Result<BTreeMap<u32, u32
 }
 
 fn decompress_page(compressed: &[u8]) -> Result<Vec<u8>, StateError> {
+    decompress_exact(compressed, PAGE_SIZE, StateError::InvalidPage)
+}
+
+fn decompress_exact(
+    compressed: &[u8],
+    size: usize,
+    error: StateError,
+) -> Result<Vec<u8>, StateError> {
     let mut decoder = Decompress::new(true);
-    let mut data = vec![0; PAGE_SIZE + 1];
+    let mut data = vec![0; size + 1];
     let status = decoder
         .decompress(compressed, &mut data, FlushDecompress::Finish)
-        .map_err(|_| StateError::InvalidPage)?;
+        .map_err(|_| error.clone())?;
     if status != Status::StreamEnd
         || decoder.total_in() != compressed.len() as u64
-        || decoder.total_out() != PAGE_SIZE as u64
+        || decoder.total_out() != size as u64
     {
-        return Err(StateError::InvalidPage);
+        return Err(error);
     }
-    data.truncate(PAGE_SIZE);
+    data.truncate(size);
     Ok(data)
 }

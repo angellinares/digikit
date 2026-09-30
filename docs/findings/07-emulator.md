@@ -2880,11 +2880,101 @@ boundaries, so coalescing (few boundaries) under-reads it.
   while still rejecting pending TX completions and queued UART input. The
   local section source marker, MAIN OS digest, and card sidecar matched the
   supplied files; these checks establish local integrity, not authenticity.
-- **[O]** This is **not** yet an imported native auto-ready checkpoint:
-  its card overlay contains 14,522,880 byte entries (~218 MB as JSON).
-  `tools/snapconv.py` rejects conversion because MSTATE v1 caps its header at
-  1 MiB. The earlier dormant and synthetic host import tests pass, but no
-  native-ColdFire DSPI2 frame was produced. A bounded binary overlay format
-  and card restore path must retain the written-byte mask (including written
-  zeroes) before testing the real auto-ready state; do not discard the overlay
-  or raise the browser-safe header limit as a shortcut.
+- **[D]** The source-checked `first-cpu-ram --count 8` DT2 and DN2 gates now
+  cross one **synchronous TRAP #0** at relative instruction 360082 / 242629.
+  The Python Oracle writes its exception frame from the host, outside the
+  guest-write hook; native ColdFire emits two frame writes through the bus.
+  The gate separately checks those writes against the source-checked vector
+  and pre-exception PC/SR/A7, rather than omitting them silently or treating
+  them as guest-instruction effects. DT2 matched 369 sampled CPU boundaries,
+  360010 guest RAM writes, two exception-frame writes and eight MMIO accesses
+  through step 360093. DN2 matched 254 sampled CPU boundaries, 242558 guest
+  RAM writes, two exception-frame writes and eight MMIO accesses through
+  step 242640. These are **post-TRAP**, not post-asynchronous-timer, Device
+  timer, or integrated playback gates. The checked DT2 trace's first later
+  asynchronous IRQ is an idle-spin Oracle injection of vector 32 at relative
+  step 380150; a further timer boundary still needs a separate gate.
+- **[D]** A narrower source-scheduled **Oracle idle-credit** gate now accepts
+  exactly `emu.longrun.IdleSpin.on_spin` vector 32 with no level, from the
+  checked trace, and rejects other asynchronous sources (including timer and
+  eDMA IRQs). It checks both exception-frame writes separately and accounts
+  for the code-hook's one guest-clock credit before the handler executes.
+  DT2 `first-cpu-ram --count 12` matched 390 sampled CPU boundaries, 360053
+  guest RAM writes, four exception-frame writes and 12 MMIO accesses through
+  step 380162; DN2 matched 275 boundaries, 242601 guest writes, four frame
+  writes and 12 MMIO accesses through step 262709. The first source-recorded
+  idle injections were at DT2 step 380150 and DN2 step 262697. This is an
+  Oracle trace-replay normalization, **not** an implemented Device timer/INTC
+  scheduler, a native audio path, or proof about a later vector-155 eDMA IRQ.
+- **[C] [D]** MSTATE v1 cannot import this auto-ready card overlay: its
+  14,522,880 byte entries become ~218 MB of JSON, above the 1 MiB header cap.
+  The opt-in MSTATE v2 sector-bitmap representation retains a mask for written
+  zeroes without lifting that cap. The local `ready.snap` converted to a
+  2,583,342-byte ignored MSTATE (SHA-256
+  `cb0f69bf102f27df8bc65b9c2396ec67027e09ca20d0f62e014f3f4155eae547`):
+  28,365 sectors, 14,522,880 written bytes. The ignored native import test
+  passed with matching retained counters, overlay byte count, and masked
+  values from the first/last sectors. This is local Python-to-native state
+  import, **not** native ColdFire playback or Device parity. It does not
+  authenticate the fixture or establish the LP0 input's origin.
+- **[C] [D]** The imported auto-ready DT2 state produced its **first native
+  ColdFire DSPI2 wire frame**: 2,748 bytes after **30,464 actual native
+  instructions**. `tools/wiretrace.py --prefix 1` matched its wire-order bytes
+  against frame 0 of the accepted 68-frame **Python-ColdFire** DTFR. A
+  source-checked `tools/autoirq.py` reference also matched 33 CPU boundaries
+  and 34 ordered guest RAM/MMIO effects over the first 32 instructions after
+  the first GUI-scheduled vector-191 IRQ. The Python fast-stepper's first
+  force was at relative clock 20,014; native reached the corresponding
+  boundary at 20,015 (one idle-code-hook credit of skew). An earlier probe
+  forced a frame at clock zero and observed one at 10,449 instructions; that
+  was **not** the accepted GUI's scheduling policy. This is an **Oracle
+  playback smoke test**, not autonomous Device timing or passing full-order
+  native parity. Its
+  ignored `native/machine/tests/auto_wire.rs` probe replays the accepted GUI
+  policy: open the frame gate, clear its counter, offer vector 191 at its
+  configured level after GUI-like idle-entry/timer boundaries when due, and
+  yield vector 32
+  every 20,000 passes over source-scanned `BRA.B -2` sites. The Python build
+  re-applies the DSPI2 polled-idle bit (bit 28 at `0xec03802c`) **after**
+  restoring the checkpoint; the native probe must do the same or the driver
+  is reached but programs no eDMA TCD. Python's checkpoint omits ColdFire
+  EMAC registers: its freshly constructed Unicorn MASK reads zero at the
+  handler, whereas the native CPU starts at the documented reset value
+  `0xffffffff`. The probe explicitly seeds zero for **Oracle** parity;
+  this cannot recover the Device's EMAC state. The local firmware source
+  marker, MAIN OS hash, card sidecar and MSTATE digest matched before the
+  run; these checks do not authenticate the fixture. This first-frame gate
+  alone says nothing about later IRQs, button-delivery clocks, sustained
+  playback or SHARC rendering/stops.
+- **[C] [D] [O]** Replaying both accepted panel-input **delivery** clocks
+  (3,516,425 and 10,552,659) through Python's UART8 ring-write/eDMA-34
+  pointer/vector-154 stimulus, the native run emitted **68 ordered frames**
+  after **13,908,723 actual instructions**. All **first 51 frames** match
+  the accepted Python-ColdFire DTFR, including the TRIG in frame 18. The
+  full comparison **fails**: frames 51 and 53 differ at bytes `0x25` and
+  `0x29` (Python has `0x01` at 51; native has `0x01` at 53); the other 66
+  frames are byte-identical. The earlier 18-frame/19th-frame mismatch was
+  caused by incorrectly forcing at exact multiples of 200,000 starting at
+  zero; the GUI offers a due frame only at a fast idle-entry or timer
+  boundary. Even with that correction the native and Python force clocks
+  are not established equal. Native frame-forces 51 and 52 were at relative
+  clocks 10,318,163 and 10,522,540, both **before** the accepted release
+  delivery at 10,552,659; its release words appear in frame 53. Python's
+  accepted frame 51 already contains those words, but its corresponding
+  frame-force clocks were not recorded, so the specific scheduler skew is
+  not yet established. The two displaced one-shot words remain an
+  **open timing/guest-state parity gap**, not Device parity. No native
+  SHARC render or zero-stopped-render gate has passed for these frames.
+- **[D] [O]** Extending the first frame-IRQ reference to 15,000 guest
+  instructions matched **15,001 CPU boundaries and 671 ordered guest
+  effects**. A 60,000-step diagnostic first reported a D0 difference at
+  step 44,204, just before `FF1 D0` at `0x40138c8e`: Python's scoped
+  Unicorn code hook changes D0 and advances PC while sampling the preceding
+  counted instruction, then reports the following PC twice. Native executes
+  `FF1` as an instruction; its D0 catches up at the next boundary. Simply
+  subtracting an instruction clock for each native FF1 was tried and
+  **failed** at the following D1 boundary, so it was not adopted. This
+  identifies a trace-observation normalization problem, not a demonstrated
+  incorrect native FF1 result or an explanation for the two displaced
+  release words. A longer CPU/RAM/MMIO gate needs an explicit hook-boundary
+  normalization before calling it CPU parity or divergence.

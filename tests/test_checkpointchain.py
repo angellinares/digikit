@@ -16,6 +16,62 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def test_cpu_ram_guard_distinguishes_guest_trap_from_host_timer_irq():
+    irq = checkpointchain.mmiotrace.IRQ
+    sync = checkpointchain.mmiotrace.IRQ_SYNC
+    records = [
+        SimpleNamespace(tag=irq, clock=82, fields=(32, 255, sync | 1)),
+        SimpleNamespace(tag=irq, clock=95, fields=(191, 5, 1)),
+    ]
+    assert not checkpointchain._crosses_async_irq(records, 0, 94)
+    assert checkpointchain._crosses_async_irq(records, 0, 96)
+    assert not checkpointchain._crosses_async_irq(records, 96, 1)
+
+
+def test_source_checked_sync_trap_metadata_is_bounded():
+    tag = checkpointchain.mmiotrace.IRQ
+    records = [
+        SimpleNamespace(
+            tag=tag,
+            clock=82,
+            fields=(32, 255, 3, 5, 0x40196D78, 0x40000410, 0x2000),
+        )
+    ]
+    assert checkpointchain._guest_traps(records, 0, 83) == [
+        {"step": 82, "vector": 32, "pc": 0x40196D78, "handler": 0x40000410}
+    ]
+    assert checkpointchain._guest_traps(records, 83, 1) == []
+    records[0].fields = (2, 255, 3, 5, 0, 0, 0)
+    with pytest.raises(ValueError, match="cannot normalize"):
+        checkpointchain._guest_traps(records, 0, 83)
+
+
+def test_only_source_checked_oracle_idle_irq_is_replayed():
+    class Records(list):
+        sources = {6: "emu.longrun.IdleSpin.on_spin"}
+
+    rec = SimpleNamespace(
+        tag=checkpointchain.mmiotrace.IRQ,
+        clock=150,
+        fields=(
+            32,
+            checkpointchain.mmiotrace.NO_LEVEL,
+            1,
+            6,
+            0x400CC7AE,
+            0x40000410,
+            8196,
+        ),
+    )
+    records = Records([rec])
+    assert checkpointchain._oracle_idle_irqs(records, 0, 151) == [
+        {"step": 150, "vector": 32, "pc": 0x400CC7AE, "handler": 0x40000410}
+    ]
+    records.sources = {6: "emu.pit.service"}
+    with pytest.raises(ValueError, match="unsupported asynchronous IRQ"):
+        checkpointchain._oracle_idle_irqs(records, 0, 151)
+
+
 @pytest.fixture
 def local_source(tmp_path, monkeypatch):
     syx = tmp_path / "firmware.syx"
@@ -250,7 +306,7 @@ def test_cpu_ram_reference_uses_private_verified_inputs(local_source, monkeypatc
     monkeypatch.setattr(
         checkpointchain.checkpointcpu,
         "capture_window",
-        lambda _uc, pc, limit, every, _regs: {
+        lambda _uc, pc, limit, every, _regs, *, tail, sample_steps: {
             "limit": limit,
             "every": every,
             "samples": [{"step": 0, "regs": {"pc": pc}}],

@@ -80,6 +80,23 @@ def test_zero_based_samples_and_interleaved_guest_effects():
     assert not uc.hooks
 
 
+def test_bounded_tail_samples_near_an_instruction_trap():
+    uc = FakeUc([(0x4000 + 2 * i, []) for i in range(4)])
+    result = checkpointcpu.capture_window(
+        uc, 0x4000, 4, 4, lambda machine: {"pc": machine.pc}, tail=2
+    )
+    assert [sample["step"] for sample in result["samples"]] == [0, 2, 3, 4]
+    assert not uc.hooks
+    with pytest.raises(ValueError, match="tail"):
+        checkpointcpu.capture_window(uc, 0x4000, 4, 4, lambda _: {}, tail=65)
+    result = checkpointcpu.capture_window(
+        uc, 0x4000, 4, 4, lambda machine: {"pc": machine.pc}, sample_steps={1}
+    )
+    assert [sample["step"] for sample in result["samples"]] == [0, 1, 4]
+    with pytest.raises(ValueError, match="sample steps"):
+        checkpointcpu.capture_window(uc, 0x4000, 4, 4, lambda _: {}, sample_steps={5})
+
+
 def test_checked_recorder_binds_pre_read_value_after_matching_mmio_order():
     effects = [
         {

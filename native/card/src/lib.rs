@@ -55,6 +55,18 @@ pub enum CardError {
     TransferTooLarge { requested: usize, maximum: usize },
     /// Saved card state belongs to a different reported capacity.
     CheckpointCapacityMismatch { expected: u32, actual: u32 },
+    /// A sector-overlay restore must not also contain the v1 byte overlay.
+    CheckpointOverlayNotEmpty,
+    /// A sector-overlay record is not ordered strictly after its predecessor.
+    OverlaySectorNotStrictlyIncreasing { previous: u64, sector: u64 },
+    /// A sector-overlay record names a sector outside the card capacity.
+    OverlaySectorOutOfRange { sector: u64, blocks: u32 },
+    /// A sector-overlay record does not mask any bytes.
+    OverlaySectorEmpty { sector: u64 },
+    /// Data for a byte absent from a sector-overlay mask must be zero.
+    OverlaySectorNonCanonicalData { sector: u64, byte: usize },
+    /// The total number of masked bytes cannot fit in the card's counter.
+    OverlayWrittenCountOverflow,
 }
 
 /// Host-only card state from Python's `Esdhc` v1 checkpoint. The sparse
@@ -65,6 +77,18 @@ pub struct CardCheckpoint {
     pub rca: u16,
     pub selected: bool,
     pub overlay: BTreeMap<u64, u8>,
+}
+
+/// A compact sparse write overlay for one 512-byte card sector.
+///
+/// `written` is a 512-bit mask in byte order: bit 0 of `written[0]` names
+/// `data[0]`, and bit 7 of `written[63]` names `data[511]`. Bytes absent from
+/// the mask must have zero data so that this representation is canonical.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CardOverlaySector {
+    pub sector: u64,
+    pub written: [u8; 64],
+    pub data: [u8; 512],
 }
 
 /// One sparse card sector. Unwritten bytes still come from the backing;
@@ -207,6 +231,88 @@ impl Card {
         }
         self.overlay = overlay;
         self.overlay_bytes = state.overlay.len();
+        self.rca = state.rca;
+        self.selected = state.selected;
+        Ok(())
+    }
+
+    /// Restore host card identity and a compact sector-bitmap overlay.
+    ///
+    /// The v1 byte overlay in `state` must be empty: mixing encodings would
+    /// otherwise discard writes. Every input is validated before this card is
+    /// changed, including canonical data for mask-absent bytes.
+    pub fn restore_checkpoint_sectors(
+        &mut self,
+        state: &CardCheckpoint,
+        sectors: &[CardOverlaySector],
+    ) -> Result<(), CardError> {
+        if self.blocks != state.blocks {
+            return Err(CardError::CheckpointCapacityMismatch {
+                expected: self.blocks,
+                actual: state.blocks,
+            });
+        }
+        if !state.overlay.is_empty() {
+            return Err(CardError::CheckpointOverlayNotEmpty);
+        }
+
+        let mut overlay = BTreeMap::<u64, Box<OverlaySector>>::new();
+        let mut overlay_bytes = 0usize;
+        let mut previous_sector = None;
+        for record in sectors {
+            if let Some(previous) = previous_sector
+                && record.sector <= previous
+            {
+                return Err(CardError::OverlaySectorNotStrictlyIncreasing {
+                    previous,
+                    sector: record.sector,
+                });
+            }
+            if record.sector >= u64::from(self.blocks) {
+                return Err(CardError::OverlaySectorOutOfRange {
+                    sector: record.sector,
+                    blocks: self.blocks,
+                });
+            }
+            let count = record
+                .written
+                .iter()
+                .map(|byte| byte.count_ones() as usize)
+                .sum::<usize>();
+            if count == 0 {
+                return Err(CardError::OverlaySectorEmpty {
+                    sector: record.sector,
+                });
+            }
+            for (byte, &value) in record.data.iter().enumerate() {
+                if record.written[byte >> 3] & (1 << (byte & 7)) == 0 && value != 0 {
+                    return Err(CardError::OverlaySectorNonCanonicalData {
+                        sector: record.sector,
+                        byte,
+                    });
+                }
+            }
+            overlay_bytes = overlay_bytes
+                .checked_add(count)
+                .ok_or(CardError::OverlayWrittenCountOverflow)?;
+            let written = std::array::from_fn(|word| {
+                let mut bytes = [0; 8];
+                bytes.copy_from_slice(&record.written[word * 8..(word + 1) * 8]);
+                u64::from_le_bytes(bytes)
+            });
+            overlay.insert(
+                record.sector,
+                Box::new(OverlaySector {
+                    data: record.data,
+                    written,
+                    count,
+                }),
+            );
+            previous_sector = Some(record.sector);
+        }
+
+        self.overlay = overlay;
+        self.overlay_bytes = overlay_bytes;
         self.rca = state.rca;
         self.selected = state.selected;
         Ok(())

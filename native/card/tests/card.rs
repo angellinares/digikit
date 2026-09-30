@@ -1,6 +1,6 @@
 use emmc_card::{
-    Card, CardCheckpoint, CardError, DEFAULT_CAPACITY_BLOCKS, MAX_TRANSFER_BYTES, RandomAccessRead,
-    SMALL_CAPACITY_BLOCKS,
+    Card, CardCheckpoint, CardError, CardOverlaySector, DEFAULT_CAPACITY_BLOCKS,
+    MAX_TRANSFER_BYTES, RandomAccessRead, SECTOR_SIZE, SMALL_CAPACITY_BLOCKS,
 };
 use periph::{
     edma::TcdSnapshot,
@@ -256,6 +256,136 @@ fn restore_python_byte_overlay_and_card_identity_atomically() {
         card.data_for(18, 1, 3).unwrap().unwrap(),
         [0xa5, 0x5a, 0xa5]
     );
+}
+
+fn sector_record(sector: u64, bytes: &[(usize, u8)]) -> CardOverlaySector {
+    let mut record = CardOverlaySector {
+        sector,
+        written: [0; SECTOR_SIZE / 8],
+        data: [0; SECTOR_SIZE],
+    };
+    for &(byte, value) in bytes {
+        record.written[byte >> 3] |= 1 << (byte & 7);
+        record.data[byte] = value;
+    }
+    record
+}
+
+#[test]
+fn restore_sector_overlay_preserves_partial_zero_masks_and_full_sectors() {
+    let mut card = Card::with_backing(
+        DEFAULT_CAPACITY_BLOCKS,
+        Some(Box::new(TinyBacking(vec![0xa5; SECTOR_SIZE * 3]))),
+    )
+    .unwrap();
+    let state = CardCheckpoint {
+        blocks: DEFAULT_CAPACITY_BLOCKS,
+        rca: 0x4321,
+        selected: true,
+        overlay: BTreeMap::new(),
+    };
+    let mut full = sector_record(1, &[]);
+    full.written.fill(0xff);
+    full.data.fill(0x3c);
+
+    card.restore_checkpoint_sectors(&state, &[sector_record(0, &[(0, 0), (9, 0x5a)]), full])
+        .unwrap();
+
+    assert_eq!(card.rca(), 0x4321);
+    assert!(card.selected());
+    assert_eq!(card.overlay_len(), SECTOR_SIZE + 2);
+    let mut partial = [0; 16];
+    card.read_into(0, &mut partial).unwrap();
+    assert_eq!(partial[0], 0);
+    assert_eq!(partial[9], 0x5a);
+    assert!(
+        partial
+            .iter()
+            .enumerate()
+            .filter(|(byte, _)| *byte != 0 && *byte != 9)
+            .all(|(_, &value)| value == 0xa5)
+    );
+    assert_eq!(
+        card.data_for(18, 1, SECTOR_SIZE).unwrap().unwrap(),
+        vec![0x3c; SECTOR_SIZE]
+    );
+}
+
+#[test]
+fn restore_sector_overlay_rejects_invalid_inputs_without_mutation() {
+    let mut card = Card::with_backing(
+        DEFAULT_CAPACITY_BLOCKS,
+        Some(Box::new(TinyBacking(vec![0xa5; SECTOR_SIZE]))),
+    )
+    .unwrap();
+    card.write_data(25, 0, &[0x13]).unwrap();
+    card.command(3, 0x1234_0000);
+    card.command(7, 0x1234_0000);
+    let state = CardCheckpoint {
+        blocks: DEFAULT_CAPACITY_BLOCKS,
+        rca: 0x4321,
+        selected: false,
+        overlay: BTreeMap::new(),
+    };
+    let unchanged = |card: &Card| {
+        assert_eq!(card.overlay_len(), 1);
+        assert_eq!(card.rca(), 0x1234);
+        assert!(card.selected());
+        assert_eq!(card.data_for(18, 0, 1).unwrap().unwrap(), [0x13]);
+    };
+
+    assert_eq!(
+        card.restore_checkpoint_sectors(
+            &state,
+            &[sector_record(1, &[(0, 1)]), sector_record(1, &[(1, 2)])]
+        ),
+        Err(CardError::OverlaySectorNotStrictlyIncreasing {
+            previous: 1,
+            sector: 1
+        })
+    );
+    unchanged(&card);
+    assert_eq!(
+        card.restore_checkpoint_sectors(
+            &state,
+            &[sector_record(2, &[(0, 1)]), sector_record(1, &[(1, 2)])]
+        ),
+        Err(CardError::OverlaySectorNotStrictlyIncreasing {
+            previous: 2,
+            sector: 1
+        })
+    );
+    unchanged(&card);
+    assert_eq!(
+        card.restore_checkpoint_sectors(
+            &state,
+            &[sector_record(u64::from(DEFAULT_CAPACITY_BLOCKS), &[(0, 1)])]
+        ),
+        Err(CardError::OverlaySectorOutOfRange {
+            sector: u64::from(DEFAULT_CAPACITY_BLOCKS),
+            blocks: DEFAULT_CAPACITY_BLOCKS
+        })
+    );
+    unchanged(&card);
+    assert_eq!(
+        card.restore_checkpoint_sectors(&state, &[sector_record(1, &[])]),
+        Err(CardError::OverlaySectorEmpty { sector: 1 })
+    );
+    unchanged(&card);
+    let mut noncanonical = sector_record(1, &[(0, 1)]);
+    noncanonical.data[1] = 2;
+    assert_eq!(
+        card.restore_checkpoint_sectors(&state, &[noncanonical]),
+        Err(CardError::OverlaySectorNonCanonicalData { sector: 1, byte: 1 })
+    );
+    unchanged(&card);
+    let mut byte_overlay_state = state.clone();
+    byte_overlay_state.overlay.insert(0, 0);
+    assert_eq!(
+        card.restore_checkpoint_sectors(&byte_overlay_state, &[sector_record(1, &[(0, 1)])]),
+        Err(CardError::CheckpointOverlayNotEmpty)
+    );
+    unchanged(&card);
 }
 
 #[test]

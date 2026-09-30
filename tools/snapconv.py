@@ -11,6 +11,7 @@ import struct
 import sys
 import zlib
 from pathlib import Path
+from typing import Any
 
 # Direct `python tools/snapconv.py` puts tools/ rather than the repository
 # root on sys.path. Keep the documented module and script entry points equal.
@@ -21,9 +22,14 @@ if str(ROOT) not in sys.path:
 from emu.snapshot import _load_blob  # noqa: E402
 
 MAGIC = b"MSTATE\x00\x01"
+MAGIC_V2 = b"MSTATE\x00\x02"
 PAGE_SIZE = 1024 * 1024
+SECTOR_SIZE = 512
+OVERLAY_RECORD_SIZE = 8 + 64 + SECTOR_SIZE
 MAX_HEADER_SIZE = 1024 * 1024
 MAX_MAPPED_PAGES = 512
+MAX_OVERLAY_SECTORS = 131072
+COMPACT_COMPONENTS = frozenset(("timers", "esdhc", "edma_tx", "uart_in"))
 REG_NAMES = tuple(
     ["d%d" % index for index in range(8)]
     + ["a%d" % index for index in range(8)]
@@ -124,6 +130,51 @@ def _esdhc_component(value):
     return _json_value(result, name)
 
 
+def _compact_overlay(value):
+    """Encode the supported eSDHC v1 overlay as sorted sparse sectors."""
+    components = value.get("components", {})
+    if not isinstance(components, dict) or set(components) != COMPACT_COMPONENTS:
+        raise ValueError("compact overlay requires the four supported host components")
+    esdhc = components["esdhc"]
+    if (
+        not isinstance(esdhc, dict)
+        or esdhc.get("type") != "Esdhc"
+        or esdhc.get("version") != 1
+    ):
+        raise ValueError("compact overlay requires an Esdhc version-1 checkpoint")
+    blocks = esdhc.get("card_blocks")
+    if type(blocks) is not int or blocks < 0:
+        raise ValueError("components.esdhc.card_blocks is not a nonnegative integer")
+    overlay = esdhc.get("card_overlay")
+    if not isinstance(overlay, dict):
+        raise ValueError("components.esdhc.card_overlay must be a dictionary")
+
+    sectors: dict[int, tuple[bytearray, bytearray]] = {}
+    card_bytes = blocks * SECTOR_SIZE
+    for offset, byte in overlay.items():
+        if type(offset) is not int or not 0 <= offset < card_bytes:
+            raise ValueError("components.esdhc.card_overlay offset is outside card")
+        if type(byte) is not int or not 0 <= byte <= 0xFF:
+            raise ValueError("components.esdhc.card_overlay value is not a byte")
+        sector, position = divmod(offset, SECTOR_SIZE)
+        mask, data = sectors.setdefault(sector, (bytearray(64), bytearray(SECTOR_SIZE)))
+        mask[position // 8] |= 1 << (position % 8)
+        data[position] = byte
+    if len(sectors) > MAX_OVERLAY_SECTORS:
+        raise ValueError("compact overlay sector count exceeds portable limit")
+
+    raw = bytearray()
+    for sector in sorted(sectors):
+        mask, data = sectors[sector]
+        raw.extend(struct.pack("<Q", sector))
+        raw.extend(mask)
+        raw.extend(data)
+    compressed = zlib.compress(raw, 6)
+    if len(compressed) > 0xFFFFFFFF:
+        raise ValueError("compact overlay compressed length exceeds u32")
+    return len(sectors), len(overlay), compressed
+
+
 def _manifest(value):
     """Convert only longrun's known tuple of excluded unblock addresses."""
     if value is None:
@@ -153,8 +204,14 @@ def _components(value):
     return _json_value(result, "components")
 
 
-def convert_blob(blob, clock=0):
-    """Return portable version-1 bytes for a blob already trusted by _load_blob."""
+def convert_blob(blob, clock=0, compact_overlay=False):
+    """Return portable MSTATE bytes for a blob already trusted by _load_blob.
+
+    The default preserves the frozen version-1 byte stream. Compact overlays
+    are an opt-in version-2 representation for the native import target.
+    """
+    if type(compact_overlay) is not bool:
+        raise ValueError("compact_overlay must be a boolean")
     if type(clock) is not int or not 0 <= clock <= 0xFFFFFFFFFFFFFFFF:
         raise ValueError("clock must be a u64")
     mapped = blob["all_mapped"]
@@ -180,13 +237,28 @@ def convert_blob(blob, clock=0):
     # ``extra`` remains outside the frozen MSTATE header, but must still be
     # portable before a trusted checkpoint crosses this interchange seam.
     _json_value(blob.get("extra", {}), "extra")
+    overlay_stream = b""
+    sector_count = 0
+    written_bytes = 0
+    source_components = blob.get("components", {})
+    if compact_overlay:
+        sector_count, written_bytes, overlay_stream = _compact_overlay(blob)
+        # Never stringify the original millions of byte-offset keys: remove
+        # the overlay before the normal JSON component validation/normalization.
+        compact_components = dict(source_components)
+        compact_card = dict(compact_components["esdhc"])
+        compact_card["card_overlay"] = {}
+        compact_components["esdhc"] = compact_card
+        components: Any = _components(compact_components)
+    else:
+        components = _components(source_components)
     header = {
         "clock": clock,
         "clock_basis": "checkpoint_relative_zero",
-        "components": _components(blob.get("components", {})),
+        "components": components,
         "ctlregs": _address_map(blob["ctlregs"], "ctlregs"),
         "ff1_count": blob["ff1_count"],
-        "format_version": 1,
+        "format_version": 2 if compact_overlay else 1,
         "manifest": _manifest(blob.get("manifest")),
         "mapped_bases": mapped,
         "mmio_forced": _address_map(blob["mmio"], "mmio"),
@@ -194,6 +266,13 @@ def convert_blob(blob, clock=0):
         "page_count": len(nonzero),
         "regs": {name: blob["regs"][name] for name in REG_NAMES},
     }
+    if compact_overlay:
+        header.update(
+            overlay_encoding="sector-bitmap-v1",
+            overlay_sector_count=sector_count,
+            overlay_written_bytes=written_bytes,
+            overlay_compressed_len=len(overlay_stream),
+        )
     encoded_header = json.dumps(
         header,
         sort_keys=True,
@@ -203,11 +282,13 @@ def convert_blob(blob, clock=0):
     ).encode("utf-8")
     if len(encoded_header) > MAX_HEADER_SIZE:
         raise ValueError("portable header exceeds limit")
-    output = bytearray(MAGIC + struct.pack("<I", len(encoded_header)) + encoded_header)
+    magic = MAGIC_V2 if compact_overlay else MAGIC
+    output = bytearray(magic + struct.pack("<I", len(encoded_header)) + encoded_header)
     for base, page in nonzero:
         compressed = zlib.compress(page, 6)
         output.extend(struct.pack("<III", base, PAGE_SIZE, len(compressed)))
         output.extend(compressed)
+    output.extend(overlay_stream)
     return bytes(output)
 
 
@@ -218,8 +299,15 @@ def main():
     parser.add_argument(
         "--clock", type=int, default=0, help="checkpoint-relative clock"
     )
+    parser.add_argument(
+        "--compact-overlay",
+        action="store_true",
+        help="write opt-in MSTATE v2 compact eSDHC overlay",
+    )
     args = parser.parse_args()
-    args.output.write_bytes(convert_blob(_load_blob(args.source), args.clock))
+    args.output.write_bytes(
+        convert_blob(_load_blob(args.source), args.clock, args.compact_overlay)
+    )
 
 
 if __name__ == "__main__":

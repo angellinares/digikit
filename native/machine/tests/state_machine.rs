@@ -47,6 +47,7 @@ fn state() -> MachineState {
                 page
             },
         }],
+        overlay_sectors: None,
     }
 }
 

@@ -33,7 +33,16 @@ def bind_recorded_mmio(effects: list[dict], recorded: list[dict]) -> None:
             actual["value"] = event["value"]
 
 
-def capture_window(uc, pc: int, limit: int, every: int, read_regs):
+def capture_window(
+    uc,
+    pc: int,
+    limit: int,
+    every: int,
+    read_regs,
+    *,
+    tail: int = 0,
+    sample_steps: set[int] | None = None,
+):
     """Return sampled pre-instruction registers and ordered guest effects.
 
     Sample zero precedes the first instruction; sample ``limit`` is the state
@@ -46,6 +55,16 @@ def capture_window(uc, pc: int, limit: int, every: int, read_regs):
         raise ValueError("CPU/RAM window must be 1..1000000 instructions")
     if type(every) is not int or not 1 <= every <= limit:
         raise ValueError("CPU sample interval is invalid")
+    if type(tail) is not int or not 0 <= tail <= 64:
+        raise ValueError("CPU sample tail must be 0..64 instructions")
+    if sample_steps is None:
+        sample_steps = set()
+    if (
+        not isinstance(sample_steps, set)
+        or len(sample_steps) > 128
+        or any(type(step) is not int or not 0 <= step < limit for step in sample_steps)
+    ):
+        raise ValueError("CPU sample steps must be a bounded in-window set")
     count = 0
     current_pc = 0
     overflow = False
@@ -56,7 +75,7 @@ def capture_window(uc, pc: int, limit: int, every: int, read_regs):
     def on_code(machine, addr, _size, _user):
         nonlocal count, current_pc
         current_pc = addr & 0xFFFF_FFFF
-        if count % every == 0:
+        if count % every == 0 or count >= limit - tail or count in sample_steps:
             samples.append({"step": count, "regs": read_regs(machine)})
         count += 1
 

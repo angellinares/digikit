@@ -142,6 +142,9 @@ impl Machine {
             }
             _ => return Err(StateApplyError::UnsupportedComponents),
         };
+        if state.overlay_sectors.is_some() && host_state.is_none() {
+            return Err(StateApplyError::UnsupportedComponents);
+        }
         if let Some(host) = &host_state {
             let expected = self.board.esdhc.card_mut().blocks();
             if expected != host.card.blocks {
@@ -182,7 +185,7 @@ impl Machine {
         }
         if let Some(host) = &host_state {
             self.board
-                .restore_storage_state(host)
+                .restore_storage_state(host, state.overlay_sectors.as_deref())
                 .map_err(|_| StateApplyError::InvalidComponents)?;
         }
 

@@ -431,12 +431,21 @@ def first_events(
 
 
 def cpu_ram_reference(
-    parent: Path, syx: Path, limit: int, every: int, *, events: Path, output: Path
+    parent: Path,
+    syx: Path,
+    limit: int,
+    every: int,
+    *,
+    events: Path,
+    output: Path,
+    sync_irqs: list[dict] | None = None,
+    host_irqs: list[dict] | None = None,
 ) -> Path:
     """Observe a privately restored parent for exactly one timer STEP.
 
     The caller must also check that the event window ends before its first
-    asynchronous IRQ. A longrun build restores host models, but this driver
+    asynchronous IRQ. Synchronous instruction traps are part of the same
+    Unicorn STEP. A longrun build restores host models, but this driver
     does not advance timer services between Unicorn instructions.
     """
     from unicorn import m68k_const
@@ -491,6 +500,10 @@ def cpu_ram_reference(
                     limit,
                     every,
                     lambda uc: checkpointprep._regs(uc, m68k_const),
+                    tail=16,
+                    sample_steps={
+                        irq["step"] for irq in (sync_irqs or []) + (host_irqs or [])
+                    },
                 )
             finally:
                 machine.close()
@@ -508,13 +521,71 @@ def cpu_ram_reference(
     temporary = output.with_suffix(".json.tmp")
     temporary.write_text(
         json.dumps(
-            {"format_version": 1, "product": product, **observed},
+            {
+                "format_version": 1,
+                "product": product,
+                "sync_irqs": sync_irqs or [],
+                "host_irqs": host_irqs or [],
+                **observed,
+            },
             sort_keys=True,
             separators=(",", ":"),
         )
     )
     temporary.replace(output)
     return output
+
+
+def _crosses_async_irq(records, start: int, limit: int) -> bool:
+    """Exclude host timer deliveries, not synchronous guest TRAP instructions."""
+    return any(
+        rec.tag == mmiotrace.IRQ
+        and start <= rec.clock < start + limit
+        and not (rec.fields[2] & mmiotrace.IRQ_SYNC)
+        for rec in records
+    )
+
+
+def _guest_traps(records, start: int, limit: int) -> list[dict]:
+    """Source-checked instruction TRAP deliveries for separate frame checking."""
+    result = []
+    for rec in records:
+        if rec.tag != mmiotrace.IRQ or not start <= rec.clock < start + limit:
+            continue
+        vector, _level, flags, _source, pc, handler, _sr = rec.fields
+        if flags & (mmiotrace.IRQ_SYNC | mmiotrace.IRQ_TAKEN) != (
+            mmiotrace.IRQ_SYNC | mmiotrace.IRQ_TAKEN
+        ):
+            continue
+        if len(result) >= 64 or not 32 <= vector <= 47:
+            raise ValueError("CPU/RAM gate cannot normalize this synchronous exception")
+        result.append(
+            {"step": rec.clock - start, "vector": vector, "pc": pc, "handler": handler}
+        )
+    return result
+
+
+def _oracle_idle_irqs(records, start: int, limit: int) -> list[dict]:
+    """Only the observed Oracle idle-credit callback; reject other async IRQs."""
+    result = []
+    for rec in records:
+        if rec.tag != mmiotrace.IRQ or not start <= rec.clock < start + limit:
+            continue
+        vector, level, flags, source, pc, handler, _sr = rec.fields
+        if flags & mmiotrace.IRQ_SYNC:
+            continue
+        if (
+            len(result) >= 64
+            or flags != mmiotrace.IRQ_TAKEN
+            or level != mmiotrace.NO_LEVEL
+            or vector != 32
+            or records.sources.get(source) != "emu.longrun.IdleSpin.on_spin"
+        ):
+            raise ValueError("CPU/RAM gate crosses an unsupported asynchronous IRQ")
+        result.append(
+            {"step": rec.clock - start, "vector": vector, "pc": pc, "handler": handler}
+        )
+    return result
 
 
 def first_mmio_gate(
@@ -564,11 +635,10 @@ def first_mmio_gate(
                     raise ValueError("CPU/RAM gate requires one covering timer STEP")
                 start = steps[0].clock
                 reader = mmiotrace.Reader(str(private_trace))
-                if any(
-                    rec.tag == mmiotrace.IRQ and start <= rec.clock < start + limit
-                    for rec in reader
-                ):
-                    raise ValueError("CPU/RAM gate crosses a timer interrupt")
+                host_irqs = _oracle_idle_irqs(reader, start, limit)
+                sync_irqs = _guest_traps(
+                    mmiotrace.Reader(str(private_trace)), start, limit
+                )
             reference = cpu_ram_reference(
                 parent,
                 syx,
@@ -576,6 +646,8 @@ def first_mmio_gate(
                 1024,
                 events=events,
                 output=Path(scratch) / "cpu-ram.json",
+                sync_irqs=sync_irqs,
+                host_irqs=host_irqs,
             )
         env = os.environ.copy()
         # Optional one-off CPU samples have no verified receipt: they cannot

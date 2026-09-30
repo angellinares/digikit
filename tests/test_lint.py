@@ -87,6 +87,7 @@ CLEAN = [
     "tests/test_timebase.py",
     "tests/test_timer_hold.py",
     "tests/test_types.py",
+    "tools/autoirq.py",
     "tools/cf.py",
     "tools/cf_lockstep.py",
     "tools/checkpointchain.py",

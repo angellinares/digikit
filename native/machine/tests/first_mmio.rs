@@ -3,7 +3,7 @@
 
 use std::{env, fs, path::Path};
 
-use coldfire::Cpu;
+use coldfire::{Cpu, InterruptPolicy};
 use emmc_card::Card;
 use machine::{
     Board, CompletionPolicy, Machine, SemaphoreAddresses, Time, TimerPolicy,
@@ -90,6 +90,19 @@ struct CpuRamTrace {
     every: usize,
     samples: Vec<CpuSample>,
     effects: Vec<GuestEffect>,
+    #[serde(default)]
+    sync_irqs: Vec<GuestTrap>,
+    #[serde(default)]
+    host_irqs: Vec<GuestTrap>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GuestTrap {
+    step: usize,
+    vector: u8,
+    pc: u32,
+    handler: u32,
 }
 
 fn local_file(env_name: &str) -> Vec<u8> {
@@ -142,7 +155,15 @@ fn assert_effect(
             && expected.address == actual.address
             && expected.size == actual.size
             && expected.value == actual.value,
-        "{product}: first ordered guest effect mismatch at step {step}, index {index}"
+        "{product}: first ordered guest effect mismatch at step {step}, index {index}: expected {} PC {:#x} addr {:#x} size {} value {:?}; actual {kind} PC {pc:#x} addr {:#x} size {} value {:?}",
+        expected.kind,
+        expected.pc,
+        expected.address,
+        expected.size,
+        expected.value,
+        actual.address,
+        actual.size,
+        actual.value,
     );
 }
 
@@ -201,17 +222,70 @@ fn check_one(product: &str, state_env: &str, events_env: &str, cpu_env: &str, ra
         assert_eq!(reference.product, product);
         assert_eq!(reference.limit, last_step + 1);
         assert!(reference.every > 0 && reference.every <= reference.limit);
-        assert_eq!(
-            reference.samples.len(),
-            (reference.limit - 1) / reference.every + 2,
-            "{product}: missing CPU samples"
+        assert!(reference.sync_irqs.len() <= 64);
+        assert!(reference.host_irqs.len() <= 64);
+        assert!(
+            reference
+                .host_irqs
+                .windows(2)
+                .all(|pair| pair[0].step < pair[1].step)
         );
-        for (index, sample) in reference.samples[..reference.samples.len() - 1]
-            .iter()
-            .enumerate()
-        {
-            assert_eq!(sample.step, index * reference.every);
-        }
+        assert!(reference.host_irqs.iter().all(|irq| {
+            irq.step < reference.limit
+                && irq.vector == 32
+                && reference
+                    .samples
+                    .iter()
+                    .any(|sample| sample.step == irq.step && sample.regs.pc == irq.handler)
+        }));
+        assert!(
+            reference
+                .sync_irqs
+                .windows(2)
+                .all(|pair| pair[0].step < pair[1].step)
+        );
+        assert!(reference.sync_irqs.iter().all(|irq| {
+            irq.step < reference.limit
+                && (32..=47).contains(&irq.vector)
+                && reference
+                    .samples
+                    .iter()
+                    .any(|sample| sample.step == irq.step && sample.regs.pc == irq.pc)
+        }));
+        assert!(
+            reference
+                .samples
+                .last()
+                .is_some_and(|sample| sample.step == reference.limit)
+        );
+        let pre = &reference.samples[..reference.samples.len() - 1];
+        let regular = (reference.limit - 1) / reference.every + 1;
+        assert!(
+            pre.len() >= regular && pre.len() <= regular + 64 + 128,
+            "{product}: missing or unbounded CPU samples"
+        );
+        assert!(pre.first().is_some_and(|sample| sample.step == 0));
+        assert!(pre.windows(2).all(|pair| pair[0].step < pair[1].step));
+        assert!(pre.iter().all(|sample| {
+            sample.step < reference.limit
+                && (sample.step % reference.every == 0
+                    || sample.step >= reference.limit.saturating_sub(64)
+                    || reference
+                        .sync_irqs
+                        .iter()
+                        .any(|irq| irq.step == sample.step)
+                    || reference
+                        .host_irqs
+                        .iter()
+                        .any(|irq| irq.step == sample.step))
+        }));
+        assert_eq!(
+            pre.iter()
+                .filter(|sample| sample.step % reference.every == 0)
+                .count(),
+            regular,
+            "{product}: missing regular CPU samples"
+        );
         assert!(
             reference
                 .samples
@@ -275,10 +349,62 @@ fn check_one(product: &str, state_env: &str, events_env: &str, cpu_env: &str, ra
     let mut sample_index = 0;
     let mut effect_index = 0;
     let mut ram_writes = 0;
+    let mut exception_frame_writes = 0;
     // Recorder._clock() labels the instruction currently executing with
     // _step_base + (_ic - 1); the first instruction is offset zero.
     for step in 0..=last_step {
+        let host_irq = cpu_ram
+            .as_ref()
+            .and_then(|reference| reference.host_irqs.iter().find(|irq| irq.step == step));
+        if let Some(irq) = host_irq {
+            // IdleSpin's Oracle-only code hook consumes one instruction-clock
+            // credit before executing the handler. The recorder's IRQ record
+            // supplies the vector and exact boundary; Device IRQs are not
+            // inferred here. Python's host frame writes bypass guest hooks.
+            assert_eq!(
+                machine.cpu.pc, irq.pc,
+                "{product}: idle IRQ PC at step {step}"
+            );
+            machine.cpu.resolve_nzv();
+            let sp = machine.cpu.a[7];
+            let fv =
+                ((4 + (sp & 3)) << 28) | (u32::from(irq.vector) << 18) | u32::from(machine.cpu.sr);
+            let address = (sp & !3).wrapping_sub(8);
+            machine.board.clear_guest_accesses();
+            assert!(
+                machine
+                    .cpu
+                    .take_interrupt(
+                        &mut machine.board,
+                        irq.vector,
+                        None,
+                        InterruptPolicy::Oracle,
+                    )
+                    .expect("source-checked Oracle idle handler")
+            );
+            assert_eq!(machine.cpu.pc, irq.handler);
+            let writes: Vec<_> = machine
+                .board
+                .take_guest_accesses()
+                .into_iter()
+                .filter(|effect| effect.kind == GuestAccessKind::Write)
+                .map(|effect| effect.access)
+                .collect();
+            assert_eq!(writes.len(), 2, "{product}: idle IRQ frame width");
+            assert_eq!(
+                (writes[0].address, writes[0].size, writes[0].value),
+                (address, 4, fv)
+            );
+            assert_eq!(
+                (writes[1].address, writes[1].size, writes[1].value),
+                (address.wrapping_add(4), 4, irq.pc)
+            );
+            exception_frame_writes += 2;
+        }
         let pc = machine.cpu.pc;
+        let trap = cpu_ram
+            .as_ref()
+            .and_then(|reference| reference.sync_irqs.iter().find(|irq| irq.step == step));
         let samples = cpu_ram
             .as_ref()
             .map(|reference| reference.samples.as_slice())
@@ -292,10 +418,31 @@ fn check_one(product: &str, state_env: &str, events_env: &str, cpu_env: &str, ra
             assert_cpu(&machine.cpu, &sample.regs, product, step);
             sample_index += 1;
         }
+        if host_irq.is_some() {
+            machine.clock += 1;
+            continue;
+        }
+        let mut frame = Vec::new();
+        if let Some(irq) = trap {
+            assert_eq!(pc, irq.pc, "{product}: trap PC at step {step}");
+            machine.cpu.resolve_nzv();
+            let sp = machine.cpu.a[7];
+            let frame_base = (sp & !3).wrapping_sub(8);
+            let fv =
+                ((4 + (sp & 3)) << 28) | (u32::from(irq.vector) << 18) | u32::from(machine.cpu.sr);
+            frame.push((frame_base, fv));
+            frame.push((frame_base.wrapping_add(4), pc.wrapping_add(2)));
+        }
         machine.board.clear_guest_accesses();
         machine.step_timed().unwrap_or_else(|error| {
             panic!("{product}: first native stop at step {step} before MMIO parity: {error:?}")
         });
+        if let Some(irq) = trap {
+            assert_eq!(
+                machine.cpu.pc, irq.handler,
+                "{product}: trap handler at step {step}"
+            );
+        }
         for GuestBusAccess { kind, access } in machine.board.take_guest_accesses() {
             let effect_kind = if recorded_mmio(access.address) {
                 match kind {
@@ -309,6 +456,20 @@ fn check_one(product: &str, state_env: &str, events_env: &str, cpu_env: &str, ra
             } else {
                 continue;
             };
+            if let Some(&(address, value)) = frame.first()
+                && effect_kind == "RAM_WR"
+                && pc == trap.unwrap().pc
+                && access.address == address
+            {
+                assert_eq!(access.size, 4, "{product}: trap frame width at step {step}");
+                assert_eq!(
+                    access.value, value,
+                    "{product}: trap frame value at step {step}"
+                );
+                frame.remove(0);
+                exception_frame_writes += 1;
+                continue;
+            }
             if let Some(reference) = &cpu_ram {
                 let Some(expected) = reference.effects.get(effect_index) else {
                     panic!("{product}: extra {effect_kind} at step {step}, index {effect_index}");
@@ -346,6 +507,10 @@ fn check_one(product: &str, state_env: &str, events_env: &str, cpu_env: &str, ra
             );
             seen += 1;
         }
+        assert!(
+            frame.is_empty(),
+            "{product}: incomplete trap frame at step {step}"
+        );
         if let Some(reference) = &cpu_ram
             && let Some(next) = reference.effects.get(effect_index)
         {
@@ -375,7 +540,7 @@ fn check_one(product: &str, state_env: &str, events_env: &str, cpu_env: &str, ra
         assert_cpu(&machine.cpu, &last.regs, product, last_step + 1);
         assert_eq!(sample_index + 1, reference.samples.len());
         println!(
-            "{product}: compared {} sampled CPU boundaries, {} ordered guest RAM writes, and {seen} ordered MMIO accesses through step {last_step}",
+            "{product}: compared {} sampled CPU boundaries, {} ordered guest RAM writes, {exception_frame_writes} separately checked exception-frame writes, and {seen} ordered MMIO accesses through step {last_step}",
             reference.samples.len(),
             ram_writes
         );

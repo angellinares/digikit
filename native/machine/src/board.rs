@@ -17,7 +17,7 @@ use periph::{
     spilink::SerqEffect,
 };
 
-use crate::{host_state::HostState, time::Time};
+use crate::{host_state::HostState, state::OverlaySectorRecord, time::Time};
 
 const PAGE_SIZE: usize = 1024 * 1024;
 const PAGE_SHIFT: u32 = 20;
@@ -165,8 +165,18 @@ impl Board {
 
     /// Restore validated host-only storage state after checkpoint pages load.
     /// Guest register files and eDMA TCDs come from the mapped MSTATE pages.
-    pub(crate) fn restore_storage_state(&mut self, state: &HostState) -> Result<(), CardError> {
-        self.esdhc.card_mut().restore_checkpoint(&state.card)?;
+    pub(crate) fn restore_storage_state(
+        &mut self,
+        state: &HostState,
+        overlay_sectors: Option<&[OverlaySectorRecord]>,
+    ) -> Result<(), CardError> {
+        if let Some(sectors) = overlay_sectors {
+            self.esdhc
+                .card_mut()
+                .restore_checkpoint_sectors(&state.card, sectors)?;
+        } else {
+            self.esdhc.card_mut().restore_checkpoint(&state.card)?;
+        }
         self.esdhc.restore_pattern(state.pattern);
         self.armed_dma59 = state.armed_dma59;
         self.esdhc_dma_bytes = state.esdhc_dma_bytes;

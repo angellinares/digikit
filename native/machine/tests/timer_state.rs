@@ -24,6 +24,7 @@ fn state(timers: serde_json::Value) -> MachineState {
         components: json!({"timers": timers}),
         manifest: serde_json::Value::Null,
         pages: vec![],
+        overlay_sectors: None,
     }
 }
 

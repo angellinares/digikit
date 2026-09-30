@@ -3,7 +3,7 @@ mod state;
 
 use flate2::{Compression, write::ZlibEncoder};
 use serde_json::json;
-use state::{MAGIC, PAGE_SIZE, StateError, parse};
+use state::{MAGIC, MAGIC_V2, OVERLAY_RECORD_SIZE, PAGE_SIZE, StateError, parse};
 use std::io::Write;
 
 fn compressed(data: &[u8]) -> Vec<u8> {
@@ -50,6 +50,33 @@ fn record_offset(image: &[u8]) -> usize {
     MAGIC.len() + 4 + u32::from_le_bytes(image[8..12].try_into().unwrap()) as usize
 }
 
+fn image_v2(raw: &[u8], count: u32, written_bytes: u64) -> Vec<u8> {
+    let source = image(&[]);
+    let mut header: serde_json::Value =
+        serde_json::from_slice(&source[12..record_offset(&source)]).unwrap();
+    let compressed = compressed(raw);
+    header["format_version"] = json!(2);
+    header["components"] = json!({"esdhc": {"card_overlay": {}}});
+    header["overlay_encoding"] = json!("sector-bitmap-v1");
+    header["overlay_sector_count"] = json!(count);
+    header["overlay_written_bytes"] = json!(written_bytes);
+    header["overlay_compressed_len"] = json!(compressed.len());
+    let header = serde_json::to_vec(&header).unwrap();
+    let mut result = MAGIC_V2.to_vec();
+    result.extend_from_slice(&(header.len() as u32).to_le_bytes());
+    result.extend_from_slice(&header);
+    result.extend_from_slice(&compressed);
+    result
+}
+
+fn overlay_record(sector: u64, written: u8, byte: u8) -> Vec<u8> {
+    let mut record = vec![0; OVERLAY_RECORD_SIZE];
+    record[..8].copy_from_slice(&sector.to_le_bytes());
+    record[8] = written;
+    record[72] = byte;
+    record
+}
+
 #[test]
 fn parses_nonzero_page_and_zero_mapped_base() {
     assert_eq!(MAGIC.len(), 8);
@@ -60,6 +87,53 @@ fn parses_nonzero_page_and_zero_mapped_base() {
     assert_eq!(state.pages.len(), 1);
     assert_eq!(state.pages[0].data[0], 42);
     assert_eq!(state.regs.pc, 16);
+    assert_eq!(state.overlay_sectors, None);
+}
+
+#[test]
+fn compact_v2_preserves_written_zero_and_sorted_sector_masks() {
+    let mut raw = overlay_record(3, 0b11, 0);
+    raw[73] = 42;
+    raw.extend(overlay_record(7, 1, 255));
+    let state = parse(&image_v2(&raw, 2, 3)).unwrap();
+    let sectors = state.overlay_sectors.unwrap();
+    assert_eq!(sectors.len(), 2);
+    assert_eq!(sectors[0].sector, 3);
+    assert_eq!(sectors[0].written[0], 0b11);
+    assert_eq!(sectors[0].data[0], 0);
+    assert_eq!(sectors[0].data[1], 42);
+    assert_eq!(sectors[1].sector, 7);
+}
+
+#[test]
+fn compact_v2_rejects_malformed_records_and_extra_bytes() {
+    let first = overlay_record(3, 1, 0);
+    let mut duplicate = first.clone();
+    duplicate.extend_from_slice(&first);
+    assert_eq!(
+        parse(&image_v2(&duplicate, 2, 2)),
+        Err(StateError::InvalidOverlay)
+    );
+    let mut noncanonical = first.clone();
+    noncanonical[73] = 1; // absent byte cannot carry an unmasked value
+    assert_eq!(
+        parse(&image_v2(&noncanonical, 1, 1)),
+        Err(StateError::InvalidOverlay)
+    );
+    assert_eq!(
+        parse(&image_v2(&first, 1, 2)),
+        Err(StateError::InvalidOverlay)
+    );
+    assert_eq!(
+        parse(&image_v2(&first, 2, 1)),
+        Err(StateError::InvalidOverlay)
+    );
+    let mut trailing = image_v2(&first, 1, 1);
+    trailing.push(0);
+    assert_eq!(parse(&trailing), Err(StateError::InvalidLayout));
+    let mut bad_magic = image_v2(&first, 1, 1);
+    bad_magic[7] = 3;
+    assert_eq!(parse(&bad_magic), Err(StateError::InvalidMagic));
 }
 
 #[test]
