@@ -1322,6 +1322,10 @@ def live_pack(
     name = ("%s.pack" if capture else "state-%s.pack") % key
     path = os.path.join(out_dir, name)
     if os.path.exists(path) and not rebuild:
+        if init_limit != 2_000_000:
+            raise ValueError(
+                "a cached pack has no init-step receipt: pass rebuild=True for a custom limit"
+            )
         return {"path": path, "key": key, "cached": True, "seconds": 0.0}
     t0 = time.perf_counter()
     cap = sharc_capture.load(capture) if capture else None
@@ -1378,6 +1382,7 @@ def state_pack(
     *,
     out_dir: str = LIVE_DIR,
     rebuild: bool = False,
+    init_limit: int = 2_000_000,
 ) -> dict:
     """The frameless live pack native/live's LiveSource starts from:
     armed_start(IMAGE, LP0) (run_init, the frame DMA set-up, the LP0 feed
@@ -1392,6 +1397,7 @@ def state_pack(
         card_sha256=card_sha256,
         out_dir=out_dir,
         rebuild=rebuild,
+        init_limit=init_limit,
     )
 
 
@@ -1499,6 +1505,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     card.add_argument("--card-sha256", help="its SHA-256 (hex)")
     ps.add_argument("--out-dir", default=LIVE_DIR)
     ps.add_argument("--rebuild", action="store_true")
+    ps.add_argument(
+        "--limit",
+        type=int,
+        help="init instruction cap; requires --rebuild (LP0 callbacks have separate limits)",
+    )
     for name, help_text in (
         ("live-pack", "build (or find) the cached pack native/live plays"),
         ("live-ref", "the Python replay's voice outputs for the live check"),
@@ -1514,16 +1525,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             pv.add_argument(
                 "--limit",
                 type=int,
-                default=2_000_000,
-                help="init instruction cap (LP0 callbacks have separate finite limits)",
+                help="init instruction cap; requires --rebuild (LP0 callbacks have separate limits)",
             )
         else:
             pv.add_argument("--frames", type=int, default=16)
     args = p.parse_args(argv)
+    if (
+        args.cmd in ("state-pack", "live-pack")
+        and args.limit is not None
+        and not args.rebuild
+    ):
+        p.error("--limit requires --rebuild: cached packs have no init-step receipt")
     if args.cmd == "state-pack":
         card_sha = args.card_sha256 or _file_sha256(args.card_image)
         info = state_pack(
-            args.image, args.lp0, card_sha, out_dir=args.out_dir, rebuild=args.rebuild
+            args.image,
+            args.lp0,
+            card_sha,
+            out_dir=args.out_dir,
+            rebuild=args.rebuild,
+            init_limit=args.limit if args.limit is not None else 2_000_000,
         )
         print(json.dumps(info))
         return 0
@@ -1535,7 +1556,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             start_frame=args.start_frame,
             out_dir=args.out_dir,
             rebuild=args.rebuild,
-            init_limit=args.limit,
+            init_limit=args.limit if args.limit is not None else 2_000_000,
         )
         print(json.dumps(info))
         return 0

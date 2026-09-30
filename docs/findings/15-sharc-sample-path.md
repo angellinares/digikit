@@ -418,6 +418,76 @@ device) from a `tools/dt2gui.py` ready snapshot, TRIG 1 pressed:
   the sample load's FlexBus log. The log `tools/dt2gui.py` records for the
   hat image is byte-identical to `out/captures/drive3/flexbus-drive3.raw`;
   both images are byte-identical to `out/plusdrive/native/dt2.img`. **[D]**
+
+> **[C][D] Current local fixture, 2026-09-30:** The historical LP0 byte-identity
+> statement above does **not** hold for the files now on disk. The sibling
+> `flexbus.raw` of `snapshots/dt2-1.16-auto/223c5811012f/ready.snap` and
+> `out/captures/drive3/flexbus-drive3.raw` are both 7,954,000 bytes, but their
+> SHA-256 values are respectively `22e82b0882d5be5f45ecfe40fcccf8ee5c1e844829c36526d7bd913158e86767`
+> and `ab91cba7290791bd87d0c4b8a959cfb887a2ee1da5cab1910e07233ec89e2a78`;
+> the first different byte is at offset 5,748,197. The auto ready snapshot's
+> `.ladder.json` MAIN OS and card hashes match the current extracted source
+> and auto card, and its firmware source matches
+> `out/sections/dt2-1.16/.source-sha256`.
+> None of these checks proves that the sibling LP0 log came from that card;
+> do not substitute the drive3 log when reproducing the auto-fixture GUI run.
+
+**[D] Current auto-fixture headless replay, 2026-09-30.** The existing
+`tools/live_gui_check.py` ran from that auto `ready.snap` with its matching
+card and sibling LP0 log, `--limit 12M --press-at 3M --hold 2M --trig 1
+--tail 0.5`, plus an external 360 s process timeout. `--limit` is an
+instruction **threshold** checked at GUI chunk boundaries, not an exact cap:
+the selected passing trace ended at 14,365,479 ColdFire instructions.
+Waiting for the GUI worker's pause acknowledgement at the threshold now
+prevents its audio tail from continuing to advance ColdFire instructions.
+The v3 frameless state pack was regenerated under ignored `out/` with
+`state-pack --rebuild --limit 2000000`: its complete pre-trailer body is identical
+to the previous v2 pack, its card hash matches the ready snapshot's sidecar,
+and its core-source hash matches both current `tools/sharc_core` and the
+selected native SHARC library. The `native/live` release library had to be
+rebuilt to load the v3 trailer.
+
+The bounded wire trace `out/native/integrated-auto-smoke/auto-wire-ack.dtfr`
+records the **68 actual ColdFire DSPI2 TX frames accepted by the native
+queue**, not capture-pack frames: format `DTFR`, little-endian u32 version 1,
+u32 count, then repeated u32 byte length and wire-order bytes.
+Each observed TX buffer is 2,748 bytes; the native SHARC receive DMA consumes
+only the leading `0x802` bytes of each buffer after 16-bit swapping. Its SHA-256
+is `e21cb015102bd6c1222b7c733238ddf7402a725ee7e63b0fb8313d00fd1f8e8b`;
+frame 18 is the sole trig frame (SHA-256
+`48ccef5ab084785fb3929efc760e7a85e9fad2e90bb151be9be2b8ccaaff8767`),
+and frame 51 carries its release. The trig frame's effective `0x802`-byte
+DMA prefix hashes to
+`6b6231c3b1360be7110da86778f8a620e6e95b4e4dd19c61faa2d896413e735c`.
+The paired report shows 68 pushed/taken frames, no merges, 1,690 clean SHARC
+renders, 1,314 nonzero renders, peak 0.23668, and 0.039 s to first sound;
+the report and guest input-delivery clocks stay under the same ignored
+directory. This is a concrete **Python ColdFire → native SHARC** comparison
+target, not proof of a native ColdFire producer, real device timing, or
+authentication of the snapshot/LP0 log.
+
+**[O] Native ColdFire handoff target.** Reproduce the same ready-state input
+delivery clocks from `run-ack.log` (press at 3,516,425, release at 10,552,659
+instructions), then compare ordered full wire-order DSPI2 TX frames against
+`auto-wire-ack.dtfr`. Wall-time-triggered reruns can deliver the pad input at
+different guest clocks, so their whole-trace hashes need not match this one.
+`native/live` already accepts these wire buffers; `native/machine` does not
+yet own a DSPI2 peripheral or offer a ColdFire-to-player frame handoff.
+Passing the wire comparison would establish only the named replay window;
+independent boot, real device timing and later audio parity stay open.
+
+**[O] Intermittent frame-stop diagnostic:** one earlier v3 run had two
+`Stopped` frames out of 1,641 even though its trig sounded and the pack body
+matched v2. Several subsequent bounded runs were clean, but a later
+headless run stopped at SHARC frame 252 with `native-trap: unmodeled MMR at
+0x1c1cd7` (`R12 = DM(I0, M5)` inside `FUN_1c18a6`); its frame sequence is
+retained in ignored `out/native/integrated-auto-smoke/diagnose-13.dtfr`.
+This is a PC, **not** proof of the accessed MMR address or root cause; the
+separately observed `0x30000` load at `0x1c1cf9` above may be related but
+has not been connected to this stop. `native/live` now exposes the first
+frame-stop index/reason through `live_first_stop`, and the headless report
+fails closed when `render.stopped` is nonzero. Clean later runs do not fix
+this intermittent stop.
 - **Reply.** The DSPI2 peer answers zeros, as every capture recorded; the
   trig-to-voice path works with zero replies. **[D]**
 

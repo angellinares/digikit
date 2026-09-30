@@ -4,8 +4,10 @@ checks, and what keys a state pack. The end-to-end run (the GUI worker, a
 TRIG press, the native engine) is tests/test_live_gui.py (slow)."""
 
 import os
+import struct
 import sys
 import tempfile
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -37,6 +39,119 @@ def test_live_pack_init_limit_is_enforced_before_loading_an_image():
 
     with pytest.raises(ValueError, match="init instruction limit must be positive"):
         tr.armed_start("absent-image", None, init_limit=0)
+
+
+def test_state_pack_forwards_the_cli_init_limit(monkeypatch, capsys):
+    import sharc_transpile_run as tr
+
+    seen = []
+
+    def fake_state_pack(image, lp0, card_sha, **kwargs):
+        seen.append((image, lp0, card_sha, kwargs["init_limit"]))
+        return {"path": "ignored/out.pack"}
+
+    monkeypatch.setattr(tr, "state_pack", fake_state_pack)
+    assert (
+        tr.main(
+            [
+                "state-pack",
+                "dt2-1.16",
+                "--lp0",
+                "log.raw",
+                "--card-sha256",
+                "abcd",
+                "--limit",
+                "2000000",
+                "--rebuild",
+            ]
+        )
+        == 0
+    )
+    assert seen == [("dt2-1.16", "log.raw", "abcd", 2_000_000)]
+    assert "ignored/out.pack" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["state-pack", "dt2-1.16", "--card-sha256", "abcd"],
+        ["live-pack", "dt2-1.16", "cap.dt2cap"],
+    ],
+)
+def test_pack_init_limit_rejects_uncapped_cache_hits(args, capsys):
+    import sharc_transpile_run as tr
+
+    with pytest.raises(SystemExit, match="2"):
+        tr.main([*args, "--limit", "10"])
+    assert "--limit requires --rebuild" in capsys.readouterr().err
+
+
+def test_headless_live_gui_limit_flag_is_an_instruction_threshold(monkeypatch):
+    import live_gui_check
+
+    seen = []
+
+    def fake_run(snapshot, card_image, **kwargs):
+        seen.append((snapshot, card_image, kwargs["instrs"]))
+        return {"ok": True}
+
+    monkeypatch.setattr(live_gui_check, "run", fake_run)
+    assert (
+        live_gui_check.main(
+            ["fixture.snap", "--card-image", "card.img", "--limit", "12M"]
+        )
+        == 0
+    )
+    assert seen == [("fixture.snap", "card.img", 12_000_000)]
+
+
+def test_headless_tail_waits_for_guest_pause_acknowledgement(monkeypatch):
+    import live_gui_check
+
+    class Worker:
+        pause = threading.Event()
+        stats = {"status": "running", "instrs": 12_000_000}
+
+        def is_alive(self):
+            return True
+
+    worker = Worker()
+
+    def acknowledge(_seconds):
+        assert worker.pause.is_set()
+        worker.stats.update(status="paused", instrs=12_400_000)
+
+    monkeypatch.setattr(live_gui_check.time, "sleep", acknowledge)
+    assert live_gui_check._pause_at_limit(worker) == 12_400_000
+
+
+def test_live_gui_wire_trace_preserves_accepted_frame_order(monkeypatch, tmp_path):
+    import live_gui_check
+
+    (tmp_path / "out").mkdir()
+    monkeypatch.setattr(live_gui_check, "ROOT", str(tmp_path))
+    frames = []
+    audio = FakeAudio()
+    recorded = live_gui_check._RecordingAudio(audio, frames)
+    quiet = bytes(0x802)
+    trig = bytearray(quiet)
+    trig[0x22:0x24] = b"\x00\x01"
+    recorded.push_frame(quiet)
+    recorded.push_frame(trig)
+    assert audio.pushed == frames == [quiet, bytes(trig)]
+    with tempfile.TemporaryDirectory(dir=tmp_path / "out") as directory:
+        path = os.path.join(directory, "frames.bin")
+        info = live_gui_check._write_frames(path, frames)
+        assert info["frames"] == 2
+        assert info["trig_indices"] == [1]
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        assert raw[:4] == b"DTFR"
+        assert struct.unpack_from("<II", raw, 4) == (1, 2)
+        assert struct.unpack_from("<I", raw, 12) == (len(quiet),)
+        assert raw[16 : 16 + len(quiet)] == quiet
+    with pytest.raises(ValueError, match="under ignored out"):
+        live_gui_check._write_frames(str(tmp_path / "frames.bin"), frames)
 
 
 def test_the_peer_queues_wire_bytes_unchanged_and_replies_zeros():

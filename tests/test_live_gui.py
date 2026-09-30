@@ -59,7 +59,7 @@ def test_a_trig_pad_sounds_through_the_live_engine():
     assert report["queue"]["trig_pushed"] >= 1, report
     assert report["queue"]["trig_taken"] == report["queue"]["trig_pushed"]
     assert report["queue"]["merged"] == 0
-    assert report["render"]["stopped"] == 0
+    assert report["render"]["stopped"] == 0, report
     assert report["render"]["nonzero_frames"] > 0
     assert report["latency_s"] is not None and report["latency_s"] < 2.0
     assert report["ok"]

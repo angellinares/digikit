@@ -5,7 +5,7 @@ engine's output at the real-time rate (1,500 frames/s, what the device
 would take); report what the engine received and rendered.
 
     DT2_SYX=Digitakt_II_OS1.16.syx uv run python tools/live_gui_check.py \\
-        SNAPSHOT --card-image IMG [--lp0 FLEXBUS.raw] [--instrs 12M] \\
+        SNAPSHOT --card-image IMG [--lp0 FLEXBUS.raw] [--limit 12M] \\
         [--press-at 3M] [--hold 2M] [--trig 1] [--tail 1.0] \\
         [--frame-period N] [--wav OUT.wav] [--json OUT.json]
 
@@ -20,11 +20,14 @@ from __future__ import annotations
 import argparse
 import array
 import dataclasses
+import hashlib
 import json
 import os
+import struct
 import sys
 import time
 import wave
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -35,6 +38,63 @@ FRAME_SAMPLES = 32
 # emu/panelin.py button codes: "TRIG 1".."TRIG 16" are 25..40
 # (tools/sharc_capture_run.py, TRIG_CODE_BASE).
 TRIG_1_CODE = 25
+MAX_WIRE_FRAMES = 256
+MAX_WIRE_BYTES = 4096
+
+
+class _RecordingAudio:
+    """Observe exactly the bytes accepted by the GUI's native frame queue."""
+
+    def __init__(self, audio, frames: list[bytes]):
+        self.audio = audio
+        self.frames = frames
+
+    def push_frame(self, frame: bytes) -> None:
+        if len(self.frames) >= MAX_WIRE_FRAMES or len(frame) > MAX_WIRE_BYTES:
+            raise ValueError("bounded live GUI frame trace exceeded")
+        self.audio.push_frame(frame)
+        self.frames.append(bytes(frame))
+
+    def __getattr__(self, name: str):
+        return getattr(self.audio, name)
+
+
+class _RecordingLive:
+    def __init__(self, live, frames: list[bytes]):
+        self.live = live
+        self.frames = frames
+
+    def open(self):
+        return _RecordingAudio(self.live.open(), self.frames)
+
+    def __getattr__(self, name: str):
+        return getattr(self.live, name)
+
+
+def _write_frames(path: str, frames: list[bytes]) -> dict:
+    out = (Path(ROOT) / "out").resolve()
+    target = Path(path).resolve()
+    if not target.is_relative_to(out):
+        raise ValueError("frame trace must stay under ignored out/")
+    if not frames or len(frames) > MAX_WIRE_FRAMES:
+        raise ValueError("no bounded live GUI frames to save")
+    blob = bytearray(b"DTFR") + struct.pack("<II", 1, len(frames))
+    trig = []
+    for index, frame in enumerate(frames):
+        if len(frame) > MAX_WIRE_BYTES:
+            raise ValueError("frame trace contains an oversized TX frame")
+        blob += struct.pack("<I", len(frame)) + frame
+        if frame[0x22:0x24] != b"\0\0":
+            trig.append(index)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(blob)
+    return {
+        "path": str(target),
+        "frames": len(frames),
+        "sha256": hashlib.sha256(blob).hexdigest(),
+        "trig_indices": trig,
+        "trig_sha256": [hashlib.sha256(frames[i]).hexdigest() for i in trig],
+    }
 
 
 def _count(text: str) -> int:
@@ -56,6 +116,19 @@ def write_wav(path: str, samples: array.array, rate: int = 48_000) -> None:
         w.writeframes(pcm.tobytes())
 
 
+def _pause_at_limit(emu, wait_s: float = 5.0) -> int:
+    """Pause at the worker's next chunk boundary before starting audio tail."""
+    emu.pause.set()
+    deadline = time.monotonic() + wait_s
+    while emu.is_alive():
+        if emu.stats["status"] == "paused":
+            return emu.stats["instrs"]
+        if time.monotonic() >= deadline:
+            raise TimeoutError("live GUI worker did not acknowledge instruction limit")
+        time.sleep(0.005)
+    raise RuntimeError("live GUI worker exited before acknowledging instruction limit")
+
+
 def run(
     snapshot: str,
     card_image: str,
@@ -69,6 +142,7 @@ def run(
     tail: float = 1.0,
     frame_period: int | None = None,
     wav: str | None = None,
+    frames_out: str | None = None,
 ) -> dict:
     """See the module docstring. -> the report (its "ok" says pass/fail)."""
     from emu import gui, livesharc
@@ -82,6 +156,9 @@ def run(
         period=frame_period or livesharc.FRAME_PERIOD,
         device=False,
     )
+    wire_frames: list[bytes] = []
+    if frames_out is not None:
+        live = _RecordingLive(live, wire_frames)
     emu = gui.Emulator(snapshot, syx=syx, card_image=card_image, live=live)
     code = TRIG_1_CODE + trig - 1
     emu.start()
@@ -113,6 +190,11 @@ def run(
                 emu.inbox.append(("release", code, None))
                 events["release"] = {"instrs": n, "sharc_frame": rendered}
             if stop_at is None and n >= instrs:
+                # Keep the native renderer open for the audio tail, but stop
+                # advancing the ColdFire beyond the requested threshold.
+                # Wait for emu.gui to finish any in-progress chunk before
+                # starting the audio tail or sampling queue counters.
+                _pause_at_limit(emu)
                 stop_at = time.time() + tail
             if stop_at is not None and time.time() >= stop_at:
                 break
@@ -140,6 +222,7 @@ def run(
             },
             "queue": dataclasses.asdict(frames),
             "render": dataclasses.asdict(render),
+            "first_stop": audio.first_stop(),
             "underruns": stats.underruns,
             "halted": emu.stats["status"],
         }
@@ -147,6 +230,10 @@ def run(
         emu.stop_flag.set()
         emu.pause.clear()
         emu.join(timeout=30)
+    if frames_out is not None:
+        report["wire"] = _write_frames(frames_out, wire_frames)
+        if report["wire"]["frames"] != report["queue"]["pushed"]:
+            raise ValueError("recorded wire frames differ from queued frame count")
     press_frame = events.get("press", {}).get("sharc_frame")
     first = report["render"]["first_nonzero"]
     report["latency_s"] = (
@@ -158,6 +245,7 @@ def run(
     report["peak"] = round(peak, 5)
     report["ok"] = bool(
         report["queue"]["trig_pushed"] >= 1
+        and report["instrs"] >= instrs
         and report["queue"]["trig_taken"] >= 1
         and report["render"]["stopped"] == 0
         and report["render"]["nonzero_frames"] > 0
@@ -175,13 +263,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--card-image", required=True)
     p.add_argument("--syx")
     p.add_argument("--lp0", help="the sample load's FlexBus log (.raw)")
-    p.add_argument("--instrs", type=_count, default=12_000_000)
+    p.add_argument(
+        "--limit", "--instrs", dest="instrs", type=_count, default=12_000_000
+    )
     p.add_argument("--press-at", type=_count, default=3_000_000)
     p.add_argument("--hold", type=_count, default=2_000_000)
     p.add_argument("--trig", type=int, default=1, help="TRIG pad 1-16")
     p.add_argument("--tail", type=float, default=1.0, help="seconds after --instrs")
     p.add_argument("--frame-period", type=_count)
     p.add_argument("--wav", help="write the rendered output here")
+    p.add_argument(
+        "--frames-out", help="write bounded accepted TX frames under ignored out/"
+    )
     p.add_argument("--json", help="write the report here")
     a = p.parse_args(argv)
     report = run(
@@ -196,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
         tail=a.tail,
         frame_period=a.frame_period,
         wav=a.wav,
+        frames_out=a.frames_out,
     )
     text = json.dumps(report, indent=1)
     if a.json:

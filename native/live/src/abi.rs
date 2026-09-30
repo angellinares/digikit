@@ -497,6 +497,33 @@ pub unsafe extern "C" fn live_render_stats(
     0
 }
 
+/// Write the first SHARC frame stop as `frame_index: halt_reason`, or an
+/// empty string when no frame stopped. Returns bytes written (excluding NUL),
+/// `-1` for a bad handle/buffer and `-2` when the source has no render log.
+///
+/// # Safety
+/// `handle` must be `NULL` or a live handle; `buf`, if non-NULL, must point
+/// to `buf_len` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn live_first_stop(
+    handle: *mut LivePlayer,
+    buf: *mut c_char,
+    buf_len: usize,
+) -> c_int {
+    let Some(player) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Some(log) = player.render_log() else {
+        return -2;
+    };
+    let log = log.lock().expect("render log poisoned");
+    let text = log
+        .first_stop
+        .as_ref()
+        .map_or_else(String::new, |(index, reason)| format!("{index}: {reason}"));
+    write_c_string(&text, buf, buf_len)
+}
+
 /// Writes the open device's name (NUL-terminated, truncated to fit) into
 /// `buf`. Returns the number of bytes written (excluding the NUL), or a
 /// negative code on a bad handle/buffer.
@@ -643,6 +670,30 @@ mod tests {
             let mut rs = LiveRenderStats::default();
             assert_eq!(live_render_stats(std::ptr::null_mut(), &mut rs), -1);
         }
+    }
+
+    #[test]
+    fn first_stop_reports_frame_and_reason_without_a_device() {
+        use crate::sharc_source::RenderLog;
+        use crate::source::SilenceSource;
+
+        let mut player = LivePlayer::offline(Box::new(SilenceSource));
+        let mut buf = [0 as c_char; 64];
+        assert_eq!(
+            unsafe { live_first_stop(&mut player, buf.as_mut_ptr(), buf.len()) },
+            -2
+        );
+        let log = std::sync::Arc::new(std::sync::Mutex::new(RenderLog::default()));
+        player.attach_render_log(std::sync::Arc::clone(&log));
+        assert_eq!(
+            unsafe { live_first_stop(&mut player, buf.as_mut_ptr(), buf.len()) },
+            0
+        );
+        log.lock().unwrap().first_stop = Some((7, "halt: trap".into()));
+        let n = unsafe { live_first_stop(&mut player, buf.as_mut_ptr(), buf.len()) };
+        assert_eq!(n, 13);
+        let value = unsafe { CStr::from_ptr(buf.as_ptr()) };
+        assert_eq!(value.to_str().unwrap(), "7: halt: trap");
     }
 
     #[test]

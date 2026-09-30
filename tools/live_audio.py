@@ -227,6 +227,11 @@ _FUNCTIONS = (
         ctypes.c_int32,
     ),
     (
+        "live_first_stop",
+        [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t],
+        ctypes.c_int32,
+    ),
+    (
         "live_open_frames",
         [
             ctypes.c_uint32,
@@ -517,6 +522,15 @@ class LiveAudio:
             raise LiveAudioError("live_render_stats failed (rc=%d)" % rc)
         names = RenderStats.__dataclass_fields__
         return RenderStats(**{name: getattr(c, name) for name in names})
+
+    def first_stop(self) -> str | None:
+        """The first SHARC frame stop's index and halt reason, when present."""
+        self._check_open()
+        buf = ctypes.create_string_buffer(_ERROR_BUF_SIZE)
+        n = self._lib.live_first_stop(self._handle, buf, len(buf))
+        if n < 0:
+            raise LiveAudioError("live_first_stop failed (rc=%d)" % n)
+        return buf.raw[:n].decode("utf-8", "replace") if n else None
 
     def device_name(self) -> str:
         self._check_open()
