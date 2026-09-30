@@ -3077,3 +3077,70 @@ post-trap value `0x31049452`. This is **Python-path** dynamic provenance,
 not proof that a stopping **native** path wrote the same value: a native
 pre-trap read and actual writer event on a reproducible stopping input
 sequence remain **[O]**. Post-trap `M1/I0` alone is not provenance.
+
+**[D]** A bounded native self-scheduling diagnostic (ignored
+`diagnose_first_autonomous_force_clock_drift` in
+`native/machine/tests/auto_replay.rs`) reproduced six forced-vector offers
+over **1,200,000 actual native ColdFire instructions**, using locally
+source-checked DT2 1.16 inputs. Its first meaningful difference is offer 2:
+native actual clock `224382` versus Python **fast-observed credited** clock
+`228381` (difference −3999). Both offers have pre-PC `0x400cccd8`,
+pre-SR `0x2000`, post-PC `0x4002dd0c`, post-SR `0x2500`. Offer 2 followed
+an **idle entry** after 180,000 observed idle passes and nine Oracle vector-32
+yields; its next native timer deadline was `925816`, not due at the offer.
+Offer 1 differs by +1 from a separately stepped vector entry. The JSON
+under `out/native/force-clock-lane/first-drift.json` records these numbers
+and its source/profile/MSTATE main SHA-256 checks. This identifies the
+earliest *observed scheduling divergence*, not its cause: fast-observed
+credits are not actual native steps or Device time. No `Board`/`Time`
+clock-credit policy changed. The lane's prose handoff gave incorrect hex
+PCs; the checked JSON values above are the probe's actual integer PCs.
+
+**[D]** An opt-in `live_open_frames_with_rendered_input_log` offline ABI
+now captures actual `LivePlayer` queue-consumer inputs after take/repeat
+and halfword swap, with a 1..256 record cap, ignored-path restriction,
+per-frame flush and an unchanged ordinary playback ABI. A 68-take plus
+22-*synthetic*-repeat ABI check reproduced the earlier 90-input diagnostic
+byte for byte (SHA-256 `1c0b5413cc115fa2d68718f0bad22c168703bdd7441d1e50b64720540d752847`)
+with **19,402,398 actual native SHARC instructions** and zero stops. This
+remains synthetic, not integrated GUI cadence. The earlier Python
+ColdFire fast-observed `14,365,479` is an **estimated/credited** count,
+not an actual native ColdFire instruction count.
+
+**[D] [O]** A new opt-in, bounded **actual Python-ColdFire GUI + native
+SHARC** run (not native-ColdFire wire production) through
+`tools/live_gui_check.py --rendered-inputs-out` reproduced the intermittent
+native stop: first **rendered ordinal 198** is a real *repeat* and stops at
+`0x1c1cd7` (`native-trap: unmodeled MMR`). Its exact post-queue/post-swap
+bytes, SHA-256, source, and native per-frame instruction delta are in ignored
+`out/native/sharc-integrated-lane/gui-trig.ndjson` (local SHA-256
+`1c870636146452a949409ffaf99cb72785f414aab2e819d8a1cf79d92b82812c`).
+The cap retained only ordinals 0..255: **256 / 1,453** rendered frames,
+**one captured stop**, two stops in total, 14 taken and 1,439 repeated,
+and 316,986,729 actual native SHARC instructions. The accepted TX wire
+log is `gui-trig.dtfr` (14 frames, one trig at TX index 2); local source
+`.syx` matches `sections/.source-sha256`. The GUI's `2,897,012`
+ColdFire count is **Python fast-mode estimated/credited**, not actual
+native ColdFire steps. The GUI zero-stop gate correctly **fails**; this is
+not audio parity or a complete 1,453-frame capture. The run required an
+explicit `--syx` matching its checkpoint flash digest; a first run without
+it failed the checkpoint provenance gate, and was not accepted. Post-trap
+`I0=M1=0x31093de7` is **not** writer evidence. Native *pre-trap* memory
+read and writer provenance, and the cause of the second uncaptured stop,
+remain **[O]**.
+The first stop is reproducible without GUI timing: re-import the same
+locally checked state pack (`state-82cf380735390258438540a4.pack`,
+SHA-256 `cbb6de7e9e732edf085dc3ba47b7760fc2db52c7595827027266d71f8e6f9bfc`)
+through offline `tools/live_audio.LiveAudio`, verify each recorded
+`bytes_hex` hash, swap each adjacent byte pair *back* to queue wire order,
+then `push_frame`/`render(1)` once for each of ordinals 0..198. These
+199 **actual native SHARC** renders take **41,661,645 instructions**, with
+198 clean and exactly one stop at ordinal 198 (`0x1c1cd7`); the per-frame
+instruction sum of the captured artifact agrees. The standalone queue
+takes every supplied frame (including bytes originally produced by a
+repeat); it reproduces **SHARC inputs and stop**, not the GUI's queue
+take/repeat timing. It enables a targeted native pre-trap watch without
+rerunning the GUI.
+An independent Python SHARC replay of all 199 recorded inputs was
+interrupted after about five minutes and ~5 GB RAM, before producing a
+comparison; it is **not** a parity result.

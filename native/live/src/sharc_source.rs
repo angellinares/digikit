@@ -1421,14 +1421,13 @@ mod tests {
         let p = pack(&[]);
         let mut s = LiveSource::new(mock(), &p, 1.0).unwrap();
         let inputs = s.enable_rendered_input_log(1);
-        let q = crate::repeater::FrameQueue::new();
-        q.write(&[0x00, 0x03, 0xAB, 0xCD]);
-        let mut wire = Vec::new();
+        // Exercise the actual offline player -> queue -> source seam, rather
+        // than calling `step` with bytes the queue never produced.
+        let player = crate::player::LivePlayer::offline(Box::new(s));
         let mut out = [StereoSample::default(); FRAME_LEN];
-        assert!(q.take_into(&mut wire));
-        s.render_frame(&wire, &mut out);
-        assert!(q.take_into(&mut wire));
-        s.render_frame(&wire, &mut out);
+        player.push_frame(&[0x00, 0x03, 0xAB, 0xCD]);
+        assert_eq!(player.render_offline(&mut out).unwrap(), 1);
+        assert_eq!(player.render_offline(&mut out).unwrap(), 1);
         let inputs = inputs.lock().unwrap();
         assert_eq!(inputs.records().len(), 1);
         assert_eq!(inputs.dropped, 1);

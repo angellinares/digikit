@@ -2,6 +2,7 @@
 //! the cpal output stream together. This is what both the CLI
 //! (`src/bin/live_play.rs`) and the C ABI (`src/abi.rs`) drive.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -50,6 +51,10 @@ pub struct LivePlayer {
     device: Option<OpenedDevice>,
     target_latency_frames: u32,
     render_log: Option<Arc<Mutex<RenderLog>>>,
+    /// Optional explicit offline diagnostic. It is absent from the normal
+    /// render path, so ordinary playback neither hashes nor copies input.
+    rendered_input_log: Option<(Arc<Mutex<crate::sharc_source::RenderedInputLog>>, PathBuf)>,
+    rendered_input_written: AtomicU64,
     /// `render_offline`'s input buffer (a Mutex: frames are pushed from
     /// another thread while a caller renders, both through `&self`).
     offline_input: Mutex<Vec<u8>>,
@@ -127,6 +132,8 @@ impl LivePlayer {
             device: Some(device),
             target_latency_frames,
             render_log: None,
+            rendered_input_log: None,
+            rendered_input_written: AtomicU64::new(0),
             offline_input: Mutex::new(Vec::new()),
         })
     }
@@ -145,6 +152,8 @@ impl LivePlayer {
             device: None,
             target_latency_frames: 0,
             render_log: None,
+            rendered_input_log: None,
+            rendered_input_written: AtomicU64::new(0),
             offline_input: Mutex::new(Vec::with_capacity(crate::repeater::FRAME_BYTES)),
         }
     }
@@ -163,6 +172,16 @@ impl LivePlayer {
             render_one(&self.source, &self.queue, &mut input, &mut frame);
             chunk.copy_from_slice(&frame);
             n += 1;
+            // Flush after every frame: a stopped frame still leaves its exact
+            // post-queue/post-swap bytes available to the caller.
+            if let Some((log, path)) = &self.rendered_input_log {
+                let log = log.lock().expect("rendered input log poisoned");
+                let count = log.records().len() as u64;
+                if count > self.rendered_input_written.load(Ordering::Relaxed) {
+                    log.write_ndjson(path)?;
+                    self.rendered_input_written.store(count, Ordering::Relaxed);
+                }
+            }
         }
         self.frames_rendered
             .fetch_add((n * FRAME_LEN) as u64, Ordering::Relaxed);
@@ -233,6 +252,16 @@ impl LivePlayer {
 
     pub fn render_log(&self) -> Option<&Arc<Mutex<RenderLog>>> {
         self.render_log.as_ref()
+    }
+
+    /// Attach an explicitly enabled bounded input diagnostic to an offline
+    /// player. `render_offline` flushes it after each rendered frame.
+    pub fn attach_rendered_input_log(
+        &mut self,
+        log: Arc<Mutex<crate::sharc_source::RenderedInputLog>>,
+        path: PathBuf,
+    ) {
+        self.rendered_input_log = Some((log, path));
     }
 
     pub fn device_name(&self) -> &str {

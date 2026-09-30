@@ -147,6 +147,8 @@ class LiveConfig:
     period: int = FRAME_PERIOD
     device: bool = True
     gain: float = 1.0
+    rendered_inputs_out: str | None = None
+    rendered_inputs_max: int = 256
 
     def open(self) -> Any:
         """-> an open tools/live_audio.py LiveAudio on the native SHARC core."""
@@ -158,6 +160,8 @@ class LiveConfig:
             card_sha256=self.card_sha256,
             device=self.device,
             gain=self.gain,
+            rendered_inputs_out=self.rendered_inputs_out,
+            rendered_inputs_max=self.rendered_inputs_max,
         )
 
 
@@ -173,6 +177,8 @@ def prepare(
     lp0: str | None = None,
     period: int = FRAME_PERIOD,
     device: bool = True,
+    rendered_inputs_out: str | None = None,
+    rendered_inputs_max: int = 256,
 ) -> LiveConfig:
     """Check the inputs and build (or find) the state pack. LP0 defaults to
     the FlexBus log next to SNAPSHOT (tools/dt2gui.py records it there);
@@ -204,7 +210,14 @@ def prepare(
     )
     pack = state_pack(lp0, card_sha256, image=SHARC_IMAGE)
     print("[gui] live audio: %s" % pack, flush=True)
-    return LiveConfig(pack, card_sha256, period=period, device=device)
+    return LiveConfig(
+        pack,
+        card_sha256,
+        period=period,
+        device=device,
+        rendered_inputs_out=rendered_inputs_out,
+        rendered_inputs_max=rendered_inputs_max,
+    )
 
 
 def status(audio: Any, peer: LiveFramePeer, forcer: FrameForcer | None) -> str:

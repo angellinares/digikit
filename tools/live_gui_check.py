@@ -143,18 +143,33 @@ def run(
     frame_period: int | None = None,
     wav: str | None = None,
     frames_out: str | None = None,
+    rendered_inputs_out: str | None = None,
+    rendered_inputs_max: int = 256,
 ) -> dict:
     """See the module docstring. -> the report (its "ok" says pass/fail)."""
     from emu import gui, livesharc
 
+    if rendered_inputs_out is not None:
+        lane = (Path(ROOT) / "out/native/sharc-integrated-lane").resolve()
+        target = Path(rendered_inputs_out).absolute()
+        if not target.parent.resolve().is_relative_to(lane) or target.is_symlink():
+            raise ValueError(
+                "rendered-input artifact must stay under ignored sharc-integrated-lane"
+            )
+        if not 1 <= rendered_inputs_max <= 256:
+            raise ValueError("rendered-input limit must be 1..256")
+        # A run with no rendered frames must not inherit a prior artifact.
+        target.unlink(missing_ok=True)
     card_sha = gui.check_card_image_sidecar(snapshot, card_image)
-    live = livesharc.prepare(
+    live: livesharc.LiveConfig | _RecordingLive = livesharc.prepare(
         snapshot,
         card_image,
         card_sha,
         lp0=lp0,
         period=frame_period or livesharc.FRAME_PERIOD,
         device=False,
+        rendered_inputs_out=rendered_inputs_out,
+        rendered_inputs_max=rendered_inputs_max,
     )
     wire_frames: list[bytes] = []
     if frames_out is not None:
@@ -234,6 +249,27 @@ def run(
         report["wire"] = _write_frames(frames_out, wire_frames)
         if report["wire"]["frames"] != report["queue"]["pushed"]:
             raise ValueError("recorded wire frames differ from queued frame count")
+    if rendered_inputs_out is not None:
+        blob = Path(rendered_inputs_out).read_bytes()
+        lines = [json.loads(line) for line in blob.splitlines()]
+        if len(lines) != min(rendered_inputs_max, report["render"]["frames"]):
+            raise ValueError("incomplete rendered-input diagnostic artifact")
+        for ordinal, row in enumerate(lines):
+            data = bytes.fromhex(row["bytes_hex"])
+            if (
+                row["ordinal"] != ordinal
+                or len(data) != row["byte_len"]
+                or hashlib.sha256(data).hexdigest() != row["sha256"]
+            ):
+                raise ValueError("corrupt rendered-input diagnostic artifact")
+        report["rendered_inputs"] = {
+            "path": rendered_inputs_out,
+            "sha256": hashlib.sha256(blob).hexdigest(),
+            "captured": len(lines),
+            "total_rendered": report["render"]["frames"],
+            "complete": len(lines) == report["render"]["frames"],
+            "captured_stops": sum(row["frame_end"] == "stopped" for row in lines),
+        }
     press_frame = events.get("press", {}).get("sharc_frame")
     first = report["render"]["first_nonzero"]
     report["latency_s"] = (
@@ -275,6 +311,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--frames-out", help="write bounded accepted TX frames under ignored out/"
     )
+    p.add_argument(
+        "--rendered-inputs-out",
+        help="opt-in exact SHARC consumer log under ignored out/native/sharc-integrated-lane/",
+    )
+    p.add_argument(
+        "--rendered-inputs-max",
+        type=int,
+        default=256,
+        help="bounded rendered-input record cap (1..256)",
+    )
     p.add_argument("--json", help="write the report here")
     a = p.parse_args(argv)
     report = run(
@@ -290,6 +336,8 @@ def main(argv: list[str] | None = None) -> int:
         frame_period=a.frame_period,
         wav=a.wav,
         frames_out=a.frames_out,
+        rendered_inputs_out=a.rendered_inputs_out,
+        rendered_inputs_max=a.rendered_inputs_max,
     )
     text = json.dumps(report, indent=1)
     if a.json:

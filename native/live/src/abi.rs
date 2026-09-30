@@ -12,6 +12,7 @@
 
 use std::cell::RefCell;
 use std::ffi::{CStr, c_char, c_float, c_int};
+use std::path::{Path, PathBuf};
 
 use crate::player::LivePlayer;
 use crate::ring::{FRAME_LEN, StereoSample};
@@ -239,7 +240,7 @@ pub struct LiveRenderStats {
     pub idle_frames: u64,
 }
 
-fn c_path(path: *const c_char, what: &str) -> Result<std::path::PathBuf, String> {
+fn c_path(path: *const c_char, what: &str) -> Result<PathBuf, String> {
     if path.is_null() {
         return Err(format!("{what}: NULL path"));
     }
@@ -247,7 +248,61 @@ fn c_path(path: *const c_char, what: &str) -> Result<std::path::PathBuf, String>
     let s = unsafe { CStr::from_ptr(path) }
         .to_str()
         .map_err(|_| format!("{what}: path is not UTF-8"))?;
-    Ok(std::path::PathBuf::from(s))
+    Ok(PathBuf::from(s))
+}
+
+/// Validate an explicit rendered-input destination. Artifacts are restricted
+/// to this ignored lane so the ABI cannot accidentally write firmware-derived
+/// bytes into a tracked location.
+fn rendered_input_path(path: *const c_char, max_records: u32) -> Result<PathBuf, String> {
+    if !(1..=256).contains(&max_records) {
+        return Err("live rendered-input log max_records must be 1..=256".to_string());
+    }
+    let path = c_path(path, "live rendered-input log")?;
+    if !path.is_absolute() {
+        return Err("live rendered-input log path must be absolute".to_string());
+    }
+    let lane = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../out/native/sharc-integrated-lane");
+    std::fs::create_dir_all(&lane).map_err(|e| format!("{}: {e}", lane.display()))?;
+    let lane = lane
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", lane.display()))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "live rendered-input log has no parent directory".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    let parent = parent
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", parent.display()))?;
+    if !parent.starts_with(&lane) {
+        return Err(format!(
+            "live rendered-input log must stay under {}",
+            lane.display()
+        ));
+    }
+    // `File::create` follows a symlink at the final component; do not allow
+    // an ignored output path to redirect firmware-derived bytes elsewhere.
+    if path.is_symlink() {
+        return Err("live rendered-input log destination must not be a symlink".to_string());
+    }
+    Ok(path)
+}
+
+#[cfg(all(test, unix))]
+#[test]
+fn rendered_input_destination_cannot_follow_symlink() {
+    use std::ffi::CString;
+    let lane = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../out/native/sharc-integrated-lane");
+    std::fs::create_dir_all(&lane).unwrap();
+    let path = lane.join(format!("symlink-check-{}.ndjson", std::process::id()));
+    std::os::unix::fs::symlink("outside", &path).unwrap();
+    let name = CString::new(path.to_str().unwrap()).unwrap();
+    assert!(
+        rendered_input_path(name.as_ptr(), 10)
+            .unwrap_err()
+            .contains("symlink")
+    );
+    std::fs::remove_file(path).unwrap();
 }
 
 /// Opens the default output device playing a SHARC capture live: the
@@ -327,7 +382,35 @@ pub unsafe extern "C" fn live_open_frames(
     gain: c_float,
     device: c_int,
 ) -> *mut LivePlayer {
+    open_frames(
+        target_latency_frames,
+        lib_path,
+        pack_path,
+        card_sha256,
+        gain,
+        device,
+        None,
+    )
+}
+
+fn open_frames(
+    target_latency_frames: u32,
+    lib_path: *const c_char,
+    pack_path: *const c_char,
+    card_sha256: *const c_char,
+    gain: c_float,
+    device: c_int,
+    rendered_input: Option<(u32, *const c_char)>,
+) -> *mut LivePlayer {
     let opened = (|| -> Result<LivePlayer, String> {
+        if rendered_input.is_some() && device != 0 {
+            return Err("live rendered-input log requires offline device=0".to_string());
+        }
+        let rendered_input = rendered_input
+            .map(|(max_records, path)| {
+                Ok::<_, String>((max_records, rendered_input_path(path, max_records)?))
+            })
+            .transpose()?;
         let lib = c_path(lib_path, "live_open_frames lib")?;
         let pack = c_path(pack_path, "live_open_frames pack")?;
         let card = if card_sha256.is_null() {
@@ -341,8 +424,11 @@ pub unsafe extern "C" fn live_open_frames(
                     .to_string(),
             )
         };
-        let (source, _info) = live_source(&lib, &pack, gain, card.as_deref())?;
+        let (mut source, _info) = live_source(&lib, &pack, gain, card.as_deref())?;
         let log = source.log();
+        let rendered_input = rendered_input.map(|(max_records, path)| {
+            (source.enable_rendered_input_log(max_records as usize), path)
+        });
         let mut player = if device != 0 {
             LivePlayer::open_with_source(
                 target_latency_frames,
@@ -354,6 +440,9 @@ pub unsafe extern "C" fn live_open_frames(
             LivePlayer::offline(Box::new(source))
         };
         player.attach_render_log(log);
+        if let Some((log, path)) = rendered_input {
+            player.attach_rendered_input_log(log, path);
+        }
         Ok(player)
     })();
     match opened {
@@ -363,6 +452,35 @@ pub unsafe extern "C" fn live_open_frames(
             std::ptr::null_mut()
         }
     }
+}
+
+/// Opens an offline live-frame player with an explicit bounded post-queue,
+/// post-swap rendered-input artifact. `out_path` must be absolute under
+/// `out/native/sharc-integrated-lane/`; `max_records` is 1..=256. Every
+/// `live_render` flushes the log after each frame, including a stopped one.
+/// The ordinary `live_open_frames` path does not enable this diagnostic.
+///
+/// # Safety
+/// The path arguments must meet `live_open_frames`'s C-string contract.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn live_open_frames_with_rendered_input_log(
+    target_latency_frames: u32,
+    lib_path: *const c_char,
+    pack_path: *const c_char,
+    card_sha256: *const c_char,
+    gain: c_float,
+    max_records: u32,
+    out_path: *const c_char,
+) -> *mut LivePlayer {
+    open_frames(
+        target_latency_frames,
+        lib_path,
+        pack_path,
+        card_sha256,
+        gain,
+        0,
+        Some((max_records, out_path)),
+    )
 }
 
 /// A player opened with no device (`live_open_frames(..., device = 0)`):

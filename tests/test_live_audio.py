@@ -51,6 +51,27 @@ class TestLibraryDiscovery:
         with pytest.raises(FileNotFoundError):
             LiveAudio(library_path="/nonexistent/liblive_audio.dylib")
 
+    def test_rendered_inputs_require_bounded_offline_frames(self):
+        with pytest.raises(ValueError, match="offline frames_pack"):
+            LiveAudio(rendered_inputs_out="/tmp/not-used.ndjson")
+        with pytest.raises(ValueError, match="1..256"):
+            LiveAudio(
+                frames_pack="/tmp/not-used.pack",
+                device=False,
+                rendered_inputs_out="/tmp/not-used.ndjson",
+                rendered_inputs_max=0,
+            )
+
+    def test_gui_rendered_inputs_reject_outside_ignored_lane(self):
+        from tools.live_gui_check import run
+
+        with pytest.raises(ValueError, match="ignored sharc-integrated-lane"):
+            run(
+                "/tmp/not-used.snap",
+                "/tmp/not-used.img",
+                rendered_inputs_out="/tmp/escape.ndjson",
+            )
+
 
 @needs_device
 class TestOpenPlayStatsClose:

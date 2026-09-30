@@ -244,6 +244,19 @@ _FUNCTIONS = (
         ctypes.c_void_p,
     ),
     (
+        "live_open_frames_with_rendered_input_log",
+        [
+            ctypes.c_uint32,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+            ctypes.c_float,
+            ctypes.c_uint32,
+            ctypes.c_char_p,
+        ],
+        ctypes.c_void_p,
+    ),
+    (
         "live_render",
         [
             ctypes.c_void_p,
@@ -339,6 +352,8 @@ class LiveAudio:
         frames_pack: str | os.PathLike[str] | None = None,
         card_sha256: str | None = None,
         device: bool = True,
+        rendered_inputs_out: str | os.PathLike[str] | None = None,
+        rendered_inputs_max: int = 256,
     ) -> None:
         """Open the default output device on silence, or, with CAPTURE (a
         .dt2cap, see ``capture_pack``) or PACK (a built live pack), on the
@@ -348,7 +363,13 @@ class LiveAudio:
         core rendering the frames ``push_frame`` queues
         (``live_open_frames``; CARD_SHA256, when given, must be the card
         the pack was built for). DEVICE=False (FRAMES_PACK only): no
-        output device; ``render`` pulls frames."""
+        output device; ``render`` pulls frames. RENDERED_INPUTS_OUT enables
+        a bounded, opt-in offline log of the exact post-queue SHARC inputs."""
+        if rendered_inputs_out is not None:
+            if frames_pack is None or device:
+                raise ValueError("rendered-input logging requires offline frames_pack")
+            if not 1 <= rendered_inputs_max <= 256:
+                raise ValueError("rendered_inputs_max must be 1..256")
         path = (
             Path(library_path) if library_path is not None else _default_library_path()
         )
@@ -375,14 +396,21 @@ class LiveAudio:
             lib = Path(sharc_lib) if sharc_lib is not None else DEFAULT_SHARC_LIB
             if not lib.is_file():
                 raise FileNotFoundError("no native SHARC core library at %r" % str(lib))
-            self._handle = self._lib.live_open_frames(
+            common = (
                 target_latency_frames,
                 os.fspath(lib).encode("utf-8"),
                 os.fspath(frames_pack).encode("utf-8"),
                 card_sha256.encode("ascii") if card_sha256 else None,
                 float(gain),
-                1 if device else 0,
             )
+            if rendered_inputs_out is not None:
+                self._handle = self._lib.live_open_frames_with_rendered_input_log(
+                    *common,
+                    rendered_inputs_max,
+                    os.fsencode(os.path.abspath(rendered_inputs_out)),
+                )
+            else:
+                self._handle = self._lib.live_open_frames(*common, 1 if device else 0)
         elif pack is not None:
             lib = Path(sharc_lib) if sharc_lib is not None else DEFAULT_SHARC_LIB
             if not lib.is_file():

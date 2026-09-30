@@ -2,14 +2,15 @@
 //! matching state pack. The extra repeats are a *synthetic* queue schedule;
 //! this does not reproduce GUI/audio callback scheduling or Device behavior.
 
-use std::{env, path::Path};
+use std::{env, ffi::CString, path::Path};
 
 use crate::{
-    FRAME_LEN, StereoSample,
-    repeater::FrameQueue,
-    sharc_lib::LibCore,
-    sharc_source::{LivePack, LiveSource},
-    source::FrameSource,
+    FRAME_LEN,
+    abi::{
+        LiveRenderStats, live_close, live_open_frames_with_rendered_input_log, live_push_frame,
+        live_render, live_render_stats,
+    },
+    sharc_source::LivePack,
 };
 
 fn input(name: &str) -> String {
@@ -45,27 +46,11 @@ fn exact_rendered_input_and_zero_stop_gate() {
     let pack = LivePack::load(Path::new(&input("SHARC_RENDER_PACK"))).unwrap();
     pack.check_card(&env::var("SHARC_RENDER_CARD_SHA256").unwrap())
         .unwrap();
-    let core = LibCore::open(Path::new(&input("SHARC_RENDER_LIB")), pack.image()).unwrap();
-    let mut source = LiveSource::new(core, &pack, 1.0).unwrap();
+    let lib = input("SHARC_RENDER_LIB");
     let frames = frames(Path::new(&expected));
     let max: usize = env::var("SHARC_RENDER_FRAMES").unwrap().parse().unwrap();
     assert!((1..=256).contains(&max) && max == frames.len());
     let max_renders = max + max / 3;
-    let inputs = source.enable_rendered_input_log(max_renders);
-    let queue = FrameQueue::new();
-    let mut wire = Vec::new();
-    let mut out = [StereoSample::default(); FRAME_LEN];
-    for (index, frame) in frames.iter().enumerate() {
-        queue.write(frame);
-        assert!(queue.take_into(&mut wire));
-        source.render_frame(&wire, &mut out);
-        // Exact post-queue bytes and their SHA-256 also cover a synthetic
-        // take/repeat sequence; the repeat clears one-shot release/trig words.
-        if (index + 1) % 3 == 0 {
-            assert!(queue.take_into(&mut wire));
-            source.render_frame(&wire, &mut out);
-        }
-    }
     let path = input("SHARC_RENDER_INPUTS");
     let ignored = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../out")
@@ -79,28 +64,61 @@ fn exact_rendered_input_and_zero_stop_gate() {
             .unwrap()
             .starts_with(ignored)
     );
-    let inputs = inputs.lock().unwrap();
-    inputs.write_ndjson(Path::new(&path)).unwrap();
-    assert_eq!(inputs.records().len(), max_renders);
-    assert_eq!(inputs.dropped, 0);
-    let log = source.log();
-    let log = log.lock().unwrap();
+    let lib = CString::new(lib).unwrap();
+    let pack_path = CString::new(input("SHARC_RENDER_PACK")).unwrap();
+    let card = CString::new(env::var("SHARC_RENDER_CARD_SHA256").unwrap()).unwrap();
+    let path_c = CString::new(path.clone()).unwrap();
+    // Exercise the exported offline ABI and its production player/queue
+    // consumer, including per-frame artifact flushing after a stop.
+    let handle = unsafe {
+        live_open_frames_with_rendered_input_log(
+            0,
+            lib.as_ptr(),
+            pack_path.as_ptr(),
+            card.as_ptr(),
+            1.0,
+            max_renders as u32,
+            path_c.as_ptr(),
+        )
+    };
+    assert!(!handle.is_null());
+    let mut out = vec![0.0f32; FRAME_LEN * 2];
+    for (index, frame) in frames.iter().enumerate() {
+        assert_eq!(
+            unsafe { live_push_frame(handle, frame.as_ptr(), frame.len()) },
+            0
+        );
+        assert_eq!(
+            unsafe { live_render(handle, 1, out.as_mut_ptr(), out.len()) },
+            1
+        );
+        if (index + 1) % 3 == 0 {
+            assert_eq!(
+                unsafe { live_render(handle, 1, out.as_mut_ptr(), out.len()) },
+                1
+            );
+        }
+    }
+    let mut log = LiveRenderStats::default();
+    assert_eq!(unsafe { live_render_stats(handle, &mut log) }, 0);
+    unsafe { live_close(handle) };
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text.lines().count(), max_renders);
+    assert!(
+        text.lines()
+            .all(|line| line.contains("\"frame_end\":\"clean\""))
+    );
     println!(
-        "rendered: {} taken + {} synthetic repeats = {} total; {} native SHARC instructions; stopped {}, dma failures {}; first stop {:?}",
+        "rendered: {} taken + {} repeats = {} total; {} native SHARC instructions; stopped {}",
         max,
         max / 3,
         log.frames,
         log.instructions,
-        log.stopped,
-        log.dma_failures,
-        log.first_stop
+        log.stopped
     );
+    assert_eq!(log.frames, max_renders as u64);
     assert_eq!(
         log.stopped, 0,
         "zero-stopped-render gate failed; input log retained in ignored out/"
-    );
-    assert_eq!(
-        log.dma_failures, 0,
-        "SHARC DMA gate failed; input log retained in ignored out/"
     );
 }
