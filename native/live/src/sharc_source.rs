@@ -568,6 +568,191 @@ pub struct RenderSummary {
     pub frames_with_single_steps: u64,
 }
 
+/// A bounded diagnostic record of the exact DMA bytes a live frame used.
+/// `bytes` and `sha256` are after the queue's take/repeat/merge semantics
+/// and after `swap16_into`; the digest is over `bytes` alone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RenderedInput {
+    pub ordinal: u64,
+    pub source: crate::repeater::TakeSource,
+    pub byte_len: usize,
+    pub sha256: String,
+    pub bytes: Vec<u8>,
+    pub frame_end: RenderedFrameEnd,
+    pub stop_pc: Option<u32>,
+    /// Total native instructions between the frame's counters before and after.
+    pub instructions: u64,
+}
+
+/// The renderer result preserved in a [`RenderedInput`] without halt text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderedFrameEnd {
+    Clean,
+    Dma,
+    Stopped,
+}
+
+/// Optional, bounded collection of rendered DMA inputs. Once full, later
+/// frames are counted in `dropped` but neither their bytes nor digest are kept.
+#[derive(Debug)]
+pub struct RenderedInputLog {
+    max_records: usize,
+    next_ordinal: u64,
+    pub dropped: u64,
+    records: Vec<RenderedInput>,
+}
+
+impl RenderedInputLog {
+    pub fn new(max_records: usize) -> Self {
+        RenderedInputLog {
+            max_records,
+            next_ordinal: 0,
+            dropped: 0,
+            records: Vec::with_capacity(max_records),
+        }
+    }
+
+    pub fn records(&self) -> &[RenderedInput] {
+        &self.records
+    }
+
+    fn push(
+        &mut self,
+        source: crate::repeater::TakeSource,
+        bytes: &[u8],
+        end: FrameEnd,
+        stop_text: Option<&str>,
+        instructions: u64,
+    ) {
+        let ordinal = self.next_ordinal;
+        self.next_ordinal += 1;
+        if self.records.len() == self.max_records {
+            self.dropped += 1;
+            return;
+        }
+        let frame_end = match end {
+            FrameEnd::Clean { .. } => RenderedFrameEnd::Clean,
+            FrameEnd::Dma => RenderedFrameEnd::Dma,
+            FrameEnd::Stopped { .. } => RenderedFrameEnd::Stopped,
+        };
+        let stop_pc = matches!(end, FrameEnd::Stopped { .. })
+            .then(|| stop_text.and_then(stop_pc))
+            .flatten();
+        self.records.push(RenderedInput {
+            ordinal,
+            source,
+            byte_len: bytes.len(),
+            sha256: sha256_hex(bytes),
+            bytes: bytes.to_vec(),
+            frame_end,
+            stop_pc,
+            instructions,
+        });
+    }
+
+    /// Write newline-delimited JSON suitable for the ignored
+    /// `out/native/sharc-rendered-lane/` diagnostic directory.
+    pub fn write_ndjson(&self, path: &std::path::Path) -> Result<(), String> {
+        use std::io::Write;
+
+        let file = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut out = std::io::BufWriter::new(file);
+        for r in &self.records {
+            let source = match r.source {
+                crate::repeater::TakeSource::Taken => "taken",
+                crate::repeater::TakeSource::Repeat => "repeat",
+            };
+            let end = match r.frame_end {
+                RenderedFrameEnd::Clean => "clean",
+                RenderedFrameEnd::Dma => "dma",
+                RenderedFrameEnd::Stopped => "stopped",
+            };
+            let stop_pc = r.stop_pc.map_or("null".to_string(), |pc| format!("{pc}"));
+            writeln!(out, "{{\"ordinal\":{},\"source\":\"{source}\",\"byte_len\":{},\"sha256\":\"{}\",\"bytes_hex\":\"{}\",\"frame_end\":\"{end}\",\"stop_pc\":{stop_pc},\"instructions\":{}}}", r.ordinal, r.byte_len, r.sha256, hex(&r.bytes), r.instructions).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        out.flush().map_err(|e| format!("{}: {e}", path.display()))
+    }
+}
+
+fn stop_pc(reason: &str) -> Option<u32> {
+    let (_, hex) = reason.rsplit_once(" at 0x")?;
+    let digits: String = hex.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+    u32::from_str_radix(&digits, 16).ok()
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        use std::fmt::Write;
+        write!(out, "{b:02x}").unwrap();
+    }
+    out
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut padded = data.to_vec();
+    let bits = (padded.len() as u64).wrapping_mul(8);
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&bits.to_be_bytes());
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    for block in padded.as_chunks::<64>().0 {
+        let mut w = [0u32; 64];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes(block[4 * i..4 * i + 4].try_into().unwrap());
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
+        }
+        let mut v = h;
+        for i in 0..64 {
+            let t1 = v[7]
+                .wrapping_add(v[4].rotate_right(6) ^ v[4].rotate_right(11) ^ v[4].rotate_right(25))
+                .wrapping_add((v[4] & v[5]) ^ (!v[4] & v[6]))
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
+            let t2 = (v[0].rotate_right(2) ^ v[0].rotate_right(13) ^ v[0].rotate_right(22))
+                .wrapping_add((v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]));
+            v = [
+                t1.wrapping_add(t2),
+                v[0],
+                v[1],
+                v[2],
+                v[3].wrapping_add(t1),
+                v[4],
+                v[5],
+                v[6],
+            ];
+        }
+        for i in 0..8 {
+            h[i] = h[i].wrapping_add(v[i]);
+        }
+    }
+    hex(&h.into_iter().flat_map(u32::to_be_bytes).collect::<Vec<_>>())
+}
+
 impl RenderLog {
     /// Record one core frame: its time NS, the core counters BEFORE and
     /// AFTER it, how it ended, the halt text of a frame that did not end
@@ -759,6 +944,7 @@ pub struct LiveSource<C: SharcCore> {
     gain: f32,
     out: FrameOutput,
     log: Arc<Mutex<RenderLog>>,
+    rendered_inputs: Option<Arc<Mutex<RenderedInputLog>>>,
 }
 
 impl<C: SharcCore> LiveSource<C> {
@@ -773,7 +959,21 @@ impl<C: SharcCore> LiveSource<C> {
             gain,
             out: FrameOutput { voices: Vec::new() },
             log: Arc::new(Mutex::new(new_log())),
+            rendered_inputs: None,
         })
+    }
+
+    /// Enable bounded recording of post-swap DMA inputs for this source.
+    /// Normal playback leaves this disabled, avoiding byte copies, hashing,
+    /// diagnostic locking, and artifact writes.
+    pub fn enable_rendered_input_log(
+        &mut self,
+        max_records: usize,
+    ) -> Arc<Mutex<RenderedInputLog>> {
+        crate::repeater::enable_render_diagnostics();
+        let log = Arc::new(Mutex::new(RenderedInputLog::new(max_records)));
+        self.rendered_inputs = Some(Arc::clone(&log));
+        log
     }
 
     pub fn log(&self) -> Arc<Mutex<RenderLog>> {
@@ -801,10 +1001,27 @@ impl<C: SharcCore> LiveSource<C> {
             _ => Some(self.renderer.halt_text()),
         };
         let nonzero = any_nonzero(&self.out);
-        self.log
-            .lock()
-            .expect("render log poisoned")
-            .record(ns, before, after, end, stop_text, nonzero);
+        self.log.lock().expect("render log poisoned").record(
+            ns,
+            before,
+            after,
+            end,
+            stop_text.clone(),
+            nonzero,
+        );
+        if let Some(log) = &self.rendered_inputs {
+            // The queue sets this immediately before the FrameSource call.
+            // Direct callers of `step` supply a frame as a taken frame.
+            let source = crate::repeater::take_source_for_render()
+                .unwrap_or(crate::repeater::TakeSource::Taken);
+            log.lock().expect("rendered input log poisoned").push(
+                source,
+                &self.dma,
+                end,
+                stop_text.as_deref(),
+                after.instructions - before.instructions,
+            );
+        }
         Some(end)
     }
 
@@ -1197,6 +1414,63 @@ mod tests {
         let log = log.lock().unwrap();
         assert_eq!((log.frames, log.clean, log.nonzero_frames), (1, 1, 1));
         assert_eq!(log.first_nonzero, Some(0));
+    }
+
+    #[test]
+    fn rendered_input_log_records_post_swap_taken_and_repeat_bytes() {
+        let p = pack(&[]);
+        let mut s = LiveSource::new(mock(), &p, 1.0).unwrap();
+        let inputs = s.enable_rendered_input_log(1);
+        let q = crate::repeater::FrameQueue::new();
+        q.write(&[0x00, 0x03, 0xAB, 0xCD]);
+        let mut wire = Vec::new();
+        let mut out = [StereoSample::default(); FRAME_LEN];
+        assert!(q.take_into(&mut wire));
+        s.render_frame(&wire, &mut out);
+        assert!(q.take_into(&mut wire));
+        s.render_frame(&wire, &mut out);
+        let inputs = inputs.lock().unwrap();
+        assert_eq!(inputs.records().len(), 1);
+        assert_eq!(inputs.dropped, 1);
+        let record = &inputs.records()[0];
+        assert_eq!(record.ordinal, 0);
+        assert_eq!(record.source, crate::repeater::TakeSource::Taken);
+        assert_eq!(record.bytes, [0x03, 0x00, 0xCD, 0xAB]);
+        assert_eq!(record.byte_len, 4);
+        assert_eq!(
+            record.sha256,
+            "6fae2c3fca6a7e597d6b9e125c1ea9894a5a76f96d691cf95b7571c7518d0451"
+        );
+        assert_eq!(record.frame_end, RenderedFrameEnd::Clean);
+        assert_eq!(record.stop_pc, None);
+        assert_eq!(record.instructions, 100);
+    }
+
+    #[test]
+    fn diagnostic_sha256_covers_multiple_compression_blocks() {
+        assert_eq!(
+            sha256_hex(&[b'a'; 64]),
+            "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb"
+        );
+        assert_eq!(
+            sha256_hex(&vec![b'a'; 2748]),
+            "4ec2234febfd986ca1ad542de49ff7445074c67e4583295a296d01128fcc1fd1"
+        );
+    }
+
+    #[test]
+    fn rendered_input_stop_records_the_trap_pc() {
+        let p = pack(&[]);
+        let mut m = mock();
+        m.handler_halt = "native-trap: unmodeled MMR at 0x1c1cd7".into();
+        let mut s = LiveSource::new(m, &p, 1.0).unwrap();
+        let inputs = s.enable_rendered_input_log(1);
+        s.step(&[1, 2]).unwrap();
+        let inputs = inputs.lock().unwrap();
+        let record = &inputs.records()[0];
+        assert_eq!(record.frame_end, RenderedFrameEnd::Stopped);
+        assert_eq!(record.stop_pc, Some(0x1c1cd7));
+        assert_eq!(record.instructions, 100);
     }
 
     fn pokes(src: &mut CaptureSource<Mock>) -> Vec<String> {

@@ -13,6 +13,9 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/autoevents.py",
+    "tools/wireevents.py",
+    "tools/sharc_render_replay.py",
     "emu/dspi2.py",
     "emu/dspiframe.py",
     "emu/livesharc.py",
@@ -21,6 +24,9 @@ CLEAN = [
     "emu/sharc_peer.py",
     "emu/ssi.py",
     "tests/test_cf.py",
+    "tests/test_autoevents.py",
+    "tests/test_wireevents.py",
+    "tests/test_sharc_render_replay.py",
     "tests/test_cf_names.py",
     "tests/test_cfdb.py",
     "tests/test_cfisa.py",

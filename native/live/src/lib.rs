@@ -37,3 +37,6 @@ pub use ring::{FRAME_LEN, SpscRing, StereoSample};
 
 #[cfg(test)]
 mod sharc_capture_tests;
+
+#[cfg(test)]
+mod rendered_replay_tests;

@@ -2978,3 +2978,102 @@ boundaries, so coalescing (few boundaries) under-reads it.
   incorrect native FF1 result or an explanation for the two displaced
   release words. A longer CPU/RAM/MMIO gate needs an explicit hook-boundary
   normalization before calling it CPU parity or divergence.
+
+### Host-event replay isolates the 68-frame release displacement (2026-09-30)
+
+**[C] [D]** The preceding note's *unrecorded Python frame-force clocks*
+are now available for a **new, source-checked diagnostic run**; the earlier
+native **autonomously scheduled** 68-frame failure remains valid. With the
+locally checked ready snapshot, card, OS image and compact state,
+`tools/autoevents.py --stepping fast-observed --frames 68 --limit 20000000`
+uses fixed guest-clock requests for `3516425:2301` and `10552659:2300` and
+delivers them at existing outer GUI-style boundaries, without a polling
+thread. Its 68-frame `fast-offers-sixtyeight.dtfr` has SHA-256
+`e21cb015102bd6c1222b7c733238ddf7402a725ee7e63b0fb8313d00fd1f8e8b`
+and **matches the previously accepted** Python-ColdFire DTFR byte for byte,
+after **14,365,479 fast-mode *estimated/credited* instructions**. The input
+delivery clocks equal both requested clocks. This integrity match is not
+source authentication or a deterministic exact-counted clock gate: the GUI
+fast stepper estimates counts and can stop at a block boundary. The separate
+`counted` mode is an exact-counted **new** Oracle reference; a bounded
+four-frame run took 2,897,012 counted/credited instructions and matched the
+first four accepted bytes, but its frame-force clocks differ substantially.
+
+The fast-observed Python **force** offers at ordinals 50–54 were
+10,404,273; **10,617,827**; **10,826,104**; 11,035,489; and 11,243,883.
+The earlier native self-scheduler forced ordinals 50–54 at 10,113,640;
+**10,318,163**; **10,522,540**; 10,732,139; and 10,937,324. Ordinal
+52's native offer is **before** release delivery at 10,552,659 while the
+corresponding Python offer is **after** it: this accounts for the one-shot
+words moving from Python frame 51 to native frame 53 without requiring a
+release-word encoding defect. Native offer 52 led by 303,564 clock units;
+Python and native delivery clocks were identical. `tools/wireevents.py`
+reports the first differing wire byte at frame 51 offset `0x25`, with
+the frame-51/53 release windows and local force-clock deltas. This is an
+observed host scheduling separation, **not** an explanation for all of its
+underlying clock drift or a Device timer model.
+
+**[D]** In a second, distinct **partial host-event replay** mode,
+`native/machine/tests/auto_replay.rs` injects exactly the recorded Python
+frame-force and panel-delivery events (bounded by `DT2_NATIVE_LIMIT` and
+`DT2_NATIVE_FRAMES`), retaining *native* timer and idle-yield scheduling.
+From the same locally checked ready state, a release-built replay emitted
+**all 68 wire-order frames byte-identically** to the accepted Python DTFR
+after **14,167,528 actual native CPU steps**, with 68 explicit force
+stimuli and 534 native idle yields. The counted-mode four-frame replay also
+matched all four ordered frames, after **2,466,249 actual native steps**.
+The full replay pass isolates this particular release displacement to the
+force-offer schedule, but does **not** establish native autonomous scheduling,
+per-instruction ColdFire parity, Device input/timer/INTC parity, or SHARC
+rendering. The first replayed host force already has a different native
+pre-IRQ PC (`0x40000458`) from Python (`0x400cccd8`); matched wire bytes do
+not erase that difference. Python SR is intentionally *not* sampled solely
+for this report because extra Unicorn SR reads can disturb condition codes;
+native pre-SR is present in its JSON telemetry. All derived artifacts remain
+under ignored `out/native/integrated-auto-smoke/`; local SHA-256s prove
+consistency only. A passing native SHARC **zero-stopped-render** gate for
+these frames is still open.
+
+**[D]** A separate, bounded **native SHARC-only** diagnostic now passes a
+zero-stopped-render gate for the same 68 native-produced wire frames, using
+the locally checked state pack `out/native/live/state-82cf380735390258438540a4.pack`
+and a **synthetic** queue schedule (one take per ordered frame and one
+one-shot-cleared repeat after each third take). Its 90 exact post-queue,
+post-halfword-swap DMA inputs are stored with take/repeat ordinals, raw-byte
+SHA-256s, end state, stop PC and native instruction deltas at
+`out/native/sharc-rendered-lane/native-replay68-plus-repeats.ndjson`
+(SHA-256 `1c0b5413cc115fa2d68718f0bad22c168703bdd7441d1e50b64720540d752847`).
+The release appears at rendered ordinal 68; all **90** rendered inputs ended
+cleanly, with **0 stops, 0 DMA failures and 19,402,398 actual native SHARC
+instructions**. This is a **synthetic** replay, not the integrated desktop
+audio callback's actual repeat cadence or proof that the intermittent
+`0x1c1cd7` stop is fixed. The prior intermittent stop remains **[O]**.
+
+**[C] [D]** `tools/sharc_render_replay.py` then imported the same checked
+state-pack SHRD bytes into the **independent Python SHARC interpreter**,
+verified the packed image against the locally loaded SHARC section, and
+replayed the 90 **exact recorded post-swap DMA byte sequences** without a
+second swap. With a 21M-instruction cap it finished all 90 frames after
+**19,402,398 actual Python SHARC instructions**; each frame's ordinal,
+take/repeat source, raw-byte SHA-256, clean/returned terminal and **per-frame
+instruction delta** matches the native SHARC log. The bounded agreement
+report is `out/native/sharc-rendered-lane/python-ninety-checked.json`
+(SHA-256 `a1adba75b01f4c24e7ee60b14d053478073067d6a65ee3017eb945a3520cf3f0`).
+This establishes a 90-input Python/native **SHARC execution/stop** gate for
+that particular synthetic sequence, **not** PCM/audio-sample parity,
+desktop callback timing, or freedom from intermittent stops on other input
+sequences. No failed-frame native read/write trace was captured.
+
+**[D] [O]** A Python interpreter watch over the suspect architectural
+`DM(0x254d94)` records a *real writer* at **SHARC PC `0x1c2c64`** on 89
+of 90 rendered frames, before the subsequent reads at `0x1c1ca8`.
+`0x1c2c64`'s explicit disassembly is `DM(0x254d90) = R12`; in SIMD mode,
+`tools/sharc_core/forms_move.py` writes its PEy companion at `+4`, i.e.
+`0x254d94`. This accounts for the previously empty **resolved static
+store** list: the current SHARC DB indexes the explicit operand but not
+this SIMD companion. The watch's canonical address is `0x28254d94`.
+The writer's values vary and none in this 90-frame run equals the old
+post-trap value `0x31049452`. This is **Python-path** dynamic provenance,
+not proof that a stopping **native** path wrote the same value: a native
+pre-trap read and actual writer event on a reproducible stopping input
+sequence remain **[O]**. Post-trap `M1/I0` alone is not provenance.

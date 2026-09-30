@@ -39,8 +39,46 @@
 //! | 0x28 | release of the 0x200 event |
 //! | 0x2a | all-voice reset (0 or 0xffff) |
 
+use std::cell::Cell;
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// How the frame most recently handed to the render thread was obtained.
+/// `Taken` includes a frame whose one-shot fields were merged while queued.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TakeSource {
+    Taken,
+    Repeat,
+}
+
+static RENDER_DIAGNOSTICS_ENABLED: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    // `take_into()` and `FrameSource::render_frame()` run consecutively on
+    // the producer (or offline render) thread. This side channel preserves
+    // the queue provenance without changing the hot FrameSource API.
+    static RENDER_TAKE_SOURCE: Cell<Option<TakeSource>> = const { Cell::new(None) };
+}
+
+fn set_render_take_source(source: Option<TakeSource>) {
+    if RENDER_DIAGNOSTICS_ENABLED.load(Ordering::Relaxed) {
+        RENDER_TAKE_SOURCE.with(|slot| slot.set(source));
+    }
+}
+
+/// Enable queue provenance for an optional rendered-input diagnostic.
+/// This is process-wide because queues and sources meet only at the existing
+/// `FrameSource` seam; it is never enabled in normal playback.
+pub fn enable_render_diagnostics() {
+    RENDER_DIAGNOSTICS_ENABLED.store(true, Ordering::Relaxed);
+}
+
+/// Consume the provenance from the immediately preceding [`FrameQueue::take_into`].
+/// This is intended for an optional render diagnostic only.
+pub fn take_source_for_render() -> Option<TakeSource> {
+    RENDER_TAKE_SOURCE.with(Cell::take)
+}
 
 /// TX byte offset of the trig mask (big-endian u16).
 pub const TRIG_MASK_OFFSET: usize = 0x22;
@@ -141,6 +179,9 @@ impl FrameQueue {
     pub fn take_into(&self, out: &mut Vec<u8>) -> bool {
         let mut g = self.inner.lock().unwrap();
         out.clear();
+        if RENDER_DIAGNOSTICS_ENABLED.load(Ordering::Relaxed) {
+            set_render_take_source(None);
+        }
         if let Some(mut frame) = g.fifo.pop_front() {
             out.extend_from_slice(&frame);
             g.stats.taken += 1;
@@ -150,12 +191,14 @@ impl FrameQueue {
             clear_one_shot_fields(&mut frame);
             g.last = Some(frame);
             g.stats.depth = g.fifo.len() as u64;
+            set_render_take_source(Some(TakeSource::Taken));
             return true;
         }
         match g.last.as_ref() {
             Some(last) => {
                 out.extend_from_slice(last);
                 g.stats.repeats += 1;
+                set_render_take_source(Some(TakeSource::Repeat));
                 true
             }
             None => false,
@@ -325,6 +368,18 @@ mod tests {
         assert!(q.take_into(&mut out));
         assert_eq!(out.len(), FRAME_BYTES);
         assert_eq!(out.capacity(), cap);
+    }
+
+    #[test]
+    fn diagnostic_provenance_distinguishes_a_take_from_a_repeat() {
+        enable_render_diagnostics();
+        let q = FrameQueue::new();
+        q.write(&frame(1, 0, 0));
+        let mut out = Vec::new();
+        assert!(q.take_into(&mut out));
+        assert_eq!(take_source_for_render(), Some(TakeSource::Taken));
+        assert!(q.take_into(&mut out));
+        assert_eq!(take_source_for_render(), Some(TakeSource::Repeat));
     }
 
     #[test]
