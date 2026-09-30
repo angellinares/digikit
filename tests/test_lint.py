@@ -39,6 +39,7 @@ CLEAN = [
     "tests/test_live_gui.py",
     "tests/test_live_sharc.py",
     "tests/test_livesharc.py",
+    "tests/test_wiretrace.py",
     "tests/test_mmio_record.py",
     "tests/test_mmiotrace.py",
     "tests/test_plusdrive.py",
@@ -136,6 +137,7 @@ CLEAN = [
     "tools/snapeq.py",
     "tools/snapconv.py",
     "tools/snapread.py",
+    "tools/wiretrace.py",
 ]
 
 

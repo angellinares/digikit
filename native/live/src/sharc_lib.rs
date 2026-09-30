@@ -33,6 +33,7 @@ type HaltFn = unsafe extern "C" fn(Handle, *mut u8, usize) -> i32;
 type OptionFn = unsafe extern "C" fn(Handle, u32, i64) -> i32;
 type StatsFn = unsafe extern "C" fn(Handle, *mut u64, usize) -> i32;
 type SetRegFn = unsafe extern "C" fn(Handle, u32, u32, u32, u32) -> i32;
+type GetRegFn = unsafe extern "C" fn(Handle, u32) -> u64;
 type PokeFn = unsafe extern "C" fn(Handle, u64, *const u8, usize, u32) -> i32;
 type PeekFn = unsafe extern "C" fn(Handle, u64, u32) -> i64;
 type FreshCallFn = unsafe extern "C" fn(Handle, u32, i64) -> i32;
@@ -50,6 +51,7 @@ struct Api {
     option: OptionFn,
     stats: StatsFn,
     set_reg: SetRegFn,
+    get_reg: GetRegFn,
     poke: PokeFn,
     peek: PeekFn,
     fresh_call: FreshCallFn,
@@ -104,6 +106,7 @@ impl Api {
                 )?),
                 stats: std::mem::transmute::<*mut c_void, StatsFn>(sym("sharc_native_stats")?),
                 set_reg: std::mem::transmute::<*mut c_void, SetRegFn>(sym("sharc_native_set_reg")?),
+                get_reg: std::mem::transmute::<*mut c_void, GetRegFn>(sym("sharc_native_get_reg")?),
                 poke: std::mem::transmute::<*mut c_void, PokeFn>(sym("sharc_native_poke")?),
                 peek: std::mem::transmute::<*mut c_void, PeekFn>(sym("sharc_native_peek")?),
                 fresh_call: std::mem::transmute::<*mut c_void, FreshCallFn>(sym(
@@ -232,6 +235,11 @@ impl SharcCore for LibCore {
     fn set_reg_const(&mut self, code: u32, value: u32) {
         // SAFETY: live handle.
         unsafe { (self.api.set_reg)(self.handle, code, 1, value, 0) };
+    }
+
+    fn get_reg(&mut self, code: u32) -> u64 {
+        // SAFETY: live handle; the return packs the known-bit mask over the value.
+        unsafe { (self.api.get_reg)(self.handle, code) }
     }
 
     fn step(&mut self, n: u32) -> u32 {

@@ -118,6 +118,26 @@ pub struct DeliverWrite {
 }
 
 impl Dspi2Link {
+    /// A TX may wait for a later RX SERQ. The board preflights the RX
+    /// descriptor against these actual captured bytes before exchange.
+    pub fn pending_tx_len(&self) -> Option<usize> {
+        self.tx_ready.as_ref().map(Vec::len)
+    }
+
+    pub fn rx_armed(&self) -> bool {
+        self.rx_armed
+    }
+
+    /// Deferred source capture follows SERQ; complete an exchange if RX
+    /// was armed earlier (including a set-all SERQ selecting both channels).
+    pub fn exchange_after_capture(
+        &mut self,
+        regs: &mut RegFile,
+        peer: &mut dyn Peer,
+    ) -> Option<DeliverWrite> {
+        self.maybe_exchange(regs, peer)
+    }
+
     pub fn new(tx_chan: usize, rx_chan: usize, raise_completion: bool) -> Self {
         Self {
             tx_chan,
@@ -164,8 +184,8 @@ impl Dspi2Link {
     /// Run `tx_chan`'s whole major loop now, given the raw source bytes a
     /// trace's `HRD` (or a live bus) supplied -- see the module docs. ->
     /// the logical TX frame (PUSHR tags stripped, exactly what
-    /// `peer.exchange` receives in Python), and calls
-    /// [`Self::maybe_exchange`] if `rx_chan` is already armed.
+    /// `peer.exchange` receives in Python). A live bus calls
+    /// [`Self::exchange_after_capture`] if `rx_chan` was already armed.
     pub fn capture(&mut self, regs: &mut RegFile, source: &[u8]) -> Vec<u8> {
         let out = Self::run_capture(regs, self.tx_chan, source);
         self.tx_ready = Some(out.clone());

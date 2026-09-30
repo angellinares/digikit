@@ -7,13 +7,14 @@ use emmc_card::{
     dma::{StorageDmaError, service_dma59},
 };
 use periph::{
-    DmaLink,
+    DmaLink, dspi,
     dtim::{BASES as DTIM_BASES, DtimBank},
     edma,
     esdhc::{self, DmaCompletion, Esdhc, RegisterPolicy},
     intc::BASES as INTC_BASES,
     pit::BASES as PIT_BASES,
     regfile::SLOT_SIZE,
+    spilink::SerqEffect,
 };
 
 use crate::{host_state::HostState, time::Time};
@@ -56,6 +57,7 @@ pub enum CompletionEvent {
 pub enum BoardWriteError {
     Bus(BusError),
     Dma(StorageDmaError),
+    DspiDma { address: u32, bytes: usize },
     CompletionAddress { address: u32 },
 }
 
@@ -248,6 +250,20 @@ impl Board {
                     let offset = (*slot & PAGE_MASK) as usize;
                     let _ = time.load_page(*slot, &data[offset..offset + SLOT_SIZE]);
                 }
+            }
+        }
+        // DmaLink's register files live inside MSTATE's 1 MiB pages, just
+        // like Time's PIT/DTIM/INTC slots. Guest TCD writes after import must
+        // see the imported starting values rather than zeroed register files.
+        for slot in [
+            edma::EDMA_BASE,
+            dspi::DSPI2_BASE,
+            dspi::DSPI1_BASE,
+            periph::dsp::BASE,
+        ] {
+            if slot & !PAGE_MASK == addr {
+                let offset = (slot & PAGE_MASK) as usize;
+                let _ = self.dma.load_page(slot, &data[offset..offset + SLOT_SIZE]);
             }
         }
         Ok(())
@@ -629,6 +645,138 @@ impl Board {
             }
         }
     }
+
+    /// Read channel 29's raw PUSHR source, respecting the TCD's SOFF/SMOD
+    /// before DmaLink strips its 16-bit tags. This is a host DMA read, not
+    /// a ColdFire Bus read and therefore not a guest access recorder entry.
+    fn dspi2_source(&mut self) -> Result<Vec<u8>, BoardWriteError> {
+        let view = edma::TcdView::new(&mut self.dma.edma_regs, dspi::TX_CHAN);
+        let mask = view.smod_mask();
+        let tcd = view.snapshot();
+        let elem = 1usize << (tcd.attr & 7);
+        let nbytes = tcd.nbytes as usize;
+        let len = (tcd.citer as usize).checked_mul(nbytes);
+        let Some(len) = len else {
+            return Err(BoardWriteError::DspiDma {
+                address: tcd.saddr,
+                bytes: usize::MAX,
+            });
+        };
+        if nbytes == 0 || !nbytes.is_multiple_of(elem) || len > dspi::FRAME_BYTES * 4 {
+            return Err(BoardWriteError::DspiDma {
+                address: tcd.saddr,
+                bytes: len,
+            });
+        }
+        let base = tcd.saddr & !mask;
+        let mut source = Vec::with_capacity(len);
+        let mut addr = tcd.saddr;
+        for _ in 0..tcd.citer as usize {
+            for _ in 0..nbytes / elem {
+                for offset in 0..elem {
+                    let at = addr
+                        .checked_add(offset as u32)
+                        .ok_or(BoardWriteError::DspiDma {
+                            address: addr,
+                            bytes: len,
+                        })?;
+                    if Self::owned_mmio(at) {
+                        return Err(BoardWriteError::DspiDma {
+                            address: at,
+                            bytes: len,
+                        });
+                    }
+                    source.push(self.ram_read(at, 1).ok_or(BoardWriteError::DspiDma {
+                        address: at,
+                        bytes: len,
+                    })? as u8);
+                }
+                addr = addr.wrapping_add_signed(tcd.soff as i32);
+                if mask != 0 {
+                    addr = base | (addr & mask);
+                }
+            }
+        }
+        Ok(source)
+    }
+
+    /// `DeliverWrite` holds contiguous bytes. Refuse a non-contiguous RX
+    /// descriptor before the peripheral exchanges the frame and advances it.
+    fn preflight_dspi2_rx(&mut self, tx_len: Option<usize>) -> Result<(), BoardWriteError> {
+        let view = edma::TcdView::new(&mut self.dma.edma_regs, dspi::RX_CHAN);
+        let mask = view.dmod_mask();
+        let tcd = view.snapshot();
+        if tcd.citer == 0 {
+            return Ok(());
+        }
+        let elem = 1usize << ((tcd.attr >> 8) & 7);
+        let nbytes = tcd.nbytes as usize;
+        let len = (tcd.citer as usize).checked_mul(nbytes);
+        let Some(len) = len else {
+            return Err(BoardWriteError::DspiDma {
+                address: tcd.daddr,
+                bytes: usize::MAX,
+            });
+        };
+        if nbytes == 0
+            || !nbytes.is_multiple_of(elem)
+            || tcd.doff != elem as i16
+            || mask != 0
+            || len > dspi::FRAME_BYTES * 2
+            || tx_len.is_some_and(|tx| tx != len)
+        {
+            return Err(BoardWriteError::DspiDma {
+                address: tcd.daddr,
+                bytes: len,
+            });
+        }
+        for offset in 0..len {
+            let at = tcd
+                .daddr
+                .checked_add(offset as u32)
+                .ok_or(BoardWriteError::DspiDma {
+                    address: tcd.daddr,
+                    bytes: len,
+                })?;
+            if Self::owned_mmio(at) || self.page(at).is_none() {
+                return Err(BoardWriteError::DspiDma {
+                    address: at,
+                    bytes: len,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn write_dspi2_rx(&mut self, addr: u32, data: &[u8]) -> Result<(), BoardWriteError> {
+        if data.len() > dspi::FRAME_BYTES * 2 {
+            return Err(BoardWriteError::DspiDma {
+                address: addr,
+                bytes: data.len(),
+            });
+        }
+        for offset in 0..data.len() {
+            let at = addr
+                .checked_add(offset as u32)
+                .ok_or(BoardWriteError::DspiDma {
+                    address: addr,
+                    bytes: data.len(),
+                })?;
+            if Self::owned_mmio(at) || self.page(at).is_none() {
+                return Err(BoardWriteError::DspiDma {
+                    address: at,
+                    bytes: data.len(),
+                });
+            }
+        }
+        for (offset, &value) in data.iter().enumerate() {
+            assert!(self.ram_write(addr + offset as u32, 1, u32::from(value)));
+        }
+        if !data.is_empty() {
+            self.dma_written.push((addr, data.len()));
+        }
+        Ok(())
+    }
     fn read_inner(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
         if let Some((mut value, prefix)) = self.forced_prefix(addr, size) {
             for offset in prefix..size {
@@ -671,7 +819,50 @@ impl Board {
             return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));
         }
         if DmaLink::owns(addr) {
-            let _ = self.dma.write(addr, size, value);
+            let is_tx_serq = addr == edma::SERQ
+                && size == 1
+                && value as u8 & 0x80 == 0
+                && self.dma.dspi2.arms_tx(value as u8);
+            let dspi_source = if is_tx_serq
+                && edma::TcdView::new(&mut self.dma.edma_regs, dspi::TX_CHAN).citer() != 0
+            {
+                Some(self.dspi2_source()?)
+            } else {
+                None
+            };
+            let is_rx_serq = addr == edma::SERQ
+                && size == 1
+                && value as u8 & 0x80 == 0
+                && self.dma.dspi2.arms_rx(value as u8);
+            if is_rx_serq || (is_tx_serq && self.dma.dspi2.rx_armed()) {
+                let tx_len = is_tx_serq.then(|| {
+                    dspi_source.as_ref().map_or(0, |source| {
+                        let attr =
+                            edma::TcdView::new(&mut self.dma.edma_regs, dspi::TX_CHAN).attr();
+                        if attr & 7 == 2 {
+                            source.len() / 2
+                        } else {
+                            source.len()
+                        }
+                    })
+                });
+                self.preflight_dspi2_rx(tx_len.or_else(|| self.dma.dspi2.pending_tx_len()))?;
+            }
+            let (owned, effect, mut host_write) = self.dma.write(addr, size, value);
+            debug_assert!(owned);
+            if effect == SerqEffect::Dspi2Capture {
+                self.dma.finish_dspi2_capture(
+                    dspi_source
+                        .as_deref()
+                        .expect("preflighted channel 29 source"),
+                );
+            }
+            if is_tx_serq && host_write.is_none() {
+                host_write = self.dma.finish_dspi2_exchange();
+            }
+            if let Some((dest, bytes)) = host_write {
+                self.write_dspi2_rx(dest, &bytes)?;
+            }
             self.update_dma59_request(addr, size, value);
             return Ok(());
         }

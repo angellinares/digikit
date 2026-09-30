@@ -265,6 +265,14 @@ impl DmaLink {
         self.dspi2.capture(&mut self.edma_regs, source)
     }
 
+    /// `SERQ` may have armed RX before the caller supplied TX source RAM.
+    /// Exchange only when both halves are ready, then return its host write.
+    pub fn finish_dspi2_exchange(&mut self) -> Option<(u32, Vec<u8>)> {
+        self.dspi2
+            .exchange_after_capture(&mut self.edma_regs, self.peer.as_mut())
+            .map(|w| (w.addr, w.data))
+    }
+
     /// Mirror an arbitrary host write (`HWR`) from a source this link does
     /// not itself model (e.g. `emu.panelin.feed` advancing TCD34's DADDR --
     /// eDMA channel 34, the panel-input UART ring, owned by `emu/panelin.py`,

@@ -471,10 +471,29 @@ delivery clocks from `run-ack.log` (press at 3,516,425, release at 10,552,659
 instructions), then compare ordered full wire-order DSPI2 TX frames against
 `auto-wire-ack.dtfr`. Wall-time-triggered reruns can deliver the pad input at
 different guest clocks, so their whole-trace hashes need not match this one.
-`native/live` already accepts these wire buffers; `native/machine` does not
-yet own a DSPI2 peripheral or offer a ColdFire-to-player frame handoff.
+`native/live` already accepts these wire buffers. **[C]** `native/machine`'s
+`Board` already owned the peripheral `DmaLink`, which in turn holds a
+`Dspi2Link`; the missing piece was Board's handling of its eDMA SERQ effect,
+not the peripheral model itself. Board now imports its eDMA/DSPI register
+slots from checkpoint pages, reads channel-29 source bytes from mapped RAM,
+completes the capture, and applies channel-28 zero-peer RX writes to RAM.
+An injected `DmaLink.peer` receives each exchanged wire-order frame; a
+firmware-free synthetic 4-byte TX/RX test passes. **[D]** This is not yet
+native ColdFire-generated playback: no ready-state active-host import,
+native input/IRQ replay, ordered frame trace, or player handoff has passed.
+The same source-checked `first-cpu-ram --count 6` pre-IRQ gate still passes
+after the Board register-slot import: DT2 353 sampled CPU boundaries,
+359,992 guest writes and six MMIO accesses through step 360,079; DN2 238,
+242,540 and six through step 242,626. These pre-IRQ windows do not exercise
+the new DSPI2 exchange or the live state.
 Passing the wire comparison would establish only the named replay window;
 independent boot, real device timing and later audio parity stay open.
+`tools/wiretrace.py EXPECTED.dtfr ACTUAL.dtfr [--prefix N]` now parses bounded
+wire-order traces and reports the first mismatching frame/byte. Prefixes 1
+and 20 cover the initial frame and trig-plus-following-frame smoke before
+the full 68-frame check. A self-comparison of the Python-produced trace
+passes, but **no native ColdFire-produced trace exists yet**; comparator
+availability is not a native producer gate result.
 
 **[O] Intermittent frame-stop diagnostic:** one earlier v3 run had two
 `Stopped` frames out of 1,641 even though its trig sounded and the pack body
@@ -488,6 +507,27 @@ has not been connected to this stop. `native/live` now exposes the first
 frame-stop index/reason through `live_first_stop`, and the headless report
 fails closed when `render.stopped` is nonzero. Clean later runs do not fix
 this intermittent stop.
+
+**[O] Register evidence, later bounded rerun:** the live renderer now reads
+the native core's register value and known-bit mask on an unmodeled-MMR stop.
+A second bounded auto-fixture run stopped at frame 251, again at PC
+`0x1c1cd7`, with post-trap `I0=0x310a7c45/mask=0xffffffff` and
+`M5=0/mask=0xffffffff` (local report:
+`out/native/integrated-auto-smoke/mmr-register-2.json`). The I0 value is
+inside the system MMR address envelope and unaligned for this word read;
+this suggests a bad pointer rather than a deliberate read of the earlier
+`0x30000` core MMR, but post-trap registers are not by themselves proof of
+the effective address or its origin. Keep the zero-stops gate and investigate
+where I0 was set; do not fill the entire MMR envelope with synthetic zeros.
+A further bounded rerun stopped at frame 318 with full-known post-trap
+`I2=0`, `M1=0x31049452`, `I0=0x31049452`, `M5=0` (ignored report
+`out/native/integrated-auto-smoke/mmr-def-14.json`). The program database
+shows `I0 = modify(I2, M1)` at `0x1c1cd4`, just before the failing
+`R12 = DM(I0, M5)` at `0x1c1cd7`. **[D]** This narrows the source to an
+unexpected M1 modifier, not a proven missing system-MMR reset value. The
+same function loads `M1 = DM(0x254d94)` at `0x1c1ca8`; the source and
+history of that memory value remain open. The run reproduced the stop once
+in 14 bounded attempts, not deterministically on every replay.
 - **Reply.** The DSPI2 peer answers zeros, as every capture recorded; the
   trig-to-voice path works with zero replies. **[D]**
 

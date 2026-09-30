@@ -56,6 +56,8 @@ pub trait SharcCore: Send {
     fn peek(&mut self, address: u64, width: u32) -> Peek;
     fn fresh_call(&mut self, pc: u32);
     fn set_reg_const(&mut self, code: u32, value: u32);
+    /// Packed native known-bit mask (high 32) and register value (low 32).
+    fn get_reg(&mut self, code: u32) -> u64;
     /// Run up to N instructions; fewer means a halt (see `halt_reason`).
     fn step(&mut self, n: u32) -> u32;
     /// The halt reason into BUF; its length (0 when not halted).
@@ -360,7 +362,31 @@ impl<C: SharcCore> SharcRenderer<C> {
     /// The last halt reason (for reports; allocates).
     pub fn halt_text(&mut self) -> String {
         let n = self.core.halt_reason(&mut self.halt_buf);
-        String::from_utf8_lossy(&self.halt_buf[..n]).into_owned()
+        let reason = String::from_utf8_lossy(&self.halt_buf[..n]);
+        if reason.starts_with("native-trap: unmodeled MMR") {
+            // UREG I0 = 16, I2 = 18, M1 = 33, M5 = 37
+            // (tools/sharc_core/encoding.py). I0 is last defined by
+            // `I0 = modify(I2, M1)` before the observed 0x1c1cd7 stop.
+            // These are post-trap registers, not a claim about the address:
+            // the instruction may have already modified I0 when it trapped.
+            let i0 = self.core.get_reg(16);
+            let i2 = self.core.get_reg(18);
+            let m1 = self.core.get_reg(33);
+            let m5 = self.core.get_reg(37);
+            format!(
+                "{reason}; post-trap I0={:#010x}/mask={:#010x}, I2={:#010x}/mask={:#010x}, M1={:#010x}/mask={:#010x}, M5={:#010x}/mask={:#010x}",
+                i0 as u32,
+                (i0 >> 32) as u32,
+                i2 as u32,
+                (i2 >> 32) as u32,
+                m1 as u32,
+                (m1 >> 32) as u32,
+                m5 as u32,
+                (m5 >> 32) as u32
+            )
+        } else {
+            reason.into_owned()
+        }
     }
 
     /// Run the current call to its return; instructions including the
@@ -808,6 +834,7 @@ mod tests {
     struct Mock {
         calls: Vec<String>,
         mem: std::collections::HashMap<u64, u32>,
+        regs: std::collections::HashMap<u32, u64>,
         halt: String,
         /// Instructions each handler call takes; None: budget exhausted.
         handler_steps: Option<u32>,
@@ -840,6 +867,9 @@ mod tests {
         }
         fn set_reg_const(&mut self, code: u32, value: u32) {
             self.calls.push(format!("reg {code}={value:#x}"));
+        }
+        fn get_reg(&mut self, code: u32) -> u64 {
+            self.regs.get(&code).copied().unwrap_or(0)
         }
         fn step(&mut self, n: u32) -> u32 {
             let clean = "native-trap: sharc_core.forms_flow._type_9b_abs: \
@@ -1000,6 +1030,30 @@ mod tests {
         assert_eq!(
             r.frame(p.frame(0), &mut out),
             FrameEnd::Stopped { instructions: 100 }
+        );
+        assert!(out.voices.iter().all(|v| v.iter().all(|&s| s == 0.0)));
+    }
+
+    #[test]
+    fn unmodeled_mmr_stop_reports_post_trap_registers_without_guessing_address() {
+        let p = pack(&[&[0; 4]]);
+        let mut m = mock();
+        m.handler_halt = "native-trap: unmodeled MMR at 0x1c1cd7".into();
+        m.regs.insert(16, (0xffff_ffff_u64 << 32) | 0x30000);
+        m.regs.insert(18, (0xffff_ffff_u64 << 32) | 0x2fff8);
+        m.regs.insert(33, (0xffff_ffff_u64 << 32) | 8);
+        m.regs.insert(37, 0xffff_ff00_u64 << 32);
+        let mut r = SharcRenderer::new(m, &p).unwrap();
+        let mut out = FrameOutput { voices: vec![] };
+        assert!(matches!(
+            r.frame(p.frame(0), &mut out),
+            FrameEnd::Stopped { .. }
+        ));
+        assert_eq!(
+            r.halt_text(),
+            "native-trap: unmodeled MMR at 0x1c1cd7; post-trap \
+             I0=0x00030000/mask=0xffffffff, I2=0x0002fff8/mask=0xffffffff, \
+             M1=0x00000008/mask=0xffffffff, M5=0x00000000/mask=0xffffff00"
         );
         assert!(out.voices.iter().all(|v| v.iter().all(|&s| s == 0.0)));
     }
