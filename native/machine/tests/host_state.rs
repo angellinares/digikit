@@ -83,7 +83,7 @@ fn dormant_python_v1_host_state_restores_storage_and_timers() {
 }
 
 #[test]
-fn active_unmodelled_uart_or_tx_state_is_rejected_before_application() {
+fn active_uart_or_pending_tx_state_is_rejected_before_application() {
     let mut input = source();
     input.components["uart_in"]["values"] = json!([0x41]);
     assert_eq!(
@@ -97,22 +97,25 @@ fn active_unmodelled_uart_or_tx_state_is_rejected_before_application() {
         Err(StateApplyError::UnsupportedComponents)
     );
     input.components["edma_tx"]["pending"] = json!(0);
-    input.components["edma_tx"]["bytes"] = json!(1);
+}
+
+#[test]
+fn nonzero_diagnostic_counters_restore_without_pending_work() {
+    let mut input = source();
+    input.components["esdhc"]["dma_bytes"] = json!(42_312_704_u64);
+    input.components["edma_tx"]["bytes"] = json!(47_114_u64);
+    input.components["edma_tx"]["transfers"] = json!(14_220_u64);
+    let mut native = machine();
+    native.apply_state(&input).unwrap();
+    assert_eq!(native.board.esdhc_dma_bytes(), 42_312_704);
+    assert_eq!(native.board.dma.tx35.bytes, 47_114);
+    assert_eq!(native.board.dma.tx35.transfers, 14_220);
+    assert_eq!(native.board.dma.tx35.pending, 0);
+
+    input.components["esdhc"]["dma_bytes"] = json!(-1);
     assert_eq!(
         machine().apply_state(&input),
-        Err(StateApplyError::UnsupportedComponents)
-    );
-    input.components["edma_tx"]["bytes"] = json!(0);
-    input.components["edma_tx"]["transfers"] = json!(1);
-    assert_eq!(
-        machine().apply_state(&input),
-        Err(StateApplyError::UnsupportedComponents)
-    );
-    input.components["edma_tx"]["transfers"] = json!(0);
-    input.components["esdhc"]["dma_bytes"] = json!(1);
-    assert_eq!(
-        machine().apply_state(&input),
-        Err(StateApplyError::UnsupportedComponents)
+        Err(StateApplyError::InvalidComponents)
     );
 }
 
@@ -222,4 +225,41 @@ fn locally_verified_dt2_and_dn2_pre_mmio_states_import() {
         assert_eq!(machine.clock, state.clock);
         assert_eq!(machine.cpu.pc, state.regs.pc);
     }
+}
+
+#[test]
+#[ignore = "requires locally checked auto-ready MSTATE; direct Rust input does not authenticate it"]
+fn locally_checked_auto_ready_counters_import() {
+    let path = std::env::var("DT2_AUTO_READY_MSTATE").expect("local MSTATE path required");
+    let bytes = std::fs::read(path).expect("local MSTATE must be readable");
+    let state = machine::state::parse(&bytes).expect("portable state must parse");
+    let mut native = machine();
+    // The timer component in this fixture uses the device's 132M guest IPS.
+    native.board.attach_time(Time::with_dtims(
+        TimerPolicy::Oracle,
+        vec![3, 2, 0],
+        vec![3],
+        132_000_000.0,
+    ));
+    native.apply_state(&state).unwrap();
+    assert_eq!(native.clock, state.clock);
+    assert_eq!(native.cpu.pc, state.regs.pc);
+    for (value, actual) in [
+        (
+            &state.components["esdhc"]["dma_bytes"],
+            native.board.esdhc_dma_bytes(),
+        ),
+        (
+            &state.components["edma_tx"]["bytes"],
+            native.board.dma.tx35.bytes,
+        ),
+        (
+            &state.components["edma_tx"]["transfers"],
+            native.board.dma.tx35.transfers,
+        ),
+    ] {
+        assert!(actual > 0);
+        assert_eq!(value.as_u64(), Some(actual));
+    }
+    assert_eq!(native.board.dma.tx35.pending, 0);
 }

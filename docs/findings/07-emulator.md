@@ -2869,3 +2869,22 @@ boundaries, so coalescing (few boundaries) under-reads it.
   Oracle agreement only, not unobserved CPU boundaries, all address ranges,
   ISR/Device behavior, integrated playback, or authentication of arbitrary
   pickle files.
+
+### Auto-ready host counter and portable overlay limit (2026-09-30)
+
+- **[D]** The locally checked DT2 1.16 auto `ready.snap` has no pending
+  `edma_tx` completion and an empty `uart_in` deque. Its historical counters
+  are nonzero: TX `bytes=47114`, `transfers=14220`, eSDHC
+  `dma_bytes=42312704`. Python increments these on transfers and restores
+  them independently of queued work. Native host import now retains them,
+  while still rejecting pending TX completions and queued UART input. The
+  local section source marker, MAIN OS digest, and card sidecar matched the
+  supplied files; these checks establish local integrity, not authenticity.
+- **[O]** This is **not** yet an imported native auto-ready checkpoint:
+  its card overlay contains 14,522,880 byte entries (~218 MB as JSON).
+  `tools/snapconv.py` rejects conversion because MSTATE v1 caps its header at
+  1 MiB. The earlier dormant and synthetic host import tests pass, but no
+  native-ColdFire DSPI2 frame was produced. A bounded binary overlay format
+  and card restore path must retain the written-byte mask (including written
+  zeroes) before testing the real auto-ready state; do not discard the overlay
+  or raise the browser-safe header limit as a shortcut.

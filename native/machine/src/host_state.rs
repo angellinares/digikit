@@ -1,5 +1,6 @@
 //! Validated Python v1 storage/UART host state. Pending UART traffic and TX
 //! completions have no native implementation yet and must fail closed.
+//! Historical transfer counters are diagnostic state, not queued work.
 
 use std::collections::BTreeMap;
 
@@ -17,6 +18,9 @@ pub(crate) struct HostState {
     pub card: CardCheckpoint,
     pub pattern: u32,
     pub armed_dma59: bool,
+    pub esdhc_dma_bytes: u64,
+    pub tx_bytes: u64,
+    pub tx_transfers: u64,
 }
 
 #[derive(Deserialize)]
@@ -27,7 +31,7 @@ struct EsdhcV1 {
     version: u32,
     pattern: u32,
     armed: Option<u8>,
-    dma_bytes: u32,
+    dma_bytes: u64,
     card_blocks: u32,
     card_rca: u16,
     card_selected: bool,
@@ -43,8 +47,8 @@ struct TxChannelV1 {
     chan: u32,
     vector: u32,
     pending: u32,
-    bytes: u32,
-    transfers: u32,
+    bytes: u64,
+    transfers: u64,
 }
 
 #[derive(Deserialize)]
@@ -85,12 +89,7 @@ pub(crate) fn parse(components: &Value) -> Result<HostState, HostStateError> {
     if card.armed.is_some_and(|chan| chan >= 64) || tx.chan != 35 || tx.vector != 155 {
         return Err(HostStateError::Unsupported);
     }
-    if card.dma_bytes != 0
-        || tx.pending != 0
-        || tx.bytes != 0
-        || tx.transfers != 0
-        || !uart.values.is_empty()
-    {
+    if tx.pending != 0 || !uart.values.is_empty() {
         return Err(HostStateError::Unsupported);
     }
     let mut overlay = BTreeMap::new();
@@ -109,6 +108,9 @@ pub(crate) fn parse(components: &Value) -> Result<HostState, HostStateError> {
             overlay,
         },
         pattern: card.pattern,
+        esdhc_dma_bytes: card.dma_bytes,
+        tx_bytes: tx.bytes,
+        tx_transfers: tx.transfers,
         // Python Esdhc.restore_checkpoint_state normalizes old channel-35
         // SERQ records to None: only channel 59 belongs to storage.
         armed_dma59: card.armed == Some(59),

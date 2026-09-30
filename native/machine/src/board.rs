@@ -93,6 +93,7 @@ pub struct Board {
     semaphores: SemaphoreAddresses,
     policy: CompletionPolicy,
     armed_dma59: bool,
+    esdhc_dma_bytes: u64,
     scratch_guest: RamPage,
     scratch_card: RamPage,
     events: Vec<CompletionEvent>,
@@ -126,6 +127,7 @@ impl Board {
             semaphores,
             policy,
             armed_dma59: false,
+            esdhc_dma_bytes: 0,
             scratch_guest: vec![0; PAGE_SIZE].into_boxed_slice(),
             scratch_card: vec![0; PAGE_SIZE].into_boxed_slice(),
             events: vec![],
@@ -167,6 +169,9 @@ impl Board {
         self.esdhc.card_mut().restore_checkpoint(&state.card)?;
         self.esdhc.restore_pattern(state.pattern);
         self.armed_dma59 = state.armed_dma59;
+        self.esdhc_dma_bytes = state.esdhc_dma_bytes;
+        self.dma.tx35.bytes = state.tx_bytes;
+        self.dma.tx35.transfers = state.tx_transfers;
         Ok(())
     }
 
@@ -313,6 +318,10 @@ impl Board {
     }
     pub fn dma59_armed(&self) -> bool {
         self.armed_dma59
+    }
+    /// Python Esdhc v1's cumulative host transfer counter, not pending DMA.
+    pub fn esdhc_dma_bytes(&self) -> u64 {
+        self.esdhc_dma_bytes
     }
     pub fn completion_policy(&self) -> CompletionPolicy {
         self.policy
@@ -601,6 +610,7 @@ impl Board {
             &mut self.scratch_guest[..len],
             &mut self.scratch_card[..],
         )?;
+        self.esdhc_dma_bytes = self.esdhc_dma_bytes.saturating_add(effect.bytes as u64);
         if effect.direction == esdhc::DmaDirection::CardToGuest && effect.completion.done {
             for i in 0..len {
                 let value = self.scratch_guest[i];
