@@ -382,6 +382,32 @@ impl Board {
         }
         true
     }
+
+    /// Host acceleration of stores within one already mapped SDRAM page.
+    /// Never allocates, dispatches MMIO, or emits DMA/guest-access events.
+    /// The caller must invalidate the CPU decode cache for the written range.
+    pub fn zero_mapped_sdram(&mut self, addr: u32, len: usize) -> bool {
+        let Ok(len) = u32::try_from(len) else {
+            return false;
+        };
+        let Some(end) = addr.checked_add(len) else {
+            return false;
+        };
+        if len == 0
+            || self.capture_guest_accesses
+            || addr < 0x4000_0000
+            || end > 0x4800_0000
+            || (addr & !PAGE_MASK) != ((end - 1) & !PAGE_MASK)
+        {
+            return false;
+        }
+        let offset = Self::page_offset(addr);
+        let Some(page) = self.page_mut(addr) else {
+            return false;
+        };
+        page[offset..offset + len as usize].fill(0);
+        true
+    }
     pub fn completion_events(&self) -> &[CompletionEvent] {
         &self.events
     }
@@ -1229,6 +1255,28 @@ mod tests {
     const AS: u32 = RAM + 0x104;
     const CS: u32 = RAM + 0x108;
     const ST: u32 = RAM + 0x10c;
+
+    #[test]
+    fn bulk_zero_only_changes_a_mapped_sdram_slice_without_events() {
+        let mut b = board(CompletionPolicy::Oracle);
+        b.write32(RAM + 0x100, 0x1234_5678).unwrap();
+        b.write32(RAM + 0x104, 0x9abc_def0).unwrap();
+        assert!(b.zero_mapped_sdram(RAM + 0x102, 4));
+        assert!(b.ram_matches(RAM + 0x100, &[0x12, 0x34, 0, 0, 0, 0, 0xde, 0xf0]));
+        assert!(!b.zero_mapped_sdram(NEXT, 4));
+        assert!(b.page(NEXT).is_none());
+        assert!(!b.zero_mapped_sdram(NEXT - 4, 8));
+        assert!(!b.zero_mapped_sdram(esdhc::BASE, 4));
+        assert!(!b.zero_mapped_sdram(u32::MAX - 1, 4));
+        assert!(!b.zero_mapped_sdram(RAM, usize::MAX));
+        assert!(!b.zero_mapped_sdram(RAM, 0));
+        b.set_guest_access_capture(true);
+        assert!(!b.zero_mapped_sdram(RAM + 0x100, 4));
+        assert!(b.take_guest_accesses().is_empty());
+        assert!(b.completion_events().is_empty());
+        assert!(b.take_dma_written_ranges().is_empty());
+        assert!(b.ram_matches(RAM + 0x100, &[0x12, 0x34, 0, 0]));
+    }
 
     #[test]
     fn backing_ram_comparison_is_bounded_and_side_effect_free() {

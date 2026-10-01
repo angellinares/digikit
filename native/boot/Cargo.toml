@@ -12,6 +12,8 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+# Differential/debug build: keep the reset RAM clear on the interpreter.
+reference-ram-clear = []
 diagnostic-profile = []
 diagnostic-events = []
 diagnostic-trace = []

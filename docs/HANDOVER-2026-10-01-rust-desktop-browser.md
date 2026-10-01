@@ -53,6 +53,18 @@ zero DSPI2 exchanges. The immediate audio investigation is actual DSP-load/TX
 production, followed by shared CPU/DSP virtual time, causal RX and SSI0 before
 an offline PCM proof and output sinks. Current silence is missing integration.
 
+Reset RAM-clear follow-up (2026-10-02, after `07b2f01`): verified complete
+non-final iterations within already mapped pages now run as bounded host
+fills. Guest counts/time, registers/CCR and original page allocation remain
+reference-consistent. Native/default WASM full replay parity passes on both
+devices; first native visible frame moves 9.02 -> 7.64 s DT2 and 9.52 ->
+8.50 s DN2 in one paired replay each. Use the new
+`ram_clear_fast_forwarded_instructions` counter alongside interpreted/idle
+work. `reference-ram-clear` or detailed `diagnostic-trace` disables batching.
+See **Guarded reset RAM-clear acceleration** in the findings for guards,
+measurements and limitations. The user requested a separate checkpoint for these follow-up changes;
+`git log` records that commit.
+
 **The goal is synchronized ColdFire + SHARC execution close enough to device
 real time to sustain audio. Boot/UI speed is secondary.** The user stopped the
 boot-focused work and explicitly requested committing all current source/docs

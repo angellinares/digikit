@@ -8,6 +8,7 @@ pub struct Position {
     pub oracle_ticks: Option<u64>,
     pub interpreted_instructions: u64,
     pub idle_fast_forwarded_instructions: u64,
+    pub ram_clear_fast_forwarded_instructions: u64,
     pub pc: u32,
 }
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -55,6 +56,7 @@ pub struct DiagnosticReport {
     pub sharc_execution_connected: bool,
     pub pcm_output_connected: bool,
     pub bus_trace_enabled: bool,
+    pub ram_clear_acceleration_enabled: bool,
     pub fault: Option<String>,
     pub profile: Option<ProfileReport>,
     pub events: Option<EventReport>,
@@ -221,6 +223,7 @@ mod tests {
             oracle_ticks: Some(n),
             interpreted_instructions: n,
             idle_fast_forwarded_instructions: 0,
+            ram_clear_fast_forwarded_instructions: 0,
             pc: 0x4000_04e8,
         }
     }

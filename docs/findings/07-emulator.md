@@ -3960,3 +3960,95 @@ The default tested WASM copied through the repaired external-target script is
 the shared static assets. No owner process was stopped and no new actual GUI
 or audio-device playback test was performed. The user subsequently requested
 committing these source/docs changes; `git log` records that checkpoint.
+
+
+### Guarded reset RAM-clear acceleration (2026-10-02)
+
+**[O]** After committing retained diagnostics as `07b2f01`, the shared runtime
+batches verified reset-clear loop iterations on both supported firmware images.
+A full 54-byte routine signature is resolved (only start/end operands vary)
+and checked against live RAM before each batch. DT2 clears
+`[0x40312000,0x47e28470)` in 8,066,631 iterations; DN2 clears
+`[0x402fc000,0x466b74d0)` in 6,536,013. Each iteration represents four
+instructions and 16 zero bytes.
+
+A batch requires the matching loop PC and pointer/count relation, zero
+D4–D7, running supervisor CPU at IPL7 with tracing disabled, no pending panel
+input, and inactive/pending-free Oracle timers. It stops at the chunk budget,
+the current 1 MiB backing-page boundary and before the final iteration.
+`Board::zero_mapped_sdram` rejects unmapped pages, cross-page spans, MMIO,
+address overflow and guest-access capture; it never allocates RAM. Original
+MOVEM steps still handle first-touch page allocation and Oracle/fallback
+limits. The last loop iteration and setup/restore/return remain interpreted.
+The CPU decode cache is invalidated for the filled range. Positive non-final
+SUBQ/BNE effects preserve registers/CCR and all original logical guest ticks.
+
+The separately reported `ram_clear_fast_forwarded_instructions` counter is
+not interpreted work. DT2 skips 32,266,036 CPU steps; DN2 skips 26,143,244 in
+the canonical 250k-chunk sequence. Logical counts, Oracle ticks and chunk
+positions remain equal to reference. PC sampling records only actual CPU
+steps, so these batches are absent from its histogram. Detailed bus-trace
+builds disable the shortcut; `--features reference-ram-clear` provides a
+portable reference build. No arithmetic execution policy is activated.
+
+**[O]** Evidence: `/private/tmp/digi-ram-clear-g5rbt10g/`, curated into ignored
+`out/native/ram-clear-20261002/`. Short native probes to the first chunk at
+35M guest instructions, excluding firmware construction, took 1.717 ->
+0.144 s (DT2) and 1.631 -> 0.398 s (DN2). Full canonical native results:
+
+| Wall-time observation | DT2 reference | DT2 batched | DN2 reference | DN2 batched |
+| --- | ---: | ---: | ---: | ---: |
+| First visible frame | 9.02 s | 7.64 s | 9.52 s | 8.50 s |
+| Ready | 27.82 s | 26.55 s | 22.65 s | 21.98 s |
+| Complete boot/input replay | 29.89 s | 28.64 s | 24.37 s | 23.74 s |
+
+These are one serial paired full replay per device, not timing distributions.
+Each excludes firmware construction; subprocess receipts include construction
+and export/exit and consequently differ slightly. The first visible frame
+still occurs at 204,749,605 DT2 / 222,249,605 DN2 logical instructions:
+this accelerates host execution without removing guest work.
+
+Native reference/batched/default Node WASM match ready/final status, diagnostic
+milestones/counters and all five frame captures on both devices. Comparisons
+normalize only the new availability flag and add batched instructions back to
+the interpreted count. Every other value matches, including all 87 intro
+publication positions/pixel counts and the previous `07b2f01` native status.
+Node WASM replays completed in 39.78 s DT2 / 33.47 s DN2; these are Node tests,
+not real browser display measurements. Independent source review found no
+issues. Default and PC/event tests exercise chunk/page boundaries, final CCR,
+CPU/register/memory parity and rejection of altered code/state/active timers.
+
+
+**[O]** Final verification: boot default 37 tests, PC/event build 39 tests and
+all diagnostics 37 tests passed. The machine suite passed 91 tests with its
+13 existing ignored fixtures. Rust formatting, warning checks and whitespace
+checks pass. Default WASM/static build and a desktop release rebuilt after the
+static assets pass. Public/static/tested WASM SHA-256 is `99aca7f2c2da64120b3558e56e6269bfef70f191823759431f939afa03495958`. An already
+running worker/app keeps its old core; refresh/relaunch to use this build.
+No owner process was stopped, actual GUI session or audio playback tested, or
+additional commit made.
+
+**[O]** A short, separate fresh-MAIN arithmetic canary prepares the next
+optimization without enabling the prototype. Both firmware images yield the
+first accepted add/mul/div calls before 72M guest instructions (53.55M DT2,
+71.20M DN2). Their real isolated callees execute 24/241/106 CPU instructions
+respectively. D0 matches the existing HLE result in all six calls. Full state
+does not: add/div differ in D1/address scratch registers and CCR; multiply
+differs in CCR. Add/div also change stack scratch bytes. Each observed call
+writes zero to a global library word (`0x4030c418` DT2 / `0x402f6f20` DN2);
+that word's value is unchanged in these particular preimages. This is not
+proof of equivalent global effects for other inputs.
+
+The temporary probe is `/private/tmp/digi-softfloat-canary-20261002`; source, pinned dependency lock, reports and
+receipts are curated under `out/native/ram-clear-20261002/softfloat-canary/`.
+It executes an isolated, IRQ-free raw callee from a real fresh reference
+preimage, snapshots all touched already-mapped SDRAM pages (max eight), and
+restores them plus the CPU before normal reference discovery continues.
+Non-RAM instruction/data accesses, executed PCs outside MAIN and unbounded
+returns fail the probe. Independent review identified the missing fetch guard;
+it was added and both guarded reports reproduced identically. Timers are
+not serviced inside the isolated canary: it establishes observed arithmetic
+state differences, not scheduling or general ABI equivalence. Keep
+`SoftfloatAbiV1` experimental; the next proof must cover full state/code
+coverage and virtual time, rather than validating D0 alone. Parent completed
+this probe directly after stopping the scoped preparatory worker.

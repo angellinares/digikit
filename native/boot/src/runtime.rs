@@ -8,6 +8,7 @@ use plusdrive_format::build_sample_image;
 use serde::Serialize;
 
 use crate::common::*;
+use crate::ram_clear::RamClear;
 use crate::softfloat::{ExecutionPolicy, SoftfloatAbi, SoftfloatCounts};
 #[cfg(feature = "diagnostic-events")]
 use crate::telemetry::EventKind;
@@ -15,6 +16,7 @@ use crate::telemetry::{DiagnosticReport, Mark, Position, Recorder};
 
 const CHUNK_MAX: u32 = 250_000;
 const CAPTURE_BUS_TRACE: bool = cfg!(feature = "diagnostic-trace");
+const ACCELERATE_RAM_CLEAR: bool = !CAPTURE_BUS_TRACE && !cfg!(feature = "reference-ram-clear");
 const SET_PIXEL_SIG: &str = "2f032f02206f000c222f0010202f00144a816d4c4a806d48b2a800046c42b0a800086c3c43e8000c761f4c1118002400ea82c680202f001820680010d282e589";
 const TCD34_BASE: u32 = 0xfc04_5440;
 const TCD34_DADDR: u32 = TCD34_BASE + 0x10;
@@ -36,9 +38,10 @@ pub struct Status {
     pub input_ready: bool,
     pub input_pending: usize,
     pub input_irqs: u64,
-    /// Legacy CPU counter; flash HLE increments it, softfloat ABI calls do not.
+    /// Actual CPU steps, excluding analytic idle and reset-clear batches.
     pub interpreted_instructions: u64,
     pub idle_fast_forwarded_instructions: u64,
+    pub ram_clear_fast_forwarded_instructions: u64,
     pub flash_hle_calls: u64,
     pub softfloat_hle_calls: u64,
     pub softfloat: SoftfloatCounts,
@@ -124,8 +127,10 @@ pub struct Emulator {
     input_attempted_in_chunk: bool,
     policy: ExecutionPolicy,
     softfloat: SoftfloatAbi,
+    ram_clear: Option<RamClear>,
     interpreted_instructions: u64,
     idle_fast_forwarded_instructions: u64,
+    ram_clear_fast_forwarded_instructions: u64,
     flash_hle_calls: u64,
 }
 
@@ -265,6 +270,7 @@ impl Emulator {
             }
         };
         let bus = LoggingBus::new(board, true, true, 160, ENTRY);
+        let ram_clear = RamClear::resolve(&main);
         let mut cpu = Cpu::new();
         cpu.pc = ENTRY;
         cpu.sr = 0x2700;
@@ -336,8 +342,10 @@ impl Emulator {
             input_attempted_in_chunk: false,
             policy,
             softfloat,
+            ram_clear,
             interpreted_instructions: 0,
             idle_fast_forwarded_instructions: 0,
+            ram_clear_fast_forwarded_instructions: 0,
             flash_hle_calls: 0,
         };
         emulator.mark(Mark::Entry, "before_instruction");
@@ -349,6 +357,18 @@ impl Emulator {
         self.input_attempted_in_chunk = false;
         let mut iterations = 0;
         while iterations < budget && self.error.is_none() {
+            if ACCELERATE_RAM_CLEAR
+                && self
+                    .ram_clear
+                    .as_ref()
+                    .is_some_and(|clear| self.cpu.pc == clear.loop_pc)
+            {
+                let count = self.advance_ram_clear(budget - iterations);
+                if count != 0 {
+                    iterations += count;
+                    continue;
+                }
+            }
             let previous_pc = self.cpu.pc;
             self.step_once();
             iterations += 1;
@@ -402,6 +422,7 @@ impl Emulator {
             sharc_execution_connected: false,
             pcm_output_connected: false,
             bus_trace_enabled: CAPTURE_BUS_TRACE,
+            ram_clear_acceleration_enabled: ACCELERATE_RAM_CLEAR && self.ram_clear.is_some(),
             fault: self.error.clone(),
             profile: self.telemetry.profile(),
             events: self.telemetry.events(),
@@ -414,6 +435,7 @@ impl Emulator {
             oracle_ticks: self.oracle_ticks().ok(),
             interpreted_instructions: self.interpreted_instructions,
             idle_fast_forwarded_instructions: self.idle_fast_forwarded_instructions,
+            ram_clear_fast_forwarded_instructions: self.ram_clear_fast_forwarded_instructions,
             pc: self.cpu.pc,
         }
     }
@@ -520,6 +542,7 @@ impl Emulator {
             input_irqs: self.input_irqs,
             interpreted_instructions: self.interpreted_instructions,
             idle_fast_forwarded_instructions: self.idle_fast_forwarded_instructions,
+            ram_clear_fast_forwarded_instructions: self.ram_clear_fast_forwarded_instructions,
             flash_hle_calls: self.flash_hle_calls,
             softfloat_hle_calls: self.softfloat.counts.calls(),
             softfloat: self.softfloat.counts,
@@ -541,6 +564,85 @@ impl Emulator {
             .icount
             .checked_add(self.softfloat.counts.calls())
             .ok_or_else(|| "oracle tick overflow".into())
+    }
+
+    /// Replace complete reset-clear iterations with the same RAM and CPU
+    /// effects. Page faults, the final iteration and any active timers retain
+    /// the interpreter path. No guest clock ticks are removed.
+    fn advance_ram_clear(&mut self, remaining: u32) -> u32 {
+        let Some(clear) = self.ram_clear else {
+            return 0;
+        };
+        if !ACCELERATE_RAM_CLEAR
+            || self.cpu.pc != clear.loop_pc
+            || self.cpu.state != coldfire::RunState::Running
+            || self.cpu.sr & 0xf700 != 0x2700
+            || self.cpu.last_exception.is_some()
+            || self.cpu.last_unimplemented.is_some()
+            || self.cpu.d[4..8] != [0; 4]
+            || !self.input_packets.is_empty()
+            || self.rx_pending
+            || self.input_attempted_in_chunk
+            || !self.bus.board.ram_matches(clear.entry, &clear.code)
+        {
+            return 0;
+        }
+        let count = clear.iterations(self.cpu.a[0], self.cpu.d[1], remaining);
+        if count == 0 {
+            return 0;
+        }
+        let Ok(now) = self.oracle_ticks() else {
+            return 0;
+        };
+        let Some(time) = self.bus.board.time_mut() else {
+            return 0;
+        };
+        // This shortcut is intentionally limited to the timer-inactive reset
+        // phase. Enabled or pending timers keep every original boundary.
+        if time.policy() != TimerPolicy::Oracle
+            || time.has_pending_interrupts()
+            || time.deadline(now).is_some()
+        {
+            return 0;
+        }
+        let instructions = count * 4;
+        let n = u64::from(instructions);
+        let (Some(cpu_count), Some(skipped), Some(done)) = (
+            self.cpu.icount.checked_add(n),
+            self.ram_clear_fast_forwarded_instructions.checked_add(n),
+            now.checked_add(n),
+        ) else {
+            return 0;
+        };
+        let addr = self.cpu.a[0];
+        let bytes = (count * 16) as usize;
+        if !self.bus.board.zero_mapped_sdram(addr, bytes) {
+            return 0;
+        }
+        self.cpu.invalidate_external_write(addr, bytes);
+        self.cpu.a[0] += bytes as u32;
+        self.cpu.d[1] -= count;
+        // The last batched SUBQ is positive without overflow/borrow, and BNE
+        // resolves its lazy flags. X/N/Z/V/C are therefore all clear.
+        self.cpu.resolve_nzv();
+        self.cpu.sr &= !0x1f;
+        self.cpu.icount = cpu_count;
+        self.ram_clear_fast_forwarded_instructions = skipped;
+        self.bus.current_pc = clear.loop_pc + 10;
+        self.bus.current_icount = done - 1;
+        match service_timers(
+            &mut self.bus,
+            &mut self.cpu,
+            done,
+            &mut self.deliveries,
+            &mut self.delivery_counts,
+            &mut self.delivery_dropped,
+        ) {
+            Ok(0) => {}
+            Ok(_) => self.set_error("unexpected interrupt during reset RAM-clear batch"),
+            Err(error) => self.set_error(error),
+        }
+        instructions
     }
 
     /// Evaluate repeated, verified BRA-to-self passes analytically, stopping
@@ -1273,6 +1375,133 @@ fn idle_advance_limit(remaining: u32, passes: u64, now: u64, deadline: Option<u6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
+    #[test]
+    fn ram_clear_batches_match_interpreter_across_chunks_pages_and_final_flags() {
+        for file in ["Digitakt_II_OS1.16.syx", "Digitone_II_OS1.11.syx"] {
+            let Ok(syx) = std::fs::read(format!("../../{file}")) else {
+                continue;
+            };
+            let mut slow = Emulator::new(&syx, None).unwrap();
+            let mut fast = Emulator::new(&syx, None).unwrap();
+            let clear = slow.ram_clear.unwrap();
+            for a0 in [(clear.start | 0x0f_ffff) + 1 - 48, clear.end - 64] {
+                for emu in [&mut slow, &mut fast] {
+                    emu.cpu = Cpu::new();
+                    emu.cpu.pc = clear.loop_pc;
+                    emu.cpu.sr = 0x271f;
+                    emu.cpu.icount = 100;
+                    emu.cpu.d = [
+                        0x7654_3210,
+                        (clear.end - a0) / 16,
+                        0x8765_4321,
+                        0xfeed,
+                        0,
+                        0,
+                        0,
+                        0,
+                    ];
+                    emu.cpu.a[0] = a0;
+                    emu.cpu.a[7] = STACK;
+                    emu.interpreted_instructions = 100;
+                    emu.ram_clear_fast_forwarded_instructions = 0;
+                    for at in a0 - 4..a0 + 68 {
+                        emu.bus.write8(at, 0xa5).unwrap();
+                    }
+                }
+                let budgets: &[u32] = if a0 == clear.end - 64 {
+                    &[16]
+                } else {
+                    &[0, 1, 2, 3, 4, 7, 13, 64]
+                };
+                for &budget in budgets {
+                    for _ in 0..budget {
+                        slow.step_once();
+                    }
+                    fast.step_chunk(budget);
+                    assert_eq!(fast.error, None);
+                    let mut actual = fast.cpu.clone();
+                    let mut expected = slow.cpu.clone();
+                    for cpu in [&mut actual, &mut expected] {
+                        cpu.resolve_nzv();
+                        cpu.invalidate_external_write(0, usize::MAX);
+                    }
+                    assert_eq!(actual, expected, "{file}, {a0:#x}, budget {budget}");
+                    assert_eq!(fast.bus.current_icount, slow.bus.current_icount);
+                    assert_eq!(fast.bus.current_pc, slow.bus.current_pc);
+                    assert_eq!(fast.delivery_counts, slow.delivery_counts);
+                    assert_eq!(fast.oracle_ticks(), slow.oracle_ticks());
+                    assert_eq!(
+                        fast.interpreted_instructions + fast.ram_clear_fast_forwarded_instructions,
+                        slow.interpreted_instructions
+                    );
+                    let mut actual = vec![0; PAGE];
+                    let mut expected = vec![0; PAGE];
+                    for page in [a0 & !0x0f_ffff, fast.cpu.a[0] & !0x0f_ffff] {
+                        fast.bus.board.read_ram_page(page, &mut actual).unwrap();
+                        slow.bus.board.read_ram_page(page, &mut expected).unwrap();
+                        assert_eq!(actual, expected);
+                    }
+                }
+                assert!(fast.ram_clear_fast_forwarded_instructions > 0);
+            }
+        }
+    }
+
+    #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
+    #[test]
+    fn ram_clear_declines_modified_code_inputs_active_timers_and_invalid_state() {
+        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let mut emu = Emulator::new(&syx, None).unwrap();
+        let clear = emu.ram_clear.unwrap();
+        emu.cpu.pc = clear.loop_pc;
+        emu.cpu.sr = 0x2700;
+        emu.cpu.a[0] = clear.start;
+        emu.cpu.d[1] = (clear.end - clear.start) / 16;
+        let original = emu.cpu.clone();
+        for mode in 0..6 {
+            emu.cpu = original.clone();
+            emu.input_packets.clear();
+            emu.bus.board.attach_time(Time::with_dtims(
+                TimerPolicy::Oracle,
+                vec![3],
+                vec![],
+                132_000_000.0,
+            ));
+            emu.bus.board.write8(clear.loop_pc, clear.code[32]).unwrap();
+            match mode {
+                0 => {
+                    emu.cpu.sr |= 0x8000;
+                }
+                1 => {
+                    emu.cpu.d[4] = 1;
+                }
+                2 => {
+                    emu.cpu.d[1] -= 1;
+                }
+                3 => {
+                    emu.input_packets.push_back(0);
+                }
+                4 => {
+                    emu.bus.board.write8(clear.loop_pc, 0).unwrap();
+                }
+                5 => {
+                    let time = emu.bus.board.time_mut().unwrap();
+                    time.write(0xfc08_c002, 2, 10); // PIT3 PMR
+                    time.write(0xfc08_c000, 2, 0x000b);
+                    assert!(time.deadline(0).is_some());
+                }
+                _ => unreachable!(),
+            }
+            let before = emu.cpu.clone();
+            assert_eq!(emu.advance_ram_clear(100), 0, "guard {mode}");
+            assert_eq!(emu.cpu, before);
+        }
+        assert_eq!(emu.ram_clear_fast_forwarded_instructions, 0);
+    }
 
     #[test]
     fn diagnostics_preserves_cpu_and_pending_frame_delivery() {

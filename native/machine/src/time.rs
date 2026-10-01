@@ -153,6 +153,11 @@ impl Time {
         self.sr.seed(sr);
     }
 
+    /// Pending IRQs must still be offered at every interpreted boundary.
+    pub fn has_pending_interrupts(&self) -> bool {
+        (0..4).any(|channel| self.pit.pending(channel) || self.dtim.pending(channel))
+    }
+
     /// Return the first PIT/DTIM deadline, arming enabled timers at `done`.
     pub fn deadline(&mut self, done: u64) -> Option<u64> {
         self.service_not_before = None;
