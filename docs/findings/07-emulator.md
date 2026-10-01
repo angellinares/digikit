@@ -4052,3 +4052,158 @@ state differences, not scheduling or general ABI equivalence. Keep
 `SoftfloatAbiV1` experimental; the next proof must cover full state/code
 coverage and virtual time, rather than validating D0 alone. Parent completed
 this probe directly after stopping the scoped preparatory worker.
+
+
+### Outer timer-service gate (2026-10-02, after `d68306c`)
+
+**[O]** The shared boot runner now checks the existing timer service boundary
+before detaching/restoring its boxed timer facade. It still seeds the live SR
+at every boundary. Only Oracle policy may skip; pending IRQs, invalidated or
+NaN deadlines and undrained DTIM host writes keep the full path. The gate uses
+the same floating-point comparison as `Time::service_with`; no new device
+clock or instruction substitution is introduced. Independent review caught
+the missing policy guard, which was added. The existing differential test now
+exercises the outer gate across timer reconfiguration, refused IRQs and large
+clock values; a new test verifies queued REF writes cannot be hidden.
+
+**[O]** Complete native baseline/current and default Node WASM replays match
+ready/final status, diagnostics, all five captures and all 87 intro publication
+positions/pixel counts exactly on both devices. Guest counts are unchanged.
+One paired native observation, excluding firmware construction:
+
+| Wall time | DT2 baseline | DT2 gated | DN2 baseline | DN2 gated |
+| --- | ---: | ---: | ---: | ---: |
+| First frame | 7.56 s | 6.39 s | 8.52 s | 7.76 s |
+| Ready | 26.31 s | 23.52 s | 21.78 s | 20.05 s |
+| Full boot/input replay | 28.41 s | 25.46 s | 23.58 s | 21.62 s |
+
+Short 100M probes took 3.074 -> 2.680 s DT2 and 3.227 -> 2.834 s DN2.
+These are observations, not timing distributions; compilation could contend
+with the beginning of the DT2 baseline. A harness initially compared native
+and WASM intro log labels literally; corrected numeric comparisons passed
+without repeating the already completed DT2 runs. The second receipts mark
+those runs as reused; use per-run `timings.json`, not their near-zero reuse
+process time, for native measurements.
+
+Evidence is curated under ignored `out/native/service-gate-20261002/` from
+`/private/tmp/digi-service-gate-yrm9gdpz/`. Boot default/PC-event tests pass
+(37/39); machine tests pass (92, with 13 existing ignored fixtures). The
+default public/static/tested WASM hash is
+`ba037b2af3843a4745fbac3bec34e21a351616bd362ba77c493accde94929f8b`.
+Web static build and a desktop release rebuilt after those assets pass. No
+owner process was stopped or actual GUI session tested. This is the final
+bounded boot optimization round before audio work.
+
+
+### Fresh DSP traffic, native startup frontier and speaker proof (2026-10-02)
+
+**[O]** A bounded temporary copy of the shared runtime records only direct
+DSPI2/FlexBus writes during a fresh DT2 1.16 boot without a card. The default
+frontend/runtime has no added tracing cost. Direct PUSHR writes span guest
+counts 40,470,807..45,931,399: an initial `03`, 321,016 loader bytes, then
+`0x18000000`. Those loader bytes match section 7 exactly, SHA-256
+`0f514a12a2255f5c081e292c47f1f29462003177658da4bbae0a22fd737fffa2`.
+There are 321,018 PUSHR writes total. The FIFO records 565,800 status writes
+and 70,725 latch writes; falling-edge decoding yields 282,900 LP0 bytes,
+69 complete 0x401-word transfers, all with header tag `0xffffffff`. This
+no-card scenario sends slot headers and no sample pages. Zero **DMA frame
+exchanges** therefore never meant zero DSP program/sample-port traffic.
+
+**[O]** The existing matching AOT library lacks reset entry `0x1c1338` in its
+instruction table. The program database omits its small loader block 89
+(20 bytes), subsequent zero fill and other startup entry PCs. The generator
+now accepts repeatable `--decode-range START:END` short-word ranges, using the
+existing loaded-memory decoder and recording the ranges in provenance. Default
+generation remains unchanged; no firmware bytes enter source control.
+
+For startup diagnosis, generate **no AOT blocks**, with explicit startup/L2
+coverage. This took 10.8 s to generate and 4.48 s to build, rather than the
+36 s generation / 76 s build of a broad AOT probe. It has 108,074 decoded
+entries. It is an interpreter diagnostic build, not an audio throughput
+optimization or a replacement for the existing hot AOT library. Reproduce:
+
+```sh
+.venv/bin/python tools/sharc_rsgen.py dt2-1.16 \
+  --decode-range 0x1c0000:0x1ce400 --decode-range 0xb80000:0xb8d5c0 \
+  --out out/native/fresh-reset-20261002/interpreter-gen
+SHARC_GEN_DIR="$PWD/out/native/fresh-reset-20261002/interpreter-gen" \
+  CARGO_TARGET_DIR=/private/tmp/digi-reset-core \
+  rustup run 1.98.1 cargo build --manifest-path native/sharc/Cargo.toml \
+  --release --locked --offline --lib
+.venv/bin/python tools/sharc_reset_check.py dt2-1.16 \
+  --lib /private/tmp/digi-reset-core/release/libsharc_native.dylib --steps 100000
+.venv/bin/python tools/sharc_reset_check.py dt2-1.16 \
+  --lib /private/tmp/digi-reset-core/release/libsharc_native.dylib \
+  --steps 7543 --compare --report /private/tmp/digi-reset-comparison.json
+```
+
+**[O]** Pure native execution from fresh `sharc_run.make_state` reference
+reset defaults completes 7,543 instructions in 0.838 ms, then stops on an
+unknown EQ predicate at `0x1c1447`. All 7,543 completed instructions match
+Python canonical state in an instruction-by-instruction comparison (16.7 s).
+No captured SHRD starting state, Python instruction fallback, provisional form
+or approximate reciprocal mode is used. The tool bounds native work to 1M
+steps and per-instruction comparisons to 10k, checks core/generator staleness
+and rejects mismatched loader/library image hashes before execution.
+
+The value comes from `DM(0x10000000)` at `0x1c1443`; its absence makes R0 and
+then ASTATX.AZ unknown. This reproduces the documented boot-source frontier
+in findings 06, rather than discovering an arithmetic mismatch. Section 7
+also calls INIT at `0x120230` before booting the final FIRST entry `0x1c1338`.
+The ADSP HWR (local p1799, p1821 and boot termination section) requires ROM
+boot-config context for INIT and updates the application vector at handoff.
+Flattening all loader records into a final memory image does not reproduce
+that execution/context, and later writes overwrite most initcode bytes.
+A subsequent primary-source check identifies `0x10000000..0x17ffffff` as
+DMC0 normal-word space, mapping to byte-addressed DDR from `0x80000000`.
+See [ADSP-2156x data addressing evidence](../refs/adsp-2156x-data-addressing.md).
+The loader fills DDR at that byte address; the strict reference's generic
+memory helper does not translate this normal-word alias. This supersedes
+"no source establishes the address mapping," but does not qualify a full ROM
+handoff. Fix addressing with explicit byte/normal-word access context and
+correct DAG modifier units, including the native fast paths; a blanket alias
+in the shared untyped memory helper could misroute byte/short accesses.
+Independent review confirmed that risk. Internal stack ACONV transitions
+also need the product map, rather than treating every conversion as a shift.
+Do not synthesize a zero or infer physical startup state from reference seeds.
+
+**[O]** Expanded interpreter-table rendering also matches all 100 existing
+capture state hashes, with the same 21,948,991 instructions. This separate
+captured-state regression is not fresh-boot audio proof. The fresh runtime
+still has no SHARC/PCM or shared CPU/DSP clock integration.
+
+**[O]** A three-second speaker check uses the existing verified capture pack
+and hot AOT library, at gain 0.25. The first attempt exposed a CPAL 0.18.2
+`Device::to_string()` panic when its Display formatter could not query the
+macOS device name. `default_output` now uses the fallible description API
+and a fallback label. Afterward, sandbox execution returns the actual
+CoreAudio configuration error (OSStatus 560947818) instead of panicking.
+The authorized test with normal OS audio access succeeds on MacBook Pro
+Speakers, 48 kHz stereo: 4,561 clean blocks, zero underruns, zero DSP stops
+and zero DMA failures. Median/p99/max render times are 443.2/520.1/908.6 us;
+first render is 8,666.7 us, covered by prefill. This short buffered playback
+checks DSP rendering plus the device sink, not worst-case real-time behavior,
+a final DAC/master-FX mix or fresh frontend sound. Live-library tests pass
+66 tests, with three existing opt-in fixtures ignored.
+
+Evidence is curated under ignored `out/native/fresh-audio-20261002/` from
+`/private/tmp/digi-fresh-audio-20261002/`, including loader/LP0 bytes, fresh
+reset reports, frontier trace, capture parity and speaker metrics. The raw
+full MMIO probe remains scratch-only; its bounded capture dropped no writes.
+Temporary demand-decode experiments were replaced by the complete table and
+full canonical comparison; the reusable probe has no such fallback.
+
+**[D]** A separate bounded reference-only pre-INIT calibration materializes
+loader records 0..6 before later records overwrite initcode. With the existing
+explicit-memory policy, it stops after 40 instructions on DMC0 PHY lane
+control. HWR reset-table seeds, an assumed top-of-ROM-stack frame and one
+EMUCLK tick per instruction let it advance to 100k instructions, polling
+CGU0_STAT at `0x120bc3..0x120bcf` after writing CGU0_PLLCTL=2 at `0x120bbf`.
+That command requests bypass clear (HWR Table 2-16); a static reset register
+map cannot perform the corresponding status transition. EMUCLK must count
+core cycles (PRM Emulation Counter Register), whereas the current reference
+leaves it static. This is calibration with explicit assumptions, not native
+startup qualification or a verified ROM call context. HWR preboot already
+enters Full-On clock mode; reset values alone are not the INIT handoff state.
+Artifacts `init-calibration.py` and `init-calibration-frontier.json` identify
+these remaining clock/ROM dependencies without changing production defaults.

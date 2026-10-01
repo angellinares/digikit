@@ -23,7 +23,9 @@ image, under out/ (it embeds firmware):
 - ``insns.rs``: the instruction statics the code still names.
 - ``image.rs``: includes the above, the PC -> block table, the image's DO
   loop ends and hash; ``insns.bin`` holds every decoded instruction for the
-  interpreter.
+  interpreter. ``--decode-range START:END`` adds short-word PCs absent from
+  the program database, such as a loader entry and its following zero fill.
+  It uses the ordinary loaded-memory decoder and adds no execution shortcuts.
 
 Which blocks to generate, and for which MODE1 values, comes from where the
 interpreter ran (``sharc-frames --coverage``: the executed set, not the whole
@@ -56,6 +58,21 @@ if HERE not in sys.path:
 ROOT = os.path.dirname(HERE)
 
 DEFAULT_OUT = os.path.join(ROOT, "out", "native", "gen", "tx")
+
+
+def decode_range(text: str) -> tuple[int, int]:
+    """An explicit, bounded half-open range of short-word execution PCs."""
+    try:
+        start, end = (int(part, 0) for part in text.split(":"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "expected START:END, e.g. 0x1c1338:0x1c13e6"
+        ) from exc
+    if not 0 <= start < end <= 1 << 24 or end - start > 1 << 20:
+        raise argparse.ArgumentTypeError(
+            "range must fit 24-bit PCs and contain at most 1048576 short words"
+        )
+    return start, end
 
 
 @dataclass
@@ -741,6 +758,7 @@ def generate(
     region_insns: int = 1200,
     transition_counts: dict[tuple[int, int], int] | None = None,
     region_regs: int = 28,
+    decode_ranges: list[tuple[int, int]] | None = None,
 ) -> dict:
     import sharc
     import sharc_run as sr
@@ -762,9 +780,11 @@ def generate(
     syms = tr.syms
     t1 = time.perf_counter()
 
-    pcs = table_pcs(db, image)
+    pcs = set(table_pcs(db, image))
+    for start, end in decode_ranges or []:
+        pcs.update(range(start, end))
     decoded = {}
-    for pc in pcs:
+    for pc in sorted(pcs):
         insn = decode_at(mem, None, pc)
         decoded[pc] = insn
     blocks = load_blocks(db, image, starts, mem)
@@ -926,6 +946,7 @@ def generate(
         "blocks": len(blocks),
         "block_instructions": sum(len(b.insns) for b in blocks),
         "instructions_in_table": len(table),
+        "decode_ranges": decode_ranges or [],
         "modules": len(modules),
         "regions": len(regions),
         "per_module": per_module,
@@ -951,6 +972,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("image", help='program database image, e.g. "dt2-1.16"')
     p.add_argument("--out", default=DEFAULT_OUT, help="output directory (under out/)")
     p.add_argument("--blocks", default="", help="comma-separated hex block starts")
+    p.add_argument(
+        "--decode-range",
+        type=decode_range,
+        action="append",
+        default=[],
+        help="add interpreter decode coverage for START:END short-word PCs (repeatable)",
+    )
     p.add_argument(
         "--blocks-from", help="a report.json listing blocks (phase 0 or this tool)"
     )
@@ -1070,6 +1098,7 @@ def main(argv: list[str] | None = None) -> int:
         region_insns=args.region_insns,
         transition_counts=counts,
         region_regs=args.region_regs,
+        decode_ranges=args.decode_range,
     )
     print(
         "%d blocks (%d instructions), %d instructions in the table, %d files -> %s (%.1fs)"

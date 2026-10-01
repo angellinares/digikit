@@ -158,6 +158,16 @@ impl Time {
         (0..4).any(|channel| self.pit.pending(channel) || self.dtim.pending(channel))
     }
 
+    /// Same boundary cache as service_with, including queued host writes.
+    /// Owners may avoid transferring the timer facade when it has no work.
+    pub fn can_skip_service(&self, done: u64) -> bool {
+        self.policy == TimerPolicy::Oracle
+            && self.host_writes.is_empty()
+            && self
+                .service_not_before
+                .is_some_and(|next| (done as f64) < next)
+    }
+
     /// Return the first PIT/DTIM deadline, arming enabled timers at `done`.
     pub fn deadline(&mut self, done: u64) -> Option<u64> {
         self.service_not_before = None;
@@ -242,6 +252,23 @@ mod tests {
     }
 
     #[test]
+    fn cached_wait_preserves_undrained_dtim_reference_writes() {
+        let mut time = Time::with_dtims(TimerPolicy::Oracle, vec![], vec![0], dtim::F_BUS / 3.0);
+        time.write(dtim::BASES[0], 2, 0x001b);
+        time.write(dtim::BASES[0] + 4, 4, 30);
+        level(&mut time, dtim::VECTORS[0], 1);
+        time.seed_sr(0x2000);
+        assert_eq!(time.service(0), Ok(vec![]));
+        let due = time.deadline(0).unwrap();
+        assert_eq!(time.service(due), Ok(vec![(dtim::VECTORS[0], 1)]));
+        assert!(!time.can_skip_service(due));
+        let writes = time.take_host_writes();
+        assert_eq!(writes.len(), 1);
+        assert_eq!((writes[0].addr, writes[0].byte), (dtim::BASES[0] + 3, 2));
+        assert!(time.can_skip_service(due));
+    }
+
+    #[test]
     fn non_finite_clock_does_not_cache_nan_deadlines() {
         let mut time = Time::new(TimerPolicy::Oracle, vec![0], f64::NAN);
         time.write(pit::BASES[0], 2, 0x000b);
@@ -318,10 +345,12 @@ mod tests {
                 }
                 reference.service_not_before = None;
                 let offer = |_, _| offset % 11 != 0;
-                assert_eq!(
-                    fast.service_with(done, offer),
-                    reference.service_with(done, offer)
-                );
+                let actual = if fast.can_skip_service(done) {
+                    Ok(Vec::new())
+                } else {
+                    fast.service_with(done, offer)
+                };
+                assert_eq!(actual, reference.service_with(done, offer));
                 assert_eq!(fast.take_host_writes(), reference.take_host_writes());
                 for i in 0..4 {
                     assert_eq!(fast.pit.pending(i), reference.pit.pending(i));

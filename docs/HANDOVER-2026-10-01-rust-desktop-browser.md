@@ -48,10 +48,9 @@ MAIN-only boot remains the default. Bootstrap may supply a missing display or
 DSP handoff, but this has not been established. Pre-intro PC samples concentrate
 in buckets containing softfloat helpers (DT2 about 68%, DN2 about 63%). Keep
 experimental softfloat opt-in pending differential proof. Neither current host
-executes SHARC or outputs PCM, and the canonical boot/input replays recorded
-zero DSPI2 exchanges. The immediate audio investigation is actual DSP-load/TX
-production, followed by shared CPU/DSP virtual time, causal RX and SSI0 before
-an offline PCM proof and output sinks. Current silence is missing integration.
+executes SHARC or outputs PCM; canonical replays recorded zero DMA frame
+exchanges. The latest direct-SPI probe below verifies that DSP program traffic
+is present. Fresh host silence remains missing integration.
 
 Reset RAM-clear follow-up (2026-10-02, after `07b2f01`): verified complete
 non-final iterations within already mapped pages now run as bounded host
@@ -64,6 +63,34 @@ work. `reference-ram-clear` or detailed `diagnostic-trace` disables batching.
 See **Guarded reset RAM-clear acceleration** in the findings for guards,
 measurements and limitations. The user requested a separate checkpoint for these follow-up changes;
 `git log` records that commit.
+
+Final bounded boot optimization follow-up (2026-10-02, after checkpoint
+`d68306c`): the outer timer-service gate reuses the existing cache before
+Box ownership transfer. Complete native/WASM status, diagnostics and frame
+parity passes on both devices. First visible frame moves 7.56 -> 6.39 s DT2
+and 8.52 -> 7.76 s DN2 in one native paired observation each; guest counts
+remain unchanged. Default WASM/static assets and desktop release are rebuilt.
+See **Outer timer-service gate** in the findings for tests and timing caveats.
+
+Fresh DSP/audio follow-up (2026-10-02): DT2 sends a byte-exact section-7
+loader over direct DSPI2 and 69 LP0 slot-header transfers during no-card boot.
+Added explicit generator decode ranges and `tools/sharc_reset_check.py`. Pure
+native startup now matches all 7,543 completed Python reference instructions
+before both stop on an unknown boot-source read at `0x10000000`. The stream's
+earlier INIT callback at `0x120230` and ROM handoff context are not reproduced
+by flattening loader memory. The official product datasheet now identifies
+the stopped address as a normal-word DDR alias. The next implementation must
+carry architectural address-space context through Python/native memory and
+DAG modifiers; a blanket untyped alias is unsafe. A bounded pre-INIT
+calibration also identifies static EMUCLK and PLL status as dependencies.
+See `docs/refs/adsp-2156x-data-addressing.md` and the findings for evidence.
+
+Separately, a three-second existing captured-state SHARC speaker test succeeds
+at 48 kHz stereo with zero underruns/stops. Fixed a real device-name query
+panic in the native player. This verifies rendering and the sink; the fresh
+desktop/browser runtime still needs coupled DSP/audio integration. See
+**Fresh DSP traffic, native startup frontier and speaker proof** in findings 07
+for commands, evidence and limits.
 
 **The goal is synchronized ColdFire + SHARC execution close enough to device
 real time to sustain audio. Boot/UI speed is secondary.** The user stopped the

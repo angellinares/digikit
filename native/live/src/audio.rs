@@ -52,7 +52,12 @@ pub fn default_output() -> Result<PendingDevice, String> {
     let device = host
         .default_output_device()
         .ok_or_else(|| "no default output device".to_string())?;
-    let device_name = device.to_string();
+    // CPAL's Device Display returns fmt::Error if the OS rejects the name
+    // query, which makes ToString panic. A label must not prevent playback.
+    let device_name = device
+        .description()
+        .map(|description| description.name().to_owned())
+        .unwrap_or_else(|_| "Default output device".to_owned());
     let (config, sample_format, used_fallback) = pick_config(&device, TARGET_SAMPLE_RATE)?;
     Ok(PendingDevice {
         sample_rate: config.sample_rate,

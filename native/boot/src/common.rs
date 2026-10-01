@@ -783,8 +783,12 @@ pub(crate) fn service_timers<const TRACE: bool>(
     delivery_counts: &mut [u64; 256],
     delivery_dropped: &mut u64,
 ) -> Result<u64, String> {
-    let mut time = bus.board.take_time().ok_or("TimerNotAttached")?;
+    let time = bus.board.time_mut().ok_or("TimerNotAttached")?;
     time.seed_sr(cpu.sr);
+    if time.can_skip_service(done) {
+        return Ok(0);
+    }
+    let mut time = bus.board.take_time().ok_or("TimerNotAttached")?;
     let mut delivery_error = None;
     let raised = time
         .service_with(done, |raw_vector, level| {
