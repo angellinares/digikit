@@ -43,6 +43,9 @@ pub struct Time {
     sr: SrTracker,
     policy: TimerPolicy,
     host_writes: Vec<HostWrite>,
+    /// Earliest boundary worth servicing after a pass with no pending IRQ.
+    /// Keep the banks' floating-point clock representation exactly.
+    service_not_before: Option<f64>,
 }
 
 impl Time {
@@ -72,6 +75,7 @@ impl Time {
             sr: SrTracker::new(),
             policy,
             host_writes: Vec::new(),
+            service_not_before: None,
         }
     }
 
@@ -79,6 +83,7 @@ impl Time {
     /// loaded PIT/DTIM/INTC register pages. Failed validation changes none of
     /// these banks (`import_timers` validates both sources before mutation).
     pub fn restore_timer_component(&mut self, state: &MachineState) -> Result<(), TimerStateError> {
+        self.service_not_before = None;
         let mut lane = Timers {
             pit: std::mem::take(&mut self.pit),
             dtim: std::mem::take(&mut self.dtim),
@@ -123,6 +128,7 @@ impl Time {
 
     /// Write an oracle PIT or INTC register. PIT handles PCSR PIF clearing.
     pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
+        self.service_not_before = None;
         Self::owns_access(addr, size)
             && (self.pit.write(addr, size, value)
                 || self.dtim.write(addr, size, value)
@@ -131,6 +137,7 @@ impl Time {
 
     /// Load one complete PIT-channel or INTC register page.
     pub fn load_page(&mut self, base: u32, data: &[u8]) -> bool {
+        self.service_not_before = None;
         self.pit.load_page(base, data)
             || self.dtim.load_page(base, data)
             || self.intc.load_page(base, data)
@@ -148,6 +155,7 @@ impl Time {
 
     /// Return the first PIT/DTIM deadline, arming enabled timers at `done`.
     pub fn deadline(&mut self, done: u64) -> Option<u64> {
+        self.service_not_before = None;
         match (self.pit.deadline(done), self.dtim.deadline(done)) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
@@ -176,6 +184,12 @@ impl Time {
         if self.policy == TimerPolicy::Device {
             return Err(TimeError::DeviceInterruptDeliveryUnsupported);
         }
+        if self
+            .service_not_before
+            .is_some_and(|next| (done as f64) < next)
+        {
+            return Ok(Vec::new());
+        }
         let mut raised = self
             .pit
             .service_with(done, &self.intc, &mut self.sr, &mut offer);
@@ -188,6 +202,20 @@ impl Time {
                 .into_iter()
                 .map(|(addr, byte)| HostWrite { addr, byte }),
         );
+        // A refused IRQ must be retried at every instruction: an SR change
+        // can unmask it even before the next timer tick. MMIO writes, page
+        // loads, checkpoint restores and deadline arming invalidate this
+        // cache. With no pending IRQ, only the earliest tick can do work.
+        self.service_not_before = if (0..4).any(|i| self.pit.pending(i) || self.dtim.pending(i)) {
+            None
+        } else {
+            (0..4)
+                .flat_map(|i| [self.pit.next_deadline(i), self.dtim.next_deadline(i)])
+                .flatten()
+                .try_fold(f64::INFINITY, |next, deadline| {
+                    (!deadline.is_nan()).then(|| next.min(deadline))
+                })
+        };
         Ok(raised)
     }
 
@@ -195,5 +223,114 @@ impl Time {
     /// must apply these as host writes, never as guest W1C register writes.
     pub fn take_host_writes(&mut self) -> Vec<HostWrite> {
         std::mem::take(&mut self.host_writes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use periph::{dtim, intc, pit};
+
+    fn level(time: &mut Time, vector: u16, value: u32) {
+        let base = intc::BASES[usize::from(vector / 64 - 1)];
+        time.write(base + 0x40 + u32::from(vector % 64), 1, value);
+    }
+
+    #[test]
+    fn non_finite_clock_does_not_cache_nan_deadlines() {
+        let mut time = Time::new(TimerPolicy::Oracle, vec![0], f64::NAN);
+        time.write(pit::BASES[0], 2, 0x000b);
+        level(&mut time, pit::VECTORS[0], 1);
+        time.seed_sr(0x2000);
+        assert_eq!(time.service(0), Ok(vec![]));
+        assert_eq!(time.service_not_before, None);
+        // Preserve the existing bank's NaN comparison behavior rather than
+        // treating an invalid deadline as an infinite idle interval.
+        assert_eq!(time.service(1), Ok(vec![(pit::VECTORS[0], 1)]));
+    }
+
+    #[test]
+    fn cached_service_matches_every_boundary_with_writes_and_refused_irqs() {
+        for start in [0, (1_u64 << 53) + 1] {
+            let make = || {
+                let mut time = Time::with_dtims(
+                    TimerPolicy::Oracle,
+                    vec![3, 2, 0],
+                    vec![3, 1],
+                    pit::F_BUS / 3.0,
+                );
+                for i in [3, 2, 0] {
+                    time.write(pit::BASES[i], 2, 0x000b);
+                    time.write(pit::BASES[i] + 2, 2, 21 + i as u32);
+                    level(&mut time, pit::VECTORS[i], 1);
+                }
+                for i in [3, 1] {
+                    time.write(dtim::BASES[i], 2, 0x001b);
+                    time.write(dtim::BASES[i] + 4, 4, 30 + i as u32);
+                    level(&mut time, dtim::VECTORS[i], 2);
+                }
+                time
+            };
+            let mut fast = make();
+            let mut reference = make();
+            for offset in 0..1000 {
+                let done = start + offset;
+                for time in [&mut fast, &mut reference] {
+                    time.seed_sr(if offset % 37 < 9 { 0x2700 } else { 0x2000 });
+                    match offset {
+                        100 => {
+                            time.write(pit::BASES[0], 2, 0);
+                        }
+                        130 => {
+                            time.write(pit::BASES[0], 2, 0x000b);
+                        }
+                        160 => {
+                            time.write(dtim::BASES[3], 2, 0);
+                        }
+                        201 => {
+                            time.write(dtim::BASES[3], 2, 0x001b);
+                        }
+                        239 => {
+                            time.write(intc::BASES[0] + 8, 4, u32::MAX);
+                        }
+                        243 => {
+                            time.write(intc::BASES[0] + 8, 4, 0);
+                        }
+                        300 => {
+                            time.write(pit::BASES[2] + 1, 1, 0x0f);
+                        }
+                        401 => {
+                            let mut page = vec![0; 0x4000];
+                            page[0..2].copy_from_slice(&0x001b_u16.to_be_bytes());
+                            page[4..8].copy_from_slice(&7_u32.to_be_bytes());
+                            assert!(time.load_page(dtim::BASES[3], &page));
+                        }
+                        510 => {
+                            time.deadline(done);
+                        }
+                        _ => {}
+                    }
+                }
+                reference.service_not_before = None;
+                let offer = |_, _| offset % 11 != 0;
+                assert_eq!(
+                    fast.service_with(done, offer),
+                    reference.service_with(done, offer)
+                );
+                assert_eq!(fast.take_host_writes(), reference.take_host_writes());
+                for i in 0..4 {
+                    assert_eq!(fast.pit.pending(i), reference.pit.pending(i));
+                    assert_eq!(fast.pit.next_deadline(i), reference.pit.next_deadline(i));
+                    assert_eq!(fast.pit.fired(i), reference.pit.fired(i));
+                    assert_eq!(fast.pit.missed(i), reference.pit.missed(i));
+                    assert_eq!(fast.pit.cleared(i), reference.pit.cleared(i));
+                    assert_eq!(fast.dtim.pending(i), reference.dtim.pending(i));
+                    assert_eq!(fast.dtim.next_deadline(i), reference.dtim.next_deadline(i));
+                    assert_eq!(fast.dtim.fired(i), reference.dtim.fired(i));
+                    assert_eq!(fast.dtim.missed(i), reference.dtim.missed(i));
+                    assert_eq!(fast.dtim.cleared(i), reference.dtim.cleared(i));
+                }
+            }
+        }
     }
 }

@@ -3588,3 +3588,235 @@ current library's core/generator check passed and its image hash matched
 No DSP timing, underrun, or synchronized real-time result was obtained.
 Evidence: `sharc-100-receipt.json`, `sharc-100.log`, and
 `meta/sharc-baseline-provenance.json` under the same temporary directory.
+
+### DSP decode allocation and first-block performance follow-up (2026-10-02)
+
+**[D]** The stale pack's 1,114 DMA frames, starting at capture frame 74,
+matched `out/captures/drive3/dt2-1.16-drive3-trig1-emac.dt2cap` byte for byte
+after the existing halfword swap. Rebuilding from that capture and
+`out/captures/drive3/flexbus-drive3.raw`, with `--rebuild --limit 2000000`,
+produced v3 pack key `2cf652cf46d0d2b45bab69a3` in 77.55 seconds. Its embedded
+image exactly matches the current loader image. The actual loaded
+`out/sections/dt2-1.16/section_7_BLOB.bin` hash is `0f514a12...`, matching the
+native library's image hash; DT2 1.16 SYX SHA is `278541e4...`, matching the
+device contract. Pack and native library both name core `4b25379c...`.
+No stale guard was disabled or pack state retagged.
+
+**[D]** The existing native library rendered 100/100 frames cleanly with no
+DMA failures or stops. The initial observation was median 457.3, p99 709.4,
+max 934.1 and first-frame 14,107.5 microseconds. Interpreter fallback was
+6,044 of 21,948,991 counted instructions (0.0275%). Block profiling showed
+distributed AOT work; its top entry `0x1c06ba` accounted for about 6.4% of
+profiled block time. Profiling adds overhead and does not provide comparable
+unprofiled deadline measurements.
+
+**[D]** `native/sharc/src/canon.rs` now stores the 103,289 decoded
+instructions, their field descriptors and field entries in three contiguous
+process-lifetime arrays, replacing roughly three heap allocations per
+instruction. Lookup pages, field order, signed values, duplicate-PC behavior
+and unknown-PC handling are preserved. Parsing completes before publishing
+the arrays, so a truncated decode does not leak partial instructions.
+`native/sharc/src/lib.rs` initializes this host-only table during engine
+construction, before rendering starts. This executes no guest instructions
+and changes no guest counters; it moves initialization cost into library/core
+loading. Code-page faults and other first-use costs can still affect rendering.
+
+**[D]** Five serial alternating baseline/final pairs each rendered 100 frames,
+using the same fresh pack and `live_play` executable, interactive QoS, default
+release flags and the pinned Rust 1.98.1 toolchain. Median across the five
+per-run statistics (microseconds):
+
+| Statistic | Baseline | Final |
+| --- | ---: | ---: |
+| First frame | 6,971.4 | 1,184.1 |
+| Steady median, excluding first frame | 446.6 | 445.4 |
+| Steady p99, excluding first frame | 526.2 | 522.2 |
+
+First-frame ranges were 6,868.2–7,129.5 and 1,101.7–2,435.3 microseconds.
+The first final run also incurred first-use costs for its new library file;
+these are fresh-process runs with an uncontrolled OS file cache, not a cold
+machine experiment. The 83.0% reduction describes the first **render** stall,
+not overall startup or sustained throughput. An intermediate arena-only build
+reduced cached-library first frames to about 4.5 ms before eager initialization.
+Steady throughput has no material demonstrated improvement. All five final
+first blocks still exceeded the explicitly nominal 666.7-microsecond budget
+for 32 samples at requested 48 kHz; no steady blocks missed it in these final
+pairs. Earlier observations did miss it, so these short runs do not establish
+worst-case deadlines. A ThinLTO/16-codegen-unit experiment preserved parity
+but showed inconsistent median changes; default build flags remain unchanged.
+
+**[D]** The final build matched all 100 baseline canonical state hashes and
+all dumped f64 PCM bytes. Every paired run retained 21,948,991 counted
+instructions and 6,044 fallback instructions. PCM SHA-256 was
+`4744e837e67720ebbf79dd5157ab2bcff18dffaeadb869426d5cfa5b94593e64`.
+Twenty SHARC runtime tests passed, including field-arena/PC-boundary and
+every-prefix truncation checks. The real wire-order live-source/capture-source
+parity test passed. The DSP-only offline gate rendered two fresh 160-frame
+runs, each with 5,120 stereo samples, non-silent output and Q31 PCM FNV-1a64
+`e89d808cd7de9585`. The generated AOT wasm32 frame module passed locked/offline
+Cargo check; this is a compilation gate, not browser execution. Independent
+review found no issues. Formatting was checked on changed files only.
+
+Evidence: `/private/tmp/digi-audio-performance-yed29asm/`, particularly
+`provenance.json`, `summary.json`, `final-comparison.json`,
+`final-parity-receipt.json`, `final-parity.log`, `offline-gate-serial.log` and
+`wire-parity.log`. The matching pack and final library were also retained in
+ignored `out/native/audio-perf-20261002-yed29asm/`. Firmware-derived artifacts
+are not commit candidates. Reproduce the bounded device-free render with:
+
+```sh
+native/live/target/release/live_play \
+  --pack out/native/audio-perf-20261002-yed29asm/2cf652cf46d0d2b45bab69a3.pack \
+  --lib out/native/audio-perf-20261002-yed29asm/libsharc_native.dylib \
+  --bench 100 --times /private/tmp/digi-audio-100.times
+```
+
+Rebuild the library with `SHARC_GEN_DIR` naming the current matching generated
+sources (`out/native/opt/gen-final` here), an external `CARGO_TARGET_DIR`, and
+`rustup run 1.98.1 cargo build --release --locked --offline --manifest-path
+native/sharc/Cargo.toml --lib --bin sharc-frames`. Regenerate those sources
+first if their core/generator provenance differs.
+
+**[O]** This is captured-state DSP rendering of voice work-buffer taps.
+ColdFire/SHARC shared virtual time, SPI reply semantics, SSI0 delivery,
+representative polyphony, sustained coupled deadlines and actual device/browser
+audio remain unvalidated. The next integration step needs an evidenced reply
+and timing contract; sending captured frames with fabricated zero replies
+does not establish it. The boot/desktop/browser runtime still does not connect
+to this DSP renderer.
+
+
+### Shared boot runtime performance, intro publication and warning audit (2026-10-02)
+
+**[O]** The user's actual desktop DT2 and DN2 boots were slow before the main
+UI, and the Elektron intro flickered. Main page buttons were responsive after
+boot. This is a different path from the captured-state SHARC renderer above:
+the Tauri host and browser WASM both use `native/boot::Emulator`, which still
+has no SHARC/audio integration.
+
+**[O]** A bounded, fresh-firmware native QA harness sampled with macOS `sample`
+identified expensive host work at every interpreted instruction: timer-bank
+service/deadline scanning and the frame-completion observer's current-TCB RAM
+read. The matching baseline was built before these changes from the existing
+runtime, including analytic idle advancement. Changes preserve the reference
+execution policy and instruction boundaries:
+
+- `machine::Time` caches the earliest possible timer service boundary when no
+  PIT/DTIM IRQ is pending. Every timer/controller write, page load, component
+  restore and explicit deadline-arm operation invalidates it. Refused/pending
+  IRQs still get an offer on every instruction; SR seeding remains unchanged.
+  The cache uses the original floating-point deadlines and disables itself for
+  NaN deadlines. Device-policy errors remain immediate.
+- `FrameTracker::complete_at_return` checks pending return PC and A7 before
+  reading the current TCB. It retains the original owner and completion checks
+  when a return can match.
+
+**[O]** The initial native ready/two-NO/encoder sequence took 56.17 -> 33.72 s
+for DT2 and 43.47 -> 27.53 s for DN2. Before the intro fix, both ready/final
+JSON files and all five framebuffer captures were byte-identical on each
+device. The DT2 baseline was sampled for ten seconds, so its wall-time result
+is not an uncontaminated speed measurement. A later unsampled DT2 baseline
+completed in 50.77 s. Final timings and frame parity are recorded below.
+These are bounded single-run observations, not real-time audio or UI latency
+benchmarks. Logical `icount` includes analytic idle and flash substitutions;
+never report it as interpreted MIPS.
+
+**[O]** Intro probes through 400M logical instructions showed 74 complete DT2
+raster ends and 70 DN2 raster ends. Each observed cycle visited all 8192
+coordinates, ending at `(127,63)`; the next `(0,0)` entry already saw a cleared
+bitmap. DT2 had 73 observed next-cycle boundaries and DN2 had 70, all with a
+zero bitmap. Chunk-boundary publication alternated zero, partial and complete
+images. This establishes why capturing at either a chunk boundary or the next
+cycle's first pixel causes flicker. Pixel order must not be assumed from the
+ending coordinate: an initial strict column-order implementation failed the
+full replay by withholding the intro and was replaced before delivery.
+
+**[O]** `IntroFrameTracker` now starts at `(0,0)`, tracks distinct coordinates
+on the same bitmap with a 128-word bitset, and waits for coverage of all 8192
+pixels. It captures the real bitmap only after the last setPixel call returns
+with the expected PC and stack pointer. Live dimensions, stride and storage
+are validated at capture. Partial/duplicate cycles cannot publish; the last
+complete image remains available. A complete black image is still published.
+Main task/return completion and the main-frame latch retain their previous
+behavior. This observes existing guest execution; it adds no pixel HLE,
+synthetic display or skipped guest work.
+
+**[O]** A scout traced the ten shared-library `dead_code` warnings to the
+same `common.rs` being compiled independently by the portable library and
+CLI binary. CLI-only constants, instruction/task/context records and exit
+checks moved to `diagnostics.rs`, included only by the CLI. Shared telemetry
+and frame metadata that the CLI actually prints have narrow, documented
+`allow(dead_code)` annotations; there is no crate-wide warning suppression.
+The CLI now uses the same `LoggingBus` constructor as the runtime. Fresh
+native QA, WASM, desktop release builds and boot tests emit no Rust warnings.
+These warnings did not identify unfinished boot/display functionality. The
+missing CPU/DSP/audio integration remains a separate, documented gap.
+
+**[O]** Verification: all 30 boot tests pass, including publication after the
+last pixel return, both raster traversal orders, retaining a completed image
+during partial drawing, rejecting a duplicate, and publishing a complete
+black raster. The timer library/integration selection passes 43 tests; its
+new differential test compares cached versus uncached service at every
+boundary with blocked/refused IRQs, MMIO changes, page loads, deadline arming,
+fractional clocks and counts beyond 2^53. A NaN-clock regression is covered.
+An independent reviewer reported no remaining findings for the timer cache,
+frame guard, warning cleanup and corrected coverage-based intro observer.
+
+Evidence is in `/private/tmp/digi-desktop-performance-5jtmamth/`: canonical
+`qa/src/main.rs`, pre-change `target-baseline`, final `target-final`,
+`target-wasm`, `target-desktop`, sample, probe logs, build/test logs, receipts
+and framebuffer captures. Firmware contracts remain DT2 1.16 and DN2 1.11.
+Builds use pinned Rust 1.98.1, `--locked --offline`, external targets and
+explicit `RUSTC`/`RUSTDOC`/sysroot library paths. Each timed run is serial,
+limited to 300 seconds and at most 1.1B logical instructions, stopping at
+ready plus 60M instructions after two NO presses and an encoder turn. The
+Node WASM harness instantiates the actual external build, with no substitutions
+or extra imports. Temporary evidence can be OS-cleaned; no new commits were
+made and no owner's app/server was stopped.
+
+
+**[O]** Final complete-raster native sequence: DT2 34.45 s versus the 50.77 s
+unsampled baseline (32.1% less time); DN2 27.74 s versus 43.47 s (36.2% less).
+Final Node WASM sequences completed in 45.21 s and 36.10 s respectively;
+there is no new WASM baseline or browser UI wall-time comparison here.
+All four runs reached ready without a fault and accepted the bounded input
+sequence. Native baseline versus final status differs only in the intentional
+frame-revision count: DT2 ready 797 -> 98, final 801 -> 102; DN2 ready
+794 -> 88, final 795 -> 89. Ready occurs at the same logical instruction
+counts (914,736,053 DT2; 847,486,347 DN2), with the same interpreted, idle,
+flash and timer behavior. All four main/input frame captures match baseline.
+The intro capture intentionally changes to the last complete image.
+
+**[O]** Final native/WASM comparison matches every ready/final status value,
+all five framebuffer captures, and all intro revision instruction counts and
+pixel counts on both devices. Each device emits 87 changed intro images;
+first publication is a complete 367-lit-pixel logo at 204,749,605 DT2 or
+222,249,605 DN2 logical instructions. The minimum observed complete-image
+pixel count is 135; the unit test, rather than this firmware sample, verifies
+a complete black image. The last complete intro capture on both devices has
+SHA-256 `fc6c0df3c364515e4f62c1904b77f01494c8a5c8a6df1e66ea7bce935d98abad`.
+The new WASM SHA-256 is
+`bf3902913fd5f22c487ff13af15103507f1481db772d3f223dc95a225fef218d`;
+the tested external build was explicitly copied to
+`packages/web/public/emulator-core.wasm`. An existing browser worker retains
+its instantiated module, so refresh the page to use the new core. Relaunch
+via `pnpm --filter @digi/desktop dev` to rebuild/use the changed native core;
+the existing desktop process was not replaced. The external desktop release
+is `target-desktop/release/digiemu-desktop` in the evidence directory above.
+No actual GUI visual/input session was exercised in this follow-up; native
+host release compilation and shared runtime/ABI replay are the evidence.
+
+
+**[O]** Final full `native/machine` suite: 90 passed, 13 existing fixture tests
+ignored; `native/boot`: 30 passed. Changed-file rustfmt checks and the Astro
+static build pass. The static output and public WASM hashes match. Curated
+logs, native/WASM captures, harness sources and receipts are also retained in
+ignored `out/native/desktop-perf-20261002/`; large target directories and the
+external desktop executable remain in the temporary evidence directory.
+
+
+**[O]** Subsequent user GUI verification: the boot animation is smooth, there
+is no flickering, and the UI is responsive after loading. The user still
+observes roughly 200M logical instructions before a bootscreen appears.
+This validates the visible publication fix; it does not measure audio,
+explain the pre-display guest work, or establish real-time hardware pacing.

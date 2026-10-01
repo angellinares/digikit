@@ -4,9 +4,33 @@ This is a cold-start handover for the current Rust ColdFire diagnostic runtime
 and its Astro/Solid web and Tauri desktop front ends. It records what has been
 demonstrated, what remains only a plausible diagnosis, and the shortest useful
 next investigations. It does **not** claim an accurate full hardware emulator,
-audio output, or a finished performance/flicker fix.
+audio output, or synchronized real-time performance. See the October 2 follow-up below for
+verified runtime improvements and their GUI-validation limits.
 
 ## Resume here: latest checkpoint and actual user goal
+
+Follow-up on 2026-10-02: a freshly rebuilt matching DSP pack now renders
+cleanly. Contiguous instruction metadata and eager host decode initialization
+reduce the median first-block render stall from 6.97 to 1.18 ms in five
+alternating native pairs; steady throughput is essentially unchanged. See
+[`findings/07-emulator.md`](findings/07-emulator.md), **DSP decode allocation
+and first-block performance follow-up (2026-10-02)**, for parity evidence,
+commands and limitations. CPU/DSP synchronization remains open.
+
+Current boot/UI follow-up on 2026-10-02: the shared runtime avoids timer scans
+before a possible event and current-TCB reads before a matching frame return.
+A fresh native boot/input sequence took 50.77 -> 34.45 s for DT2 and
+43.47 -> 27.74 s for DN2. Intro frames now publish after a complete 8192-pixel
+raster's last setPixel return, rather than sampling a cleared/partial bitmap.
+Final native/WASM runs match all status values, five frame captures and all
+87 intro revisions for both devices. Ten shared-library warnings were traced
+to CLI diagnostics and cleaned up; they were not missing boot functionality.
+See **Shared boot runtime performance, intro publication and warning audit
+(2026-10-02)** in [`findings/07-emulator.md`](findings/07-emulator.md).
+The browser public WASM asset and an external desktop release build are
+updated; an already-running app/worker retains its old core. The user subsequently verified a smooth boot animation without flicker and
+responsive UI after loading; cold boot still waits about 200M logical
+instructions before the first visible logo.
 
 **The goal is synchronized ColdFire + SHARC execution close enough to device
 real time to sustain audio. Boot/UI speed is secondary.** The user stopped the
@@ -48,10 +72,10 @@ real-time audio checkpoint**. Current implementation state:
   host interpreter work. `oracle_ticks` additionally includes accepted atomic
   arithmetic calls. Never compare synthetic/logical counts as interpreted
   MIPS; measure audio-block/wall time and report the distinct counters.
-- Main frames are already task/return-completion-gated; unchanged revisions
-  are suppressed and main latches over intro. Intro samples a live bitmap at
-  chunk boundaries. Flicker remains unresolved; hiding black frames or drawing
-  substitute images is not a fix.
+- Main frames are task/return-completion-gated; unchanged revisions are
+  suppressed and main latches over intro. The October 2 follow-up replaces
+  intro chunk sampling with complete-raster return capture. Complete black
+  frames remain publishable; no substitute images are drawn.
 
 ### Actual audio path and immediate blocker
 

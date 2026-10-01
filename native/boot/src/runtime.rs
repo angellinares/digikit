@@ -89,7 +89,7 @@ pub struct Emulator {
     fs_clear_pending: Option<(u32, u32, u32)>,
     fs_active: bool,
     frames: FrameTracker,
-    intro_candidate_bmp: Option<u32>,
+    intro_frames: IntroFrameTracker,
     main_frame_latched: bool,
     current_frame: Option<Vec<u8>>,
     frame_source: Option<String>,
@@ -298,7 +298,7 @@ impl Emulator {
             fs_clear_pending: None,
             fs_active: false,
             frames: FrameTracker::default(),
-            intro_candidate_bmp: None,
+            intro_frames: IntroFrameTracker::default(),
             main_frame_latched: false,
             current_frame: None,
             frame_source: None,
@@ -544,8 +544,13 @@ impl Emulator {
             self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
             return;
         }
-        if pc == self.set_pixel {
-            self.observe_intro_bitmap();
+        if !self.main_frame_latched {
+            self.intro_frames
+                .complete_at_return(&mut self.bus.board, pc, self.cpu.a[7]);
+            if pc == self.set_pixel {
+                self.intro_frames
+                    .observe_pixel(&mut self.bus.board, self.cpu.a[7]);
+            }
         }
         self.observe_marks(pc);
         self.frames.complete_at_return(
@@ -736,15 +741,6 @@ impl Emulator {
         self.uart_bytes += self.bus.board.take_uart_tx().len() as u64;
     }
 
-    fn observe_intro_bitmap(&mut self) {
-        let Some(bmp) = self.bus.board.read32(self.cpu.a[7].wrapping_add(4)).ok() else {
-            return;
-        };
-        if self.bus.board.can_write_ram_range(bmp.wrapping_add(4), 16) {
-            self.intro_candidate_bmp = Some(bmp);
-        }
-    }
-
     fn refresh_frame(&mut self) {
         if let Some(frame) = self.frames.latest_for(self.mainloop_tcb) {
             if self.main_frame_latched || frame.lit_bytes > 0 {
@@ -756,11 +752,10 @@ impl Emulator {
             }
         }
         if !self.main_frame_latched
-            && let Some(bmp) = self.intro_candidate_bmp
-            && let Some(raw) = decode_intro_bitmap(&mut self.bus.board, bmp)
-            && self.current_frame.as_ref() != Some(&raw)
+            && let Some(raw) = &self.intro_frames.latest
+            && self.current_frame.as_ref() != Some(raw)
         {
-            self.publish_frame("intro", raw);
+            self.publish_frame("intro", raw.clone());
         }
     }
 
@@ -1024,6 +1019,77 @@ fn flash_image(main: &[u8], flash_read: u32, container: &[u8]) -> Result<Vec<u8>
     Ok(flash)
 }
 
+// Supported intro routines start at (0, 0) and visit the entire bitmap. Capture
+// after the final setPixel returns: the next draw clears this same bitmap before
+// its first pixel, so neither chunk boundaries nor the next pixel entry are safe.
+struct IntroFrameTracker {
+    bitmap: Option<u32>,
+    seen: [u64; 128],
+    seen_pixels: u32,
+    pending: Option<(u32, u32, u32)>, // bitmap, return PC, expected A7
+    latest: Option<Vec<u8>>,
+}
+
+impl Default for IntroFrameTracker {
+    fn default() -> Self {
+        Self {
+            bitmap: None,
+            seen: [0; 128],
+            seen_pixels: 0,
+            pending: None,
+            latest: None,
+        }
+    }
+}
+
+impl IntroFrameTracker {
+    fn observe_pixel(&mut self, board: &mut Board, a7: u32) {
+        let args = (|| {
+            Some((
+                board.read32(a7.wrapping_add(4)).ok()?,
+                board.read32(a7.wrapping_add(8)).ok()?,
+                board.read32(a7.wrapping_add(12)).ok()?,
+            ))
+        })();
+        let Some((bitmap, x, y)) = args.filter(|(_, x, y)| *x < 128 && *y < 64) else {
+            self.bitmap = None;
+            return;
+        };
+        if (x, y) == (0, 0) {
+            self.bitmap = Some(bitmap);
+            self.seen.fill(0);
+            self.seen_pixels = 0;
+        }
+        let bit = 1u64 << y;
+        if self.bitmap != Some(bitmap) || self.seen[x as usize] & bit != 0 {
+            self.bitmap = None;
+            return;
+        }
+        self.seen[x as usize] |= bit;
+        self.seen_pixels += 1;
+        if self.seen_pixels == 128 * 64 {
+            self.pending = board
+                .read32(a7)
+                .ok()
+                .map(|pc| (bitmap, pc, a7.wrapping_add(4)));
+            self.bitmap = None;
+        }
+    }
+
+    fn complete_at_return(&mut self, board: &mut Board, pc: u32, a7: u32) {
+        if let Some((bitmap, return_pc, expected_a7)) = self.pending
+            && pc == return_pc
+            && a7 == expected_a7
+        {
+            self.pending = None;
+            // Validate the live header here; bitmap dimensions/storage can change.
+            if let Some(raw) = decode_intro_bitmap(board, bitmap) {
+                self.latest = Some(raw);
+            }
+        }
+    }
+}
+
 fn decode_intro_bitmap(board: &mut Board, bmp: u32) -> Option<Vec<u8>> {
     if !board.can_write_ram_range(bmp.wrapping_add(4), 16) {
         return None;
@@ -1095,6 +1161,65 @@ mod tests {
         assert_eq!(fast.interpreted_instructions, 1);
         assert_eq!(fast.idle_fast_forwarded_instructions, 399);
         assert_eq!(fast.bus.current_icount, slow.bus.current_icount);
+    }
+
+    #[test]
+    fn intro_publishes_only_after_a_complete_raster_returns_including_black() {
+        let mut board = Board::new(
+            Card::default(),
+            Default::default(),
+            CompletionPolicy::Oracle,
+        );
+        let bmp = 0x4020_0000;
+        let base = 0x4030_0000;
+        let sp = 0x4020_0100;
+        for page in [bmp, base] {
+            board.map_zeroed_ram_page(page).unwrap();
+        }
+        for (offset, value) in [(4, 128), (8, 64), (12, 2), (16, base)] {
+            board.write32(bmp + offset, value).unwrap();
+        }
+        board.write32(sp, MAIN_LOAD + 0x100).unwrap();
+        board.write32(sp + 4, bmp).unwrap();
+        let mut tracker = IntroFrameTracker::default();
+        for black in [false, true] {
+            for pixel in 0..8192 {
+                let (x, y) = if black {
+                    (pixel % 128, pixel / 128)
+                } else {
+                    (pixel / 64, pixel % 64)
+                };
+                board.write32(sp + 8, x).unwrap();
+                board.write32(sp + 12, y).unwrap();
+                tracker.observe_pixel(&mut board, sp);
+                if pixel < 8191 {
+                    assert!(tracker.pending.is_none());
+                }
+            }
+            let before_return = tracker.latest.clone();
+            tracker.complete_at_return(&mut board, MAIN_LOAD + 0x100, sp);
+            assert_eq!(tracker.latest, before_return); // caller PC alone is insufficient
+            board
+                .write32(base, if black { 0 } else { 0x8000_0000 })
+                .unwrap();
+            tracker.complete_at_return(&mut board, MAIN_LOAD + 0x100, sp + 4);
+            let frame = tracker.latest.as_ref().unwrap();
+            assert_eq!(panel_pixel(frame, 0, 0), !black);
+            assert!(tracker.pending.is_none());
+            // A partial redraw must leave the last complete frame visible.
+            board.write32(base, 0xffff_ffff).unwrap();
+            board.write32(sp + 8, 0).unwrap();
+            board.write32(sp + 12, 0).unwrap();
+            tracker.observe_pixel(&mut board, sp);
+            tracker.complete_at_return(&mut board, MAIN_LOAD + 0x100, sp + 4);
+            assert_eq!(panel_pixel(tracker.latest.as_ref().unwrap(), 0, 0), !black);
+        }
+        // A duplicate before full coverage invalidates the partial raster.
+        board.write32(sp + 12, 1).unwrap();
+        tracker.observe_pixel(&mut board, sp);
+        tracker.observe_pixel(&mut board, sp);
+        assert_eq!(tracker.bitmap, None);
+        assert!(tracker.pending.is_none());
     }
 
     #[test]

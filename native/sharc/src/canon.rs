@@ -381,7 +381,7 @@ pub struct InsnTable {
     /// Two levels over the 24-bit short-word PC: 4096-PC pages of
     /// instruction indices plus one (0: none).
     pages: Vec<Option<Box<[u32; 4096]>>>,
-    insns: Vec<&'static Insn>,
+    insns: &'static [Insn],
 }
 
 impl InsnTable {
@@ -396,7 +396,7 @@ impl InsnTable {
         if i == 0 {
             None
         } else {
-            Some(self.insns[i as usize - 1])
+            Some(&self.insns[i as usize - 1])
         }
     }
     pub fn len(&self) -> usize {
@@ -421,14 +421,18 @@ fn parse_insn_table(b: &[u8]) -> Result<InsnTable, i32> {
     let n = r.u32()? as usize;
     let mut pages: Vec<Option<Box<[u32; 4096]>>> = Vec::new();
     pages.resize_with(1 << 12, || None);
-    let mut insns = Vec::with_capacity(n);
+    // Decode into temporary headers and one field arena before publishing
+    // process-lifetime references. Per-instruction boxes otherwise make the
+    // first interpreter fallback allocate hundreds of thousands of objects.
+    let mut headers = Vec::with_capacity(n);
+    let mut entries = Vec::with_capacity(b.len() / 14);
     for _ in 0..n {
         let pc = r.u32()?;
         let type_name = r.u16()?;
         let kind = r.u16()?;
         let length = r.u8()? as i8;
         let nf = r.u8()? as usize;
-        let mut entries = Vec::with_capacity(nf);
+        let start = entries.len();
         for _ in 0..nf {
             let key = r.u16()?;
             let stem = r.u16()?;
@@ -437,21 +441,35 @@ fn parse_insn_table(b: &[u8]) -> Result<InsnTable, i32> {
             let v = r.i64()? as Int;
             entries.push(FieldEntry(key, stem, hi, lo, v));
         }
-        let fields: &'static Fields = Box::leak(Box::new(Fields {
-            kv: Box::leak(entries.into_boxed_slice()),
-        }));
+        headers.push((pc, type_name, kind, length, start, entries.len()));
+    }
+    // These three arrays share the table's process lifetime, as the previous
+    // individual leaked boxes did. No references escape a failed decode.
+    let entries: &'static [FieldEntry] = Box::leak(entries.into_boxed_slice());
+    let fields: &'static [Fields] = Box::leak(
+        headers
+            .iter()
+            .map(|&(_, _, _, _, start, end)| Fields {
+                kv: &entries[start..end],
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    );
+    let mut insns = Vec::with_capacity(n);
+    for ((pc, type_name, kind, length, _, _), fields) in headers.into_iter().zip(fields) {
         if pc < (1 << 24) {
             let page = pages[(pc >> 12) as usize].get_or_insert_with(|| Box::new([0; 4096]));
             page[(pc & 0xFFF) as usize] = insns.len() as u32 + 1;
         }
-        insns.push(&*Box::leak(Box::new(Insn {
+        insns.push(Insn {
             type_name,
             fields,
             length_bytes: (length >= 0).then_some(length as Int),
             kind,
             offset: 0,
-        })));
+        });
     }
+    let insns = Box::leak(insns.into_boxed_slice());
     Ok(InsnTable { pages, insns })
 }
 
@@ -471,4 +489,66 @@ pub fn field_entry(key: &str, value: Int) -> Option<FieldEntry> {
         lo = l.parse().unwrap_or(-1);
     }
     Some(FieldEntry(k, st, hi, lo, value))
+}
+
+#[cfg(test)]
+mod instruction_table_tests {
+    use super::*;
+
+    fn blob() -> Vec<u8> {
+        let mut out = b"SHIX".to_vec();
+        out.extend_from_slice(&4_u32.to_le_bytes());
+        for (pc, kind, length, values) in [
+            (0xfff_u32, 2_u16, 6_i8, &[17_i64, -23][..]),
+            (0x1000, 3, -1, &[][..]),
+            (0xfff, 4, 4, &[99][..]),
+            (1 << 24, 5, 2, &[123][..]),
+        ] {
+            out.extend_from_slice(&pc.to_le_bytes());
+            out.extend_from_slice(&1_u16.to_le_bytes());
+            out.extend_from_slice(&kind.to_le_bytes());
+            out.extend_from_slice(&[length as u8, values.len() as u8]);
+            for (index, &value) in values.iter().enumerate() {
+                out.extend_from_slice(&(index as u16 + 10).to_le_bytes());
+                out.extend_from_slice(&7_u16.to_le_bytes());
+                out.extend_from_slice(&[31, 16]);
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn packed_fields_preserve_order_and_pc_lookup() {
+        let table = parse_insn_table(&blob()).unwrap();
+        assert_eq!(table.len(), 4);
+        let original = &table.insns[0];
+        assert_eq!(original.type_name, 1);
+        assert_eq!(original.length_bytes, Some(6));
+        assert_eq!(original.fields.kv.len(), 2);
+        assert_eq!(original.fields.get(10), Some(17));
+        assert_eq!(original.fields.get(11), Some(-23));
+        let field = original.fields.kv[1];
+        assert_eq!((field.0, field.1, field.2, field.3), (11, 7, 31, 16));
+        // Duplicate PCs select the last instruction, as before. Adjacent
+        // pages and zero-field instructions keep distinct lookup entries.
+        let duplicate = table.get(0xfff).unwrap();
+        assert_eq!(duplicate.kind, 4);
+        assert_eq!(duplicate.fields.get(10), Some(99));
+        let next = table.get(0x1000).unwrap();
+        assert_eq!(next.kind, 3);
+        assert_eq!(next.length_bytes, None);
+        assert!(next.fields.kv.is_empty());
+        for pc in [-1, 0, 0xffe, 0x1001, 1 << 24] {
+            assert!(table.get(pc).is_none());
+        }
+    }
+
+    #[test]
+    fn truncated_field_arena_is_rejected() {
+        let bytes = blob();
+        for end in 0..bytes.len() {
+            assert!(parse_insn_table(&bytes[..end]).is_err(), "length {end}");
+        }
+    }
 }

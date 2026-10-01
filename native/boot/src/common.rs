@@ -11,10 +11,8 @@ use sha2::{Digest, Sha256};
 
 pub(crate) const MAIN_LOAD: u32 = 0x4000_0400;
 pub(crate) const ENTRY: u32 = 0x4000_04e8;
-pub(crate) const VECTOR_RAM: u32 = 0x4000_0000;
 pub(crate) const STACK: u32 = 0x4080_0000;
 pub(crate) const PAGE: usize = 1024 * 1024;
-pub(crate) const LIMIT: u64 = 1_000_000_000;
 pub(crate) const UART8_USR: u32 = 0xec07_0004;
 pub(crate) const UART8_UDR: u32 = 0xec07_000c;
 pub(crate) const TX35_VECTOR: u8 = 155;
@@ -237,12 +235,6 @@ pub(crate) struct Access {
     pub(crate) value: Option<u32>,
     pub(crate) fault: Option<(u32, bool)>,
 }
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct InstructionObservation {
-    pub(crate) icount: u64,
-    pub(crate) pc: u32,
-    pub(crate) sr: u16,
-}
 
 pub(crate) fn operand_pair(image: &[u8], base: u32) -> Result<(u32, u32), String> {
     let offset = base
@@ -274,8 +266,10 @@ pub(crate) fn operand_pair(image: &[u8], base: u32) -> Result<(u32, u32), String
 #[derive(Clone, Debug)]
 pub(crate) struct Frame {
     pub(crate) owner_tcb: u32,
+    #[allow(dead_code, reason = "frame address is reported by the diagnostic CLI")]
     pub(crate) ptr: u32,
     pub(crate) icount: u64,
+    #[allow(dead_code, reason = "frame hash is reported by the diagnostic CLI")]
     pub(crate) hash: String,
     pub(crate) lit_bytes: usize,
     pub(crate) raw: Vec<u8>,
@@ -354,6 +348,15 @@ impl FrameTracker {
         pc: u32,
         a7: u32,
     ) {
+        // Most guest instructions cannot complete a pending display call.
+        // Check its return boundary before reading the current task in RAM.
+        if !self
+            .pending
+            .iter()
+            .any(|pending| pending.return_pc == pc && pending.expected_a7 == a7)
+        {
+            return;
+        }
         let Ok(owner_tcb) = board.read32(current_tcb_addr) else {
             return;
         };
@@ -414,10 +417,7 @@ pub(crate) fn readiness_contract_ready(
         }
     }
 }
-pub(crate) fn stop_success(stop: &str, target: &str, ready: bool, icount: u64, limit: u64) -> bool {
-    (target == "ready" && stop == "VERIFIED_READY" && ready)
-        || (target == "limit" && stop == "instruction limit" && icount >= limit)
-}
+
 pub(crate) fn record_deliveries(
     raised: &[(u16, u8)],
     ring: &mut Vec<(u16, u8)>,
@@ -458,6 +458,10 @@ impl TraceValue for () {
     }
 }
 #[derive(Debug)]
+#[allow(
+    dead_code,
+    reason = "retained telemetry is printed by the diagnostic CLI"
+)]
 pub(crate) struct UnknownTouch {
     pub(crate) pc: u32,
     pub(crate) kind: &'static str,
@@ -466,33 +470,16 @@ pub(crate) struct UnknownTouch {
     pub(crate) value: u32,
 }
 #[derive(Debug)]
+#[allow(
+    dead_code,
+    reason = "retained telemetry is printed by the diagnostic CLI"
+)]
 pub(crate) struct FlashRead {
     pub(crate) offset: u32,
     pub(crate) length: u32,
     pub(crate) dest: u32,
 }
-#[derive(Debug)]
-pub(crate) struct TaskCreate {
-    pub(crate) at: u64,
-    pub(crate) tcb: u32,
-    pub(crate) entry: u32,
-    pub(crate) prio: u32,
-    pub(crate) stack: u32,
-    pub(crate) size: u32,
-}
-#[derive(Debug)]
-pub(crate) struct Pend {
-    pub(crate) at: u64,
-    pub(crate) return_pc: u32,
-    pub(crate) sem: u32,
-    pub(crate) value: Option<u32>,
-}
-#[derive(Debug)]
-pub(crate) struct Context {
-    pub(crate) at: u64,
-    pub(crate) current_tcb: u32,
-    pub(crate) ready_cursor: u32,
-}
+
 pub(crate) struct LoggingBus {
     pub(crate) board: Board,
     pub(crate) accesses: Vec<Access>,

@@ -4,8 +4,10 @@
 //! requested by the diagnostic CLI; it is not a hardware boot contract.
 
 mod common;
+mod diagnostics;
 
 use common::*;
+use diagnostics::*;
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -517,29 +519,7 @@ fn run() -> Result<(), String> {
         .map(|(offset, _)| MAIN_LOAD + offset as u32)
         .collect();
     let max_steps = cli.limit;
-    let mut bus = LoggingBus {
-        board,
-        accesses: vec![],
-        access_dropped: 0,
-        ppmcr_contract: cli.diagnostic_services,
-        zero_page_mmio,
-        zero_page_limit: 160,
-        current_pc: ENTRY,
-        current_icount: 0,
-        unknown_touches: BTreeMap::new(),
-        timer_accesses: vec![],
-        timer_writes: vec![],
-        uart8_tx: vec![],
-        dspi2_status_reads: vec![],
-        dspi2_dma_writes: vec![],
-        cmdarg_writes: 0,
-        xfertyp_writes: 0,
-        gpio_reads: 0,
-        gpio_writes: 0,
-        last_cmdarg: 0,
-        command_trace: vec![],
-        gpio_trace: vec![],
-    };
+    let mut bus = LoggingBus::new(board, cli.diagnostic_services, zero_page_mmio, 160, ENTRY);
     let mut cpu = Cpu::new();
     cpu.pc = ENTRY;
     cpu.sr = 0x2700;

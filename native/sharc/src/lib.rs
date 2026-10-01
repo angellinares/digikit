@@ -293,6 +293,10 @@ fn image_loop_ends() -> &'static [i64] {
 fn image_insn_at() -> fn(Int) -> Option<&'static Insn> {
     #[cfg(all(sharc_gen, sharc_image))]
     {
+        // Build host-only decode metadata while constructing the engine.
+        // The first interpreter fallback must not parse the entire image
+        // and allocate its instruction table on the audio render path.
+        canon::insn_table(generated::image::INSN_BLOB);
         generated::image::insn_at
     }
     #[cfg(not(all(sharc_gen, sharc_image)))]
