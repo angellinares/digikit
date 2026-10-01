@@ -519,7 +519,8 @@ fn run() -> Result<(), String> {
         .map(|(offset, _)| MAIN_LOAD + offset as u32)
         .collect();
     let max_steps = cli.limit;
-    let mut bus = LoggingBus::new(board, cli.diagnostic_services, zero_page_mmio, 160, ENTRY);
+    let mut bus: LoggingBus =
+        LoggingBus::new(board, cli.diagnostic_services, zero_page_mmio, 160, ENTRY);
     let mut cpu = Cpu::new();
     cpu.pc = ENTRY;
     cpu.sr = 0x2700;

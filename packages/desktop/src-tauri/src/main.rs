@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use elektron_native_boot::{Emulator, Snapshot};
+use elektron_native_boot::{DiagnosticReport, Emulator, Snapshot};
 use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SMALL_CAPACITY_BLOCKS};
 use serde::Deserialize;
 use tauri::State;
@@ -71,6 +71,10 @@ fn runtime_from(
 }
 
 enum Command {
+    Diagnostics {
+        session: u64,
+        reply: mpsc::Sender<Result<DiagnosticReport, String>>,
+    },
     Startup {
         reply: Reply,
     },
@@ -123,7 +127,26 @@ fn actor(receiver: mpsc::Receiver<Command>) {
     let mut cached: Option<(Vec<u8>, Option<PathBuf>)> = None;
     let mut read_error: Option<Arc<Mutex<Option<String>>>> = None;
     while let Ok(command) = receiver.recv() {
+        let command = match command {
+            Command::Diagnostics {
+                session: token,
+                reply,
+            } => {
+                let result = if token != session {
+                    Err("stale emulator session".into())
+                } else {
+                    runtime
+                        .as_ref()
+                        .map(Emulator::diagnostics)
+                        .ok_or_else(|| "No firmware selected".into())
+                };
+                let _ = reply.send(result);
+                continue;
+            }
+            command => command,
+        };
         let (request_session, reply) = match &command {
+            Command::Diagnostics { .. } => unreachable!("diagnostics handled above"),
             Command::Startup { reply } => (session, reply.clone()),
             Command::Load { session, reply, .. }
             | Command::Restart { session, reply, .. }
@@ -139,6 +162,7 @@ fn actor(receiver: mpsc::Receiver<Command>) {
             continue;
         }
         let result = match command {
+            Command::Diagnostics { .. } => unreachable!("diagnostics handled above"),
             Command::Startup { .. } => runtime
                 .as_mut()
                 .ok_or_else(|| "No startup firmware selected".to_string())
@@ -252,6 +276,28 @@ async fn send(
     .await
     .map_err(|e| e.to_string())?
 }
+#[tauri::command]
+async fn emu_diagnostics(
+    host: State<'_, Host>,
+    session_id: u64,
+) -> Result<DiagnosticReport, String> {
+    let sender = host.sender.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (reply, response) = mpsc::channel();
+        sender
+            .send(Command::Diagnostics {
+                session: session_id,
+                reply,
+            })
+            .map_err(|_| "emulator actor stopped")?;
+        response
+            .recv()
+            .map_err(|_| "emulator actor dropped reply")?
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn emu_load(
     host: State<'_, Host>,
@@ -381,6 +427,7 @@ fn main() {
     tauri::Builder::default()
         .manage(host)
         .invoke_handler(tauri::generate_handler![
+            emu_diagnostics,
             emu_startup,
             emu_load,
             emu_restart,

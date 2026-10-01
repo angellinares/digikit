@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+diagnostics = ["elektron-native-boot/diagnostic-profile", "elektron-native-boot/diagnostic-events"]
+
 [build-dependencies]
 tauri-build = { version = "2.5.1", features = [] }
 

@@ -9,8 +9,12 @@ use serde::Serialize;
 
 use crate::common::*;
 use crate::softfloat::{ExecutionPolicy, SoftfloatAbi, SoftfloatCounts};
+#[cfg(feature = "diagnostic-events")]
+use crate::telemetry::EventKind;
+use crate::telemetry::{DiagnosticReport, Mark, Position, Recorder};
 
 const CHUNK_MAX: u32 = 250_000;
+const CAPTURE_BUS_TRACE: bool = cfg!(feature = "diagnostic-trace");
 const SET_PIXEL_SIG: &str = "2f032f02206f000c222f0010202f00144a816d4c4a806d48b2a800046c42b0a800086c3c43e8000c761f4c1118002400ea82c680202f001820680010d282e589";
 const TCD34_BASE: u32 = 0xfc04_5440;
 const TCD34_DADDR: u32 = TCD34_BASE + 0x10;
@@ -56,7 +60,10 @@ pub struct Snapshot {
 pub struct Emulator {
     main: Vec<u8>,
     cpu: Cpu,
-    bus: LoggingBus,
+    bus: LoggingBus<CAPTURE_BUS_TRACE>,
+    telemetry: Recorder,
+    #[cfg(feature = "diagnostic-events")]
+    dspi_frames_observed: u64,
     device: String,
     version: String,
     contract: device_profile::ReadinessContract,
@@ -262,10 +269,13 @@ impl Emulator {
         cpu.pc = ENTRY;
         cpu.sr = 0x2700;
         cpu.a[7] = STACK;
-        Ok(Self {
+        let mut emulator = Self {
             main,
             cpu,
             bus,
+            telemetry: Recorder::default(),
+            #[cfg(feature = "diagnostic-events")]
+            dspi_frames_observed: 0,
             device: device.short.clone(),
             version: profile.version.clone(),
             contract,
@@ -329,7 +339,9 @@ impl Emulator {
             interpreted_instructions: 0,
             idle_fast_forwarded_instructions: 0,
             flash_hle_calls: 0,
-        })
+        };
+        emulator.mark(Mark::Entry, "before_instruction");
+        Ok(emulator)
     }
 
     pub fn step_chunk(&mut self, budget: u32) -> Snapshot {
@@ -345,6 +357,17 @@ impl Emulator {
         if budget != 0 {
             self.refresh_frame();
         }
+        if self.bus.board.dma.dspi2.frames != 0 {
+            self.mark(Mark::DspiExchange, "chunk_end");
+        }
+        #[cfg(feature = "diagnostic-events")]
+        {
+            let frames = self.bus.board.dma.dspi2.frames;
+            if frames != self.dspi_frames_observed {
+                self.event(EventKind::DspiExchange, frames - self.dspi_frames_observed);
+                self.dspi_frames_observed = frames;
+            }
+        }
         self.snapshot()
     }
 
@@ -357,6 +380,51 @@ impl Emulator {
             self.emitted_revision = Some(self.frame_revision);
         }
         Snapshot { status, frame }
+    }
+
+    /// Export observations without stepping, reading guest memory, or consuming a frame.
+    pub fn diagnostics(&self) -> DiagnosticReport {
+        DiagnosticReport {
+            schema_version: 1,
+            device: self.device.clone(),
+            version: self.version.clone(),
+            execution_policy: self.policy,
+            main_sha256: digest(&self.main),
+            at: self.position(),
+            milestones: self.telemetry.milestones(),
+            interrupt_deliveries: self.delivery_counts.to_vec(),
+            uart_tx_bytes: self.uart_bytes,
+            dma_written_ranges: self.dma_ranges,
+            dma_written_bytes: self.dma_bytes,
+            storage_completions: self.completion_events,
+            dspi_exchanges: self.bus.board.dma.dspi2.frames,
+            dspi_tx_bytes: self.bus.board.dma.dspi2.tx_bytes,
+            sharc_execution_connected: false,
+            pcm_output_connected: false,
+            bus_trace_enabled: CAPTURE_BUS_TRACE,
+            fault: self.error.clone(),
+            profile: self.telemetry.profile(),
+            events: self.telemetry.events(),
+        }
+    }
+
+    fn position(&self) -> Position {
+        Position {
+            icount: self.cpu.icount,
+            oracle_ticks: self.oracle_ticks().ok(),
+            interpreted_instructions: self.interpreted_instructions,
+            idle_fast_forwarded_instructions: self.idle_fast_forwarded_instructions,
+            pc: self.cpu.pc,
+        }
+    }
+    fn mark(&mut self, kind: Mark, boundary: &'static str) {
+        if !self.telemetry.has(kind) {
+            self.telemetry.mark(kind, self.position(), boundary);
+        }
+    }
+    #[cfg(feature = "diagnostic-events")]
+    fn event(&mut self, kind: EventKind, value: u64) {
+        self.telemetry.event(kind, value, self.position());
     }
 
     pub fn button(&mut self, code: u8, down: bool) -> Result<(), String> {
@@ -372,6 +440,8 @@ impl Emulator {
         }
         self.queue_packet(0x20 | channel, next)?;
         self.held_masks[channel as usize] = next;
+        #[cfg(feature = "diagnostic-events")]
+        self.event(EventKind::Input, (u64::from(code) << 1) | u64::from(down));
         Ok(())
     }
 
@@ -388,6 +458,11 @@ impl Emulator {
         {
             return Err("panel input queue full".into());
         }
+        #[cfg(feature = "diagnostic-events")]
+        self.event(
+            EventKind::Encoder,
+            (u64::from(encoder) << 32) | u64::from(detents as u32),
+        );
         let mut remaining = i64::from(detents);
         while remaining != 0 {
             let part = remaining.clamp(-128, 127) as i8;
@@ -416,6 +491,9 @@ impl Emulator {
                 main_frame,
                 self.fs_success_result,
             );
+        if ready {
+            self.mark(Mark::Ready, "snapshot");
+        }
         let phase = if self.error.is_some() {
             "fault"
         } else if ready {
@@ -454,6 +532,7 @@ impl Emulator {
     }
 
     fn set_error(&mut self, error: impl Into<String>) {
+        self.mark(Mark::Fault, "observed_instruction_boundary");
         self.error.get_or_insert_with(|| error.into());
     }
 
@@ -545,9 +624,14 @@ impl Emulator {
             return;
         }
         if !self.main_frame_latched {
-            self.intro_frames
-                .complete_at_return(&mut self.bus.board, pc, self.cpu.a[7]);
+            if self
+                .intro_frames
+                .complete_at_return(&mut self.bus.board, pc, self.cpu.a[7])
+            {
+                self.mark(Mark::IntroRaster, "before_instruction");
+            }
             if pc == self.set_pixel {
+                self.mark(Mark::IntroPixel, "before_instruction");
                 self.intro_frames
                     .observe_pixel(&mut self.bus.board, self.cpu.a[7]);
             }
@@ -630,6 +714,18 @@ impl Emulator {
         ) {
             Ok(())
         } else {
+            #[cfg(feature = "diagnostic-profile")]
+            self.telemetry.sample(
+                self.interpreted_instructions,
+                pc,
+                if self.main_frame_latched {
+                    2
+                } else if self.intro_frames.latest.is_some() {
+                    1
+                } else {
+                    0
+                },
+            );
             let before = self.cpu.icount;
             let result = self
                 .cpu
@@ -657,7 +753,13 @@ impl Emulator {
                 &mut self.delivery_counts,
                 &mut self.delivery_dropped,
             ) {
-                Ok(count) => timer_delivered = count != 0,
+                Ok(count) => {
+                    timer_delivered = count != 0;
+                    #[cfg(feature = "diagnostic-events")]
+                    if count != 0 {
+                        self.event(EventKind::TimerDeliveries, count);
+                    }
+                }
                 Err(error) => self.set_error(error),
             }
         }
@@ -678,6 +780,9 @@ impl Emulator {
     fn observe_marks(&mut self, pc: u32) {
         if pc == self.task_create {
             self.task_create_hits += 1;
+            if self.task_create_hits == 1 {
+                self.mark(Mark::TaskCreated, "before_instruction");
+            }
         }
         if pc == self.mainloop {
             self.mainloop_hits += 1;
@@ -690,13 +795,22 @@ impl Emulator {
         }
         if pc == self.intro_done {
             self.intro_done_hits += 1;
+            if self.intro_done_hits == 1 {
+                self.mark(Mark::IntroDone, "before_instruction");
+            }
         }
         if pc == self.display_start {
             self.display_start_hits += 1;
+            if self.display_start_hits == 1 {
+                self.mark(Mark::DisplayStart, "before_instruction");
+            }
         }
         if let Some((entry, completion, success, done)) = self.fs_worker {
             if pc == entry {
                 self.fs_starts += 1;
+                if self.fs_starts == 1 {
+                    self.mark(Mark::FilesystemStart, "before_instruction");
+                }
                 self.fs_active = true;
                 self.fs_last_complete = None;
                 self.fs_success_result = None;
@@ -720,6 +834,7 @@ impl Emulator {
                 _ => None,
             };
             self.fs_completions += 1;
+            self.mark(Mark::FilesystemComplete, "after_instruction");
             self.fs_last_complete = self.oracle_ticks().ok();
             self.fs_active = false;
         }
@@ -728,6 +843,10 @@ impl Emulator {
     fn drain_board(&mut self) {
         let completions = self.bus.board.take_completion_events();
         self.completion_events += completions.len() as u64;
+        #[cfg(feature = "diagnostic-events")]
+        if !completions.is_empty() {
+            self.event(EventKind::StorageCompletion, completions.len() as u64);
+        }
         for completion in completions {
             match completion {
                 CompletionEvent::Dma59 { .. } => self.completion_kind_counts[0] += 1,
@@ -738,7 +857,22 @@ impl Emulator {
         let ranges = self.bus.board.take_dma_written_ranges();
         self.dma_ranges += ranges.len() as u64;
         self.dma_bytes += ranges.iter().map(|(_, bytes)| *bytes as u64).sum::<u64>();
-        self.uart_bytes += self.bus.board.take_uart_tx().len() as u64;
+        #[cfg(feature = "diagnostic-events")]
+        for &(address, bytes) in &ranges {
+            self.event(
+                EventKind::DmaWrite,
+                (u64::from(address) << 32) | bytes as u64,
+            );
+        }
+        let uart_bytes = self.bus.board.take_uart_tx().len() as u64;
+        self.uart_bytes += uart_bytes;
+        if uart_bytes != 0 {
+            self.mark(Mark::UartTx, "after_instruction");
+        }
+        #[cfg(feature = "diagnostic-events")]
+        if uart_bytes != 0 {
+            self.event(EventKind::UartTx, uart_bytes);
+        }
     }
 
     fn refresh_frame(&mut self) {
@@ -760,6 +894,14 @@ impl Emulator {
     }
 
     fn publish_frame(&mut self, source: &str, raw: Vec<u8>) {
+        self.mark(
+            if source == "intro" {
+                Mark::IntroPublished
+            } else {
+                Mark::MainPublished
+            },
+            "chunk_end",
+        );
         self.current_frame = Some(raw);
         self.frame_source = Some(source.into());
         self.frame_revision = self.frame_revision.wrapping_add(1);
@@ -819,6 +961,7 @@ impl Emulator {
                 return Ok(false);
             };
             self.input_ready = true;
+            self.mark(Mark::InputReady, "before_input_delivery");
             let used = ((daddr - base).wrapping_sub(consumed)) & 1023;
             let free = 1023 - used;
             let packets = (free as usize / 2).min(self.input_packets.len() / 2);
@@ -874,6 +1017,8 @@ impl Emulator {
         ) {
             Ok(true) => {
                 self.input_irqs += 1;
+                #[cfg(feature = "diagnostic-events")]
+                self.event(EventKind::InputIrq, u64::from(RX_VECTOR));
                 self.rx_pending = false;
                 Ok(true)
             }
@@ -1076,7 +1221,7 @@ impl IntroFrameTracker {
         }
     }
 
-    fn complete_at_return(&mut self, board: &mut Board, pc: u32, a7: u32) {
+    fn complete_at_return(&mut self, board: &mut Board, pc: u32, a7: u32) -> bool {
         if let Some((bitmap, return_pc, expected_a7)) = self.pending
             && pc == return_pc
             && a7 == expected_a7
@@ -1085,8 +1230,10 @@ impl IntroFrameTracker {
             // Validate the live header here; bitmap dimensions/storage can change.
             if let Some(raw) = decode_intro_bitmap(board, bitmap) {
                 self.latest = Some(raw);
+                return true;
             }
         }
+        false
     }
 }
 
@@ -1126,6 +1273,47 @@ fn idle_advance_limit(remaining: u32, passes: u64, now: u64, deadline: Option<u6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostics_preserves_cpu_and_pending_frame_delivery() {
+        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let mut runtime = Emulator::new(&syx, None).unwrap();
+        runtime.current_frame = Some(vec![0xa5; PANEL_BYTES]);
+        runtime.frame_revision = 1;
+        let before = runtime.cpu.clone();
+        let first = runtime.diagnostics();
+        let second = runtime.diagnostics();
+        assert_eq!(runtime.cpu, before);
+        assert_eq!(first.at.icount, second.at.icount);
+        assert_eq!(runtime.emitted_revision, None);
+        assert!(!first.sharc_execution_connected && !first.pcm_output_connected);
+        assert_eq!(runtime.snapshot().frame.unwrap(), vec![0xa5; PANEL_BYTES]);
+        runtime.diagnostics();
+        assert!(runtime.snapshot().frame.is_none());
+    }
+
+    #[test]
+    fn tracing_choice_preserves_bus_results_and_compatibility_fault_mapping() {
+        let board = || {
+            Board::new(
+                Card::default(),
+                Default::default(),
+                CompletionPolicy::Oracle,
+            )
+        };
+        let mut traced = LoggingBus::<true>::new(board(), true, true, 160, ENTRY);
+        let mut plain = LoggingBus::<false>::new(board(), true, true, 160, ENTRY);
+        for addr in [0x4020_0100, 0x4030_0100, 0xfc04_002d] {
+            assert_eq!(traced.write8(addr, 0x12), plain.write8(addr, 0x12));
+        }
+        assert_eq!(traced.read32(0x4020_0100), plain.read32(0x4020_0100));
+        assert_eq!(traced.fetch16(0x4020_0100), plain.fetch16(0x4020_0100));
+        assert_eq!(traced.unknown_touches.len(), plain.unknown_touches.len());
+        assert!(!traced.accesses.is_empty());
+        assert!(plain.accesses.is_empty());
+    }
 
     #[test]
     fn idle_advance_stops_before_each_observable_boundary() {

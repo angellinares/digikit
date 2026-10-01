@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Build the portable native runtime for the browser without changing toolchains."""
+
 from __future__ import annotations
 
+import argparse
 import os
 import pathlib
 import shutil
 import subprocess
-import sys
 
-
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    "--diagnostics",
+    action="store_true",
+    help="include bounded PC profiling and event history",
+)
+args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parents[1]
 rustc = shutil.which("rustup")
 if rustc is not None:
@@ -25,12 +32,30 @@ env = os.environ | {
     "RUSTC": rustc,
     "RUSTDOC": str(pathlib.Path(rustc).with_name("rustdoc")),
 }
-command = ["cargo", "build", "--manifest-path", "native/boot/Cargo.toml", "--locked", "--offline", "--release", "--lib", "--target", "wasm32-unknown-unknown"]
+command = [
+    "cargo",
+    "build",
+    "--manifest-path",
+    "native/boot/Cargo.toml",
+    "--locked",
+    "--offline",
+    "--release",
+    "--lib",
+    "--target",
+    "wasm32-unknown-unknown",
+]
+if args.diagnostics:
+    command.extend(["--features", "diagnostic-profile,diagnostic-events"])
 try:
     subprocess.run(command, cwd=root, env=env, check=True)
 except subprocess.CalledProcessError:
-    raise SystemExit("WASM build failed; install wasm32-unknown-unknown for the pinned Rust toolchain") from None
-source = root / "native/boot/target/wasm32-unknown-unknown/release/elektron_native_boot.wasm"
+    raise SystemExit(
+        "WASM build failed; install wasm32-unknown-unknown for the pinned Rust toolchain"
+    ) from None
+target_dir = pathlib.Path(env.get("CARGO_TARGET_DIR", root / "native/boot/target"))
+if not target_dir.is_absolute():
+    target_dir = root / target_dir
+source = target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm"
 target = root / "packages/web/public/emulator-core.wasm"
 target.parent.mkdir(parents=True, exist_ok=True)
 shutil.copyfile(source, target)

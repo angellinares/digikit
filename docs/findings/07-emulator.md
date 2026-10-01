@@ -3820,3 +3820,143 @@ is no flickering, and the UI is responsive after loading. The user still
 observes roughly 200M logical instructions before a bootscreen appears.
 This validates the visible publication fix; it does not measure audio,
 explain the pre-display guest work, or establish real-time hardware pacing.
+
+
+### Retained boot diagnostics and audio integration audit (2026-10-02)
+
+**[O]** The user reports that a physical DT2 immediately shows the Elektron
+logo and OS version 1.16, followed by the animation. The portable runtime
+executes section 3 MAIN at `0x400004e8`; it does not execute section 2
+bootstrap at `0x80000400`. Host setup supplies selected Board/Oracle state
+(SR/A7, RAM, timer/interrupt policy, forced status values and flash image).
+Existing evidence establishes MAIN intro code, but not which boot stage owns
+the physical immediate splash. Adding bootstrap would add earlier guest work;
+it cannot by itself make MAIN's execution faster. Its compatibility benefit
+should be established by tracing an actual missing handoff or state dependency.
+
+**[O]** New retained diagnostics are observational and export on demand through
+`Emulator::diagnostics()`, the `digi_diagnostics` WASM ABI, and the session-
+checked Tauri `emu_diagnostics` actor request. **Export diagnostics** in the
+faceplate downloads JSON, including after a runtime fault. Report requests do
+not step the guest, consume a pending frame or read MMIO. The schema includes
+firmware MAIN hash, execution policy, separate logical/interpreted/idle
+counters, first milestones, timer delivery counts, storage/DMA/UART/DSPI
+counters, fault, enabled profiling and event history. SHARC and PCM connection
+flags truthfully remain false for the current boot core.
+
+- Always-on milestones retain the first observation only in a fixed 15-slot
+  array. They cover entry, first task/pixel/complete raster/published intro,
+  intro exit, display start/main publication, filesystem start/completion,
+  ready, input-ready, UART TX, DSPI exchange and fault. Each records its
+  observation boundary: instruction, chunk end or snapshot. The DSPI first
+  milestone is an observation at chunk end, not its exact transfer timestamp.
+- `diagnostic-profile` samples once per 16,381 interpreted instructions into
+  three fixed 1024-bin (4 KiB PC bucket) histograms: before intro, intro and
+  main. Analytic idle advancement has its own counter and is not reported as
+  interpreted samples. It is a sample estimate, not exact instruction/call
+  attribution. Code/storage are absent when this feature is disabled.
+- `diagnostic-events` retains the newest 256 events in a preallocated ring
+  and reports how many older entries were dropped. Entries include first
+  milestones, timer-delivery batches, input/encoder requests, input IRQs,
+  storage completions, DMA writes, UART TX and DSPI exchanges observed at
+  chunk end. It reuses existing successful execution/completion observations;
+  it does not probe devices again. Code/storage are absent when disabled.
+
+**[O]** The host separately measures load/step response wall time, response
+counts, maximum response duration and first-frame/main/ready response times.
+Browser measurements cover WASM ABI execution/decoding; desktop measurements
+include IPC and actor response time. These are not firmware cycle times or
+physical display-present measurements. Host clocks are sampled per chunk,
+never per guest instruction. No timer policy, guest pacing or defaults change.
+
+**[O]** The normal portable bus now specializes `LoggingBus<false>`, compiling
+out the per-fetch/read/write record collection. The diagnostic CLI retains
+`LoggingBus<true>` and its original observations. RAM/compatibility fault
+mapping, PPMCR behavior, interrupt checks and device accesses remain active
+in both specializations. `diagnostic-trace` restores detailed portable bus
+collection for focused debugging; it is separate from lightweight PC/event
+sampling and carries a larger cost. Default builds have none of these three
+optional features, while retaining milestones and export.
+
+To enable PC/event diagnostics for a native diagnostic build, use
+`--features diagnostic-profile,diagnostic-events` on `native/boot/Cargo.toml`.
+For the desktop, use `pnpm --filter @digi/desktop dev --features diagnostics`;
+the desktop feature forwards PC/event features without detailed bus tracing.
+For a browser diagnostic asset, run `tools/native_wasm.sh --diagnostics`, then
+reload the page. Running it without the flag restores the default build.
+The WASM build script now copies from the actual `CARGO_TARGET_DIR` when set,
+resolving the previous stale external-target copy trap. All Cargo work still
+uses the pinned toolchain, offline/locked dependencies and external targets.
+
+**[O]** Audio audit: neither current host attaches a SHARC engine or consumes
+PCM. Board DSPI2 transport currently uses the captured-trace-compatible
+`ZeroPeer`; the FlexBus FIFO models ready/bookkeeping and discards transferred
+words. `native/periph::ssi` is not connected to the active renderer. The native
+SHARC/live infrastructure can execute a matching captured state and tap voice
+work buffers; the Python live path forces SSI0/vector 191, returns zero RX and
+repeats frames under independent pacing. This is not validated coupled device
+execution or final DAC output. Silence in the new frontends is therefore an
+integration gap, not evidence of a muted functioning audio engine.
+
+The next defensible audio slice is to trace actual ColdFire DSP load/DSPI TX
+activity from this same boot runtime, then supply matching real DSP state and
+establish CPU/DSP virtual time, RX causality and SSI0 cadence. Coupled PCM
+should first pass a bounded offline render/nonzero/hash check, followed by
+native audio-device and browser AudioWorklet sinks with underrun/backlog
+metrics. A fresh boot must not silently substitute a captured-state benchmark
+or call voice-buffer taps the final DAC/master-FX mix.
+
+
+**[O]** Retained-diagnostics replay evidence is in temporary
+`/private/tmp/digi-diagnostics-ff4s2up9` and curated ignored `out/native/diagnostics-20261002/`.
+All default native, PC/event native and default Node WASM runs match the
+committed `40731a0` runtime's complete ready/final JSON and all five binary
+captures for DT2 and DN2. All three modes match the 87 intro publications and
+all base diagnostic fields. A PC/event WASM DT2 replay also matches the native
+PC/event report in full, including histograms and the bounded event history.
+These are deterministic replay checks, not audio or unrestricted hardware proof.
+
+| Canonical ready/input replay | Native default | Native PC/events | Node WASM default |
+| --- | ---: | ---: | ---: |
+| DT2 | 30.20 s | 30.88 s | 41.65 s |
+| DN2 | 24.65 s | 25.23 s | 34.82 s |
+
+A freshly rerun committed DT2 baseline took 32.76 s: disabling unused detailed
+portable-bus tracing reduced this single comparison by 7.8%. PC/events added
+2.3% (DT2) and 2.4% (DN2) versus the new default in this batch. This is one
+serial run per mode, not a distribution or a real GUI timing. The optional
+PC/event WASM DT2 replay took 42.34 s. Export/hash/serialization cost occurs
+only on request; bounded milestones still carry a small observation cost.
+
+**[O]** Before the DT2 first complete raster there were 12,467 PC samples:
+56.94% in `0x40182000` and 11.04% in `0x40183000`, 4 KiB buckets containing
+software floating-point routines/helpers. Another 15.85% falls in
+`0x40000000`, including the early RAM clear. DN2's `0x40178000` bucket contains
+62.64% of its 13,545 pre-intro samples. This localizes expensive firmware work;
+it does not attribute every sample to a specific routine or validate the
+experimental arithmetic substitutions. Keep `SoftfloatAbiV1` opt-in until
+its ABI/state/interrupt contract has stronger differential evidence.
+
+DT2 first UART TX is observed at 32,979,092 logical instructions; first
+setPixel at 203,458,677; first complete raster at 204,520,827; first intro
+publication at 204,749,605. Earlier UART traffic does not prove an OLED splash.
+A focused early display-transfer/handoff trace is preferable to adding the
+entire bootstrap or drawing a substitute logo. Both canonical boot/input
+replays report zero observed DSPI2 exchanges/TX bytes. That is a finding for
+this scenario, not proof that every guest/audio scenario has no transfers.
+Investigate actual DSP-load/TX production before assuming PCM plumbing alone
+will make this runtime audible.
+
+**[O]** Final boot tests pass with default features (33 tests) and all
+`diagnostics` features (35 tests). Desktop default release build and PC/event
+feature check pass without Rust warnings. Astro check reports zero errors,
+zero warnings and its existing async hint; static build passes. The native
+adapter probe covers normal and post-fault report export plus rejecting an
+in-flight report during firmware replacement, as well as prior lifecycle/input
+checks. Independent source review found that session race; it is corrected.
+Changed Python build-script lint/format and diff whitespace checks pass.
+The default tested WASM copied through the repaired external-target script is
+`5292e9b154c1b7adc53f9f12315047ddbfaff67dc91995c6d64fb733f21438a9`; public and static assets match. The desktop release was rebuilt after
+the shared static assets. No owner process was stopped and no new actual GUI
+or audio-device playback test was performed. The user subsequently requested
+committing these source/docs changes; `git log` records that checkpoint.

@@ -1,3 +1,4 @@
+import { hostMetrics } from './runtime-metrics';
 export interface RuntimeStatus {
   device: string; version: string; icount: number; pc: number; ready: boolean; phase: string;
   error: string | null; frame_revision: number; frame_source: string | null;
@@ -5,7 +6,13 @@ export interface RuntimeStatus {
   input_pending: number; input_irqs: number;
 }
 export interface RuntimeSnapshot { status: RuntimeStatus; frame?: Uint8Array }
+export interface RuntimeDiagnostics {
+  schema_version: number; device: string; version: string;
+  sharc_execution_connected: boolean; pcm_output_connected: boolean;
+  [key: string]: unknown;
+}
 export interface EmulatorRuntime {
+  diagnostics(): Promise<RuntimeDiagnostics>;
   load(bytes: Uint8Array, name: string): Promise<RuntimeSnapshot>; restart(): Promise<RuntimeSnapshot>;
   pause(): void; resume(): void; press(code: number): Promise<void>; release(code: number): Promise<void>;
   turn(encoder: number, detents: number): Promise<void>; stop(): Promise<void>; dispose(): void;
@@ -38,6 +45,7 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
     worker.addEventListener('message', listener); worker.postMessage({ type, id, generation, ...payload });
   });
   return {
+    diagnostics: () => request<RuntimeDiagnostics>('diagnostics'),
     async load(bytes, selectedName) { generation += 1; paused = false; source = bytes.slice(); name = selectedName; return request<RuntimeSnapshot>('load', { bytes: bytes.buffer, name: selectedName }); },
     async restart() { if (!source) throw new Error('No firmware selected'); generation += 1; paused = false; return request<RuntimeSnapshot>('load', { bytes: source.slice().buffer, name }); },
     pause() { paused = true; worker.postMessage({ type: 'pause', generation }); },
@@ -51,6 +59,7 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
 export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): Promise<EmulatorRuntime | undefined> {
   let api: typeof import('@tauri-apps/api/core'); try { api = await import('@tauri-apps/api/core'); } catch { return undefined; }
   if (!api.isTauri()) return undefined;
+  const metrics = hostMetrics('native_ipc');
   let generation = 0, activeSession: number | undefined, loaded = false, paused = true, disposed = false, epoch = 0, timer: number | undefined, input = Promise.resolve(), lifecycle = Promise.resolve();
   const clearPump = () => { paused = true; epoch += 1; if (timer) window.clearTimeout(timer); timer = undefined; };
   const fault = (error: unknown) => { clearPump(); loaded = false; onUpdate({ type: 'error', error: String(error) }); };
@@ -59,9 +68,9 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     await input.catch(() => {});
     if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
     try {
-      const snapshot = await api.invoke<RuntimeSnapshot>('emu_step', { sessionId: token, budget: 250_000 });
+      const begin = performance.now(); const snapshot = await api.invoke<RuntimeSnapshot>('emu_step', { sessionId: token, budget: 250_000 });
       if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
-      onUpdate({ type: 'snapshot', snapshot });
+      metrics.step(begin, performance.now(), snapshot); onUpdate({ type: 'snapshot', snapshot });
       if (snapshot.status.error) { fault(snapshot.status.error); return; }
       timer = window.setTimeout(() => { void pump(token, run); }, 0);
     } catch (error) { if (token === generation && run === epoch) fault(error); }
@@ -73,14 +82,15 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     input = next; return next.catch((error) => { if (token === generation) fault(error); throw error; });
   };
   try {
-    const startup = await api.invoke<RuntimeSnapshot>('emu_startup');
+    metrics.reset(); const startup = await api.invoke<RuntimeSnapshot>('emu_startup'); metrics.loaded();
     generation = 1; activeSession = 1; loaded = true; onUpdate({ type: 'snapshot', snapshot: startup }); start(1);
   } catch (error) {
     if (!String(error).includes('No startup firmware selected')) onUpdate({ type: 'error', error: String(error) });
   }
   return {
-    async load(bytes, _name) { const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { const snapshot = await api.invoke<RuntimeSnapshot>('emu_load', bytes, { headers: { 'x-session-id': String(token) } }); if (disposed || token !== generation) return snapshot; activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
-    async restart() { const old = activeSession; if (!loaded || old === undefined) throw new Error('No firmware selected'); const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { const snapshot = await api.invoke<RuntimeSnapshot>('emu_restart', { sessionId: old, nextSessionId: token }); if (disposed || token !== generation) return snapshot; activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
+    async diagnostics() { const session = activeSession; if (session === undefined) throw new Error('No firmware selected'); const report = await api.invoke<RuntimeDiagnostics>('emu_diagnostics', { sessionId: session }); if (disposed || activeSession !== session) throw new Error('Firmware session changed during diagnostic export'); return { ...report, host: metrics.report() }; },
+    async load(bytes, _name) { const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { metrics.reset(); const snapshot = await api.invoke<RuntimeSnapshot>('emu_load', bytes, { headers: { 'x-session-id': String(token) } }); if (disposed || token !== generation) return snapshot; metrics.loaded(); activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
+    async restart() { const old = activeSession; if (!loaded || old === undefined) throw new Error('No firmware selected'); const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { metrics.reset(); const snapshot = await api.invoke<RuntimeSnapshot>('emu_restart', { sessionId: old, nextSessionId: token }); if (disposed || token !== generation) return snapshot; metrics.loaded(); activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
     pause() { clearPump(); }, resume() { if (loaded && activeSession !== undefined && paused) start(activeSession); },
     press: (code) => queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: true })), release: (code) => queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: false })), turn: (encoder, detents) => queueInput((session) => api.invoke<void>('emu_turn', { sessionId: session, encoder, detents })),
     async stop() { const token = ++generation; clearPump(); loaded = false; activeSession = undefined; await (lifecycle = lifecycle.catch(() => {}).then(() => api.invoke<void>('emu_stop', { sessionId: token }))); }, dispose() { disposed = true; const token = ++generation; clearPump(); loaded = false; activeSession = undefined; void api.invoke<void>('emu_stop', { sessionId: token }); },

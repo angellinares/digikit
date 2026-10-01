@@ -480,7 +480,7 @@ pub(crate) struct FlashRead {
     pub(crate) dest: u32,
 }
 
-pub(crate) struct LoggingBus {
+pub(crate) struct LoggingBus<const TRACE: bool = true> {
     pub(crate) board: Board,
     pub(crate) accesses: Vec<Access>,
     pub(crate) access_dropped: u64,
@@ -503,7 +503,7 @@ pub(crate) struct LoggingBus {
     pub(crate) command_trace: Vec<(u64, u32, u32, u32)>,
     pub(crate) gpio_trace: Vec<(u64, u32, &'static str, u32)>,
 }
-impl LoggingBus {
+impl<const TRACE: bool> LoggingBus<TRACE> {
     pub(crate) fn new(
         board: Board,
         ppmcr_contract: bool,
@@ -537,7 +537,9 @@ impl LoggingBus {
     }
 
     pub(crate) fn clear(&mut self) {
-        self.accesses.clear();
+        if TRACE {
+            self.accesses.clear();
+        }
     }
     fn log<T: TraceValue>(
         &mut self,
@@ -546,6 +548,9 @@ impl LoggingBus {
         size: u8,
         result: &Result<T, BusError>,
     ) {
+        if !TRACE {
+            return;
+        }
         let (value, fault) = match result {
             Ok(v) => (v.trace_value(), None),
             Err(e) => (None, Some((e.addr, e.write))),
@@ -586,6 +591,9 @@ impl LoggingBus {
         supplied: u32,
         result: &Result<T, BusError>,
     ) {
+        if !TRACE {
+            return;
+        }
         self.log(kind, addr, size, result);
         if let Some(access) = self.accesses.last_mut() {
             if access.addr == addr && access.kind == kind {
@@ -626,17 +634,17 @@ impl LoggingBus {
         true
     }
     fn note_timer_write(&mut self, addr: u32, size: u8, value: u32) {
-        if Time::owns(addr) && self.timer_writes.len() < 64 {
+        if TRACE && Time::owns(addr) && self.timer_writes.len() < 64 {
             self.timer_writes.push((self.current_pc, addr, size, value));
         }
     }
     fn note_uart8_write(&mut self, addr: u32, size: u8, value: u32) {
-        if addr == UART8_UDR && self.uart8_tx.len() < 256 {
+        if TRACE && addr == UART8_UDR && self.uart8_tx.len() < 256 {
             self.uart8_tx.push((self.current_pc, size, value));
         }
     }
     fn note_dspi2_dma_write(&mut self, addr: u32, size: u8, value: u32) {
-        if (0xfc04_4000..0xfc04_6000).contains(&addr) && self.dspi2_dma_writes.len() < 64 {
+        if TRACE && (0xfc04_4000..0xfc04_6000).contains(&addr) && self.dspi2_dma_writes.len() < 64 {
             self.dspi2_dma_writes
                 .push((self.current_pc, addr, size, value));
         }
@@ -648,6 +656,9 @@ impl LoggingBus {
         }
         if addr == ESDHC_XFERTYP {
             self.xfertyp_writes += 1;
+            if !TRACE {
+                return;
+            }
             if self.command_trace.len() == 64 {
                 self.command_trace.remove(0);
             }
@@ -660,7 +671,7 @@ impl LoggingBus {
         }
     }
 }
-impl Bus for LoggingBus {
+impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
         let r = self.board.read8(addr);
         if self.zero_page("read", addr, 1, 0, r.is_err()) {
@@ -687,7 +698,7 @@ impl Bus for LoggingBus {
         let r = self.board.read32(addr);
         if self.zero_page("read", addr, 4, 0, r.is_err()) {
             let retry = self.board.read32(addr);
-            if addr == DSPI2_SR && self.dspi2_status_reads.len() < 64 {
+            if TRACE && addr == DSPI2_SR && self.dspi2_status_reads.len() < 64 {
                 if let Ok(value) = retry {
                     self.dspi2_status_reads.push((self.current_pc, value));
                 }
@@ -695,7 +706,7 @@ impl Bus for LoggingBus {
             self.log("zero-page-read-retry", addr, 4, &retry);
             retry
         } else {
-            if addr == DSPI2_SR && self.dspi2_status_reads.len() < 64 {
+            if TRACE && addr == DSPI2_SR && self.dspi2_status_reads.len() < 64 {
                 if let Ok(value) = r {
                     self.dspi2_status_reads.push((self.current_pc, value));
                 }
@@ -764,8 +775,8 @@ impl Bus for LoggingBus {
 
 // Exact diagnostic adaptation of Machine::step_timed: the caller performs
 // the guest step between the deadline arm and this boundary service.
-pub(crate) fn service_timers(
-    bus: &mut LoggingBus,
+pub(crate) fn service_timers<const TRACE: bool>(
+    bus: &mut LoggingBus<TRACE>,
     cpu: &mut Cpu,
     done: u64,
     deliveries: &mut Vec<(u16, u8)>,
@@ -837,8 +848,8 @@ pub(crate) fn service_timers(
 // Exact Python emu.edma.py completion boundary: channel 35 is offered only
 // at its firmware queue-space wait loop. Unlike a generic IRQ scheduler, this
 // checks the programmed INTC1 source-27 level/mask and the live CPU IPL.
-pub(crate) fn service_tx35_wait(
-    bus: &mut LoggingBus,
+pub(crate) fn service_tx35_wait<const TRACE: bool>(
+    bus: &mut LoggingBus<TRACE>,
     cpu: &mut Cpu,
     wait_pc: u32,
     handler_expected: u32,
@@ -891,8 +902,8 @@ pub(crate) fn service_tx35_wait(
 
 // Exact emu.longrun.py flash_read ABI: [return, offset, length, destination]
 // at A7; copy only an in-range request, return D0=0, pop return address.
-pub(crate) fn hle_flash_read(
-    bus: &mut LoggingBus,
+pub(crate) fn hle_flash_read<const TRACE: bool>(
+    bus: &mut LoggingBus<TRACE>,
     cpu: &mut Cpu,
     flash: &[u8],
     reads: &mut Vec<FlashRead>,

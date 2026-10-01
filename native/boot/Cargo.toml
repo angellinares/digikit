@@ -10,6 +10,13 @@ description = "Bounded Oracle cold-boot diagnostic runner"
 name = "elektron_native_boot"
 crate-type = ["rlib", "cdylib"]
 
+[features]
+default = []
+diagnostic-profile = []
+diagnostic-events = []
+diagnostic-trace = []
+diagnostics = ["diagnostic-profile", "diagnostic-events", "diagnostic-trace"]
+
 [dependencies]
 coldfire = { path = "../coldfire" }
 device-profile = { path = "../device-profile" }

@@ -107,6 +107,18 @@ pub extern "C" fn digi_turn(encoder: u8, delta: i32) -> i32 {
     })
 }
 
+/// Read-only report; does not consume a pending display frame.
+#[unsafe(no_mangle)]
+pub extern "C" fn digi_diagnostics() -> i32 {
+    EMULATOR.with(|slot| match slot.borrow().as_ref() {
+        Some(emulator) => {
+            result(serde_json::json!(emulator.diagnostics()));
+            0
+        }
+        None => failure("no emulator loaded"),
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn digi_stop() {
     EMULATOR.with(|slot| *slot.borrow_mut() = None);

@@ -1,5 +1,8 @@
 /// <reference lib="webworker" />
 
+import { hostMetrics } from './runtime-metrics';
+const metrics = hostMetrics('wasm_abi');
+
 type Abi = Record<string, CallableFunction>;
 let wasm: Abi | undefined;
 let corePromise: Promise<Abi> | undefined;
@@ -29,7 +32,7 @@ function core() {
 function publish(snapshot: unknown, token: number) { postMessage({ type: 'snapshot', generation: token, snapshot }); }
 async function pump(token: number, epoch: number) {
   if (!running || token !== generation || epoch !== runEpoch) return;
-  try { const snapshot = call('digi_step', 250_000); publish(snapshot, token); if (snapshot.status?.error) { running = false; postMessage({ type: 'error', generation: token, error: snapshot.status.error }); return; } } catch (error) { running = false; postMessage({ type: 'error', generation: token, error: String(error) }); return; }
+  try { const begin = performance.now(); const snapshot = call('digi_step', 250_000); metrics.step(begin, performance.now(), snapshot); publish(snapshot, token); if (snapshot.status?.error) { running = false; postMessage({ type: 'error', generation: token, error: snapshot.status.error }); return; } } catch (error) { running = false; postMessage({ type: 'error', generation: token, error: String(error) }); return; }
   setTimeout(() => { void pump(token, epoch); }, 0);
 }
 function reject(data: { id?: string }, error: string) { if (data.id) postMessage({ reply: data.id, error }); }
@@ -44,7 +47,7 @@ async function handle(data: { type: string; id?: string; generation: number; byt
     if (pointer === 0 && bytes.length !== 0) return reject(data, 'native allocation failed');
     try {
         new Uint8Array((wasm!.memory as unknown as WebAssembly.Memory).buffer, pointer, bytes.length).set(bytes);
-      const snapshot = call('digi_load', pointer, bytes.length);
+      metrics.reset(); const snapshot = call('digi_load', pointer, bytes.length); metrics.loaded();
       publish(snapshot, generation); running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0);
       if (data.id) postMessage({ reply: data.id, value: snapshot });
     } finally { wasm!.digi_dealloc(pointer, bytes.length); }
@@ -55,6 +58,7 @@ async function handle(data: { type: string; id?: string; generation: number; byt
     generation = data.generation; running = false; runEpoch += 1; stopCore(); if (data.id) postMessage({ reply: data.id, value: undefined }); return;
   }
   if (data.generation !== generation) return reject(data, 'stale emulator session');
+  if (data.type === 'diagnostics') { const report = { ...call('digi_diagnostics'), host: metrics.report() }; if (data.id) postMessage({ reply: data.id, value: report }); return; }
   if (data.type === 'pause') { running = false; runEpoch += 1; return; }
   if (data.type === 'resume') { if (!running) { running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0); } return; }
   if (data.type === 'button') { call('digi_button', data.code!, data.down ? 1 : 0); if (data.id) postMessage({ reply: data.id, value: undefined }); return; }

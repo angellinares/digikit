@@ -32,6 +32,27 @@ updated; an already-running app/worker retains its old core. The user subsequent
 responsive UI after loading; cold boot still waits about 200M logical
 instructions before the first visible logo.
 
+Retained diagnostics follow-up (2026-10-02, after local commit `40731a0`):
+**Export diagnostics** now downloads first milestones, counters, MAIN hash,
+fault and host response timings. Optional PC sampling and a bounded event ring
+are off by default; see **Retained boot diagnostics and audio integration
+audit** in [`findings/07-emulator.md`](findings/07-emulator.md) for build flags,
+measurements and proof limits. Portable per-access tracing is compiled out by
+default; the diagnostic CLI retains it. Canonical native/profile/WASM status
+and frame parity passes for both devices. A fresh DT2 native sequence took
+32.76 -> 30.20 s; optional PC/events added about 2–2.4% in single-run comparisons.
+The new default public WASM/static assets and external desktop release are
+built. Relaunch/refresh to use them; no owner process was stopped.
+
+MAIN-only boot remains the default. Bootstrap may supply a missing display or
+DSP handoff, but this has not been established. Pre-intro PC samples concentrate
+in buckets containing softfloat helpers (DT2 about 68%, DN2 about 63%). Keep
+experimental softfloat opt-in pending differential proof. Neither current host
+executes SHARC or outputs PCM, and the canonical boot/input replays recorded
+zero DSPI2 exchanges. The immediate audio investigation is actual DSP-load/TX
+production, followed by shared CPU/DSP virtual time, causal RX and SSI0 before
+an offline PCM proof and output sinks. Current silence is missing integration.
+
 **The goal is synchronized ColdFire + SHARC execution close enough to device
 real time to sustain audio. Boot/UI speed is secondary.** The user stopped the
 boot-focused work and explicitly requested committing all current source/docs
@@ -122,9 +143,9 @@ No DSP throughput, underrun or coupled real-time result was obtained here.
   harnesses with the same package/binary name **distinct target directories**:
   shared pilot/canonical targets selected the wrong executable once. The
   corrected isolated run passed; the initial CLI panic did not run firmware.
-- `tools/native_wasm.sh` copies from a fixed repository target. Merely setting
-  an external `CARGO_TARGET_DIR` can select the wrong WASM; build/copy the actual
-  external output explicitly and record hashes.
+- `tools/native_wasm.sh` now copies from the actual `CARGO_TARGET_DIR`. Its
+  `--diagnostics` flag enables PC/events; running without it restores default.
+  Record the actual public/static build hashes and refresh existing workers.
 - Automatic mutators earlier reintroduced unrelated SOFF/state edits. A
   temporary `.pi-lens.json` paused mutations only; diagnostics stayed enabled.
   It is not a permanent config and must not be committed. Preserve the original
