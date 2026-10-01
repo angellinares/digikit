@@ -87,6 +87,7 @@ dependencies = [
  "dt2-firmware-loader",
  "emmc-card",
  "machine",
+ "plusdrive-format",
  "serde",
  "serde_json",
  "sha2",
@@ -185,6 +186,16 @@ dependencies = [
 [[package]]
 name = "periph"
 version = "0.0.1"
+
+[[package]]
+name = "plusdrive-format"
+version = "0.1.0"
+dependencies = [
+ "device-profile",
+ "dt2-firmware-loader",
+ "emmc-card",
+ "sha2",
+]
 
 [[package]]
 name = "proc-macro2"

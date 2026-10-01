@@ -1,20 +1,88 @@
-/** Future worker contract. This shell deliberately does not implement it. */
-import { deviceProfiles, type DeviceId } from './data/device-profiles';
-
-export interface EmulatorRuntime {
-  press(code: number): void;
-  release(code: number): void;
-  turn(encoder: number, detents: number): void;
+export interface RuntimeStatus {
+  device: string; version: string; icount: number; pc: number; ready: boolean; phase: string;
+  error: string | null; frame_revision: number; frame_source: string | null;
+  main_ui_reached: boolean; filesystem_verified: boolean | null; input_ready: boolean;
+  input_pending: number; input_irqs: number;
 }
+export interface RuntimeSnapshot { status: RuntimeStatus; frame?: Uint8Array }
+export interface EmulatorRuntime {
+  load(bytes: Uint8Array, name: string): Promise<RuntimeSnapshot>; restart(): Promise<RuntimeSnapshot>;
+  pause(): void; resume(): void; press(code: number): Promise<void>; release(code: number): Promise<void>;
+  turn(encoder: number, detents: number): Promise<void>; stop(): Promise<void>; dispose(): void;
+}
+export type RuntimeUpdate = { type: 'snapshot'; snapshot: RuntimeSnapshot } | { type: 'error'; error: string };
 
-export const knownFirmware: Record<DeviceId, readonly (readonly [string, string])[]> = {
-  dt2: deviceProfiles.dt2.firmware.map(({ version, sha256 }) => [version, sha256]),
-  dn2: deviceProfiles.dn2.firmware.map(({ version, sha256 }) => [version, sha256]),
+export const drawFrame = (canvas: HTMLCanvasElement, frame: Uint8Array) => {
+  if (frame.length !== 1024) return;
+  const context = canvas.getContext('2d'); if (!context) return;
+  const pixels = context.createImageData(128, 64);
+  for (let y = 0; y < 64; y += 1) for (let x = 0; x < 128; x += 1) {
+    const on = (frame[(7 - Math.floor(y / 8)) + 8 * x] & (1 << (y % 8))) !== 0;
+    const at = (y * 128 + x) * 4;
+    pixels.data[at] = on ? 242 : 8; pixels.data[at + 1] = on ? 244 : 9;
+    pixels.data[at + 2] = on ? 249 : 12; pixels.data[at + 3] = 255;
+  }
+  context.putImageData(pixels, 0, 0);
 };
 
-export async function identifyFirmware(file: File, device: keyof typeof knownFirmware) {
-  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-  const hash = [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, '0')).join('');
-  const found = knownFirmware[device].find(([, expected]) => expected === hash);
-  return found ? { version: found[0], hash } : null;
+export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): EmulatorRuntime {
+  const worker = new Worker(new URL('./runtime-worker.ts', import.meta.url), { type: 'module' });
+  let generation = 0, paused = true, source: Uint8Array | undefined, name = '';
+  worker.onmessage = ({ data }: MessageEvent<RuntimeUpdate & { generation?: number }>) => { if (data.generation === generation) onUpdate(data); };
+  const request = <T>(type: string, payload: Record<string, unknown> = {}) => new Promise<T>((resolve, reject) => {
+    const id = crypto.randomUUID();
+    const listener = ({ data }: MessageEvent<{ reply?: string; value?: T; error?: string }>) => {
+      if (data.reply !== id) return; worker.removeEventListener('message', listener);
+      data.error ? reject(new Error(data.error)) : resolve(data.value as T);
+    };
+    worker.addEventListener('message', listener); worker.postMessage({ type, id, generation, ...payload });
+  });
+  return {
+    async load(bytes, selectedName) { generation += 1; paused = false; source = bytes.slice(); name = selectedName; return request<RuntimeSnapshot>('load', { bytes: bytes.buffer, name: selectedName }); },
+    async restart() { if (!source) throw new Error('No firmware selected'); generation += 1; paused = false; return request<RuntimeSnapshot>('load', { bytes: source.slice().buffer, name }); },
+    pause() { paused = true; worker.postMessage({ type: 'pause', generation }); },
+    resume() { if (!paused) return; paused = false; worker.postMessage({ type: 'resume', generation }); },
+    press: (code) => request<void>('button', { code, down: true }), release: (code) => request<void>('button', { code, down: false }),
+    turn: (encoder, detents) => request<void>('turn', { encoder, detents }),
+    async stop() { generation += 1; paused = true; source = undefined; worker.postMessage({ type: 'stop', generation }); }, dispose() { generation += 1; paused = true; worker.terminate(); },
+  };
+}
+
+export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): Promise<EmulatorRuntime | undefined> {
+  let api: typeof import('@tauri-apps/api/core'); try { api = await import('@tauri-apps/api/core'); } catch { return undefined; }
+  if (!api.isTauri()) return undefined;
+  let generation = 0, activeSession: number | undefined, loaded = false, paused = true, disposed = false, epoch = 0, timer: number | undefined, input = Promise.resolve(), lifecycle = Promise.resolve();
+  const clearPump = () => { paused = true; epoch += 1; if (timer) window.clearTimeout(timer); timer = undefined; };
+  const fault = (error: unknown) => { clearPump(); loaded = false; onUpdate({ type: 'error', error: String(error) }); };
+  const pump = async (token: number, run: number) => {
+    if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
+    await input.catch(() => {});
+    if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
+    try {
+      const snapshot = await api.invoke<RuntimeSnapshot>('emu_step', { sessionId: token, budget: 250_000 });
+      if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
+      onUpdate({ type: 'snapshot', snapshot });
+      if (snapshot.status.error) { fault(snapshot.status.error); return; }
+      timer = window.setTimeout(() => { void pump(token, run); }, 0);
+    } catch (error) { if (token === generation && run === epoch) fault(error); }
+  };
+  const start = (token: number) => { paused = false; const run = ++epoch; timer = window.setTimeout(() => { void pump(token, run); }, 0); };
+  const queueInput = (operation: (session: number) => Promise<void>) => {
+    const token = generation, session = activeSession;
+    const next = input.catch(() => {}).then(async () => { if (!disposed && loaded && token === generation && session === activeSession && session !== undefined) await operation(session); });
+    input = next; return next.catch((error) => { if (token === generation) fault(error); throw error; });
+  };
+  try {
+    const startup = await api.invoke<RuntimeSnapshot>('emu_startup');
+    generation = 1; activeSession = 1; loaded = true; onUpdate({ type: 'snapshot', snapshot: startup }); start(1);
+  } catch (error) {
+    if (!String(error).includes('No startup firmware selected')) onUpdate({ type: 'error', error: String(error) });
+  }
+  return {
+    async load(bytes, _name) { const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { const snapshot = await api.invoke<RuntimeSnapshot>('emu_load', bytes, { headers: { 'x-session-id': String(token) } }); if (disposed || token !== generation) return snapshot; activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
+    async restart() { const old = activeSession; if (!loaded || old === undefined) throw new Error('No firmware selected'); const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { const snapshot = await api.invoke<RuntimeSnapshot>('emu_restart', { sessionId: old, nextSessionId: token }); if (disposed || token !== generation) return snapshot; activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
+    pause() { clearPump(); }, resume() { if (loaded && activeSession !== undefined && paused) start(activeSession); },
+    press: (code) => queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: true })), release: (code) => queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: false })), turn: (encoder, detents) => queueInput((session) => api.invoke<void>('emu_turn', { sessionId: session, encoder, detents })),
+    async stop() { const token = ++generation; clearPump(); loaded = false; activeSession = undefined; await (lifecycle = lifecycle.catch(() => {}).then(() => api.invoke<void>('emu_stop', { sessionId: token }))); }, dispose() { disposed = true; const token = ++generation; clearPump(); loaded = false; activeSession = undefined; void api.invoke<void>('emu_stop', { sessionId: token }); },
+  };
 }

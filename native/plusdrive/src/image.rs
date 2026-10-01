@@ -167,7 +167,7 @@ pub struct BuiltImage {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ImageError {
-    NoSamples,
+    ProjectRequiresSample,
     TooManySamples { maximum: usize },
     TooManyNativeBytes { maximum: usize },
     InvalidName { file_name: String },
@@ -328,8 +328,8 @@ pub fn build_sample_image_with_options(
     capacity_blocks: u32,
     project_seed: Option<crate::ProjectSeed<'_>>,
 ) -> Result<BuiltImage, ImageError> {
-    if samples.is_empty() {
-        return Err(ImageError::NoSamples);
+    if samples.is_empty() && project_seed.is_some() {
+        return Err(ImageError::ProjectRequiresSample);
     }
     if samples.len() > MAX_SAMPLES {
         return Err(ImageError::TooManySamples {
@@ -612,6 +612,28 @@ mod tests {
         assert_eq!(
             u32::from_be_bytes(root[0x28..0x2c].try_into().unwrap()),
             0x78
+        );
+    }
+
+    #[test]
+    fn builds_and_lists_an_empty_formatted_root() {
+        let built = build_sample_image(Vec::new()).unwrap();
+        assert!(built.files.is_empty());
+        assert_eq!(crate::list_image(&built.image).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn empty_image_rejects_project_before_first_file_reference() {
+        assert_eq!(
+            build_sample_image_with_options(
+                Vec::new(),
+                DEFAULT_CAPACITY_BLOCKS,
+                Some(crate::ProjectSeed {
+                    main: &[],
+                    contract: device_profile::PlusdriveProjectContract::Dt2V3Default116,
+                }),
+            ),
+            Err(ImageError::ProjectRequiresSample)
         );
     }
 

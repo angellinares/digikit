@@ -1,0 +1,12 @@
+{
+  "name": "@digi/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev --release",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.0"
+  }
+}

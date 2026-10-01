@@ -3504,3 +3504,87 @@ and the main panel. DN2 evidence is main-panel-only; filesystem-verification
 completion remains unresolved and is not claimed. Both remain Oracle
 diagnostic observations: full hardware, audio, input, GUI, and WASM bridge
 work remain pending.
+
+**[D]** The bounded portable runtime produced identical native and WASM JSON
+snapshots and packed OLED frames at ready, two `NO` presses, and a subsequent
+encoder turn for DT2 and DN2. DT2 reached ready at 914,736,053 instructions
+and DN2 at 847,486,347; each run delivered five RX interrupts and drained its
+input queue. This checks the shared diagnostic runtime and raw-WASM boundary,
+not DSP, audio, hardware timing, or a complete GUI bridge.
+
+### Opt-in Softfloat ABI substitution prototype (2026-10-01)
+
+**[O]** The portable runtime has an opt-in `softfloat-abi-v1` execution policy
+for guarded `addsf3`, `mulsf3`, and `divsf3` ABI-result substitution on only
+registry-verified DT2 1.16 and DN2 1.11 images. Default construction and the
+existing raw ABI entry retain reference execution. A successful substitution
+uses host binary32-rounded arithmetic only for finite normal operands (or
+signed zero) and a finite nonzero normal result, then writes D0, pops only the
+return address, and transfers to that return address. It intentionally does
+not claim scratch-register, stack-scratch, exit-CCR, instruction-count, or
+interrupt-timing equivalence.
+
+**[D]** The prototype records separate legacy CPU, interpreted-instruction,
+flash-HLE, softfloat-HLE, and synthetic Oracle-tick counters. An accepted
+atomic softfloat call consumes one Oracle scheduling tick without incrementing
+the legacy CPU counter; failed guards execute firmware normally. It checks
+the complete arithmetic code region against verified image bytes before each
+substitution, using allocation-free backing-RAM comparison rather than copying
+1 MiB pages. Division rounds directly in binary32. Per-routine firmware
+differential, WASM, browser, and full architectural equivalence remain untested;
+the bounded native observations below do not establish those claims.
+
+**[O]** The shared chunk runner also evaluates verified `BRA.B`-to-self idle
+passes analytically after one ordinary pass, stopping strictly before the next
+Oracle timer deadline, the 20,000-pass rescheduling boundary, or chunk end.
+It retains the exact guest clock/pass count and unchanged CPU state, and reports
+`idle_fast_forwarded_instructions` separately from actually interpreted work.
+Queued input, trace/non-running CPU state, changed code, or exceptional state
+disable this shortcut. This mirrors Python's `IdleSpin.skip` approach, not a
+timer hold or an estimated instruction count. The DT2 sequence below has been
+reproduced; DN2, current WASM, and wider firmware parity remain pending.
+
+### Performance and real-time audio checkpoint (2026-10-01)
+
+**[D]** Removing PIT/DTIM service-loop channel clones, then retaining timer
+ownership in `Option<Box<Time>>`, reduced observed native DT2 full-machine QA
+wall time from about 119 to 66 seconds. The final scoped box-only pair was
+89.995 to 66.466 seconds; matched intro throughput increased 32.8%. These are
+single observations, not statistical or real-browser/audio results. Both
+devices' native/WASM reference captures matched. Evidence:
+`/private/tmp/digi-box-timer-main-ujmZRJAi/{RESULTS.md,summary.json}`.
+
+**[D]** The softfloat-only native DT2 pilot, before idle advancement, reached
+first nonblank output at 6.647 seconds, first nonblank main output at 52.992,
+and readiness at 60.831. It accepted 1,009,206 arithmetic calls; one button
+packet was delivered and drained. This did not resolve the minute-long boot
+and was not a matched reference comparison. Evidence:
+`/private/tmp/digi-acceleration-1yDSzAfs/dt2-native-pilot/report.json`.
+
+**[D]** With idle advancement in reference mode, the complete DT2 ready/two
+NO/encoder sequence reproduced all five binary captures and every legacy
+ready/final JSON field. Additional accounting fields are intentional. Final
+guest count remained 974,985,741: 629,900,776 interpreted instructions,
+345,084,958 analytically evaluated idle instructions, and seven flash calls.
+There were five input IRQs, no pending input/error, and verified filesystem
+readiness. Wall time was 51.872 seconds, not a fresh paired timing result.
+Evidence: `reference-idle-isolated-receipt.json` under the same temporary
+directory. Thirteen boot-library tests and the new backing-RAM comparison
+test passed; active LSP checks of the changed Rust paths reported no errors.
+
+**[D]** Source inspection found the existing Python live-audio route feeds
+ColdFire DSPI2 frames to the native SHARC renderer, but uses forced SSI0
+interrupts, zero DSP RX replies, and repeated command frames. Audio-buffer
+pacing is not a shared CPU/DSP clock. The new Rust boot/desktop/browser paths
+have no SHARC/audio integration. `native/live` does execute real SHARC frame
+work via its native library; its 32-sample, requested-48-kHz output gives a
+nominal 0.667-ms render budget, not demonstrated full-device timing.
+
+**[O]** A 100-frame device-free DSP benchmark refused its stale live pack
+before rendering. Pack core hash `124ec4db...` differs from current native/core
+hash `4b25379c...`; do not bypass that guard or merely retag the pack. The
+current library's core/generator check passed and its image hash matched
+`sections/section_7_BLOB.bin`; the sections source SHA matched DT2 OS 1.16.
+No DSP timing, underrun, or synchronized real-time result was obtained.
+Evidence: `sharc-100-receipt.json`, `sharc-100.log`, and
+`meta/sharc-baseline-provenance.json` under the same temporary directory.

@@ -49,6 +49,9 @@ native/**/target/
 node_modules/
 .astro/
 dist/
+packages/web/public/emulator-core.wasm
+packages/desktop/src-tauri/target/
+packages/desktop/src-tauri/gen/
 
 # Temporary local agent worktrees.
 .claude/worktrees/

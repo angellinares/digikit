@@ -260,7 +260,8 @@ impl DtimBank {
         }
         let donef = done as f64;
         let mut writes = Vec::new();
-        for &ci in &self.channels.clone() {
+        for channel_index in 0..self.channels.len() {
+            let ci = self.channels[channel_index];
             match self.period(ci) {
                 None => {
                     if self.ch[ci].next.is_some() {
@@ -304,7 +305,8 @@ impl DtimBank {
             return (Vec::new(), writes);
         }
         let mut raised = Vec::new();
-        for &ci in &self.channels.clone() {
+        for channel_index in 0..self.channels.len() {
+            let ci = self.channels[channel_index];
             if !self.ch[ci].pending {
                 continue;
             }

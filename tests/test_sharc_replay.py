@@ -348,6 +348,8 @@ class ReplayIdleCaptureTest(unittest.TestCase):
         self.assertEqual(frame0["instructions"], 192)
         self.assertFalse(frame0["master_bus_source_nonzero"])
 
+        # 2026-10-01 re-pin 205769 -> 205747: the SIMD companion correction
+        # skips 22 PCs; the captured data and all other frame state agree.
         # 2026-09-28 re-pin, 95063 -> 213212 and 95049 -> 205769: the fixed
         # core takes the real per-voice paths (FRAME_MILESTONE moved 96,044
         # -> 213,504 the same way), and drive_dma_completion() no longer
@@ -366,7 +368,7 @@ class ReplayIdleCaptureTest(unittest.TestCase):
         self.assertEqual(frame2["command"], 3)
         self.assertEqual(frame2["stop_reason"], "frame-returned")
         self.assertEqual(frame2["stop_pc"], "0x1c75d3")
-        self.assertEqual(frame2["instructions"], 205769)
+        self.assertEqual(frame2["instructions"], 205747)
         self.assertTrue(frame2["master_bus_source_nonzero"])
 
         self.assertIsNone(result["first_stop"])

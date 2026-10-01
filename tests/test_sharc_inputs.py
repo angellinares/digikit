@@ -360,6 +360,8 @@ class DynamicViewCaptureTest(unittest.TestCase):
     same real call chain the same way."""
 
     def test_three_frame_capture_replay_milestone(self):
+        # 2026-10-01 re-pin 407044 -> 407022: the SIMD companion correction
+        # skips 22 PCs; capture data and halt state are otherwise unchanged.
         # 2026-09-28 re-pin, 178723 -> 407044: the fixed core (Type4b
         # (1,1,1) normal word, (lw) and MODIFY scaling, ShiftImm 0x19
         # or-fdep, SIMD companions and PEy compute) takes the real
@@ -367,7 +369,7 @@ class DynamicViewCaptureTest(unittest.TestCase):
         # went 96,044 -> 213,504 the same way). The run still stops at the
         # same 0x1c32b0 opcode in the third frame.
         view = si.dynamic_view_capture("dt2-1.16", str(IDLE_CAPTURE), n_frames=3)
-        self.assertEqual(view.instructions, 407044)
+        self.assertEqual(view.instructions, 407022)
         self.assertEqual(
             view.halt["category"],
             "uncertain or undecodable form: source: firmware (undocumented; unconfirmed)",

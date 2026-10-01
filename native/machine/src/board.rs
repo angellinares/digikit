@@ -103,8 +103,9 @@ pub struct Board {
     events: Vec<CompletionEvent>,
     dma_written: Vec<(u32, usize)>,
     last_error: Option<BoardWriteError>,
-    /// Optional PIT/INTC facade. Its owned MMIO is never backed by sparse RAM.
-    time: Option<Time>,
+    /// Optional PIT/INTC facade in a stable allocation; ownership transfers by pointer.
+    /// Its owned MMIO is never backed by sparse RAM.
+    time: Option<Box<Time>>,
     /// Oracle read hooks: each value overlays four big-endian bytes before a
     /// guest read, without changing the backing page or later guest writes.
     forced_mmio: BTreeMap<u32, u32>,
@@ -175,19 +176,21 @@ impl Board {
 
     /// Route PIT and INTC MMIO through the supplied timer facade.
     pub fn attach_time(&mut self, time: Time) {
-        self.time = Some(time);
+        self.time = Some(Box::new(time));
     }
 
+    /// Borrow the timer facade while retaining its stable allocation.
     pub fn time_mut(&mut self) -> Option<&mut Time> {
-        self.time.as_mut()
+        self.time.as_deref_mut()
     }
 
-    /// Temporarily remove the timer facade for an atomic CPU interrupt offer.
-    pub fn take_time(&mut self) -> Option<Time> {
+    /// Temporarily transfer ownership of the timer facade's stable allocation.
+    pub fn take_time(&mut self) -> Option<Box<Time>> {
         self.time.take()
     }
 
-    pub fn restore_time(&mut self, time: Time) {
+    /// Restore a timer facade allocation transferred by [`Self::take_time`].
+    pub fn restore_time(&mut self, time: Box<Time>) {
         debug_assert!(self.time.is_none());
         self.time = Some(time);
     }
@@ -354,6 +357,30 @@ impl Board {
         let page = self.page(addr).ok_or(Self::bus_error(addr, false))?;
         out.copy_from_slice(page);
         Ok(())
+    }
+
+    /// Compare backing RAM without copying pages, dispatching MMIO, or recording
+    /// guest accesses. Like `read_ram_page`, this is host-side observation only.
+    pub fn ram_matches(&self, mut addr: u32, mut expected: &[u8]) -> bool {
+        let Ok(len) = u32::try_from(expected.len()) else {
+            return false;
+        };
+        if addr.checked_add(len).is_none() {
+            return false;
+        }
+        while !expected.is_empty() {
+            let Some(page) = self.page(addr) else {
+                return false;
+            };
+            let offset = Self::page_offset(addr);
+            let count = expected.len().min(PAGE_SIZE - offset);
+            if page[offset..offset + count] != expected[..count] {
+                return false;
+            }
+            addr += count as u32;
+            expected = &expected[count..];
+        }
+        true
     }
     pub fn completion_events(&self) -> &[CompletionEvent] {
         &self.events
@@ -1202,6 +1229,21 @@ mod tests {
     const AS: u32 = RAM + 0x104;
     const CS: u32 = RAM + 0x108;
     const ST: u32 = RAM + 0x10c;
+
+    #[test]
+    fn backing_ram_comparison_is_bounded_and_side_effect_free() {
+        let mut b = board(CompletionPolicy::Oracle);
+        b.map_zeroed_ram_page(NEXT).unwrap();
+        b.write32(NEXT - 2, 0x1234_5678).unwrap();
+        b.set_guest_access_capture(true);
+        assert!(b.ram_matches(NEXT - 2, &[0x12, 0x34, 0x56, 0x78]));
+        assert!(!b.ram_matches(NEXT - 2, &[0x12, 0x34, 0x56, 0x79]));
+        assert!(!b.ram_matches(NEXT + PAGE_SIZE as u32, &[0]));
+        assert!(!b.ram_matches(u32::MAX, &[0]));
+        assert!(b.ram_matches(u32::MAX, &[]));
+        assert!(b.take_guest_accesses().is_empty());
+        assert!(b.completion_events().is_empty());
+    }
 
     #[test]
     fn dtim_host_ref_byte_updates_backing_without_guest_mmio_dispatch() {

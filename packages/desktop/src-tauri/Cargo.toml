@@ -1,0 +1,15 @@
+[package]
+name = "digiemu-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2.5.1", features = [] }
+
+[dependencies]
+tauri = { version = "2.9.1", features = ["custom-protocol"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+elektron-native-boot = { path = "../../../native/boot" }
+emmc-card = { path = "../../../native/card" }

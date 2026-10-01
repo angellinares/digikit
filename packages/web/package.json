@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "../../tools/native_wasm.sh",
     "dev": "astro dev",
+    "prebuild": "../../tools/native_wasm.sh",
     "build": "astro build",
     "check": "astro check"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.12.1",
     "@astrojs/check": "0.9.10",
     "@astrojs/solid-js": "7.0.2",
     "astro": "7.3.5",

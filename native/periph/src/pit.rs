@@ -273,7 +273,8 @@ impl PitBank {
             return Vec::new();
         }
         let donef = done as f64;
-        for &ci in &self.channels.clone() {
+        for channel_index in 0..self.channels.len() {
+            let ci = self.channels[channel_index];
             match self.period(ci) {
                 None => {
                     if self.ch[ci].next.is_some() {
@@ -310,7 +311,8 @@ impl PitBank {
             return Vec::new();
         }
         let mut raised = Vec::new();
-        for &ci in &self.channels.clone() {
+        for channel_index in 0..self.channels.len() {
+            let ci = self.channels[channel_index];
             if !self.ch[ci].pending {
                 continue;
             }

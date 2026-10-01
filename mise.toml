@@ -10,3 +10,7 @@ description = "Run the bounded native Oracle boot diagnostic"
 [tasks.plusdrive]
 run = "tools/native_plusdrive.sh"
 description = "Build or inspect a standalone +Drive image"
+
+[tasks.emu]
+run = "tools/native_emu.sh"
+description = "Build the shared panel UI and run the desktop diagnostic emulator"

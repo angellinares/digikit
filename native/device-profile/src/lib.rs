@@ -5,7 +5,10 @@
 //! A boot contract identifies the existing explicit Oracle MAIN diagnostic
 //! path; it is not a hardware-topology description.
 
-use std::{collections::HashSet, fmt};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fmt,
+};
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -29,6 +32,29 @@ pub struct DeviceProfile {
     pub name: String,
     pub short: String,
     pub firmwares: Vec<FirmwareProfile>,
+    pub panel: Option<PanelProfile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelProfile {
+    pub linear_channels: u8,
+    pub encoders: u8,
+    pub exceptions: BTreeMap<u8, (u8, u8)>,
+}
+
+impl PanelProfile {
+    pub fn button(&self, code: u8) -> Option<(u8, u8)> {
+        if code == 0 {
+            return None;
+        }
+        let linear = u16::from(self.linear_channels) * 8;
+        if u16::from(code) <= linear {
+            let value = code - 1;
+            Some((value / 8, value % 8))
+        } else {
+            self.exceptions.get(&code).copied()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,12 +137,21 @@ struct SourceDocument {
     device: SourceDevice,
     #[serde(default)]
     firmware: Vec<SourceFirmware>,
+    panel: Option<SourcePanel>,
 }
 
 #[derive(Debug, Deserialize)]
 struct SourceDevice {
     name: String,
     short: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SourcePanel {
+    linear_channels: u8,
+    encoders: u8,
+    #[serde(default)]
+    exceptions: BTreeMap<String, [u8; 2]>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -193,10 +228,15 @@ impl Registry {
                     readiness_contract: firmware.readiness_contract,
                 });
             }
+            let panel = parsed
+                .panel
+                .map(|panel| validate_panel(source, panel))
+                .transpose()?;
             devices.push(DeviceProfile {
                 name: parsed.device.name,
                 short: parsed.device.short,
                 firmwares,
+                panel,
             });
         }
         Ok(Self { devices })
@@ -254,6 +294,42 @@ impl Registry {
         }
         Ok((device, firmware, boot))
     }
+}
+
+fn validate_panel(source: &str, panel: SourcePanel) -> Result<PanelProfile, RegistryError> {
+    if panel.linear_channels > 16 || panel.encoders > 16 {
+        return invalid(
+            source,
+            "panel linear_channels and encoders must be at most 16",
+        );
+    }
+    let mut coordinates = HashSet::new();
+    for channel in 0..panel.linear_channels {
+        for bit in 0..8 {
+            coordinates.insert((channel, bit));
+        }
+    }
+    let mut exceptions = BTreeMap::new();
+    for (code, [channel, bit]) in panel.exceptions {
+        let code = code.parse::<u8>().map_err(|_| RegistryError::Invalid {
+            source: source.into(),
+            detail: "panel exception code must be u8".into(),
+        })?;
+        if code == 0 || channel >= 16 || bit >= 8 || !coordinates.insert((channel, bit)) {
+            return invalid(
+                source,
+                "panel exception overlaps linear or another exception",
+            );
+        }
+        if exceptions.insert(code, (channel, bit)).is_some() {
+            return invalid(source, "duplicate panel exception code");
+        }
+    }
+    Ok(PanelProfile {
+        linear_channels: panel.linear_channels,
+        encoders: panel.encoders,
+        exceptions,
+    })
 }
 
 fn invalid<T>(source: &str, detail: impl Into<String>) -> Result<T, RegistryError> {
@@ -388,6 +464,24 @@ mod tests {
                 b"anything"
             ),
             Err(RegistryError::UnsupportedBoot { .. })
+        ));
+    }
+
+    #[test]
+    fn panel_profile_maps_exceptions_and_rejects_aliases() {
+        let registry = Registry::embedded().unwrap();
+        let dt2 = registry
+            .devices()
+            .iter()
+            .find(|device| device.short == "dt2")
+            .unwrap();
+        let panel = dt2.panel.as_ref().unwrap();
+        assert_eq!(panel.button(1), Some((0, 0)));
+        assert_eq!(panel.button(49), Some((6, 1)));
+        let alias = DT2.replacen("49 = [6, 1]", "49 = [0, 1]", 1);
+        assert!(matches!(
+            Registry::parse(&[("dt2", &alias)]),
+            Err(RegistryError::Invalid { .. })
         ));
     }
 }
