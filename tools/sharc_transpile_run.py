@@ -200,6 +200,23 @@ _EXTRA_FUNCTIONS = (
     ),
 )
 
+# Peripheral host events (native/sharc/src/lib.rs); bound when present so an
+# older library still reaches the build-info check.
+_PERIPHERAL_FUNCTIONS = (
+    ("sharc_native_sec_raise", [ctypes.c_void_p, ctypes.c_uint32], ctypes.c_int32),
+    ("sharc_native_dma_start", [ctypes.c_void_p, ctypes.c_uint32], ctypes.c_int64),
+    (
+        "sharc_native_dma_done",
+        [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32],
+        ctypes.c_int32,
+    ),
+    (
+        "sharc_native_spi2_exchange",
+        [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p],
+        ctypes.c_int64,
+    ),
+)
+
 # sharc_native_set_option keys (native lib.rs / canon.rs).
 OPT_BLOCKS = 1
 OPT_EXPORT_RANGES = 2
@@ -222,6 +239,7 @@ OPT_STACK_MODEL = 20
 OPT_STOP_PC = 8
 OPT_SOFTWARE_INTERRUPTS = 9
 OPT_CORE_TIMER = 21
+OPT_PERIPHERAL_MODEL = 22
 
 
 # How to rebuild DEFAULT_LIB (native-opt's inputs, all under out/native/opt).
@@ -293,6 +311,11 @@ class NativeCore(sd.NativeEngine):
         if self._get_pc is not None:
             self._get_pc.argtypes = [ctypes.c_void_p]
             self._get_pc.restype = ctypes.c_int64
+        for name, argtypes, restype in _PERIPHERAL_FUNCTIONS:
+            fn = getattr(self._lib, name, None)
+            if fn is not None:
+                fn.argtypes = argtypes
+                fn.restype = restype
         check_build_info(self.info(), library_path)
 
     def export_state(self, **_kwargs: Any) -> dict:
@@ -312,6 +335,8 @@ class NativeCore(sd.NativeEngine):
             raise ValueError("sharc_native_set_option(%d) failed (%d)" % (key, rc))
         if key == OPT_CORE_TIMER:
             self._core_timer_enabled = bool(value)
+        if key == OPT_PERIPHERAL_MODEL:
+            self._peripheral_enabled = bool(value)
 
     def set_provisional(self, name: str, mode: str) -> None:
         n, m = name.encode(), mode.encode()
@@ -395,6 +420,27 @@ class NativeCore(sd.NativeEngine):
             raise sr.UnmodeledMMR(address, None)
         return raw & 0xFFFFFFFF if raw >> 32 else None
 
+    def sec_raise(self, sid: int) -> None:
+        if self._lib.sharc_native_sec_raise(self._handle, sid) != 0:
+            raise ValueError("SEC source %d rejected" % sid)
+
+    def dma_start(self, base: int) -> int:
+        address = self._lib.sharc_native_dma_start(self._handle, base)
+        if address < 0:
+            raise ValueError("DMA channel %#x rejected" % base)
+        return address
+
+    def dma_done(self, base: int, sid: int) -> None:
+        if self._lib.sharc_native_dma_done(self._handle, base, sid) != 0:
+            raise ValueError("DMA channel %#x completion rejected" % base)
+
+    def spi2_exchange(self, frame: bytes) -> bytes:
+        out = ctypes.create_string_buffer(len(frame))
+        n = self._lib.sharc_native_spi2_exchange(self._handle, frame, len(frame), out)
+        if n < 0:
+            raise ValueError("SPI2 exchange rejected")
+        return out.raw[:n]
+
     def fresh_call(self, pc: int, return_address: int | None = None) -> None:
         self._lib.sharc_native_fresh_call(
             self._handle, pc, -1 if return_address is None else return_address
@@ -408,7 +454,11 @@ class NativeCore(sd.NativeEngine):
             raise RuntimeError("sharc_native_step hard error (%d)" % rc)
         # A peripheral event can fail after the last requested instruction
         # completed. Timer-enabled runs must inspect that boundary too.
-        if rc < max_steps or getattr(self, "_core_timer_enabled", False):
+        if (
+            rc < max_steps
+            or getattr(self, "_core_timer_enabled", False)
+            or getattr(self, "_peripheral_enabled", False)
+        ):
             buf = ctypes.create_string_buffer(512)
             n = self._lib.sharc_native_halt_reason(self._handle, buf, 512)
             self._halted_reason = buf.raw[:n].decode("utf-8", "replace") if n else None
@@ -461,6 +511,7 @@ def to_native(core: NativeCore, state: st.State) -> None:
     core.set_option(OPT_STACK_MODEL, state.stack_model)
     core.set_option(OPT_SOFTWARE_INTERRUPTS, state.software_interrupts)
     core.set_option(OPT_CORE_TIMER, state.core_timer)
+    core.set_option(OPT_PERIPHERAL_MODEL, state.peripheral_model)
     if state.provisional_forms:
         raise ValueError("provisional_forms are not supported natively")
     for name, mode in state.provisional_interpretations.items():
@@ -1182,6 +1233,7 @@ def _state_options(state: st.State) -> list[tuple[int, int]]:
         (OPT_STACK_MODEL, int(state.stack_model)),
         (OPT_SOFTWARE_INTERRUPTS, int(state.software_interrupts)),
         (OPT_CORE_TIMER, int(state.core_timer)),
+        (OPT_PERIPHERAL_MODEL, int(state.peripheral_model)),
     ]
 
 

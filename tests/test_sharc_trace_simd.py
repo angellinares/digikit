@@ -1033,7 +1033,7 @@ class SimdMemoryCompanionTest(TraceHelpers):
         )
         self.assertEqual(wrong.uregs[86], T.Const(7))
 
-    def test_type15b_pm_normal_and_long_word_leave_dm_immutable(self):
+    def test_type15b_pm_uses_unified_memory_but_not_pey(self):
         base = 0x30005500
         sentinel = T.Const(0xA5A5A5A5)
         for long_word, store in ((0, 0), (0, 1), (1, 0), (1, 1)):
@@ -1067,21 +1067,24 @@ class SimdMemoryCompanionTest(TraceHelpers):
                         4,
                     ),
                 )
-                self.assertEqual(T._dm_read(out, base, 4), sentinel)
-                self.assertEqual(T._dm_read(out, base + 4, 4), sentinel)
                 event = next(e for e in out.trace if e["action"] in {"load", "store"})
                 self.assertEqual(event["space"], "PM")
-                if not store:
-                    # Normal PM reads now resolve the explicit word in
-                    # unified memory. PM LW/implicit SIMD transfers are
-                    # still unmodeled; this test does not qualify them.
+                # PM data accesses use the unified memory; the implicit SIMD
+                # PEy transfer over PM is still unmodeled.
+                if store:
+                    self.assertEqual(T._dm_read(out, base, 4), T.Const(0x11111111))
+                    self.assertEqual(
+                        T._dm_read(out, base + 4, 4),
+                        T.Const(0x22222222) if long_word else sentinel,
+                    )
+                else:
+                    self.assertEqual(T._dm_read(out, base, 4), sentinel)
+                    self.assertEqual(T._dm_read(out, base + 4, 4), sentinel)
+                    self.assertEqual(out.uregs[6], sentinel)
                     if long_word:
-                        self.assertIsInstance(out.uregs[6], T.Unknown)
+                        self.assertEqual(out.uregs[7], sentinel)
                     else:
-                        self.assertEqual(out.uregs[6], sentinel)
                         self.assertIsInstance(out.uregs[86], T.Unknown)
-                    if long_word:
-                        self.assertIsInstance(out.uregs[7], T.Unknown)
 
     def test_type1a_pm_bdcst9_unknown_and_snapshot_collision(self):
         fields = {

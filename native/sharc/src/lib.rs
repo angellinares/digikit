@@ -216,6 +216,16 @@ pub struct Engine {
     last_interp_next: Int,
 }
 
+/// Swap the two bytes of every 16-bit unit: SPI words are MSB first on
+/// the wire and little-endian in DSP memory.
+fn swap16(data: &[u8]) -> Vec<u8> {
+    let mut out = data.to_vec();
+    for pair in out.chunks_exact_mut(2) {
+        pair.swap(0, 1);
+    }
+    out
+}
+
 /// Name of a trap: the generated site table or the runtime's own codes.
 pub fn trap_name(t: Trap) -> String {
     if t.0 >= TRAP_RT_BASE {
@@ -436,6 +446,55 @@ impl Engine {
             .map(|v| v.map(|v| v.b))
     }
 
+    /// A host-side peripheral event in its own transaction: all or nothing.
+    pub fn host_event<T>(
+        &mut self,
+        f: impl FnOnce(&mut rt::St) -> Result<T, Trap>,
+    ) -> Result<T, Trap> {
+        self.s.begin();
+        match f(&mut self.s) {
+            Ok(v) => {
+                self.s.commit_host();
+                Ok(v)
+            }
+            Err(t) => {
+                self.s.rollback();
+                Err(t)
+            }
+        }
+    }
+
+    /// tools/sharc_periph_host.spi2_exchange: FRAME (wire order) lands in
+    /// the SPI2 RX DMA work unit; the TX work unit comes back in wire order;
+    /// both channels then complete (SEC sources 69 and 70).
+    pub fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, Trap> {
+        const TX: u32 = 0x3102_D200;
+        const RX: u32 = 0x3102_D280;
+        let rx = self.host_event(|s| rt::periph::dma_start(s, RX))?;
+        let tx = self.host_event(|s| rt::periph::dma_start(s, TX))?;
+        for base in [RX, TX] {
+            let step = self.s.mmr_get(base + 0x10).map(|v| v.b);
+            let count = self.s.mmr_get(base + 0x0C).map(|v| v.b as usize);
+            if step != Some(2) || count.map(|c| 2 * c) != Some(frame.len()) {
+                return Err(rt::TRAP_PERIPHERAL);
+            }
+        }
+        if frame.len() % 4 != 0 {
+            return Err(rt::TRAP_PERIPHERAL);
+        }
+        let mut reply = Vec::with_capacity(frame.len());
+        for offset in (0..frame.len()).step_by(4) {
+            let word = rt::periph::ram_word(&self.s, tx.wrapping_add(offset as u32))?;
+            reply.extend_from_slice(&word.to_le_bytes());
+        }
+        for (k, &byte) in swap16(frame).iter().enumerate() {
+            self.s.mem.write_byte(rx.wrapping_add(k as u32), byte);
+        }
+        self.host_event(|s| rt::periph::dma_done(s, TX, 69))?;
+        self.host_event(|s| rt::periph::dma_done(s, RX, 70))?;
+        Ok(swap16(&reply))
+    }
+
     /// sharc_run.fresh_call_state (see sharc_native_fresh_call).
     pub fn fresh_call(&mut self, pc: u32, return_address: Option<Int>) {
         self.s.pc_sw = pc as Int;
@@ -556,7 +615,7 @@ impl Engine {
                     Some("diagnostic: unmasked software interrupt; entry not modeled".into());
                 break;
             }
-            if self.software_interrupts || self.s.cfg.core_timer {
+            if self.software_interrupts || self.s.cfg.core_timer || self.s.cfg.peripheral_model {
                 #[cfg(sharc_gen)]
                 {
                     let allowed = (if self.software_interrupts {
@@ -567,7 +626,24 @@ impl Engine {
                         0x0040_0800
                     } else {
                         0
+                    }) | (if self.s.cfg.peripheral_model {
+                        0x0000_8000
+                    } else {
+                        0
                     });
+                    if self.s.cfg.peripheral_model {
+                        // The SEC request line latches SECI at the boundary
+                        // (tools/sharc_run.py calls periph._sec_line here).
+                        self.s.begin();
+                        match rt::periph::sec_line(&mut self.s) {
+                            Ok(()) => self.s.commit_host(),
+                            Err(trap) => {
+                                self.s.rollback();
+                                self.trapped(trap);
+                                break;
+                            }
+                        }
+                    }
                     let candidate =
                         generated::core_g::sequencer::_interrupt_candidate(&mut self.s, allowed);
                     let result = candidate.and_then(|mask| {
@@ -1005,6 +1081,68 @@ pub unsafe extern "C" fn sharc_native_peek(handle: *mut Engine, address: u64, wi
     match e.peek(address, width) {
         Ok(Some(v)) => (1i64 << 32) | v as i64,
         Ok(None) => 0,
+        Err(_) => -1,
+    }
+}
+
+/// periph._sec_raise(state, SID) as a host event: 0, or -1 when the
+/// peripheral model rejects it (nothing changes).
+///
+/// # Safety
+/// HANDLE from sharc_native_create.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_sec_raise(handle: *mut Engine, sid: u32) -> i32 {
+    // SAFETY: caller contract.
+    let e = unsafe { &mut *handle };
+    e.host_event(|s| rt::periph::sec_raise(s, sid)).map_or(-1, |()| 0)
+}
+
+/// periph._dma_start(state, BASE): the work unit's start address, or -1.
+///
+/// # Safety
+/// HANDLE from sharc_native_create.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_dma_start(handle: *mut Engine, base: u32) -> i64 {
+    // SAFETY: caller contract.
+    let e = unsafe { &mut *handle };
+    e.host_event(|s| rt::periph::dma_start(s, base))
+        .map_or(-1, |a| a as i64)
+}
+
+/// periph._dma_done(state, BASE, SID): 0, or -1 when rejected.
+///
+/// # Safety
+/// HANDLE from sharc_native_create.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_dma_done(handle: *mut Engine, base: u32, sid: u32) -> i32 {
+    // SAFETY: caller contract.
+    let e = unsafe { &mut *handle };
+    e.host_event(|s| rt::periph::dma_done(s, base, sid))
+        .map_or(-1, |()| 0)
+}
+
+/// One SPI2 slave frame (Engine::spi2_exchange): FRAME holds LEN bytes in
+/// wire order and the reply (LEN bytes) is written to OUT. Returns LEN, or
+/// -1 when the peripheral model rejects the exchange.
+///
+/// # Safety
+/// HANDLE from sharc_native_create; FRAME points to LEN readable bytes and
+/// OUT to LEN writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_spi2_exchange(
+    handle: *mut Engine,
+    frame: *const u8,
+    len: usize,
+    out: *mut u8,
+) -> i64 {
+    // SAFETY: caller contract.
+    let (e, bytes) = unsafe { (&mut *handle, std::slice::from_raw_parts(frame, len)) };
+    match e.spi2_exchange(bytes) {
+        Ok(reply) => {
+            // SAFETY: OUT has LEN writable bytes and the reply is LEN long.
+            unsafe { std::ptr::copy_nonoverlapping(reply.as_ptr(), out, reply.len()) };
+            reply.len() as i64
+        }
         Err(_) => -1,
     }
 }

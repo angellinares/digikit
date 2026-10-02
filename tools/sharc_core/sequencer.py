@@ -34,6 +34,7 @@ from .state import (
     Pending,
     State,
     _bank_complete,
+    _bank_hold_request,
     _copy,
     _event,
     _pc_stack_complete,
@@ -681,6 +682,10 @@ def _take_interrupt_return(
     state.uregs[UREG_CODES["ASTATX"]] = astatx
     state.uregs[UREG_CODES["ASTATY"]] = astaty
     _write_ureg(state, UREG_CODES["MODE1"], mode1)
+    if delayed:
+        # RTI (DB) delay slots still use the interrupt's banks: the DN2/DT2
+        # task restore reloads the kernel's own I7 and I12 there.
+        _bank_hold_request(state)
     # RTI clears the highest-priority active interrupt and its latch.
     bit = active.value & -active.value
     state.uregs[UREG_CODES["IMASKP"]] = Const(active.value & ~bit)
@@ -740,7 +745,7 @@ def _enter_interrupt(state: State, mask: int) -> None:
         raise ValueError(
             "software interrupt entry requires architectural stacks and banks"
         )
-    if mask == 0 or mask & (mask - 1) or mask & ~0xF0400800:
+    if mask == 0 or mask & (mask - 1) or mask & ~0xF0408800:
         raise ValueError("unsupported interrupt source")
     if state.pending or state.loops or state.pc_stack_pending >= 0:
         raise ValueError("software interrupt entry during deferred control effect")

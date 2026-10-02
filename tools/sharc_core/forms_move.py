@@ -173,12 +173,10 @@ def _type_3a_transfer(
             )
         if _field(f, "d"):
             codes, values = _lw_store_pair(old, ureg)
-            all_written = False  # a PM store writes nothing
-            if space == "DM":
-                all_written = True
-                for item_address, value in zip(pair_addresses, values, strict=True):
-                    if not _dm_write(target, item_address, 4, value, normal_word=True):
-                        all_written = False
+            all_written = True
+            for item_address, value in zip(pair_addresses, values, strict=True):
+                if not _dm_write(target, item_address, 4, value, normal_word=True):
+                    all_written = False
             _event(
                 target,
                 insn,
@@ -198,8 +196,6 @@ def _type_3a_transfer(
             for item_address in pair_addresses[: len(codes)]:
                 loaded_values.append(
                     _dm_read(target, item_address, 4, normal_word=True)
-                    if space == "DM"
-                    else None
                 )
             for item, mem_value in zip(codes, loaded_values, strict=True):
                 target.uregs[item] = mem_value or Unknown("memory-address " + rendered)
@@ -222,11 +218,7 @@ def _type_3a_transfer(
             )
     elif _field(f, "d"):
         value = _ureg(old, ureg)
-        wrote = (
-            _dm_write(target, address, 4, value, normal_word=True)
-            if space == "DM"
-            else False
-        )
+        wrote = _dm_write(target, address, 4, value, normal_word=True)
         _event(
             target,
             insn,
@@ -433,7 +425,7 @@ def _type_14a(
         return [_stop(state, insn, str(error))]
     if _field(f, "d"):
         value = _ureg(state.uregs, code)
-        store_now = space == "DM" and state.concrete is not None
+        store_now = state.concrete is not None
         wrote = (
             _dm_write(state, address, 4, value, normal_word=True)
             if store_now
@@ -921,11 +913,7 @@ def _type_4a_access(
             return [_stop(state, insn, str(error))]
     if _field(f, "d"):
         value = _ureg(old, code)
-        wrote = (
-            _dm_write(state, address, 4, value, normal_word=True)
-            if space == "DM"
-            else False
-        )
+        wrote = _dm_write(state, address, 4, value, normal_word=True)
         _event(
             state,
             insn,
@@ -951,9 +939,7 @@ def _type_4a_access(
                 expression=_render(companion[1]),
             )
     else:
-        loaded = (
-            _dm_read(state, address, 4, normal_word=True) if space == "DM" else None
-        )
+        loaded = _dm_read(state, address, 4, normal_word=True)
         _write_ureg(
             state, code, loaded or Unknown("memory-address " + _render(address))
         )
@@ -1014,17 +1000,12 @@ def _type_4b_access(
     )
     if store:
         value = _ureg(old, code)
-        wrote = (
-            _dm_write(
-                executed,
-                address,
-                width,
-                value,
-                normal_word=access_width == "normal-word"
-                or access_width == "long-word",
-            )
-            if space == "DM"
-            else False
+        wrote = _dm_write(
+            executed,
+            address,
+            width,
+            value,
+            normal_word=access_width == "normal-word" or access_width == "long-word",
         )
         _event(
             executed,
@@ -1042,17 +1023,12 @@ def _type_4b_access(
             predicate_assumption=True,
         )
     else:
-        loaded = (
-            _dm_read(
-                executed,
-                address,
-                width,
-                signed,
-                normal_word=access_width == "normal-word"
-                or access_width == "long-word",
-            )
-            if space == "DM"
-            else None
+        loaded = _dm_read(
+            executed,
+            address,
+            width,
+            signed,
+            normal_word=access_width == "normal-word" or access_width == "long-word",
         )
         _write_ureg(
             executed, code, loaded or Unknown("memory-address " + _render(address))
@@ -1216,17 +1192,12 @@ def _type_3b_access(
         return str(error)
     if store:
         value = _ureg(old, ureg)
-        wrote = (
-            _dm_write(
-                executed,
-                address,
-                width,
-                value,
-                normal_word=access_width == "normal-word"
-                or access_width == "long-word",
-            )
-            if space == "DM"
-            else False
+        wrote = _dm_write(
+            executed,
+            address,
+            width,
+            value,
+            normal_word=access_width == "normal-word" or access_width == "long-word",
         )
         _event(
             executed,
@@ -1271,17 +1242,13 @@ def _type_3b_access(
                 executed, space, address, ureg
             )
         else:
-            scalar_loaded = (
-                _dm_read(
-                    executed,
-                    address,
-                    width,
-                    access_width.endswith("sign-extended"),
-                    normal_word=access_width == "normal-word"
-                    or access_width == "long-word",
-                )
-                if space == "DM"
-                else None
+            scalar_loaded = _dm_read(
+                executed,
+                address,
+                width,
+                access_width.endswith("sign-extended"),
+                normal_word=access_width == "normal-word"
+                or access_width == "long-word",
             )
             _write_ureg(
                 executed,
@@ -1480,11 +1447,7 @@ def _type_16a(
     value = Const(
         _wide(f, "data") if name == "16a" else _signed(_field(f, "data[15:0]"), 16)
     )
-    wrote = (
-        _dm_write(state, address, 4, value, normal_word=True)
-        if not _field(f, "g")
-        else False
-    )
+    wrote = _dm_write(state, address, 4, value, normal_word=True)
     _event(
         state,
         insn,
@@ -1556,9 +1519,7 @@ def _type_15b(
                 )
             all_written = True
             for offset_address, value in zip(offsets, values, strict=True):
-                if space != "DM" or not _dm_write(
-                    state, offset_address, 4, value, normal_word=True
-                ):
+                if not _dm_write(state, offset_address, 4, value, normal_word=True):
                     all_written = False
             _event(
                 state,
@@ -1588,8 +1549,6 @@ def _type_15b(
                 )
                 loaded_values.append(
                     _dm_read(state, offset_address, 4, normal_word=True)
-                    if space == "DM"
-                    else None
                 )
             for item, mem_value in zip(codes, loaded_values, strict=True):
                 _write_ureg(
@@ -1634,11 +1593,7 @@ def _type_15b(
         )
     if _field(f, "d"):
         value = state.uregs.get(code, Unknown("uninitialized " + UREG_NAMES[code]))
-        wrote = (
-            _dm_write(state, address, 4, value, normal_word=True)
-            if space == "DM"
-            else False
-        )
+        wrote = _dm_write(state, address, 4, value, normal_word=True)
         _event(
             state,
             insn,
@@ -1738,11 +1693,7 @@ def _type_15a(
                 )
             concrete_write = True
             for offset_address, value in zip(offsets, values, strict=True):
-                wrote = (
-                    _dm_write(state, offset_address, 4, value, normal_word=True)
-                    if space == "DM"
-                    else False
-                )
+                wrote = _dm_write(state, offset_address, 4, value, normal_word=True)
                 if not wrote:
                     concrete_write = False
             _event(
@@ -1773,8 +1724,6 @@ def _type_15a(
                 )
                 loaded_values.append(
                     _dm_read(state, offset_address, 4, normal_word=True)
-                    if space == "DM"
-                    else None
                 )
             for item, mem_value in zip(codes, loaded_values, strict=True):
                 _write_ureg(
@@ -1815,11 +1764,7 @@ def _type_15a(
         )
     if _field(f, "d"):
         value = _ureg(state.uregs, code)
-        wrote = (
-            _dm_write(state, address, 4, value, normal_word=True)
-            if space == "DM"
-            else False
-        )
+        wrote = _dm_write(state, address, 4, value, normal_word=True)
         _event(
             state,
             insn,
@@ -1882,11 +1827,7 @@ def _type_1a_access(
     companion = _type_nw_companion(old, index, dreg, address, store, scale)
     if store:
         value = _ureg(old, dreg)
-        wrote = (
-            _dm_write(state, address, 4, value, normal_word=True)
-            if space == "DM"
-            else False
-        )
+        wrote = _dm_write(state, address, 4, value, normal_word=True)
         _event(
             state,
             insn,
@@ -2131,17 +2072,12 @@ def _type_4d(
     mode = "post-modify" if post_modify else "pre-modify"
     if store:
         value = _ureg(state.uregs, code)
-        wrote = (
-            _dm_write(
-                state,
-                address,
-                width,
-                value,
-                normal_word=access_width == "normal-word"
-                or access_width == "long-word",
-            )
-            if space == "DM"
-            else False
+        wrote = _dm_write(
+            state,
+            address,
+            width,
+            value,
+            normal_word=access_width == "normal-word" or access_width == "long-word",
         )
         _event(
             state,
@@ -2162,17 +2098,13 @@ def _type_4d(
         loaded = (
             _load_normal_ureg(state, space, address, code)
             if access_width == "normal-word"
-            else (
-                _dm_read(
-                    state,
-                    address,
-                    width,
-                    access_width.endswith("sign-extended"),
-                    normal_word=access_width == "normal-word"
-                    or access_width == "long-word",
-                )
-                if space == "DM"
-                else None
+            else _dm_read(
+                state,
+                address,
+                width,
+                access_width.endswith("sign-extended"),
+                normal_word=access_width == "normal-word"
+                or access_width == "long-word",
             )
         )
         if access_width != "normal-word":
@@ -2224,17 +2156,12 @@ def _type_3d_access(
     iv = _ureg(old, 16 + index)
     if store:
         value = _ureg(old, ureg)
-        wrote = (
-            _dm_write(
-                executed,
-                address,
-                width,
-                value,
-                normal_word=access_width == "normal-word"
-                or access_width == "long-word",
-            )
-            if space == "DM"
-            else False
+        wrote = _dm_write(
+            executed,
+            address,
+            width,
+            value,
+            normal_word=access_width == "normal-word" or access_width == "long-word",
         )
         _event(
             executed,
@@ -2257,17 +2184,13 @@ def _type_3d_access(
         loaded = (
             _load_normal_ureg(executed, space, address, ureg)
             if access_width == "normal-word"
-            else (
-                _dm_read(
-                    executed,
-                    address,
-                    width,
-                    access_width.endswith("sign-extended"),
-                    normal_word=access_width == "normal-word"
-                    or access_width == "long-word",
-                )
-                if space == "DM"
-                else None
+            else _dm_read(
+                executed,
+                address,
+                width,
+                access_width.endswith("sign-extended"),
+                normal_word=access_width == "normal-word"
+                or access_width == "long-word",
             )
         )
         if access_width != "normal-word":

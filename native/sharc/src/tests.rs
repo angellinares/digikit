@@ -595,3 +595,43 @@ fn plain_ram_fast_paths_follow_the_alias() {
     s.set_mmr_windows();
     assert_eq!(s.mem.fast_read(0x2800_1000, 4), None);
 }
+
+#[test]
+fn peripheral_model_acknowledges_and_ends_sec_sources() {
+    let mut s = state();
+    s.set_mmr_windows();
+    s.cfg.peripheral_model = true;
+    s.cfg.refresh();
+    s.mmr_put(periph::SEC_GCTL, V::c(1));
+    s.mmr_put(periph::SEC_CCTL, V::c(1));
+    s.mmr_put(periph::SEC_SCTL + 8 * 70, V::c(5));
+    let status = periph::SEC_SCTL + 8 * 70 + 4;
+    s.begin();
+    periph::sec_raise(&mut s, 70).unwrap();
+    s.commit();
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(periph::SECI_ID as Int), 4, false, false),
+        Ok(Some(V::c(70)))
+    );
+    // A rolled-back instruction leaves the source issued and unacknowledged.
+    s.begin();
+    assert!(bnd::_dm_write(&mut s, VI::I(periph::SECI_ID as Int), 4, V::c(0), false).unwrap());
+    assert!(bnd::_dm_write(&mut s, VI::I(periph::SEC_END as Int), 4, V::c(70), false).unwrap());
+    s.rollback();
+    assert_eq!(s.mmr_get(status), Some(V::c(0x100)));
+    s.begin();
+    assert!(bnd::_dm_write(&mut s, VI::I(periph::SECI_ID as Int), 4, V::c(0), false).unwrap());
+    assert_eq!(s.mmr_get(status), Some(V::c(0x200)));
+    assert!(bnd::_dm_write(&mut s, VI::I(periph::SEC_END as Int), 4, V::c(70), false).unwrap());
+    s.commit();
+    assert_eq!(s.mmr_get(status), Some(V::c(0)));
+    // With the model off the same write is a plain register store.
+    s.cfg.peripheral_model = false;
+    s.cfg.refresh();
+    s.begin();
+    s.named_mmrs = vec![periph::SEC_END];
+    s.set_mmr_windows();
+    assert!(bnd::_dm_write(&mut s, VI::I(periph::SEC_END as Int), 4, V::c(70), false).unwrap());
+    s.commit();
+    assert_eq!(s.mmr_get(periph::SEC_END), Some(V::c(70)));
+}

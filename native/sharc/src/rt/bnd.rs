@@ -379,7 +379,7 @@ pub fn _snapshot_uregs(s: &mut St, uregs: RegView) -> RegView {
 /// visible assignment; St::commit supplies the one-cycle delay.
 pub fn _bank_request(s: &mut St, value: V) -> R<()> {
     if s.cfg.bank_model {
-        if !value.is_c() {
+        if !value.is_c() || s.bank_requested_mask >= 0 {
             return Err(TRAP_SYMBOLIC);
         }
         s.bank_requested_mask = value.val() & BANK_MASK;
@@ -391,6 +391,14 @@ pub fn _bank_request(s: &mut St, value: V) -> R<()> {
 /// centralised in St::commit/commit_blk so a trap can never expose a swap.
 #[inline(always)]
 pub fn _bank_complete(_s: &mut St) {}
+
+/// state._bank_hold_request: a delayed RTI keeps its popped bank selection
+/// requested through the first delay slot (consumed by St::bank_complete).
+pub fn _bank_hold_request(s: &mut St) {
+    if s.cfg.bank_model && s.bank_requested_mask >= 0 {
+        s.bank_requested_mask |= BANK_HOLD;
+    }
+}
 
 /// PCSTKP truncation is delayed until the following completed instruction.
 pub fn _pc_stack_request(s: &mut St, value: V) -> R<()> {
@@ -892,6 +900,13 @@ pub fn _dm_read_full(
     if !s.cfg.has_concrete || !matches!(width, 1 | 2 | 4 | 8) {
         return Ok(None);
     }
+    if s.cfg.peripheral_model
+        && width == 4
+        && (0..=u32::MAX as Int).contains(&concrete)
+        && let Some(v) = super::periph::periph_read(s, concrete as u32)?
+    {
+        return Ok(Some(v));
+    }
     // Plain internal/external RAM, the common case: no MMR rules apply.
     let mmr_candidate = in_core_mmr_range(concrete)
         || in_system_mmr_range(concrete)
@@ -1067,6 +1082,13 @@ pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V, normal_word
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
     }
+    if s.cfg.peripheral_model
+        && width == 4
+        && (0..=u32::MAX as Int).contains(&concrete)
+        && super::periph::periph_write(s, concrete as u32, value.b)?
+    {
+        return Ok(true);
+    }
     if width == 4 && fixed_width_mmr(s, concrete) {
         s.mmr_set(concrete as u32, value)?;
         return Ok(true);
@@ -1120,6 +1142,13 @@ fn _dm_write_nolog_full(
     };
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
+    }
+    if s.cfg.peripheral_model
+        && width == 4
+        && (0..=u32::MAX as Int).contains(&concrete)
+        && super::periph::periph_write(s, concrete as u32, value.b)?
+    {
+        return Ok(true);
     }
     if width == 4 && fixed_width_mmr(s, concrete) {
         s.mmr_put(concrete as u32, value);

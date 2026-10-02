@@ -49,6 +49,7 @@ import sharc_trace as st  # noqa: E402
 import sharcfn  # noqa: E402
 from sharc_core.addressing import normal_word_to_byte  # noqa: E402
 from sharc_core.memory import UnmodeledMMR, _canonical_dm_address  # noqa: E402
+from sharc_core.periph import _sec_line  # noqa: E402
 from sharc_core.sequencer import (  # noqa: E402
     _core_timer_tick,
     _enter_interrupt,
@@ -1086,11 +1087,15 @@ class Runner:
         """
         state = self.state
         state.timer_written = False
-        if state.software_interrupts or state.core_timer:
+        if state.software_interrupts or state.core_timer or state.peripheral_model:
             try:
-                allowed = (0xF0000000 if state.software_interrupts else 0) | (
-                    0x00400800 if state.core_timer else 0
+                allowed = (
+                    (0xF0000000 if state.software_interrupts else 0)
+                    | (0x00400800 if state.core_timer else 0)
+                    | (0x00008000 if state.peripheral_model else 0)
                 )
+                if state.peripheral_model:
+                    _sec_line(state)
                 candidate = _interrupt_candidate(state, allowed)
                 if candidate:
                     _enter_interrupt(state, candidate)

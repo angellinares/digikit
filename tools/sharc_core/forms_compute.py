@@ -102,9 +102,7 @@ def _type_6a_mem(
     dreg = _field(f, "dreg")
     if _field(f, "d"):
         value = _ureg(old, dreg)
-        wrote = (
-            _dm_write(state, iv, 4, value, normal_word=True) if space == "DM" else False
-        )
+        wrote = _dm_write(state, iv, 4, value, normal_word=True)
         _event(
             state,
             insn,

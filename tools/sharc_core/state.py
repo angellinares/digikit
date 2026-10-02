@@ -254,6 +254,8 @@ class State:
     core_timer: bool = False
     # Instruction-local write priority; drivers reset before each instruction.
     timer_written: bool = False
+    # SEC core interface and descriptor DMA (periph.py), opt-in.
+    peripheral_model: bool = False
 
     def __post_init__(self) -> None:
         if not self.loop_slots:
@@ -669,6 +671,9 @@ def _write_ureg(state: State, code: int, value: Value) -> None:
 
 
 _BANK_MASK = 0x4F8
+# Set on bank_requested_mask only while a delayed RTI executes; consumed by
+# that instruction's _bank_complete, so it never survives an instruction end.
+_BANK_HOLD = 0x10000
 
 
 def _bank_codes(group: int) -> tuple[int, ...]:
@@ -705,13 +710,24 @@ def _bank_request(state: State, value: Value) -> None:
         return
     if not isinstance(value, Const):
         raise ValueError("unknown MODE1 write with alternate banks enabled")
+    if state.bank_requested_mask >= 0:
+        raise ValueError("MODE1 write while a delayed RTI bank selection is held")
     state.bank_requested_mask = value.value & _BANK_MASK
 
 
 def _bank_complete(state: State) -> None:
-    """Advance alternate-register selection at a successful instruction end."""
+    """Advance alternate-register selection at a successful instruction end.
+
+    A delayed RTI's popped selection stays requested through its first delay
+    slot, so it is active only at the return target.
+    """
     if not state.bank_model:
         return
+    held = state.bank_requested_mask
+    if held >= 0 and held & _BANK_HOLD:
+        state.bank_requested_mask = -1
+    else:
+        held = -1
     if state.bank_pending_mask >= 0:
         changed = state.bank_active_mask ^ state.bank_pending_mask
         for group in (10, 7, 6, 5, 4, 3):
@@ -727,6 +743,14 @@ def _bank_complete(state: State) -> None:
         state.bank_active_mask = state.bank_pending_mask
     state.bank_pending_mask = state.bank_requested_mask
     state.bank_requested_mask = -1
+    if held >= 0:
+        state.bank_requested_mask = held & _BANK_MASK
+
+
+def _bank_hold_request(state: State) -> None:
+    """Keep a delayed RTI's MODE1 bank selection for both delay slots."""
+    if state.bank_model and state.bank_requested_mask >= 0:
+        state.bank_requested_mask |= _BANK_HOLD
 
 
 def _pc_stack_depth(state: State) -> int:

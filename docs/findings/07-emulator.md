@@ -4608,11 +4608,118 @@ Use matching firmware metadata for the legacy replay harness, or explicitly
 select runtime decode; a matching core source hash alone is insufficient.
 
 
-**[O]** Independent static review resolves the next indirect-target stop:
-`0xb88a99` loads Type3b `(lw)` through I6 `0x269470`, M7=-1, destination I12.
-Both words exist at canonical byte `0x2826946c`: saved return `0xb88ab1` and
-paired word `0x269478`. The core deliberately rejects width8 reads and writes
-Unknown to I12, so `0xb88aa1` cannot branch through I12+M14. This is an
-unimplemented long-word move, rather than missing guest data. Public register-
-pair rules, atomic load/store behavior and rollback still need implementation
-and tests before that next continuation can be claimed.
+**[C]** The previous paragraph's diagnosis of the `0xb88aa1` stop was wrong.
+DN2 1.11 `0xb88a99` is bytes `fe 4d 3f 0e`, VISA word `0x4dfe0e3f`: Type3b with
+l=0, x=1, w=1, a plain normal-word `I12 = DM(M7,I6)` (only l=x=w=1 is `(lw)`,
+PRM Type3b encode tables, pages 318-319). The pure-Python core loads it
+correctly (I12 = `0xb88ab1`). That epilogue is also not on the failing path.
+The 31 instructions after the 2,000,300-step state are a task context restore
+(`0xb8b385..0xb8b39a`, then `0x1c0b37..0x1c0b5d`) that ends with `RTI (DB)` at
+`0x1c0b5a` (Type11c x=1 j=1). The RTI pops MODE1 `0x39011cf8`, which selects
+the secondary DAG and register-file banks. Its delay slots are
+`I7 = PM(5,I12)` and `I12 = PM(1,I12)`. The model applied the bank switch
+after one following instruction, so slot 2 read through the task's secondary
+I12 (`0xb88ab1`) into code space. Python then loaded 0 and native loaded
+Unknown, and the task's I12 was lost before its RETURN.
+
+**[D]** Both RTI (DB) delay slots use the interrupt's banks; the restored
+selection is first active at the return target. The PRM does not say when a
+delayed RTI's status pop takes effect: page 57 and pages 213-214 give only a
+flat one-cycle MODE1 bank latency, and nothing covers delay slots. The firmware
+decides it. In the context block at `0x26f770`, word 1 is `0x26f770` (a self
+pointer) and word 5 is `0x26f7a8`. The slots reload the kernel's own primary
+I12 and I7 from the block, and the task's secondary I7/I12/I6/B7
+(`0x269458`/`0xb88ab1`/`0x269470`/`0x269170`) stay intact. DT2 1.16 has the
+same sequence (RTI (DB) at `0x1c0c08`). The model marks the popped selection
+with a transient hold bit in `bank_requested_mask` (`_bank_hold_request`,
+`St::bank_complete`), so the canonical format stays v4. A MODE1 write in such a
+delay slot fails closed. Explicit MODE1 writes, BIT SET/CLR, POP STS and
+interrupt entry keep their latency. Generator version 9.
+
+**[O]** A non-delayed RTI still runs the first target instruction in the old
+bank (the one-following-instruction rule). The older PGR says an ISR return's
+status pop "results in a one cycle stall" (Table A-11 notes), which suggests
+that the target sees the new bank. No firmware case has tested it yet.
+
+**[D]** With the fix, the DN2 continuation from the 2,000,300-step state
+returns to `0xb88ab2` and runs to a 10,000,000-instruction cap without a halt
+(1.5 s native). MODE1 alternates between task (`0x39011cf8`) and timer-handler
+(`0x39010800`) states, and IRPTL bit 11 stays latched and masked. Native and WASM
+canonical states at 2,000,300 steps from the IRQ-continued state are identical
+(6,663,756 bytes). Strict generation is 306/0, with 40 native unit tests and 75 focused
+Python tests. This shows no halt, not forward progress. It is still a private
+diagnostic continuation, not a fresh boot, and there is no PCM.
+
+## Opt-in SEC, descriptor DMA and SPI2 frames (2026-10-02)
+
+**[D]** The DN2 continuation now waits in the RTOS idle task. FUN_b88aa6
+spins while the priority-0 ready-list count at DM `0x2d0608` is at most 1, and
+it touches no MMR. Only an interrupt that readies a task can move it on.
+
+**[D]** DN2 SECI path. Vector `0x9003c` enters `FUN_1c0a6f` at `0x1c0acd`.
+- It reads the SID from SHDBG_SECI_ID `0x300eb` at `0x1c0ae1`, acknowledges by
+  writing it back at `0x1c0ae4`, and looks up the halfword selector at
+  `0x240910+2*SID`, then `{callback, arg}` at `0x240aa0+8*sel`.
+- It enters the callback with `RTS (DB)` at `0x1c0b2e`, with R4=SID, R8=sel and
+  R12=arg. SEC_END is written at `0x1c0b34`.
+- The earlier "JUMP (CI) at `0x1c0af6`" was an unaligned decode artefact; the
+  aligned stream has `R12 = 0x240910` at `0x1c0af4`.
+- Generic wrapper `0x1c02a4` jumps through `0x2404b0+4*sel`.
+- SPI2 handlers (arg = device struct `0x268d30`) are SID69 `0x1cc2eb`, SID70
+  `0x1cc3f5`, SID71 `0x1cc5ca` and SID72 `0x1cc520`. Their DMA completion
+  helper `0x1cc1d6` W1C-acknowledges DMA_STAT, advances the descriptor and
+  calls `0x1ca04a`, which toggles the ping-pong bit at DM `0x2c0450`.
+- SPI2 completions ready no task.
+
+**[D]** The Audio Task (entry `0x1c9fe7`) is woken only by event `0x100`.
+- The event reaches the task through this chain: SID191
+  DAI1_GBL_SPORT_INT0, handler `0x1cd73c` (arg `0x2690e0`), callback
+  `0x1ca136`, then task_notify `0xb88e41`.
+- Each block is paced by SPORT4A/B (DMA10/11): 2-descriptor rings of 0x40
+  words, clocked by PCG C through DAI1.
+- In this state DAI1_GBL_SP_EN bit 0 and SPORT4 SPEN are clear. No static
+  writer of them was found.
+- The block handler `0x1c9d6b` reads its command from the SPI2 RX buffer.
+  `0x1ca020` returns the ping-pong buffer pointers; the command dispatch is
+  the indirect jump at `0x1c9dbf` through `0x268a68`.
+
+**[D]** `State.peripheral_model`, native option 22, models two blocks (sources
+in tools/sharc_core/periph.py, twin native/sharc/src/rt/periph.rs):
+- The SEC core interface: SCTL.SEN/IEN, SSTAT PND/ACT, CSID/CSTAT.SIDV,
+  acknowledge by a SHDBG_SECI_ID or CSID write, END and RAISE.
+- Descriptor-list DMA for DMA26/27/10/11: the fetch order is NXT, ADDRSTART,
+  CFG, XCNT, XMOD (NDSIZE+1 words). An X-count completion sets IRQDONE and
+  raises the SEC source. DMA_STAT is W1C, and CFG.EN 0->1 resets RUN.
+
+All state lives in `State.mmrs`, so the canonical format stays v4. SECI is a
+level request from issue to acknowledge. It latches IRPTL bit 15 at an
+instruction boundary unless SECI is active (the PRM rule that SECI is not
+stored during an SEC ISR), so a request issued inside the ISR is taken after
+its RTI.
+
+Not modeled:
+- the SEC preemption stack and CPMSK/CGMSK;
+- re-assertion of a level source after END;
+- DMA timing, autobuffer, array and 2D flows.
+
+Unsupported cases raise or trap.
+
+**[C]** PM-bus scalar and long-word data loads and stores now use the unified
+memory, as normal-word UREG loads already did ("single, unified address
+space"). Previously PM loads were Unknown and PM stores wrote nothing. The DN2
+dispatcher's `R8 = PM(I12+0) (sw)` depends on this. The SIMD PEy transfer over
+PM remains an explicit stub.
+
+**[D]** Feeding ten genuine DT2 1.16 ColdFire frames
+(`dt2-1.16-idle-fulltx.dt2cap`) to the idle DN2 state:
+- Each frame takes two SECI entries (SID69, then SID70 after END), runs the
+  genuine handlers, flips the ping-pong bit and leaves the SEC state clean.
+- There are no halts and the replies are all zero.
+- Python, native and WASM agree on frames 0-7 (ping-pong, SEC state, end PC).
+  Native and WASM agree on all ten. Frames 8-9 end at different idle-loop PCs
+  in Python, whose run options differed (a periodic path at `0xb8afe4` ran in
+  Python frame 8) **[O]**.
+- Native takes 0.18 s for the ten frames and WASM 0.30 s.
+- These are DT2 frames driving DN2 firmware, so the protocol meaning is
+  unverified. No task woke and no DAI1 or SPORT4 enable was written. DN2
+  frames are needed next.

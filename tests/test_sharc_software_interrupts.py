@@ -266,6 +266,62 @@ def test_entry_settles_banks_and_rti_restores_with_following_instruction(native)
     assert ref.state.bank_active_mask == 0x400
 
 
+def delayed_rti() -> int:
+    return word(
+        "11a",
+        **{
+            "x": 1,
+            "cond[4:0]": 31,
+            "j": 1,
+            "lr": 0,
+            "e": 0,
+            "compute[22:16]": 0,
+            "compute[15:0]": 0,
+        },
+    )
+
+
+def banked_runner(handler):
+    ref = runner(handler=handler)
+    ref.state.uregs[0] = Const(11)
+    ref.state.bank_alt[0] = Const(22)
+    _write_ureg(ref.state, 114, Const(0x1400))
+    _bank_complete(ref.state)
+    _bank_complete(ref.state)
+    ref.state.uregs[115] = Const(0x1400)
+    return ref
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_delayed_rti_restores_banks_at_the_return_target(native):
+    ref = banked_runner([delayed_rti(), word("21a"), word("21a")])
+    assert ref.state.uregs[0] == Const(22)
+    core = native_core(ref) if native else None
+    for index in range(7):
+        ref.step()
+        if core:
+            assert core.run(1) == 1, core.halt_reason
+            assert (
+                sd.compare_states(sd.export_state(ref.state), core.export_state()) == []
+            )
+        # Steps 3-5 are the RTI and its two delay slots; both slots still
+        # see the interrupt's bank, the target at 0x40 sees the restored one.
+        assert ref.state.uregs[0] == Const(22 if index >= 5 else 11)
+        if index == 5:
+            assert ref.state.pc_sw == 0x40
+    assert ref.state.bank_active_mask == 0x400
+    assert ref.state.bank_requested_mask == ref.state.bank_pending_mask == -1
+
+
+def test_mode1_write_in_delayed_rti_slot_fails_closed():
+    ref = banked_runner([delayed_rti(), word("21a"), word("21a")])
+    for _ in range(4):
+        ref.step()
+    assert ref.state.bank_requested_mask == 0x400
+    with pytest.raises(ValueError, match="delayed RTI"):
+        _write_ureg(ref.state, 114, Const(0))
+
+
 def test_vector_fetch_failure_preserves_successful_entry():
     ref = runner()
     # Public format: an unpopulated IVT has no readable backing bytes.

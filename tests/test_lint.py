@@ -64,6 +64,8 @@ CLEAN = [
     "tests/test_sharc_armpath.py",
     "tests/test_sharc_architectural_stacks.py",
     "tests/test_sharc_software_interrupts.py",
+    "tests/test_sharc_periph.py",
+    "tools/sharc_periph_host.py",
     "tests/test_sharc_core_timer.py",
     "tests/test_sharc_calltrace.py",
     "tests/test_sharc_capture.py",

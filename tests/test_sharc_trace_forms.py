@@ -64,8 +64,8 @@ class Type1aTest(unittest.TestCase):
         self.assertEqual(store["space"], "DM")
         self.assertEqual(store["address"], 0x1000)
         self.assertEqual(result.uregs[T.UREG_CODES["I5"]], T.Const(0x1002))
-        # PM(I13, M14) into R8, post-modify: PM loads are always Unknown here
-        # (no PM concrete backing), but the post-modify still advances I13.
+        # PM(I13, M14) into R8, post-modify: this state has no concrete
+        # memory, so the load is Unknown, but the post-modify advances I13.
         load = next(e for e in result.trace if e["action"] == "load")
         self.assertEqual(load["space"], "PM")
         self.assertIsInstance(result.uregs[T.UREG_CODES["R8"]], T.Unknown)

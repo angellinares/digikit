@@ -448,11 +448,32 @@ for _n in [
     "_pey_special",
     "_bank_codes",
     "_bank_complete",
+    "_bank_hold_request",
     "_pc_stack_complete",
 ]:
     BOUNDARY["sharc_core.state." + _n] = Bnd()
 BOUNDARY["sharc_core.state._bank_request"] = Bnd(traps=True)
 BOUNDARY["sharc_core.state._pc_stack_request"] = Bnd(traps=True)
+# Hand-written twins in native/sharc/src/rt/periph.rs, reached only from the
+# memory boundary and the host.
+for _n in [
+    "_mmr",
+    "_set",
+    "_sstat",
+    "_sec_raise",
+    "_sec_arbitrate",
+    "_sec_ack",
+    "_sec_end",
+    "_sec_line",
+    "_signed32",
+    "_ram_word",
+    "_dma_fetch",
+    "_dma_start",
+    "_dma_done",
+    "_periph_read",
+    "_periph_write",
+]:
+    BOUNDARY["sharc_core.periph." + _n] = Bnd()
 for _n in ["_concrete_address", "_byte_present"]:
     BOUNDARY["sharc_core.memory." + _n] = Bnd()
 for _n in [
@@ -5112,7 +5133,7 @@ FN_ID_BASE = 16
 # what generated code does, so native libraries built by an older generator
 # are refused (tools/sharc_transpile_run.check_build_info). A native library
 # also carries core_hash(), so a tools/sharc_core change needs no bump.
-GENERATOR_VERSION = 8
+GENERATOR_VERSION = 9
 
 
 def core_hash() -> str:

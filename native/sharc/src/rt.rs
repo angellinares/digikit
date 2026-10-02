@@ -90,6 +90,7 @@ pub const TRAP_NO_BLOCK: Trap = Trap(TRAP_RT_BASE + 10);
 /// way block code does not follow (the one-instruction interpreter runs
 /// the instruction instead).
 pub const TRAP_BLOCK_UNKNOWN: Trap = Trap(TRAP_RT_BASE + 11);
+pub const TRAP_PERIPHERAL: Trap = Trap(TRAP_RT_BASE + 12);
 
 pub fn rt_trap_name(t: Trap) -> &'static str {
     match t.0.wrapping_sub(TRAP_RT_BASE) {
@@ -104,6 +105,7 @@ pub fn rt_trap_name(t: Trap) -> &'static str {
         9 => "address outside 32 bits",
         10 => "no native code for this pc",
         11 => "block code: value not known",
+        12 => "peripheral model",
         _ => "?",
     }
 }
@@ -584,6 +586,8 @@ pub struct Cfg {
     pub bank_model: bool,
     pub stack_model: bool,
     pub core_timer: bool,
+    /// SEC core interface and descriptor DMA (rt/periph.rs), opt-in.
+    pub peripheral_model: bool,
     /// provisional_interpretations: form name -> mode ("nop").
     pub provisional_interp: Vec<(Sym, Sym)>,
     /// provisional_forms.
@@ -612,6 +616,7 @@ impl Default for Cfg {
             bank_model: false,
             stack_model: false,
             core_timer: false,
+            peripheral_model: false,
             provisional_interp: Vec::new(),
             provisional_forms: Vec::new(),
             block_ok: true,
@@ -637,6 +642,7 @@ impl Cfg {
             && !self.bank_model
             && !self.stack_model
             && !self.core_timer
+            && !self.peripheral_model
             && self.provisional_interp.is_empty()
             && self.provisional_forms.is_empty();
     }
@@ -912,9 +918,16 @@ impl St {
     /// MODE1 bank selector becomes visible after the following completed
     /// instruction.  This runs only after a successful interpreter/block
     /// instruction, so traps leave the old bank state intact.
+    /// A delayed RTI's held selection (BANK_HOLD) stays requested one more instruction.
     pub fn bank_complete(&mut self) {
         if !self.cfg.bank_model {
             return;
+        }
+        let mut held = self.bank_requested_mask;
+        if held >= 0 && held & BANK_HOLD != 0 {
+            self.bank_requested_mask = -1;
+        } else {
+            held = -1;
         }
         if self.bank_pending_mask >= 0 {
             let changed = self.bank_active_mask ^ self.bank_pending_mask;
@@ -930,6 +943,9 @@ impl St {
         }
         self.bank_pending_mask = self.bank_requested_mask;
         self.bank_requested_mask = -1;
+        if held >= 0 {
+            self.bank_requested_mask = held & BANK_MASK;
+        }
     }
 
     pub fn pc_stack_complete(&mut self) {
@@ -1145,6 +1161,8 @@ impl St {
 }
 
 pub const BANK_MASK: Int = 0x4f8;
+/// Transient bank_requested_mask marker for a delayed RTI (state._BANK_HOLD).
+pub const BANK_HOLD: Int = 0x10000;
 
 pub fn bank_codes(bit: Int) -> Vec<usize> {
     match bit {
@@ -1681,6 +1699,7 @@ pub fn scalbn(x: f64, n: Int) -> f64 {
 }
 
 pub mod bnd;
+pub mod periph;
 
 stack_ops!(
     loop_slots,

@@ -19,6 +19,7 @@ from .encoding import (
     UREG_CODES,
     UREG_NAMES,
 )
+from .periph import _periph_read, _periph_write
 from .state import (
     State,
     _cureg_code,
@@ -177,6 +178,10 @@ def _dm_read(
         mapped = normal_word_to_byte(concrete)
         if mapped is not None:
             concrete = mapped
+    if state.peripheral_model and width == 4:
+        special = _periph_read(state, concrete)
+        if special is not None:
+            return special
     fixed_width_mmr = (
         concrete in CORE_MMR_RESET_VALUES or name_address(concrete) is not None
     )
@@ -329,6 +334,12 @@ def _dm_write(
         mapped = normal_word_to_byte(concrete)
         if mapped is not None:
             concrete = mapped
+    if (
+        state.peripheral_model
+        and width == 4
+        and _periph_write(state, concrete, value.value & 0xFFFFFFFF)
+    ):
+        return True
     fixed_width_mmr = (
         concrete in CORE_MMR_RESET_VALUES or name_address(concrete) is not None
     )
