@@ -21,6 +21,7 @@ CLEAN = [
     "tools/sharc_decode_rsgen.py",
     "tests/test_sharc_addressing.py",
     "tests/test_sharc_conditional_move.py",
+    "tests/test_sharc_conditional_shift.py",
     "tools/autoevents.py",
     "tools/wireevents.py",
     "tools/sharc_render_replay.py",

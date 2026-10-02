@@ -4361,3 +4361,56 @@ stops at aligned Type1a `0x1c0e1b` with ALUOP `0x20`. The public PRM fixed
 ALU table lists PASS as `0x21` and does not explain `0x20`; no alias is
 assumed. Neither table progress nor this isolated extension proves DSP boot
 completion or oscillator output.
+
+**[C]** The apparent ALUOP `0x20` startup stop above was caused by an
+earlier width error, not evidence that DN2 requires an undocumented ALU
+operation. At `0x1c0e13`, the eight-instruction successor check retained
+32-bit Type2b where the helper requires a 16-bit Type2c ADD. Its successor
+loads the high half of a 64-bit random-generator increment. Correcting this
+single width in an isolated native continuation executes only supported
+operations and returns normally to `0x1c4bc8`. For seeds 0, 1, `0xffffffff`,
+`0x123456789abcdef0` and `0xffffffffffffffff`, both stored state words equal
+`(seed * 0x5851f42d4c957f2d + 0x14057b7ef767814f) mod 2^64`; the returned
+value equals the high word masked to 31 bits. This is an independent
+arithmetic check, not merely agreement between two decoders.
+
+**[D]** Python and Rust width resolution now keep the existing eight-step
+policy and retry only unresolved, confident Type2b/Type2c pairs through
+at most 16 instructions. A common boundary reached by both confident
+prefixes establishes a rejoin; uncertainty after that shared boundary does
+not invalidate it. A public-format synthetic ADD/load/NOP fixture exercises
+late rejoin followed by uncertainty. Generated libraries are version 3 and
+the instruction database is version 15, invalidating prior decode artifacts.
+The corrected native runtime automatically passes the same five arithmetic
+checks without a PC-specific override. Conditional SISD Type6a support has
+separate reference/native predicate and parallel-effect tests; its earlier
+DN2 sighting was in the misaligned stream and does not qualify a real DN2
+instruction boundary.
+
+**[D]** Corrected-width bounded continuations pass the table constructor and
+reach peripheral initialization. Two calls contain the same finite software
+delay: a counter increments to `0xffffff` in a seven-instruction loop. A
+private generated block matched interpreter canonical state after 10,007
+instructions. It then executed the first wait's remaining 68,596,700 guest
+instructions in about 2.1 seconds, and the second wait's remaining
+107,441,345 in about 3.3 seconds. These are generated execution of the loop,
+not counter patches or skipped guest instructions. The diagnostic instruction
+clock was disabled only inside the inspected loop, which does not access it,
+and its logical continuation base was restored afterward. These host timings
+describe isolated DSP diagnostic runs, not desktop/browser boot or audio.
+
+**[O]** After those waits, the legacy unified-register continuation reaches
+SHARC instruction 561,611,502 with `MODE1=0x39010c80`,
+`IRPTL=0x80000000`, and `IMASK=0x80408018`. Both alternate RF halves are
+selected and SFT3I is pending, but MODE1.IRPTEN is clear, so the interrupt
+is not yet eligible. The next architectural dependency is alternate-register
+banks, followed by interrupt entry/return handling. The continuation already
+ran instructions after changing bank selectors; it cannot be imported into a
+bank-aware core as a qualified state. Restart initialization with the bank
+model rather than retagging that capture. No fresh DN2 oscillator PCM or
+native/browser sound has been demonstrated.
+
+**[D]** The corrected-width checkpoint passed the full Python suite including
+slow tests: 2,165 passed, 29 skipped, one expected failure and 274 passing
+subtests. The native SHARC tests (31) and a 100k native/WASM canonical-state
+comparison also passed; six existing SHARC golden outputs stayed unchanged.

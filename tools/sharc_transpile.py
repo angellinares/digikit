@@ -5098,7 +5098,7 @@ FN_ID_BASE = 16
 # what generated code does, so native libraries built by an older generator
 # are refused (tools/sharc_transpile_run.check_build_info). A native library
 # also carries core_hash(), so a tools/sharc_core change needs no bump.
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 3
 
 
 def core_hash() -> str:

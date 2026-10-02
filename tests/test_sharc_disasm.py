@@ -264,6 +264,26 @@ class ConfidentDecodeTest(unittest.TestCase):
         )
         self.assertEqual(loaded.fields, flat.fields)
 
+    def test_short_compute_rejoins_beyond_eight_instructions_with_uncertain_tail(self):
+        # Synthetic ADD followed by ten immediate loads and a NOP. The
+        # alternative wide stream reads the constants as BIT instructions;
+        # both streams remain confident until they rejoin after the NOP.
+        words = [0xC020]
+        for i in range(10):
+            words.extend([0x0F00 + i, 0x1400, 0x0100])
+        words.extend([0x0001, 0x8000, 0, 0])
+        data = struct.pack("<%dH" % len(words), *words)
+        naive = next(sharc_disasm.disassemble(data, count=1))
+        self.assertEqual(naive.type_name, "2b")
+        flat = sharc_disasm.decode_confident(data, 0)
+        self.assertEqual((flat.type_name, flat.length_bytes), ("2c", 2))
+        sw = 0x100000
+        addr = sharcldr.sw_to_byte(sw)
+        mem = sharcldr.LoadedMemory.from_stream(block(0, addr, len(data), payload=data))
+        loaded = sharc_disasm.decode_confident_loaded(mem, sw)
+        self.assertEqual((loaded.type_name, loaded.length_bytes), ("2c", 2))
+        self.assertEqual(loaded.fields, flat.fields)
+
     def test_loaded_lands_on_never_aligned_form_directly_and_still_decodes(self):
         sw = 0x100000
         addr = sharcldr.sw_to_byte(sw)

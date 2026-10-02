@@ -69,8 +69,25 @@ def _type_6a_mem(
     """6a_mem."""
     # PRM Type 6a performs a ShiftImm and a normal-word memory transfer
     # in parallel, then post-modifies the selected I register by M.
-    if _field(f, "cond") != 0x1F:
-        return [_stop(state, insn, "unsupported Type6a predicate")]
+    cond = _field(f, "cond")
+    if cond != 0x1F:
+        # The recovered conditional Type6a sighting is SISD only. Do not
+        # infer PEy's parallel memory/shift behavior or fork an unknown
+        # MODE1; both remain deliberately unsupported.
+        if _simd_active(state) is not False:
+            return [_stop(state, insn, "unsupported conditional SIMD Type6a")]
+        predicate = _predicate(state, cond)
+        if predicate is None:
+            return [_stop(state, insn, "unknown conditional Type6a predicate")]
+        if predicate is False:
+            _event(
+                state,
+                insn,
+                "type6a-skipped",
+                condition=cond,
+                predicate_assumption=False,
+            )
+            return _advance(state, insn)
     old = _snapshot_uregs(state.uregs)
     try:
         result = _shift_immediate(f, old, state.special)

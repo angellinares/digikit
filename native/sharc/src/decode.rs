@@ -8,6 +8,7 @@ use core::fmt;
 
 const MAX_FIELDS: usize = 12;
 const WIDTH_LOOKAHEAD: usize = 8;
+const WIDTH_REJOIN_LOOKAHEAD: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DecodeKind {
@@ -325,13 +326,14 @@ fn successor_confidence(
     read_word: &mut impl FnMut(u32) -> Option<u16>,
     pc_sw: u32,
     first: Decoded,
-) -> ([u32; WIDTH_LOOKAHEAD + 1], usize, bool) {
-    let mut boundaries = [0; WIDTH_LOOKAHEAD + 1];
+    lookahead: usize,
+) -> ([u32; WIDTH_REJOIN_LOOKAHEAD + 1], usize, bool) {
+    let mut boundaries = [0; WIDTH_REJOIN_LOOKAHEAD + 1];
     boundaries[0] = pc_sw;
     let mut len = 1;
     let mut current = first;
     let mut pc = pc_sw;
-    for _ in 0..WIDTH_LOOKAHEAD {
+    for _ in 0..lookahead {
         if current.kind != DecodeKind::Confident {
             return (boundaries, len, false);
         }
@@ -362,14 +364,15 @@ pub fn decode_at(mut read_word: impl FnMut(u32) -> Option<u16>, pc_sw: u32) -> D
     if candidate_count == 0 {
         return wide;
     }
-    let (wide_bounds, wide_len, wide_clean) = successor_confidence(&mut read_word, pc_sw, wide);
+    let (wide_bounds, wide_len, wide_clean) =
+        successor_confidence(&mut read_word, pc_sw, wide, WIDTH_LOOKAHEAD);
     for form in candidates.into_iter().take(candidate_count).flatten() {
         if form.kind != DecodeKind::Confident {
             continue;
         }
         let candidate = decode_form(&words[..count], form);
         let (candidate_bounds, candidate_len, candidate_clean) =
-            successor_confidence(&mut read_word, pc_sw, candidate);
+            successor_confidence(&mut read_word, pc_sw, candidate, WIDTH_LOOKAHEAD);
         if !candidate_clean {
             continue;
         }
@@ -379,6 +382,19 @@ pub fn decode_at(mut read_word: impl FnMut(u32) -> Option<u16>, pc_sw: u32) -> D
             .any(|boundary| wide_bounds[1..wide_len].contains(boundary));
         if !wide_clean || rejoins {
             return candidate;
+        }
+        if wide.type_name == "2b" && candidate.type_name == "2c" {
+            let (wide_bounds, wide_len, _) =
+                successor_confidence(&mut read_word, pc_sw, wide, WIDTH_REJOIN_LOOKAHEAD);
+            let (candidate_bounds, candidate_len, _) =
+                successor_confidence(&mut read_word, pc_sw, candidate, WIDTH_REJOIN_LOOKAHEAD);
+            if candidate_bounds[..candidate_len]
+                .iter()
+                .skip(1)
+                .any(|boundary| wide_bounds[1..wide_len].contains(boundary))
+            {
+                return candidate;
+            }
         }
     }
     wide
@@ -454,5 +470,23 @@ mod tests {
         assert_eq!(decoded.type_name, "2c");
         assert_eq!(decoded.length_bytes, Some(2));
         assert_eq!(decoded.kind, DecodeKind::Confident);
+    }
+
+    #[test]
+    fn short_compute_rejoins_after_ten_loads_despite_uncertain_tail() {
+        // Synthetic public-format ADD, ten immediate loads and NOP.
+        // The alternative stream reads the constants as BIT instructions.
+        let mut words = vec![0xc020];
+        for i in 0..10_u16 {
+            words.extend([0x0f00 + i, 0x1400, 0x0100]);
+        }
+        words.extend([0x0001, 0x8000, 0, 0]);
+        assert_eq!(
+            decode_raw(&mut |pc| words_at(&words, pc), 0).type_name,
+            "2b"
+        );
+        let decoded = decode_at(|pc| words_at(&words, pc), 0);
+        assert_eq!(decoded.type_name, "2c");
+        assert_eq!(decoded.length_bytes, Some(2));
     }
 }

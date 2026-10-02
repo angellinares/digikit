@@ -221,6 +221,9 @@ def decode_loaded_at(reader: ShortWordReader, pc_sw: int) -> Instruction:
 # image) make the identical choice -- see docs/findings/05-sharc-isa-and-
 # decoding.md, "One decode path".
 WIDTH_LOOKAHEAD = 8
+# Ambiguous short computes can remain out of phase for more than eight
+# instructions. Search farther only for an otherwise unresolved 2b/2c pair.
+WIDTH_REJOIN_LOOKAHEAD = 16
 
 # tools/sharcfn.py's module docstring: Type10a_rel (and, as measured there,
 # Type10a_abs too) is absent from tools/sharc_visa_tables.py's VISA form set
@@ -308,10 +311,10 @@ def resolve_confident_width(pos, insn, raw_at, narrow_at, lookahead=WIDTH_LOOKAH
     if insn is None or insn.length_bytes is None or insn.length_bytes <= 2:
         return insn
 
-    def confident_reach(pos0, insn0):
+    def confident_reach(pos0, insn0, limit=lookahead):
         boundaries = {pos0}
         cur, p = insn0, pos0
-        for _ in range(lookahead):
+        for _ in range(limit):
             if cur is None or cur.kind != "confident":
                 return boundaries, False
             p += cur.length_bytes
@@ -332,6 +335,18 @@ def resolve_confident_width(pos, insn, raw_at, narrow_at, lookahead=WIDTH_LOOKAH
             continue
         if not wide_clean or (cand_boundaries & wide_targets):
             return cand
+        if (
+            lookahead == WIDTH_LOOKAHEAD
+            and insn.type_name == "2b"
+            and cand.type_name == "2c"
+        ):
+            extended_wide, _ = confident_reach(pos, insn, WIDTH_REJOIN_LOOKAHEAD)
+            extended_narrow, _ = confident_reach(pos, cand, WIDTH_REJOIN_LOOKAHEAD)
+            # Both prefixes are confident through each returned boundary.
+            # Once they rejoin, later uncertainty is shared and cannot
+            # justify consuming the short instruction's successor word.
+            if (extended_narrow - {pos}) & (extended_wide - {pos}):
+                return cand
     return insn
 
 
