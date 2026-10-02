@@ -45,8 +45,8 @@ pub const SPORT4B_DMA: u32 = 0x3102_3080;
 pub const SID_SPORT4A_DMA: u32 = 53;
 pub const SID_SPORT4B_DMA: u32 = 55;
 const SID_DAI1_GRP0: u32 = 191;
-const GBL_SP_ENABLE: u32 = 0x1;
-const SPORT_SPEN: u32 = 0x1;
+/// GBL_SPEN_DAIX | SP0A_PC | SP0B_PC: DAI1's grouped SPORT4A/B primaries.
+const GBL_SPORT4_RUN: u32 = 0x52;
 const DAI_MEMBER_MASK: u32 = 0xFF;
 const UREG_IRPTL: usize = 122;
 const UREG_IMASKP: usize = 124;
@@ -245,11 +245,11 @@ fn dma_irq(s: &mut St, base: u32, sid: u32) -> R<()> {
     sec_raise(s, sid)
 }
 
-/// periph._sport_running
+/// DAI1 group-enables both SPORT4 primaries and both DMA channels run.
 pub fn sport_running(s: &St) -> R<bool> {
-    Ok(mmr(s, DAI1_GBL_SP_EN)? & GBL_SP_ENABLE != 0
-        && mmr(s, SPORT4A_CTL)? & SPORT_SPEN != 0
-        && mmr(s, SPORT4B_CTL)? & SPORT_SPEN != 0)
+    Ok(mmr(s, DAI1_GBL_SP_EN)? & GBL_SPORT4_RUN == GBL_SPORT4_RUN
+        && mmr(s, SPORT4A_DMA + DMA_CFG)? & 1 != 0
+        && mmr(s, SPORT4B_DMA + DMA_CFG)? & 1 != 0)
 }
 
 /// periph._dma_done

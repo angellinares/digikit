@@ -3,6 +3,9 @@
 //! usage: dspi2_capture SYX OUT.dt2cap [EXTRA_AFTER_READY=60000000] [SSI_HZ=0 (off; 96000 = audio)]
 //! Follows the handover QA sequence (NO button at ready and +20M, encoder A
 //! at +40M) so the instruction counts match its table.
+//! NOTE_EVENTS=trig|play (env) adds panel key events after that sequence:
+//! trig = TRIG 1 (code 25) held 40M instructions at +60M/+110M/+160M;
+//! play = PLAY (code 20) at +60M held 1M, STOP (code 21) at +200M.
 
 use elektron_native_boot::Emulator;
 use sha2::{Digest, Sha256};
@@ -26,6 +29,23 @@ fn main() {
     if ssi_hz != 0 {
         emu.enable_ssi_diagnostic(ssi_hz).unwrap();
     }
+    let mut events: Vec<(u64, u8, bool)> = Vec::new();
+    match env::var("NOTE_EVENTS").as_deref() {
+        Ok("trig") => {
+            for t in [60_000_000, 110_000_000, 160_000_000] {
+                events.push((t, 25, true));
+                events.push((t + 40_000_000, 25, false));
+            }
+        }
+        Ok("play") => {
+            events.push((60_000_000, 20, true));
+            events.push((61_000_000, 20, false));
+            events.push((200_000_000, 21, true));
+            events.push((201_000_000, 21, false));
+        }
+        _ => {}
+    }
+    let mut next_event = 0;
     let mut ready_at: Option<u64> = None;
     let mut stage = 0;
     let mut next = 0;
@@ -59,6 +79,12 @@ fn main() {
             if stage == 4 && elapsed >= 40_000_000 {
                 emu.turn(1, 1).unwrap();
                 stage = 5;
+            }
+            while next_event < events.len() && elapsed >= events[next_event].0 {
+                let (t, code, down) = events[next_event];
+                emu.button(code, down).unwrap();
+                println!("event t=+{t} code={code} down={down} icount={}", s.icount);
+                next_event += 1;
             }
         }
         if ready_at.is_some_and(|at| s.icount - at >= extra)

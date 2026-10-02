@@ -1147,7 +1147,8 @@ class SimdMemoryCompanionTest(TraceHelpers):
         )
 
     def test_type15_uncomplementary_store_does_not_write_a_neighbor_word(self):
-        """Type15a/b only duplicate Cureg transfers in SIMD mode."""
+        """A non-Cureg, non-DAG UREG (TCOUNT, PRM p.16-8 example) stays
+        single-word in SIMD mode."""
         base = 0x30002000
         sentinel = T.Const(0xA5A5A5A5)
         forms = (
@@ -1158,7 +1159,7 @@ class SimdMemoryCompanionTest(TraceHelpers):
                     "g": 0,
                     "d": 1,
                     "l": 0,
-                    "ureg[6:0]": 32,
+                    "ureg[6:0]": T.UREG_CODES["TCOUNT"],
                     "addr[31:16]": 0,
                     "addr[15:0]": 0,
                 },
@@ -1171,7 +1172,7 @@ class SimdMemoryCompanionTest(TraceHelpers):
                     "g": 0,
                     "d": 1,
                     "l": 0,
-                    "ureg[6:0]": 32,
+                    "ureg[6:0]": T.UREG_CODES["TCOUNT"],
                     "data[6:0]": 0,
                 },
                 4,
@@ -1183,7 +1184,7 @@ class SimdMemoryCompanionTest(TraceHelpers):
                     1,
                     {
                         16: T.Const(base),
-                        32: T.Const(0x11223344),
+                        T.UREG_CODES["TCOUNT"]: T.Const(0x11223344),
                         T.UREG_CODES["MODE1"]: T.Const(1 << 21),
                     },
                     concrete=loader_memory(),
@@ -1194,6 +1195,65 @@ class SimdMemoryCompanionTest(TraceHelpers):
                 self.assertEqual(T._dm_read(stored, base, 4), T.Const(0x11223344))
                 self.assertEqual(T._dm_read(stored, base + 4, 4), sentinel)
                 self.assertFalse(any(e["action"] == "store-pey" for e in stored.trace))
+
+    def test_type15_dag_register_store_writes_both_words_in_simd(self):
+        """FUN_1c1f1e (DN2 1.11 sw 0x1c1f4b-0x1c1f96) clears each 64-word
+        voice row with 16 x `DM(I4 - 32) = M12` (Type15b) plus
+        `DM(I4, M4) = M12` (M4 = 2): every store must write the explicit
+        and the next normal word (Table 4-22 "Ureg is source for each
+        move"), or the odd lane of the row is never cleared.  SISD mode and
+        loads keep one word."""
+        base = 0x30002000
+        sentinel = T.Const(0xA5A5A5A5)
+        m12 = T.UREG_CODES["M12"]
+        forms = (
+            (
+                "15a",
+                {
+                    "i[2:0]": 0,
+                    "g": 0,
+                    "d": 1,
+                    "l": 0,
+                    "ureg[6:0]": m12,
+                    "addr[31:16]": 0,
+                    "addr[15:0]": 0,
+                },
+                6,
+            ),
+            (
+                "15b",
+                {
+                    "i[2:0]": 0,
+                    "g": 0,
+                    "d": 1,
+                    "l": 0,
+                    "ureg[6:0]": m12,
+                    "data[6:0]": 0,
+                },
+                4,
+            ),
+        )
+        for form, fields, length in forms:
+            for simd in (True, False):
+                with self.subTest(form=form, simd=simd):
+                    state = T.State(
+                        1,
+                        {
+                            16: T.Const(base),
+                            m12: T.Const(0),
+                            T.UREG_CODES["MODE1"]: T.Const((1 << 21) if simd else 0),
+                        },
+                        concrete=loader_memory(),
+                        assume_nw32=True,
+                    )
+                    self.assertTrue(T._dm_write(state, base, 4, sentinel))
+                    self.assertTrue(T._dm_write(state, base + 4, 4, sentinel))
+                    stored = self.run_one(state, insn(form, fields, length))
+                    self.assertEqual(T._dm_read(stored, base, 4), T.Const(0))
+                    self.assertEqual(
+                        T._dm_read(stored, base + 4, 4),
+                        T.Const(0) if simd else sentinel,
+                    )
 
 
 class SimdBranchPredicateTest(TraceHelpers):

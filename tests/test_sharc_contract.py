@@ -39,7 +39,8 @@ class ContractTest(unittest.TestCase):
         # over call+jump edges: 154 functions, 11,575 instructions."
         reach = C.reach_functions(self.img, 0x1C2B24)
         self.assertEqual(len(reach), 154)
-        self.assertEqual(C.instruction_count(self.img, reach), 11575)
+        # 11575 -> 11577: 2b/2c width-resolver fix re-syncs DT2 1.16 0x1c32ab.
+        self.assertEqual(C.instruction_count(self.img, reach), 11577)
 
     def test_render_reach_includes_the_known_call_chain(self):
         # FUN_1c2b24 -> 0x1c24e9 (per-track unpack) -> FUN_1c642a (per-slot

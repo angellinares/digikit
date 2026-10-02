@@ -91,11 +91,13 @@ import sharcldr  # noqa: E402
 from sharc_trace import ACCESS_WIDTHS  # noqa: E402
 from sharc_core.encoding import TYPE4B_ACCESS_WIDTHS  # noqa: E402
 
-DB_VERSION = 15
+DB_VERSION = 16
 
 # Bump DB_VERSION whenever the schema or the semantics of an existing column
 # change, so build_database()'s skip-rebuild check (sha256 + DB_VERSION) does
 # the right thing on the next run.
+# v16 also resolves a 2b/2c collision whose short reading is clean once its
+# own successors are width-resolved (sharc_disasm._resolved_reach_clean).
 # v15 also retries unresolved 2b/2c collisions through a bounded later
 # rejoin, so old aligned instruction rows must be decoded again.
 #

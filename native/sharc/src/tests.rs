@@ -672,9 +672,10 @@ fn sport_block_returns_the_tx_unit_and_raises_the_group_source() {
     // Not running: nothing happens.
     assert_eq!(e.sport_block(None), Ok(None));
     assert_eq!(e.s.mmr_get(status), None);
-    e.s.mmr_put(periph::DAI1_GBL_SP_EN, V::c(0x5f));
-    e.s.mmr_put(periph::SPORT4A_CTL, V::c(0x111f3));
-    e.s.mmr_put(periph::SPORT4B_CTL, V::c(0x111f3));
+    // The genuine DN2 start: DAI1 group enable, SPORT CTL.SPEN left clear.
+    e.s.mmr_put(periph::DAI1_GBL_SP_EN, V::c(0x5e));
+    e.s.mmr_put(periph::SPORT4A_CTL, V::c(0x111f2));
+    e.s.mmr_put(periph::SPORT4B_CTL, V::c(0x111f2));
     // A wrong-sized input is rejected and leaves no trace.
     assert!(e.sport_block(Some(&[0; 4])).is_err());
     assert_eq!(e.s.mmr_get(status), None);

@@ -80,7 +80,7 @@ class TraceTest(unittest.TestCase):
                 self.assertEqual(advanced.uregs[register], T.Const(expected))
                 self.assertEqual(advanced.trace[-1]["action"], "compute")
 
-    def test_type6b_rejects_unimplemented_predicates_and_opcodes(self):
+    def test_type6b_rejects_unresolved_predicates_and_opcodes(self):
         base = {
             "cond[4:0]": 0x1E,
             "dataex[3:0]": 0,
@@ -88,7 +88,7 @@ class TraceTest(unittest.TestCase):
             "shiftimm[15:0]": 0,
         }
         stopped = self.run_one(T.State(0x10), insn("6b_shiftimm", base, length=6))
-        self.assertEqual(stopped.stopped, "unsupported Type6b predicate")
+        self.assertEqual(stopped.stopped, "unsupported conditional SIMD Type6b")
         base["cond[4:0]"] = 0x1F
         base["shiftimm[22:16]"] = 0x11
         stopped = self.run_one(T.State(0x10), insn("6b_shiftimm", base, length=6))

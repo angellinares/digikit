@@ -4756,6 +4756,13 @@ the block, then `0x1ca136` and task_notify `0xb88e41`. The scheduler then
 halts at `0xb8ac2e` (`LADDR` restore, "guest packed loop restoration is not
 modeled") before the Audio Task entry runs. The output block is all zero.
 
+**[C]** SPORT4 runs once DAI1_GBL_SP_EN holds GBL_SPEN_DAIX and both
+primary selects (`0x52` within the DN2 value `0x5e`, written by group-open
+`0x1cd1c3` at `0x1cd2e4` during boot init) and both DMA channels are enabled.
+The firmware never sets SPORT CTL.SPEN, and GBL_SP_EN bit 0 is the cross-DAI
+strobe. The earlier gate (bit 0 plus SPEN) treated genuinely running audio as
+stopped.
+
 ### Packed loop restore and DO above PUSH LOOP slots (2026-10-02)
 
 **[C]** The halt at `0xb8ac2e` was not an active loop. The frame restored
@@ -4839,3 +4846,50 @@ never run. The UI still reaches the main page without them.
 - Neither a genuine audio start nor non-zero PCM has been established. The
   enable path probably needs DSP replies (the ColdFire may wait on a reply
   protocol) or commands this capture does not contain.
+
+### Type15 DAG-register stores in SIMD mode write both words (2026-10-02)
+
+**[C]** The Type15b/15a rule "uncomplementary UREGs behave as in SISD mode"
+(PRM p.16-8, TCOUNT example) is wrong for DAG registers (I/M/L/B). DN2 1.11
+`FUN_1c1f1e` (sw `0x1c1f4b`-`0x1c1f96`) clears each 64-word voice row with
+16 x `DM(I4 - 32) = M12` (Type15b) and `DM(I4, M4) = M12` (M4 = 2) in
+`MODE1.PEYEN`; only a two-word store per displaced access covers the row. With
+one word the odd lane kept its old value, the voice mix fed it back (gain about
+-2.4 per 32-sample block from DM `0x25ba68`), and the master buffer at
+`0x268438` overflowed to +-Inf and NaN by block ~4994 of the DN2 audio run.
+`_type_nw_companion` now replicates DAG-register stores; TCOUNT-like UREGs and
+all loads keep one word. **[D]** The PRM text does not say this; the evidence is
+the compiler-shaped clear loop. After the fix the same run gives no NaN
+(blocks 4896-4899 are a short finite transient, then 0). Test:
+`tests/test_sharc_trace_simd.py::test_type15_dag_register_store_writes_both_words_in_simd`.
+The earlier "real cmd3 output from frame 4896" in that run was this blow-up.
+
+## DN2 command-3 synthesis path (2026-10-02)
+
+**[C]** The DN2 1.11 "`R2 = fpack(R3, R14)`" at `0x1c4f4a` (in `FUN_1c4f04`,
+a wavetable lookup reached from command 3) was a width-resolution error, not a
+missing FPACK.
+- The parcels from `0x1c4f46` tile as `M4 = 0x114`, `0x1c4f48` 3b
+  `R0 = DM(I3,M4)`, `0x1c4f4a` 2c `R2 = add(R2,R9)`, then shifts, adds, a
+  clamp and `float`. This is a 24-bit sample combine that ends exactly on the
+  15b at `0x1c4f52`.
+- The 2b/2c resolver rejected 2c because its raw successor chain lost phase.
+  It now takes 2c when the 2b chain is unclean and the 2c chain is clean once
+  each successor is itself width-resolved (one level).
+- The Python decoder and the Rust runtime decoder make the same choice.
+- Changed sites: DN2 1.11 `0x1c4f48`/`0x1c4f4a`, and DT2 1.16 `0x1c32ab`, where
+  a garbage decode becomes clean code. That accounts for the `cov_all` and
+  `cov_render` golden updates; the run and trace goldens are unchanged.
+- sharcdb DB_VERSION is 16. FPACK/FUNPACK remain unimplemented; their only DN2
+  sites are in a data region.
+
+**[D]** Type6b (shift immediate) now executes a conditional SISD predicate as
+Type6a does. DN2 `0xb8b03d` `IF NOT TF R0 = bset(R0, bit=16)` needed it.
+Unknown predicates and SIMD mode still stop.
+
+**[D]** Command 3 (block handler `0x1c9d6b` → `0x1c9f0f`) copies RX words
+through `0x1c9d00` into `0x268538..0x268938` and calls FM `0x1c2712` with
+master L/R `0x268438`/`0x2684b8`. `0x1c9d3f` converts them to Q31 in the
+SPORT4A buffer as interleaved L/R (even/odd words), 32 samples per block.
+Observed sign: Q31 = −master, clipped. Commands 0 and 1 write silence;
+command 2 is a copy/loopback.

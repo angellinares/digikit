@@ -225,16 +225,22 @@ def _sport_state(running: bool = True) -> State:
     state.mmrs[SPORT4B_DMA] = Const(RAM + 0x40)
     state.mmrs[SPORT4A_DMA + 0x08] = Const(0x44225)
     state.mmrs[SPORT4B_DMA + 0x08] = Const(0x44227)
-    state.mmrs[DAI1_GBL_SP_EN] = Const(0x5F if running else 0x5E)
-    state.mmrs[SPORT4A_CTL] = Const(0x111F3)
-    state.mmrs[SPORT4B_CTL] = Const(0x111F3)
+    state.mmrs[DAI1_GBL_SP_EN] = Const(0x5E if running else 0x0C)
+    state.mmrs[SPORT4A_CTL] = Const(0x111F2)
+    state.mmrs[SPORT4B_CTL] = Const(0x111F2)
     return state
 
 
 def test_sport_block_waits_for_the_enables() -> None:
-    for patch in (DAI1_GBL_SP_EN, SPORT4A_CTL, SPORT4B_CTL):
+    for address, bit in (
+        (DAI1_GBL_SP_EN, 0x02),
+        (DAI1_GBL_SP_EN, 0x10),
+        (DAI1_GBL_SP_EN, 0x40),
+        (SPORT4A_DMA + 0x08, 0x01),
+        (SPORT4B_DMA + 0x08, 0x01),
+    ):
         state = _sport_state()
-        state.mmrs[patch] = Const(state.mmrs[patch].value & ~1)
+        state.mmrs[address] = Const(state.mmrs[address].value & ~bit)
         assert sport_block(state) is None
         assert not state.overlay
         assert _sstat(state, 191) == 0

@@ -1,4 +1,4 @@
-"""Bounded SISD conditional Type6a shift-plus-memory coverage."""
+"""Bounded SISD conditional Type6a shift-plus-memory and Type6b shift coverage."""
 
 import sys
 from pathlib import Path
@@ -154,3 +154,53 @@ def test_native_conditional_shift_matches_reference(az, fields):
     reference = execute(initial, fields)
     assert core.exec_insn(nr.pack_insn("6a_mem", 6, "confident", fields))
     assert sd.compare_states(sd.export_state(reference), core.export_state()) == []
+
+
+def execute_6b(initial, f):
+    [result] = st._execute(
+        initial, Instruction(0, 6, "6b_shiftimm", f, kind="confident")
+    )
+    return result
+
+
+def synthetic_6b_fields(cond):
+    # Same synthetic logical shift as the Type6a tests, no memory transfer.
+    return {
+        "cond[4:0]": cond,
+        "dataex[3:0]": 0,
+        "shiftimm[22:16]": 0,
+        "shiftimm[15:0]": 0x574,
+    }
+
+
+def test_conditional_type6b_true_executes_and_false_skips():
+    # cond 0x00 is EQ (AZ). Known AZ=1 executes the shift of R4 into R7.
+    ran = execute_6b(
+        state(st.PartialConst(0x00FFFFFF, 0x00041801)), synthetic_6b_fields(0)
+    )
+    assert ran.stopped is None
+    assert ran.uregs[st.UREG_CODES["R7"]] == st.Const(0x24466880)
+    assert ran.trace[-1]["action"] == "compute"
+    # Known AZ=0 skips: no register changes, even for an invalid shift opcode.
+    initial = state(st.Const(0))
+    before = dict(initial.uregs)
+    bad = synthetic_6b_fields(0)
+    bad["shiftimm[22:16]"] = 0x7F
+    skipped = execute_6b(initial, bad)
+    assert skipped.stopped is None
+    assert skipped.pc_sw == 3
+    assert skipped.uregs == before
+    assert skipped.trace[-1]["action"] == "type6b-skipped"
+
+
+def test_conditional_type6b_unknown_or_simd_predicate_stops_unchanged():
+    initial = state(st.Unknown("AZ unknown"))
+    before = dict(initial.uregs)
+    result = execute_6b(initial, synthetic_6b_fields(0))
+    assert result.stopped == "unknown conditional Type6b predicate"
+    assert result.uregs == before
+    simd = state(st.Const(0))
+    simd.uregs[st.UREG_CODES["MODE1"]] = st.Const(1 << 21)
+    assert execute_6b(simd, synthetic_6b_fields(0)).stopped == (
+        "unsupported conditional SIMD Type6b"
+    )

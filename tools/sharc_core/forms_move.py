@@ -826,10 +826,23 @@ def _type_nw_companion(
     store: bool,
     scale: int,
 ) -> tuple[int, Operand] | None:
-    """Type 1a/15 normal-word PEy transfer, including BDCST I1/I9 loads."""
+    """Type 1a/15 normal-word PEy transfer, including BDCST I1/I9 loads.
+
+    A DAG register (I/M/L/B, UREG codes 16-79) stored by a Type15 transfer
+    in SIMD mode writes both normal words, like Table 4-22's "Ureg is
+    source for each move" rule.  The PRM's Type15 text only says a
+    non-Cureg UREG (its example is TCOUNT) behaves as in SISD mode; the
+    firmware's compiler-generated SIMD clear loops (FUN_1c1f1e sw
+    0x1c1f4b-0x1c1f96, 16 x `DM(I4 - 32) = M12` / `DM(I4, M4) = M12`
+    with M4 = 2, a 64-word row per voice) need both words of every
+    displaced store, or the odd lane of each row is never cleared and
+    feeds back through the voice mix.  Other non-Cureg UREGs and every
+    load keep the single-word PRM behaviour."""
     cureg = _cureg_code(code)
     if cureg is None:
-        return None
+        if not (store and 16 <= code <= 79):
+            return None
+        cureg = code
     mode = old.get(UREG_CODES["MODE1"])
     mode_value = mode.value if isinstance(mode, Const) else 0
     broadcast = not store and (
@@ -1578,19 +1591,17 @@ def _type_15b(
     # Table 6-10).  (LW) returned above and explicitly overrides SIMD.
     old = _snapshot_uregs(state.uregs)
     companion = None
-    # Type15a/b's form-specific SIMD rule affects only the Cureg subset.
-    # Uncomplementary UREG transfers (for example TCOUNT) have the same
-    # behavior in SIMD and SISD mode, unlike forms that use the generic
-    # Table 4-22 replication rule.
-    if _cureg_code(code) is not None:
-        companion = _type_nw_companion(
-            old,
-            index,
-            code,
-            address,
-            bool(_field(f, "d")),
-            _normal_word_stride(address),
-        )
+    # Cureg transfers and DAG-register stores get the PEy half;
+    # other uncomplementary UREGs (for example TCOUNT) match SISD mode
+    # (see _type_nw_companion).
+    companion = _type_nw_companion(
+        old,
+        index,
+        code,
+        address,
+        bool(_field(f, "d")),
+        _normal_word_stride(address),
+    )
     if _field(f, "d"):
         value = state.uregs.get(code, Unknown("uninitialized " + UREG_NAMES[code]))
         wrote = _dm_write(state, address, 4, value, normal_word=True)
@@ -1750,18 +1761,17 @@ def _type_15a(
     code = _field(f, "ureg")
     old = _snapshot_uregs(state.uregs)
     companion = None
-    # Type15a's form-specific SIMD rule affects only the Cureg subset.
-    # Uncomplementary UREG transfers have the same behavior in SIMD and
-    # SISD mode (PRM p.16-8), unlike forms that use Table 4-22 replication.
-    if _cureg_code(code) is not None:
-        companion = _type_nw_companion(
-            old,
-            index,
-            code,
-            address,
-            bool(_field(f, "d")),
-            _normal_word_stride(address),
-        )
+    # Cureg transfers and DAG-register stores get the PEy half;
+    # other uncomplementary UREGs (for example TCOUNT) match SISD mode
+    # (see _type_nw_companion).
+    companion = _type_nw_companion(
+        old,
+        index,
+        code,
+        address,
+        bool(_field(f, "d")),
+        _normal_word_stride(address),
+    )
     if _field(f, "d"):
         value = _ureg(state.uregs, code)
         wrote = _dm_write(state, address, 4, value, normal_word=True)

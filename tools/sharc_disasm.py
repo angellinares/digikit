@@ -313,7 +313,23 @@ def _read_words(data: bytes, offset: int) -> list[int]:
     return words
 
 
-def resolve_confident_width(pos, insn, raw_at, narrow_at, lookahead=WIDTH_LOOKAHEAD):
+def _resolved_reach_clean(pos, first, raw_at, narrow_at, lookahead):
+    """True when FIRST at POS and its LOOKAHEAD successors are all confident,
+    each successor width-resolved by resolve_confident_width()."""
+    cur, p = first, pos
+    for _ in range(lookahead):
+        if cur is None or cur.kind != "confident":
+            return False
+        p += cur.length_bytes
+        cur = resolve_confident_width(
+            p, raw_at(p), raw_at, narrow_at, lookahead, _resolved_successors=False
+        )
+    return True
+
+
+def resolve_confident_width(
+    pos, insn, raw_at, narrow_at, lookahead=WIDTH_LOOKAHEAD, _resolved_successors=True
+):
     """The one width/form choice both tools/sharcimm.py's decode_all() and
     tools/sharc_core.sequencer.decode_at() make: prefer a narrower form over
     a wider one at the same position when the narrower form's own successor
@@ -329,6 +345,10 @@ def resolve_confident_width(pos, insn, raw_at, narrow_at, lookahead=WIDTH_LOOKAH
     *uncorrected* single-form decode at pos (already excluding
     NEVER_ALIGNED_FORMS); narrow_at(pos, max_bits) -> list[Instruction] is
     _narrow_candidates()/_narrow_candidates_from_words() or equivalent.
+
+    _resolved_successors is internal: the 2b/2c fallback below re-walks a
+    chain with every successor itself width-resolved (False for those inner
+    calls, so the fallback does not recurse).
     """
     if insn is None or insn.length_bytes is None or insn.length_bytes <= 2:
         return insn
@@ -354,6 +374,19 @@ def resolve_confident_width(pos, insn, raw_at, narrow_at, lookahead=WIDTH_LOOKAH
             continue
         cand_boundaries, cand_clean = confident_reach(pos, cand)
         if not cand_clean:
+            # A short compute followed by shifts and further short computes:
+            # the raw chain reads the next 2c's word pair as a 2b and loses
+            # phase one instruction later, although that successor resolves
+            # to 2c itself. DN2 1.11 sw 0x1c4f4a.
+            if (
+                _resolved_successors
+                and not wide_clean
+                and insn.type_name == "2b"
+                and cand.type_name == "2c"
+                and _resolved_reach_clean(pos, cand, raw_at, narrow_at, lookahead)
+                and not _resolved_reach_clean(pos, insn, raw_at, narrow_at, lookahead)
+            ):
+                return cand
             continue
         if not wide_clean or (cand_boundaries & wide_targets):
             return cand

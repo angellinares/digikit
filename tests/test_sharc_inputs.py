@@ -353,13 +353,18 @@ class DynamicViewCaptureTest(unittest.TestCase):
     own header is command 1 (a trivial clear, 192 instructions), frame 1 is
     the first real render (95982 instructions, the same "frame-returned"
     count tools/sharc_replay.py's own milestone test pins for its own
-    frame 1), and frame 2 -- the second real render -- hits the same
-    unconfirmed opcode at 0x1c32b0 that module's milestone test also pins.
+    frame 1), and frame 2 -- the second real render -- returns
+    cleanly (since the 2026-10-02 width-resolver fix it no longer hits the
+    old 0x1c32b0 opcode, which was a mis-decode).
     Instruction counts across the two tools agree exactly (178723 =
     192 + 95982 + 82549), an end-to-end cross-check that both drive the
     same real call chain the same way."""
 
     def test_three_frame_capture_replay_milestone(self):
+        # 2026-10-02 re-pin 407022 -> 419200, halt now "frame-returned" at
+        # 0x1c75d3 (was the 0x1c32b0 opcode): the 2b/2c width-resolver fix
+        # re-decodes DT2 1.16 0x1c32ab onward as clean code, so the third
+        # frame (second real render) runs to the same return as frame 1.
         # 2026-10-01 re-pin 407044 -> 407022: the SIMD companion correction
         # skips 22 PCs; capture data and halt state are otherwise unchanged.
         # 2026-09-28 re-pin, 178723 -> 407044: the fixed core (Type4b
@@ -369,12 +374,9 @@ class DynamicViewCaptureTest(unittest.TestCase):
         # went 96,044 -> 213,504 the same way). The run still stops at the
         # same 0x1c32b0 opcode in the third frame.
         view = si.dynamic_view_capture("dt2-1.16", str(IDLE_CAPTURE), n_frames=3)
-        self.assertEqual(view.instructions, 407022)
-        self.assertEqual(
-            view.halt["category"],
-            "uncertain or undecodable form: source: firmware (undocumented; unconfirmed)",
-        )
-        self.assertEqual(view.halt["pc"], 0x1C32B0)
+        self.assertEqual(view.instructions, 419200)
+        self.assertEqual(view.halt["category"], "frame-returned")
+        self.assertEqual(view.halt["pc"], 0x1C75D3)
         self.assertGreater(view.n_read_addrs, 0)
         self.assertGreater(view.n_written_addrs, 0)
 

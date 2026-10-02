@@ -284,6 +284,33 @@ class ConfidentDecodeTest(unittest.TestCase):
         self.assertEqual((loaded.type_name, loaded.length_bytes), ("2c", 2))
         self.assertEqual(loaded.fields, flat.fields)
 
+    def test_short_compute_resolves_when_next_short_compute_is_also_ambiguous(self):
+        # Synthetic words: a Type3b load, a short compute (0xC029), two shifts,
+        # a second short compute (0xC020) and an indexed load, then ten
+        # immediate loads. The raw chain reads each short compute with its
+        # successor word as a 2b, so the first one only looks clean once the
+        # second has itself resolved to 2c.
+        words = [0x473E, 0x403D, 0xC029, 0x023E, 0x0000, 0x0801]
+        words += [0x023E, 0x0000, 0x0823, 0xC020, 0x9A08, 0x0220]
+        for i in range(10):
+            words.extend([0x0F00 + i, 0x1400, 0x0100])
+        words.extend([0x0001, 0x8000, 0, 0])
+        data = struct.pack("<%dH" % len(words), *words)
+        naive = next(sharc_disasm.disassemble(data, 4, count=1))
+        self.assertEqual(naive.type_name, "2b")
+        flat = sharc_disasm.decode_confident(data, 4)
+        self.assertEqual((flat.type_name, flat.length_bytes), ("2c", 2))
+        self.assertEqual(sharc_disasm.decode_confident(data, 0).type_name, "3b")
+        sw = 0x100000
+        addr = sharcldr.sw_to_byte(sw)
+        mem = sharcldr.LoadedMemory.from_stream(block(0, addr, len(data), payload=data))
+        loaded = sharc_disasm.decode_confident_loaded(mem, sw + 2)
+        self.assertEqual((loaded.type_name, loaded.length_bytes), ("2c", 2))
+        self.assertEqual(loaded.fields, flat.fields)
+        # With nothing valid after it, 2b stays.
+        broken = struct.pack("<6H", 0x473E, 0x403D, 0xC029, 0x023E, 0, 0)
+        self.assertEqual(sharc_disasm.decode_confident(broken, 4).type_name, "2b")
+
     def test_loaded_lands_on_never_aligned_form_directly_and_still_decodes(self):
         sw = 0x100000
         addr = sharcldr.sw_to_byte(sw)

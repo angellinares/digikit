@@ -53,8 +53,23 @@ def _type_6b_shiftimm(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
     """6b_shiftimm."""
-    if _field(f, "cond") != 0x1F:
-        return [_stop(state, insn, "unsupported Type6b predicate")]
+    cond = _field(f, "cond")
+    if cond != 0x1F:
+        # Same SISD-only policy as the conditional Type6a below.
+        if _simd_active(state) is not False:
+            return [_stop(state, insn, "unsupported conditional SIMD Type6b")]
+        predicate = _predicate(state, cond)
+        if predicate is None:
+            return [_stop(state, insn, "unknown conditional Type6b predicate")]
+        if predicate is False:
+            _event(
+                state,
+                insn,
+                "type6b-skipped",
+                condition=cond,
+                predicate_assumption=False,
+            )
+            return _advance(state, insn)
     try:
         result = _shift_immediate(f, _snapshot_uregs(state.uregs), state.special)
     except ValueError as error:

@@ -63,8 +63,8 @@ SPORT4B_DMA = 0x31023080
 SID_SPORT4A_DMA = 53
 SID_SPORT4B_DMA = 55
 SID_DAI1_GRP0 = 191
-GBL_SP_ENABLE = 0x1
-SPORT_SPEN = 0x1
+# GBL_SPEN_DAIX | SP0A_PC | SP0B_PC: DAI1's grouped SPORT4A/B primaries.
+GBL_SPORT4_RUN = 0x52
 # DAI_GBL_INT_EN: GRPn_INT_EN is bit 16+n, GRPn_SPxINT_EN is bit 8n+x
 # (x = 0 SP0A = SPORT4A, 1 SP0B = SPORT4B).
 DAI_MEMBERS = {SPORT4A_DMA: 0, SPORT4B_DMA: 1}
@@ -254,11 +254,11 @@ def _dma_irq(state: State, base: int, sid: int) -> None:
 
 
 def _sport_running(state: State) -> bool:
-    """DAI1_GBL_SP_EN.GBL_SP_EN set and both SPORT4 halves enabled."""
+    """DAI1 group-enables both SPORT4 primaries and both DMA channels run."""
     return bool(
-        _mmr(state, DAI1_GBL_SP_EN) & GBL_SP_ENABLE
-        and _mmr(state, SPORT4A_CTL) & SPORT_SPEN
-        and _mmr(state, SPORT4B_CTL) & SPORT_SPEN
+        _mmr(state, DAI1_GBL_SP_EN) & GBL_SPORT4_RUN == GBL_SPORT4_RUN
+        and _mmr(state, SPORT4A_DMA + DMA_CFG) & 1
+        and _mmr(state, SPORT4B_DMA + DMA_CFG) & 1
     )
 
 

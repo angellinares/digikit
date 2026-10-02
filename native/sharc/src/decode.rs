@@ -361,10 +361,40 @@ fn successor_confidence(
 /// at an unmapped word; a missing word never becomes an invented instruction.
 pub fn decode_at(mut read_word: impl FnMut(u32) -> Option<u16>, pc_sw: u32) -> Decoded {
     let wide = decode_raw(&mut read_word, pc_sw);
+    decode_width_resolved(&mut read_word, pc_sw, wide, true)
+}
+
+/// True when `first` at `pc_sw` and its `WIDTH_LOOKAHEAD` successors are all
+/// confident, each successor itself width-resolved (without this fallback).
+/// Mirrors sharc_disasm._resolved_reach_clean.
+fn resolved_reach_clean(
+    read_word: &mut impl FnMut(u32) -> Option<u16>,
+    pc_sw: u32,
+    first: Decoded,
+) -> bool {
+    let mut current = first;
+    let mut pc = pc_sw;
+    for _ in 0..WIDTH_LOOKAHEAD {
+        if current.kind != DecodeKind::Confident {
+            return false;
+        }
+        pc += (current.length_bytes.expect("non-unknown confident") / 2) as u32;
+        let raw = successor_raw(read_word, pc);
+        current = decode_width_resolved(read_word, pc, raw, false);
+    }
+    true
+}
+
+fn decode_width_resolved(
+    read_word: &mut impl FnMut(u32) -> Option<u16>,
+    pc_sw: u32,
+    wide: Decoded,
+    resolve_successors: bool,
+) -> Decoded {
     if wide.kind == DecodeKind::Unknown || wide.length_bytes.unwrap() <= 2 {
         return wide;
     }
-    let loaded = loaded_words(&mut read_word, pc_sw);
+    let loaded = loaded_words(read_word, pc_sw);
     let count = loaded.iter().take_while(|word| word.is_some()).count();
     let mut words = [0_u16; 3];
     for (dst, src) in words.iter_mut().zip(loaded) {
@@ -377,15 +407,27 @@ pub fn decode_at(mut read_word: impl FnMut(u32) -> Option<u16>, pc_sw: u32) -> D
         return wide;
     }
     let (wide_bounds, wide_len, wide_clean) =
-        successor_confidence(&mut read_word, pc_sw, wide, WIDTH_LOOKAHEAD);
+        successor_confidence(read_word, pc_sw, wide, WIDTH_LOOKAHEAD);
     for form in candidates.into_iter().take(candidate_count).flatten() {
         if form.kind != DecodeKind::Confident {
             continue;
         }
         let candidate = decode_form(&words[..count], form);
         let (candidate_bounds, candidate_len, candidate_clean) =
-            successor_confidence(&mut read_word, pc_sw, candidate, WIDTH_LOOKAHEAD);
+            successor_confidence(read_word, pc_sw, candidate, WIDTH_LOOKAHEAD);
         if !candidate_clean {
+            // A short compute whose next 2c word pair the raw chain reads as a
+            // 2b; clean once that successor is itself resolved to 2c. DN2 1.11
+            // sw 0x1c4f4a (sharc_disasm.resolve_confident_width).
+            if resolve_successors
+                && !wide_clean
+                && wide.type_name == "2b"
+                && candidate.type_name == "2c"
+                && resolved_reach_clean(read_word, pc_sw, candidate)
+                && !resolved_reach_clean(read_word, pc_sw, wide)
+            {
+                return candidate;
+            }
             continue;
         }
         let rejoins = candidate_bounds[..candidate_len]
@@ -397,9 +439,9 @@ pub fn decode_at(mut read_word: impl FnMut(u32) -> Option<u16>, pc_sw: u32) -> D
         }
         if wide.type_name == "2b" && candidate.type_name == "2c" {
             let (wide_bounds, wide_len, _) =
-                successor_confidence(&mut read_word, pc_sw, wide, WIDTH_REJOIN_LOOKAHEAD);
+                successor_confidence(read_word, pc_sw, wide, WIDTH_REJOIN_LOOKAHEAD);
             let (candidate_bounds, candidate_len, _) =
-                successor_confidence(&mut read_word, pc_sw, candidate, WIDTH_REJOIN_LOOKAHEAD);
+                successor_confidence(read_word, pc_sw, candidate, WIDTH_REJOIN_LOOKAHEAD);
             if candidate_bounds[..candidate_len]
                 .iter()
                 .skip(1)
@@ -500,5 +542,28 @@ mod tests {
         let decoded = decode_at(|pc| words_at(&words, pc), 0);
         assert_eq!(decoded.type_name, "2c");
         assert_eq!(decoded.length_bytes, Some(2));
+    }
+
+    #[test]
+    fn short_compute_resolves_when_next_short_compute_is_also_ambiguous() {
+        // Synthetic words, mirrored by tests/test_sharc_disasm.py.
+        let mut words = vec![
+            0x473e, 0x403d, 0xc029, 0x023e, 0x0000, 0x0801, 0x023e, 0x0000, 0x0823, 0xc020, 0x9a08,
+            0x0220,
+        ];
+        for i in 0..10_u16 {
+            words.extend([0x0f00 + i, 0x1400, 0x0100]);
+        }
+        words.extend([0x0001, 0x8000, 0, 0]);
+        assert_eq!(
+            decode_raw(&mut |pc| words_at(&words, pc), 2).type_name,
+            "2b"
+        );
+        assert_eq!(decode_at(|pc| words_at(&words, pc), 0).type_name, "3b");
+        let decoded = decode_at(|pc| words_at(&words, pc), 2);
+        assert_eq!(decoded.type_name, "2c");
+        assert_eq!(decoded.length_bytes, Some(2));
+        let broken = [0x473e, 0x403d, 0xc029, 0x023e, 0, 0];
+        assert_eq!(decode_at(|pc| words_at(&broken, pc), 2).type_name, "2b");
     }
 }
