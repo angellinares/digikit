@@ -29,6 +29,9 @@ from .memory import (
 )
 from .state import (
     AFTER_DELAY_SLOTS,
+    LADDR_ADDRESS_MASK,
+    LOOP_START_FROM_PCSTK,
+    PC_STACK_ISINT,
     UNKNOWN_PC_STACK_ENTRY,
     Loop,
     Pending,
@@ -37,6 +40,8 @@ from .state import (
     _bank_hold_request,
     _copy,
     _event,
+    _loop_reserved_above,
+    _packed_counter_laddr,
     _pc_stack_complete,
     _pc_stack_depth,
     _pc_stack_top,
@@ -45,6 +50,7 @@ from .state import (
     _push_pc_stack,
     _simd_active,
     _stop,
+    _sync_empty_loop_registers,
     _sync_pc_stack,
     _sync_status_stack,
     _ureg,
@@ -101,6 +107,17 @@ def _advance(state: State, insn: Instruction) -> list[State]:
     if state.pending is None:
         if state.loops and state.pc_sw == state.loops[-1].end_sw:
             loop = state.loops[-1]
+            start_sw = loop.start_sw
+            if start_sw == LOOP_START_FROM_PCSTK:
+                # Restored loop: its start is the PC-stack top (PRM 4-33).
+                if not _pc_stack_depth(state):
+                    return [_stop(state, insn, "restored loop without PC-stack entry")]
+                top = _pc_stack_top(state)
+                if top & PC_STACK_ISINT:
+                    return [
+                        _stop(state, insn, "restored loop PC-stack entry is a return")
+                    ]
+                start_sw = top & LADDR_ADDRESS_MASK
             remaining = loop.remaining - 1
             state.uregs[UREG_CODES["CURLCNTR"]] = Const(max(remaining, 0))
             if remaining > 0:
@@ -108,35 +125,44 @@ def _advance(state: State, insn: Instruction) -> list[State]:
                     state,
                     insn,
                     "loop-back",
-                    target_sw=loop.start_sw,
+                    target_sw=start_sw,
                     remaining=remaining,
                     mode=loop.mode,
                 )
-                state.loops[-1] = Loop(loop.start_sw, loop.end_sw, remaining, loop.mode)
+                state.loops[-1] = Loop(start_sw, loop.end_sw, remaining, loop.mode)
                 if state.stack_model:
                     address, _ = state.loop_slots[state.loop_depth - 1]
                     state.loop_slots[state.loop_depth - 1] = (address, Const(remaining))
-                state.pc_sw = loop.start_sw
+                state.pc_sw = start_sw
                 _pc_stack_complete(state)
                 return [state]
             _event(state, insn, "loop-exit", remaining=0, mode=loop.mode)
             state.loops.pop()
             if state.stack_model:
                 _pop_loop_resource(state)
-            if not _pc_stack_depth(state) or _pc_stack_top(state) != loop.start_sw:
+            if (
+                not _pc_stack_depth(state)
+                or (_pc_stack_top(state) & LADDR_ADDRESS_MASK) != start_sw
+            ):
                 return [_stop(state, insn, "loop PC-stack mismatch")]
             _pop_pc_stack(state)
-            state.uregs[UREG_CODES["CURLCNTR"]] = (
-                Const(state.loops[-1].remaining) if state.loops else Const(0xFFFFFFFF)
-            )
-            if not state.loops:
-                stkyx_code = UREG_CODES["STKYX"]
-                state.uregs[stkyx_code] = _bitwise(
-                    _ureg(state.uregs, stkyx_code),
-                    Const(1 << 26),
-                    "loop stacks empty",
-                    _op_or,
+            if not state.stack_model:
+                # The physical model's _pop_loop_resource already synchronized
+                # CURLCNTR and STKYX from the slots, which also holds when
+                # PUSH LOOP slots lie below.
+                state.uregs[UREG_CODES["CURLCNTR"]] = (
+                    Const(state.loops[-1].remaining)
+                    if state.loops
+                    else Const(0xFFFFFFFF)
                 )
+                if not state.loops:
+                    stkyx_code = UREG_CODES["STKYX"]
+                    state.uregs[stkyx_code] = _bitwise(
+                        _ureg(state.uregs, stkyx_code),
+                        Const(1 << 26),
+                        "loop stacks empty",
+                        _op_or,
+                    )
         state.pc_sw = next_pc
         _pc_stack_complete(state)
         return [state]
@@ -434,7 +460,7 @@ def _pop_loop_stack(state: State) -> None:
     Updates CURLCNTR and STKYX's loop-stacks-empty bit (bit 26) the way
     ``_advance``'s own loop-exit path does."""
     if state.stack_model:
-        if state.loops and state.loop_depth != len(state.loops):
+        if _loop_reserved_above(state):
             raise ValueError("mixed active and reserved loop pops are not modeled")
         _pop_loop_resource(state)
         if state.loops:
@@ -847,14 +873,14 @@ def _start_counted_loop(state: State, insn: Instruction, count: int) -> list[Sta
         _op_andnot,
     )
     if state.stack_model:
-        if state.loop_depth != len(state.loops):
-            raise ValueError("DO with reserved loop resources is not modeled")
+        if _loop_reserved_above(state):
+            raise ValueError("DO above reserved restore slots is not modeled")
         _push_loop_resource(state)
         state.loop_slots[state.loop_depth - 1] = (
-            Unknown("packed DO loop address"),
+            _packed_counter_laddr(end_sw),
             Const(count),
         )
-        state.uregs[UREG_CODES["CURLCNTR"]] = Const(count)
+        _sync_empty_loop_registers(state)
     state.loops.append(Loop(start_sw, end_sw, count, mode))
     _push_pc_stack(state, start_sw)
     _event(

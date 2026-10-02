@@ -29,6 +29,7 @@ from .sequencer import (
     _pop_pc_stack,
 )
 from .state import (
+    LOOP_START_FROM_PCSTK,
     UNKNOWN_PC_STACK_ENTRY,
     State,
     _event,
@@ -256,7 +257,9 @@ def _type_20a(
                 _op_or,
             )
     if push_loop:
-        if state.loops:
+        # A restored loop that has not looped yet is mid-restoration (PRM
+        # 4-46: PUSH LOOP, CURLCNTR, LADDR, then the next level).
+        if state.loops and state.loops[-1].start_sw != LOOP_START_FROM_PCSTK:
             return [_stop(state, insn, "PUSH LOOP inside active DO is not modeled")]
         _push_loop_resource(state)
     if pop_loop:

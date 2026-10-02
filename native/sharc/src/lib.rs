@@ -495,6 +495,66 @@ impl Engine {
         Ok(swap16(&reply))
     }
 
+    /// tools/sharc_periph_host.sport_block: one audio block through SPORT4A
+    /// (output, DMA10) and SPORT4B (input, DMA11). Ok(None) while the SPORTs
+    /// are not running (nothing changes). BLOCK None means zeros. All or
+    /// nothing: a rejected block leaves the state untouched.
+    pub fn sport_block(&mut self, block: Option<&[u8]>) -> Result<Option<Vec<u8>>, Trap> {
+        use rt::periph::{
+            SID_SPORT4A_DMA, SID_SPORT4B_DMA, SPORT4A_DMA, SPORT4B_DMA, dma_done, dma_start,
+            ram_word, sport_running,
+        };
+        // The unit's size in bytes: contiguous 32-bit words, TX reads memory
+        // and RX writes it (DMA_CFG.WNR).
+        fn unit(s: &rt::St, base: u32, writes: bool) -> Result<usize, Trap> {
+            let reg = |a: u32| s.mmr_get(a).filter(|v| v.is_c()).map(|v| v.b);
+            let cfg = reg(base + 0x08).ok_or(rt::TRAP_PERIPHERAL)?;
+            let size = 1u32 << ((cfg >> 4) & 7);
+            if (cfg & 2 != 0) != writes || reg(base + 0x10) != Some(size) || size != 4 {
+                return Err(rt::TRAP_PERIPHERAL);
+            }
+            let count = reg(base + 0x0C).ok_or(rt::TRAP_PERIPHERAL)?;
+            Ok(count as usize * 4)
+        }
+        self.s.begin();
+        let result = (|| {
+            let s = &mut self.s;
+            if !sport_running(s)? {
+                return Ok(None);
+            }
+            let tx = dma_start(s, SPORT4A_DMA)?;
+            let rx = dma_start(s, SPORT4B_DMA)?;
+            let out_size = unit(s, SPORT4A_DMA, false)?;
+            let in_size = unit(s, SPORT4B_DMA, true)?;
+            if block.is_some_and(|b| b.len() != in_size) {
+                return Err(rt::TRAP_PERIPHERAL);
+            }
+            let mut reply = Vec::with_capacity(out_size);
+            for offset in (0..out_size).step_by(4) {
+                let word = ram_word(s, tx.wrapping_add(offset as u32))?;
+                reply.extend_from_slice(&word.to_le_bytes());
+            }
+            dma_done(s, SPORT4A_DMA, SID_SPORT4A_DMA)?;
+            dma_done(s, SPORT4B_DMA, SID_SPORT4B_DMA)?;
+            // Memory writes are not journaled: nothing may fail after this.
+            for k in 0..in_size {
+                let byte = block.map_or(0, |b| b[k]);
+                s.mem.write_byte(rx.wrapping_add(k as u32), byte);
+            }
+            Ok(Some(reply))
+        })();
+        match result {
+            Ok(v) => {
+                self.s.commit_host();
+                Ok(v)
+            }
+            Err(t) => {
+                self.s.rollback();
+                Err(t)
+            }
+        }
+    }
+
     /// sharc_run.fresh_call_state (see sharc_native_fresh_call).
     pub fn fresh_call(&mut self, pc: u32, return_address: Option<Int>) {
         self.s.pc_sw = pc as Int;
@@ -1094,7 +1154,8 @@ pub unsafe extern "C" fn sharc_native_peek(handle: *mut Engine, address: u64, wi
 pub unsafe extern "C" fn sharc_native_sec_raise(handle: *mut Engine, sid: u32) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
-    e.host_event(|s| rt::periph::sec_raise(s, sid)).map_or(-1, |()| 0)
+    e.host_event(|s| rt::periph::sec_raise(s, sid))
+        .map_or(-1, |()| 0)
 }
 
 /// periph._dma_start(state, BASE): the work unit's start address, or -1.
@@ -1144,6 +1205,41 @@ pub unsafe extern "C" fn sharc_native_spi2_exchange(
             reply.len() as i64
         }
         Err(_) => -1,
+    }
+}
+
+/// One audio block (Engine::sport_block). BLOCK holds LEN input bytes
+/// (LEN 0 with a null BLOCK means zeros); the output block is written to OUT
+/// (OUT_CAP bytes). Returns the output length, -1 when rejected (nothing
+/// changes) or -2 while the SPORTs are not running.
+///
+/// # Safety
+/// HANDLE from sharc_native_create; BLOCK points to LEN readable bytes (or is
+/// null with LEN 0) and OUT to OUT_CAP writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_sport_block(
+    handle: *mut Engine,
+    block: *const u8,
+    len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> i64 {
+    // SAFETY: caller contract.
+    let e = unsafe { &mut *handle };
+    let input = if block.is_null() {
+        None
+    } else {
+        // SAFETY: caller contract.
+        Some(unsafe { std::slice::from_raw_parts(block, len) })
+    };
+    match e.sport_block(input) {
+        Ok(Some(reply)) if reply.len() <= out_cap => {
+            // SAFETY: OUT has OUT_CAP writable bytes and the reply fits.
+            unsafe { std::ptr::copy_nonoverlapping(reply.as_ptr(), out, reply.len()) };
+            reply.len() as i64
+        }
+        Ok(None) => -2,
+        _ => -1,
     }
 }
 

@@ -7,6 +7,7 @@ use machine::{Board, CompletionEvent, CompletionPolicy, Time, TimerPolicy};
 use plusdrive_format::build_sample_image;
 use serde::Serialize;
 
+use crate::capture::Dspi2Capture;
 use crate::common::*;
 use crate::ram_clear::RamClear;
 use crate::softfloat::{ExecutionPolicy, SoftfloatAbi, SoftfloatCounts};
@@ -132,6 +133,7 @@ pub struct Emulator {
     idle_fast_forwarded_instructions: u64,
     ram_clear_fast_forwarded_instructions: u64,
     flash_hle_calls: u64,
+    dspi2_capture: Option<Dspi2Capture>,
 }
 
 impl Emulator {
@@ -141,6 +143,19 @@ impl Emulator {
 
     /// Opt-in bounded diagnostic source for the recovered SSI/eDMA chain.
     /// It is intentionally not enabled by normal frontend construction.
+    /// Record every ColdFire->DSP DSPI2 frame (replies stay zeros). Call
+    /// before stepping; `dspi2_capture_bytes` returns the `.dt2cap` file.
+    pub fn record_dspi2(&mut self, source_sha256: &str) {
+        let capture = Dspi2Capture::new(&self.device, source_sha256);
+        capture.set_icount(self.cpu.icount);
+        self.bus.board.dma.peer = capture.peer();
+        self.dspi2_capture = Some(capture);
+    }
+
+    pub fn dspi2_capture_bytes(&self) -> Option<Vec<u8>> {
+        self.dspi2_capture.as_ref().map(Dspi2Capture::bytes)
+    }
+
     pub fn enable_ssi_diagnostic(&mut self, request_hz: u64) -> Result<(), String> {
         if request_hz == 0 || request_hz > 132_000_000 {
             return Err("SSI request clock must be between 1 and 132000000 Hz".into());
@@ -391,6 +406,7 @@ impl Emulator {
             idle_fast_forwarded_instructions: 0,
             ram_clear_fast_forwarded_instructions: 0,
             flash_hle_calls: 0,
+            dspi2_capture: None,
         };
         emulator.mark(Mark::Entry, "before_instruction");
         Ok(emulator)
@@ -768,6 +784,9 @@ impl Emulator {
 
     fn step_once(&mut self) {
         let pc = self.cpu.pc;
+        if let Some(capture) = &self.dspi2_capture {
+            capture.set_icount(self.cpu.icount);
+        }
         match self.oracle_ticks() {
             Ok(ticks) => self.bus.current_icount = ticks,
             Err(error) => {

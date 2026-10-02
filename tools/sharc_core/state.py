@@ -597,6 +597,84 @@ def _pop_loop_resource(state: State) -> None:
     _sync_empty_loop_registers(state)
 
 
+# Packed loop-address word (REGF_LADDR). Public classic-core manual, Table A-4:
+# bits 23-0 termination address, 28-24 termination code, 31-29 loop type. The
+# SHARC+ manual gives the same 24/5/3 split and the 24-bit termination address
+# and 5-bit termination code are all this model interprets. The type bits are
+# kept as written and never interpreted. A DO the model starts writes the
+# classic counter-based "length > 3" code because the model does not track the
+# F1-/E2-active choice or the loop length that the real field records.
+LADDR_ADDRESS_MASK = 0x00FFFFFF
+LADDR_TERM_SHIFT = 24
+LADDR_TERM_MASK = 0x1F
+LADDR_TERM_LCE = 0x0F
+LADDR_COUNTER_LONG = 0xE0000000
+# A Loop restored from the physical loop stack has no start address yet. At
+# loop end the hardware refetches from the top of the PC stack (SHARC+ PRM
+# 4-33), so the start is read there then and bound into the Loop.
+LOOP_START_FROM_PCSTK = 0xFFFFFFFF
+# F1-/E2-active mode of a restored loop is not recoverable from the model.
+LOOP_MODE_RESTORED = 0xFFFFFFFF
+PC_STACK_ISINT = 0x02000000
+
+
+def _loop_reserved_above(state: State) -> bool:
+    """True while PUSH LOOP slots sit above restored loops (restore in progress).
+
+    Reserved slots otherwise lie below the active DO loops: the model starts
+    DO loops above whatever PUSH LOOP left, and a restore needs an empty
+    stack below the slot it recreates (see ``_restore_packed_loop``). So the
+    unbound top loop of a restore is the only place where they can be above.
+    """
+    if not state.loops:
+        return False
+    return state.loops[-1].start_sw == LOOP_START_FROM_PCSTK and state.loop_depth > len(
+        state.loops
+    )
+
+
+def _packed_counter_laddr(end_sw: int) -> Const:
+    """LADDR word of a counter-based DO UNTIL LCE ending at END_SW."""
+    return Const(
+        LADDR_COUNTER_LONG
+        | (LADDR_TERM_LCE << LADDR_TERM_SHIFT)
+        | (end_sw & LADDR_ADDRESS_MASK)
+    )
+
+
+def _restore_packed_loop(state: State, value: Value, counter: Value) -> None:
+    """Guest LADDR write to a reserved loop slot with a real loop word.
+
+    PRM 4-46/4-47: after PUSH LOOP the guest loads CURLCNTR and then LADDR;
+    "at the time of LADDR restoration, the hardware recreates the information
+    about the exact characterization of the loop". The model recreates it only
+    when everything it executes is defined by the two words: a counter-based
+    loop (termination code LCE) with a known CURLCNTR, directly above active
+    loops. The start comes from the PC stack at loop end, never from here.
+    """
+    if not isinstance(value, Const):
+        raise ValueError("guest packed loop restoration is not modeled: unknown LADDR")
+    if state.loop_depth != len(state.loops) + 1:
+        raise ValueError(
+            "guest packed loop restoration is not modeled: mixed reserved slots"
+        )
+    term = (value.value >> LADDR_TERM_SHIFT) & LADDR_TERM_MASK
+    if term != LADDR_TERM_LCE:
+        raise ValueError(
+            "guest packed loop restoration is not modeled: termination code"
+        )
+    if not isinstance(counter, Const) or counter.value in (0, 0xFFFFFFFF):
+        raise ValueError("guest packed loop restoration is not modeled: loop counter")
+    state.loops.append(
+        Loop(
+            LOOP_START_FROM_PCSTK,
+            value.value & LADDR_ADDRESS_MASK,
+            counter.value,
+            LOOP_MODE_RESTORED,
+        )
+    )
+
+
 def _write_ureg(state: State, code: int, value: Value) -> None:
     """Guest register write, including architectural PCSTK effects.
 
@@ -608,20 +686,19 @@ def _write_ureg(state: State, code: int, value: Value) -> None:
         code == UREG_CODES["LADDR"] or code == UREG_CODES["CURLCNTR"]
     ):
         if state.loop_depth:
-            if state.loops:
+            top = state.loop_depth - 1
+            if state.loops and not _loop_reserved_above(state):
                 raise ValueError(
                     "guest active loop-register restoration is not modeled"
                 )
-            address, counter = state.loop_slots[state.loop_depth - 1]
+            address, counter = state.loop_slots[top]
             if code == UREG_CODES["LADDR"]:
-                # A real packed loop needs termination/type characterization
-                # and its matching PC-stack start. Never invent those fields.
                 if not isinstance(value, Const) or value.value != 0xFFFFFFFF:
-                    raise ValueError("guest packed loop restoration is not modeled")
+                    _restore_packed_loop(state, value, counter)
                 address = value
             else:
                 counter = value
-            state.loop_slots[state.loop_depth - 1] = (address, counter)
+            state.loop_slots[top] = (address, counter)
         _sync_empty_loop_registers(state)
         return
     if code == UREG_CODES["PCSTKP"]:

@@ -4723,3 +4723,119 @@ PM remains an explicit stub.
 - These are DT2 frames driving DN2 firmware, so the protocol meaning is
   unverified. No task woke and no DAI1 or SPORT4 enable was written. DN2
   frames are needed next.
+
+## DAI1 group SPORT interrupt and the SPORT4 audio block (2026-10-02)
+
+**[D]** Public-manual semantics (ADSP-2156x HWR "Grouping of SPORTs" ch. 23,
+DAI_GBL_INT_EN and DAI_GBL_SP_EN ch. 22):
+- SPORT4A/B are the DAI1 "SP0A/SP0B". DAI1_GBL_INT_EN `0x310CA2EC` bit 16+n
+  is GRPn_INT_EN and bit 8n+x selects member x. DN2 idles at `0x10003`: group
+  0, both halves.
+- The group source is the AND of its members' DMA interrupts (each channel
+  needs DMA_CFG.INT set). There is no status register of its own: it is
+  cleared by W1C of the members' DMA_STAT.IRQDONE. SEC SID 191 is
+  DAI1_GBL_SPORT_INT0 (sensitivity "None" in the table).
+- DAI1_GBL_SP_EN bit 0 is GBL_SP_EN; the HWR says it is reserved for DAI1,
+  so the real start bit may be GBL_SPEN_DAIX (bit 1, already set at idle)
+  **[O]**. The model follows the lead's reading: bit 0 plus both SPEN.
+
+**[D]** The handler `0x1cd73c` touches one MMR kind: a W1C write of 1 to each
+member channel's DMA_STAT (`+0x30`). The branch at `0x1cd88f` writes R13 to a
+channel's DMA_CFG; it is not on the callback path **[O]**.
+
+**[D]** Model (periph.py `_dma_irq`, `_sport_running`; host
+`sharc_periph_host.sport_block`; native `Engine::sport_block`,
+`sharc_native_sport_block`, `NativeCore.sport_block`): while the SPORTs run,
+a block returns the DMA10 work unit bytes, writes the input (default zeros)
+into the DMA11 unit, completes both, and the second completion raises SID 191
+(the channel SIDs 53 and 55 stay quiet). Not running returns None.
+
+**[D]** Diagnostic, not genuine audio: from the idle DN2 state with the
+enables poked, one block takes SID 191: `0x1cd73c` ran 223 instructions after
+the block, then `0x1ca136` and task_notify `0xb88e41`. The scheduler then
+halts at `0xb8ac2e` (`LADDR` restore, "guest packed loop restoration is not
+modeled") before the Audio Task entry runs. The output block is all zero.
+
+### Packed loop restore and DO above PUSH LOOP slots (2026-10-02)
+
+**[C]** The halt at `0xb8ac2e` was not an active loop. The frame restored
+there (DN2 `0x2d1604`: loop count 1, CURLCNTR `0xffffffff`, LADDR `0`, one
+PC entry `0x011c0e68`) was written by an earlier model that did not
+synchronize LADDR for a pushed empty slot; every capture after
+`digi-audio-dn2-irq-progress.bin` carries it. The current model saves LADDR
+`0xffffffff` there (re-run from `digi-audio-dn2-task-restored.bin`), and that
+restore already worked. LADDR `0` is code 0 (EQ), type 0, end 0: an
+arithmetic loop that the model does not execute, so the stale frame still
+stops, now with "termination code".
+
+**[D]** Kernel order (DN2 1.11): the save at `0xb8abd2` pops every loop
+entry (LADDR then CURLCNTR, `lpo`), stores LCNTR, then the PC stack. The
+restore at `0xb8ac1e` / `0xb8a912` / `0xb8b1f8` pushes `lpu`, loads CURLCNTR,
+then LADDR for each entry (deepest first), then LCNTR, then all PC entries
+(`ppu`, PCSTK). All loops are restored before any PC entry, unlike the
+interleaved example in SHARC+ PRM 4-46/4-47 (all.txt 7117-7186).
+
+**[D]** Model (state.py `_restore_packed_loop`, `_loop_reserved_above`,
+`_packed_counter_laddr`; sequencer.py `_advance`, `_start_counted_loop`):
+LADDR is 24-bit end address, 5-bit termination code, 3-bit type (SHARC+ PRM
+28-40, all.txt 31264; field positions from the public classic manual Table A-4,
+`adsp-2136x...rev2.4` all.txt 24869-24885, and code LCE = `01111`, Table 10-4,
+20209). A LADDR write that follows PUSH LOOP and a known CURLCNTR makes an
+active `Loop` only for LCE (counter) words, directly above active loops,
+with CURLCNTR not 0 or all ones. The start is not in LADDR: the Loop gets
+the sentinel `0xFFFFFFFF` and the first loop end reads the PC-stack top
+(PRM 4-33, all.txt 6438-6441: refetch "from the top-of-loop address stored on
+the top of PC stack") and binds it; an ISINT entry or an empty stack stops.
+The type bits are kept as written, never interpreted. A DO the model starts
+reports a concrete LADDR (`0xE0000000 | 0x0F<<24 | end`, the classic
+"counter, length > 3" code; F1/E2 mode and exact length are not modeled
+**[O]**) instead of Unknown, so a save round-trips. PUSH LOOP above an
+unbound restored loop is allowed (nested restore); above a bound loop it
+still stops. Stops kept: non-LCE codes, unknown LADDR, bad counter, restore
+over reserved slots, writes to an executing loop's registers, DO or POP
+over a half-restored stack. Canonical format v4 and generator 8 are
+unchanged (the sentinel is an ordinary u32 start).
+
+**[D]** DO above reserved slots: PUSH LOOP slots lie below DO loops, so the
+slot index and CURLCNTR/STKYX stay those of the top slot; the old stop "DO with
+reserved loop resources" is gone and loop exit no longer forces CURLCNTR to
+all ones. This is what stopped the fresh run next (`0x1c9e31`).
+
+**[D]** Diagnostic (private, not a boot): fresh state = `task-restored` +
+22M instructions with the current model, timer on after 10M. 20 SPORT4
+blocks at 700k instructions: no halt in 14M instructions; SID 191
+handler `0x1cd73c`, Audio Task `0x1c9fe7` and block handler `0x1c9d6b` each
+ran 20 times. Output blocks (256 B) are all zero with zero input: no
+evidence of synthesis, no note/command-3 protocol yet **[O]**.
+
+## Genuine DN2 ColdFire frames and the first coupled run (2026-10-02)
+
+**[D]** The native ColdFire boot sends no DSPI2 frames unless SSI0 is paced.
+`Emulator::enable_ssi_diagnostic(hz)` is off by default. Without it eDMA50
+never completes, so vector 170, the forced vector 191 and the DSPI2 driver
+never run. The UI still reaches the main page without them.
+
+**[D]** DN2 1.11 runs with `native/boot/examples/dspi2_capture.rs` (opt-in
+`Emulator::record_dspi2`, writing .dt2cap files with zero replies) and
+`SSI_HZ=96000` (`ssi::AUDIO_SSI0_REQUEST_HZ`). Results:
+- Ready at 851,236,347 instructions (847,486,347 without SSI pacing).
+- 5,415 frames of 2748 bytes from instruction 434,996,163, exactly 88,000
+  ColdFire instructions apart: 1,500 Hz at 132 MHz, one frame per 32-frame
+  48 kHz audio block.
+- First-word histogram: 0x0001 ×4,604, all byte-identical, then 0x0003 ×811
+  (251 distinct).
+- 0x0003 frames vary in only 68 bytes: a 32-byte area at 116-147, and byte
+  pairs 4 bytes apart in a repeating 146-byte record from byte 334.
+- These are frames from a ColdFire that saw zero DSP replies; a real device
+  may send a different sequence.
+
+**[O]** Fed one frame per ~667k DSP instructions into a fresh DN2 continuation
+(peripheral model on, assumed 1 GHz DSP clock):
+- 5,415 frames ran in 3.6G native instructions (7.6M instr/s) with no halt.
+- The firmware never set DAI1_GBL_SP_EN bit 0 or SPORT4 SPEN, so no audio block
+  ran.
+- With those enables forced (diagnostic only), 585 blocks over frames 0-584
+  (all 0x0001) ran the Audio Task with all-zero output.
+- Neither a genuine audio start nor non-zero PCM has been established. The
+  enable path probably needs DSP replies (the ColdFire may wait on a reply
+  protocol) or commands this capture does not contain.

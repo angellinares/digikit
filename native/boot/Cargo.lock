@@ -87,6 +87,7 @@ dependencies = [
  "dt2-firmware-loader",
  "emmc-card",
  "machine",
+ "periph",
  "plusdrive-format",
  "serde",
  "serde_json",

@@ -19,6 +19,7 @@ use std::{
 
 use coldfire::{Bus, Cpu, InterruptPolicy, decode_at};
 use dt2_firmware_loader::{decode_syx, parse};
+use elektron_native_boot::Dspi2Capture;
 use emmc_card::{
     Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SECTOR_SIZE, SMALL_CAPACITY_BLOCKS,
 };
@@ -35,10 +36,11 @@ struct Cli {
     progress_every: u64,
     diagnostic_services: bool,
     card_image: Option<PathBuf>,
+    record_dspi2: Option<PathBuf>,
 }
 
 fn usage() -> &'static str {
-    "usage: elektron-native-boot --syx ABS --out ABS_DIR --mode oracle-diagnostic --limit N [--card-image ABS_FILE] [--stop-at ready|limit] [--progress-every N] [--diagnostic-services]"
+    "usage: elektron-native-boot --syx ABS --out ABS_DIR --mode oracle-diagnostic --limit N [--card-image ABS_FILE] [--stop-at ready|limit] [--progress-every N] [--diagnostic-services] [--record-dspi2 ABS_FILE]"
 }
 
 fn cli() -> Result<Cli, String> {
@@ -50,6 +52,7 @@ fn cli() -> Result<Cli, String> {
     let mut progress_every = 10_000_000;
     let mut diagnostic_services = false;
     let mut card_image = None;
+    let mut record_dspi2 = None;
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -75,6 +78,12 @@ fn cli() -> Result<Cli, String> {
                 }
                 card_image = args.next().map(PathBuf::from)
             }
+            "--record-dspi2" => {
+                if record_dspi2.is_some() {
+                    return Err("duplicate --record-dspi2".into());
+                }
+                record_dspi2 = args.next().map(PathBuf::from)
+            }
             "--mode" => mode = args.next(),
             "--limit" => limit = args.next().and_then(|v| v.parse().ok()),
             "--stop-at" => stop_at = args.next().ok_or("missing --stop-at value")?,
@@ -95,6 +104,9 @@ fn cli() -> Result<Cli, String> {
     if !syx.is_absolute() || !out.is_absolute() {
         return Err("--syx and --out must be absolute".into());
     }
+    if record_dspi2.as_ref().is_some_and(|p| !p.is_absolute()) {
+        return Err("--record-dspi2 must be absolute".into());
+    }
     if mode.as_deref() != Some("oracle-diagnostic") {
         return Err("--mode must be oracle-diagnostic".into());
     }
@@ -112,6 +124,7 @@ fn cli() -> Result<Cli, String> {
         progress_every,
         diagnostic_services,
         card_image,
+        record_dspi2,
     })
 }
 
@@ -434,6 +447,13 @@ fn run() -> Result<(), String> {
 
     let dtim1_enabled = cli.diagnostic_services;
     let mut board = Board::new(card, sd_semaphores, CompletionPolicy::Oracle);
+    let capture = cli
+        .record_dspi2
+        .as_ref()
+        .map(|_| Dspi2Capture::new(&device.short, &syx_sha));
+    if let Some(cap) = &capture {
+        board.dma.peer = cap.peer();
+    }
     let sd_gate_enabled = cli.diagnostic_services;
     if sd_gate_enabled {
         board
@@ -601,6 +621,9 @@ fn run() -> Result<(), String> {
     while cpu.icount < max_steps {
         let pc = cpu.pc;
         bus.current_icount = cpu.icount;
+        if let Some(cap) = &capture {
+            cap.set_icount(cpu.icount);
+        }
         if instruction_trace.len() == 256 {
             instruction_trace.pop_front();
             instruction_trace_dropped += 1;
@@ -1081,6 +1104,9 @@ fn run() -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     if let Some(frame) = main_frame {
         fs::write(cli.out.join("framebuffer.bin"), &frame.raw).map_err(|e| e.to_string())?;
+    }
+    if let (Some(cap), Some(path)) = (&capture, &cli.record_dspi2) {
+        fs::write(path, cap.bytes()).map_err(|e| format!("write capture: {e}"))?;
     }
     if !stop_success(&stop, &cli.stop_at, ready, observed.icount, cli.limit) {
         fs::write(cli.out.join("failure.json"), serde_json::to_vec_pretty(&json!({"reason":stop,"frame":frame_metadata,"cpu":{"d":observed.d,"a":observed.a,"pc":observed.pc,"sr":observed.sr,"other_a7":observed.other_a7,"ctrl":{"vbr":observed.ctrl.vbr,"cacr":observed.ctrl.cacr,"asid":observed.ctrl.asid,"acr":observed.ctrl.acr,"mmubar":observed.ctrl.mmubar,"rgpiobar":observed.ctrl.rgpiobar,"rambar":observed.ctrl.rambar},"emac":{"macsr":observed.emac.macsr,"acc":observed.emac.acc,"accext01":observed.emac.accext01,"accext23":observed.emac.accext23,"mask":observed.emac.mask}},"last_instruction_trace":instruction_trace,"last_bus_accesses":bus.accesses,"timer_observations":bus.timer_accesses,"unknown_pages":bus.unknown_touches.len(),"delivery_counts":delivery_counts.to_vec(),"delivery_dropped":delivery_dropped})).unwrap()).map_err(|e| e.to_string())?;

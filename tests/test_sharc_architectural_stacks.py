@@ -353,6 +353,224 @@ def test_packed_loop_restore_stops_before_inventing_control_flow():
     assert machine.state.loops == []
 
 
+LADDR_TYPE_COUNTER = 0xE0000000
+LCE = 0x0F << 24
+
+
+def laddr(end: int, term: int = LCE, kind: int = LADDR_TYPE_COUNTER) -> int:
+    """Packed loop word: classic Table A-4 (address 23-0, code 28-24, type 31-29)."""
+    return kind | term | end
+
+
+def restore_level(machine, count: int, end: int) -> None:
+    """PRM 4-46: PUSH LOOP, then CURLCNTR, then LADDR."""
+    machine.step("20a", {**STACK, "lpu": 1})
+    machine.step("17a", immediate(103, count))
+    machine.step("17a", immediate(102, laddr(end)))
+
+
+def push_start(machine, start: int) -> None:
+    machine.step("20a", {**STACK, "ppu": 1})
+    machine.step("17a", immediate(100, 0x01000000 | start))  # ISCALL entry
+
+
+def at_loop_end(machine, pc: int) -> None:
+    """Place the sequencer on a loop's last instruction (both engines)."""
+    machine.state.pc_sw = pc
+    if machine.core is not None:
+        nr.to_native(machine.core, machine.state)
+
+
+def stops(machine, form: str, fields: dict[str, int], text: str) -> None:
+    """The instruction stops with TEXT and leaves both engines unchanged."""
+    before = sd.export_state(machine.state)
+    [result] = st._execute(
+        machine.state, Instruction(0, 6, form, fields, kind="confident")
+    )
+    assert result.stopped and text in result.stopped, result.stopped
+    result.stopped = None
+    assert sd.compare_states(before, sd.export_state(machine.state)) == []
+    if machine.core is not None:
+        native_before = machine.core.export_state()
+        assert not machine.core.exec_insn(nr.pack_insn(form, 6, "confident", fields))
+        assert sd.compare_states(native_before, machine.core.export_state()) == []
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_restored_counter_loop_binds_start_from_pc_stack_and_runs(native):
+    machine = Machine(native)
+    restore_level(machine, 3, 0x20)
+    machine.step("20a", {**STACK, "ppu": 1})
+    machine.step("17a", immediate(100, 0x01000010))
+    loop = machine.state.loops[0]
+    assert (loop.start_sw, loop.end_sw, loop.remaining) == (0xFFFFFFFF, 0x20, 3)
+    assert machine.state.loop_depth == 1
+    assert machine.state.uregs[102] == st.Const(laddr(0x20))
+    fields = sd.unpack_state(sd.pack_state(sd.export_state(machine.state)))
+    assert sd.import_state(fields).loops == machine.state.loops  # format v4 as is
+    for remaining in (2, 1):
+        at_loop_end(machine, 0x20)
+        machine.step("21a", {})
+        assert machine.state.pc_sw == 0x10
+        assert machine.state.loops[0].start_sw == 0x10
+        assert machine.state.loops[0].remaining == remaining
+        assert machine.state.uregs[103] == st.Const(remaining)
+    at_loop_end(machine, 0x20)
+    machine.step("21a", {})
+    assert machine.state.loops == [] and machine.state.loop_depth == 0
+    assert machine.state.pc_stack == [] and machine.state.pc_sw == 0x23
+    assert machine.state.uregs[102] == st.Const(0xFFFFFFFF)
+    assert machine.state.uregs[103] == st.Const(0xFFFFFFFF)
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_two_deep_restore_in_firmware_order_loops_then_pc_stack(native):
+    machine = Machine(native)
+    restore_level(machine, 2, 0x30)  # outer, deepest first
+    restore_level(machine, 2, 0x20)  # PUSH LOOP above an unbound restored loop
+    push_start(machine, 0x08)
+    push_start(machine, 0x10)
+    assert [(x.end_sw, x.remaining) for x in machine.state.loops] == [
+        (0x30, 2),
+        (0x20, 2),
+    ]
+    assert machine.state.loop_depth == 2
+    for _ in range(2):
+        at_loop_end(machine, 0x20)
+        machine.step("21a", {})
+    assert [x.end_sw for x in machine.state.loops] == [0x30]
+    assert machine.state.pc_stack == [0x01000008]
+    assert machine.state.uregs[102] == st.Const(laddr(0x30))
+    for _ in range(2):
+        at_loop_end(machine, 0x30)
+        machine.step("21a", {})
+    assert machine.state.loops == [] and machine.state.pc_stack == []
+    assert machine.state.pc_sw == 0x33
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_do_loop_words_save_and_restore_round_trip(native):
+    machine = Machine(native)
+    machine.step(
+        "12a_imm",
+        {
+            "data[15:8]": 0,
+            "data[7:0]": 2,
+            "mode": 0,
+            "reladdr[22:16]": 0,
+            "reladdr[15:0]": 3,
+        },
+    )
+    word, count, pc = (machine.state.uregs[x] for x in (102, 103, 100))
+    assert word == st.Const(laddr(3)) and count == st.Const(2)
+    saved = machine.state.pc_stack[-1]
+    machine.step("20a", {**STACK, "lpo": 1, "ppo": 1})  # context save pops both
+    assert machine.state.loops == [] and machine.state.pc_stack == []
+    restore_level(machine, count.value, word.value & 0xFFFFFF)
+    push_start(machine, saved)
+    assert machine.state.uregs[102] == word and machine.state.uregs[103] == count
+    assert machine.state.pc_stack == [0x01000003]
+    at_loop_end(machine, 3)
+    machine.step("21a", {})
+    assert machine.state.pc_sw == 3 and machine.state.uregs[103] == st.Const(1)
+    machine.step("20a", {**STACK, "lpo": 1})  # a later save pops the restored loop
+    assert machine.state.loops == [] and machine.state.loop_depth == 0
+    machine.step("20a", {**STACK, "lpu": 1})
+    assert machine.state.uregs[102] == word
+    assert machine.state.uregs[103] == st.Const(1)
+
+
+def do_loop(machine, count: int = 2) -> None:
+    """DO at pc 0: the loop is the single instruction at 3."""
+    at_loop_end(machine, 0)
+    machine.step(
+        "12a_imm",
+        {
+            "data[15:8]": 0,
+            "data[7:0]": count,
+            "mode": 0,
+            "reladdr[22:16]": 0,
+            "reladdr[15:0]": 3,
+        },
+    )
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_do_above_reserved_push_loop_slot_leaves_the_slot_visible(native):
+    machine = Machine(native)
+    machine.step("20a", {**STACK, "lpu": 1})
+    machine.step("17a", immediate(103, 7))
+    machine.step("17a", immediate(102, 0xFFFFFFFF))
+    do_loop(machine)
+    assert machine.state.loop_depth == 2 and len(machine.state.loops) == 1
+    assert machine.state.uregs[102] == st.Const(laddr(3))
+    assert machine.state.uregs[103] == st.Const(2)
+    machine.step("21c", {}, 2)  # last instruction of the loop: back to 3, then exit
+    assert machine.state.uregs[103] == st.Const(1)
+    machine.step("21c", {}, 2)
+    assert machine.state.loops == [] and machine.state.loop_depth == 1
+    assert machine.state.uregs[102] == st.Const(0xFFFFFFFF)
+    assert machine.state.uregs[103] == st.Const(7)
+    assert (machine.state.uregs[116].value >> 26) & 1 == 0  # loop stacks nonempty
+    # POP LOOP in a second loop removes that loop, not the reserved slot.
+    do_loop(machine)
+    machine.step("20a", {**STACK, "lpo": 1})
+    assert machine.state.loops == [] and machine.state.loop_depth == 1
+    assert machine.state.uregs[103] == st.Const(7)
+    machine.step("20a", {**STACK, "lpo": 1})
+    assert machine.state.loop_depth == 0
+    assert machine.state.uregs[103] == st.Const(0xFFFFFFFF)
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_unmodeled_packed_loop_restorations_stop_without_state_change(native):
+    # Arithmetic termination code (EQ), as in a stale slot value of zero.
+    machine = Machine(native)
+    machine.step("20a", {**STACK, "lpu": 1})
+    machine.step("17a", immediate(103, 5))
+    stops(machine, "17a", immediate(102, 0x1234), "termination code")
+    stops(
+        machine,
+        "17a",
+        immediate(102, laddr(0x20, kind=0, term=0x1F << 24)),
+        "termination",
+    )
+    # Counter not usable by LCE: empty-stack marker or zero.
+    for bad in (0xFFFFFFFF, 0):
+        machine.step("17a", immediate(103, bad))
+        stops(machine, "17a", immediate(102, laddr(0x20)), "loop counter")
+    # A reserved slot below the one being restored.
+    machine = Machine(native)
+    machine.step("20a", {**STACK, "lpu": 1})
+    machine.step("17a", immediate(102, 0xFFFFFFFF))
+    machine.step("20a", {**STACK, "lpu": 1})
+    machine.step("17a", immediate(103, 4))
+    stops(machine, "17a", immediate(102, laddr(0x20)), "mixed reserved slots")
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_restored_loop_edges_stay_explicit(native):
+    machine = Machine(native)
+    restore_level(machine, 2, 0x20)
+    # No PC-stack entry yet: the end of the loop cannot find its start.
+    at_loop_end(machine, 0x20)
+    stops(machine, "21a", {}, "restored loop without PC-stack entry")
+    # A return entry (ISINT) is not a loop start.
+    at_loop_end(machine, 0)
+    machine.step("20a", {**STACK, "ppu": 1})
+    machine.step("17a", immediate(100, 0x03000010))
+    at_loop_end(machine, 0x20)
+    stops(machine, "21a", {}, "PC-stack entry is a return")
+    at_loop_end(machine, 0)
+    machine.step("17a", immediate(100, 0x01000010))
+    at_loop_end(machine, 0x20)
+    # Loop registers of a loop that is executing are not writable.
+    stops(machine, "17a", immediate(103, 9), "active loop-register")
+    machine.step("21a", {})
+    # Once bound, PUSH LOOP inside the loop stays unsupported.
+    stops(machine, "20a", {**STACK, "lpu": 1}, "PUSH LOOP inside active DO")
+
+
 def test_import_keyed_memory_ranges_round_trips_loaded_bytes():
     state = Machine(False).state
     address = sharcldr.SW_ALIAS_BASE

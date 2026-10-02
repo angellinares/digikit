@@ -215,6 +215,17 @@ _PERIPHERAL_FUNCTIONS = (
         [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p],
         ctypes.c_int64,
     ),
+    (
+        "sharc_native_sport_block",
+        [
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+            ctypes.c_char_p,
+            ctypes.c_size_t,
+        ],
+        ctypes.c_int64,
+    ),
 )
 
 # sharc_native_set_option keys (native lib.rs / canon.rs).
@@ -439,6 +450,20 @@ class NativeCore(sd.NativeEngine):
         n = self._lib.sharc_native_spi2_exchange(self._handle, frame, len(frame), out)
         if n < 0:
             raise ValueError("SPI2 exchange rejected")
+        return out.raw[:n]
+
+    def sport_block(
+        self, block: bytes | None = None, capacity: int = 4096
+    ) -> bytes | None:
+        """One SPORT4 audio block; None while the SPORTs are not running."""
+        out = ctypes.create_string_buffer(capacity)
+        n = self._lib.sharc_native_sport_block(
+            self._handle, block, 0 if block is None else len(block), out, capacity
+        )
+        if n == -2:
+            return None
+        if n < 0:
+            raise ValueError("SPORT block rejected")
         return out.raw[:n]
 
     def fresh_call(self, pc: int, return_address: int | None = None) -> None:

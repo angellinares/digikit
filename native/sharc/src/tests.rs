@@ -635,3 +635,59 @@ fn peripheral_model_acknowledges_and_ends_sec_sources() {
     s.commit();
     assert_eq!(s.mmr_get(periph::SEC_END), Some(V::c(70)));
 }
+
+/// Descriptor rings for SPORT4A (DMA10, TX) and SPORT4B (DMA11, RX) at
+/// 0x2810_0000, 4 words each, as the DN2 firmware sets them up.
+fn sport_engine() -> crate::Engine {
+    const RAM: u32 = 0x2810_0000;
+    let words = |v: &[u32]| -> Vec<u8> { v.iter().flat_map(|w| w.to_le_bytes()).collect() };
+    let mut image = vec![0u8; 0x400];
+    let tx = words(&[RAM, RAM + 0x100, 0x144225, 4, 4]);
+    let rx = words(&[RAM + 0x40, RAM + 0x200, 0x144227, 4, 4]);
+    image[..tx.len()].copy_from_slice(&tx);
+    image[0x40..0x40 + rx.len()].copy_from_slice(&rx);
+    image[0x100..0x110].copy_from_slice(&words(&[0xdead_beef, 1, 0x8000_0000, 0x1234_5678]));
+    let mut mem = Mem::new();
+    mem.load(RAM, &image);
+    mem.reset();
+    let mut e = crate::Engine::new(mem);
+    e.s.cfg.peripheral_model = true;
+    e.s.cfg.refresh();
+    e.s.mmr_put(periph::SEC_GCTL, V::c(1));
+    e.s.mmr_put(periph::SEC_CCTL, V::c(1));
+    e.s.mmr_put(periph::SEC_SCTL + 8 * 191, V::c(5));
+    e.s.mmr_put(periph::DAI1_GBL_INT_EN, V::c(0x10003));
+    e.s.mmr_put(periph::SPORT4A_DMA, V::c(RAM as Int));
+    e.s.mmr_put(periph::SPORT4A_DMA + 8, V::c(0x44225));
+    e.s.mmr_put(periph::SPORT4B_DMA, V::c((RAM + 0x40) as Int));
+    e.s.mmr_put(periph::SPORT4B_DMA + 8, V::c(0x44227));
+    e
+}
+
+#[test]
+fn sport_block_returns_the_tx_unit_and_raises_the_group_source() {
+    let mut e = sport_engine();
+    let status = periph::SEC_SCTL + 8 * 191 + 4;
+    let stat = |e: &crate::Engine, base: u32| e.s.mmr_get(base + 0x30).map(|v| v.b & 0x701);
+    // Not running: nothing happens.
+    assert_eq!(e.sport_block(None), Ok(None));
+    assert_eq!(e.s.mmr_get(status), None);
+    e.s.mmr_put(periph::DAI1_GBL_SP_EN, V::c(0x5f));
+    e.s.mmr_put(periph::SPORT4A_CTL, V::c(0x111f3));
+    e.s.mmr_put(periph::SPORT4B_CTL, V::c(0x111f3));
+    // A wrong-sized input is rejected and leaves no trace.
+    assert!(e.sport_block(Some(&[0; 4])).is_err());
+    assert_eq!(e.s.mmr_get(status), None);
+    assert_eq!(stat(&e, periph::SPORT4A_DMA), None);
+    let input: Vec<u8> = (0..16).collect();
+    let out = e.sport_block(Some(&input)).unwrap().unwrap();
+    assert_eq!(out[..8], [0xef, 0xbe, 0xad, 0xde, 1, 0, 0, 0]);
+    assert_eq!(out.len(), 16);
+    assert_eq!(stat(&e, periph::SPORT4A_DMA), Some(0x201));
+    assert_eq!(stat(&e, periph::SPORT4B_DMA), Some(0x201));
+    // Only the group source is raised; the channel sources stay quiet.
+    assert_eq!(e.s.mmr_get(status), Some(V::c(0x100)));
+    assert_eq!(e.s.mmr_get(periph::SEC_SCTL + 8 * 53 + 4), None);
+    assert_eq!(e.s.mmr_get(periph::SEC_CSID), Some(V::c(191)));
+    assert_eq!(e.s.mem.read_le(0x2810_0200, 4), 0x0302_0100);
+}

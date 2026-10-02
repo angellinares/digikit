@@ -469,6 +469,8 @@ for _n in [
     "_ram_word",
     "_dma_fetch",
     "_dma_start",
+    "_dma_irq",
+    "_sport_running",
     "_dma_done",
     "_periph_read",
     "_periph_write",

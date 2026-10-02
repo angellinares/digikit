@@ -16,6 +16,8 @@ import sharcldr
 from sharc_core.encoding import UREG_CODES
 from sharc_core.memory import _dm_read, _dm_write
 from sharc_core.periph import (
+    DAI1_GBL_INT_EN,
+    DAI1_GBL_SP_EN,
     SEC_CCTL,
     SEC_CSID,
     SEC_CSTAT,
@@ -23,6 +25,8 @@ from sharc_core.periph import (
     SEC_GCTL,
     SEC_SCTL,
     SECI_ID,
+    SPORT4A_CTL,
+    SPORT4B_CTL,
     _dma_done,
     _dma_start,
     _sec_line,
@@ -30,7 +34,15 @@ from sharc_core.periph import (
 )
 from sharc_core.state import State
 from sharc_core.values import Const
-from sharc_periph_host import SPI2_RX_DMA, SPI2_TX_DMA, spi2_exchange, swap16
+from sharc_periph_host import (
+    SPI2_RX_DMA,
+    SPI2_TX_DMA,
+    SPORT4A_DMA,
+    SPORT4B_DMA,
+    spi2_exchange,
+    sport_block,
+    swap16,
+)
 
 RAM = 0x28100000
 IRPTL = UREG_CODES["IRPTL"]
@@ -65,7 +77,7 @@ def _state(ram: bytes = bytes(0x400)) -> State:
 
 
 def _sstat(state: State, sid: int) -> int:
-    return state.mmrs[SEC_SCTL + 8 * sid + 4].value
+    return state.mmrs.get(SEC_SCTL + 8 * sid + 4, Const(0)).value
 
 
 def _ring(cfg: int, count: int) -> bytes:
@@ -198,3 +210,84 @@ def test_native_twin_matches_reference_through_a_frame() -> None:
         assert core.poke(address, value.to_bytes(4, "little"), 4) == 1
     assert sd.compare_states(sd.export_state(state), core.export_state()) == []
     assert _sstat(state, 70) == 0
+
+
+def _sport_state(running: bool = True) -> State:
+    """SPORT4A/B rings as DN2 sets them up, DAI1 group 0 interrupt on."""
+    ram = bytearray(0x400)
+    ram[0:0x14] = _words(RAM, RAM + 0x100, 0x144225, 4, 4)
+    ram[0x40:0x54] = _words(RAM + 0x40, RAM + 0x200, 0x144227, 4, 4)
+    ram[0x100:0x110] = _words(0xDEADBEEF, 1, 0x80000000, 0x12345678)
+    state = _state(bytes(ram))
+    state.mmrs[SEC_SCTL + 8 * 191] = Const(5)
+    state.mmrs[DAI1_GBL_INT_EN] = Const(0x10003)
+    state.mmrs[SPORT4A_DMA] = Const(RAM)
+    state.mmrs[SPORT4B_DMA] = Const(RAM + 0x40)
+    state.mmrs[SPORT4A_DMA + 0x08] = Const(0x44225)
+    state.mmrs[SPORT4B_DMA + 0x08] = Const(0x44227)
+    state.mmrs[DAI1_GBL_SP_EN] = Const(0x5F if running else 0x5E)
+    state.mmrs[SPORT4A_CTL] = Const(0x111F3)
+    state.mmrs[SPORT4B_CTL] = Const(0x111F3)
+    return state
+
+
+def test_sport_block_waits_for_the_enables() -> None:
+    for patch in (DAI1_GBL_SP_EN, SPORT4A_CTL, SPORT4B_CTL):
+        state = _sport_state()
+        state.mmrs[patch] = Const(state.mmrs[patch].value & ~1)
+        assert sport_block(state) is None
+        assert not state.overlay
+        assert _sstat(state, 191) == 0
+
+
+def test_sport_block_returns_tx_words_and_raises_the_group_source() -> None:
+    state = _sport_state()
+    with pytest.raises(ValueError):
+        sport_block(state, bytes(4))
+    block = bytes(range(16))
+    out = sport_block(state, block)
+    assert out == _words(0xDEADBEEF, 1, 0x80000000, 0x12345678)
+    landed = bytes(state.overlay[RAM + 0x200 + k] for k in range(16))
+    assert landed == block
+    for base in (SPORT4A_DMA, SPORT4B_DMA):
+        assert state.mmrs[base + 0x30].value & 0x701 == 0x201
+    # The group source fires once both IRQDONE bits are set; the channel
+    # sources 53 and 55 stay quiet.
+    assert _sstat(state, 191) & 0x300 == 0x100
+    assert state.mmrs[SEC_CSID] == Const(191)
+    assert SEC_SCTL + 8 * 53 + 4 not in state.mmrs
+    # DMA_STAT W1C clears the group condition; the next block fires again.
+    assert _dm_write(state, SEC_END, 4, Const(191)) is True
+    for base in (SPORT4A_DMA, SPORT4B_DMA):
+        assert _dm_write(state, base + 0x30, 4, Const(1))
+    assert sport_block(state) is not None
+    assert state.mmrs[SEC_CSID] == Const(191)
+    zeros = bytes(state.overlay[RAM + 0x200 + k] for k in range(16))
+    assert zeros == bytes(16)
+
+
+def test_sport_group_waits_for_every_member() -> None:
+    state = _sport_state()
+    _dma_start(state, SPORT4A_DMA)
+    _dma_done(state, SPORT4A_DMA, 53)
+    assert _sstat(state, 191) == 0
+    # Without the group enable a channel raises its own source.
+    state.mmrs[DAI1_GBL_INT_EN] = Const(0)
+    state.mmrs[SEC_SCTL + 8 * 55] = Const(5)
+    _dma_start(state, SPORT4B_DMA)
+    _dma_done(state, SPORT4B_DMA, 55)
+    assert _sstat(state, 191) == 0
+    assert _sstat(state, 55) & 0x300 == 0x100
+
+
+def test_native_sport_block_matches_reference() -> None:
+    state = _sport_state()
+    core = _native(state)
+    nr.to_native(core, state)
+    block = bytes(range(16, 32))
+    assert core.sport_block(block) == sport_block(state, block)
+    assert sd.compare_states(sd.export_state(state), core.export_state()) == []
+    core2 = _native(_sport_state(False))
+    assert core2.sport_block() is None
+    with pytest.raises(ValueError):
+        core.sport_block(bytes(4))

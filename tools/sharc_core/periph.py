@@ -49,6 +49,26 @@ STAT_IRQDONE = 0x1
 STAT_IRQERR = 0x2
 STAT_RUN = 0x700
 STAT_RUN_TRANSFER = 0x200
+# DAI1 group SPORT interrupt (HWR ch. 22 DAI_GBL_INT_EN, ch. 23 "Grouping of
+# SPORTs"): SPORT4A/B are DAI1 "SP0A/SP0B". A group raises one SEC source
+# (DAI1_GBL_SPORT_INT0/1, SID 191/192) when every selected member's
+# DMA_STAT.IRQDONE is set; there is no status register of its own, W1C of the
+# members' IRQDONE clears it.
+DAI1_GBL_SP_EN = 0x310CA2E8
+DAI1_GBL_INT_EN = 0x310CA2EC
+SPORT4A_CTL = 0x31002400
+SPORT4B_CTL = 0x31002480
+SPORT4A_DMA = 0x31023000
+SPORT4B_DMA = 0x31023080
+SID_SPORT4A_DMA = 53
+SID_SPORT4B_DMA = 55
+SID_DAI1_GRP0 = 191
+GBL_SP_ENABLE = 0x1
+SPORT_SPEN = 0x1
+# DAI_GBL_INT_EN: GRPn_INT_EN is bit 16+n, GRPn_SPxINT_EN is bit 8n+x
+# (x = 0 SP0A = SPORT4A, 1 SP0B = SPORT4B).
+DAI_MEMBERS = {SPORT4A_DMA: 0, SPORT4B_DMA: 1}
+DAI_MEMBER_MASK = 0xFF
 
 
 def _mmr(state: State, address: int) -> int:
@@ -201,6 +221,47 @@ def _dma_start(state: State, base: int) -> int:
     return _mmr(state, base + 0x04)
 
 
+def _dma_irq(state: State, base: int, sid: int) -> None:
+    """Route a channel's IRQDONE: a DAI1 group source or its own SID.
+
+    A SPORT4 channel that belongs to an enabled DAI1 group raises the group
+    source only when every member's IRQDONE is set (one source per event);
+    the channel's own source stays quiet. Other members of a group are not
+    modeled and raise ValueError.
+    """
+    member = DAI_MEMBERS.get(base)
+    if member is not None:
+        enable = _mmr(state, DAI1_GBL_INT_EN)
+        routed = False
+        for group in (0, 1):
+            members = (enable >> (8 * group)) & DAI_MEMBER_MASK
+            if not enable & (1 << (16 + group)) or not members & (1 << member):
+                continue
+            if members & ~3:
+                raise ValueError("only SPORT4A/B group members are modeled")
+            routed = True
+            complete = True
+            for base_of, index in DAI_MEMBERS.items():
+                if members & (1 << index) and not (
+                    _mmr(state, base_of + DMA_STAT) & STAT_IRQDONE
+                ):
+                    complete = False
+            if complete:
+                _sec_raise(state, SID_DAI1_GRP0 + group)
+        if routed:
+            return
+    _sec_raise(state, sid)
+
+
+def _sport_running(state: State) -> bool:
+    """DAI1_GBL_SP_EN.GBL_SP_EN set and both SPORT4 halves enabled."""
+    return bool(
+        _mmr(state, DAI1_GBL_SP_EN) & GBL_SP_ENABLE
+        and _mmr(state, SPORT4A_CTL) & SPORT_SPEN
+        and _mmr(state, SPORT4B_CTL) & SPORT_SPEN
+    )
+
+
 def _dma_done(state: State, base: int, sid: int) -> None:
     """Complete the work unit: IRQDONE and its SEC source, next descriptor."""
     _dma_start(state, base)
@@ -212,7 +273,7 @@ def _dma_done(state: State, base: int, sid: int) -> None:
     interrupt = (cfg >> 20) & 3
     if interrupt == 1:
         _set(state, base + DMA_STAT, _mmr(state, base + DMA_STAT) | STAT_IRQDONE)
-        _sec_raise(state, sid)
+        _dma_irq(state, base, sid)
     elif interrupt:
         raise ValueError("only X-count DMA interrupts are modeled")
     flow = (cfg >> 12) & 7

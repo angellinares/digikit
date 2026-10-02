@@ -36,6 +36,18 @@ const STAT_IRQDONE: u32 = 0x1;
 const STAT_IRQERR: u32 = 0x2;
 const STAT_RUN: u32 = 0x700;
 const STAT_RUN_TRANSFER: u32 = 0x200;
+pub const DAI1_GBL_SP_EN: u32 = 0x310C_A2E8;
+pub const DAI1_GBL_INT_EN: u32 = 0x310C_A2EC;
+pub const SPORT4A_CTL: u32 = 0x3100_2400;
+pub const SPORT4B_CTL: u32 = 0x3100_2480;
+pub const SPORT4A_DMA: u32 = 0x3102_3000;
+pub const SPORT4B_DMA: u32 = 0x3102_3080;
+pub const SID_SPORT4A_DMA: u32 = 53;
+pub const SID_SPORT4B_DMA: u32 = 55;
+const SID_DAI1_GRP0: u32 = 191;
+const GBL_SP_ENABLE: u32 = 0x1;
+const SPORT_SPEN: u32 = 0x1;
+const DAI_MEMBER_MASK: u32 = 0xFF;
 const UREG_IRPTL: usize = 122;
 const UREG_IMASKP: usize = 124;
 
@@ -196,6 +208,50 @@ pub fn dma_start(s: &mut St, base: u32) -> R<u32> {
     mmr(s, base + 0x04)
 }
 
+/// periph._dma_irq: a SPORT4 channel in an enabled DAI1 group raises the
+/// group source once every member's IRQDONE is set, else its own source.
+fn dma_irq(s: &mut St, base: u32, sid: u32) -> R<()> {
+    let member = match base {
+        SPORT4A_DMA => Some(0),
+        SPORT4B_DMA => Some(1),
+        _ => None,
+    };
+    if let Some(member) = member {
+        let enable = mmr(s, DAI1_GBL_INT_EN)?;
+        let mut routed = false;
+        for group in 0..2u32 {
+            let members = (enable >> (8 * group)) & DAI_MEMBER_MASK;
+            if enable & (1 << (16 + group)) == 0 || members & (1 << member) == 0 {
+                continue;
+            }
+            if members & !3 != 0 {
+                return Err(TRAP_PERIPHERAL);
+            }
+            routed = true;
+            let mut all = true;
+            for (other, index) in [(SPORT4A_DMA, 0), (SPORT4B_DMA, 1)] {
+                if members & (1 << index) != 0 && mmr(s, other + DMA_STAT)? & STAT_IRQDONE == 0 {
+                    all = false;
+                }
+            }
+            if all {
+                sec_raise(s, SID_DAI1_GRP0 + group)?;
+            }
+        }
+        if routed {
+            return Ok(());
+        }
+    }
+    sec_raise(s, sid)
+}
+
+/// periph._sport_running
+pub fn sport_running(s: &St) -> R<bool> {
+    Ok(mmr(s, DAI1_GBL_SP_EN)? & GBL_SP_ENABLE != 0
+        && mmr(s, SPORT4A_CTL)? & SPORT_SPEN != 0
+        && mmr(s, SPORT4B_CTL)? & SPORT_SPEN != 0)
+}
+
 /// periph._dma_done
 pub fn dma_done(s: &mut St, base: u32, sid: u32) -> R<()> {
     dma_start(s, base)?;
@@ -210,7 +266,7 @@ pub fn dma_done(s: &mut St, base: u32, sid: u32) -> R<()> {
         1 => {
             let stat = mmr(s, base + DMA_STAT)? | STAT_IRQDONE;
             set(s, base + DMA_STAT, stat)?;
-            sec_raise(s, sid)?;
+            dma_irq(s, base, sid)?;
         }
         _ => return Err(TRAP_PERIPHERAL),
     }
