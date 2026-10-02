@@ -49,6 +49,11 @@ import sharc_trace as st  # noqa: E402
 import sharcfn  # noqa: E402
 from sharc_core.addressing import normal_word_to_byte  # noqa: E402
 from sharc_core.memory import UnmodeledMMR, _canonical_dm_address  # noqa: E402
+from sharc_core.sequencer import (  # noqa: E402
+    _core_timer_tick,
+    _enter_interrupt,
+    _interrupt_candidate,
+)
 from sharc_disasm import Instruction  # noqa: E402
 from sharcldr import LoadedMemory  # noqa: E402
 
@@ -351,20 +356,34 @@ def fresh_call_state(
     new_uregs = dict(state.uregs)
     for key, value in (regs or {}).items():
         new_uregs[st._seed_code(key)] = st._seed_value(value)
-    return dataclasses.replace(
+    result = dataclasses.replace(
         state,
         pc_sw=pc_sw,
         uregs=new_uregs,
         trace=[dict(event) for event in state.trace],
         overlay=dict(state.overlay),
         call_stack=[return_address] if return_address is not None else [],
+        pc_stack=(
+            [0x01000000 | (return_address & 0xFFFFFF)]
+            if state.stack_model and return_address is not None
+            else []
+        ),
+        pc_stack_pending=-1,
+        pc_stack_requested=-1,
         loops=[],
+        loop_depth=0,
+        loop_slots=list(state.loop_slots),
         status_stack=[],
         mmrs=dict(state.mmrs),
         special=dict(state.special),
+        bank_alt=dict(state.bank_alt),
         pending=None,
         stopped=None,
     )
+    if result.stack_model:
+        st._sync_pc_stack(result)
+        st._sync_status_stack(result)
+    return result
 
 
 @dataclass(frozen=True)
@@ -1066,6 +1085,17 @@ class Runner:
         this module's docstring for what that costs in practice.
         """
         state = self.state
+        state.timer_written = False
+        if state.software_interrupts or state.core_timer:
+            try:
+                allowed = (0xF0000000 if state.software_interrupts else 0) | (
+                    0x00400800 if state.core_timer else 0
+                )
+                candidate = _interrupt_candidate(state, allowed)
+                if candidate:
+                    _enter_interrupt(state, candidate)
+            except ValueError as error:
+                raise Halt("interrupt", state.pc_sw, text=str(error)) from error
         if state.pc_sw in self.breakpoints:
             raise Halt("breakpoint", state.pc_sw)
         insn = self._decode(state.pc_sw)
@@ -1128,6 +1158,11 @@ class Runner:
         depth = len(state.call_stack)
         if depth > self.max_call_depth_reached:
             self.max_call_depth_reached = depth
+        if state.core_timer:
+            try:
+                _core_timer_tick(state)
+            except ValueError as error:
+                raise Halt("timer", state.pc_sw, text=str(error)) from error
 
     def run(self, max_steps: int) -> RunResult:
         start_pc_sw = self.state.pc_sw

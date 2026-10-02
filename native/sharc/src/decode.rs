@@ -140,13 +140,16 @@ enum Selection {
     Ambiguous,
 }
 
-fn select(words: &[u16]) -> Selection {
+fn select(words: &[u16], isa: bool) -> Selection {
     let frame = frame(words);
     let mut leading = 0;
     let mut fixed = 0;
     let mut winner = None;
     let mut tied = false;
     for form in FORMS {
+        if isa && form.width_bytes != 6 {
+            continue;
+        }
         if frame & form.mask != form.value {
             continue;
         }
@@ -172,7 +175,16 @@ fn select(words: &[u16]) -> Selection {
 }
 
 fn decode_words(words: &[u16]) -> Decoded {
-    let form = match select(words) {
+    decode_words_mode(words, false)
+}
+
+/// A supported fixed-width ISA instruction in little-endian 48-bit storage.
+pub fn decode_isa(raw: u64) -> Decoded {
+    decode_words_mode(&[(raw >> 32) as u16, (raw >> 16) as u16, raw as u16], true)
+}
+
+fn decode_words_mode(words: &[u16], isa: bool) -> Decoded {
+    let form = match select(words, isa) {
         Selection::Form(form) => form,
         Selection::NoForm => return Decoded::unknown(),
         Selection::Ambiguous => {

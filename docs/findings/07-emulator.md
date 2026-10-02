@@ -4414,3 +4414,205 @@ native/browser sound has been demonstrated.
 slow tests: 2,165 passed, 29 skipped, one expected failure and 274 passing
 subtests. The native SHARC tests (31) and a 100k native/WASM canonical-state
 comparison also passed; six existing SHARC golden outputs stayed unchanged.
+
+## Opt-in SHARC register banks and interrupt-frontier probe (2026-10-02)
+
+**[D]** `State.bank_model`, native option 19 and `sharc_reset_check.py --banks`
+enable the primary/alternate register files. MODE1.SRRFL/SRRFH select both
+PEx/PEy halves; SRD1L/H and SRD2L/H select the four I/M/L/B quarters.
+Guest register transfers, system bit operations and existing PUSH/POP STS
+MODE1 writes request a switch after the following completed instruction.
+Separate requested/pending selectors preserve back-to-back writes. Native
+traps roll back requests. Canonical state v2 preserves the inactive registers
+and selector pipeline; v1 imports disable banking with unknown inactive
+values. Native AOT blocks are disabled while banking is enabled until their
+register-file path can preserve both banks. This is a correctness limitation,
+not an audio-performance result. Diagnostic call/render clones copy inactive
+registers, and state comparison checks them and the selector pipeline.
+
+**[D]** Integration checks passed: 82 focused checks (four skips), 147
+runner/render/golden/lint/type checks (five skips), and 36 native SHARC tests.
+Instruction-level native/reference cases cover banked moves, back-to-back
+selectors, MODE1 bit operations and both delayed-branch slots. Each selector
+has independent isolation coverage. A bank-enabled 100k-instruction DN2
+diagnostic produced identical native/WASM canonical states. Existing golden
+outputs are unchanged. The full slow suite recorded above belongs to the
+preceding decoder checkpoint; the bank follow-up has not yet run that suite.
+
+**[D]** `sharc_reset_check.py --stop-software-interrupt` (native option 7)
+stops before executing another instruction when a concrete software interrupt
+is pending with global/per-source masks enabled and priority permits it. It
+defers during branch delay slots and hardware loops. This observes an
+interrupt candidate, not cycle-accurate eligibility or interrupt delivery;
+core-control effect latencies and ISR entry/return are still unmodeled.
+It is disabled by default and suppresses AOT dispatch when enabled so every
+instruction boundary is inspected. It neither patches masks nor pushes an
+interrupt frame. Coarse host sampling had repeatedly observed IRPTEN clear
+inside critical sections; that sampling cannot exclude a brief enable window.
+Use the opt-in boundary stop to locate the actual next dependency. No fresh
+DN2 PCM or native/browser playback has been established.
+
+**[O]** A restarted bank-aware DN2 diagnostic, with the boundary stop enabled
+and the same memory policy across continuations, reached 589,544,942
+instructions without finding an unmasked software-interrupt candidate.
+The final observation was PC `0xb85ab8`, MODE1 `0x39010c80`, IRPTL
+`0x80000000`, and IMASK `0x80408018`; global IRPTEN remained clear.
+This run did not execute loader INIT and is not a qualified hardware boot.
+Missing interrupt delivery alone has not been established as the reason
+initialization remains in its task/event paths.
+
+**[D]** An independent review against the public SHARC+ programming manual
+confirmed that the core conflates followed-call bookkeeping with the
+architectural PC stack. Type25a CJUMP is a JUMP plus compiler frame-register
+transfers, but `forms_flow.py` marks it as a call and `sequencer.py` pushes
+its return address into guest-visible PCSTK/PCSTKP. The corresponding
+compiler JUMP-return also pops that stack. Neither operation is an
+architectural CALL/RTS. Separating those stacks is required for correct
+guest context restoration and interrupt work. This defect is confirmed;
+its causal role in the observed initialization loop remains unproven.
+
+## Physical task stacks, ISA vectors and software IRQ delivery (2026-10-02)
+
+**[D]** Opt-in `State.stack_model`, native option 20 and
+`sharc_reset_check.py --stacks` separate the architectural PC stack from
+followed-CALL observations. CJUMP and compiler computed JUMP-return no longer
+push/pop hardware return addresses. CALL reserves its physical entry at issue,
+including before delayed slots; RTS consumes that entry at issue. Guest PCSTK
+writes replace the occupied top, and PCSTKP truncation takes effect after the
+following completed instruction. Growth and unknown targets fail closed.
+MODE1STK reads/writes the actual top status-stack MODE1, including guest task
+context restoration. Canonical v3 preserves independent physical entries and
+the pointer pipeline; v1/v2 imports disable that model. Native AOT remains
+disabled while bank or physical-stack models are enabled. Native option 8 is a
+default-off PC boundary stop; it leaves guest bytes and state unchanged.
+
+**[O]** Restarting DN2 1.11 with banks and physical stacks, documented reset
+MMRs, approximate reciprocal mode and the diagnostic instruction clock reaches
+the first task restore at instruction 561,596,597. Two finite software waits
+were executed by the previously validated generated counter-loop block, with
+10,007 agreeing interpreter/generated instructions checked at each wait. The
+restore's PUSH STS / guest MODE1STK write / RTS / POP STS changes MODE1 to
+`0x39011cf8`. After 723 more instructions, SFT3 is demonstrably eligible at
+PC `0xb896f7`: IRPTL `0x80000000`, IMASK `0x80408018`, IMASKP zero.
+This establishes the causal role of the earlier stack/MODE1STK defect; the
+bank-only run's repeated IRPTEN-clear observations were not sufficient.
+
+**[D]** Native option 9 and `--software-interrupts` opt into functional L1
+software IRQ delivery. They require banks and physical stacks. Entry preserves
+PC and status, applies MMASK, clears the accepted latch, sets IMASKP and settles
+bank selection before the vector executes. RTI restores status/PC and clears
+that interrupt's latch/priority bit; decoded guest IRPTL writes keep the current
+active source clear. The supported IVT window uses fixed 48-bit ISA words and
+normal-word PCs, then branches into the main VISA program with both delay slots
+preserved. This is standard public ISA encoding, independently audited for the
+DN2 SFT3 target; see the correction in findings 06. Generator version is 6.
+Delivery is disabled by default. Active hardware loops and delayed transfers
+are deferred; hardware IRQ generation, external IVTs, overflow traps, CI and
+cycle-accurate control/pipeline timing remain outside this bounded model.
+
+**[O]** A continuation from the eligible boundary now enters SFT3's
+`0x9007c` vector and reaches VISA handler `0x1c0a70` after two ISA delay slots.
+It initially failed 41 instructions later at `0xb8a947` reading the saved PC.
+An independent manual/address audit confirmed another core defect: W2B was
+multiplying an already-byte-space L1 stack pointer by four. PRM Table 6-4
+requires identity in that case. Both engines now preserve known destination
+address spaces; unknown spaces retain the legacy likely-shift/ILAD limitation.
+The corrected continuation completes interrupt/task restoration and executes
+another ten million instructions without a trap, ending at `0xb88aaf` with
+MODE1 `0x39011cf8`, IRPTL/IMASKP zero. This repeated task/event path still needs
+peripheral events and genuine ColdFire/DSP coupling; it produces no sound by
+itself.
+
+**[D]** Focused verification passed: 123 Python/native checks (five skips),
+40 native SHARC unit tests, unchanged six SHARC goldens, strict translation of
+all 300 core functions, and native/WASM builds. A 100k-instruction continuation
+from the eligible SFT3 boundary also produced identical native/WASM canonical
+states, including interrupt entry, task restoration and both register banks. Synthetic public fixtures
+cover ISA vector delay slots, RTI status and bank restoration, active-latch
+writes through decoded instructions, default-disabled delivery, rejected-entry
+rollback, and committed entry followed by missing-vector fetch. The full slow
+suite has not yet run for this follow-up.
+
+**[O]** These diagnostics start at the flattened loader FIRST entry. They do
+not execute loader INIT/ROM handoff, are explicitly unqualified as complete
+hardware boot, and do not establish fresh DN2 oscillator PCM or native/browser
+playback. Private canonical captures are troubleshooting boundaries, not
+redistributable running-state fixtures. The genuine audio integration seam is
+the shared board's DSPI2 peer, currently ZeroPeer, followed by SHARC-produced
+master output into the existing native audio ring and a browser PCM consumer.
+
+
+## Core timer and physical loop reservations (2026-10-02)
+
+**[D]** Native option 21 and `sharc_reset_check.py --core-timer` enable a
+functional core timer, using one clock per completed instruction. MODE2.TIMEN,
+TCOUNT and TPERIOD drive countdown/reload; expiry latches both TMZHI (11) and
+TMZLI (22). Guest count/period writes win over that instruction's clock.
+Completed instructions remain committed if a subsequent timer event cannot be
+modeled; timer changes are transactional separately. This is an instruction
+clock, with no claim of cycle accuracy or architectural TIMEN latency. It is
+inactive by default. Enabled timer IRQ delivery requires banks/physical stacks
+and uses the same public ISA vector/RTI machinery as software IRQs.
+
+**[D]** The physical stack model now implements inactive PUSH LOOP/POP LOOP
+reservations separately from active decoded DO loops. It tracks six retained
+(LADDR, CURLCNTR) slots and a depth, preserves popped contents when pushed again,
+and returns all ones for empty register reads. Empty writes have no effect.
+Reserved-slot CURLCNTR writes and the all-ones LADDR value are supported.
+Packed active-loop restoration, PUSH within an active DO, mixed reserved/active
+pops, and overflow interrupts stop explicitly. Decoded DO counters are paired
+with physical resources, but packed DO LADDR characterization remains unknown.
+Canonical v4 stores all six slots, including popped shadows; v1-v3 readers start
+with empty resources. Native rejects an older physical-stack capture containing
+active loops because it cannot reconstruct those resources. Native undo logs
+preserve both depth and slot contents across failed instructions. Generator 8
+translates 306 functions with zero unsupported translations. Independent review
+against public PRM loop-stack rules found no issues in this bounded contract.
+
+**[O]** Enabling the functional timer in the existing DN2 continuation expires
+TCOUNT after one million instructions and enters the genuine enabled TMZLI
+handler. The initial stop at `0xb8b1ff` was unsupported PUSH LOOP in a context
+restore's delayed slot. With reservations implemented, the handler returns,
+subsequent expiry is serviced, and 2,000,300 additional instructions produce
+identical native/WASM canonical state (6,663,756 bytes). The continuation stops
+31 instructions later at `0xb88aa1`, an unknown Type9b indirect target. This is a
+bounded continuation from private guest state, not evidence of complete fresh
+hardware boot. No command-3/note protocol, master PCM or frontend sound has been
+established.
+
+**[C]** `sharc_diff.import_state` now restores canonical memory ranges keyed by
+address, as produced by `export_state`/`unpack_state`; it also accepts the older
+explicit-address record form. A public byte round-trip checks this path. Raw
+manual parsing of the DN2 continuation previously led to an incorrect claim of
+zero memory ranges; its canonical state actually contains 264,256 ranges and
+4,451,800 memory bytes.
+
+**[D]** Checkpoint verification: 40 native unit tests, native/WASM release
+builds and real continuation parity pass. Full slow-suite coverage completed
+in resumed segments: 2,237 passed, 29 skipped, one expected failure and 274
+passing subtests. The first segment passed 1,770 checks before interruption,
+with one new lambda subset-lint violation. Replacing that initializer with
+`State.__post_init__` corrected it; the remaining segment passed 467 checks
+(one skip), including the failed lint and interrupted captured-frame replay.
+Another 134 affected checks and the PyPy compatibility check pass against the
+final initializer; six SHARC goldens remain unchanged.
+
+**[C]** The captured-frame replay initially used a semantics-only diagnostic
+library without firmware instruction metadata or enabled runtime decode. Every
+instruction therefore fell back to Python, repeatedly exporting/hashing full
+DSP state. A one-second process sample found that export path dominating the
+replay. Regenerating matching DT2 instruction metadata (103,289 table entries;
+zero AOT blocks required) let the remaining 468 checks finish in 150.56 seconds.
+DN2 diagnostics explicitly enable runtime decode and still agree native/WASM.
+Use matching firmware metadata for the legacy replay harness, or explicitly
+select runtime decode; a matching core source hash alone is insufficient.
+
+
+**[O]** Independent static review resolves the next indirect-target stop:
+`0xb88a99` loads Type3b `(lw)` through I6 `0x269470`, M7=-1, destination I12.
+Both words exist at canonical byte `0x2826946c`: saved return `0xb88ab1` and
+paired word `0x269478`. The core deliberately rejects width8 reads and writes
+Unknown to I12, so `0xb88aa1` cannot branch through I12+M14. This is an
+unimplemented long-word move, rather than missing guest data. Public register-
+pair rules, atomic load/store behavior and rollback still need implementation
+and tests before that next continuation can be claimed.

@@ -579,6 +579,11 @@ pub struct Cfg {
     pub approx_recips: bool,
     pub data_memory_tainted: bool,
     pub dossier_bytes: Int,
+    /// Opt-in MODE1 alternate register banking.  AOT blocks are disabled
+    /// until their register-file plumbing can carry both banks.
+    pub bank_model: bool,
+    pub stack_model: bool,
+    pub core_timer: bool,
     /// provisional_interpretations: form name -> mode ("nop").
     pub provisional_interp: Vec<(Sym, Sym)>,
     /// provisional_forms.
@@ -604,6 +609,9 @@ impl Default for Cfg {
             approx_recips: true,
             data_memory_tainted: false,
             dossier_bytes: 0,
+            bank_model: false,
+            stack_model: false,
+            core_timer: false,
             provisional_interp: Vec::new(),
             provisional_forms: Vec::new(),
             block_ok: true,
@@ -626,6 +634,9 @@ impl Cfg {
             && self.approx_recips == d.approx_recips
             && self.data_memory_tainted == d.data_memory_tainted
             && self.dossier_bytes == d.dossier_bytes
+            && !self.bank_model
+            && !self.stack_model
+            && !self.core_timer
             && self.provisional_interp.is_empty()
             && self.provisional_forms.is_empty();
     }
@@ -648,12 +659,18 @@ impl Cfg {
 #[derive(Clone, Copy, Debug)]
 pub enum Undo {
     Special(u8, Spec, bool),
+    LoopSlotsPush,
+    LoopSlotsPop((V, V)),
+    LoopSlotsSet(usize, (V, V)),
     LoopsPush,
     LoopsPop(Loop),
     LoopsSet(usize, Loop),
     CallsPush,
     CallsPop(Int),
     CallsSet(usize, Int),
+    PcPush,
+    PcPop(Int),
+    PcSet(usize, Int),
     StatusPush,
     StatusPop((V, V, V)),
     StatusSet(usize, (V, V, V)),
@@ -670,6 +687,17 @@ pub const UNDO_CAP: usize = 64;
 pub struct St {
     /// The register file.
     pub r: [V; NUREG],
+    /// Alternate sides of UREG codes 0..95, plus MODE1's delayed selector
+    /// state.  The visible `r` remains the bank selected for this cycle.
+    pub bank_alt: [V; 96],
+    pub bank_active_mask: Int,
+    pub bank_pending_mask: Int,
+    pub bank_requested_mask: Int,
+    pub timer_written: bool,
+    pub loop_depth: Int,
+    pub loop_slots: Stk<(V, V), 6>,
+    pub pc_stack_pending: Int,
+    pub pc_stack_requested: Int,
     /// The current instruction's register writes: code and the value
     /// before the write. From `snap` on they also give the
     /// `_snapshot_uregs` view (a register's first entry there is its value
@@ -688,6 +716,7 @@ pub struct St {
     pub at_loaded_entry: bool,
     pub loops: Stk<Loop, MAX_LOOPS>,
     pub call_stack: Stk<Int, MAX_CALLS>,
+    pub pc_stack: Stk<Int, MAX_CALLS>,
     pub status_stack: Stk<(V, V, V), MAX_STATUS>,
     /// Fixed-width MMR values, sorted by address.
     pub mmrs: Vec<(u32, V)>,
@@ -695,7 +724,7 @@ pub struct St {
     pub cfg: Cfg,
     undo: [Undo; UNDO_CAP],
     pub un: usize,
-    saved: (Int, Option<Pending>, Int, bool),
+    saved: (Int, Option<Pending>, Int, bool, Int, Int, Int),
     /// Instructions completed.
     pub icount: u64,
     /// Block code stops before running past this instruction count.
@@ -740,6 +769,18 @@ impl St {
     pub fn new(mem: Mem) -> Box<St> {
         Box::new(St {
             r: [V::UNK; NUREG],
+            bank_alt: [V::UNK; 96],
+            bank_active_mask: 0,
+            bank_pending_mask: -1,
+            bank_requested_mask: -1,
+            timer_written: false,
+            loop_depth: 0,
+            loop_slots: Stk {
+                a: [(V::UNK, V::UNK); 6],
+                n: 6,
+            },
+            pc_stack_pending: -1,
+            pc_stack_requested: -1,
             jr: [0; JOURNAL_CAP],
             jr_old: [V::UNK; JOURNAL_CAP],
             jn: 0,
@@ -752,13 +793,14 @@ impl St {
             at_loaded_entry: false,
             loops: Stk::default(),
             call_stack: Stk::default(),
+            pc_stack: Stk::default(),
             status_stack: Stk::default(),
             mmrs: Vec::new(),
             mem,
             cfg: Cfg::default(),
             undo: [Undo::LoopsPush; UNDO_CAP],
             un: 0,
-            saved: (0, None, 0, false),
+            saved: (0, None, 0, false, -1, -1, 0),
             icount: 0,
             limit: 0,
             trap: None,
@@ -828,12 +870,22 @@ impl St {
     /// Start an instruction: nothing to undo yet.
     #[inline(always)]
     pub fn begin(&mut self) {
-        self.saved = (self.pc_sw, self.pending, self.steps, self.at_loaded_entry);
+        self.saved = (
+            self.pc_sw,
+            self.pending,
+            self.steps,
+            self.at_loaded_entry,
+            self.bank_requested_mask,
+            self.pc_stack_requested,
+            self.loop_depth,
+        );
     }
 
     /// Finish an instruction: its writes become the next one's snapshot.
     #[inline(always)]
     pub fn commit(&mut self) {
+        self.bank_complete();
+        self.pc_stack_complete();
         self.jn = 0;
         self.snap = 0;
         self.un = 0;
@@ -844,6 +896,8 @@ impl St {
     /// block's register file, so only the undo log is dropped.
     #[inline(always)]
     pub fn commit_blk(&mut self) {
+        self.bank_complete();
+        self.pc_stack_complete();
         self.un = 0;
         self.icount += 1;
     }
@@ -853,6 +907,59 @@ impl St {
         self.jn = 0;
         self.snap = 0;
         self.un = 0;
+    }
+
+    /// MODE1 bank selector becomes visible after the following completed
+    /// instruction.  This runs only after a successful interpreter/block
+    /// instruction, so traps leave the old bank state intact.
+    pub fn bank_complete(&mut self) {
+        if !self.cfg.bank_model {
+            return;
+        }
+        if self.bank_pending_mask >= 0 {
+            let changed = self.bank_active_mask ^ self.bank_pending_mask;
+            for bit in [10, 7, 6, 5, 4, 3] {
+                if changed & (1 << bit) == 0 {
+                    continue;
+                }
+                for code in bank_codes(bit) {
+                    std::mem::swap(&mut self.r[code], &mut self.bank_alt[code]);
+                }
+            }
+            self.bank_active_mask = self.bank_pending_mask;
+        }
+        self.bank_pending_mask = self.bank_requested_mask;
+        self.bank_requested_mask = -1;
+    }
+
+    pub fn pc_stack_complete(&mut self) {
+        if !self.cfg.stack_model {
+            return;
+        }
+        if self.pc_stack_pending >= 0 {
+            self.pc_stack.n = self.pc_stack.n.min(self.pc_stack_pending as usize);
+            let depth = self.pc_stack.n;
+            self.r[101] = V::c(depth as Int);
+            self.r[100] = if depth == 0 {
+                V::c(0x7fff_ffff)
+            } else if self.pc_stack.a[depth - 1] == 0xffff_ffff {
+                V::UNK
+            } else {
+                V::c(self.pc_stack.a[depth - 1])
+            };
+            let mask = (1 << 22) | (1 << 21);
+            let bits = if depth == 0 {
+                1 << 22
+            } else if depth == 30 {
+                1 << 21
+            } else {
+                0
+            };
+            self.r[120] = bnd::_bitwise(self, self.r[120], V::c(mask), S_EMPTY, FN_OP_ANDNOT);
+            self.r[120] = bnd::_bitwise(self, self.r[120], V::c(bits), S_EMPTY, FN_OP_OR);
+        }
+        self.pc_stack_pending = self.pc_stack_requested;
+        self.pc_stack_requested = -1;
     }
 
     /// Undo every effect of the current instruction.
@@ -871,6 +978,11 @@ impl St {
                     self.special[i as usize] = v;
                     self.special_present[i as usize] = p;
                 }
+                Undo::LoopSlotsPush => self.loop_slots.n -= 1,
+                Undo::LoopSlotsPop(v) => {
+                    let _ = self.loop_slots.push_raw(v);
+                }
+                Undo::LoopSlotsSet(i, v) => self.loop_slots.a[i] = v,
                 Undo::LoopsPush => self.loops.n -= 1,
                 Undo::LoopsPop(v) => {
                     let _ = self.loops.push_raw(v);
@@ -881,6 +993,11 @@ impl St {
                     let _ = self.call_stack.push_raw(v);
                 }
                 Undo::CallsSet(i, v) => self.call_stack.a[i] = v,
+                Undo::PcPush => self.pc_stack.n -= 1,
+                Undo::PcPop(v) => {
+                    let _ = self.pc_stack.push_raw(v);
+                }
+                Undo::PcSet(i, v) => self.pc_stack.a[i] = v,
                 Undo::StatusPush => self.status_stack.n -= 1,
                 Undo::StatusPop(v) => {
                     let _ = self.status_stack.push_raw(v);
@@ -896,11 +1013,14 @@ impl St {
                 }
             }
         }
-        let (pc, pending, steps, entry) = self.saved;
+        let (pc, pending, steps, entry, bank_requested, pc_requested, loop_depth) = self.saved;
         self.pc_sw = pc;
         self.pending = pending;
         self.steps = steps;
         self.at_loaded_entry = entry;
+        self.bank_requested_mask = bank_requested;
+        self.pc_stack_requested = pc_requested;
+        self.loop_depth = loop_depth;
     }
 
     /// Undo the current instruction's logged changes (block code: its
@@ -908,9 +1028,25 @@ impl St {
     /// block itself).
     #[cold]
     pub fn rollback_log(&mut self) {
-        let saved = (self.pc_sw, self.pending, self.steps, self.at_loaded_entry);
+        let saved = (
+            self.pc_sw,
+            self.pending,
+            self.steps,
+            self.at_loaded_entry,
+            self.bank_requested_mask,
+            self.pc_stack_requested,
+            self.loop_depth,
+        );
         self.rollback();
-        (self.pc_sw, self.pending, self.steps, self.at_loaded_entry) = saved;
+        (
+            self.pc_sw,
+            self.pending,
+            self.steps,
+            self.at_loaded_entry,
+            self.bank_requested_mask,
+            self.pc_stack_requested,
+            self.loop_depth,
+        ) = saved;
     }
 
     /// No instruction in progress (after an import).
@@ -1005,6 +1141,29 @@ impl St {
             return true;
         }
         self.named_ranges.iter().any(|&(lo, hi)| lo <= a && a < hi)
+    }
+}
+
+pub const BANK_MASK: Int = 0x4f8;
+
+pub fn bank_codes(bit: Int) -> Vec<usize> {
+    match bit {
+        10 => (0..8).chain(80..88).collect(),
+        7 => (8..16).chain(88..96).collect(),
+        4 | 3 | 6 | 5 => {
+            let start = match bit {
+                4 => 0,
+                3 => 4,
+                6 => 8,
+                5 => 12,
+                _ => unreachable!(),
+            };
+            [16, 32, 48, 64]
+                .into_iter()
+                .flat_map(|base| base + start..base + start + 4)
+                .collect()
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -1187,7 +1346,7 @@ pub fn s_set_special(s: &mut St, key: Sym, v: Spec) -> R<()> {
 }
 
 macro_rules! stack_ops {
-    ($field:ident, $ty:ty, $len:ident, $at:ident, $push:ident, $pop:ident, $set:ident, $tup:ident, $upush:ident, $upop:ident, $uset:ident) => {
+    ($field:ident, $ty:ty, $len:ident, $at:ident, $push:ident, $pop:ident, $set:ident, $tup:ident, $upush:ident, $upop:ident, $uset:ident $(,)?) => {
         #[inline(always)]
         pub fn $len(s: &St) -> Int {
             s.$field.n as Int
@@ -1263,6 +1422,19 @@ stack_ops!(
     StatusPush,
     StatusPop,
     StatusSet
+);
+stack_ops!(
+    pc_stack,
+    Int,
+    stk_len_pc_stack,
+    stk_at_pc_stack,
+    stk_push_pc_stack,
+    stk_pop_pc_stack,
+    stk_set_pc_stack,
+    stk_tup_pc_stack,
+    PcPush,
+    PcPop,
+    PcSet
 );
 
 // ---------------------------------------------------------------------------
@@ -1509,3 +1681,17 @@ pub fn scalbn(x: f64, n: Int) -> f64 {
 }
 
 pub mod bnd;
+
+stack_ops!(
+    loop_slots,
+    (V, V),
+    stk_len_loop_slots,
+    stk_at_loop_slots,
+    stk_push_loop_slots,
+    stk_pop_loop_slots,
+    stk_set_loop_slots,
+    stk_tup_loop_slots,
+    LoopSlotsPush,
+    LoopSlotsPop,
+    LoopSlotsSet
+);

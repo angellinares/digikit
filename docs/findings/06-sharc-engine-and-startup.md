@@ -258,19 +258,24 @@ Seven slots hold only the filler `00 00 00 00 3e 0b` x4 -- slots 2, 9, 10,
 16-19 -- exactly the interrupt numbers Table 4-46 marks "Reserved" for the
 ADSP-2156x/SC57x/SC58x family. **[V]**
 
-Each populated slot's jump target is not what `tools/sharc_isa.py` decodes:
-its matched form (`Type14a`, `Type11a` or `8a_abs`, depending on slot)
-assembles an address from the standard word-swapped 48-bit frame and gets it
-wrong (e.g. `0x1c063e` for the reset slot, not the code it actually runs).
-The real target is the instruction's first three stored bytes read as a
-plain little-endian 24-bit integer, no word-swap: RSTI (1) -> `0x1c1338`
-(loader entry), EMUI (0) -> `0xb89010`, PARI (3) -> `0xb89046`, ILOPI (4) ->
-`0xb8902a` (all in `FUN_b89002`), 20 slots (5-8, 11-14, 20-31) -> `0x1c0b1e`,
-SECI (15) -> `0x1c0b7b` (both in `FUN_1c0b1d`) -- six of nine distinct
-targets checked directly against the bytes, all exact. Real decoder gap, not
-a firmware oddity: Types 11a/14a/16a's `addr`/`compute` fields are correctly
-placed for ordinary 48-bit instructions but wrong for this table's flat
-byte-address encoding. **[C][V]**
+The IVT uses fixed-width ISA words stored as little-endian 48-bit values,
+whereas ordinary VISA instructions use little-endian 16-bit parcels in
+most-significant-parcel-first order. Feeding IVT bytes through the VISA
+path therefore gives incorrect forms and targets. The first three bytes
+are the Type8a address bits 23:0. This is standard ISA encoding, not a
+special firmware encoding. The slot PC is a normal-word instruction
+address: each ISA word advances by one, and each vector occupies four
+words. The supported L1 table maps normal-word PC `0x90000 + n` to byte
+`0x28240000 + 6*n`; the data normal-word mapping's four-byte stride does
+not apply to these instruction words. **[C][V]**
+
+The independently audited DT2 targets remain: RSTI (1) -> `0x1c1338`,
+EMUI (0) -> `0xb89010`, PARI (3) -> `0xb89046`, ILOPI (4) -> `0xb8902a`,
+20 slots (5-8, 11-14, 20-31) -> `0x1c0b1e`, and SECI (15) -> `0x1c0b7b`.
+A separate DN2 1.11 audit confirms SFT3's slot at normal-word `0x9007c`
+jumps with two ISA delay slots to VISA address `0x1c0a70`. Generic public
+Type8a extraction and an independent byte audit agree on that target.
+**[V]**
 
 `FUN_1c0b1d` dispatches by reading the interrupt number from `ASTATX` (`fext`
 pos 0 len 12), scaling by 8, adding `0x240ad8`, and jumping through `I12`
@@ -5134,3 +5139,35 @@ hash touched.
   against the image bytes independently before it is marked **[V]**, per
   this project's own rule (CLAUDE.md: "Have a second agent check a finding
   against the image bytes before marking it [V]").
+
+
+## DN2 SPI2 DMA/SEC integration boundary (2026-10-02)
+
+**[O]** Shared canonical-state import plus the DN2 1.11 loader overlay confirms
+SPI2 configured in slave mode (CTL `0x351`) and circular DMA descriptor lists.
+RX channel 27 descriptors `0x282c2960` / `0x282c297c` target `0x282c39d0` /
+`0x282c29d0`. TX channel 26 descriptors `0x282c2998` / `0x282c29b4` target
+`0x282c59d0` / `0x282c49d0`. Their CFGs are `0x144117` / `0x144115`, XCNT
+`0x55e`, XMOD 2, YCNT/YMOD zero: 1374 16-bit words, the observed 2748-byte CF
+command-frame length. These are DN2 observations; DT2 callback/buffer addresses
+must not be substituted. Static MMR writes do not yet cause descriptor fetch,
+SPI transfer, DMA_STAT W1C completion or SEC pending/active transitions.
+
+**[D]** Public HWR Table 6-5 assigns SPI2 RX DMA27 to SEC SID 70. The installed
+SCTL[70] is 5. A minimal coupling must fetch actual guest descriptors, transfer
+full-duplex words, update current DMA state and IRQDONE, then route completion
+through SEC and its genuine core SECI interrupt. SEC source acceptance and end
+are separate: ACK clears pending/sets active; matching SEC_END clears active.
+The precise source routing configuration still needs validation before delivery.
+
+**[O]** DN2's SECI vector branches to `0x1c0acd`, inside `FUN_1c0a6f`.
+At `0x1c0ae1` it reads SHDBG_SECI_ID (`0x300eb`), writes the ID back at
+`0x1c0ae4` (ACK), and writes SEC0_END (`0x3108900c`) at `0x1c0b34`.
+Its SID70 table entry at `0x24099c` is selector 26, not a callback pointer.
+At `0x1c0af6` the confident decoder reports Type9a_rel CI, currently unsupported.
+Later PM(I4)/PCSTK reads need a real SECI entry trace to establish the installed
+callback. These PCs/operands were independently inspected in the database;
+callback binding remains unresolved. Next experiment: model one actual SPI2
+DMA exchange and trace acceptance/ACK/END, rather than calling a guessed handler.
+Public references: SHARC+ PRM SHDBG_SECI_ID register description and ADSP-2156x
+HWR SEC and DMA chapters, available through `docs/sharc/SOURCES.md`.

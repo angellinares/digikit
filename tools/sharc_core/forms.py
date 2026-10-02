@@ -18,6 +18,7 @@ from .state import (
     State,
     _note_provisional,
     _stop,
+    _sync_empty_loop_registers,
 )
 
 
@@ -40,6 +41,7 @@ FORMS = _build_forms(
 
 
 def _execute(state: State, insn: Instruction) -> list[State]:
+    _sync_empty_loop_registers(state)
     if insn.kind != "confident" or insn.length_bytes is None:
         if insn.length_bytes is None or insn.type_name not in state.provisional_forms:
             return [_stop(state, insn, "uncertain or undecodable form: " + insn.note)]

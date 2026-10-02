@@ -5,6 +5,51 @@ use crate::mem::Mem;
 use crate::rt::bnd;
 use crate::rt::*;
 
+#[test]
+fn aconv_preserves_known_destination_address_spaces() {
+    let s = St::new(Mem::new());
+    for (word, byte) in [
+        (0x90080, 0x240200),
+        (0xb0040, 0x2c0100),
+        (0x08000020, 0x20000080),
+        (0x10000020, 0x80000080),
+    ] {
+        assert_eq!(bnd::_aconv(&s, V::c(word), true, 0, 0).unwrap(), V::c(byte));
+        assert_eq!(bnd::_aconv(&s, V::c(byte), true, 0, 0).unwrap(), V::c(byte));
+        assert_eq!(
+            bnd::_aconv(&s, V::c(byte), false, 0, 0).unwrap(),
+            V::c(word)
+        );
+        assert_eq!(
+            bnd::_aconv(&s, V::c(word), false, 0, 0).unwrap(),
+            V::c(word)
+        );
+    }
+}
+
+#[test]
+fn isa_vector_branch_decodes_public_absolute_target() {
+    // Public Type8a fields: IF TRUE JUMP 0x123456 (DB), fixed ISA word.
+    let raw = 0x0600_0000_0000 | (31 << 33) | (1 << 26) | 0x123456;
+    let insn = crate::decode::decode_isa(raw);
+    assert_eq!(insn.type_name, "8a_abs");
+    assert_eq!(insn.length_bytes, Some(6));
+    assert_eq!(
+        insn.fields()
+            .iter()
+            .find(|field| field.key == "addr[23:16]")
+            .map(|field| field.value),
+        Some(0x12)
+    );
+    assert_eq!(
+        insn.fields()
+            .iter()
+            .find(|field| field.key == "addr[15:0]")
+            .map(|field| field.value),
+        Some(0x3456)
+    );
+}
+
 fn state() -> Box<St> {
     let mut mem = Mem::new();
     // A loader-backed word at the short-word alias of 0x1000, and one at a
@@ -15,6 +60,150 @@ fn state() -> Box<St> {
     let mut s = St::new(mem);
     s.sync_snapshot();
     s
+}
+
+#[test]
+fn software_interrupt_probe_respects_masks_and_nesting() {
+    let mut engine = crate::Engine::new(Mem::new());
+    engine.s.r[114] = V::c((1 << 12) | (1 << 11));
+    engine.s.r[122] = V::c((1 << 31) | (1 << 28));
+    engine.s.r[123] = V::c(0xf000_0000);
+    engine.s.r[124] = V::c(0);
+    assert_eq!(engine.software_interrupt_candidate(), Some(28));
+    engine.s.r[124] = V::c(1 << 29);
+    assert_eq!(engine.software_interrupt_candidate(), Some(28));
+    engine.s.r[122] = V::c(1 << 31);
+    assert_eq!(engine.software_interrupt_candidate(), None);
+    engine.s.r[124] = V::c(0);
+    engine.s.r[114] = V::c(0);
+    assert_eq!(engine.software_interrupt_candidate(), None);
+    engine.s.r[114] = V::c(1 << 12);
+    engine.s.r[123] = V::c(0);
+    assert_eq!(engine.software_interrupt_candidate(), None);
+}
+
+#[test]
+fn software_interrupt_probe_stops_before_an_instruction_and_defers_delay_slots() {
+    let mut engine = crate::Engine::new(Mem::new());
+    engine.s.r[114] = V::c(1 << 12);
+    engine.s.r[122] = V::c(1 << 31);
+    engine.s.r[123] = V::c(1 << 31);
+    engine.s.r[124] = V::c(0);
+    engine.s.pending = Some(Pending {
+        target: Some(0x40),
+        call: false,
+        slots: 2,
+        return_from_call: false,
+        return_sw: None,
+    });
+    assert_eq!(engine.software_interrupt_candidate(), None);
+    engine.s.pending = None;
+    assert!(!engine.stop_software_interrupt);
+    assert_eq!(engine.set_option(7, 1), 0);
+    assert_eq!(engine.step(1), 0);
+    assert_eq!(engine.s.icount, 0);
+    assert!(engine.halt.as_deref().unwrap().starts_with("diagnostic:"));
+    assert!(engine.s.call_stack.items().is_empty());
+    assert!(engine.s.status_stack.items().is_empty());
+}
+
+#[test]
+fn alternate_banks_apply_after_one_completed_following_instruction() {
+    let mut s = state();
+    s.cfg.bank_model = true;
+    s.cfg.refresh();
+    s.r[0] = V::c(1);
+    s.r[16] = V::c(16);
+    s.r[80] = V::c(80);
+    s.bank_alt[0] = V::c(101);
+    s.bank_alt[16] = V::c(116);
+    s.bank_alt[80] = V::c(180);
+    s.bank_requested_mask = 1 << 10;
+    s.commit(); // MODE1 write: latch only.
+    assert_eq!(s.r[0], V::c(1));
+    s.bank_requested_mask = 1 << 4;
+    s.commit(); // following instruction: SRRFL takes effect.
+    assert_eq!(s.r[0], V::c(101));
+    assert_eq!(s.r[80], V::c(180));
+    assert_eq!(s.r[16], V::c(16));
+    s.commit(); // following request: SRD1L takes effect.
+    assert_eq!(s.r[0], V::c(1));
+    assert_eq!(s.r[16], V::c(116));
+}
+
+#[test]
+fn trapped_mode1_bank_request_rolls_back() {
+    let mut s = state();
+    s.cfg.bank_model = true;
+    s.cfg.refresh();
+    s.bank_requested_mask = -1;
+    s.begin();
+    bnd::_bank_request(&mut s, V::c(1 << 10)).unwrap();
+    assert_eq!(s.bank_requested_mask, 1 << 10);
+    s.rollback();
+    assert_eq!(s.bank_requested_mask, -1);
+}
+
+#[test]
+fn canonical_v2_preserves_bank_state() {
+    let mut source = state();
+    source.cfg.bank_model = true;
+    source.cfg.refresh();
+    source.bank_active_mask = 1 << 10;
+    source.bank_pending_mask = 1 << 4;
+    source.bank_requested_mask = 1 << 3;
+    source.bank_alt[0] = V::c(42);
+    let blob = canon::export_state(&source, false);
+    let mut restored = state();
+    canon::import_state(&mut restored, &blob).unwrap();
+    assert!(restored.cfg.bank_model);
+    assert_eq!(restored.bank_active_mask, 1 << 10);
+    assert_eq!(restored.bank_pending_mask, 1 << 4);
+    assert_eq!(restored.bank_requested_mask, 1 << 3);
+    assert_eq!(restored.bank_alt[0], V::c(42));
+}
+
+#[test]
+fn physical_stack_wire_state_and_pointer_requests_survive_rollback() {
+    let mut source = state();
+    source.cfg.stack_model = true;
+    source.cfg.refresh();
+    source.pc_stack.push_raw(0x0100_0123).unwrap();
+    source.pc_stack.push_raw(0x0100_0456).unwrap();
+    source.pc_stack_pending = 1;
+    source.begin();
+    bnd::_pc_stack_request(&mut source, V::c(0)).unwrap();
+    stk_set_pc_stack(&mut source, 1, 0x0100_0789).unwrap();
+    source.rollback();
+    assert_eq!(source.pc_stack_requested, -1);
+    assert_eq!(source.pc_stack.items(), &[0x0100_0123, 0x0100_0456]);
+    let blob = canon::export_state(&source, false);
+    let mut restored = state();
+    canon::import_state(&mut restored, &blob).unwrap();
+    assert!(restored.cfg.stack_model);
+    assert!(!restored.cfg.block_ok);
+    assert_eq!(restored.pc_stack_pending, 1);
+    restored.begin();
+    restored.commit();
+    assert_eq!(restored.pc_stack.items(), &[0x0100_0123]);
+    assert_eq!(restored.r[100], V::c(0x0100_0123));
+    assert_eq!(restored.r[101], V::c(1));
+}
+
+#[test]
+fn diagnostic_pc_breakpoint_stops_before_clock_or_instruction_effects() {
+    let mut engine = crate::Engine::new(Mem::new());
+    assert_eq!(engine.set_option(8, -2), -1);
+    assert_eq!(engine.set_option(8, 0x0100_0000), -1);
+    assert_eq!(engine.set_option(8, 0), 0);
+    assert_eq!(engine.set_option(5, 1), 0);
+    let clock = engine.s.r[105];
+    assert_eq!(engine.step(1), 0);
+    assert_eq!(engine.halt.as_deref(), Some("diagnostic: PC breakpoint"));
+    assert_eq!(engine.s.r[105], clock);
+    assert_eq!(engine.s.icount, 0);
+    assert_eq!(engine.set_option(8, -1), 0);
+    assert_eq!(engine.stop_pc, None);
 }
 
 fn direct_short_word(mem: &Mem, pc_sw: u32) -> Option<u16> {

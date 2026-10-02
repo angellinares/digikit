@@ -26,6 +26,28 @@ from sharc_isa import frame_of, load_instruction_set
 from sharc_visa_tables import TYPES, get_type
 
 ISA = load_instruction_set()
+ISA48 = load_instruction_set(mode="isa")
+
+
+def decode_isa48(data: bytes) -> Instruction:
+    """One fixed-width ISA word stored as a little-endian 48-bit value."""
+    if len(data) != 6:
+        return Instruction(0, None, "unknown", kind="unknown", note="unmapped ISA word")
+    raw = int.from_bytes(data, "little")
+    selection = ISA48.select_frame(raw)
+    form = selection.form
+    if form is None:
+        return Instruction(
+            0, None, "unknown", kind="unknown", note="unresolved ISA word"
+        )
+    return Instruction(
+        0,
+        6,
+        form.id,
+        {item.field.label: item.value for item in form.extract_fields(raw)},
+        raw=raw,
+        kind="uncertain" if form.uncertain else "confident",
+    )
 
 
 class Desync(Exception):

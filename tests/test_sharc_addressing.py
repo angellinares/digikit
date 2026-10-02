@@ -42,6 +42,8 @@ def test_product_map_endpoints(word, byte):
     assert a.byte_to_normal_word(arch_byte) == word
     assert _aconv(Const(word), True, 0, 0) == Const(arch_byte)
     assert _aconv(Const(arch_byte), False, 0, 0) == Const(word)
+    assert _aconv(Const(arch_byte), True, 0, 0) == Const(arch_byte)
+    assert _aconv(Const(word), False, 0, 0) == Const(word)
 
 
 def test_access_context_and_alias_coherence():

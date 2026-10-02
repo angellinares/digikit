@@ -43,9 +43,20 @@ def probe(
     mmr_resets: pathlib.Path | None = None,
     approx_recips: bool = False,
     instruction_clock: bool = False,
+    banks: bool = False,
+    stacks: bool = False,
+    stop_software_interrupt: bool = False,
+    software_interrupts: bool = False,
+    core_timer: bool = False,
     compare_every: int = 1,
     seconds: float = 60,
 ) -> dict:
+    if compare and stop_software_interrupt:
+        raise ValueError(
+            "software-interrupt diagnostic stop requires non-comparison mode"
+        )
+    if (software_interrupts or core_timer) and not (banks and stacks):
+        raise ValueError("software interrupts require --banks and --stacks")
     data = sr._load_image_memory(image)
     entries = sharcldr.entry_points(data.blocks)
     if not entries:
@@ -57,6 +68,10 @@ def probe(
     if not runtime_decode and build["image_sha256"] != image_hash:
         raise ValueError("native library's instruction image does not match the loader")
     runner = sr.Runner(data, entry, approx_recips=approx_recips)
+    runner.state.bank_model = banks
+    runner.state.stack_model = stacks
+    runner.state.software_interrupts = software_interrupts
+    runner.state.core_timer = core_timer
     resets_source = None
     if mmr_resets is not None:
         raw = mmr_resets.read_bytes()
@@ -75,6 +90,8 @@ def probe(
         core.set_option(nr.OPT_RUNTIME_DECODE, 1)
     if instruction_clock:
         core.set_option(nr.OPT_INSTRUCTION_CLOCK, 1)
+    if stop_software_interrupt:
+        core.set_option(nr.OPT_STOP_SOFTWARE_INTERRUPT, 1)
     started = time.perf_counter()
     differences: list[str] = []
     if compare:
@@ -129,6 +146,13 @@ def probe(
         "loader_init_executed": False,
         "qualified_fresh_boot": False,
         "runtime_decode": runtime_decode,
+        "banks": banks,
+        "stacks": stacks,
+        "stop_software_interrupt": stop_software_interrupt,
+        "software_interrupts": software_interrupts,
+        "core_timer": "functional: one clock per completed instruction"
+        if core_timer
+        else "static",
         "mmr_resets": resets_source,
         "approx_recips": approx_recips,
         "clock_policy": "diagnostic: one tick per instruction, not cycle accurate"
@@ -184,6 +208,31 @@ def main() -> int:
         help="diagnostic EMUCLK ticks; not hardware cycle timing",
     )
     parser.add_argument(
+        "--banks",
+        action="store_true",
+        help="enable opt-in MODE1 alternate register banks",
+    )
+    parser.add_argument(
+        "--stop-software-interrupt",
+        action="store_true",
+        help="stop at an unmasked software-interrupt candidate; does not deliver it",
+    )
+    parser.add_argument(
+        "--software-interrupts",
+        action="store_true",
+        help="deliver software IRQs through the L1 ISA vector table (functional timing)",
+    )
+    parser.add_argument(
+        "--core-timer",
+        action="store_true",
+        help="countdown and timer IRQs, one clock per instruction; omits pipeline timing",
+    )
+    parser.add_argument(
+        "--stacks",
+        action="store_true",
+        help="enable independent hardware PC stack and MODE1STK access",
+    )
+    parser.add_argument(
         "--compare-every",
         type=int,
         default=1,
@@ -212,6 +261,11 @@ def main() -> int:
             mmr_resets=args.mmr_resets,
             approx_recips=args.approx_recips,
             instruction_clock=args.instruction_clock,
+            banks=args.banks,
+            stacks=args.stacks,
+            stop_software_interrupt=args.stop_software_interrupt,
+            software_interrupts=args.software_interrupts,
+            core_timer=args.core_timer,
             compare_every=args.compare_every,
             seconds=args.seconds,
         )

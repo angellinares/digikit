@@ -207,6 +207,7 @@ OPT_SPECIAL_PRESENT = 3
 OPT_RUNTIME_DECODE = 4
 OPT_INSTRUCTION_CLOCK = 5
 OPT_INSTRUCTION_CLOCK_BASE = 6
+OPT_STOP_SOFTWARE_INTERRUPT = 7
 OPT_EXPLICIT_MEMORY_MODEL = 10
 OPT_APPROX_RECIPS = 11
 OPT_ASSUME_NW32 = 12
@@ -216,6 +217,11 @@ OPT_CONTINUE_EXTERNAL_CALLS = 15
 OPT_DATA_MEMORY_TAINTED = 16
 OPT_HAS_CONCRETE = 17
 OPT_DOSSIER_BYTES = 18
+OPT_BANK_MODEL = 19
+OPT_STACK_MODEL = 20
+OPT_STOP_PC = 8
+OPT_SOFTWARE_INTERRUPTS = 9
+OPT_CORE_TIMER = 21
 
 
 # How to rebuild DEFAULT_LIB (native-opt's inputs, all under out/native/opt).
@@ -304,6 +310,8 @@ class NativeCore(sd.NativeEngine):
         rc = self._lib.sharc_native_set_option(self._handle, key, int(value))
         if rc != 0:
             raise ValueError("sharc_native_set_option(%d) failed (%d)" % (key, rc))
+        if key == OPT_CORE_TIMER:
+            self._core_timer_enabled = bool(value)
 
     def set_provisional(self, name: str, mode: str) -> None:
         n, m = name.encode(), mode.encode()
@@ -398,12 +406,12 @@ class NativeCore(sd.NativeEngine):
         rc = self._lib.sharc_native_step(self._handle, max_steps)
         if rc < 0:
             raise RuntimeError("sharc_native_step hard error (%d)" % rc)
-        if rc < max_steps:
+        # A peripheral event can fail after the last requested instruction
+        # completed. Timer-enabled runs must inspect that boundary too.
+        if rc < max_steps or getattr(self, "_core_timer_enabled", False):
             buf = ctypes.create_string_buffer(512)
             n = self._lib.sharc_native_halt_reason(self._handle, buf, 512)
-            self._halted_reason = (
-                buf.raw[:n].decode("utf-8", "replace") if n else "halted"
-            )
+            self._halted_reason = buf.raw[:n].decode("utf-8", "replace") if n else None
         return rc
 
 
@@ -449,6 +457,10 @@ def to_native(core: NativeCore, state: st.State) -> None:
     core.set_option(OPT_DATA_MEMORY_TAINTED, state.data_memory_tainted)
     core.set_option(OPT_HAS_CONCRETE, state.concrete is not None)
     core.set_option(OPT_DOSSIER_BYTES, state.dossier_bytes)
+    core.set_option(OPT_BANK_MODEL, state.bank_model)
+    core.set_option(OPT_STACK_MODEL, state.stack_model)
+    core.set_option(OPT_SOFTWARE_INTERRUPTS, state.software_interrupts)
+    core.set_option(OPT_CORE_TIMER, state.core_timer)
     if state.provisional_forms:
         raise ValueError("provisional_forms are not supported natively")
     for name, mode in state.provisional_interpretations.items():
@@ -488,10 +500,21 @@ def to_python(core: NativeCore, template: st.State) -> st.State:
         pending=state.pending,
         loops=state.loops,
         call_stack=state.call_stack,
+        stack_model=state.stack_model,
+        pc_stack=state.pc_stack,
+        loop_depth=state.loop_depth,
+        loop_slots=state.loop_slots,
+        pc_stack_pending=state.pc_stack_pending,
+        pc_stack_requested=state.pc_stack_requested,
         status_stack=state.status_stack,
         overlay=overlay,
         stopped=None,
         trace=[],
+        bank_model=state.bank_model,
+        bank_active_mask=state.bank_active_mask,
+        bank_pending_mask=state.bank_pending_mask,
+        bank_requested_mask=state.bank_requested_mask,
+        bank_alt=state.bank_alt,
     )
 
 
@@ -1155,6 +1178,10 @@ def _state_options(state: st.State) -> list[tuple[int, int]]:
         (OPT_DATA_MEMORY_TAINTED, int(state.data_memory_tainted)),
         (OPT_HAS_CONCRETE, int(state.concrete is not None)),
         (OPT_DOSSIER_BYTES, int(state.dossier_bytes)),
+        (OPT_BANK_MODEL, int(state.bank_model)),
+        (OPT_STACK_MODEL, int(state.stack_model)),
+        (OPT_SOFTWARE_INTERRUPTS, int(state.software_interrupts)),
+        (OPT_CORE_TIMER, int(state.core_timer)),
     ]
 
 

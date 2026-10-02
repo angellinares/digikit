@@ -91,6 +91,25 @@ VERSION``, the first four bytes of every blob):
                    ``_page_hashes`` for exactly what is hashed (the
                    overlay's own dirty bytes in that page, sorted by
                    address, as (address:uint64 LE, value:uint8) pairs).
+    ...     1     v2 bank_model (0/1)
+    ...     12    v2 bank_active_mask, bank_pending_mask, bank_requested_mask:
+                   three int32 values; -1 means no pending/requested change.
+    ...     864   v2 inactive bank: UREG codes 0..95, each a 9-byte Value.
+    ...     1     v3 stack_model (0/1)
+    ...     8     v3 pc_stack_pending, pc_stack_requested: two int32 values;
+                   -1 means no pending/requested truncation.
+    ...     2     v3 physical pc_stack_count (uint16)
+    ...     ...   v3 physical PC stack: count uint32 entries.
+
+    ...     1     v4 physical loop_depth (0..6)
+    ...   108     v4 six retained (LADDR, CURLCNTR) Value32 pairs
+
+Readers accept v1 with banking disabled and unknown inactive registers.
+Readers accept v1/v2 with physical stacks disabled and no entries.
+Readers accept v3 with empty physical loop resources.
+Writers emit v4, preserving inactive registers, independent physical PC
+entries, both selector/pointer pipelines, and all six physical loop slots. Software IRQ delivery is an
+explicit run option, not a wire-format flag.
 
 Deliberately out of the canonical format: the trace/event log
 (``State.trace``, observability only), the calibration/provisional
@@ -127,7 +146,7 @@ from sharcldr import LoadedMemory  # noqa: E402
 # 1. Canonical state layout
 # ---------------------------------------------------------------------------
 
-STATE_FORMAT_VERSION = 1
+STATE_FORMAT_VERSION = 4
 _MAGIC = b"SHRD"
 
 # sharc_core.encoding.UREG_NAMES is a 128-entry tuple; a UREG's code IS its
@@ -328,10 +347,28 @@ def export_state(
         "pending": _export_pending(state.pending),
         "loops": [_export_loop(loop) for loop in state.loops],
         "call_stack": list(state.call_stack),
+        "stack_model": state.stack_model,
+        "pc_stack": list(state.pc_stack),
+        "loop_depth": state.loop_depth,
+        "loop_slots": [
+            [_export_value32(a), _export_value32(c)] for a, c in state.loop_slots
+        ],
+        "pc_stack_pending": state.pc_stack_pending,
+        "pc_stack_requested": state.pc_stack_requested,
         "status_stack": [
             [_export_value32(v) for v in triple] for triple in state.status_stack
         ],
         "memory_ranges": ranges,
+        "bank_model": state.bank_model,
+        "bank_active_mask": state.bank_active_mask,
+        "bank_pending_mask": state.bank_pending_mask,
+        "bank_requested_mask": state.bank_requested_mask,
+        "bank_alt": {
+            code: _export_value32(
+                state.bank_alt.get(code, st.Unknown("uninitialized alternate register"))
+            )
+            for code in range(96)
+        },
     }
     if page_hash:
         result["page_hashes"] = _page_hashes(state.overlay)
@@ -379,6 +416,19 @@ def import_state(
         pending=_import_pending(fields.get("pending")),
         loops=[_import_loop(loop) for loop in fields.get("loops", ())],
         call_stack=list(fields.get("call_stack", ())),
+        stack_model=bool(fields.get("stack_model", False)),
+        pc_stack=list(fields.get("pc_stack", ())),
+        loop_depth=int(fields.get("loop_depth", 0)),
+        loop_slots=[
+            (_import_value32(pair[0]), _import_value32(pair[1]))
+            for pair in fields["loop_slots"]
+        ]
+        if "loop_slots" in fields
+        else [
+            (st.Unknown("loop address"), st.Unknown("loop counter")) for _ in range(6)
+        ],
+        pc_stack_pending=int(fields.get("pc_stack_pending", -1)),
+        pc_stack_requested=int(fields.get("pc_stack_requested", -1)),
         status_stack=[
             (
                 _import_value32(triple[0]),
@@ -394,11 +444,28 @@ def import_state(
         assume_nw32=assume_nw32,
         follow_loaded_calls=data is not None,
         max_call_depth=64,
+        bank_model=bool(fields.get("bank_model", False)),
+        bank_active_mask=int(fields.get("bank_active_mask", 0)),
+        bank_pending_mask=int(fields.get("bank_pending_mask", -1)),
+        bank_requested_mask=int(fields.get("bank_requested_mask", -1)),
+        bank_alt={
+            code: _import_value32(
+                fields.get("bank_alt", {}).get(
+                    code,
+                    fields.get("bank_alt", {}).get(
+                        str(code), {"kind": 0, "value": 0, "mask": 0}
+                    ),
+                )
+            )
+            for code in range(96)
+        },
     )
-    for range_dict in fields.get("memory_ranges", {}).values():
+    for range_address, range_dict in fields.get("memory_ranges", {}).items():
         if range_dict["data"] is not None:
             _write_bytes(
-                state, range_dict["address"], bytes.fromhex(range_dict["data"])
+                state,
+                int(range_dict.get("address", range_address)),
+                bytes.fromhex(range_dict["data"]),
             )
     return state
 
@@ -508,6 +575,33 @@ def pack_state(fields: Mapping[str, Any]) -> bytes:
     for page in sorted(page_hashes):
         out += struct.pack("<I", page)
         out += bytes.fromhex(page_hashes[page])
+    out += bytes([1 if fields.get("bank_model", False) else 0])
+    out += struct.pack(
+        "<iii",
+        int(fields.get("bank_active_mask", 0)),
+        int(fields.get("bank_pending_mask", -1)),
+        int(fields.get("bank_requested_mask", -1)),
+    )
+    bank_alt = fields.get("bank_alt", {})
+    for code in range(96):
+        value = bank_alt.get(
+            code, bank_alt.get(str(code), {"kind": 0, "value": 0, "mask": 0})
+        )
+        out += _pack_value32(value)
+    out += struct.pack(
+        "<BiiH",
+        bool(fields.get("stack_model", False)),
+        int(fields.get("pc_stack_pending", -1)),
+        int(fields.get("pc_stack_requested", -1)),
+        len(fields.get("pc_stack", ())),
+    )
+    for entry in fields.get("pc_stack", ()):
+        out += struct.pack("<I", entry & 0xFFFFFFFF)
+    out += bytes([int(fields.get("loop_depth", 0))])
+    for address, counter in fields.get(
+        "loop_slots", [[{"kind": 0, "value": 0, "mask": 0}] * 2 for _ in range(6)]
+    ):
+        out += _pack_value32(address) + _pack_value32(counter)
     return bytes(out)
 
 
@@ -516,7 +610,7 @@ def unpack_state(blob: bytes) -> dict:
     if blob[:4] != _MAGIC:
         raise ValueError("not a sharc_diff state blob (bad magic %r)" % (blob[:4],))
     (version,) = struct.unpack_from("<I", blob, 4)
-    if version != STATE_FORMAT_VERSION:
+    if version not in (1, 2, 3, STATE_FORMAT_VERSION):
         raise ValueError(
             "sharc_diff state blob is format version %d, this module reads %d"
             % (version, STATE_FORMAT_VERSION)
@@ -617,6 +711,42 @@ def unpack_state(blob: bytes) -> dict:
         off += 4
         page_hashes[page] = blob[off : off + 32].hex()
         off += 32
+    bank_model = False
+    bank_active_mask = 0
+    bank_pending_mask = -1
+    bank_requested_mask = -1
+    bank_alt = {code: {"kind": 0, "value": 0, "mask": 0} for code in range(96)}
+    if version >= 2:
+        bank_model = bool(blob[off])
+        off += 1
+        bank_active_mask, bank_pending_mask, bank_requested_mask = struct.unpack_from(
+            "<iii", blob, off
+        )
+        off += 12
+        for code in range(96):
+            bank_alt[code], off = _unpack_value32(blob, off)
+    stack_model = False
+    pc_stack_pending = pc_stack_requested = -1
+    pc_stack = []
+    if version >= 3:
+        stack_model, pc_stack_pending, pc_stack_requested, depth = struct.unpack_from(
+            "<BiiH", blob, off
+        )
+        off += 11
+        for _ in range(depth):
+            (entry,) = struct.unpack_from("<I", blob, off)
+            pc_stack.append(entry)
+            off += 4
+    loop_depth = 0
+    loop_slots = [[{"kind": 0, "value": 0, "mask": 0}] * 2 for _ in range(6)]
+    if version >= 4:
+        loop_depth = blob[off]
+        off += 1
+        loop_slots = []
+        for _ in range(6):
+            address, off = _unpack_value32(blob, off)
+            counter, off = _unpack_value32(blob, off)
+            loop_slots.append([address, counter])
     return {
         "format_version": version,
         "pc_sw": pc_sw,
@@ -627,9 +757,20 @@ def unpack_state(blob: bytes) -> dict:
         "pending": pending,
         "loops": loops,
         "call_stack": call_stack,
+        "stack_model": bool(stack_model),
+        "pc_stack": pc_stack,
+        "loop_depth": loop_depth,
+        "loop_slots": loop_slots,
+        "pc_stack_pending": pc_stack_pending,
+        "pc_stack_requested": pc_stack_requested,
         "status_stack": status_stack,
         "memory_ranges": memory_ranges,
         "page_hashes": page_hashes,
+        "bank_model": bank_model,
+        "bank_active_mask": bank_active_mask,
+        "bank_pending_mask": bank_pending_mask,
+        "bank_requested_mask": bank_requested_mask,
+        "bank_alt": bank_alt,
     }
 
 
@@ -912,6 +1053,35 @@ def compare_states(
         )
     if a.get("stopped") != b.get("stopped"):
         lines.append("stopped: %r != %r" % (a.get("stopped"), b.get("stopped")))
+    for name, default in (
+        ("bank_model", False),
+        ("bank_active_mask", 0),
+        ("bank_pending_mask", -1),
+        ("bank_requested_mask", -1),
+        ("stack_model", False),
+        ("pc_stack_pending", -1),
+        ("pc_stack_requested", -1),
+        ("loop_depth", 0),
+    ):
+        va, vb = a.get(name, default), b.get(name, default)
+        if va != vb:
+            lines.append("%s: %r != %r" % (name, va, vb))
+    if a.get("pc_stack", []) != b.get("pc_stack", []):
+        lines.append("pc_stack: %r != %r" % (a.get("pc_stack"), b.get("pc_stack")))
+    unknown = {"kind": 0, "value": 0, "mask": 0}
+    if a.get("loop_slots", [[unknown] * 2 for _ in range(6)]) != b.get(
+        "loop_slots", [[unknown] * 2 for _ in range(6)]
+    ):
+        lines.append("loop_slots: physical resource contents differ")
+    aa, ba = a.get("bank_alt", {}), b.get("bank_alt", {})
+    for code in range(96):
+        va = aa.get(code, aa.get(str(code), unknown))
+        vb = ba.get(code, ba.get(str(code), unknown))
+        if va != vb:
+            lines.append(
+                "bank_alt[%s]: %s != %s"
+                % (st.UREG_NAMES[code], _value_repr(va), _value_repr(vb))
+            )
     for code in range(UREG_COUNT):
         va = a["uregs"][code] if code in a["uregs"] else a["uregs"][str(code)]
         vb = b["uregs"][code] if code in b["uregs"] else b["uregs"][str(code)]

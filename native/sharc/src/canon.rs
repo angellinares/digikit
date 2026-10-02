@@ -1,12 +1,14 @@
 //! The harness's canonical machine-state format (tools/sharc_diff.py,
-//! module docstring: `pack_state`/`unpack_state`, STATE_FORMAT_VERSION 1)
+//! module docstring: `pack_state`/`unpack_state`, STATE_FORMAT_VERSION 4).
+//! Versions 1/2 remain readable with physical stacks disabled; v1 also
+//! disables banking and supplies unknown shadows.
 //! and the image blob tools/sharc_transpile_run.py `pack_image` writes.
 
 use crate::mem::Mem;
 use crate::rt::*;
 use crate::sha256::Sha256;
 
-pub const STATE_FORMAT_VERSION: u32 = 1;
+pub const STATE_FORMAT_VERSION: u32 = 4;
 const PAGE: u32 = 4096;
 
 struct Rd<'a> {
@@ -132,7 +134,8 @@ pub fn import_state(s: &mut St, blob: &[u8]) -> Result<(), i32> {
     if r.take(4)? != b"SHRD" {
         return Err(-1);
     }
-    if r.u32()? != STATE_FORMAT_VERSION {
+    let version = r.u32()?;
+    if !matches!(version, 1 | 2 | 3 | STATE_FORMAT_VERSION) {
         return Err(-4);
     }
     s.mem.reset();
@@ -216,9 +219,58 @@ pub fn import_state(s: &mut St, blob: &[u8]) -> Result<(), i32> {
         }
     }
     // Page hashes describe the source's overlay; nothing to import.
+    for _ in 0..r.u32()? {
+        r.u32()?;
+        r.take(32)?;
+    }
     s.steps = 0;
     s.at_loaded_entry = false;
     s.cfg = Cfg::default();
+    s.bank_alt = [V::UNK; 96];
+    s.bank_active_mask = 0;
+    s.bank_pending_mask = -1;
+    s.bank_requested_mask = -1;
+    if version >= 2 {
+        s.cfg.bank_model = r.u8()? != 0;
+        s.bank_active_mask = r.i32()? as Int;
+        s.bank_pending_mask = r.i32()? as Int;
+        s.bank_requested_mask = r.i32()? as Int;
+        for code in 0..96 {
+            s.bank_alt[code] = r.value()?;
+        }
+    }
+    s.pc_stack.clear();
+    s.pc_stack_pending = -1;
+    s.pc_stack_requested = -1;
+    if version >= 3 {
+        s.cfg.stack_model = r.u8()? != 0;
+        s.pc_stack_pending = r.i32()? as Int;
+        s.pc_stack_requested = r.i32()? as Int;
+        let depth = r.u16()?;
+        if depth > 30 {
+            return Err(-5);
+        }
+        for _ in 0..depth {
+            let entry = r.u32()? as Int;
+            s.pc_stack.push_raw(entry).map_err(|_| -5)?;
+        }
+    }
+    s.loop_depth = 0;
+    s.loop_slots.n = 6;
+    s.loop_slots.a = [(V::UNK, V::UNK); 6];
+    if version >= 4 {
+        s.loop_depth = r.u8()? as Int;
+        if s.loop_depth > 6 {
+            return Err(-5);
+        }
+        for slot in &mut s.loop_slots.a {
+            *slot = (r.value()?, r.value()?);
+        }
+    } else if s.cfg.stack_model && !s.loops.items().is_empty() {
+        // Older snapshots cannot reconstruct packed loop resource contents.
+        return Err(-5);
+    }
+    s.cfg.refresh();
     s.sync_snapshot();
     s.check_loops();
     s.trap = None;
@@ -319,13 +371,32 @@ pub fn export_state(s: &St, ranges: bool) -> Vec<u8> {
         out.extend_from_slice(&page.to_le_bytes());
         out.extend_from_slice(&digest);
     }
+    out.push(s.cfg.bank_model as u8);
+    out.extend_from_slice(&(s.bank_active_mask as i32).to_le_bytes());
+    out.extend_from_slice(&(s.bank_pending_mask as i32).to_le_bytes());
+    out.extend_from_slice(&(s.bank_requested_mask as i32).to_le_bytes());
+    for value in s.bank_alt {
+        put_value(&mut out, value);
+    }
+    out.push(s.cfg.stack_model as u8);
+    out.extend_from_slice(&(s.pc_stack_pending as i32).to_le_bytes());
+    out.extend_from_slice(&(s.pc_stack_requested as i32).to_le_bytes());
+    out.extend_from_slice(&(s.pc_stack.len() as u16).to_le_bytes());
+    for &entry in s.pc_stack.items() {
+        out.extend_from_slice(&(entry as u32).to_le_bytes());
+    }
+    out.push(s.loop_depth as u8);
+    for &(address, counter) in s.loop_slots.items() {
+        put_value(&mut out, address);
+        put_value(&mut out, counter);
+    }
     out
 }
 
 /// Run configuration: 10 explicit_memory_model, 11 approx_recips, 12
 /// assume_nw32, 13 follow_loaded_calls, 14 max_call_depth, 15
 /// continue_external_calls, 16 data_memory_tainted, 17 has_concrete (a
-/// State with concrete=None), 18 dossier_bytes.
+/// State with concrete=None), 18 dossier_bytes, 19 bank_model.
 pub fn set_option(s: &mut St, key: u32, value: i64) -> i32 {
     let b = value != 0;
     match key {
@@ -338,6 +409,9 @@ pub fn set_option(s: &mut St, key: u32, value: i64) -> i32 {
         16 => s.cfg.data_memory_tainted = b,
         17 => s.cfg.has_concrete = b,
         18 => s.cfg.dossier_bytes = value as Int,
+        19 => s.cfg.bank_model = b,
+        20 => s.cfg.stack_model = b,
+        21 => s.cfg.core_timer = b,
         _ => return -1,
     }
     s.cfg.refresh();

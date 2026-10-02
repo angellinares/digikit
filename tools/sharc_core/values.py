@@ -299,6 +299,15 @@ def _aconv(value: Value, w2b: bool, source_code: int, pc_sw: int) -> Value:
         )
         if mapped is not None:
             return Const(mapped)
+        # PRM Table 6-4: an address already in the destination space is
+        # unchanged. In particular W2B must not multiply an L1 byte pointer.
+        already_in_space = (
+            byte_to_normal_word(value.value)
+            if w2b
+            else normal_word_to_architectural_byte(value.value)
+        )
+        if already_in_space is not None:
+            return value
         return Const(value.value << 2 if w2b else value.value >> 2)
     if not isinstance(value, Affine):
         return Unknown("ACONV source is not symbolic")

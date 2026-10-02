@@ -184,6 +184,13 @@ pub struct Engine {
     /// Starting tick for a bounded diagnostic continuation. The host must
     /// supply it explicitly; canonical state does not carry execution counts.
     pub instruction_clock_base: u64,
+    /// Diagnostic stop before an unmasked software-interrupt candidate.
+    /// This observes register state; it does not emulate interrupt entry.
+    pub stop_software_interrupt: bool,
+    /// Opt-in instruction-boundary breakpoint; no guest state is changed.
+    pub stop_pc: Option<u32>,
+    /// Opt-in functional software IRQ delivery through the L1 ISA IVT.
+    pub software_interrupts: bool,
     pub export_ranges: bool,
     pub dispatch: Dispatch,
     pub stats: Stats,
@@ -257,17 +264,30 @@ pub fn sym_of(name: &str) -> Option<Sym> {
 pub fn exec_insn(s: &mut St, insn: Insn) -> R<()> {
     #[cfg(sharc_gen)]
     {
+        if s.cfg.core_timer {
+            s.timer_written = false;
+        }
         s.begin();
         match generated::core_g::forms::_execute(s, insn) {
-            Ok(()) => {
-                s.commit();
-                Ok(())
-            }
+            Ok(()) => s.commit(),
             Err(t) => {
                 s.rollback();
-                Err(t)
+                return Err(t);
             }
         }
+        if s.cfg.core_timer {
+            // Peripheral time advances after a completed instruction. A
+            // failed timer event rolls back itself, retaining that instruction.
+            s.begin();
+            match generated::core_g::sequencer::_core_timer_tick(s) {
+                Ok(_) => s.commit_host(),
+                Err(t) => {
+                    s.rollback();
+                    return Err(t);
+                }
+            }
+        }
+        Ok(())
     }
     #[cfg(not(sharc_gen))]
     {
@@ -328,6 +348,9 @@ impl Engine {
             use_blocks: true,
             instruction_clock: false,
             instruction_clock_base: 0,
+            stop_software_interrupt: false,
+            stop_pc: None,
+            software_interrupts: false,
             export_ranges: false,
             dispatch: Dispatch::new(image_blocks()),
             stats: Stats::default(),
@@ -418,11 +441,23 @@ impl Engine {
         self.s.pc_sw = pc as Int;
         self.s.loops.clear();
         self.s.call_stack.clear();
+        self.s.pc_stack.clear();
+        self.s.pc_stack_pending = -1;
+        self.s.pc_stack_requested = -1;
         if let Some(r) = return_address {
             let _ = self.s.call_stack.push_raw(r);
+            if self.s.cfg.stack_model {
+                let _ = self.s.pc_stack.push_raw(0x0100_0000 | (r & 0x00ff_ffff));
+            }
         }
         self.s.status_stack.clear();
         self.s.pending = None;
+        #[cfg(sharc_gen)]
+        if self.s.cfg.stack_model {
+            let _ = generated::core_g::state::_sync_pc_stack(&mut self.s);
+            let _ = generated::core_g::state::_sync_status_stack(&mut self.s);
+            self.s.commit_host();
+        }
         self.halt = None;
         self.last_trap = None;
     }
@@ -444,6 +479,17 @@ impl Engine {
                 self.enable_runtime_decode(mem::Mem::read_sw);
             }
             5 => self.instruction_clock = value != 0,
+            7 => self.stop_software_interrupt = value != 0,
+            9 => self.software_interrupts = value != 0,
+            8 => {
+                if value == -1 {
+                    self.stop_pc = None;
+                } else if (0..=0x00ff_ffff).contains(&value) {
+                    self.stop_pc = Some(value as u32);
+                } else {
+                    return -1;
+                }
+            }
             6 => {
                 if value < 0 {
                     return -1;
@@ -458,6 +504,28 @@ impl Engine {
             _ => return canon::set_option(&mut self.s, key, value),
         }
         0
+    }
+
+    fn software_interrupt_candidate(&self) -> Option<u32> {
+        if self.s.pending.is_some() || !self.s.loops.items().is_empty() {
+            return None;
+        }
+        let [mode, latch, mask, priority] = [114, 122, 123, 124].map(|code| self.s.r[code]);
+        if ![mode, latch, mask, priority]
+            .iter()
+            .all(|value| value.is_c())
+            || mode.b & (1 << 12) == 0
+        {
+            return None;
+        }
+        let mut candidates = latch.b & mask.b & 0xf000_0000;
+        if priority.b != 0 {
+            if mode.b & (1 << 11) == 0 {
+                return None;
+            }
+            candidates &= ((1u64 << priority.b.trailing_zeros()) - 1) as u32;
+        }
+        (candidates != 0).then(|| candidates.trailing_zeros())
     }
 
     fn trapped(&mut self, t: Trap) {
@@ -479,12 +547,65 @@ impl Engine {
         let start = self.s.icount;
         let limit = start + n as u64;
         while self.s.icount < limit {
+            if self.stop_pc.is_some_and(|pc| self.s.pc_sw == pc as Int) {
+                self.halt = Some("diagnostic: PC breakpoint".into());
+                break;
+            }
+            if self.stop_software_interrupt && self.software_interrupt_candidate().is_some() {
+                self.halt =
+                    Some("diagnostic: unmasked software interrupt; entry not modeled".into());
+                break;
+            }
+            if self.software_interrupts || self.s.cfg.core_timer {
+                #[cfg(sharc_gen)]
+                {
+                    let allowed = (if self.software_interrupts {
+                        0xf000_0000
+                    } else {
+                        0
+                    }) | (if self.s.cfg.core_timer {
+                        0x0040_0800
+                    } else {
+                        0
+                    });
+                    let candidate =
+                        generated::core_g::sequencer::_interrupt_candidate(&mut self.s, allowed);
+                    let result = candidate.and_then(|mask| {
+                        if mask == 0 {
+                            return Ok(());
+                        }
+                        self.s.begin();
+                        let result =
+                            generated::core_g::sequencer::_enter_interrupt(&mut self.s, mask);
+                        if result.is_ok() {
+                            self.s.bank_complete();
+                            self.s.bank_complete();
+                            self.s.commit_host();
+                        } else {
+                            self.s.rollback();
+                        }
+                        result
+                    });
+                    if let Err(trap) = result {
+                        self.trapped(trap);
+                        break;
+                    }
+                }
+                #[cfg(not(sharc_gen))]
+                {
+                    self.trapped(TRAP_NO_INSN);
+                    break;
+                }
+            }
             if self.instruction_clock {
                 let tick = self.instruction_clock_base.wrapping_add(self.s.icount);
                 self.s.r[105] = V::c((tick as u32) as Int);
                 self.s.r[106] = V::c((tick >> 32) as Int);
             }
             if !self.instruction_clock
+                && !self.software_interrupts
+                && !self.stop_software_interrupt
+                && self.stop_pc.is_none()
                 && self.use_blocks
                 && self.s.cfg.block_ok
                 && self.s.loops_ok

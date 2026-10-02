@@ -26,6 +26,7 @@ from .sequencer import (
     _advance,
     _check_return_target,
     _immediate_transfer,
+    _instruction_stride,
     _predicate,
     _predicate_simd_branch,
     _return_transfer,
@@ -35,9 +36,11 @@ from .sequencer import (
 from .state import (
     Pending,
     State,
+    _bank_complete,
     _copy,
     _event,
     _json_value,
+    _pc_stack_complete,
     _snapshot_uregs,
     _stop,
     _ureg,
@@ -71,7 +74,7 @@ def _type_11c(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
     """11c."""
-    if _field(f, "x"):
+    if _field(f, "x") and not state.stack_model:
         return [_stop(state, insn, "unsupported Type11c RTI")]
     if _field(f, "lr"):
         return [_stop(state, insn, "unsupported Type11c loop reentry")]
@@ -80,6 +83,7 @@ def _type_11c(
         insn,
         _predicate_simd_branch(state, _field(f, "cond")),
         bool(_field(f, "j")),
+        interrupt=bool(_field(f, "x")),
     )
 
 
@@ -112,9 +116,8 @@ def _type_11a(
     # 17818-17862, printed pp.9-44/9-45): IF COND RTS/RTI (DB) (LR),
     # compute / ELSE compute. x selects RTS (0) or RTI (1), the same
     # bit Type11c's own "x" already gates; RTI additionally pops the
-    # status/loop stacks and clears IRPTL/IMASKP, none of which this
-    # tracer models, so it fails closed exactly like Type11c's RTI
-    # check. LR (loop reentry) changes how a loop's PC-stack entry is
+    # status stack and clears IRPTL/IMASKP when architectural stacks
+    # are enabled. LR (loop reentry) changes how a loop's PC-stack entry is
     # consumed and is also unmodeled; fail closed rather than guess.
     # j is the (DB) delayed-return modifier, reusing
     # ``_return_transfer``'s existing Type9b/11c-verified delay-slot
@@ -126,7 +129,7 @@ def _type_11a(
     # the If condition is false").
     if state.pending:
         return [_stop(state, insn, "nested delayed transfer")]
-    if _field(f, "x"):
+    if _field(f, "x") and not state.stack_model:
         return [_stop(state, insn, "unsupported Type11a RTI")]
     if _field(f, "lr"):
         return [_stop(state, insn, "unsupported Type11a loop reentry")]
@@ -140,7 +143,9 @@ def _type_11a(
             error = _flow_apply_compute(state, insn, f)
             if error:
                 return [_stop(state, insn, error)]
-        return _return_transfer(state, insn, predicate, delayed)
+        return _return_transfer(
+            state, insn, predicate, delayed, interrupt=bool(_field(f, "x"))
+        )
     taken, not_taken = _copy(state), _copy(state)
     compute_state = taken if compute_when_taken else not_taken
     error = _flow_apply_compute(compute_state, insn, f)
@@ -156,8 +161,10 @@ def _type_11a(
         condition=cond,
         predicate_assumption=False,
     )
-    return _return_transfer(taken, insn, True, delayed) + _return_transfer(
-        not_taken, insn, False, delayed
+    return _return_transfer(
+        taken, insn, True, delayed, interrupt=bool(_field(f, "x"))
+    ) + _return_transfer(
+        not_taken, insn, False, delayed, interrupt=bool(_field(f, "x"))
     )
 
 
@@ -182,7 +189,13 @@ def _type_9a_abs(
     cond = _field(f, "cond")
     compute_when_taken = not bool(_field(f, "e"))
 
-    if _field(f, "b") == 0 and cond == 0x1F and pmm == 6 and _field(f, "j") == 1:
+    if (
+        not state.stack_model
+        and _field(f, "b") == 0
+        and cond == 0x1F
+        and pmm == 6
+        and _field(f, "j") == 1
+    ):
         # The verified I(8+pmi)/M14 (DB) return idiom of 9b_abs, plus the
         # compute -- see _check_return_target's docstring for why any DAG2
         # index register (not just I12) belongs here.
@@ -205,7 +218,9 @@ def _type_9a_abs(
             raise ValueError("cannot return from an instruction without a length")
         _event(state, insn, "return-branch", index="I%d" % (8 + pmi), modifier="M14")
         state.steps += 1
-        state.pc_sw = state.pc_sw + insn.length_bytes // 2
+        _bank_complete(state)
+        _pc_stack_complete(state)
+        state.pc_sw = state.pc_sw + _instruction_stride(state.pc_sw, insn.length_bytes)
         state.pending = Pending(None, slots=2, return_from_call=True)
         return [state]
     # Type 9 indirect branches use DAG2: Ic is I8-I15 and Md is M8-M15.
@@ -268,7 +283,8 @@ def _type_9b_abs(
     pmi = (_field(f, "pmi[2:2]") << 2) | _field(f, "pmi[1:0]")
     pmm = _field(f, "pmm")
     if (
-        _field(f, "b") == 0
+        not state.stack_model
+        and _field(f, "b") == 0
         and _field(f, "cond") == 0x1F
         and pmm == 6
         and _field(f, "j") == 1
@@ -286,7 +302,9 @@ def _type_9b_abs(
             raise ValueError("cannot return from an instruction without a length")
         _event(state, insn, "return-branch", index="I%d" % (8 + pmi), modifier="M14")
         state.steps += 1
-        state.pc_sw = state.pc_sw + insn.length_bytes // 2
+        _bank_complete(state)
+        _pc_stack_complete(state)
+        state.pc_sw = state.pc_sw + _instruction_stride(state.pc_sw, insn.length_bytes)
         state.pending = Pending(None, slots=2, return_from_call=True)
         return [state]
     # Any other Type 9b JUMP/CALL (Md, Ic): DAG2 I(8+pmi) + M(8+pmm).
@@ -410,7 +428,7 @@ def _type_25a_direct(
         if name.endswith(("direct", "abs"))
         else (state.pc_sw + _signed(raw, 24)) & 0xFFFFFF
     )
-    call = name.startswith("25a") or bool(_field(f, "b"))
+    call = not state.stack_model if name.startswith("25a") else bool(_field(f, "b"))
     if name.startswith("25a"):
         previous_i6 = _ureg(state.uregs, UREG_CODES["I6"])
         new_i6 = _ureg(state.uregs, UREG_CODES["I7"])

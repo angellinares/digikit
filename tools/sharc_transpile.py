@@ -446,8 +446,13 @@ for _n in [
     "_snapshot_uregs",
     "_pey_view",
     "_pey_special",
+    "_bank_codes",
+    "_bank_complete",
+    "_pc_stack_complete",
 ]:
     BOUNDARY["sharc_core.state." + _n] = Bnd()
+BOUNDARY["sharc_core.state._bank_request"] = Bnd(traps=True)
+BOUNDARY["sharc_core.state._pc_stack_request"] = Bnd(traps=True)
 for _n in ["_concrete_address", "_byte_present"]:
     BOUNDARY["sharc_core.memory." + _n] = Bnd()
 for _n in [
@@ -567,6 +572,12 @@ STATE_ATTRS: dict[str, tuple[T, str, bool]] = {
     "max_call_depth": (INT, "s.cfg.max_call_depth", False),
     "assume_nw32": (BOOL, "s.cfg.assume_nw32", False),
     "explicit_memory_model": (BOOL, "s.cfg.explicit_memory_model", False),
+    "stack_model": (BOOL, "s.cfg.stack_model", False),
+    "pc_stack_pending": (INT, "s.pc_stack_pending", False),
+    "loop_depth": (INT, "s.loop_depth", True),
+    "bank_model": (BOOL, "s.cfg.bank_model", False),
+    "core_timer": (BOOL, "s.cfg.core_timer", False),
+    "timer_written": (BOOL, "s.timer_written", True),
     "approx_recips": (BOOL, "s.cfg.approx_recips", False),
     "data_memory_tainted": (BOOL, "s.cfg.data_memory_tainted", False),
     "dossier_bytes": (INT, "s.cfg.dossier_bytes", False),
@@ -1537,7 +1548,9 @@ def rust_ident(name: str) -> str:
 
 STACKS = {
     "loops": REC("Loop"),
+    "loop_slots": TUP(VAL, VAL),
     "call_stack": INT,
+    "pc_stack": INT,
     "status_stack": TUP(VAL, VAL, VAL),
 }
 
@@ -4636,6 +4649,7 @@ _PURE_CALLS = {
     "Trap",
     "stk_len_loops",
     "stk_len_call_stack",
+    "stk_len_pc_stack",
     "stk_len_status_stack",
 }
 
@@ -5098,7 +5112,7 @@ FN_ID_BASE = 16
 # what generated code does, so native libraries built by an older generator
 # are refused (tools/sharc_transpile_run.check_build_info). A native library
 # also carries core_hash(), so a tools/sharc_core change needs no bump.
-GENERATOR_VERSION = 3
+GENERATOR_VERSION = 8
 
 
 def core_hash() -> str:

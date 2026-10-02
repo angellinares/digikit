@@ -102,6 +102,7 @@ from sharc_core.state import (  # noqa: E402, F401
     _simd_active,
     _stop,
     _sync_pc_stack,
+    _sync_status_stack,
     _ureg,
     _ureg_raw,
 )

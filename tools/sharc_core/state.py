@@ -230,6 +230,39 @@ class State:
     # False: this must not change tools/sharc_run.py's default CLI output
     # or tests/test_sharc_golden.py's hashes.
     explicit_memory_model: bool = False
+    # Opt-in secondary register files controlled by MODE1 SRRFL/SRRFH and
+    # SRD1H/L/SRD2H/L.  The visible UREG file is always the currently active
+    # bank; BANK_ALT holds the other side.  MODE1 changes take effect after
+    # the following successful instruction (PRM "one cycle latency").
+    bank_model: bool = False
+    bank_active_mask: int = 0
+    bank_pending_mask: int = -1
+    bank_requested_mask: int = -1
+    # Missing inactive values are Unknown; disabled callers need no allocation.
+    bank_alt: dict[int, Value] = field(default_factory=dict)
+    # Opt-in architectural stacks, separate from followed-call bookkeeping.
+    stack_model: bool = False
+    pc_stack: list[int] = field(default_factory=list)
+    pc_stack_pending: int = -1
+    pc_stack_requested: int = -1
+    # Physical loop resources retain popped slots; PUSH only moves the pointer.
+    loop_depth: int = 0
+    loop_slots: list[tuple[Value, Value]] = field(default_factory=list)
+    # Functional software-interrupt scheduling, opt-in; not cycle timing.
+    software_interrupts: bool = False
+    # Functional timer: one clock per completed instruction, opt-in.
+    core_timer: bool = False
+    # Instruction-local write priority; drivers reset before each instruction.
+    timer_written: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.loop_slots:
+            # The tuple and its Values are immutable; the list is per state.
+            slot: tuple[Value, Value] = (
+                Unknown("loop address"),
+                Unknown("loop counter"),
+            )
+            self.loop_slots = [slot] * 6
 
 
 def _render(value: Value | MR | int) -> str:
@@ -352,10 +385,13 @@ def _copy(state: State) -> State:
         trace=[dict(event) for event in state.trace],
         overlay=dict(state.overlay),
         call_stack=list(state.call_stack),
+        pc_stack=list(state.pc_stack),
+        loop_slots=list(state.loop_slots),
         loops=list(state.loops),
         status_stack=list(state.status_stack),
         mmrs=dict(state.mmrs),
         special=dict(state.special),
+        bank_alt=dict(state.bank_alt),
     )
 
 
@@ -518,16 +554,88 @@ def _simd_active(state: State) -> bool | None:
 UNKNOWN_PC_STACK_ENTRY = 0xFFFFFFFF
 
 
+def _sync_empty_loop_registers(state: State) -> None:
+    """PRM 4-40/4-41: synchronize the physical loop-stack register view."""
+    if state.stack_model:
+        if state.loop_depth:
+            address, counter = state.loop_slots[state.loop_depth - 1]
+            state.uregs[UREG_CODES["LADDR"]] = address
+            state.uregs[UREG_CODES["CURLCNTR"]] = counter
+        else:
+            state.uregs[UREG_CODES["LADDR"]] = Const(0xFFFFFFFF)
+            state.uregs[UREG_CODES["CURLCNTR"]] = Const(0xFFFFFFFF)
+
+
+def _push_loop_resource(state: State) -> None:
+    """PUSH LOOP preserves the newly exposed slot, without starting a DO."""
+    if not state.stack_model:
+        raise ValueError("PUSH LOOP requires physical stack model")
+    if state.loop_depth >= 6:
+        raise ValueError("loop stack overflow interrupt is not modeled")
+    state.loop_depth += 1
+    state.uregs[UREG_CODES["STKYX"]] = _bitwise(
+        _ureg(state.uregs, UREG_CODES["STKYX"]),
+        Const(1 << 26),
+        "loop stacks nonempty",
+        _op_andnot,
+    )
+    _sync_empty_loop_registers(state)
+
+
+def _pop_loop_resource(state: State) -> None:
+    if state.loop_depth:
+        state.loop_depth -= 1
+    if not state.loop_depth:
+        state.uregs[UREG_CODES["STKYX"]] = _bitwise(
+            _ureg(state.uregs, UREG_CODES["STKYX"]),
+            Const(1 << 26),
+            "loop stacks empty",
+            _op_or,
+        )
+    _sync_empty_loop_registers(state)
+
+
 def _write_ureg(state: State, code: int, value: Value) -> None:
     """Guest register write, including architectural PCSTK effects.
 
     PRM pp.4-8/4-9: PCSTK replaces the occupied top entry without a push;
-    an empty-stack write has no effect. PCSTKP timing/growth is not yet
-    modeled, so reject it rather than change only the register mirror.
+    an empty-stack write has no effect. Opt-in PCSTKP truncation takes
+    effect after the following instruction; stack growth fails closed.
     """
+    if state.stack_model and (
+        code == UREG_CODES["LADDR"] or code == UREG_CODES["CURLCNTR"]
+    ):
+        if state.loop_depth:
+            if state.loops:
+                raise ValueError(
+                    "guest active loop-register restoration is not modeled"
+                )
+            address, counter = state.loop_slots[state.loop_depth - 1]
+            if code == UREG_CODES["LADDR"]:
+                # A real packed loop needs termination/type characterization
+                # and its matching PC-stack start. Never invent those fields.
+                if not isinstance(value, Const) or value.value != 0xFFFFFFFF:
+                    raise ValueError("guest packed loop restoration is not modeled")
+                address = value
+            else:
+                counter = value
+            state.loop_slots[state.loop_depth - 1] = (address, counter)
+        _sync_empty_loop_registers(state)
+        return
     if code == UREG_CODES["PCSTKP"]:
+        if state.stack_model:
+            _pc_stack_request(state, value)
+            return
         raise ValueError("guest PCSTKP write is not modeled")
     if code == UREG_CODES["PCSTK"]:
+        if state.stack_model:
+            if not state.pc_stack:
+                return
+            if not isinstance(value, Const):
+                raise ValueError("unknown guest PCSTK write")
+            state.pc_stack[-1] = value.value & 0x03FFFFFF
+            _sync_pc_stack(state)
+            return
         if not state.call_stack:
             return
         if not isinstance(value, Const):
@@ -535,25 +643,167 @@ def _write_ureg(state: State, code: int, value: Value) -> None:
         state.call_stack[-1] = value.value & 0x03FFFFFF
         _sync_pc_stack(state)
         return
+    if code == UREG_CODES["MODE1STK"] and state.stack_model:
+        if not state.status_stack:
+            raise ValueError("guest MODE1STK write with empty status stack")
+        astatx, astaty, _ = state.status_stack[-1]
+        state.status_stack[-1] = (astatx, astaty, value)
+        _sync_status_stack(state)
+        return
+    if code == UREG_CODES["IRPTL"] and state.stack_model:
+        active = _ureg(state.uregs, UREG_CODES["IMASKP"])
+        if not isinstance(active, Const):
+            raise ValueError("unknown active interrupt during latch write")
+        if active.value:
+            if not isinstance(value, Const):
+                raise ValueError("unknown active interrupt latch write")
+            bit = active.value & -active.value
+            value = Const(value.value & ~bit)
+    if state.core_timer and (
+        code == UREG_CODES["TPERIOD"] or code == UREG_CODES["TCOUNT"]
+    ):
+        state.timer_written = True
+    if code == UREG_CODES["MODE1"]:
+        _bank_request(state, value)
     state.uregs[code] = value
+
+
+_BANK_MASK = 0x4F8
+
+
+def _bank_codes(group: int) -> tuple[int, ...]:
+    """UREGs selected by one MODE1 alternate-register bit."""
+    if group == 10:  # SRRFL: R0-7 and S0-7
+        return tuple(range(0, 8)) + tuple(range(80, 88))
+    if group == 7:  # SRRFH: R8-15 and S8-15
+        return tuple(range(8, 16)) + tuple(range(88, 96))
+    # DAG register codes are I0-15, M0-15, L0-15, B0-15 at 16..79.
+    if group == 4:
+        start = 0
+    elif group == 3:
+        start = 4
+    elif group == 6:
+        start = 8
+    else:
+        start = 12
+    return (
+        tuple(range(16 + start, 20 + start))
+        + tuple(range(32 + start, 36 + start))
+        + tuple(range(48 + start, 52 + start))
+        + tuple(range(64 + start, 68 + start))
+    )
+
+
+def _bank_request(state: State, value: Value) -> None:
+    """Latch a MODE1 bank selection for the instruction after next.
+
+    Unknown MODE1 is deliberately rejected while the opt-in model is active:
+    silently retaining an arbitrary alternate bank would make later results
+    look concrete when the architectural selection is not known.
+    """
+    if not state.bank_model:
+        return
+    if not isinstance(value, Const):
+        raise ValueError("unknown MODE1 write with alternate banks enabled")
+    state.bank_requested_mask = value.value & _BANK_MASK
+
+
+def _bank_complete(state: State) -> None:
+    """Advance alternate-register selection at a successful instruction end."""
+    if not state.bank_model:
+        return
+    if state.bank_pending_mask >= 0:
+        changed = state.bank_active_mask ^ state.bank_pending_mask
+        for group in (10, 7, 6, 5, 4, 3):
+            if changed & (1 << group):
+                for code in _bank_codes(group):
+                    visible = state.uregs.get(
+                        code, Unknown("uninitialized UREG %d" % code)
+                    )
+                    state.uregs[code] = state.bank_alt.get(
+                        code, Unknown("uninitialized alternate register %d" % code)
+                    )
+                    state.bank_alt[code] = visible
+        state.bank_active_mask = state.bank_pending_mask
+    state.bank_pending_mask = state.bank_requested_mask
+    state.bank_requested_mask = -1
+
+
+def _pc_stack_depth(state: State) -> int:
+    return len(state.pc_stack) if state.stack_model else len(state.call_stack)
+
+
+def _pc_stack_top(state: State) -> int:
+    if state.stack_model:
+        return state.pc_stack[-1] if state.pc_stack else UNKNOWN_PC_STACK_ENTRY
+    return state.call_stack[-1] if state.call_stack else UNKNOWN_PC_STACK_ENTRY
+
+
+def _push_pc_stack(state: State, value: int) -> None:
+    if _pc_stack_depth(state) >= 30:
+        raise ValueError("PC stack overflow interrupt is not modeled")
+    if state.stack_model:
+        state.pc_stack.append(value)
+    else:
+        state.call_stack.append(value)
+    _sync_pc_stack(state)
+
+
+def _pc_stack_request(state: State, value: Value) -> None:
+    if not isinstance(value, Const) or value.value > 30:
+        raise ValueError("unsupported guest PCSTKP value")
+    if value.value > len(state.pc_stack):
+        raise ValueError("guest PCSTKP growth is not modeled")
+    if state.pc_stack_pending >= 0 and value.value > state.pc_stack_pending:
+        raise ValueError("guest PCSTKP growth after pending truncation is not modeled")
+    state.pc_stack_requested = value.value
+
+
+def _pc_stack_complete(state: State) -> None:
+    if not state.stack_model:
+        return
+    if state.pc_stack_pending >= 0:
+        while len(state.pc_stack) > state.pc_stack_pending:
+            state.pc_stack.pop()
+        _sync_pc_stack(state)
+    state.pc_stack_pending = state.pc_stack_requested
+    state.pc_stack_requested = -1
+
+
+def _sync_status_stack(state: State) -> None:
+    if state.stack_model:
+        state.uregs[UREG_CODES["MODE1STK"]] = (
+            state.status_stack[-1][2]
+            if state.status_stack
+            else Unknown("empty status stack MODE1STK")
+        )
 
 
 def _sync_pc_stack(state: State) -> None:
     """Mirror the tracer's architectural PC stack into its public registers."""
-    state.uregs[UREG_CODES["PCSTKP"]] = Const(len(state.call_stack))
+    depth = _pc_stack_depth(state)
+    top = _pc_stack_top(state)
+    state.uregs[UREG_CODES["PCSTKP"]] = Const(depth)
     state.uregs[UREG_CODES["PCSTK"]] = (
         (
             Unknown("unwritten pushed PC stack entry")
-            if state.call_stack[-1] == UNKNOWN_PC_STACK_ENTRY
-            else Const(state.call_stack[-1])
+            if top == UNKNOWN_PC_STACK_ENTRY
+            else Const(top)
         )
-        if state.call_stack
+        if depth
         else Const(0x7FFFFFFF)
     )
     stkyx_code = UREG_CODES["STKYX"]
     state.uregs[stkyx_code] = _bitwise(
         _ureg(state.uregs, stkyx_code),
         Const(1 << 22),
-        "PC stack empty" if not state.call_stack else "PC stack nonempty",
-        _op_or if not state.call_stack else _op_andnot,
+        "PC stack empty" if not depth else "PC stack nonempty",
+        _op_or if not depth else _op_andnot,
     )
+    if state.stack_model:
+        state.uregs[stkyx_code] = _bitwise(
+            _ureg(state.uregs, stkyx_code),
+            Const(1 << 21),
+            "PC stack full flag",
+            _op_or if depth == 30 else _op_andnot,
+        )

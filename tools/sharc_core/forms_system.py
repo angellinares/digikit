@@ -33,10 +33,13 @@ from .state import (
     State,
     _event,
     _json_value,
+    _push_loop_resource,
+    _push_pc_stack,
     _stop,
-    _sync_pc_stack,
+    _sync_status_stack,
     _ureg,
     _ureg_raw,
+    _write_ureg,
 )
 from .values import (
     Const,
@@ -145,7 +148,7 @@ def _type_18a(
         "%s %s %#x" % (operation, UREG_NAMES[code], mask),
         calculate,
     )
-    state.uregs[code] = value
+    _write_ureg(state, code, value)
     _event(
         state,
         insn,
@@ -167,18 +170,9 @@ def _type_20a(
     pops = _field(f, "lpo") or _field(f, "spo") or _field(f, "ppo")
     if pushes and pops:
         return [_stop(state, insn, "invalid Type20a mixed push and pop")]
-    unsupported: list[str] = []
-    for field in ("lpu",):
-        if _field(f, field):
-            unsupported.append(field)
-    if unsupported:
-        return [
-            _stop(
-                state,
-                insn,
-                "unsupported Type20a operations: " + ", ".join(unsupported),
-            )
-        ]
+    push_loop = bool(_field(f, "lpu"))
+    if push_loop and not state.stack_model:
+        return [_stop(state, insn, "PUSH LOOP requires physical stack model")]
     push_status = bool(_field(f, "spu"))
     push_pc = bool(_field(f, "ppu"))
     pop_status = bool(_field(f, "spo"))
@@ -218,6 +212,10 @@ def _type_20a(
     mode1_code = UREG_CODES["MODE1"]
     stkyx_code = UREG_CODES["STKYX"]
     if push_status:
+        if state.stack_model and len(state.status_stack) >= 15:
+            return [
+                _stop(state, insn, "status stack overflow interrupt is not modeled")
+            ]
         # PUSH STS saves the exact ASTATX/ASTATY register, including any
         # partial knowledge, not a value moved to a general register: use
         # _ureg_raw so a PartialConst round-trips through POP STS intact.
@@ -228,11 +226,15 @@ def _type_20a(
                 _ureg(state.uregs, mode1_code),
             )
         )
-        state.uregs[mode1_code] = _bitwise(
-            _ureg(state.uregs, mode1_code),
-            _ureg(state.uregs, UREG_CODES["MMASK"]),
-            "MODE1 masked by PUSH STS",
-            _op_andnot,
+        _write_ureg(
+            state,
+            mode1_code,
+            _bitwise(
+                _ureg(state.uregs, mode1_code),
+                _ureg(state.uregs, UREG_CODES["MMASK"]),
+                "MODE1 masked by PUSH STS",
+                _op_andnot,
+            ),
         )
         state.uregs[stkyx_code] = _bitwise(
             _ureg(state.uregs, stkyx_code),
@@ -245,7 +247,7 @@ def _type_20a(
             astatx, astaty, mode1 = state.status_stack.pop()
             state.uregs[astatx_code] = astatx
             state.uregs[astaty_code] = astaty
-            state.uregs[mode1_code] = mode1
+            _write_ureg(state, mode1_code, mode1)
         if not state.status_stack:
             state.uregs[stkyx_code] = _bitwise(
                 _ureg(state.uregs, stkyx_code),
@@ -253,15 +255,17 @@ def _type_20a(
                 "status stack empty",
                 _op_or,
             )
+    if push_loop:
+        if state.loops:
+            return [_stop(state, insn, "PUSH LOOP inside active DO is not modeled")]
+        _push_loop_resource(state)
     if pop_loop:
         _pop_loop_stack(state)
     if pop_pc:
         _pop_pc_stack(state)
     if push_pc:
-        if len(state.call_stack) >= 30:
-            return [_stop(state, insn, "PC stack overflow interrupt is not modeled")]
-        state.call_stack.append(UNKNOWN_PC_STACK_ENTRY)
-        _sync_pc_stack(state)
+        _push_pc_stack(state, UNKNOWN_PC_STACK_ENTRY)
+    _sync_status_stack(state)
     _event(
         state,
         insn,

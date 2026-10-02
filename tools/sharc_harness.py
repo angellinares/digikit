@@ -593,10 +593,12 @@ def _clone_state(state: st.State) -> st.State:
         trace=[dict(event) for event in state.trace],
         overlay=dict(state.overlay),
         call_stack=list(state.call_stack),
+        pc_stack=list(state.pc_stack),
         loops=list(state.loops),
         status_stack=list(state.status_stack),
         mmrs=dict(state.mmrs),
         special=dict(state.special),
+        bank_alt=dict(state.bank_alt),
     )
 
 

@@ -318,6 +318,14 @@ pub fn _aconv(_s: &St, value: V, w2b: bool, _source_code: Int, _pc_sw: Int) -> R
         if let Some(mapped) = mapped {
             return Ok(V::c(mapped));
         }
+        let already_in_space = if w2b {
+            crate::addressing::byte_to_normal_word(value.val())
+        } else {
+            crate::addressing::normal_word_to_architectural_byte(value.val())
+        };
+        if already_in_space.is_some() {
+            return Ok(value);
+        }
         return Ok(V::c(if w2b {
             value.val() << 2
         } else {
@@ -366,6 +374,39 @@ pub fn _snapshot_uregs(s: &mut St, uregs: RegView) -> RegView {
     }
     RegView(uregs.0 | 1)
 }
+
+/// state._bank_request. MODE1's alternate-bank bits are latched before its
+/// visible assignment; St::commit supplies the one-cycle delay.
+pub fn _bank_request(s: &mut St, value: V) -> R<()> {
+    if s.cfg.bank_model {
+        if !value.is_c() {
+            return Err(TRAP_SYMBOLIC);
+        }
+        s.bank_requested_mask = value.val() & BANK_MASK;
+    }
+    Ok(())
+}
+
+/// Python calls this at each source completion site.  Native completion is
+/// centralised in St::commit/commit_blk so a trap can never expose a swap.
+#[inline(always)]
+pub fn _bank_complete(_s: &mut St) {}
+
+/// PCSTKP truncation is delayed until the following completed instruction.
+pub fn _pc_stack_request(s: &mut St, value: V) -> R<()> {
+    if !value.is_c()
+        || value.b > 30
+        || value.b as usize > s.pc_stack.len()
+        || (s.pc_stack_pending >= 0 && value.val() > s.pc_stack_pending)
+    {
+        return Err(TRAP_SYMBOLIC);
+    }
+    s.pc_stack_requested = value.val();
+    Ok(())
+}
+
+#[inline(always)]
+pub fn _pc_stack_complete(_s: &mut St) {}
 
 /// state._pey_view
 #[inline(always)]
@@ -494,6 +535,12 @@ pub fn _split_compute_fields(_s: &St, f: Fields) -> Fields {
 
 #[inline(always)]
 pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<Insn> {
+    if (0x90000..0x90080).contains(&pc_sw) {
+        let address = 0x2824_0000 + ((pc_sw - 0x90000) * 6) as u32;
+        let low = s.mem.read_present(address, 4).ok_or(TRAP_NO_INSN)? as u64;
+        let high = s.mem.read_present(address + 4, 2).ok_or(TRAP_NO_INSN)? as u64;
+        return decoded_insn(crate::decode::decode_isa(low | (high << 32)));
+    }
     if !s.runtime_decode {
         return (s.insn_at)(pc_sw).ok_or(TRAP_NO_INSN);
     }
@@ -519,6 +566,12 @@ pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<
         },
         pc,
     );
+    let insn = decoded_insn(decoded)?;
+    s.decode_cache.insert(pc, CachedInsn { insn, words });
+    Ok(insn)
+}
+
+fn decoded_insn(decoded: crate::decode::Decoded) -> R<Insn> {
     if decoded.kind == crate::decode::DecodeKind::Unknown {
         return Err(TRAP_NO_INSN);
     }
@@ -545,7 +598,6 @@ pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<
         kind,
         offset: 0,
     };
-    s.decode_cache.insert(pc, CachedInsn { insn, words });
     Ok(insn)
 }
 
