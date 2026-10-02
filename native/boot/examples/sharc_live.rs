@@ -17,8 +17,17 @@
 //!   DSP_ATTACH=ready with a snapshot is the old uncoupled mode (no .dsp).
 //!   CF_DIGEST=1 prints the ColdFire state digest, the DSP export sha256 and
 //!   the sha256 of the PCM produced since ready.
+//!   DSP_THREAD=1: the DSP renders each period on its own thread while the
+//!   ColdFire runs the next frame (`ThreadedPeer`); results are identical to
+//!   the default synchronous run (compare CF_DIGEST output).
+//!   AUDIO=1 (needs `--features play`): play the PCM through the default
+//!   output device as it is produced (silence while the emulator is behind,
+//!   which is nearly always: it runs far slower than real time).
+//!   AUDIO_BUFFER=SECONDS: hold the audio back until that much has been
+//!   produced, then play it in real time (implies AUDIO=1); at the end of the
+//!   run whatever is left is played out. No device: a message, the run goes on.
 //! Build: SHARC_GEN_DIR=<generated dir> cargo build --release --features sharc
-//!   --example sharc_live
+//!   [,play] --example sharc_live
 //! The DSP state is a mid-run continuation, so it does not match the
 //! ColdFire's boot-time view of the link; see the findings notes.
 
@@ -26,9 +35,13 @@ mod common;
 
 use elektron_native_boot::{
     Emulator,
-    sharc_peer::{DEFAULT_PERIOD, SharcPeer, SharedDsp, open_dn2_engine},
+    sharc_peer::{
+        DEFAULT_PERIOD, DN2_IDLE_RANGE, NativeDsp, SharcPeer, Shared, SharedDsp, ThreadedHandle,
+        ThreadedPeer, open_dn2_engine,
+    },
 };
 use sha2::{Digest, Sha256};
+use std::{cell::RefCell, rc::Rc};
 use std::{env, fs, io::Write, time::Instant};
 
 fn sha_hex(b: &[u8]) -> String {
@@ -39,6 +52,93 @@ fn sha_hex(b: &[u8]) -> String {
 }
 
 const DSP_MAGIC: &[u8; 8] = b"DT2DSP01";
+
+/// Host view of the DSP engine: in-thread (`SharedDsp`) or on the worker.
+enum DspCtl {
+    Local(SharedDsp),
+    Worker(ThreadedHandle),
+}
+
+impl DspCtl {
+    /// Finish every frame sent so far (worker only).
+    fn sync(&self) {
+        if let DspCtl::Worker(h) = self {
+            h.sync();
+        }
+    }
+    /// (canonical state, instruction counter) after every frame so far.
+    fn export(&self) -> (Vec<u8>, u64) {
+        match self {
+            DspCtl::Local(d) => (d.export(), d.0.borrow().s.icount),
+            DspCtl::Worker(h) => h.export(),
+        }
+    }
+}
+
+/// Optional live playback of the PCM the peer has produced so far.
+struct Audio {
+    #[cfg(feature = "play")]
+    player: Option<elektron_native_boot::pcm_play::PcmPlayer>,
+    sent: usize,
+}
+
+impl Audio {
+    fn from_env() -> Self {
+        let buffer = env::var("AUDIO_BUFFER")
+            .ok()
+            .map(|v| v.parse::<f64>().unwrap());
+        let on = buffer.is_some() || env::var("AUDIO").as_deref() == Ok("1");
+        #[cfg(feature = "play")]
+        {
+            use elektron_native_boot::pcm_play::{Mode, PcmPlayer};
+            let player = on
+                .then(|| {
+                    let mode = buffer.map_or(Mode::Live, Mode::Buffer);
+                    match PcmPlayer::spawn(mode) {
+                        Ok(p) => {
+                            println!("audio: {} at {} Hz, mode {mode:?}", p.device, p.device_rate);
+                            Some(p)
+                        }
+                        Err(e) => {
+                            eprintln!("audio disabled: {e}");
+                            None
+                        }
+                    }
+                })
+                .flatten();
+            Audio { player, sent: 0 }
+        }
+        #[cfg(not(feature = "play"))]
+        {
+            if on {
+                eprintln!("AUDIO needs `--features play`; continuing silent");
+            }
+            Audio { sent: 0 }
+        }
+    }
+
+    /// Hand the newly produced PCM to the player (never blocks).
+    fn feed(&mut self, shared: &Rc<RefCell<Shared>>) {
+        #[cfg(feature = "play")]
+        if let Some(p) = &self.player {
+            let sh = shared.borrow();
+            if sh.pcm.len() > self.sent {
+                p.push(&sh.pcm[self.sent..]);
+                self.sent = sh.pcm.len();
+            }
+        }
+        #[cfg(not(feature = "play"))]
+        let _ = (shared, &mut self.sent);
+    }
+
+    fn finish(self) {
+        #[cfg(feature = "play")]
+        if let Some(p) = self.player {
+            println!("audio: playing out the buffered PCM");
+            p.finish();
+        }
+    }
+}
 
 fn wav_f32(pcm: &[f32]) -> Vec<u8> {
     let data = (pcm.len() * 4) as u32;
@@ -101,8 +201,21 @@ fn main() {
         _ => state,
     };
 
-    let dsp = SharedDsp::new(open_dn2_engine(&image, &state, base).expect("DSP engine"));
-    let (peer, shared) = SharcPeer::new(dsp.clone(), period);
+    let threaded = env::var("DSP_THREAD").as_deref() == Ok("1");
+    let (peer, dsp, shared): (Box<dyn periph::dspi::Peer>, DspCtl, _) = if threaded {
+        let (image, state) = (image.clone(), state.clone());
+        let (p, h, sh) = ThreadedPeer::spawn(
+            move || open_dn2_engine(&image, &state, base).map(NativeDsp),
+            period,
+            DN2_IDLE_RANGE,
+        )
+        .expect("DSP worker");
+        (p.boxed(), DspCtl::Worker(h), sh)
+    } else {
+        let d = SharedDsp::new(open_dn2_engine(&image, &state, base).expect("DSP engine"));
+        let (p, sh) = SharcPeer::new(d.clone(), period);
+        (p.boxed(), DspCtl::Local(d), sh)
+    };
     shared.borrow_mut().attached = !attach_at_ready;
     shared.borrow_mut().dsp_instructions = dsp_instructions0;
     let mut emu = Emulator::new(&syx, None).unwrap();
@@ -122,7 +235,8 @@ fn main() {
             dsp_path.as_ref().unwrap().display()
         );
     }
-    emu.set_dspi2_peer(peer.boxed());
+    emu.set_dspi2_peer(peer);
+    let mut audio = Audio::from_env();
     let mut next = 0;
     let end = loop {
         let snap = emu.step_chunk(250_000);
@@ -130,11 +244,12 @@ fn main() {
         if let Some(p) = &snap_path {
             if common::save_if_ready(&mut emu, p, &script, s.ready, &mut saved) && !attach_at_ready
             {
+                let (exported, icount) = dsp.export(); // also syncs the worker
                 let mut f = DSP_MAGIC.to_vec();
-                let tick = base.wrapping_add(dsp.0.borrow().s.icount);
+                let tick = base.wrapping_add(icount);
                 f.extend(tick.to_le_bytes());
                 f.extend(shared.borrow().dsp_instructions.to_le_bytes());
-                f.extend(dsp.export());
+                f.extend(exported);
                 fs::write(dsp_path.as_ref().unwrap(), &f).unwrap();
                 pcm_base = shared.borrow().pcm.len();
                 println!("saved DSP state ({} KB)", f.len() >> 10);
@@ -143,6 +258,7 @@ fn main() {
         if script.poll(&mut emu, s.icount, s.ready) && attach_at_ready {
             shared.borrow_mut().attached = true;
         }
+        audio.feed(&shared);
         if s.icount >= next {
             let sh = shared.borrow();
             println!(
@@ -163,6 +279,7 @@ fn main() {
             break s.icount;
         }
     };
+    dsp.sync();
     let wall = t0.elapsed().as_secs_f64();
     if env::var_os("CF_DIGEST").is_some() {
         let sh = shared.borrow();
@@ -171,13 +288,14 @@ fn main() {
             .flat_map(|x| x.to_le_bytes())
             .collect();
         println!("cf_state_digest={}", emu.state_digest().unwrap());
-        println!("dsp_export_sha256={}", sha_hex(&dsp.export()));
+        println!("dsp_export_sha256={}", sha_hex(&dsp.export().0));
         println!(
             "pcm_since_ready_sha256={} samples={}",
             sha_hex(&pcm),
             pcm.len() / 4
         );
     }
+    audio.feed(&shared);
     let sh = shared.borrow();
     fs::write(out, wav_f32(&sh.pcm)).unwrap();
     let raw: Vec<u8> = sh.raw.iter().flat_map(|w| w.to_le_bytes()).collect();
@@ -239,4 +357,6 @@ fn main() {
         sh.nonzero_replies, sh.missing_blocks, sh.halted
     );
     println!("first_words={:04x?}", sh.first_words);
+    drop(sh);
+    audio.finish();
 }

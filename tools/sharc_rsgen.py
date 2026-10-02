@@ -137,6 +137,116 @@ def insn_static(syms, pc: int, insn) -> str:
     )
 
 
+# --- model-safe blocks -----------------------------------------------------
+#
+# The native core can run with opt-in models on (register banks, physical
+# stacks, core timer, software IRQs, peripherals, instruction clock). Block
+# code is the partial evaluation of the same core, and the core reads those
+# models' switches at run time, so what block code does not do is what the
+# *engine* does between instructions: complete a pending bank or PC-stack
+# change, tick the core timer, take an interrupt, set EMUCLK, step a
+# peripheral. A block is "model-safe" when none of those can matter inside
+# it, given the engine's entry gate (native/sharc/src/lib.rs block_plan):
+#
+# - it writes none of MODE1 (a bank request), PCSTKP/PCSTK/MODE1STK/LADDR/
+#   CURLCNTR (stack models), IRPTL/IMASK/IMASKP/MMASK (interrupt state),
+#   TCOUNT/TPERIOD/MODE2 (timer) and neither reads nor writes EMUCLK, TCOUNT
+#   (they are advanced by instruction count, not per instruction);
+# - it holds no instruction that pushes or pops a stack explicitly, calls,
+#   returns (RTS, RTI, CJUMP, RFRAME) or enters/leaves an interrupt, and no
+#   system-register form (DO loops and the instruction at a loop's last
+#   address are allowed: block code runs the core's own loop logic, with
+#   loop_depth restored if the instruction traps);
+# - what it has left is compute, moves, DAG modifies, memory accesses and
+#   plain (non-call, non-return, non-loop-abort) jumps. Stores the peripheral
+#   model acts on leave the block at run time (TRAP_BLOCK_MODEL).
+MODEL_REG_NAMES = (
+    "PCSTK",
+    "PCSTKP",
+    "LADDR",
+    "CURLCNTR",
+    "EMUCLK",
+    "EMUCLK2",
+    "TPERIOD",
+    "TCOUNT",
+    "MODE1",
+    "MMASK",
+    "MODE2",
+    "IRPTL",
+    "IMASK",
+    "IMASKP",
+    "MODE1STK",
+)
+# Plain jumps are model-safe when they are not calls (b), loop aborts (a) or
+# interrupt-driven (ci), and not the (DB) register-indirect return idiom.
+JUMP_FORMS = ("8a_abs", "8a_rel", "9a_abs", "9a_rel", "9b_abs", "9b_rel")
+SAFE_FORM_MODULES = ("forms_compute", "forms_move", "forms_dag")
+# DO loop setup. With the physical stacks a DO also pushes a loop slot and a PC
+# stack entry and the loop's last instruction pops or updates them; those are
+# the core's own (translated) steps, and a trap after them restores the one
+# scalar (loop_depth) the undo log does not hold (body_lines).
+LOOP_FORMS = ("12a_imm", "12a_ureg")
+
+
+def _field_or(fields: dict, stem: str, default: int = 0) -> int:
+    from sharc_core.encoding import _field
+
+    try:
+        return _field(fields, stem)
+    except KeyError:
+        return default
+
+
+def ureg_codes(fields: dict) -> set[int]:
+    """Every UREG code an instruction names in a register field."""
+    codes = set()
+    for key, value in fields.items():
+        if "ureg" not in key or key.startswith("srcureg"):
+            continue
+        codes.add(value & 0x7F)
+    if any(k.startswith("srcureg") for k in fields):
+        codes.add(
+            (
+                _field_or(fields, "srcureghigh") << 2
+                | _field_or(fields, "srcureglow[1:1]") << 1
+                | _field_or(fields, "srcureglow[0:0]")
+            )
+            & 0x7F
+        )
+    return codes
+
+
+def model_unsafe_reason(insn, pc: int, loop_end_set: frozenset) -> str | None:
+    """Why INSN (at PC) is not model-safe, or None when it is."""
+    from sharc_core.encoding import UREG_CODES
+    from sharc_core.forms import FORMS
+
+    name = insn.type_name or "unknown"
+    f = insn.fields
+    handler = FORMS.get(name)
+    if handler is None:
+        return "no handler"
+    if name in JUMP_FORMS:
+        if _field_or(f, "b") or _field_or(f, "a") or _field_or(f, "ci"):
+            return "call, loop abort or CI jump"
+        if (
+            _field_or(f, "cond", -1) == 0x1F
+            and _field_or(f, "pmm", -1) == 6
+            and _field_or(f, "j") == 1
+        ):
+            return "return idiom"
+    elif name not in LOOP_FORMS:
+        module = handler.__module__.rsplit(".", 1)[-1]
+        if module not in SAFE_FORM_MODULES or "undoc" in name:
+            return "form %s (%s)" % (name, module)
+    bad = {UREG_CODES[n] for n in MODEL_REG_NAMES}
+    named = ureg_codes(f) & bad
+    if named:
+        names = {v: k for k, v in UREG_CODES.items()}
+        return "register " + ", ".join(sorted(names[c] for c in named))
+    return None
+
+
 @dataclass
 class Body:
     """One block specialised on one MODE1 value (None: not a fact), as a
@@ -161,9 +271,20 @@ def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
 
     steps = []
     pending_none = True
-    stopped = None
+    stopped: tuple | None = None
     entry_mode1 = mode1
     for i, (pc, insn) in enumerate(block.insns):
+        if MODEL_SAFE_ONLY:
+            # --model-safe: the body ends before the first instruction a
+            # model could make differ; the interpreter runs it and the
+            # blocks resume at the next entry.
+            why = model_unsafe_reason(insn, pc, LOOP_END_SET)
+            if why is not None:
+                if i == 0:
+                    UNSAFE_REASONS[block.start] = why
+                    return None
+                stopped = (pc, insn, why)
+                break
         facts: dict = {"pc_sw": pc}
         if pending_none:
             facts["pending"] = None
@@ -308,6 +429,10 @@ def body_lines(
         # known to be none unless a delay slot.
         if not no_pending:
             lines.append(ind + "let pd0 = rf.pending;")
+        loopy = pc in LOOP_END_SET or (insn.type_name or "") in LOOP_FORMS
+        if loopy:
+            # The physical loop stack's depth is not in the undo log.
+            lines.append(ind + "let ld%d = s.loop_depth;" % i)
         if TR is not None and path in TR.variant_inline:
             # The instruction only moves the PC.
             lines.append(ind + TR.variant_inline[path])
@@ -317,6 +442,8 @@ def body_lines(
             lines.append(ind + "if let Err(t) = %s(s, &mut rf) {" % path)
         for c in sorted(w):
             lines.append(ind + "    rf.r[%d] = sv%d;" % (c, c))
+        if loopy:
+            lines.append(ind + "    s.loop_depth = ld%d;" % i)
         lines.append(ind + "    rf.pc = %#x;" % pc)
         lines.append(ind + "    rf.pending = %s;" % ("None" if no_pending else "pd0"))
         lines.append(ind + "    s.trap = Some(t);")
@@ -508,6 +635,7 @@ def build_regions(
     group by program-db function in address order (MAX_INSNS 0: one block
     each)."""
     planned: dict[int, list[Body]] = {}
+    safe_of: dict[int, bool] = {}
     for blk in sorted(blocks, key=lambda x: x.start):
         values: list[int | None] = list((mode1 or {}).get(blk.start) or []) or [None]
         found: list[Body] = []
@@ -518,6 +646,15 @@ def build_regions(
                 found.append(body)
         if found:
             planned[blk.start] = found
+            reasons = [
+                model_unsafe_reason(insn, pc, LOOP_END_SET)
+                for body in found
+                for pc, insn, *_rest in body.steps
+                if not MODEL_SAFE_ONLY
+            ]
+            safe_of[blk.start] = all(r is None for r in reasons)
+            if not safe_of[blk.start]:
+                UNSAFE_REASONS[blk.start] = next(r for r in reasons if r is not None)
 
     def size_of(starts: set) -> tuple[int, int]:
         regs: set = set()
@@ -541,6 +678,8 @@ def build_regions(
                 continue
             if c * 2 < incoming.get(b, 0):
                 continue
+            if safe_of[a] != safe_of[b]:
+                continue
             ga, gb = group_of[a], group_of[b]
             if ga is gb:
                 continue
@@ -558,9 +697,9 @@ def build_regions(
             seen.add(id(members))
             groups.append(sorted(members))
     else:
-        by_fn: dict[int, list[int]] = {}
+        by_fn: dict[tuple, list[int]] = {}
         for st in planned:
-            by_fn.setdefault(func_of.get(st, st), []).append(st)
+            by_fn.setdefault((func_of.get(st, st), safe_of[st]), []).append(st)
         for fn in sorted(by_fn):
             chunk: list[int] = []
             size = 0
@@ -586,10 +725,22 @@ def build_regions(
             entry_text(st, name, [b for b in bodies if b.block.start == st]) for st in g
         ]
         out.append((name, list(g), text + "\n\n" + "\n\n".join(ents)))
+        for st in g:
+            if safe_of[st]:
+                MODEL_SAFE_STARTS.add(st)
     return out
 
 
 MODE1 = 114
+# Set by generate(): every DO loop end of the image; the entries of the
+# blocks classed model-safe (build_regions), and why the others are not.
+LOOP_END_SET: frozenset = frozenset()
+# --model-safe: generate only model-safe instruction prefixes of the blocks.
+MODEL_SAFE_ONLY = False
+# --explicit-memory-model: the memory model block code is generated for.
+GEN_EXPLICIT_MEMORY_MODEL = True
+MODEL_SAFE_STARTS: set[int] = set()
+UNSAFE_REASONS: dict[int, str] = {}
 # Regions may span program-db functions (a call and its callee's blocks).
 CROSS_FUNCTIONS = True
 # Partial registers whose usual mask block code requires at entry (none:
@@ -747,6 +898,32 @@ def insn_blob(syms, decoded: dict) -> bytes:
     return bytes(out)
 
 
+CODE_LOOKAHEAD = 6  # short words past a block the decoder may read
+
+
+def code_ranges(mem, blocks: list[Block]) -> list[tuple[int, int, str]]:
+    """Merged short-word ranges covering the generated blocks (plus
+    CODE_LOOKAHEAD words), each with the SHA-256 native/sharc/src/lib.rs
+    verify_code computes over the loaded words."""
+    import hashlib
+
+    spans = sorted((b.start, b.end + CODE_LOOKAHEAD) for b in blocks)
+    merged: list[list[int]] = []
+    for lo, hi in spans:
+        if merged and lo <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], hi)
+        else:
+            merged.append([lo, hi])
+    out = []
+    for lo, hi in merged:
+        h = hashlib.sha256()
+        for pc in range(lo, hi):
+            word = mem.read_sw(pc, 2)
+            h.update(word if word is not None else b"\xde\xad\xbe")
+        out.append((lo, hi - lo, h.hexdigest()))
+    return out
+
+
 def generate(
     image: str,
     starts: list[int],
@@ -776,6 +953,9 @@ def generate(
     out = tp.translate(core)
     tr = out.translator  # type: ignore[attr-defined]
     tr.blk = True
+    # Block code folds the run configuration; explicit_memory_model is the one
+    # a diagnostic run changes (the runtime refuses blocks for any other).
+    tr.gen_cfg["explicit_memory_model"] = GEN_EXPLICIT_MEMORY_MODEL
     global TR
     TR = tr
     syms = tr.syms
@@ -795,6 +975,10 @@ def generate(
     # Every DO loop's end address (sequencer._start_counted_loop's end_sw):
     # block code knows a loop can only end at one of these.
     tr.loop_ends = frozenset(loop_ends(decoded))
+    global LOOP_END_SET
+    LOOP_END_SET = tr.loop_ends
+    MODEL_SAFE_STARTS.clear()
+    UNSAFE_REASONS.clear()
     # Specialized code refers to an instruction by its static.
     named = list(decoded.items()) + [(pc, insn) for b in blocks for pc, insn in b.insns]
     for pc, insn in named:
@@ -894,6 +1078,10 @@ def generate(
         "use crate::generated::core_i as ci;",
         "",
         "pub const IMAGE: &str = %s;" % json.dumps(image),
+        "/// Block code was generated for this explicit_memory_model setting",
+        "/// (the engine runs blocks only under the same one).",
+        "pub const GEN_EXPLICIT_MEMORY_MODEL: bool = %s;"
+        % ("true" if GEN_EXPLICIT_MEMORY_MODEL else "false"),
         "pub const IMAGE_SHA256: &str = %s;" % json.dumps(sr._image_sha256(mem)),
         "",
         "include!(%s);" % (gen_dir % "insns.rs"),
@@ -905,6 +1093,20 @@ def generate(
         "/// holds only these; the runtime checks at import).",
         "pub static LOOP_ENDS: &[i64] = &[%s];"
         % ", ".join("%d" % e for e in sorted(tr.loop_ends)),
+        "",
+        "/// Entry PCs of the blocks classed model-safe (tools/sharc_rsgen.py",
+        "/// model_unsafe_reason): the engine runs only these with a model on.",
+        "pub static MODEL_SAFE: &[u32] = &[%s];"
+        % ", ".join("%#x" % st for st in sorted(MODEL_SAFE_STARTS & generated)),
+        "",
+        "/// The short-word ranges the blocks were generated from (with the words",
+        "/// the decoder looks ahead at) and the SHA-256 of their loaded bytes (an",
+        "/// absent word counts as DE AD BE): with runtime decoding the engine runs",
+        "/// blocks only while its memory still hashes to these.",
+        "pub static CODE_RANGES: &[(u32, u32, &str)] = &[%s];"
+        % ", ".join(
+            '(%#x, %d, "%s")' % (lo, n, h) for lo, n, h in code_ranges(mem, blocks)
+        ),
         "",
         "/// The decoded instruction at PC (sequencer.decode_at over the image).",
         "pub fn insn_at(pc: Int) -> Option<Insn> {",
@@ -960,6 +1162,12 @@ def generate(
             "total": round(time.perf_counter() - t0, 2),
         },
         "block_starts": [b.start for b in blocks],
+        "model_safe_blocks": len(MODEL_SAFE_STARTS & generated),
+        "model_unsafe_reasons": {
+            "%#x" % st: UNSAFE_REASONS[st]
+            for st in sorted(UNSAFE_REASONS)
+            if st in generated
+        },
         "specializer_failures": [["%#x" % pc, why] for pc, why in tr.block_failures],
         "transpile": out.report,
     }
@@ -992,6 +1200,26 @@ def main(argv: list[str] | None = None) -> int:
         "--only",
         help="comma-separated hex block starts: generate only these (with the "
         "MODE1 values --coverage gives them)",
+    )
+    p.add_argument(
+        "--work",
+        help="the inference work directory sharc_transpile.py --work wrote "
+        "(default out/native/transpile-work)",
+    )
+    p.add_argument(
+        "--explicit-memory-model",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="the explicit_memory_model setting block code is generated for "
+        "(DN2 diagnostics run with 0)",
+    )
+    p.add_argument(
+        "--model-safe",
+        action="store_true",
+        help="cut each block before its first instruction a run-time model "
+        "(banks, stacks, timer, IRQs, clock, peripherals) could make differ, "
+        "so every generated block may run with the models on",
     )
     p.add_argument(
         "--chain",
@@ -1075,8 +1303,10 @@ def main(argv: list[str] | None = None) -> int:
         keep = {int(x, 16) for x in args.only.split(",") if x}
         starts = [st for st in starts if st in keep]
     starts = sorted(set(starts))
-    global CHAINING
+    global CHAINING, MODEL_SAFE_ONLY, GEN_EXPLICIT_MEMORY_MODEL
+    GEN_EXPLICIT_MEMORY_MODEL = bool(args.explicit_memory_model)
     CHAINING = args.chain and not args.no_chain
+    MODEL_SAFE_ONLY = args.model_safe
     successors: dict[int, set[int]] | None = None
     counts: dict[tuple[int, int], int] | None = None
     if args.transitions:
@@ -1100,6 +1330,7 @@ def main(argv: list[str] | None = None) -> int:
         transition_counts=counts,
         region_regs=args.region_regs,
         decode_ranges=args.decode_range,
+        work_dir=args.work,
     )
     print(
         "%d blocks (%d instructions), %d instructions in the table, %d files -> %s (%.1fs)"

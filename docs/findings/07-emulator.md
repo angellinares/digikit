@@ -4981,3 +4981,131 @@ are already compared on canonical state.
   all registers, `steps`, icount and EMUCLK after odd step sizes across timer
   periods 0, 1, 2, 7, 100 and 1000.
 
+
+## AOT blocks with the models on (2026-10-03)
+
+**[C]** The earlier statements that native AOT blocks stay disabled while the
+bank, physical-stack, core-timer, software-IRQ or peripheral models are on
+(sections "Opt-in SHARC register banks", "Physical task stacks", "Core timer
+and physical loop reservations") no longer hold: generated blocks now run
+with all of them on, behind a generator classification and a run-time gate.
+Block code is the partial evaluation of the same core, and the core reads the
+model switches (`s.cfg.stack_model`, ...) at run time, so a block already
+does what the interpreter does for an instruction. What it does not do is
+what the *engine* does between instructions, and that is the whole list of
+blockers, per model:
+
+- **Banks**: `St::bank_complete` swaps the visible and alternate registers
+  one instruction after a MODE1 write. Blocks never call it. Gate: no bank
+  selection pending or requested at entry; classification: no instruction
+  that names MODE1 (or MODE1STK) in a register field, so none can request.
+- **Physical stacks**: `pc_stack_complete` truncates the PC stack after a
+  PCSTKP write; CALL/RTS/RTI/CJUMP/RFRAME and PUSH/POP act on the physical
+  entries. Gate: none pending or requested. Classification: no PCSTK/PCSTKP/
+  LADDR/CURLCNTR/MODE1STK field, no call, return (RTS, RTI, CJUMP, RFRAME,
+  the `(DB)` return idiom), loop-abort or CI jump, no system form (PUSH/POP,
+  bit operations on system registers, IDLE, ...). DO loops and the
+  instruction at a loop's last address stay in: block code runs the core's
+  own loop logic (including the `loop_slots` and PC-stack updates), and the
+  block now saves `loop_depth` and puts it back if that instruction traps,
+  the one scalar the undo log lacks (`rollback_log` kept the changed value).
+- **Software IRQs**: the engine checks the latches at every boundary. A
+  block is entered only when no source it delivers (software 28..31, timer
+  11/22, SECI 15) is latched, enabled and not priority-blocked, *ignoring*
+  the delay-slot and active-loop deferral (`latent_interrupt`): that
+  deferral can end at a boundary inside the block. Classification excludes
+  writes of IRPTL, IMASK, IMASKP, MMASK, MODE1 and RTI, so nothing inside can
+  make a source deliverable. SEC SECI latching (`sec_line`) is idempotent
+  within a block because SEC state changes only through stores (below).
+- **Core timer**: one tick per completed instruction. The block's `s.limit` is
+  `icount + TCOUNT - 1`, so it cannot reach expiry (TCOUNT < 2 or a reload at
+  0 is left to the interpreter); afterwards TCOUNT is reduced by the
+  instructions run. Classification excludes TCOUNT/TPERIOD/MODE2 fields.
+- **Instruction clock**: EMUCLK is set at every instruction start. After a
+  block the engine sets it as the last instruction saw it (`base + icount -
+  1`), and before the interpreter's next instruction as usual; blocks that
+  name EMUCLK/EMUCLK2 are excluded. This found a real bug in the first
+  version: after a budget exit the interpreter instruction ran with a stale
+  clock and without the boundary's interrupt checks; the step loop now goes
+  back to its top whenever a block completed instructions.
+- **Peripheral model**: SEC/DMA state changes only through stores. A block
+  store that `periph_write` would act on (`rt::periph::write_acts`: SECI_ID,
+  CSID, END, RAISE, SCTL status, DMA STAT/CFG) traps out of the block with
+  `TRAP_BLOCK_MODEL` before any change and the interpreter re-runs it. Reads
+  are pure and stay in the block.
+- **Idle skip**: no block runs while a probed iteration is open or while the
+  PC is inside the idle range (the skip needs the interpreter's write log);
+  blocks run up to and after it.
+- **Runtime decode (option 4)**: it used to clear the dispatch table. Blocks
+  now survive it but run only while the loaded code is what they were
+  generated from: `image.rs` carries `CODE_RANGES` (short-word ranges, with
+  six look-ahead words, and the SHA-256 of their loaded bytes). `Mem` watches
+  the pages of those ranges (`code_gen` counts stores), and the engine
+  re-hashes after a store to one, so a library made for another image (DT2
+  blocks on DN2 memory) or a patched code word never runs. Loops started by
+  runtime-decoded code are re-checked against `LOOP_ENDS` when the loop stack
+  changes.
+- **Memory model**: block code folds `explicit_memory_model`; the DN2
+  diagnostics run with it off, so `rsgen --explicit-memory-model 0` generates
+  for that and `Cfg::refresh` compares with `GEN_EXPLICIT_MEMORY_MODEL`.
+
+Tools: `sharc_rsgen.py` classifies (`model_unsafe_reason`) and `--model-safe`
+cuts each block before its first unsafe instruction (the interpreter runs
+that one and a block resumes at the next entry; `--entries` supplies those
+entries); without the flag each entry is flagged in `MODEL_SAFE` and regions
+never mix safe and unsafe bodies. `sharc_dn2_replay.py` is the replay runner
+(state hashes, PCM hash, wall time, block and idle counts, the profile for
+`--coverage/--entries/--transitions`: native option 26,
+`sharc_native_profile`). Generator version stays 9: the translator's output
+is unchanged, and libraries without the new statics do not build.
+
+**[D]** DN2 1.11 note capture, `digi-audio-loop2-fresh.bin` state, frames
+4600..5600 (667.7M DSP instructions, 333.8M of them replayed by the idle
+skip), idle skip and all models on, native, one machine:
+- Export-state SHA-256 at frames 4700, 5000, 5399, 5400, 5500, 5599, 5600 and
+  the PCM SHA-256 are identical in five runs: blocks off/on with the skip,
+  blocks off/on without it, and a repeat. The first four hashes also equal the
+  earlier idle-skip run's.
+- Frames 5400..5600 (133.4M instructions, 67.0M not skipped): 11.06 s without
+  blocks (6.06M non-idle instr/s), 1.08-1.25 s with (54-62M instr/s), 8.9x
+  to 10.3x; whole range 56.7 s -> 6.8-7.5 s. Without the skip, 100.3 s ->
+  20.4 s (4.9x; the idle loop is interpreted). 93.6% of the non-skipped
+  instructions run in blocks (312.4M of 333.8M); 967 blocks, 6.7M block
+  calls, 18.1k refused for a latched interrupt, 2.0k for the timer, 8.0k
+  peripheral-store exits, 0 code mismatches.
+- What is left is interpreted: 64% is code whose operands are Unknown in this
+  diagnostic state (blocks need known registers), 8% return idioms, 15%
+  CJUMP/RFRAME, 8% system forms, 3% MODE1 writes (instruction counts by the
+  first block-level reason, from the replay's own profile).
+
+**[O]** Not done: calls, returns, CJUMP/RFRAME and MODE1 writes in blocks
+(about 25% of what is still interpreted); a differential check of one block
+call against the interpreter for every entry (the replay hashes are the only
+end-to-end evidence, over this one capture); a unit test that takes a real
+interrupt after a timer-limited block (the replay crosses several hundred timer
+periods, but no unit test takes one); an independent audit of the classification against the core
+before this is marked **[V]**; a one-command pipeline (profile, generate with
+`--entries/--transitions`, build, replay); WASM and `SharcPeer`/`sharc_live`
+builds of a DN2 library; the cost of re-hashing when a data store shares a
+64 KiB page with generated code (not measured; `code_mismatch` stayed 0).
+
+### Threaded coupling and native playback (2026-10-03)
+
+**[D]** `sharc_peer::ThreadedPeer` (`DSP_THREAD=1` in `sharc_live`) moves the
+SHARC engine into a worker thread (built there, so it need not be `Send`).
+Frame N: the ColdFire thread sends it; the worker, which is one thread working
+in order, finishes period N-1, does the SPI2 exchange, returns the reply, then
+renders period N and the SPORT4 block while the ColdFire runs frame N+1. Frame
+logic is one `Core` shared with the synchronous `SharcPeer`; `Shared` gets
+each frame in order when the ColdFire thread next looks (`ThreadedHandle::sync`
+/ `export` wait for the worker). DN2 1.11 coupled snapshot, trig, ready+100M
+(1,139 frames): ColdFire state digest, DSP export sha256, PCM sha256, wav, q31
+and per-frame csv are byte-identical to the synchronous run. Wall 68.4 s sync,
+63.6 s threaded; the ColdFire alone is 5.3 s, so the DSP is the bound and
+threading hides only the ColdFire share (about 7%).
+- `--features play`: `pcm_play::PcmPlayer` feeds `native/live`'s `SpscRing` and
+  cpal output from a feeder thread (linear resampling to the device rate
+  outside the callback; the producer never blocks). `AUDIO=1` plays as
+  produced (silence on underrun); `AUDIO_BUFFER=SECONDS` holds the audio back,
+  then plays it in real time and plays out the rest at the end. No device:
+  a message and the run goes on.

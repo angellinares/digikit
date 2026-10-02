@@ -91,6 +91,11 @@ pub const TRAP_NO_BLOCK: Trap = Trap(TRAP_RT_BASE + 10);
 /// the instruction instead).
 pub const TRAP_BLOCK_UNKNOWN: Trap = Trap(TRAP_RT_BASE + 11);
 pub const TRAP_PERIPHERAL: Trap = Trap(TRAP_RT_BASE + 12);
+/// Block code only, with a model on: a store the peripheral model acts on
+/// (SEC, DMA registers). It may latch an interrupt or start a transfer that
+/// the engine must see at the next instruction boundary, so the block leaves
+/// the instruction to the one-instruction interpreter.
+pub const TRAP_BLOCK_MODEL: Trap = Trap(TRAP_RT_BASE + 13);
 
 pub fn rt_trap_name(t: Trap) -> &'static str {
     match t.0.wrapping_sub(TRAP_RT_BASE) {
@@ -106,6 +111,7 @@ pub fn rt_trap_name(t: Trap) -> &'static str {
         10 => "no native code for this pc",
         11 => "block code: value not known",
         12 => "peripheral model",
+        13 => "block code: model-visible store",
         _ => "?",
     }
 }
@@ -300,9 +306,32 @@ pub struct Loop {
 /// the first '[': `_field`'s prefix match), the bit range HI:LO the key
 /// names (-1 when it names none) and the value.
 #[derive(Clone, Copy, Debug)]
-pub struct FieldEntry(pub Sym, pub Sym, pub i8, pub i8, pub Int);
+pub struct FieldEntry(pub Sym, pub Sym, pub i8, pub i8, pub i64);
 
 pub const MAX_INSN_FIELDS: usize = 12;
+
+/// Multiplicative hasher for the decode cache's PC keys (iteration order is
+/// never observed; SipHash cost ~6% of the DN2 profile).
+#[derive(Default, Clone, Copy)]
+pub struct PcHasher(u64);
+impl std::hash::Hasher for PcHasher {
+    #[inline(always)]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    #[inline(always)]
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0 ^ b as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+    #[inline(always)]
+    fn write_u32(&mut self, n: u32) {
+        self.0 = (n as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        self.0 ^= self.0 >> 32;
+    }
+}
+pub type PcHash = std::hash::BuildHasherDefault<PcHasher>;
 
 /// Decoded fields of one instruction, in decode order (a Python dict's
 /// insertion order).
@@ -326,7 +355,7 @@ impl Fields {
     pub fn get(&self, k: Sym) -> Option<Int> {
         for e in self.entries() {
             if e.0 == k {
-                return Some(e.4);
+                return Some(e.4 as Int);
             }
         }
         None
@@ -595,6 +624,10 @@ pub struct Cfg {
     /// The configuration is the one block code was generated for
     /// (tools/sharc_transpile.py GEN_CFG_DEFAULT); block code runs only then.
     pub block_ok: bool,
+    /// The configuration is block code's apart from the opt-in models
+    /// (bank, stack, core timer, peripheral): the Engine may then run blocks
+    /// the generator classed as model-safe, behind its run-time gate.
+    pub block_base_ok: bool,
     /// The configuration allows the plain-RAM fast paths (has_concrete,
     /// assume_nw32, no data_memory_tainted).
     pub fast_mem: bool,
@@ -620,6 +653,7 @@ impl Default for Cfg {
             provisional_interp: Vec::new(),
             provisional_forms: Vec::new(),
             block_ok: true,
+            block_base_ok: true,
             fast_mem: true,
         }
     }
@@ -630,21 +664,22 @@ impl Cfg {
     pub fn refresh(&mut self) {
         let d = Cfg::default();
         self.fast_mem = self.has_concrete && self.assume_nw32 && !self.data_memory_tainted;
-        self.block_ok = self.has_concrete == d.has_concrete
+        self.block_base_ok = self.has_concrete == d.has_concrete
             && self.follow_loaded_calls == d.follow_loaded_calls
             && self.continue_external_calls == d.continue_external_calls
             && self.max_call_depth == d.max_call_depth
             && self.assume_nw32 == d.assume_nw32
-            && self.explicit_memory_model == d.explicit_memory_model
+            && self.explicit_memory_model == crate::gen_explicit_memory_model()
             && self.approx_recips == d.approx_recips
             && self.data_memory_tainted == d.data_memory_tainted
             && self.dossier_bytes == d.dossier_bytes
+            && self.provisional_interp.is_empty()
+            && self.provisional_forms.is_empty();
+        self.block_ok = self.block_base_ok
             && !self.bank_model
             && !self.stack_model
             && !self.core_timer
-            && !self.peripheral_model
-            && self.provisional_interp.is_empty()
-            && self.provisional_forms.is_empty();
+            && !self.peripheral_model;
     }
     pub fn provisional_get(&self, name: Sym) -> Option<Sym> {
         self.provisional_interp
@@ -731,6 +766,7 @@ pub struct St {
     pub status_stack: Stk<(V, V, V), MAX_STATUS>,
     /// Fixed-width MMR values, sorted by address.
     pub mmrs: Vec<(u32, V)>,
+    pub mmr_hint: std::cell::Cell<usize>,
     pub mem: Mem,
     pub cfg: Cfg,
     undo: [Undo; UNDO_CAP],
@@ -750,7 +786,7 @@ pub struct St {
     /// with this state, unlike the process-lifetime AOT instruction table.
     pub runtime_decode: bool,
     pub read_sw: fn(&Mem, u32) -> Option<u16>,
-    pub decode_cache: std::collections::HashMap<u32, CachedInsn>,
+    pub decode_cache: std::collections::HashMap<u32, CachedInsn, PcHash>,
     /// Addresses named by sharcimm.name_address: exact addresses and
     /// [lo, hi) ranges, from the image blob.
     pub named_mmrs: Vec<u32>,
@@ -760,6 +796,9 @@ pub struct St {
     /// on the stack ends at one of them (block code assumes it).
     pub loop_ends: &'static [i64],
     pub loops_ok: bool,
+    /// Set by the Engine around a block call: stores the peripheral model
+    /// acts on trap out of the block (TRAP_BLOCK_MODEL).
+    pub in_block: bool,
     /// [lo, hi) windows that hold every named or reset-valued MMR (a quick
     /// test before the exact lookup).
     pub mmr_windows: Vec<(u32, u32)>,
@@ -809,6 +848,7 @@ impl St {
             pc_stack: Stk::default(),
             status_stack: Stk::default(),
             mmrs: Vec::new(),
+            mmr_hint: std::cell::Cell::new(0),
             mem,
             cfg: Cfg::default(),
             undo: [Undo::LoopsPush; UNDO_CAP],
@@ -821,12 +861,13 @@ impl St {
             insn_at: no_insn,
             runtime_decode: false,
             read_sw: no_read_sw,
-            decode_cache: std::collections::HashMap::new(),
+            decode_cache: Default::default(),
             named_mmrs: Vec::new(),
             named_ranges: Vec::new(),
             core_mmr_reset: Vec::new(),
             loop_ends: &[],
             loops_ok: true,
+            in_block: false,
             mmr_windows: Vec::new(),
             mmr_page: vec![false; 1 << 16],
         })
@@ -1143,10 +1184,17 @@ impl St {
     }
 
     pub fn mmr_get(&self, a: u32) -> Option<V> {
-        self.mmrs
-            .binary_search_by_key(&a, |(k, _)| *k)
-            .ok()
-            .map(|i| self.mmrs[i].1)
+        // `mmrs` is sorted with unique keys, so a matching hinted slot is
+        // the entry; the hint only skips the binary search.
+        let h = self.mmr_hint.get();
+        if let Some(&(k, v)) = self.mmrs.get(h)
+            && k == a
+        {
+            return Some(v);
+        }
+        let i = self.mmrs.binary_search_by_key(&a, |(k, _)| *k).ok()?;
+        self.mmr_hint.set(i);
+        Some(self.mmrs[i].1)
     }
 
     pub fn mmr_put(&mut self, a: u32, v: V) {

@@ -288,6 +288,20 @@ pub fn periph_read(s: &St, a: u32) -> R<Option<V>> {
     Ok(None)
 }
 
+/// Whether `periph_write` would act on a word store to A (the same cases,
+/// without running them): block code leaves such a store to the interpreter.
+pub fn write_acts(a: u32) -> bool {
+    if a == SECI_ID || a == SEC_CSID || a == SEC_END || a == SEC_RAISE {
+        return true;
+    }
+    if a >= SEC_SCTL && a < SEC_SCTL + 8 * SEC_SOURCES && (a - SEC_SCTL) & 7 == 4 {
+        return true;
+    }
+    DMA_BASES
+        .iter()
+        .any(|&base| a == base + DMA_STAT || a == base + DMA_CFG)
+}
+
 /// periph._periph_write: true when the write had a peripheral effect.
 pub fn periph_write(s: &mut St, a: u32, value: u32) -> R<bool> {
     if a == SECI_ID || a == SEC_CSID {

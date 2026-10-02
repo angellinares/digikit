@@ -519,7 +519,7 @@ fn parse_insn_table(b: &[u8]) -> Result<InsnTable, i32> {
             let stem = r.u16()?;
             let hi = r.u8()? as i8;
             let lo = r.u8()? as i8;
-            let v = r.i64()? as Int;
+            let v = r.i64()?;
             entries.push(FieldEntry(key, stem, hi, lo, v));
         }
         headers.push((pc, type_name, kind, length, start, entries.len()));
@@ -558,7 +558,7 @@ pub fn field_entry(key: &str, value: Int) -> Option<FieldEntry> {
         hi = h.parse().unwrap_or(-1);
         lo = l.parse().unwrap_or(-1);
     }
-    Some(FieldEntry(k, st, hi, lo, value))
+    Some(FieldEntry(k, st, hi, lo, i64::try_from(value).ok()?))
 }
 
 #[cfg(test)]

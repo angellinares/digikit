@@ -13,7 +13,7 @@
 //! The engine is generic over [`DspEngine`] so the plumbing is testable
 //! without firmware.
 
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc, thread};
 
 use periph::dspi::Peer;
 
@@ -44,6 +44,14 @@ pub trait DspEngine {
     fn pc(&self) -> u32;
     /// Halt reason, once stopped.
     fn halt_reason(&self) -> Option<String>;
+    /// Canonical state blob (hosts that snapshot); empty when unsupported.
+    fn export(&self) -> Vec<u8> {
+        Vec::new()
+    }
+    /// Executed-instruction counter (hosts that snapshot).
+    fn icount(&self) -> u64 {
+        0
+    }
 }
 
 /// Per-frame record.
@@ -79,30 +87,40 @@ pub struct Shared {
     pub attached: bool,
 }
 
-pub struct SharcPeer<E: DspEngine> {
+/// Everything about one frame that depends on the DSP engine. It is the
+/// same code in the synchronous peer and in the DSP worker thread, so the
+/// two cannot drift apart. It never touches [`Shared`].
+struct Core<E: DspEngine> {
     engine: E,
     period: u32,
     idle: (u32, u32),
-    shared: Rc<RefCell<Shared>>,
+    /// Mirror of `Shared::halted` (only the core ever sets it).
+    halted: Option<String>,
 }
 
-impl<E: DspEngine> SharcPeer<E> {
-    pub fn new(engine: E, period: u32) -> (Self, Rc<RefCell<Shared>>) {
-        let shared = Rc::new(RefCell::new(Shared {
-            attached: true,
-            ..Shared::default()
-        }));
-        let peer = Self {
+/// What the exchange half of a frame leaves for the render half.
+struct Exchanged {
+    stat: FrameStat,
+    /// Detached or halted: zero reply, zero audio, no DSP time.
+    skipped: bool,
+}
+
+/// What one frame adds to [`Shared`] once it has been rendered.
+struct Done {
+    stat: FrameStat,
+    skipped: bool,
+    block: Option<Vec<u8>>,
+    halted: Option<String>,
+}
+
+impl<E: DspEngine> Core<E> {
+    fn new(engine: E, period: u32) -> Self {
+        Self {
             engine,
             period,
             idle: DN2_IDLE_RANGE,
-            shared: shared.clone(),
-        };
-        (peer, shared)
-    }
-
-    pub fn set_idle_range(&mut self, range: (u32, u32)) {
-        self.idle = range;
+            halted: None,
+        }
     }
 
     /// Run the DSP for one period; returns (executed, busy, reached_idle).
@@ -129,45 +147,65 @@ impl<E: DspEngine> SharcPeer<E> {
         (done, busy.unwrap_or(done), busy.is_some())
     }
 
-    fn frame(&mut self, tx: &[u8]) -> Vec<u8> {
-        let mut sh = self.shared.borrow_mut();
+    /// First half: deliver the frame through the SPI2 model, take the reply.
+    fn exchange(&mut self, tx: &[u8], attached: bool) -> (Vec<u8>, Exchanged) {
         let first_word = tx.get(..2).map_or(0, |b| u16::from_be_bytes([b[0], b[1]]));
-        *sh.first_words.entry(first_word).or_default() += 1;
         let mut stat = FrameStat {
             first_word,
             tx_hash: fnv1a(tx),
             ..FrameStat::default()
         };
-        if !sh.attached || sh.halted.is_some() {
-            sh.pcm.extend_from_slice(&[0.0; BLOCK_WORDS]);
-            sh.raw.extend_from_slice(&[0; BLOCK_WORDS]);
-            sh.frames.push(stat);
-            return vec![0; tx.len()];
+        if !attached || self.halted.is_some() {
+            return (
+                vec![0; tx.len()],
+                Exchanged {
+                    stat,
+                    skipped: true,
+                },
+            );
         }
         let reply = match self.engine.spi2_exchange(tx) {
             Ok(r) if r.len() == tx.len() => r,
             Ok(r) => {
                 eprintln!("sharc_peer: reply length {} != {}", r.len(), tx.len());
-                sh.halted = Some("bad reply length".into());
+                self.halted = Some("bad reply length".into());
                 vec![0; tx.len()]
             }
             Err(e) => {
                 eprintln!("sharc_peer: spi2_exchange failed: {e}");
-                sh.halted = Some(e);
+                self.halted = Some(e);
                 vec![0; tx.len()]
             }
         };
         stat.reply_hash = fnv1a(&reply);
         stat.reply_nonzero_bytes = reply.iter().filter(|&&b| b != 0).count() as u32;
-        sh.nonzero_replies += (stat.reply_nonzero_bytes != 0) as u64;
-        drop(sh);
-        let mut halted = self.shared.borrow().halted.clone();
+        (
+            reply,
+            Exchanged {
+                stat,
+                skipped: false,
+            },
+        )
+    }
+
+    /// Second half: run the DSP for the period and take the audio block.
+    /// Reads only the engine state left by the exchange.
+    fn render(&mut self, ex: Exchanged) -> Done {
+        let Exchanged { mut stat, skipped } = ex;
+        if skipped {
+            return Done {
+                stat,
+                skipped,
+                block: None,
+                halted: self.halted.clone(),
+            };
+        }
+        let mut halted = self.halted.clone();
         if halted.is_none() {
             let (executed, busy, idle) = self.run_period();
             stat.executed = executed;
             stat.busy = busy;
             stat.reached_idle = idle;
-            self.shared.borrow_mut().dsp_instructions += executed as u64;
             halted = self.engine.halt_reason();
             if halted.is_some() {
                 eprintln!(
@@ -188,26 +226,85 @@ impl<E: DspEngine> SharcPeer<E> {
         } else {
             None
         };
-        let mut sh = self.shared.borrow_mut();
-        if halted.is_some() && sh.halted.is_none() {
-            sh.halted = halted;
+        if halted.is_some() && self.halted.is_none() {
+            self.halted = halted;
         }
-        match block {
-            Some(b) if b.len() == BLOCK_WORDS * 4 => {
-                stat.block = true;
-                for w in b.chunks_exact(4) {
-                    let q = i32::from_le_bytes([w[0], w[1], w[2], w[3]]);
-                    sh.raw.push(q);
-                    sh.pcm.push(-(q as f64 / 2_147_483_648.0) as f32);
-                }
-            }
-            _ => {
-                sh.missing_blocks += 1;
-                sh.raw.extend_from_slice(&[0; BLOCK_WORDS]);
-                sh.pcm.extend_from_slice(&[0.0; BLOCK_WORDS]);
-            }
+        Done {
+            stat,
+            skipped,
+            block,
+            halted: self.halted.clone(),
         }
+    }
+}
+
+/// Append one finished frame to the shared record.
+fn commit(sh: &mut Shared, d: Done) {
+    let Done {
+        stat,
+        skipped,
+        block,
+        halted,
+    } = d;
+    *sh.first_words.entry(stat.first_word).or_default() += 1;
+    if skipped {
+        sh.pcm.extend_from_slice(&[0.0; BLOCK_WORDS]);
+        sh.raw.extend_from_slice(&[0; BLOCK_WORDS]);
         sh.frames.push(stat);
+        return;
+    }
+    let mut stat = stat;
+    sh.nonzero_replies += (stat.reply_nonzero_bytes != 0) as u64;
+    sh.dsp_instructions += stat.executed as u64;
+    if halted.is_some() && sh.halted.is_none() {
+        sh.halted = halted;
+    }
+    match block {
+        Some(b) if b.len() == BLOCK_WORDS * 4 => {
+            stat.block = true;
+            for w in b.chunks_exact(4) {
+                let q = i32::from_le_bytes([w[0], w[1], w[2], w[3]]);
+                sh.raw.push(q);
+                sh.pcm.push(-(q as f64 / 2_147_483_648.0) as f32);
+            }
+        }
+        _ => {
+            sh.missing_blocks += 1;
+            sh.raw.extend_from_slice(&[0; BLOCK_WORDS]);
+            sh.pcm.extend_from_slice(&[0.0; BLOCK_WORDS]);
+        }
+    }
+    sh.frames.push(stat);
+}
+
+/// The synchronous peer: the whole frame runs inside the ColdFire bus write.
+pub struct SharcPeer<E: DspEngine> {
+    core: Core<E>,
+    shared: Rc<RefCell<Shared>>,
+}
+
+impl<E: DspEngine> SharcPeer<E> {
+    pub fn new(engine: E, period: u32) -> (Self, Rc<RefCell<Shared>>) {
+        let shared = Rc::new(RefCell::new(Shared {
+            attached: true,
+            ..Shared::default()
+        }));
+        let peer = Self {
+            core: Core::new(engine, period),
+            shared: shared.clone(),
+        };
+        (peer, shared)
+    }
+
+    pub fn set_idle_range(&mut self, range: (u32, u32)) {
+        self.core.idle = range;
+    }
+
+    fn frame(&mut self, tx: &[u8]) -> Vec<u8> {
+        let attached = self.shared.borrow().attached;
+        let (reply, ex) = self.core.exchange(tx, attached);
+        let done = self.core.render(ex);
+        commit(&mut self.shared.borrow_mut(), done);
         reply
     }
 }
@@ -221,6 +318,194 @@ impl<E: DspEngine + 'static> SharcPeer<E> {
 impl<E: DspEngine> Peer for SharcPeer<E> {
     fn exchange(&mut self, tx: &[u8]) -> Vec<u8> {
         self.frame(tx)
+    }
+}
+
+enum Msg {
+    Frame { tx: Vec<u8>, attached: bool },
+    Export,
+}
+
+/// ColdFire-thread side of the threaded peer.
+struct Link {
+    tx: Option<mpsc::Sender<Msg>>,
+    reply_rx: mpsc::Receiver<Vec<u8>>,
+    done_rx: mpsc::Receiver<Done>,
+    export_rx: mpsc::Receiver<(Vec<u8>, u64)>,
+    /// Frames sent whose [`Done`] has not been committed yet.
+    outstanding: usize,
+    shared: Rc<RefCell<Shared>>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl Link {
+    fn commit_ready(&mut self, block: bool) {
+        while self.outstanding > 0 {
+            let done = if block {
+                self.done_rx.recv().ok()
+            } else {
+                self.done_rx.try_recv().ok()
+            };
+            let Some(d) = done else { break };
+            commit(&mut self.shared.borrow_mut(), d);
+            self.outstanding -= 1;
+        }
+    }
+
+    fn worker_died(&mut self, len: usize) -> Vec<u8> {
+        let mut sh = self.shared.borrow_mut();
+        if sh.halted.is_none() {
+            sh.halted = Some("DSP worker thread stopped".into());
+        }
+        sh.attached = false;
+        vec![0; len]
+    }
+}
+
+impl Drop for Link {
+    fn drop(&mut self) {
+        self.tx = None; // the worker's recv fails and the thread ends
+        if let Some(w) = self.worker.take() {
+            let _ = w.join();
+        }
+    }
+}
+
+/// Threaded peer. Frame N: the ColdFire thread sends the frame to the DSP
+/// worker and waits only for the reply, which the worker produces after it
+/// has finished rendering frame N-1 (one thread, in order), so the reply and
+/// every DSP state it depends on are exactly those of the synchronous peer.
+/// The worker then renders period N while the ColdFire thread continues to
+/// frame N+1. [`Shared`] receives each frame's PCM and statistics in order,
+/// when the ColdFire thread next looks (`exchange`, [`ThreadedHandle::sync`]);
+/// the DSP engine is created inside the worker thread, so it need not be
+/// `Send`.
+pub struct ThreadedPeer {
+    link: Rc<RefCell<Link>>,
+}
+
+/// Host-side handle to a [`ThreadedPeer`] that the ColdFire emulator owns.
+#[derive(Clone)]
+pub struct ThreadedHandle {
+    link: Rc<RefCell<Link>>,
+}
+
+impl ThreadedPeer {
+    /// Start the worker. `make` runs on the worker thread and builds the
+    /// engine there (an error is returned here).
+    pub fn spawn<E, F>(
+        make: F,
+        period: u32,
+        idle: (u32, u32),
+    ) -> Result<(Self, ThreadedHandle, Rc<RefCell<Shared>>), String>
+    where
+        E: DspEngine + 'static,
+        F: FnOnce() -> Result<E, String> + Send + 'static,
+    {
+        let (tx, rx) = mpsc::channel::<Msg>();
+        let (reply_tx, reply_rx) = mpsc::channel::<Vec<u8>>();
+        let (done_tx, done_rx) = mpsc::channel::<Done>();
+        let (export_tx, export_rx) = mpsc::channel::<(Vec<u8>, u64)>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let worker = thread::Builder::new()
+            .name("sharc-dsp".into())
+            .spawn(move || {
+                let engine = match make() {
+                    Ok(e) => {
+                        let _ = ready_tx.send(Ok(()));
+                        e
+                    }
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(e));
+                        return;
+                    }
+                };
+                let mut core = Core::new(engine, period);
+                core.idle = idle;
+                while let Ok(msg) = rx.recv() {
+                    match msg {
+                        Msg::Frame { tx, attached } => {
+                            let (reply, ex) = core.exchange(&tx, attached);
+                            if reply_tx.send(reply).is_err() {
+                                return;
+                            }
+                            if done_tx.send(core.render(ex)).is_err() {
+                                return;
+                            }
+                        }
+                        Msg::Export => {
+                            let _ = export_tx.send((core.engine.export(), core.engine.icount()));
+                        }
+                    }
+                }
+            })
+            .map_err(|e| format!("spawn DSP worker: {e}"))?;
+        ready_rx
+            .recv()
+            .map_err(|_| "DSP worker died at start".to_string())??;
+        let shared = Rc::new(RefCell::new(Shared {
+            attached: true,
+            ..Shared::default()
+        }));
+        let link = Rc::new(RefCell::new(Link {
+            tx: Some(tx),
+            reply_rx,
+            done_rx,
+            export_rx,
+            outstanding: 0,
+            shared: shared.clone(),
+            worker: Some(worker),
+        }));
+        Ok((Self { link: link.clone() }, ThreadedHandle { link }, shared))
+    }
+
+    pub fn boxed(self) -> Box<dyn Peer> {
+        Box::new(self)
+    }
+}
+
+impl Peer for ThreadedPeer {
+    fn exchange(&mut self, tx: &[u8]) -> Vec<u8> {
+        let mut l = self.link.borrow_mut();
+        let attached = l.shared.borrow().attached;
+        let sent = l.tx.as_ref().is_some_and(|c| {
+            c.send(Msg::Frame {
+                tx: tx.to_vec(),
+                attached,
+            })
+            .is_ok()
+        });
+        if !sent {
+            return l.worker_died(tx.len());
+        }
+        l.outstanding += 1;
+        match l.reply_rx.recv() {
+            Ok(r) => {
+                l.commit_ready(false);
+                r
+            }
+            Err(_) => l.worker_died(tx.len()),
+        }
+    }
+}
+
+impl ThreadedHandle {
+    /// Wait for the DSP to finish every frame sent so far and commit them to
+    /// [`Shared`]. Call before reading `Shared` for totals or a snapshot.
+    pub fn sync(&self) {
+        self.link.borrow_mut().commit_ready(true);
+    }
+
+    /// Canonical DSP state and instruction counter after every frame sent so
+    /// far (empty / 0 when the engine does not export).
+    pub fn export(&self) -> (Vec<u8>, u64) {
+        let mut l = self.link.borrow_mut();
+        l.commit_ready(true);
+        let sent = l.tx.as_ref().is_some_and(|c| c.send(Msg::Export).is_ok());
+        if !sent {
+            return (Vec::new(), 0);
+        }
+        l.export_rx.recv().unwrap_or_default()
     }
 }
 
@@ -246,6 +531,12 @@ impl DspEngine for NativeDsp {
     }
     fn halt_reason(&self) -> Option<String> {
         self.0.halt.clone()
+    }
+    fn export(&self) -> Vec<u8> {
+        self.0.export()
+    }
+    fn icount(&self) -> u64 {
+        self.0.s.icount
     }
 }
 
@@ -285,6 +576,12 @@ impl DspEngine for SharedDsp {
     }
     fn halt_reason(&self) -> Option<String> {
         self.0.borrow().halt.clone()
+    }
+    fn export(&self) -> Vec<u8> {
+        self.0.borrow().export()
+    }
+    fn icount(&self) -> u64 {
+        self.0.borrow().s.icount
     }
 }
 
@@ -434,6 +731,179 @@ mod tests {
         sh.borrow_mut().attached = false;
         assert_eq!(peer.exchange(&[1u8; 4]), vec![0; 4]);
         assert_eq!(sh.borrow().dsp_instructions, 0);
-        assert_eq!(peer.engine.frames, 0);
+        assert_eq!(peer.core.engine.frames, 0);
+    }
+}
+
+#[cfg(test)]
+mod threaded_tests {
+    use super::*;
+
+    /// State-dependent engine: every reply and block depends on everything
+    /// that happened before, so any reordering shows up in the output.
+    struct Chain {
+        h: u64,
+        halt_after: Option<u32>,
+        frames: u32,
+        pc: u32,
+    }
+
+    impl Chain {
+        fn new(halt_after: Option<u32>) -> Self {
+            Chain {
+                h: 0x1234_5678,
+                halt_after,
+                frames: 0,
+                pc: 0,
+            }
+        }
+        fn mix(&mut self, v: u64) {
+            self.h = (self.h ^ v).wrapping_mul(0x100_0000_01b3).rotate_left(13);
+        }
+    }
+
+    impl DspEngine for Chain {
+        fn spi2_exchange(&mut self, f: &[u8]) -> Result<Vec<u8>, String> {
+            self.frames += 1;
+            self.mix(fnv1a(f));
+            let h = self.h;
+            Ok((0..f.len()).map(|i| (h >> ((i % 8) * 8)) as u8).collect())
+        }
+        fn step(&mut self, n: u32) -> u32 {
+            self.mix(n as u64);
+            self.pc = if self.h & 3 == 0 {
+                DN2_IDLE_RANGE.0 + 1
+            } else {
+                0x1c0000
+            };
+            n
+        }
+        fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
+            if self.halt_after == Some(self.frames) {
+                return Err("chain halt".into());
+            }
+            self.mix(7);
+            let mut b = Vec::new();
+            for i in 0..BLOCK_WORDS as u64 {
+                self.mix(i);
+                b.extend_from_slice(&((self.h >> 20) as i32).to_le_bytes());
+            }
+            Ok(Some(b))
+        }
+        fn pc(&self) -> u32 {
+            self.pc
+        }
+        fn halt_reason(&self) -> Option<String> {
+            None
+        }
+        fn export(&self) -> Vec<u8> {
+            self.h.to_le_bytes().to_vec()
+        }
+        fn icount(&self) -> u64 {
+            self.frames as u64
+        }
+    }
+
+    fn tx_for(i: u32) -> Vec<u8> {
+        let mut tx = vec![0u8; 64];
+        tx[0..2].copy_from_slice(&((i % 5) as u16).to_be_bytes());
+        tx[8..12].copy_from_slice(&i.to_le_bytes());
+        tx
+    }
+
+    type Stat = (u16, u64, u64, u32, u32, bool, u32, bool);
+    /// (replies, pcm bits, raw, per-frame stats, counters, halted)
+    type Out = (
+        Vec<Vec<u8>>,
+        Vec<u32>,
+        Vec<i32>,
+        Vec<Stat>,
+        (u64, u64, u64),
+        Option<String>,
+    );
+
+    fn collect(sh: &Shared, replies: Vec<Vec<u8>>) -> Out {
+        (
+            replies,
+            sh.pcm.iter().map(|x| x.to_bits()).collect(),
+            sh.raw.clone(),
+            sh.frames
+                .iter()
+                .map(|f| {
+                    (
+                        f.first_word,
+                        f.tx_hash,
+                        f.reply_hash,
+                        f.reply_nonzero_bytes,
+                        f.busy,
+                        f.reached_idle,
+                        f.executed,
+                        f.block,
+                    )
+                })
+                .collect(),
+            (sh.dsp_instructions, sh.nonzero_replies, sh.missing_blocks),
+            sh.halted.clone(),
+        )
+    }
+
+    /// Frames 40..60 are sent detached.
+    fn script(i: u32) -> bool {
+        !(40..60).contains(&i)
+    }
+
+    fn run_sync(n: u32, halt: Option<u32>) -> Out {
+        let (mut peer, sh) = SharcPeer::new(Chain::new(halt), 5000);
+        let mut replies = Vec::new();
+        for i in 0..n {
+            sh.borrow_mut().attached = script(i);
+            replies.push(peer.exchange(&tx_for(i)));
+        }
+        let sh = sh.borrow();
+        collect(&sh, replies)
+    }
+
+    fn run_threaded(n: u32, halt: Option<u32>, poll: bool) -> (Out, (Vec<u8>, u64)) {
+        let (mut peer, handle, sh) =
+            ThreadedPeer::spawn(move || Ok(Chain::new(halt)), 5000, DN2_IDLE_RANGE).unwrap();
+        let mut replies = Vec::new();
+        for i in 0..n {
+            sh.borrow_mut().attached = script(i);
+            replies.push(peer.exchange(&tx_for(i)));
+            if poll && i % 17 == 0 {
+                handle.sync();
+            }
+        }
+        let exp = handle.export();
+        let sh = sh.borrow();
+        (collect(&sh, replies), exp)
+    }
+
+    #[test]
+    fn threaded_matches_sync() {
+        for halt in [None, Some(150)] {
+            let want = run_sync(300, halt);
+            for poll in [false, true] {
+                let (got, exp) = run_threaded(300, halt, poll);
+                assert!(got == want, "halt={halt:?} poll={poll}");
+                assert_eq!(exp.0.len(), 8);
+                assert_eq!(exp.1, if halt.is_some() { 150 } else { 280 });
+            }
+        }
+        // The script really exercised the detach and halt paths.
+        let w = run_sync(300, Some(150));
+        assert_eq!(w.5.as_deref(), Some("chain halt"));
+        assert!(w.3[45].2 == 0 && !w.3[45].7);
+        assert!(w.3[100].7);
+    }
+
+    #[test]
+    fn threaded_engine_start_error_is_reported() {
+        let r = ThreadedPeer::spawn(
+            || Err::<Chain, _>("no engine".to_string()),
+            1,
+            DN2_IDLE_RANGE,
+        );
+        assert_eq!(r.err().as_deref(), Some("no engine"));
     }
 }

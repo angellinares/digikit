@@ -502,12 +502,12 @@ pub fn _mr_write_word(_s: &St, mr: Spec, word: Int, value: V) -> Spec {
 pub fn _field(_s: &St, f: Fields, stem: Sym) -> R<Int> {
     for e in f.entries() {
         if e.0 == stem {
-            return Ok(e.4);
+            return Ok(e.4 as Int);
         }
     }
     for e in f.entries() {
         if e.1 == stem && e.0 != e.1 {
-            return Ok(e.4);
+            return Ok(e.4 as Int);
         }
     }
     Err(TRAP_KEY)
@@ -518,7 +518,7 @@ pub fn _field(_s: &St, f: Fields, stem: Sym) -> R<Int> {
 fn range_field(f: Fields, stem: Sym, hi: i8, lo: i8) -> R<Int> {
     for e in f.entries() {
         if e.1 == stem && e.2 == hi && e.3 == lo {
-            return Ok(e.4);
+            return Ok(e.4 as Int);
         }
     }
     Err(TRAP_KEY)
@@ -596,7 +596,7 @@ fn decoded_insn(decoded: crate::decode::Decoded) -> R<Insn> {
             crate::sym_of(field.stem).ok_or(TRAP_NO_INSN)?,
             field.hi,
             field.lo,
-            field.value as Int,
+            field.value,
         );
     }
     let insn = Insn {
@@ -1082,12 +1082,13 @@ pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V, normal_word
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
     }
-    if s.cfg.peripheral_model
-        && width == 4
-        && (0..=u32::MAX as Int).contains(&concrete)
-        && super::periph::periph_write(s, concrete as u32, value.b)?
-    {
-        return Ok(true);
+    if s.cfg.peripheral_model && width == 4 && (0..=u32::MAX as Int).contains(&concrete) {
+        if s.in_block && super::periph::write_acts(concrete as u32) {
+            return Err(TRAP_BLOCK_MODEL);
+        }
+        if super::periph::periph_write(s, concrete as u32, value.b)? {
+            return Ok(true);
+        }
     }
     if width == 4 && fixed_width_mmr(s, concrete) {
         s.mmr_set(concrete as u32, value)?;
@@ -1143,12 +1144,13 @@ fn _dm_write_nolog_full(
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
     }
-    if s.cfg.peripheral_model
-        && width == 4
-        && (0..=u32::MAX as Int).contains(&concrete)
-        && super::periph::periph_write(s, concrete as u32, value.b)?
-    {
-        return Ok(true);
+    if s.cfg.peripheral_model && width == 4 && (0..=u32::MAX as Int).contains(&concrete) {
+        if s.in_block && super::periph::write_acts(concrete as u32) {
+            return Err(TRAP_BLOCK_MODEL);
+        }
+        if super::periph::periph_write(s, concrete as u32, value.b)? {
+            return Ok(true);
+        }
     }
     if width == 4 && fixed_width_mmr(s, concrete) {
         s.mmr_put(concrete as u32, value);

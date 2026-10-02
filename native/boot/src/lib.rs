@@ -4,6 +4,8 @@
 mod abi;
 mod capture;
 mod common;
+#[cfg(feature = "play")]
+pub mod pcm_play;
 mod ram_clear;
 mod runtime;
 #[cfg(feature = "sharc")]

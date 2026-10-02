@@ -21,6 +21,8 @@ diagnostics = ["diagnostic-profile", "diagnostic-events", "diagnostic-trace"]
 # Opt-in live ColdFire<->SHARC+ coupling (SharcPeer). Needs SHARC_GEN_DIR at
 # build time for real DSP execution (see native/sharc/build.rs).
 sharc = ["dep:sharc-native"]
+# Opt-in PCM playback through native/live (cpal output ring).
+play = ["dep:live-audio"]
 
 [dependencies]
 coldfire = { path = "../coldfire" }
@@ -34,6 +36,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 sharc-native = { path = "../sharc", optional = true }
+live-audio = { path = "../live", optional = true }
 
 [[example]]
 name = "sharc_live"

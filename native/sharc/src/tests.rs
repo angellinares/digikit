@@ -702,9 +702,15 @@ fn spin_engine(skip: bool, period: i64) -> crate::Engine {
     mem.reset();
     let mut e = crate::Engine::new(mem);
     e.enable_runtime_decode(direct_short_word);
-    for (k, v) in [(5, 1), (6, 12345), (21, 1)] {
+    // Block code is only used under the memory model it was generated for.
+    let gen_model = i64::from(crate::gen_explicit_memory_model());
+    for (k, v) in [(5, 1), (6, 12345), (10, gen_model), (21, 1)] {
         assert_eq!(e.set_option(k, v), 0);
     }
+    // The stand-in block code is not the generated image's code.
+    e.code_known = true;
+    e.code_ok = true;
+    e.code_checked = e.s.mem.code_gen;
     e.s.r[116] = V::c(0x20); // MODE2.TIMEN
     e.s.r[114] = V::c(0); // MODE1
     e.s.r[122] = V::c(0); // IRPTL
@@ -752,4 +758,132 @@ fn idle_skip_matches_plain_stepping_across_timer_events() {
         }
         assert_eq!(plain.idle_stats.iterations, 0);
     }
+}
+
+/// A stand-in for block code over `spin_engine`'s `JUMP 0`: it completes
+/// instructions (icount and steps, the PC stays) until its limit, as a
+/// generated block does.
+#[cfg(sharc_gen)]
+fn fake_spin_block(s: &mut St) -> u32 {
+    loop {
+        if s.icount + 1 > s.limit {
+            return crate::EXIT_BUDGET;
+        }
+        s.icount += 1;
+        s.steps += 1;
+    }
+}
+
+#[cfg(sharc_gen)]
+fn same_state(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
+    assert_eq!(plain.s.icount, fast.s.icount, "{why}");
+    assert_eq!(plain.s.pc_sw, fast.s.pc_sw, "{why}");
+    assert_eq!(plain.s.steps, fast.s.steps, "{why}");
+    for code in 0..crate::rt::NUREG {
+        assert_eq!(plain.s.r[code], fast.s.r[code], "r{code} {why}");
+    }
+}
+
+/// A model-safe block runs with the core timer and the instruction clock on
+/// and leaves exactly what stepping leaves (TCOUNT, the IRPTL latch at
+/// expiry, EMUCLK), across odd step sizes and timer periods; a block that is
+/// not model-safe never runs.
+#[cfg(sharc_gen)]
+#[test]
+fn model_safe_block_matches_stepping_across_timer_events() {
+    for period in [0, 1, 2, 3, 7, 100, 1000] {
+        let mut plain = spin_engine(false, period);
+        plain.use_blocks = false;
+        let mut fast = spin_engine(false, period);
+        fast.dispatch = crate::Dispatch::new(&[(0, fake_spin_block)], &[0]);
+        let mut unsafe_block = spin_engine(false, period);
+        unsafe_block.dispatch = crate::Dispatch::new(&[(0, fake_spin_block)], &[]);
+        for n in [1, 2, 3, 50, 99, 100, 101, 977, 5000, 12345, 1] {
+            assert_eq!(plain.step(n), n, "{:?}", plain.halt);
+            assert_eq!(fast.step(n), n, "{:?}", fast.halt);
+            assert_eq!(unsafe_block.step(n), n);
+            same_state(&plain, &fast, &format!("period {period} n {n}"));
+            same_state(
+                &plain,
+                &unsafe_block,
+                &format!("unsafe period {period} n {n}"),
+            );
+        }
+        if period >= 3 {
+            assert!(fast.stats.block_instructions > 0, "period {period}");
+            assert!(fast.model_stats.gated > 0);
+        }
+        assert_eq!(unsafe_block.stats.block_entries, 0);
+        assert!(unsafe_block.model_stats.unsafe_block > 0);
+        // The timer expired inside stepping, never inside a block.
+        assert_eq!(plain.s.r[122], fast.s.r[122], "IRPTL period {period}");
+    }
+}
+
+/// An interrupt source that is latched and enabled keeps blocks out even
+/// where the interpreter defers it (an active DO loop): the deferral could
+/// end inside the block.
+#[cfg(sharc_gen)]
+#[test]
+fn latched_interrupt_blocks_model_safe_blocks_while_deferred() {
+    let mut e = spin_engine(false, 1000);
+    e.dispatch = crate::Dispatch::new(&[(0, fake_spin_block)], &[0]);
+    assert_eq!(e.set_option(9, 1), 0);
+    assert_eq!(e.latent_interrupt(), Some(false));
+    e.s.r[114] = V::c(0x1000); // MODE1.IRPTEN
+    e.s.r[122] = V::c(0x1000_0000); // IRPTL: SFT0
+    e.s.r[123] = V::c(0x1000_0000); // IMASK
+    assert_eq!(e.latent_interrupt(), Some(true));
+    e.s.r[124] = V::c(0x1000_0000); // IMASKP: that level is being serviced
+    e.s.r[114] = V::c(0x1800); // nesting on: only higher priority is eligible
+    assert_eq!(e.latent_interrupt(), Some(false));
+    e.s.r[124] = V::c(0x2000_0000);
+    assert_eq!(e.latent_interrupt(), Some(true));
+    e.s.r[122] = V::UNK;
+    assert_eq!(e.latent_interrupt(), None);
+}
+
+#[test]
+fn peripheral_stores_that_act_leave_block_code() {
+    use crate::rt::periph::write_acts;
+    for a in [
+        periph::SECI_ID,
+        periph::SEC_CSID,
+        periph::SEC_END,
+        periph::SEC_RAISE,
+        periph::SEC_SCTL + 4,
+        periph::SEC_SCTL + 8 * 70 + 4,
+        periph::SPORT4A_DMA + 8,
+        periph::SPORT4B_DMA + 0x30,
+    ] {
+        assert!(write_acts(a), "{a:#x}");
+    }
+    for a in [
+        periph::SEC_SCTL,
+        periph::SEC_SCTL + 8 * 70,
+        periph::SEC_CCTL,
+        0x30000,
+    ] {
+        assert!(!write_acts(a), "{a:#x}");
+    }
+    let mut s = state();
+    s.cfg.peripheral_model = true;
+    s.cfg.refresh();
+    s.named_mmrs = vec![periph::SEC_END, 0x3100_0000];
+    s.set_mmr_windows();
+    s.in_block = true;
+    s.begin();
+    assert_eq!(
+        bnd::_dm_write(&mut s, VI::I(periph::SEC_END as Int), 4, V::c(70), false),
+        Err(TRAP_BLOCK_MODEL)
+    );
+    s.rollback();
+    // An ordinary register store goes through; so does the interpreter's.
+    assert_eq!(
+        bnd::_dm_write(&mut s, VI::I(0x3100_0000), 4, V::c(1), false),
+        Ok(true)
+    );
+    s.in_block = false;
+    s.begin();
+    assert!(bnd::_dm_write(&mut s, VI::I(periph::SEC_RAISE as Int), 4, V::c(70), false).is_ok());
 }

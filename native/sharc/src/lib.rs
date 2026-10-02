@@ -120,21 +120,33 @@ pub fn no_block(_s: &mut St) -> u32 {
 
 pub type BlockFn = fn(&mut St) -> u32;
 
+/// A dispatch entry: the block function and whether the generator classed it
+/// model-safe (tools/sharc_rsgen.py model_safe), i.e. its instructions touch
+/// none of the state the bank, stack, timer, interrupt, clock and peripheral
+/// models update between instructions.
+#[derive(Clone, Copy)]
+pub struct Entry {
+    pub f: BlockFn,
+    pub model_safe: bool,
+}
+
 /// pc -> block function, as a two-level table over the short-word PC.
 pub struct Dispatch {
-    pages: Vec<Option<Box<[Option<BlockFn>; 4096]>>>,
+    pages: Vec<Option<Box<[Option<Entry>; 4096]>>>,
     pub count: usize,
 }
 
 impl Default for Dispatch {
     fn default() -> Self {
-        Self::new(&[])
+        Self::new(&[], &[])
     }
 }
 
 impl Dispatch {
-    pub fn new(blocks: &[(u32, BlockFn)]) -> Dispatch {
-        let mut pages: Vec<Option<Box<[Option<BlockFn>; 4096]>>> = Vec::new();
+    /// BLOCKS: (entry pc, function); SAFE: the sorted entry PCs that are
+    /// model-safe.
+    pub fn new(blocks: &[(u32, BlockFn)], safe: &[u32]) -> Dispatch {
+        let mut pages: Vec<Option<Box<[Option<Entry>; 4096]>>> = Vec::new();
         pages.resize_with(1 << 12, || None);
         for &(pc, f) in blocks {
             let hi = (pc >> 12) as usize;
@@ -142,7 +154,10 @@ impl Dispatch {
                 continue;
             }
             let page = pages[hi].get_or_insert_with(|| Box::new([None; 4096]));
-            page[(pc & 0xFFF) as usize] = Some(f);
+            page[(pc & 0xFFF) as usize] = Some(Entry {
+                f,
+                model_safe: safe.binary_search(&pc).is_ok(),
+            });
         }
         Dispatch {
             pages,
@@ -151,7 +166,7 @@ impl Dispatch {
     }
 
     #[inline(always)]
-    pub fn get(&self, pc: Int) -> Option<BlockFn> {
+    pub fn get_entry(&self, pc: Int) -> Option<Entry> {
         if !(0..(1 << 24)).contains(&pc) {
             return None;
         }
@@ -159,6 +174,11 @@ impl Dispatch {
         self.pages[(pc >> 12) as usize]
             .as_ref()
             .and_then(|p| p[(pc & 0xFFF) as usize])
+    }
+
+    #[inline(always)]
+    pub fn get(&self, pc: Int) -> Option<BlockFn> {
+        self.get_entry(pc).map(|e| e.f)
     }
 }
 
@@ -221,6 +241,43 @@ pub struct Engine {
     pub idle_hi: u32,
     idle_snap: Option<Box<IdleSnap>>,
     pub idle_stats: IdleStats,
+    /// Counters for the run-time gate that lets model-safe blocks run with
+    /// the bank, stack, timer, peripheral, clock and interrupt models on.
+    pub model_stats: ModelStats,
+    /// `Mem::code_gen` when `code_ok` was computed, and the result: the
+    /// loaded code is what the generated blocks were made from.
+    code_checked: u64,
+    code_known: bool,
+    code_ok: bool,
+}
+
+/// What the run-time model gate decided (diagnostic counters).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ModelStats {
+    /// Block calls made with a model on.
+    pub gated: u64,
+    /// Dispatch attempts at a block the generator did not class model-safe.
+    pub unsafe_block: u64,
+    /// Attempts refused because an interrupt source was latched and enabled
+    /// (it is taken, or deferred by a delay slot or loop, by the interpreter).
+    pub irq_deferred: u64,
+    /// Attempts refused because the core timer was within one tick of expiry
+    /// or a bank or PC-stack change was still in flight.
+    pub timer_gated: u64,
+    /// Block exits through TRAP_BLOCK_MODEL (a peripheral store).
+    pub mmr_exits: u64,
+    /// Attempts refused because the loaded code differs from the code the
+    /// blocks were generated from.
+    pub code_mismatch: u64,
+}
+
+/// What a block call needs besides its function: the instruction limit that
+/// keeps the core timer from expiring inside it, and the timer count to
+/// advance afterwards.
+struct BlockPlan {
+    limit: u64,
+    models: bool,
+    timer_count: Option<u32>,
 }
 
 /// Idle-skip counters (diagnostic).
@@ -361,10 +418,34 @@ pub fn exec_insn(s: &mut St, insn: Insn) -> R<()> {
     }
 }
 
+/// The explicit_memory_model setting the image's block code was generated
+/// for (true without an image: the default configuration).
+pub fn gen_explicit_memory_model() -> bool {
+    #[cfg(all(sharc_gen, sharc_image))]
+    {
+        generated::image::GEN_EXPLICIT_MEMORY_MODEL
+    }
+    #[cfg(not(all(sharc_gen, sharc_image)))]
+    {
+        true
+    }
+}
+
 fn image_blocks() -> &'static [(u32, BlockFn)] {
     #[cfg(all(sharc_gen, sharc_image))]
     {
         generated::image::BLOCKS
+    }
+    #[cfg(not(all(sharc_gen, sharc_image)))]
+    {
+        &[]
+    }
+}
+
+fn image_model_safe() -> &'static [u32] {
+    #[cfg(all(sharc_gen, sharc_image))]
+    {
+        generated::image::MODEL_SAFE
     }
     #[cfg(not(all(sharc_gen, sharc_image)))]
     {
@@ -417,7 +498,7 @@ impl Engine {
             stop_pc: None,
             software_interrupts: false,
             export_ranges: false,
-            dispatch: Dispatch::new(image_blocks()),
+            dispatch: Dispatch::new(image_blocks(), image_model_safe()),
             stats: Stats::default(),
             cov: None,
             one_dispatch: false,
@@ -431,6 +512,10 @@ impl Engine {
             idle_hi: 0x00ff_ffff,
             idle_snap: None,
             idle_stats: IdleStats::default(),
+            model_stats: ModelStats::default(),
+            code_checked: 0,
+            code_known: false,
+            code_ok: false,
         }
     }
 
@@ -448,16 +533,19 @@ impl Engine {
     }
 
     /// Select runtime instruction decoding over the engine's loaded memory.
-    /// This disables firmware-specific AOT blocks and metadata for this
-    /// engine only. `read_sw` maps a short-word PC to its two little-endian
-    /// loaded bytes and must return None for an unmapped word.
+    /// The generated instruction table is dropped for this engine only.
+    /// Generated blocks stay, but run only while the loaded code hashes to
+    /// what they were generated from (`blocks_code_ok`: the generator's
+    /// per-range SHA-256, re-checked when a store touches the code's pages),
+    /// so a library made for another image never runs here. `read_sw` maps a
+    /// short-word PC to its two little-endian loaded bytes and must return
+    /// None for an unmapped word.
     pub fn enable_runtime_decode(&mut self, read_sw: fn(&mem::Mem, u32) -> Option<u16>) {
         self.s.runtime_decode = true;
         self.s.read_sw = read_sw;
         self.s.decode_cache.clear();
         self.s.insn_at = |_| None;
-        self.s.loop_ends = &[];
-        self.dispatch = Dispatch::default();
+        self.watch_block_code();
     }
 
     /// Drop runtime-decoded metadata after the host replaces executable
@@ -666,6 +754,21 @@ impl Engine {
                 self.enable_runtime_decode(mem::Mem::read_sw);
             }
             5 => self.instruction_clock = value != 0,
+            26 => {
+                // Coverage, entries, transitions and block exits for
+                // tools/sharc_rsgen.py (read back by sharc_native_profile).
+                if value != 0 {
+                    self.cov.get_or_insert_with(Default::default);
+                    self.entries.get_or_insert_with(Default::default);
+                    self.trans.get_or_insert_with(Default::default);
+                    self.exits.get_or_insert_with(Default::default);
+                } else {
+                    self.cov = None;
+                    self.entries = None;
+                    self.trans = None;
+                    self.exits = None;
+                }
+            }
             7 => self.stop_software_interrupt = value != 0,
             9 => self.software_interrupts = value != 0,
             8 => {
@@ -733,6 +836,213 @@ impl Engine {
             candidates &= ((1u64 << priority.b.trailing_zeros()) - 1) as u32;
         }
         (candidates != 0).then(|| candidates.trailing_zeros())
+    }
+
+    /// Whether any run-time model beyond the plain interpreter's is on.
+    fn models_active(&self) -> bool {
+        let c = &self.s.cfg;
+        c.bank_model
+            || c.stack_model
+            || c.core_timer
+            || c.peripheral_model
+            || self.instruction_clock
+            || self.software_interrupts
+    }
+
+    /// The loaded code is what the generated blocks came from. Without
+    /// runtime decoding the image's own table is the code, as always. With
+    /// it, the generator's per-range SHA-256 of the short words (and the words
+    /// the decoder looks ahead at) is compared with the engine's memory,
+    /// again whenever a store touches a watched page.
+    fn blocks_code_ok(&mut self) -> bool {
+        if !self.s.runtime_decode {
+            return true;
+        }
+        if self.code_known && self.code_checked == self.s.mem.code_gen {
+            return self.code_ok;
+        }
+        self.code_checked = self.s.mem.code_gen;
+        self.code_known = true;
+        self.code_ok = self.verify_code();
+        self.code_ok
+    }
+
+    fn verify_code(&self) -> bool {
+        #[cfg(all(sharc_gen, sharc_image))]
+        {
+            for &(start, len, want) in generated::image::CODE_RANGES {
+                let mut bytes = Vec::with_capacity(len as usize * 2);
+                for k in 0..len {
+                    match self.s.mem.read_sw(start + k) {
+                        Some(w) => bytes.extend_from_slice(&w.to_le_bytes()),
+                        None => bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE]),
+                    }
+                }
+                let mut h = sha256::Sha256::new();
+                h.update(&bytes);
+                if frames::hex(&h.finish()) != want {
+                    return false;
+                }
+            }
+            true
+        }
+        #[cfg(not(all(sharc_gen, sharc_image)))]
+        {
+            // No generated image: there is no block code to protect.
+            true
+        }
+    }
+
+    /// Watch the pages that hold generated block code (runtime decoding).
+    fn watch_block_code(&mut self) {
+        #[cfg(all(sharc_gen, sharc_image))]
+        {
+            self.s.mem.unwatch_code();
+            for &(start, len, _) in generated::image::CODE_RANGES {
+                let (lo, hi) = (start, start + len);
+                self.s
+                    .mem
+                    .watch_code(0x2800_0000 + lo * 2, 0x2800_0000 + hi * 2);
+                if lo < 0xc0_0000 && hi > 0xb8_0000 {
+                    let (a, b) = (lo.max(0xb8_0000), hi.min(0xc0_0000));
+                    self.s.mem.watch_code(
+                        0x2000_0000 + (a - 0xb8_0000) * 2,
+                        0x2000_0000 + (b - 0xb8_0000) * 2,
+                    );
+                }
+            }
+            self.code_known = false;
+        }
+    }
+
+    /// An interrupt source the engine delivers is latched, enabled and not
+    /// blocked by priority, ignoring the delay-slot and loop deferral that
+    /// holds it back at this boundary. None: a control register is not
+    /// concrete. No block may run while this is true: the deferral could end
+    /// at an instruction boundary inside it.
+    fn latent_interrupt(&self) -> Option<bool> {
+        let [mode, latch, mask, active] = [114, 122, 123, 124].map(|c| self.s.r[c]);
+        if ![mode, latch, mask, active].iter().all(|v| v.is_c()) {
+            return None;
+        }
+        let mut allowed = 0u32;
+        if self.software_interrupts {
+            allowed |= 0xf000_0000;
+        }
+        if self.s.cfg.core_timer {
+            allowed |= 0x0040_0800;
+        }
+        if self.s.cfg.peripheral_model {
+            allowed |= 0x0000_8000;
+        }
+        if mode.b & 0x1000 == 0 {
+            return Some(false);
+        }
+        let mut candidates = latch.b & mask.b & allowed;
+        if active.b != 0 {
+            if mode.b & 0x800 == 0 {
+                return Some(false);
+            }
+            candidates &= (active.b & active.b.wrapping_neg()).wrapping_sub(1);
+        }
+        Some(candidates != 0)
+    }
+
+    /// The block to run at the current PC and its plan, or None to
+    /// interpret one instruction. Without a model on, any block runs. With
+    /// one, a model-safe block runs only while nothing the models update
+    /// between instructions can change inside it: no bank or PC-stack change
+    /// in flight, no interrupt source that could become deliverable, the
+    /// core timer at least two ticks from expiry (the block is limited to
+    /// the ticks before that), and no peripheral store (those leave the block
+    /// as TRAP_BLOCK_MODEL).
+    fn block_plan(&mut self, limit: u64) -> Option<(Entry, BlockPlan)> {
+        if !(self.use_blocks
+            && self.s.cfg.block_base_ok
+            && !self.stop_software_interrupt
+            && self.stop_pc.is_none()
+            && self.s.probe.is_none()
+            && self.s.loops_ok)
+        {
+            return None;
+        }
+        if self.idle_head.is_some()
+            && (self.idle_lo as Int..=self.idle_hi as Int).contains(&self.s.pc_sw)
+        {
+            return None;
+        }
+        let entry = self.dispatch.get_entry(self.s.pc_sw)?;
+        let mut plan = BlockPlan {
+            limit,
+            models: false,
+            timer_count: None,
+        };
+        if self.models_active() {
+            if !entry.model_safe {
+                self.model_stats.unsafe_block += 1;
+                return None;
+            }
+            let s = &self.s;
+            if (s.cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0))
+                || (s.cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0))
+            {
+                self.model_stats.timer_gated += 1;
+                return None;
+            }
+            if self.software_interrupts || s.cfg.core_timer || s.cfg.peripheral_model {
+                match self.latent_interrupt() {
+                    Some(false) => {}
+                    _ => {
+                        self.model_stats.irq_deferred += 1;
+                        return None;
+                    }
+                }
+            }
+            if self.s.cfg.core_timer {
+                let (mode, count) = (self.s.r[R_MODE2], self.s.r[R_TCOUNT]);
+                if !mode.is_c() {
+                    return None;
+                }
+                if mode.b & 0x20 != 0 {
+                    if !count.is_c() || count.b < 2 {
+                        self.model_stats.timer_gated += 1;
+                        return None;
+                    }
+                    plan.limit = limit.min(self.s.icount + count.b as u64 - 1);
+                    plan.timer_count = Some(count.b);
+                }
+            }
+            if !self.blocks_code_ok() {
+                self.model_stats.code_mismatch += 1;
+                return None;
+            }
+            plan.models = true;
+            self.model_stats.gated += 1;
+        } else if !self.blocks_code_ok() {
+            self.model_stats.code_mismatch += 1;
+            return None;
+        }
+        Some((entry, plan))
+    }
+
+    /// After a block call: the models' per-instruction effects the block
+    /// does not apply. Its K completed instructions each ticked the core
+    /// timer (the plan kept it from expiring) and set EMUCLK for the next;
+    /// the interpreter sets EMUCLK at the start of every instruction, so the
+    /// value left behind is the last one's.
+    fn block_models_after(&mut self, plan: &BlockPlan, before: u64) {
+        let k = self.s.icount - before;
+        if k == 0 {
+            return;
+        }
+        if let Some(count) = plan.timer_count {
+            self.s.r[R_TCOUNT] = V::c((count as u64 - k) as Int);
+        }
+        if self.instruction_clock {
+            let tick = self.instruction_clock_base.wrapping_add(self.s.icount - 1);
+            self.s.r[R_EMUCLK] = V::c((tick as u32) as Int);
+            self.s.r[R_EMUCLK2] = V::c((tick >> 32) as Int);
+        }
     }
 
     fn trapped(&mut self, t: Trap) {
@@ -834,23 +1144,18 @@ impl Engine {
                 self.s.r[105] = V::c((tick as u32) as Int);
                 self.s.r[106] = V::c((tick >> 32) as Int);
             }
-            if !self.instruction_clock
-                && self.idle_head.is_none()
-                && !self.software_interrupts
-                && !self.stop_software_interrupt
-                && self.stop_pc.is_none()
-                && self.use_blocks
-                && self.s.cfg.block_ok
-                && self.s.loops_ok
-                && let Some(f) = self.dispatch.get(self.s.pc_sw)
-            {
-                self.s.limit = limit;
+            if let Some((entry, plan)) = self.block_plan(limit) {
+                self.s.limit = plan.limit;
                 self.s.chain = 0;
                 let before = self.s.icount;
-                let entry = self.s.pc_sw as u32;
+                let entry_pc = self.s.pc_sw as u32;
                 self.last_interp_next = -1;
                 let t0 = if self.prof.is_some() { ticks() } else { 0 };
-                let code = f(&mut self.s);
+                self.s.in_block = plan.models;
+                let code = (entry.f)(&mut self.s);
+                self.s.in_block = false;
+                self.block_models_after(&plan, before);
+                let entry = entry_pc;
                 if let Some(p) = &mut self.prof {
                     let t = ticks() - t0;
                     let e = p.entry(entry).or_default();
@@ -884,14 +1189,25 @@ impl Engine {
                         // Undone: the one-instruction interpreter runs it
                         // (and traps for good if the core does).
                         self.stats.block_traps += 1;
+                        if self.s.trap == Some(TRAP_BLOCK_MODEL) {
+                            self.model_stats.mmr_exits += 1;
+                        }
                         self.s.trap = None;
                         if self.s.icount >= limit {
                             break;
+                        }
+                        if self.s.icount > before {
+                            // Instructions completed: the next boundary gets
+                            // its interrupt, clock and peripheral checks.
+                            continue;
                         }
                     }
                     _ => {
                         if self.s.icount >= limit {
                             break;
+                        }
+                        if self.s.icount > before {
+                            continue;
                         }
                     }
                 }
@@ -921,9 +1237,16 @@ impl Engine {
                     *en.entry(self.s.pc_sw as u32).or_default() += 1;
                 }
             }
+            let loops_before = self.s.loops.n;
             if let Err(t) = exec_insn(&mut self.s, insn) {
                 self.trapped(t);
                 break;
+            }
+            if self.s.loops.n != loops_before || !self.s.loops_ok {
+                // Block code assumes every loop ends at a PC the generator
+                // saw (a loop the interpreter started in runtime-decoded code
+                // may not): re-check the loop stack when it changed.
+                self.s.check_loops();
             }
             self.last_interp_next = self.s.pc_sw;
             if self.one_dispatch {
@@ -1296,7 +1619,9 @@ pub unsafe extern "C" fn sharc_native_exec_insn(
 
 /// Counters: [instructions, block entries, block instructions, single
 /// steps, traps, blocks in the image, special-slot presence bits, idle-skipped
-/// instructions].
+/// instructions, block exits through traps, then ModelStats: gated calls,
+/// unsafe blocks refused, interrupt-deferred, timer/pipeline-gated,
+/// peripheral-store exits, code mismatches].
 /// Returns how many were written.
 ///
 /// # Safety
@@ -1318,11 +1643,75 @@ pub unsafe extern "C" fn sharc_native_stats(
         e.dispatch.count as u64,
         (0..7).map(|i| (e.s.special_present[i] as u64) << i).sum(),
         e.idle_stats.instructions,
+        e.stats.block_traps,
+        e.model_stats.gated,
+        e.model_stats.unsafe_block,
+        e.model_stats.irq_deferred,
+        e.model_stats.timer_gated,
+        e.model_stats.mmr_exits,
+        e.model_stats.code_mismatch,
     ];
     let n = v.len().min(out_cap);
     // SAFETY: OUT has OUT_CAP >= n u64s.
     unsafe { std::ptr::copy_nonoverlapping(v.as_ptr(), out, n) };
     n as i32
+}
+
+/// The profile maps (option 26) as text, for tools/sharc_rsgen.py: KIND 0
+/// coverage ("pc MODE1 known count", sharc-frames --coverage), 1 entries
+/// ("pc count"), 2 block transitions ("from to count"), 3 block exits
+/// ("block kind at count"). Returns the length, or -needed when OUT_CAP is
+/// too small, or -1 for a bad KIND or no profile.
+///
+/// # Safety
+/// HANDLE from sharc_native_create; OUT points to OUT_CAP writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_profile(
+    handle: *mut Engine,
+    kind: u32,
+    out: *mut u8,
+    out_cap: usize,
+) -> i32 {
+    // SAFETY: caller contract.
+    let e = unsafe { &mut *handle };
+    let text = match kind {
+        0 => e.cov.as_ref().map(|m| {
+            let mut rows: Vec<_> = m.iter().collect();
+            rows.sort();
+            rows.iter()
+                .map(|((pc, mode, known), c)| format!("{pc:#x} {mode:#x} {} {c}\n", *known as u8))
+                .collect::<String>()
+        }),
+        1 => e.entries.as_ref().map(|m| {
+            let mut rows: Vec<_> = m.iter().collect();
+            rows.sort();
+            rows.iter()
+                .map(|(pc, c)| format!("{pc:#x} {c}\n"))
+                .collect::<String>()
+        }),
+        2 => e.trans.as_ref().map(|m| {
+            let mut rows: Vec<_> = m.iter().collect();
+            rows.sort();
+            rows.iter()
+                .map(|((a, b), c)| format!("{a:#x} {b:#x} {c}\n"))
+                .collect::<String>()
+        }),
+        3 => e.exits.as_ref().map(|m| {
+            let mut rows: Vec<_> = m.iter().collect();
+            rows.sort();
+            rows.iter()
+                .map(|((b, k, at), c)| format!("{b:#x} {k} {at:#x} {c}\n"))
+                .collect::<String>()
+        }),
+        _ => None,
+    };
+    let Some(text) = text else { return -1 };
+    if text.len() > out_cap {
+        return -(text.len() as i32);
+    }
+    // SAFETY: OUT has OUT_CAP >= len writable bytes.
+    unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), out, text.len()) };
+    text.len() as i32
 }
 
 /// Set UREG CODE to (KIND 0 Unknown / 1 Const / 2 PartialConst, VALUE,

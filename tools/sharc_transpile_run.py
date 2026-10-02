@@ -166,6 +166,11 @@ _EXTRA_FUNCTIONS = (
     ),
     ("sharc_native_info", [ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int32),
     (
+        "sharc_native_profile",
+        [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_size_t],
+        ctypes.c_int32,
+    ),
+    (
         "sharc_native_set_reg",
         [
             ctypes.c_void_p,
@@ -253,6 +258,7 @@ OPT_CORE_TIMER = 21
 OPT_PERIPHERAL_MODEL = 22
 # Idle-loop skip (native only): loop head PC (-1 off) and the inclusive PC
 # range every loop instruction must lie in. Exact; see findings 07.
+OPT_PROFILE = 26
 OPT_IDLE_HEAD = 23
 OPT_IDLE_LO = 24
 OPT_IDLE_HI = 25
@@ -375,8 +381,8 @@ class NativeCore(sd.NativeEngine):
         return rc == 1
 
     def stats(self) -> dict[str, int]:
-        arr = (ctypes.c_uint64 * 8)()
-        n = self._lib.sharc_native_stats(self._handle, arr, 8)
+        arr = (ctypes.c_uint64 * 16)()
+        n = self._lib.sharc_native_stats(self._handle, arr, 16)
         names = (
             "instructions",
             "block_entries",
@@ -386,8 +392,28 @@ class NativeCore(sd.NativeEngine):
             "blocks",
             "special_present",
             "idle_instructions",
+            "block_traps",
+            "model_gated",
+            "model_unsafe",
+            "model_irq_deferred",
+            "model_timer_gated",
+            "model_mmr_exits",
+            "model_code_mismatch",
         )
         return {names[i]: int(arr[i]) for i in range(min(n, len(names)))}
+
+    def profile(self, kind: int) -> str:
+        """Interpreter profile text (OPT_PROFILE): 0 coverage, 1 entries,
+        2 block transitions, 3 block exits (see native sharc_native_profile)."""
+        cap = 1 << 20
+        while True:
+            buf = ctypes.create_string_buffer(cap)
+            n = self._lib.sharc_native_profile(self._handle, kind, buf, cap)
+            if n >= 0:
+                return buf.raw[:n].decode()
+            if n == -1:
+                raise ValueError("no profile of kind %d" % kind)
+            cap = -n
 
     def info(self) -> dict:
         buf = ctypes.create_string_buffer(4096)

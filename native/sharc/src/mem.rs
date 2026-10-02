@@ -48,6 +48,11 @@ pub struct Mem {
     /// for an MMR page (`mmr`) or none. Kept in step with `pages`.
     eff: Box<[*mut Page; NPAGES]>,
     mmr: Vec<bool>,
+    /// Pages (and their short-word alias pages) that hold generated block
+    /// code, and a count of the writes that touched them (`code_gen`): the
+    /// engine re-verifies the code it was generated for when it changes.
+    code_pg: Vec<bool>,
+    pub code_gen: u64,
 }
 
 /// The short-word alias base in pages (memory.SW_ALIAS_BASE >> 16).
@@ -74,6 +79,34 @@ impl Mem {
                 .try_into()
                 .expect("NPAGES entries"),
             mmr: vec![false; NPAGES],
+            code_pg: vec![false; NPAGES],
+            code_gen: 0,
+        }
+    }
+
+    /// Watch the pages holding the bytes [lo, hi) (and their aliases): any
+    /// write there bumps `code_gen`.
+    pub fn watch_code(&mut self, lo: u32, hi: u32) {
+        if hi <= lo {
+            return;
+        }
+        for idx in (lo >> PAGE_BITS)..=((hi - 1) >> PAGE_BITS) {
+            let idx = idx as usize;
+            self.code_pg[idx] = true;
+            if idx >= ALIAS_PAGES {
+                self.code_pg[idx - ALIAS_PAGES] = true;
+            }
+        }
+    }
+
+    pub fn unwatch_code(&mut self) {
+        self.code_pg.fill(false);
+    }
+
+    #[inline(always)]
+    fn note_write(&mut self, a: u32) {
+        if self.code_pg[(a >> PAGE_BITS) as usize] {
+            self.code_gen += 1;
         }
     }
 
@@ -158,6 +191,7 @@ impl Mem {
         if p.is_null() {
             return None;
         }
+        self.note_write(a);
         // SAFETY: eff holds null or a page `pages` owns (kept in step).
         let p = unsafe { &mut *p };
         let off = (a as usize) & (PAGE_SIZE - 1);
@@ -186,6 +220,7 @@ impl Mem {
 
     /// Add loader-image bytes at byte address A (building the image).
     pub fn load(&mut self, a: u32, bytes: &[u8]) {
+        self.code_gen += 1;
         for (k, &b) in bytes.iter().enumerate() {
             let addr = a.wrapping_add(k as u32);
             let idx = (addr >> PAGE_BITS) as usize;
@@ -198,6 +233,7 @@ impl Mem {
 
     /// Discard every overlay byte: memory is the loader image again.
     pub fn reset(&mut self) {
+        self.code_gen += 1;
         for idx in 0..NPAGES {
             match &self.loader[idx] {
                 Some(src) => {
@@ -347,6 +383,7 @@ impl Mem {
     /// present/dirty bits (bit 0, bit 1) for the undo journal.
     #[inline(always)]
     pub fn write_byte(&mut self, a: u32, v: u8) -> (u8, u8) {
+        self.note_write(a);
         let idx = (a >> PAGE_BITS) as usize;
         if self.pages[idx].is_none() {
             self.pages[idx] = Some(Page::empty());
@@ -428,6 +465,7 @@ impl Mem {
     /// on one page already (nothing else changes); false otherwise.
     #[inline(always)]
     pub fn write_dirty(&mut self, a: u32, width: u32, v: u32) -> bool {
+        self.note_write(a);
         let off = (a as usize) & (PAGE_SIZE - 1);
         let Some(p) = self.pages[(a >> PAGE_BITS) as usize].as_deref_mut() else {
             return false;
@@ -448,6 +486,7 @@ impl Mem {
 
     /// Undo a write_byte.
     pub fn restore(&mut self, a: u32, byte: u8, flags: u8) {
+        self.note_write(a);
         if let Some(p) = self.pages[(a >> PAGE_BITS) as usize].as_deref_mut() {
             let off = (a as usize) & (PAGE_SIZE - 1);
             let (w, bit) = (off >> 6, 1u64 << (off & 63));
