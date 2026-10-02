@@ -152,6 +152,12 @@ impl Emulator {
         self.dspi2_capture = Some(capture);
     }
 
+    /// Install the DSP side of the DSPI2 link (opt-in coupling, e.g.
+    /// `sharc_peer::SharcPeer`). Replaces any recorder.
+    pub fn set_dspi2_peer(&mut self, peer: Box<dyn periph::dspi::Peer>) {
+        self.bus.board.dma.peer = peer;
+    }
+
     pub fn dspi2_capture_bytes(&self) -> Option<Vec<u8>> {
         self.dspi2_capture.as_ref().map(Dspi2Capture::bytes)
     }

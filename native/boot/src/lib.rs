@@ -6,6 +6,8 @@ mod capture;
 mod common;
 mod ram_clear;
 mod runtime;
+#[cfg(feature = "sharc")]
+pub mod sharc_peer;
 mod softfloat;
 mod telemetry;
 

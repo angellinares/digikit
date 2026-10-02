@@ -7,6 +7,8 @@
 //! trig = TRIG 1 (code 25) held 40M instructions at +60M/+110M/+160M;
 //! play = PLAY (code 20) at +60M held 1M, STOP (code 21) at +200M.
 
+mod common;
+
 use elektron_native_boot::Emulator;
 use sha2::{Digest, Sha256};
 use std::{env, fs};
@@ -29,25 +31,7 @@ fn main() {
     if ssi_hz != 0 {
         emu.enable_ssi_diagnostic(ssi_hz).unwrap();
     }
-    let mut events: Vec<(u64, u8, bool)> = Vec::new();
-    match env::var("NOTE_EVENTS").as_deref() {
-        Ok("trig") => {
-            for t in [60_000_000, 110_000_000, 160_000_000] {
-                events.push((t, 25, true));
-                events.push((t + 40_000_000, 25, false));
-            }
-        }
-        Ok("play") => {
-            events.push((60_000_000, 20, true));
-            events.push((61_000_000, 20, false));
-            events.push((200_000_000, 21, true));
-            events.push((201_000_000, 21, false));
-        }
-        _ => {}
-    }
-    let mut next_event = 0;
-    let mut ready_at: Option<u64> = None;
-    let mut stage = 0;
+    let mut script = common::Script::from_env();
     let mut next = 0;
     let end = loop {
         let snap = emu.step_chunk(250_000);
@@ -56,37 +40,8 @@ fn main() {
             println!("icount={} ready={}", s.icount, s.ready);
             next = s.icount + 50_000_000;
         }
-        if s.ready && ready_at.is_none() {
-            ready_at = Some(s.icount);
-            println!("ready_at={}", s.icount);
-            emu.button(12, true).unwrap();
-            stage = 1;
-        }
-        if let Some(at) = ready_at {
-            let elapsed = s.icount - at;
-            if stage == 1 && elapsed >= 1_000_000 {
-                emu.button(12, false).unwrap();
-                stage = 2;
-            }
-            if stage == 2 && elapsed >= 20_000_000 {
-                emu.button(12, true).unwrap();
-                stage = 3;
-            }
-            if stage == 3 && elapsed >= 21_000_000 {
-                emu.button(12, false).unwrap();
-                stage = 4;
-            }
-            if stage == 4 && elapsed >= 40_000_000 {
-                emu.turn(1, 1).unwrap();
-                stage = 5;
-            }
-            while next_event < events.len() && elapsed >= events[next_event].0 {
-                let (t, code, down) = events[next_event];
-                emu.button(code, down).unwrap();
-                println!("event t=+{t} code={code} down={down} icount={}", s.icount);
-                next_event += 1;
-            }
-        }
+        script.poll(&mut emu, s.icount, s.ready);
+        let ready_at = script.ready_at;
         if ready_at.is_some_and(|at| s.icount - at >= extra)
             || s.error.is_some()
             || s.icount >= 1_100_000_000

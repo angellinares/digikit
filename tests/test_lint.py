@@ -13,6 +13,7 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/sharc_pack_image.py",
     "tools/sharc_mmr_reset.py",
     "tools/sharc_reset_check.py",
     "tests/test_sharc_mmr_reset.py",

@@ -4893,3 +4893,28 @@ master L/R `0x268438`/`0x2684b8`. `0x1c9d3f` converts them to Q31 in the
 SPORT4A buffer as interleaved L/R (even/odd words), 32 samples per block.
 Observed sign: Q31 = −master, clipped. Commands 0 and 1 write silence;
 command 2 is a copy/loopback.
+
+## Live ColdFire/SHARC+ coupling (2026-10-02)
+
+**[D]** `native/boot` feature `sharc` (off by default; no effect on the
+default or WASM build) adds `sharc_peer::SharcPeer`, a `periph::dspi::Peer`
+that owns the native SHARC engine. Per 2748-byte DSPI2 frame: SPI2 exchange
+(reply returned to the ColdFire), `step(666_667)` in 1024-instruction chunks
+(noting the first chunk that ends in the DN2 idle range `0xb88a49..0xb88abb`),
+then one SPORT4 block (-Q31 to f32 stereo). Driver:
+`native/boot/examples/sharc_live.rs` (needs `SHARC_GEN_DIR`; image blob from
+`tools/sharc_pack_image.py`; DSP state is a private canonical blob).
+
+**[D]** DN2 1.11, SSI paced, NOTE_EVENTS=trig, ready+250M (1.1015G ColdFire
+instructions, 7,574 frames, 5.05 s audio, 5.05G DSP instructions): no halt,
+wall 732 s (145x slower than real time; DSP about 6.9M instr/s, native). The
+audio is bit-identical between two runs and matches the zero-reply replay
+(peak 0.693, same pin and decay figures).
+- The TX stream is byte-identical to the zero-reply capture for all 7,560
+  frames both runs cover: the ColdFire does not react to the DSP replies yet.
+- Replies are non-zero (7,571 of 7,574) but tiny: 1 to 5 non-zero bytes per
+  frame, 2,143 distinct.
+- DSP busy before idle: command 1 about 3.4k instructions (max 5k); command 3
+  about 335k (50% of a 1 GHz period; assumed clock). Overall idle share 80%.
+- The DSP state is a mid-run continuation attached from the first ColdFire
+  frame (435M), not from the DSP's own boot **[O]**.
