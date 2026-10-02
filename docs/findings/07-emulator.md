@@ -4207,3 +4207,157 @@ startup qualification or a verified ROM call context. HWR preboot already
 enters Full-On clock mode; reset values alone are not the INIT handoff state.
 Artifacts `init-calibration.py` and `init-calibration-frontier.json` identify
 these remaining clock/ROM dependencies without changing production defaults.
+
+## Runtime SHARC decoding and startup semantics follow-up (2026-10-02)
+
+**[D]** The shared Python core and native memory boundaries now distinguish
+normal-word transfers from byte/short transfers. Product-specific private L1,
+public L1, L2, SPI and DDR normal-word windows use the public ADSP-2156x map
+in [the addressing evidence](../refs/adsp-2156x-data-addressing.md).
+DAG modifier units and ACONV use the same map. Host pokes/peeks remain byte
+addressed. Synthetic tests cover alias coherence, window endpoints, absent
+memory, modifier units and native instruction rollback; numeric addresses
+alone no longer imply a normal-word transfer.
+
+**[D]** `tools/sharc_decode_rsgen.py` generates an ISA-only Rust decoder from
+our public-manual decode table. An engine can select runtime decoding with
+C ABI option 4, rather than requiring a firmware-specific instruction table.
+Instruction fields and cached metadata are owned. Cache hits revalidate the
+loaded shortwords used for decoding and successor confidence, so executable
+writes cannot silently keep stale metadata. Enabling runtime decoding clears
+that engine's AOT dispatch/table-loop assumptions. Unmapped, truncated,
+ambiguous and unsupported instructions fail closed. Generator version 2
+invalidates libraries using the older instruction-field representation.
+
+**[D]** Startup-driven shared semantics fixes include conditional SISD Type4a
+transfers, coherent-memory L1 cache maintenance, modular low-word integer
+MACs when upper MR words are unknown, Type8a loop-abort bookkeeping, PUSH
+PCSTK and explicit guest PCSTK restore, normal PM reads from unified physical
+memory, and PX transfers from the maintained PX1/PX2 halves. PCSTK preserves
+its 26-bit word while return targets use its low 24 bits. Unknown reserved
+stack entries and unsupported PCSTKP writes stop. This does not implement
+complete stack/CEC behavior, PM LW or implicit PM SIMD reads, or 40-bit data
+registers. Normal PM reads make the explicit result known; the unmodeled
+implicit SIMD result remains unknown.
+
+**[D]** A Digitone II startup stop at `0x1c0716` additionally exposed Type5b's
+conditional SIMD register transfer using the old SISD-only EQ predicate.
+Type5b now evaluates each processing element independently, including paired
+sources and shared-source broadcasts. A destination with no complement uses
+PEx only. Unknown relevant predicates stop before either write. Type5a's
+conditional parallel-compute extension is not qualified by this change.
+The following stop at `0x1c0720` exposed the same predicate problem in Type2a
+compute-only instructions. These now select each PE from the pre-instruction
+flags, preserving the registers and flags of an unselected PE. An unknown
+relevant condition stops before either PE changes. Synthetic native/reference
+checks cover all four independent EQ predicate combinations.
+
+**[D]** The retained startup tool accepts runtime decoding, public HWR reset
+rows, interval comparisons and bounded wall time. C ABI option 5 explicitly
+provides one diagnostic EMUCLK tick per completed instruction; option 6
+supplies a continuation base. Neither is a hardware cycle clock. Canonical
+state does not contain instruction counters: a continuation host must supply
+its clock origin deliberately. Reset-table parsing rejects conflicting rows
+and models values only, not peripheral side effects. Reports explicitly keep
+`loader_init_executed` and `qualified_fresh_boot` false: a flattened final
+loader still omits ROM/INIT handoff. Approximate reciprocal seeds remain an
+explicit diagnostic option.
+Interval reports count completed instructions at agreeing comparison
+boundaries, excluding a requested interval's unexecuted remainder after a halt.
+
+A reproducible bounded invocation is:
+
+```sh
+.venv/bin/python tools/sharc_transpile.py --out out/native/runtime-core/gen
+SHARC_GEN_DIR="$PWD/out/native/runtime-core/gen" \
+  CARGO_TARGET_DIR=/private/tmp/digi-runtime-core \
+  rustup run 1.98.1 cargo build --manifest-path native/sharc/Cargo.toml \
+  --release --locked --offline --lib
+.venv/bin/python tools/sharc_reset_check.py dn2-1.11 \
+  --lib /private/tmp/digi-runtime-core/release/libsharc_native.dylib \
+  --runtime-decode --mmr-resets out/refs/adsp-2156x-hwr/all.txt \
+  --approx-recips --instruction-clock --steps 100000 \
+  --compare --compare-every 1000 --seconds 60 --report /private/tmp/dsp-start.json
+```
+
+**[O]** An explicitly unqualified DT2 final-entry diagnostic ran through
+256M instructions without a native halt. At that boundary IRPTL had software
+interrupt 3 pending, TCOUNT remained static, and the core had no CEC delivery.
+A new instruction budget completing is not a completed DSP boot. Interrupt
+entry/RTI/CI, alternate register banks, clocks and coupled peripherals remain
+material gaps; additional execution of a task loop does not prove progress.
+
+**[D]** Independent static/MMIO audit associates DMA10 DSCPTR_NXT
+`0x282620c8` with ring-A list head `0x2620c8`; the public HWR maps DMA10 to
+SPORT4A. Captured CFG `0x44225` selects enabled descriptor-list memory-read
+transfers, 4-byte peripheral/memory sizes and no DMA interrupt request.
+SPORT4A CTL `0x021119f2` selects transmit/32-bit words but leaves both data
+paths disabled. Its bit clock and frame sync are external; DIV `0x20` does
+not establish a sample rate. Zero current descriptor/count registers provide
+no transfer proof. This is a diagnostic setup observation, not PCM output or
+physical connector qualification (HWR DMA/SPORT chapters, local lines
+47322–47323, 50043–50302, 59200–59392).
+
+**[O]** The first audio scenario is a freshly generated Digitone II oscillator
+trigger. Existing DT2 captured-state players tap voice work buffers and cannot
+qualify this scenario. DN2's common task/command/ring symbols resolve, but the
+DT2 initializer and sample-voice harness do not. DN2's command-3 path calls
+its renderer and converts the planar master buffer to the output ring. A
+fresh command producer and valid initialized DSP/task state must precede host
+playback integration; no fresh nonzero master PCM or frontend audio result is
+claimed here.
+
+## Guest-driven SSI command producer follow-up (2026-10-02)
+
+**[D]** `Emulator::enable_ssi_diagnostic(request_hz)` opts into a bounded
+SSI0 request source before guest execution. Default desktop/browser construction
+keeps it disabled. The request clock uses the existing 132M Oracle scheduling
+ticks per second and an explicitly supplied frequency; it does not establish
+the physical clock. SSI0 channels 48/50 now transfer mapped guest RAM through
+their live TCDs, advance minor/major loops, reload scatter/gather descriptors,
+honor D_REQ and route byte SERQ/CERQ/CINT writes. Unsupported descriptor shapes
+or unmapped payload/descriptor ranges are rejected before TCD/RAM mutation.
+RX carries the existing documented diagnostic handover marker at major-loop
+start. This marker is an explicit external-peer assumption, not recovered
+SHARC audio.
+
+**[D]** SSI work precedes timer delivery at an instruction boundary. The
+guest's vector table, ICR levels, INTC mask and CPU IPL decide whether an owed
+170/191 interrupt can enter. The lane offers one eligible SSI interrupt per
+boundary; accepted entries are recorded in the existing diagnostic counters.
+They are excluded from the runtime's unexpected-exception fault check. Idle
+and RAM-clear acceleration respect active SSI deadlines. Tests cover invalid
+SG/strides without mutation, D_REQ, NOP CINT, non-byte SERQ rejection and
+SSI/timer ordering with retained timer delivery.
+
+**[D]** A bounded native DN2 1.11 MAIN-only diagnostic, with fresh construction,
+the empty synthetic +Drive and explicit 96k requests/s, reached six 2,748-byte
+DSPI frame exchanges at logical instruction 435,499,044. SSI counters were
+316,726 requests, 4,948 RX and TX major loops, and zero rejected requests.
+The guest's handover counter reached 64; diagnostic IRQ counts were 1,570 for
+vector 170 and 1,506 for vector 191. No vector, frame gate or countdown was
+patched by the host. The six retained initial payloads were identical command
+1 frames (SHA-256 `8d9342e6b2f7b8a3e5f04c3d7d4ecddafd901af8f5129accad3e258547cdeb33`).
+The DSPI peer still replied with zeros; neither SHARC execution nor PCM was
+connected. This proves guest command production under the diagnostic assumptions,
+not an oscillator trigger or completed audio boot.
+
+**[D]** Validation of this checkpoint: the full Python suite including slow
+tests completed with 2,152 passes, 29 skips, one expected failure and 274
+passing subtests. Its sole failure was the subset linter not declaring the
+new pure normal-word stride helper; the declaration was corrected and the
+subset/lint checks rerun. Native SHARC tests (30), peripheral tests (87),
+SSI board tests (5) and boot runtime tests passed. The generic SHARC core
+produced identical native/WASM canonical state after a 100k-instruction
+diagnostic. With SSI disabled, fresh DN2 native/WASM boot and panel QA
+produced identical status, diagnostics and all framebuffer captures.
+
+**[O]** The unqualified DN2 flattened-entry diagnostic has different progress
+from DT2: IRPTL remains zero at 250M and 300M instructions while it constructs
+tables. At 325,496,893 it stops on conditional Type6a at `0x1c0e18`.
+Saved canonical state permits bounded continuation without repeating startup.
+An isolated SISD conditional-shift extension advances one instruction, then
+stops at aligned Type1a `0x1c0e1b` with ALUOP `0x20`. The public PRM fixed
+ALU table lists PASS as `0x21` and does not explain `0x20`; no alias is
+assumed. Neither table progress nor this isolated extension proves DSP boot
+completion or oscillator output.

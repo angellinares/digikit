@@ -29,10 +29,12 @@ from .sequencer import (
     _pop_pc_stack,
 )
 from .state import (
+    UNKNOWN_PC_STACK_ENTRY,
     State,
     _event,
     _json_value,
     _stop,
+    _sync_pc_stack,
     _ureg,
     _ureg_raw,
 )
@@ -166,7 +168,7 @@ def _type_20a(
     if pushes and pops:
         return [_stop(state, insn, "invalid Type20a mixed push and pop")]
     unsupported: list[str] = []
-    for field in ("lpu", "ppu", "llii", "lldwb", "lldi", "llpwb", "llpi"):
+    for field in ("lpu",):
         if _field(f, field):
             unsupported.append(field)
     if unsupported:
@@ -178,10 +180,39 @@ def _type_20a(
             )
         ]
     push_status = bool(_field(f, "spu"))
+    push_pc = bool(_field(f, "ppu"))
     pop_status = bool(_field(f, "spo"))
     pop_loop = bool(_field(f, "lpo"))
     pop_pc = bool(_field(f, "ppo"))
     flush_cache = bool(_field(f, "fc"))
+    l1_cache = bool(
+        _field(f, "llii")
+        or _field(f, "lldwb")
+        or _field(f, "lldi")
+        or _field(f, "llpwb")
+        or _field(f, "llpi")
+    )
+    if l1_cache:
+        # PRM pp.16-8--16-10: L1 cache maintenance cannot be combined
+        # with stack/conflict-cache operations. This memory model has no
+        # dirty cache lines: stores are immediately coherent with backing
+        # memory, so flushing/writing back changes no architectural bytes.
+        # Runtime instruction metadata validates its memory dependencies;
+        # it is not a simulation of an architectural cache.
+        if pushes or pops or flush_cache:
+            return [_stop(state, insn, "invalid Type20a combined L1 cache operation")]
+        _event(
+            state,
+            insn,
+            "l1-cache-maintenance",
+            invalidate_instruction=bool(_field(f, "llii")),
+            invalidate_dm=bool(_field(f, "lldi")),
+            writeback_dm=bool(_field(f, "lldwb")),
+            invalidate_pm=bool(_field(f, "llpi")),
+            writeback_pm=bool(_field(f, "llpwb")),
+            memory_model="coherent; no buffered cache writes",
+        )
+        return _advance(state, insn)
     astatx_code = UREG_CODES["ASTATX"]
     astaty_code = UREG_CODES["ASTATY"]
     mode1_code = UREG_CODES["MODE1"]
@@ -226,6 +257,11 @@ def _type_20a(
         _pop_loop_stack(state)
     if pop_pc:
         _pop_pc_stack(state)
+    if push_pc:
+        if len(state.call_stack) >= 30:
+            return [_stop(state, insn, "PC stack overflow interrupt is not modeled")]
+        state.call_stack.append(UNKNOWN_PC_STACK_ENTRY)
+        _sync_pc_stack(state)
     _event(
         state,
         insn,
@@ -234,6 +270,7 @@ def _type_20a(
         pop_status=pop_status,
         pop_loop=pop_loop,
         pop_pc=pop_pc,
+        push_pc=push_pc,
         flush_cache=flush_cache,
         status_depth=len(state.status_stack),
     )

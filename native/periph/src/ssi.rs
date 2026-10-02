@@ -103,6 +103,9 @@ pub struct Ssi0Dma {
     pub major_loops_rx: u64,
     pub major_loops_tx: u64,
     pub tx_bytes: u64,
+    /// Requests rejected by the machine bus because their TCD shape or RAM
+    /// range is outside this deliberately bounded diagnostic lane.
+    pub rejected_requests: u64,
 }
 
 impl Default for Ssi0Dma {
@@ -127,6 +130,7 @@ impl Ssi0Dma {
             major_loops_rx: 0,
             major_loops_tx: 0,
             tx_bytes: 0,
+            rejected_requests: 0,
         }
     }
 
@@ -174,6 +178,31 @@ impl Ssi0Dma {
         match remaining {
             Some(r) => step.min(r),
             None => step,
+        }
+    }
+
+    /// Earliest guest-instruction boundary at which a request can be due.
+    /// The caller uses this to keep analytic CPU advances from crossing SSI.
+    pub fn deadline(&mut self, done: u64) -> Option<u64> {
+        if !self.enabled.iter().any(|&e| e) {
+            return None;
+        }
+        Some(done.saturating_add(self.step(done, None)))
+    }
+
+    pub fn due(&mut self, done: u64) -> bool {
+        if !self.enabled.iter().any(|&enabled| enabled) {
+            return false;
+        }
+        if self.q.is_none() {
+            self.q = Some(self.first(done));
+        }
+        done.saturating_mul(self.request_hz) >= self.q.unwrap()
+    }
+
+    pub fn advance_due(&mut self) {
+        if let Some(q) = self.q {
+            self.q = Some(q.saturating_add(self.ips));
         }
     }
 
@@ -244,22 +273,19 @@ impl Ssi0Dma {
         let attr = tcd.attr();
         let source_size = 1usize << (attr & 0x7);
         let dest_size = 1usize << ((attr >> 8) & 0x7);
-        assert!(
-            source_size == 4 && dest_size == 4,
-            "Ssi0Dma only supports the observed 32-bit transfers"
-        );
+        if source_size != 4 || dest_size != 4 {
+            return None;
+        }
         let nbytes = tcd.nbytes() as usize;
-        assert!(
-            nbytes != 0 && nbytes.is_multiple_of(source_size),
-            "invalid SSI eDMA minor-loop byte count"
-        );
+        if nbytes == 0 || nbytes > 4096 || !nbytes.is_multiple_of(source_size) {
+            return None;
+        }
         let dest0 = tcd.daddr();
+        let source0 = tcd.saddr();
         if let Some(p) = provided {
-            assert_eq!(
-                p.len(),
-                nbytes,
-                "Ssi0Dma: RX sample count does not match NBYTES"
-            );
+            if p.len() != nbytes {
+                return None;
+            }
         }
         let elements = nbytes / source_size;
         let new_source = advance(tcd.saddr(), tcd.soff(), elements);
@@ -290,11 +316,18 @@ impl Ssi0Dma {
                 self.int50_asserted = true;
                 self.int50_delivered = false;
             }
+            if csr & crate::edma::CSR_D_REQ != 0 {
+                self.enabled[channel] = false;
+                if !self.enabled.iter().any(|&enabled| enabled) {
+                    self.q = None;
+                }
+            }
             major = true;
         }
         let _ = dest_size;
         Some(RunMinorResult {
             major_complete: major,
+            source_addr: source0,
             dest_addr: dest0,
         })
     }
@@ -321,9 +354,28 @@ impl Ssi0Dma {
 
     /// `_on_cint`.
     pub fn on_cint(&mut self, value: u8) {
+        if value & 0x80 != 0 {
+            return;
+        }
         if value & 0x40 != 0 || (value & 0x3F) as usize == TX_CHAN {
             self.int50_asserted = false;
             self.int50_delivered = false;
+        }
+    }
+
+    /// `CERQ` disables a named channel, or both SSI channels for CAER.
+    pub fn on_cerq(&mut self, value: u8) {
+        if value & 0x80 != 0 {
+            return;
+        }
+        if value & 0x40 != 0 {
+            self.enabled[RX_CHAN] = false;
+            self.enabled[TX_CHAN] = false;
+        } else if matches!((value & 0x3f) as usize, RX_CHAN | TX_CHAN) {
+            self.enabled[(value & 0x3f) as usize] = false;
+        }
+        if !self.enabled.iter().any(|&enabled| enabled) {
+            self.q = None;
         }
     }
 
@@ -366,6 +418,7 @@ impl Ssi0Dma {
 /// this period's RX write (if any) targeted before advancing.
 pub struct RunMinorResult {
     pub major_complete: bool,
+    pub source_addr: u32,
     pub dest_addr: u32,
 }
 

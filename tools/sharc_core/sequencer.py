@@ -27,6 +27,7 @@ from .memory import (
 )
 from .state import (
     AFTER_DELAY_SLOTS,
+    UNKNOWN_PC_STACK_ENTRY,
     Loop,
     Pending,
     State,
@@ -115,11 +116,13 @@ def _advance(state: State, insn: Instruction) -> list[State]:
     p = state.pending
     if p.slots == 1:
         if p.return_from_call:
+            if state.call_stack and state.call_stack[-1] == UNKNOWN_PC_STACK_ENTRY:
+                return [_stop(state, insn, "return through unwritten PC stack entry")]
             if not state.call_stack:
                 return [_stop(state, insn, "return without followed call")]
             if state.loops and state.call_stack[-1] == state.loops[-1].start_sw:
                 return [_stop(state, insn, "return reached loop PC-stack entry")]
-            state.pc_sw = state.call_stack.pop()
+            state.pc_sw = state.call_stack.pop() & 0xFFFFFF
             _sync_pc_stack(state)
             state.pending = None
             _event(state, insn, "loaded-call-return", return_sw=state.pc_sw)
@@ -376,7 +379,7 @@ def _check_return_target(state: State, pmi: int) -> str | None:
     if not isinstance(index, Const) or not isinstance(modifier, Const):
         return None
     target = (index.value + modifier.value) & 0xFFFFFF
-    if target != state.call_stack[-1]:
+    if target != (state.call_stack[-1] & 0xFFFFFF):
         return "return target %#x differs from recorded return %#x" % (
             target,
             state.call_stack[-1],
@@ -502,6 +505,8 @@ def _take_return(
     taken: State, insn: Instruction, delayed: bool, length_bytes: int
 ) -> list[State]:
     """The taken half of an RTS on TAKEN."""
+    if taken.call_stack and taken.call_stack[-1] == UNKNOWN_PC_STACK_ENTRY:
+        return [_stop(taken, insn, "return through unwritten PC stack entry")]
     if not taken.call_stack:
         return [_stop(taken, insn, "return without followed call")]
     if taken.loops and taken.call_stack[-1] == taken.loops[-1].start_sw:
@@ -512,7 +517,7 @@ def _take_return(
         taken.pending = Pending(None, slots=2, return_from_call=True)
     else:
         taken.steps += 1
-        taken.pc_sw = taken.call_stack.pop()
+        taken.pc_sw = taken.call_stack.pop() & 0xFFFFFF
         _sync_pc_stack(taken)
         _event(taken, insn, "loaded-call-return", return_sw=taken.pc_sw)
     return [taken]

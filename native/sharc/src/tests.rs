@@ -17,6 +17,109 @@ fn state() -> Box<St> {
     s
 }
 
+fn direct_short_word(mem: &Mem, pc_sw: u32) -> Option<u16> {
+    mem.read_present(pc_sw.checked_mul(2)?, 2)
+        .map(|word| word as u16)
+}
+
+#[test]
+fn diagnostic_clock_has_an_explicit_continuation_base() {
+    let mut e = crate::Engine::new(Mem::new());
+    assert_eq!(e.set_option(6, -1), -1);
+    assert_eq!(e.set_option(6, 0x1_0000_0002), 0);
+    assert_eq!(e.set_option(5, 1), 0);
+    // A failed decode still exposes this attempted instruction's tick;
+    // it does not advance the completed-instruction counter.
+    assert_eq!(e.step(1), 0);
+    assert_eq!(e.s.r[105], V::c(2));
+    assert_eq!(e.s.r[106], V::c(1));
+    assert_eq!(e.s.icount, 0);
+}
+
+#[test]
+fn runtime_decode_cache_is_owned_and_invalidated_per_engine() {
+    // 0x0000, 0x0001 decodes as the runtime symbolized 21p_undoc16 form.
+    let mut mem = Mem::new();
+    mem.load(0, &[0, 0, 1, 0]);
+    mem.reset();
+    let mut e = crate::Engine::new(mem);
+    e.enable_runtime_decode(direct_short_word);
+    let decoded = crate::decode::decode_at(|pc| direct_short_word(&e.s.mem, pc), 0);
+    assert_eq!(decoded.type_name, "21p_undoc16");
+    assert_eq!(crate::sym_of(decoded.type_name), Some(S_21P_UNDOC16));
+    assert!(crate::sym_of("operand").is_some());
+    assert!(crate::sym_of("operand[6:0]").is_some());
+    let first = bnd::decode_at(&mut e.s, (), None, 0).unwrap();
+    assert_eq!(first.type_name, S_21P_UNDOC16);
+    assert_eq!(e.s.decode_cache.len(), 1);
+    assert_eq!(
+        bnd::decode_at(&mut e.s, (), None, 0).unwrap().type_name,
+        first.type_name
+    );
+    // Guest stores and host pokes are observed without an explicit cache clear.
+    e.s.mem.write_byte(0, 0xff);
+    e.s.mem.write_byte(1, 0xff);
+    assert!(bnd::decode_at(&mut e.s, (), None, 0).is_err());
+}
+
+#[test]
+fn normal_word_aliases_preserve_access_context_and_rollback() {
+    let mut mem = Mem::new();
+    mem.load(
+        0x80000000,
+        &[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88],
+    );
+    mem.load(0x10000000, &[0xef, 0xbe, 0xad, 0xde]);
+    mem.reset();
+    let mut s = St::new(mem);
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(0x10000000), 4, false, true).unwrap(),
+        Some(V::c(0x44332211))
+    );
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(0x10000001), 4, false, true).unwrap(),
+        Some(V::c(0x88776655))
+    );
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(0x10000000), 4, false, false).unwrap(),
+        Some(V::c(0xdeadbeef))
+    );
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(0x10000000), 2, false, false).unwrap(),
+        Some(V::c(0xbeef))
+    );
+    s.begin();
+    assert!(bnd::_dm_write(&mut s, VI::I(0x10000001), 4, V::c(0x12345678), true).unwrap());
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(0x80000004), 4, false, false).unwrap(),
+        Some(V::c(0x12345678))
+    );
+    s.rollback();
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(0x10000001), 4, false, true).unwrap(),
+        Some(V::c(0x88776655))
+    );
+    assert!(s.mem.dirty_bytes().is_empty());
+}
+
+#[test]
+fn runtime_ffi_selection_and_loaded_execution_aliases() {
+    let mut mem = Mem::new();
+    mem.load(0x28380000, &[0, 0, 1, 0]);
+    mem.load(0x20000000, &[0x11, 0x22]);
+    mem.reset();
+    assert_eq!(mem.read_sw(0xb80000), Some(0x2211));
+    assert_eq!(mem.read_sw(0x1c0000), Some(0));
+    assert_eq!(mem.read_sw(1 << 24), None);
+    let mut e = crate::Engine::new(mem);
+    // The configuration used by the C interface selects the concrete reader.
+    assert_eq!(e.set_option(4, 1), 0);
+    let first = bnd::decode_at(&mut e.s, (), None, 0x1c0000).unwrap();
+    assert_eq!(first.type_name, S_21P_UNDOC16);
+    assert_eq!(e.poke(0x28380000, &[0xff, 0xff], 2), 1);
+    assert!(bnd::decode_at(&mut e.s, (), None, 0x1c0000).is_err());
+}
+
 #[test]
 fn journal_undoes_an_instruction() {
     let mut s = state();
@@ -68,21 +171,21 @@ fn memory_alias_and_explicit_model() {
         bnd::_canonical_dm_address(&s, 0x1000, 4, false).unwrap(),
         Some(0x2800_1000)
     );
-    let v = bnd::_dm_read(&s, VI::I(0x1000), 4, false).unwrap();
+    let v = bnd::_dm_read(&s, VI::I(0x1000), 4, false, false).unwrap();
     assert_eq!(v, Some(V::c(0x0403_0201)));
     // A signed byte read sign-extends, then masks to 32 bits.
     s.mem.load(0x2800_2000, &[0x80]);
     s.mem.reset();
-    let v = bnd::_dm_read(&s, VI::I(0x2000), 1, true).unwrap();
+    let v = bnd::_dm_read(&s, VI::I(0x2000), 1, true, false).unwrap();
     assert_eq!(v, Some(V::c(0xFFFF_FF80)));
     // Unwritten internal RAM reads as 0 under the explicit memory model.
     assert_eq!(
-        bnd::_dm_read(&s, VI::I(0x5000), 4, false).unwrap(),
+        bnd::_dm_read(&s, VI::I(0x5000), 4, false, false).unwrap(),
         Some(V::c(0))
     );
     // A write to an unbacked low address lands at the alias.
     s.begin();
-    assert!(bnd::_dm_write(&mut s, VI::I(0x6000), 2, V::c(0xBEEF)).unwrap());
+    assert!(bnd::_dm_write(&mut s, VI::I(0x6000), 2, V::c(0xBEEF), false).unwrap());
     s.commit();
     assert_eq!(s.mem.byte(0x2800_6000), 0xEF);
     assert!(!s.mem.present(0x6000));
@@ -91,14 +194,14 @@ fn memory_alias_and_explicit_model() {
         vec![(0x2800_6000, 0xEF), (0x2800_6001, 0xBE)]
     );
     // An unknown value is not stored.
-    assert!(!bnd::_dm_write(&mut s, VI::I(0x6000), 4, V::UNK).unwrap());
+    assert!(!bnd::_dm_write(&mut s, VI::I(0x6000), 4, V::UNK, false).unwrap());
 }
 
 #[test]
 fn memory_write_rolls_back() {
     let mut s = state();
     s.begin();
-    bnd::_dm_write(&mut s, VI::I(0x1000), 1, V::c(0x55)).unwrap();
+    bnd::_dm_write(&mut s, VI::I(0x1000), 1, V::c(0x55), false).unwrap();
     assert_eq!(s.mem.byte(0x2800_1000), 0x55);
     s.rollback();
     assert_eq!(s.mem.byte(0x2800_1000), 1);
@@ -111,14 +214,14 @@ fn unmodelled_mmr_traps() {
     s.named_mmrs = vec![0x3100_0000];
     s.set_mmr_windows();
     assert_eq!(
-        bnd::_dm_read(&s, VI::I(0x3100_0000), 4, false),
+        bnd::_dm_read(&s, VI::I(0x3100_0000), 4, false, false),
         Err(TRAP_UNMODELED_MMR)
     );
     s.begin();
-    assert!(bnd::_dm_write(&mut s, VI::I(0x3100_0000), 4, V::c(5)).unwrap());
+    assert!(bnd::_dm_write(&mut s, VI::I(0x3100_0000), 4, V::c(5), false).unwrap());
     s.commit();
     assert_eq!(
-        bnd::_dm_read(&s, VI::I(0x3100_0000), 4, false),
+        bnd::_dm_read(&s, VI::I(0x3100_0000), 4, false, false),
         Ok(Some(V::c(5)))
     );
 }
@@ -232,7 +335,7 @@ fn canonical_state_round_trip() {
         .unwrap();
     s.call_stack.push_raw(10).unwrap();
     s.begin();
-    bnd::_dm_write(&mut s, VI::I(0x7000), 4, V::c(0xAABBCCDD)).unwrap();
+    bnd::_dm_write(&mut s, VI::I(0x7000), 4, V::c(0xAABBCCDD), false).unwrap();
     s.commit();
     let blob = canon::export_state(&s, true);
     let mut t = state();
@@ -289,12 +392,12 @@ fn plain_ram_fast_paths_follow_the_alias() {
     // 0x1000 has no page of its own: it reads the short-word alias.
     assert_eq!(s.mem.fast_read(0x1000, 4), Some(0x0403_0201));
     assert_eq!(
-        bnd::_dm_read_b(&s, VI::I(0x1000), 4, false).unwrap(),
-        bnd::_dm_read_full(&s, VI::I(0x1000), 4, false).unwrap()
+        bnd::_dm_read_b(&s, VI::I(0x1000), 4, false, false).unwrap(),
+        bnd::_dm_read_full(&s, VI::I(0x1000), 4, false, false).unwrap()
     );
     // A write lands at the alias (once its bytes are overlay bytes, the
     // fast path takes it too).
-    assert!(bnd::_dm_write_nolog_b(&mut s, VI::I(0x1000), 4, V::c(0x0a0b_0c0d)).unwrap());
+    assert!(bnd::_dm_write_nolog_b(&mut s, VI::I(0x1000), 4, V::c(0x0a0b_0c0d), false).unwrap());
     assert_eq!(s.mem.read_le(0x2800_1000, 4), 0x0a0b_0c0d);
     assert_eq!(s.mem.fast_write(0x1000, 4, 0x1111_2222), Some(0x0a0b_0c0d));
     assert_eq!(s.mem.read_le(0x2800_1000, 4), 0x1111_2222);

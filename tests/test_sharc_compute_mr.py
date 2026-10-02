@@ -161,6 +161,60 @@ class PlainMultiplyTest(unittest.TestCase):
 
 
 class AccumulateTest(unittest.TestCase):
+    def test_integer_register_result_needs_only_mr0(self):
+        partial = T._mr_write_word(T.Unknown("reset"), 0, T.Const(0x269548))
+        for opcode, expected in ((0xB0, 0x269570), (0xF0, 0x269520)):
+            with self.subTest(opcode=opcode):
+                rn, value, _, flags = compute(
+                    full_compute(1, opcode, 7, 1, 2),
+                    {1: T.Const(1), 2: T.Const(40)},
+                    special={"MRF": partial},
+                )
+                self.assertEqual(rn, 7)
+                self.assertEqual(value, T.Const(expected))
+                astat = flags(T.Const(0xFFFFFFFF))
+                self.assertIsNone(T._astatx_known_bit(astat, T.MV_BIT))
+                self.assertIsNone(T._astatx_known_bit(astat, T.MN_BIT))
+                self.assertEqual(T._astatx_known_bit(astat, T.MI_BIT), False)
+
+    def test_partial_mr_integer_result_wraps_without_guessing_upper_words(self):
+        partial = T._mr_write_word(T.Unknown("reset"), 0, T.Const(0xFFFFFFFE))
+        _, value, _, _ = compute(
+            full_compute(1, 0xB0, 7, 1, 2),
+            {1: T.Const(2), 2: T.Const(3)},
+            special={"MRF": partial},
+        )
+        self.assertEqual(value, T.Const(4))
+        _, fractional, _, _ = compute(
+            full_compute(1, 0xB8, 7, 1, 2),
+            {1: T.Const(2), 2: T.Const(3)},
+            special={"MRF": partial},
+        )
+        self.assertIsInstance(fractional, T.Unknown)
+        dest, accumulator, _, _ = compute(
+            full_compute(1, 0xB4, 7, 1, 2),
+            {1: T.Const(2), 2: T.Const(3)},
+            special={"MRF": partial},
+        )
+        self.assertEqual(dest, "MRF")
+        self.assertEqual(T._mr_read_word(accumulator, 0), T.Const(4))
+        self.assertIsInstance(T._mr_read_word(accumulator, 1), T.Unknown)
+
+    def test_partial_mr_accumulate_then_integer_register_read(self):
+        partial = T._mr_write_word(T.Unknown("reset"), 0, T.Const(0x269548))
+        _, accumulated, _, _ = compute(
+            full_compute(1, 0xB4, 0, 10, 2),
+            {10: T.Const(4), 2: T.Const(80)},
+            special={"MRF": partial},
+        )
+        _, pointer, _, _ = compute(
+            full_compute(1, 0xB0, 7, 11, 6),
+            {11: T.Const(0), 6: T.Const(40)},
+            special={"MRF": accumulated},
+        )
+        self.assertEqual(pointer, T.Const(0x269688))
+        self.assertFalse(accumulated.known)
+
     def test_accumulate_stays_exact_past_32_bits(self):
         # Sum the same 0.25 (1.63 fmt) fractional product eight times: a
         # 32-bit-truncating accumulator would lose the fractional

@@ -47,6 +47,7 @@ if HERE not in sys.path:
 
 import sharc_trace as st  # noqa: E402
 import sharcfn  # noqa: E402
+from sharc_core.addressing import normal_word_to_byte  # noqa: E402
 from sharc_core.memory import UnmodeledMMR, _canonical_dm_address  # noqa: E402
 from sharc_disasm import Instruction  # noqa: E402
 from sharcldr import LoadedMemory  # noqa: E402
@@ -373,6 +374,10 @@ class Watchpoint:
     stops the Runner or only logs it, and an optional ``label`` carried
     onto every :class:`WatchEvent` it produces.
 
+    ``normal_word=True`` selects a normal-word address range, in word units;
+    it is translated to bytes using the product memory map before attachment.
+    Byte ranges remain the default, including an identical numeric address.
+
     ``start``/``end`` are given in the same terms a ``--poke`` or a
     disassembly listing uses -- an application DM pointer such as
     ``0x26968c`` -- not the loader's own byte-address alias. A watch
@@ -401,6 +406,7 @@ class Watchpoint:
     on_write: bool = True
     stop: bool = True
     label: str = ""
+    normal_word: bool = False
 
     def covers(self, address: int) -> bool:
         return self.start <= address < self.end
@@ -490,6 +496,24 @@ def _canonicalize_watchpoint(state: st.State, wp: Watchpoint) -> tuple[Watchpoin
     does (an unmapped low address aliases from the very first write
     onward, never the reverse).
     """
+    if wp.normal_word:
+        start = normal_word_to_byte(wp.start)
+        last = normal_word_to_byte(wp.end - 1) if wp.end > wp.start else start
+        if (
+            start is None
+            or last is None
+            or wp.end < wp.start
+            or (wp.end > wp.start and last - start != (wp.end - wp.start - 1) * 4)
+        ):
+            raise ValueError(
+                "normal-word watchpoint must stay within one mapped word window"
+            )
+        wp = dataclasses.replace(
+            wp,
+            start=start,
+            end=last + 4 if wp.end > wp.start else start,
+            normal_word=False,
+        )
     seen: set[tuple[int, int]] = set()
     results: list[Watchpoint] = []
     for for_write in (True, False):

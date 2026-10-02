@@ -139,6 +139,50 @@ impl Emulator {
         Self::new_with_policy(syx, card, ExecutionPolicy::Reference)
     }
 
+    /// Opt-in bounded diagnostic source for the recovered SSI/eDMA chain.
+    /// It is intentionally not enabled by normal frontend construction.
+    pub fn enable_ssi_diagnostic(&mut self, request_hz: u64) -> Result<(), String> {
+        if request_hz == 0 || request_hz > 132_000_000 {
+            return Err("SSI request clock must be between 1 and 132000000 Hz".into());
+        }
+        if self.oracle_ticks()? != 0 {
+            return Err("SSI diagnostic must be enabled before guest execution".into());
+        }
+        self.bus
+            .board
+            .enable_ssi_diagnostic(request_hz, 132_000_000)
+            .then_some(())
+            .ok_or_else(|| "SSI diagnostic is already enabled".into())
+    }
+
+    fn service_ssi(&mut self, done: u64) -> Result<bool, String> {
+        if self.bus.board.dma.ssi.is_none() {
+            return Ok(false);
+        }
+        let delivered = service_ssi(&mut self.bus, &mut self.cpu, done)?;
+        if let Some(delivery) = delivered {
+            record_deliveries(
+                &[delivery],
+                &mut self.deliveries,
+                &mut self.delivery_counts,
+                &mut self.delivery_dropped,
+            );
+        }
+        Ok(delivered.is_some())
+    }
+
+    /// `(requests, rx_major_loops, tx_major_loops, rejected_requests)` for
+    /// the opt-in SSI diagnostic lane; `None` means it was not enabled.
+    pub fn ssi_diagnostic_counters(&self) -> Option<(u64, u64, u64, u64)> {
+        let dma = self.bus.board.dma.ssi.as_ref()?;
+        Some((
+            dma.requests,
+            dma.major_loops_rx,
+            dma.major_loops_tx,
+            dma.rejected_requests,
+        ))
+    }
+
     pub fn new_with_policy(
         syx: &[u8],
         card: Option<Card>,
@@ -594,6 +638,7 @@ impl Emulator {
         let Ok(now) = self.oracle_ticks() else {
             return 0;
         };
+        let ssi_active = self.bus.board.ssi_deadline(now).is_some();
         let Some(time) = self.bus.board.time_mut() else {
             return 0;
         };
@@ -602,6 +647,7 @@ impl Emulator {
         if time.policy() != TimerPolicy::Oracle
             || time.has_pending_interrupts()
             || time.deadline(now).is_some()
+            || ssi_active
         {
             return 0;
         }
@@ -630,6 +676,9 @@ impl Emulator {
         self.ram_clear_fast_forwarded_instructions = skipped;
         self.bus.current_pc = clear.loop_pc + 10;
         self.bus.current_icount = done - 1;
+        if let Err(error) = self.service_ssi(done) {
+            self.set_error(error);
+        }
         match service_timers(
             &mut self.bus,
             &mut self.cpu,
@@ -668,13 +717,19 @@ impl Emulator {
         let Ok(now) = self.oracle_ticks() else {
             return 0;
         };
+        let ssi_deadline = self.bus.board.ssi_deadline(now);
         let Some(time) = self.bus.board.time_mut() else {
             return 0;
         };
         if time.policy() != TimerPolicy::Oracle {
             return 0;
         }
-        let count = idle_advance_limit(remaining, self.idle_passes, now, time.deadline(now));
+        let timer_deadline = time.deadline(now);
+        let deadline = match (timer_deadline, ssi_deadline) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        let count = idle_advance_limit(remaining, self.idle_passes, now, deadline);
         if count == 0 {
             return 0;
         }
@@ -693,6 +748,9 @@ impl Emulator {
         self.idle_passes = passes;
         self.idle_fast_forwarded_instructions = skipped;
         self.bus.current_icount = done - 1;
+        if let Err(error) = self.service_ssi(done) {
+            self.set_error(error);
+        }
         match service_timers(
             &mut self.bus,
             &mut self.cpu,
@@ -847,6 +905,10 @@ impl Emulator {
                     return;
                 }
             };
+            match self.service_ssi(done) {
+                Ok(delivered) => timer_delivered |= delivered,
+                Err(error) => self.set_error(error),
+            }
             match service_timers(
                 &mut self.bus,
                 &mut self.cpu,
@@ -856,7 +918,7 @@ impl Emulator {
                 &mut self.delivery_dropped,
             ) {
                 Ok(count) => {
-                    timer_delivered = count != 0;
+                    timer_delivered |= count != 0;
                     #[cfg(feature = "diagnostic-events")]
                     if count != 0 {
                         self.event(EventKind::TimerDeliveries, count);
@@ -1130,6 +1192,84 @@ impl Emulator {
     }
 }
 
+/// Offer SSI's guest-created eDMA interrupt requests at a real instruction
+/// boundary. Eligibility comes from the guest's INTC mask/ICR and CPU IPL;
+/// a declined request stays latched for the next boundary.
+fn service_ssi<const TRACE: bool>(
+    bus: &mut LoggingBus<TRACE>,
+    cpu: &mut Cpu,
+    done: u64,
+) -> Result<Option<(u16, u8)>, String> {
+    for (addr, len) in bus.board.service_ssi(done) {
+        cpu.invalidate_external_write(addr, len);
+    }
+    let mut selected = None;
+    for (vector, owed) in [(170u8, 0usize), (191u8, 1usize)] {
+        let pending = bus.board.dma.ssi.as_ref().is_some_and(|dma| {
+            if owed == 0 {
+                dma.vector170_owed()
+            } else {
+                dma.vector191_owed()
+            }
+        });
+        if !pending {
+            continue;
+        }
+        let source = u32::from(vector) - 128;
+        let level = bus
+            .board
+            .read8(0xfc04_c000 + 0x40 + source)
+            .map_err(|_| "SSI ICR unavailable")?
+            & 7;
+        let imrh = bus
+            .board
+            .read32(0xfc04_c000 + 0x08)
+            .map_err(|_| "SSI IMRH unavailable")?;
+        if level == 0 || (imrh >> (source - 32)) & 1 != 0 || ((cpu.sr >> 8) & 7) >= u16::from(level)
+        {
+            continue;
+        }
+        let handler = bus
+            .board
+            .read32(cpu.ctrl.vbr.wrapping_add(4 * u32::from(vector)))
+            .map_err(|_| "SSI vector unavailable")?;
+        if handler == 0 || handler >= 0x4800_0000 {
+            continue;
+        }
+        let stack = if cpu.sr & 0x2000 == 0 && cpu.ctrl.cacr & 0x20 != 0 {
+            cpu.other_a7
+        } else {
+            cpu.a[7]
+        };
+        let frame = (stack & !3).wrapping_sub(8);
+        if !bus.board.can_write_ram_range(frame, 8) {
+            continue;
+        }
+        if selected
+            .is_none_or(|(best_level, best_vector, _)| (level, vector) > (best_level, best_vector))
+        {
+            selected = Some((level, vector, owed));
+        }
+    }
+    if let Some((level, vector, owed)) = selected {
+        match cpu.take_interrupt(&mut bus.board, vector, Some(level), InterruptPolicy::Oracle) {
+            Ok(true) => {
+                if let Some(dma) = bus.board.dma.ssi.as_mut() {
+                    if owed == 0 {
+                        dma.mark_vector170_delivered();
+                    } else {
+                        dma.mark_vector191_delivered();
+                    }
+                }
+                return Ok(Some((u16::from(vector), level)));
+            }
+            Ok(false) => {}
+            Err(stop) => return Err(format!("SSI interrupt delivery poisoned({stop:?})")),
+        }
+    }
+    Ok(None)
+}
+
 fn verified_task_create(main: &[u8]) -> Result<u32, String> {
     let task_create = 0x4000_12c8;
     main.get((task_create - MAIN_LOAD) as usize..)
@@ -1375,6 +1515,55 @@ fn idle_advance_limit(remaining: u32, passes: u64, now: u64, deadline: Option<u6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ssi_delivery_precedes_same_boundary_timer_and_is_recorded_without_fault() {
+        let Ok(syx) = std::fs::read("../../Digitone_II_OS1.11.syx") else {
+            return;
+        };
+        let mut runtime = Emulator::new(&syx, None).unwrap();
+        runtime.enable_ssi_diagnostic(96_000).unwrap();
+        assert!(runtime.enable_ssi_diagnostic(96_000).is_err());
+        runtime.cpu = Cpu::new();
+        runtime.cpu.pc = MAIN_LOAD + 0x10000;
+        runtime.cpu.sr = 0x2000;
+        runtime.cpu.ctrl.vbr = MAIN_LOAD;
+        runtime.cpu.a[7] = STACK + 0x100;
+        let board = &mut runtime.bus.board;
+        board.write16(runtime.cpu.pc, 0x4e71).unwrap(); // NOP
+        board
+            .write32(MAIN_LOAD + 191 * 4, MAIN_LOAD + 0x11000)
+            .unwrap();
+        let timer_vector = 192 + 13;
+        board
+            .write32(MAIN_LOAD + timer_vector * 4, MAIN_LOAD + 0x12000)
+            .unwrap();
+        board.attach_time(Time::new(TimerPolicy::Oracle, vec![0], 132_000_000.0));
+        board.write8(0xfc04_c000 + 0x40 + 63, 4).unwrap();
+        board.write8(0xfc05_0000 + 0x40 + 13, 3).unwrap();
+        board.write16(0xfc08_0000 + 2, 0).unwrap(); // PIT0 due at tick 1
+        board.write16(0xfc08_0000, 0x000b).unwrap();
+        assert_eq!(board.time_mut().unwrap().deadline(0), Some(1));
+        board.write32(0xfc04_c010, 0x8000_0000).unwrap();
+        runtime.step_once();
+        assert_eq!(runtime.error, None);
+        assert_eq!(runtime.cpu.pc, MAIN_LOAD + 0x11000);
+        assert_eq!(runtime.delivery_counts[191], 1);
+        assert_eq!(runtime.delivery_counts[timer_vector as usize], 0);
+        assert!(runtime.enable_ssi_diagnostic(96_000).is_err());
+        runtime.cpu.sr = 0x2000;
+        let count = service_timers(
+            &mut runtime.bus,
+            &mut runtime.cpu,
+            1,
+            &mut runtime.deliveries,
+            &mut runtime.delivery_counts,
+            &mut runtime.delivery_dropped,
+        )
+        .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(runtime.delivery_counts[timer_vector as usize], 1);
+    }
 
     #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
     #[test]

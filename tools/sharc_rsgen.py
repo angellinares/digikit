@@ -117,18 +117,19 @@ def split_compute(fields: dict[str, int]) -> dict[str, int]:
 
 def insn_static(syms, pc: int, insn) -> str:
     fields = split_compute(insn.fields)
-    entries = ", ".join(field_entry(syms, k, v) for k, v in fields.items())
+    entries = [field_entry(syms, k, v) for k, v in fields.items()]
+    if len(entries) > 12:
+        raise ValueError("decoded instruction has more than 12 fields")
+    entries.extend(["FieldEntry(S_EMPTY, S_EMPTY, -1, -1, 0)"] * (12 - len(entries)))
     length = "None" if insn.length_bytes is None else "Some(%d)" % insn.length_bytes
     return (
-        "static F_%s: Fields = Fields { kv: &[%s] };\n"
-        "static I_%s: Insn = Insn { type_name: %s, fields: &F_%s, "
+        "static I_%s: Insn = Insn { type_name: %s, fields: Fields::from_entries([%s], %d), "
         "length_bytes: %s, kind: %s, offset: %d };"
         % (
             ident(pc),
-            entries,
-            ident(pc),
             syms.ident(insn.type_name or "unknown"),
-            ident(pc),
+            ", ".join(entries),
+            len(fields),
             length,
             syms.ident(insn.kind),
             insn.offset,
@@ -906,7 +907,7 @@ def generate(
         % ", ".join("%d" % e for e in sorted(tr.loop_ends)),
         "",
         "/// The decoded instruction at PC (sequencer.decode_at over the image).",
-        "pub fn insn_at(pc: Int) -> Option<&'static Insn> {",
+        "pub fn insn_at(pc: Int) -> Option<Insn> {",
         "    crate::canon::insn_table(INSN_BLOB).get(pc)",
         "}",
         "",

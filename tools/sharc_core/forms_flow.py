@@ -430,7 +430,8 @@ def _type_25a_direct(
     )
     delayed = name.startswith("25a") or bool(_field(f, "j"))
     transfer = _transfer if delayed else _immediate_transfer
-    return transfer(state, insn, target, call, cond)
+    loop_abort = not name.startswith("25a") and bool(f.get("a", 0))
+    return transfer(state, insn, target, call, cond, loop_abort=loop_abort)
 
 
 FORMS = {

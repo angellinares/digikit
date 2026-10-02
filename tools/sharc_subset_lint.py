@@ -160,6 +160,8 @@ PURE = frozenset(
         "Const",
         "_ureg",
         "_ureg_raw",
+        # Address classification reads only the value and fixed memory map.
+        "_normal_word_stride",
     }
 )
 # String methods allowed inside observability arguments.

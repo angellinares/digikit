@@ -13,6 +13,7 @@ from sharc_disasm import Instruction
 
 from .compute import (
     _apply_compute,
+    _apply_compute_pey,
     _apply_compute_simd,
     _compute,
     _compute_simd,
@@ -29,12 +30,14 @@ from .memory import (
 from .sequencer import (
     _advance,
     _predicate,
+    _predicate_pe,
 )
 from .state import (
     State,
     _copy,
     _event,
     _render,
+    _simd_active,
     _snapshot_uregs,
     _stop,
     _ureg,
@@ -76,13 +79,15 @@ def _type_6a_mem(
     bank = 8 if _field(f, "g") else 0
     index, modifier = _field(f, "i") + bank, _field(f, "m") + bank
     iv, mv = _ureg(old, 16 + index), _ureg(old, 32 + modifier)
-    scale = _access_modifier_scale("normal-word", state.assume_nw32)
+    scale = _access_modifier_scale("normal-word", state.assume_nw32, iv)
     scaled_mv = _multiply(mv, Const(scale), "M%d * %d" % (modifier, scale))
     space = "PM" if bank else "DM"
     dreg = _field(f, "dreg")
     if _field(f, "d"):
         value = _ureg(old, dreg)
-        wrote = _dm_write(state, iv, 4, value) if space == "DM" else False
+        wrote = (
+            _dm_write(state, iv, 4, value, normal_word=True) if space == "DM" else False
+        )
         _event(
             state,
             insn,
@@ -164,6 +169,35 @@ def _type_2a(
     state: State, insn: Instruction, f: Mapping[str, int], name: str
 ) -> list[State]:
     """2a."""
+    if _simd_active(state) is True:
+        # PRM Table 4-22 (p.4-55): conditional compute is independent
+        # in each PE. Snapshot both files before applying either result.
+        cond = _field(f, "cond")
+        predicate_x = _predicate_pe(state, cond, "x")
+        predicate_y = _predicate_pe(state, cond, "y")
+        if predicate_x is None or predicate_y is None:
+            return [_stop(state, insn, "unknown conditional SIMD Type2a predicate")]
+        if not predicate_x and not predicate_y:
+            _event(state, insn, "compute-skipped", condition=cond)
+            return _advance(state, insn)
+        try:
+            compute_x, compute_y = _compute_simd(
+                state,
+                f,
+                False,
+                _snapshot_uregs(state.uregs),
+                state.special,
+                approx_recips=state.approx_recips,
+            )
+        except ValueError as error:
+            return [_stop(state, insn, str(error))]
+        if compute_x is None or compute_y is None:
+            return [_stop(state, insn, "empty conditional SIMD compute")]
+        if predicate_x:
+            _apply_compute(state, insn, compute_x)
+        if predicate_y:
+            _apply_compute_pey(state, insn, compute_y)
+        return _advance(state, insn)
     # Type 2a conditionally executes a full compute.  Decode against the
     # pre-instruction register file before either predicate assumption mutates it.
     try:

@@ -26,7 +26,9 @@
 //! that instruction and halts with a reason starting `native-trap:`; the
 //! caller then lets the Python core execute it (tools/sharc_transpile_run.py).
 
+pub mod addressing;
 pub mod canon;
+pub mod decode;
 pub mod frames;
 pub mod mem;
 pub mod rt;
@@ -176,6 +178,12 @@ pub struct Engine {
     pub halt: Option<String>,
     pub last_trap: Option<Trap>,
     pub use_blocks: bool,
+    /// Diagnostic clock only: one EMUCLK tick per completed instruction.
+    /// This is explicitly not a cycle-accurate DSP clock.
+    pub instruction_clock: bool,
+    /// Starting tick for a bounded diagnostic continuation. The host must
+    /// supply it explicitly; canonical state does not carry execution counts.
+    pub instruction_clock_base: u64,
     pub export_ranges: bool,
     pub dispatch: Dispatch,
     pub stats: Stats,
@@ -246,7 +254,7 @@ pub fn sym_of(name: &str) -> Option<Sym> {
 /// Execute one decoded instruction through the generated core, undoing it
 /// if it traps.
 #[inline(never)]
-pub fn exec_insn(s: &mut St, insn: &'static Insn) -> R<()> {
+pub fn exec_insn(s: &mut St, insn: Insn) -> R<()> {
     #[cfg(sharc_gen)]
     {
         s.begin();
@@ -290,7 +298,7 @@ fn image_loop_ends() -> &'static [i64] {
     }
 }
 
-fn image_insn_at() -> fn(Int) -> Option<&'static Insn> {
+fn image_insn_at() -> fn(Int) -> Option<Insn> {
     #[cfg(all(sharc_gen, sharc_image))]
     {
         // Build host-only decode metadata while constructing the engine.
@@ -301,7 +309,7 @@ fn image_insn_at() -> fn(Int) -> Option<&'static Insn> {
     }
     #[cfg(not(all(sharc_gen, sharc_image)))]
     {
-        fn none(_pc: Int) -> Option<&'static Insn> {
+        fn none(_pc: Int) -> Option<Insn> {
             None
         }
         none
@@ -318,6 +326,8 @@ impl Engine {
             halt: None,
             last_trap: None,
             use_blocks: true,
+            instruction_clock: false,
+            instruction_clock_base: 0,
             export_ranges: false,
             dispatch: Dispatch::new(image_blocks()),
             stats: Stats::default(),
@@ -344,9 +354,29 @@ impl Engine {
         Ok(e)
     }
 
+    /// Select runtime instruction decoding over the engine's loaded memory.
+    /// This disables firmware-specific AOT blocks and metadata for this
+    /// engine only. `read_sw` maps a short-word PC to its two little-endian
+    /// loaded bytes and must return None for an unmapped word.
+    pub fn enable_runtime_decode(&mut self, read_sw: fn(&mem::Mem, u32) -> Option<u16>) {
+        self.s.runtime_decode = true;
+        self.s.read_sw = read_sw;
+        self.s.decode_cache.clear();
+        self.s.insn_at = |_| None;
+        self.s.loop_ends = &[];
+        self.dispatch = Dispatch::default();
+    }
+
+    /// Drop runtime-decoded metadata after the host replaces executable
+    /// loader bytes (for example, after loader INIT blocks install main).
+    pub fn invalidate_runtime_decode(&mut self) {
+        self.s.decode_cache.clear();
+    }
+
     /// Import a canonical state blob (sharc_native_import_state).
     pub fn import(&mut self, blob: &[u8]) -> Result<(), i32> {
         canon::import_state(&mut self.s, blob)?;
+        self.invalidate_runtime_decode();
         self.halt = None;
         self.last_trap = None;
         Ok(())
@@ -364,7 +394,7 @@ impl Engine {
             }
             let addr = VI::I(address as Int + (k * w) as Int);
             self.s.begin();
-            match rt::bnd::_dm_write(&mut self.s, addr, chunk.len() as Int, V::c(v as Int)) {
+            match rt::bnd::_dm_write(&mut self.s, addr, chunk.len() as Int, V::c(v as Int), false) {
                 Ok(true) => {
                     self.s.commit_host();
                     ok += 1
@@ -379,7 +409,7 @@ impl Engine {
     /// memory._dm_read(ADDRESS, WIDTH): Ok(None) when unknown, Err on an
     /// unmodelled MMR.
     pub fn peek(&self, address: u64, width: u32) -> Result<Option<u32>, Trap> {
-        rt::bnd::_dm_read(&self.s, VI::I(address as Int), width as Int, false)
+        rt::bnd::_dm_read(&self.s, VI::I(address as Int), width as Int, false, false)
             .map(|v| v.map(|v| v.b))
     }
 
@@ -407,6 +437,19 @@ impl Engine {
         match key {
             1 => self.use_blocks = value != 0,
             2 => self.export_ranges = value != 0,
+            4 => {
+                if value == 0 {
+                    return -1;
+                }
+                self.enable_runtime_decode(mem::Mem::read_sw);
+            }
+            5 => self.instruction_clock = value != 0,
+            6 => {
+                if value < 0 {
+                    return -1;
+                }
+                self.instruction_clock_base = value as u64;
+            }
             3 => {
                 for i in 0..7 {
                     self.s.special_present[i] = value & (1 << i) != 0;
@@ -436,7 +479,13 @@ impl Engine {
         let start = self.s.icount;
         let limit = start + n as u64;
         while self.s.icount < limit {
-            if self.use_blocks
+            if self.instruction_clock {
+                let tick = self.instruction_clock_base.wrapping_add(self.s.icount);
+                self.s.r[105] = V::c((tick as u32) as Int);
+                self.s.r[106] = V::c((tick >> 32) as Int);
+            }
+            if !self.instruction_clock
+                && self.use_blocks
                 && self.s.cfg.block_ok
                 && self.s.loops_ok
                 && let Some(f) = self.dispatch.get(self.s.pc_sw)
@@ -493,7 +542,18 @@ impl Engine {
                     }
                 }
             }
-            let Some(insn) = (self.s.insn_at)(self.s.pc_sw) else {
+            let insn = if self.s.runtime_decode {
+                let pc = self.s.pc_sw;
+                match rt::bnd::decode_at(&mut self.s, (), None, pc) {
+                    Ok(insn) => insn,
+                    Err(t) => {
+                        self.trapped(t);
+                        break;
+                    }
+                }
+            } else if let Some(insn) = (self.s.insn_at)(self.s.pc_sw) {
+                insn
+            } else {
                 self.trapped(TRAP_NO_INSN);
                 break;
             };
@@ -523,6 +583,24 @@ impl Engine {
 // ---------------------------------------------------------------------------
 // C ABI (tools/sharc_diff.py NativeEngine, tools/sharc_transpile_run.py)
 // ---------------------------------------------------------------------------
+
+/// Allocate a host-transfer buffer, including in WebAssembly where JavaScript
+/// cannot supply an allocation owned by Rust. Release with the same length.
+#[unsafe(no_mangle)]
+pub extern "C" fn sharc_native_alloc(len: usize) -> *mut u8 {
+    let bytes = vec![0u8; len].into_boxed_slice();
+    Box::into_raw(bytes) as *mut u8
+}
+
+/// # Safety
+/// PTR and LEN must be an outstanding allocation from sharc_native_alloc.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sharc_native_free(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() {
+        // SAFETY: caller supplies the allocation and its original length.
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) });
+    }
+}
 
 /// # Safety
 /// IMAGE must point to IMAGE_LEN readable bytes (a tools/sharc_transpile_run.py
@@ -618,7 +696,8 @@ pub unsafe extern "C" fn sharc_native_halt_reason(
 /// 1), 2 export every overlay byte as memory ranges (default 0), 3 which
 /// special-register slots are present as dict keys (bit per
 /// SPECIAL_SLOTS entry; the canonical format cannot say, and
-/// `"BFF_HI" in special` reads it), 10+ run configuration
+/// `"BFF_HI" in special` reads it), 4 enables runtime decoding,
+/// 5 enables the diagnostic instruction clock, 10+ run configuration
 /// (canon::set_option).
 ///
 /// # Safety

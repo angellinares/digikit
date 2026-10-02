@@ -513,11 +513,42 @@ def _simd_active(state: State) -> bool | None:
     return bool(mode1.value & (1 << 21))
 
 
+# Explicit PUSH PCSTK reserves an entry without establishing a return
+# address. This value is outside PCSTK's documented implemented bits.
+UNKNOWN_PC_STACK_ENTRY = 0xFFFFFFFF
+
+
+def _write_ureg(state: State, code: int, value: Value) -> None:
+    """Guest register write, including architectural PCSTK effects.
+
+    PRM pp.4-8/4-9: PCSTK replaces the occupied top entry without a push;
+    an empty-stack write has no effect. PCSTKP timing/growth is not yet
+    modeled, so reject it rather than change only the register mirror.
+    """
+    if code == UREG_CODES["PCSTKP"]:
+        raise ValueError("guest PCSTKP write is not modeled")
+    if code == UREG_CODES["PCSTK"]:
+        if not state.call_stack:
+            return
+        if not isinstance(value, Const):
+            raise ValueError("unknown guest PCSTK write")
+        state.call_stack[-1] = value.value & 0x03FFFFFF
+        _sync_pc_stack(state)
+        return
+    state.uregs[code] = value
+
+
 def _sync_pc_stack(state: State) -> None:
     """Mirror the tracer's architectural PC stack into its public registers."""
     state.uregs[UREG_CODES["PCSTKP"]] = Const(len(state.call_stack))
     state.uregs[UREG_CODES["PCSTK"]] = (
-        Const(state.call_stack[-1]) if state.call_stack else Const(0x7FFFFFFF)
+        (
+            Unknown("unwritten pushed PC stack entry")
+            if state.call_stack[-1] == UNKNOWN_PC_STACK_ENTRY
+            else Const(state.call_stack[-1])
+        )
+        if state.call_stack
+        else Const(0x7FFFFFFF)
     )
     stkyx_code = UREG_CODES["STKYX"]
     state.uregs[stkyx_code] = _bitwise(

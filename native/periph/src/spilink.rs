@@ -51,6 +51,7 @@ use crate::dsp;
 use crate::dspi::{self, Peer};
 use crate::edma;
 use crate::regfile::RegFile;
+use crate::ssi::Ssi0Dma;
 
 pub const DSPI1_SLOT: u32 = dspi::DSPI1_BASE;
 pub const DSPI2_SLOT: u32 = dspi::DSPI2_BASE;
@@ -73,6 +74,9 @@ pub struct DmaLink {
     pub tx35: edma::TxChannel,
     pub dspi2: dspi::Dspi2Link,
     pub dsp: dsp::Fifo,
+    /// Disabled until a diagnostic host explicitly supplies the recovered SSI
+    /// clock. The board owns its guest-RAM transfers.
+    pub ssi: Option<Ssi0Dma>,
     pub peer: Box<dyn Peer>,
     forced: HashMap<u32, u32>,
 }
@@ -87,6 +91,7 @@ impl Default for DmaLink {
             tx35: edma::TxChannel::new(35, 155),
             dspi2: dspi::Dspi2Link::new(dspi::TX_CHAN, dspi::RX_CHAN, true),
             dsp: dsp::Fifo::default(),
+            ssi: None,
             peer: Box::new(dspi::ZeroPeer),
             forced: HashMap::new(),
         }
@@ -94,6 +99,15 @@ impl Default for DmaLink {
 }
 
 impl DmaLink {
+    /// Enable once before guest execution. Re-enabling would discard the
+    /// guest's live TCD/request state, so it is refused.
+    pub fn enable_ssi_diagnostic(&mut self, request_hz: u64, ips: u64) -> bool {
+        if self.ssi.is_some() {
+            return false;
+        }
+        self.ssi = Some(Ssi0Dma::new(request_hz, ips));
+        true
+    }
     pub fn owns(addr: u32) -> bool {
         Self::slot(addr).is_some()
     }
@@ -229,8 +243,20 @@ impl DmaLink {
                             .map(|w| (w.addr, w.data));
                     }
                 }
+                if size == 1
+                    && let Some(ssi) = self.ssi.as_mut()
+                {
+                    ssi.on_serq(v);
+                }
+            } else if addr == edma::CERQ && size == 1 {
+                if let Some(ssi) = self.ssi.as_mut() {
+                    ssi.on_cerq(value as u8);
+                }
             } else if addr == edma::CINT && size == 1 {
                 self.dspi2.on_cint(value as u8);
+                if let Some(ssi) = self.ssi.as_mut() {
+                    ssi.on_cint(value as u8);
+                }
             }
             return (true, effect, hw);
         }

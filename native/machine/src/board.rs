@@ -16,6 +16,7 @@ use periph::{
     pit::BASES as PIT_BASES,
     regfile::SLOT_SIZE,
     spilink::SerqEffect,
+    ssi::{self, RxHandoverPeer},
 };
 
 use crate::{host_state::HostState, state::OverlaySectorRecord, time::Time};
@@ -126,6 +127,157 @@ pub struct Board {
     uart_tx: Vec<u8>,
 }
 impl Board {
+    /// Enable the recovered SSI/eDMA clock only for bounded diagnostics.
+    /// Normal product construction leaves the lane absent.
+    pub fn enable_ssi_diagnostic(&mut self, request_hz: u64, ips: u64) -> bool {
+        self.dma.enable_ssi_diagnostic(request_hz, ips)
+    }
+
+    pub fn ssi_deadline(&mut self, done: u64) -> Option<u64> {
+        self.dma.ssi.as_mut()?.deadline(done)
+    }
+
+    /// Service one due SSI request using actual mapped guest RAM. Invalid
+    /// descriptors and ranges are rejected before any TCD or RAM mutation.
+    /// Returned ranges require CPU decode-cache invalidation by the owner.
+    pub fn service_ssi(&mut self, done: u64) -> Vec<(u32, usize)> {
+        let Some(mut ssi) = self.dma.ssi.take() else {
+            return Vec::new();
+        };
+        let due = ssi.due(done);
+        if !due {
+            self.dma.ssi = Some(ssi);
+            return Vec::new();
+        }
+        struct Planned {
+            channel: usize,
+            tcd: edma::TcdSnapshot,
+            payload: Vec<u8>,
+            descriptor: Option<Vec<u8>>,
+        }
+        let mut plans = Vec::new();
+        for channel in [ssi::RX_CHAN, ssi::TX_CHAN] {
+            if !ssi.enabled[channel] {
+                continue;
+            }
+            let view = edma::TcdView::new(&mut self.dma.edma_regs, channel);
+            let linked = view.citer_raw() & 0x8000 != 0 || view.biter_raw() & 0x8000 != 0;
+            let smod = view.smod_mask();
+            let dmod = view.dmod_mask();
+            let tcd = view.snapshot();
+            let n = tcd.nbytes as usize;
+            let valid = tcd.citer != 0
+                && !linked
+                && smod == 0
+                && dmod == 0
+                && tcd.nbytes & 0xc000_0000 == 0
+                && n != 0
+                && n <= 4096
+                && n % 4 == 0
+                && (tcd.attr & 7) == 2
+                && ((tcd.attr >> 8) & 7) == 2
+                && if channel == ssi::RX_CHAN {
+                    tcd.soff == 0 && tcd.doff == 4
+                } else {
+                    tcd.soff == 4 && tcd.doff == 0
+                };
+            let addr = if channel == ssi::RX_CHAN {
+                tcd.daddr
+            } else {
+                tcd.saddr
+            };
+            let range_ok = valid
+                && (0..n).all(|offset| {
+                    let Some(at) = addr.checked_add(offset as u32) else {
+                        return false;
+                    };
+                    !Self::owned_mmio(at) && self.page(at).is_some()
+                });
+            if !range_ok {
+                ssi.rejected_requests += 1;
+                ssi.requests += 1;
+                ssi.advance_due();
+                self.dma.ssi = Some(ssi);
+                return Vec::new();
+            }
+            let major_start = tcd.citer == tcd.biter;
+            let payload = if channel == ssi::RX_CHAN {
+                let mut peer = RxHandoverPeer;
+                peer.rx_major(n, major_start)
+            } else {
+                let mut bytes = Vec::with_capacity(n);
+                for offset in 0..n {
+                    bytes.push(self.ram_read(addr + offset as u32, 1).unwrap() as u8);
+                }
+                bytes
+            };
+            let descriptor = if tcd.csr & edma::CSR_E_SG != 0 && tcd.citer == 1 {
+                let descriptor = tcd.dlast as u32;
+                let descriptor_ok = descriptor & 0x1f == 0
+                    && (0..0x20u32).all(|offset| {
+                        let Some(at) = descriptor.checked_add(offset) else {
+                            return false;
+                        };
+                        !Self::owned_mmio(at) && self.page(at).is_some()
+                    });
+                if !descriptor_ok {
+                    ssi.rejected_requests += 1;
+                    ssi.requests += 1;
+                    ssi.advance_due();
+                    self.dma.ssi = Some(ssi);
+                    return Vec::new();
+                }
+                Some(
+                    (0..0x20u32)
+                        .map(|offset| self.ram_read(descriptor + offset, 1).unwrap() as u8)
+                        .collect(),
+                )
+            } else {
+                None
+            };
+            plans.push(Planned {
+                channel,
+                tcd,
+                payload,
+                descriptor,
+            });
+        }
+        let mut writes = Vec::new();
+        for plan in plans {
+            let channel = plan.channel;
+            let n = plan.payload.len();
+            let result = ssi
+                .run_minor(
+                    &mut self.dma.edma_regs,
+                    channel,
+                    (channel == ssi::RX_CHAN).then_some(plan.payload.as_slice()),
+                )
+                .expect("preflighted SSI descriptor");
+            if channel == ssi::RX_CHAN {
+                for (offset, byte) in plan.payload.into_iter().enumerate() {
+                    let _ = self.ram_write(result.dest_addr + offset as u32, 1, u32::from(byte));
+                }
+                writes.push((result.dest_addr, n));
+            } else {
+                ssi.tx_bytes += n as u64;
+            }
+            if result.major_complete && plan.tcd.csr & edma::CSR_E_SG != 0 {
+                if let Some(descriptor) = plan.descriptor {
+                    for (offset, byte) in descriptor.into_iter().enumerate() {
+                        self.dma
+                            .edma_regs
+                            .set_u8_at(edma::tcd_offset(channel) + offset, byte);
+                    }
+                }
+            }
+        }
+        ssi.requests += 1;
+        ssi.now = done;
+        // Advance exactly one period; no coalescing across guest boundaries.
+        ssi.advance_due();
+        self.dma.ssi = Some(ssi);
+        writes
+    }
     pub fn new(card: Card, semaphores: SemaphoreAddresses, policy: CompletionPolicy) -> Self {
         let register_policy = match policy {
             CompletionPolicy::Oracle => RegisterPolicy::Oracle,
@@ -989,6 +1141,15 @@ impl Board {
             if let Some(time) = self.time.as_mut()
                 && time.write(addr, size, value)
             {
+                if addr == ssi::INTFRCH1
+                    && size == 4
+                    && let Some(ssi) = self.dma.ssi.as_mut()
+                    && let Some(current) = time.read(addr, size)
+                {
+                    // Observe the register's actual post-write value; do not
+                    // infer bit transitions from an arbitrary-sized write.
+                    ssi.on_intfrch1(current);
+                }
                 return Ok(());
             }
             return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));

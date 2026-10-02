@@ -24,7 +24,7 @@ pub type TblId = u16;
 /// interns these first, in this order.
 pub const S_EMPTY: Sym = 0;
 pub const SYM_DYN: Sym = 1;
-pub const RT_SYMS: [&str; 16] = [
+pub const RT_SYMS: [&str; 18] = [
     "",
     "<dyn>",
     "MRF",
@@ -41,6 +41,8 @@ pub const RT_SYMS: [&str; 16] = [
     "DM",
     "PM",
     "21p_undoc16",
+    "operand",
+    "operand[6:0]",
 ];
 pub const S_MRF: Sym = 2;
 pub const S_MRB: Sym = 3;
@@ -298,17 +300,29 @@ pub struct Loop {
 #[derive(Clone, Copy, Debug)]
 pub struct FieldEntry(pub Sym, pub Sym, pub i8, pub i8, pub Int);
 
+pub const MAX_INSN_FIELDS: usize = 12;
+
 /// Decoded fields of one instruction, in decode order (a Python dict's
 /// insertion order).
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Fields {
-    pub kv: &'static [FieldEntry],
+    pub kv: [FieldEntry; MAX_INSN_FIELDS],
+    pub n: u8,
 }
 
 impl Fields {
     #[inline(always)]
+    pub const fn from_entries(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> Fields {
+        assert!((n as usize) <= MAX_INSN_FIELDS);
+        Fields { kv, n }
+    }
+    #[inline(always)]
+    pub fn entries(&self) -> &[FieldEntry] {
+        &self.kv[..self.n as usize]
+    }
+    #[inline(always)]
     pub fn get(&self, k: Sym) -> Option<Int> {
-        for e in self.kv {
+        for e in self.entries() {
             if e.0 == k {
                 return Some(e.4);
             }
@@ -325,19 +339,22 @@ impl Fields {
     }
 }
 
-pub static FIELDS_NONE: Fields = Fields { kv: &[] };
+pub const FIELDS_NONE: Fields = Fields {
+    kv: [FieldEntry(S_EMPTY, S_EMPTY, -1, -1, 0); MAX_INSN_FIELDS],
+    n: 0,
+};
 
-impl Default for &'static Fields {
+impl Default for Fields {
     fn default() -> Self {
-        &FIELDS_NONE
+        FIELDS_NONE
     }
 }
 
 /// sharc_disasm.Instruction, as the core reads it.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Insn {
     pub type_name: Sym,
-    pub fields: &'static Fields,
+    pub fields: Fields,
     pub length_bytes: Option<Int>,
     pub kind: Sym,
     pub offset: Int,
@@ -345,15 +362,15 @@ pub struct Insn {
 
 pub static INSN_NONE: Insn = Insn {
     type_name: S_UNKNOWN,
-    fields: &FIELDS_NONE,
+    fields: FIELDS_NONE,
     length_bytes: None,
     kind: S_UNKNOWN,
     offset: 0,
 };
 
-impl Default for &'static Insn {
+impl Default for Insn {
     fn default() -> Self {
-        &INSN_NONE
+        INSN_NONE
     }
 }
 
@@ -542,6 +559,14 @@ pub const MAX_LOOPS: usize = 16;
 pub const MAX_CALLS: usize = 256;
 pub const MAX_STATUS: usize = 16;
 
+/// Runtime decode and the words used to choose its width, including successors.
+/// Checking dependencies keeps guest/host writes coherent without discarding
+/// all decoded code on unrelated stack/data writes.
+pub struct CachedInsn {
+    pub insn: Insn,
+    pub words: Vec<(u32, Option<u16>)>,
+}
+
 /// Run configuration (State fields that do not change during a run).
 #[derive(Clone, Debug)]
 pub struct Cfg {
@@ -680,7 +705,12 @@ pub struct St {
     /// Blocks called directly by other blocks since the dispatcher's call.
     pub chain: u32,
     /// Decoded instruction at a PC (the generated image table).
-    pub insn_at: fn(Int) -> Option<&'static Insn>,
+    pub insn_at: fn(Int) -> Option<Insn>,
+    /// Runtime decoder configuration. Its cache is engine-owned and drops
+    /// with this state, unlike the process-lifetime AOT instruction table.
+    pub runtime_decode: bool,
+    pub read_sw: fn(&Mem, u32) -> Option<u16>,
+    pub decode_cache: std::collections::HashMap<u32, CachedInsn>,
     /// Addresses named by sharcimm.name_address: exact addresses and
     /// [lo, hi) ranges, from the image blob.
     pub named_mmrs: Vec<u32>,
@@ -698,7 +728,11 @@ pub struct St {
     pub mmr_page: Vec<bool>,
 }
 
-fn no_insn(_pc: Int) -> Option<&'static Insn> {
+fn no_insn(_pc: Int) -> Option<Insn> {
+    None
+}
+
+fn no_read_sw(_mem: &Mem, _pc_sw: u32) -> Option<u16> {
     None
 }
 
@@ -730,6 +764,9 @@ impl St {
             trap: None,
             chain: 0,
             insn_at: no_insn,
+            runtime_decode: false,
+            read_sw: no_read_sw,
+            decode_cache: std::collections::HashMap::new(),
             named_mmrs: Vec::new(),
             named_ranges: Vec::new(),
             core_mmr_reset: Vec::new(),

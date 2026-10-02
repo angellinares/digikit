@@ -53,5 +53,8 @@ def _execute(state: State, insn: Instruction) -> list[State]:
     assert name is not None, "instruction with no type_name"
     handler = FORMS.get(name)
     if handler is not None:
-        return handler(state, insn, f, name)
+        try:
+            return handler(state, insn, f, name)
+        except ValueError as error:
+            return [_stop(state, insn, str(error))]
     return [_stop(state, insn, "unsupported form " + str(name))]

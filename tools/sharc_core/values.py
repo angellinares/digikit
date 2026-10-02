@@ -16,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NamedTuple
 
+from .addressing import byte_to_normal_word, normal_word_to_architectural_byte
 from .encoding import AF_BIT
 
 
@@ -291,6 +292,13 @@ def _aconv_symbol(
 def _aconv(value: Value, w2b: bool, source_code: int, pc_sw: int) -> Value:
     """Apply the PRM-likely ACONV arithmetic without inventing ILAD behavior."""
     if isinstance(value, Const):
+        mapped = (
+            normal_word_to_architectural_byte(value.value)
+            if w2b
+            else byte_to_normal_word(value.value)
+        )
+        if mapped is not None:
+            return Const(mapped)
         return Const(value.value << 2 if w2b else value.value >> 2)
     if not isinstance(value, Affine):
         return Unknown("ACONV source is not symbolic")

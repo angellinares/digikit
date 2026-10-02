@@ -332,6 +332,8 @@ RT_SYMS = (
     "DM",
     "PM",
     "21p_undoc16",
+    "operand",
+    "operand[6:0]",
 )
 
 
@@ -880,8 +882,8 @@ class Translator:
             "mr": "MR",
             "spec": "Spec",
             "vi": "VI",
-            "insn": "&'static Insn",
-            "fields": "&'static Fields",
+            "insn": "Insn",
+            "fields": "Fields",
             "regview": "RegView",
             "specview": "SpecView",
             "lstate": "()",
@@ -3012,6 +3014,18 @@ class FnT:
     def call_bound(self, e: Any, fullname: str, sig: FnSig, args: list[E | None]) -> E:
         """A call of FULLNAME with its arguments already evaluated (one E
         per parameter, None for a state parameter)."""
+        if self.blk and fullname == "sharc_core.state._write_ureg":
+            destination = next(
+                a
+                for (name, _type, _default), a in zip(sig.params, args, strict=True)
+                if name == "code"
+            )
+            if (
+                destination is None
+                or not _is_const(destination)
+                or destination.const in (100, 101)
+            ):
+                raise self.fail(e, "block guest PC stack write requires interpreter")
         codes = []
         traps_first = []
         for (pname, _pt, _d), a in zip(sig.params, args, strict=True):
@@ -5084,7 +5098,7 @@ FN_ID_BASE = 16
 # what generated code does, so native libraries built by an older generator
 # are refused (tools/sharc_transpile_run.check_build_info). A native library
 # also carries core_hash(), so a tools/sharc_core change needs no bump.
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 
 
 def core_hash() -> str:

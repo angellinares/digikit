@@ -307,6 +307,31 @@ impl Mem {
         }
     }
 
+    /// A VISA short word in the loaded execution aliases. Unknown bytes stay
+    /// unknown; reads never synthesize code from unwritten RAM.
+    pub fn read_sw(&self, pc: u32) -> Option<u16> {
+        if pc >= (1 << 24) {
+            return None;
+        }
+        let word = |address: u32| {
+            if self.present(address) && self.present(address + 1) {
+                Some(u16::from_le_bytes([
+                    self.byte(address),
+                    self.byte(address + 1),
+                ]))
+            } else {
+                None
+            }
+        };
+        if let Some(v) = word(0x2800_0000 + pc * 2) {
+            return Some(v);
+        }
+        if (0xb80000..0xc00000).contains(&pc) {
+            return word(0x2000_0000 + (pc - 0xb80000) * 2);
+        }
+        None
+    }
+
     /// A loader-image byte (ignores the overlay).
     pub fn loader_byte(&self, a: u32) -> Option<u8> {
         let p = self.loader[(a >> PAGE_BITS) as usize].as_deref()?;

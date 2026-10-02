@@ -208,10 +208,9 @@ class SimdRegisterMoveTest(TraceHelpers):
         self.assertIsNone(state.trace[-1]["simd_companion"])
         self.assertEqual(state.uregs[84], T.Const(0x66))  # untouched
 
-    def test_conditional_ureg_copy_is_not_simd_duplicated(self):
-        # Documented scope limit: cond != 0x1F is left PEx-only (see the
-        # handler's own comment); this pins that choice rather than
-        # silently drifting.
+    def test_conditional_ureg_copy_requires_relevant_pey_predicate(self):
+        # Type5b now evaluates both processing elements independently.
+        # Missing PEy flags must not silently choose a PEx-only transfer.
         fields = {
             "srcureghigh[4:0]": 6,
             "srcureglow[1:1]": 0,
@@ -232,7 +231,8 @@ class SimdRegisterMoveTest(TraceHelpers):
             ),
             insn("5b_move", fields),
         )
-        self.assertEqual(state.uregs[5], T.Const(0x77))
+        self.assertEqual(state.stopped, "unknown conditional SIMD Type5b predicate")
+        self.assertNotIn(5, state.uregs)
         self.assertNotIn(85, state.uregs)
 
 
@@ -1072,7 +1072,14 @@ class SimdMemoryCompanionTest(TraceHelpers):
                 event = next(e for e in out.trace if e["action"] in {"load", "store"})
                 self.assertEqual(event["space"], "PM")
                 if not store:
-                    self.assertIsInstance(out.uregs[6], T.Unknown)
+                    # Normal PM reads now resolve the explicit word in
+                    # unified memory. PM LW/implicit SIMD transfers are
+                    # still unmodeled; this test does not qualify them.
+                    if long_word:
+                        self.assertIsInstance(out.uregs[6], T.Unknown)
+                    else:
+                        self.assertEqual(out.uregs[6], sentinel)
+                        self.assertIsInstance(out.uregs[86], T.Unknown)
                     if long_word:
                         self.assertIsInstance(out.uregs[7], T.Unknown)
 

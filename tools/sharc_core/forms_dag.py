@@ -97,7 +97,7 @@ def _type_7a(
             base = _ureg(state.uregs, UREG_CODES["B%d" % source])
             index_now = _ureg(state.uregs, 16 + source)
             modifier_now = _ureg(state.uregs, 32 + modifier)
-            scale_now = _modify_scale(access_width, state.assume_nw32)
+            scale_now = _modify_scale(access_width, state.assume_nw32, index_now)
             if (
                 isinstance(base, Const)
                 and isinstance(index_now, Const)
@@ -178,7 +178,7 @@ def _type_7a(
     else:
         index_value = _ureg(state.uregs, 16 + source)
         modifier_value = _ureg(state.uregs, 32 + modifier)
-        scale = _modify_scale(access_width, state.assume_nw32)
+        scale = _modify_scale(access_width, state.assume_nw32, index_value)
         scaled_modifier = _multiply(
             modifier_value, Const(scale), "M%d * %d" % (modifier, scale)
         )

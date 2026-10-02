@@ -448,7 +448,32 @@ def _mac_body(
     right: Operand,
     special: Mapping[str, Operand | MR] | None,
 ) -> MultResult:
-    _accumulator, acc_signed = _mac_accumulator(spec.src_key, special)
+    accumulator, acc_signed = _mac_accumulator(spec.src_key, special)
+    # An integer RN destination takes only bits 31:0 (PRM Table 3-7).
+    # Unknown guard/upper words cannot affect modular addition in that
+    # slice. Keep the full-result flags unknown rather than inventing the
+    # unwritten accumulator words (MR0 writes do not sign-extend).
+    if (
+        acc_signed is None
+        and not spec.fractional
+        and not spec.round_
+        and isinstance(left, Const)
+        and isinstance(right, Const)
+    ):
+        low = _mr_read_word(accumulator, 0)
+        if isinstance(low, Const):
+            product = _mr_product_raw(
+                left.value, right.value, spec.signed_x, spec.signed_y, False
+            )
+            raw = low.value - product if spec.subtract else low.value + product
+            flags = _astatx_mult_from(None, False, spec.signed)
+            result = Const(raw & 0xFFFFFFFF)
+            if spec.dest_key is None:
+                return rn, result, spec.op_name, flags
+            # Carry out of MR0 may change the unknown upper words. Keep
+            # only this independently known slice for later MR/RN reads.
+            partial = _mr_write_word(Unknown("unknown upper MAC result"), 0, result)
+            return spec.dest_key, partial, spec.op_name, flags
     if acc_signed is None or not (isinstance(left, Const) and isinstance(right, Const)):
         astatx = _astatx_mult_from(None, spec.fractional, spec.signed)
         label = "%s %s R%d * R%d MOD1" % (

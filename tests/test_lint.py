@@ -13,6 +13,14 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/sharc_mmr_reset.py",
+    "tools/sharc_reset_check.py",
+    "tests/test_sharc_mmr_reset.py",
+    "tests/test_sharc_stack_registers.py",
+    "tools/sharc_core/addressing.py",
+    "tools/sharc_decode_rsgen.py",
+    "tests/test_sharc_addressing.py",
+    "tests/test_sharc_conditional_move.py",
     "tools/autoevents.py",
     "tools/wireevents.py",
     "tools/sharc_render_replay.py",

@@ -310,6 +310,14 @@ pub fn _stack_bounded_symbol(_s: &St, _value: V) -> Option<(Sym, Int)> {
 #[inline(always)]
 pub fn _aconv(_s: &St, value: V, w2b: bool, _source_code: Int, _pc_sw: Int) -> R<V> {
     if value.is_c() {
+        let mapped = if w2b {
+            crate::addressing::normal_word_to_architectural_byte(value.val())
+        } else {
+            crate::addressing::byte_to_normal_word(value.val())
+        };
+        if let Some(mapped) = mapped {
+            return Ok(V::c(mapped));
+        }
         return Ok(V::c(if w2b {
             value.val() << 2
         } else {
@@ -442,13 +450,13 @@ pub fn _mr_write_word(_s: &St, mr: Spec, word: Int, value: V) -> Spec {
 
 /// encoding._field: the exact key, else the first key STEM[...].
 #[inline(always)]
-pub fn _field(_s: &St, f: &Fields, stem: Sym) -> R<Int> {
-    for e in f.kv {
+pub fn _field(_s: &St, f: Fields, stem: Sym) -> R<Int> {
+    for e in f.entries() {
         if e.0 == stem {
             return Ok(e.4);
         }
     }
-    for e in f.kv {
+    for e in f.entries() {
         if e.1 == stem && e.0 != e.1 {
             return Ok(e.4);
         }
@@ -458,8 +466,8 @@ pub fn _field(_s: &St, f: &Fields, stem: Sym) -> R<Int> {
 
 /// The field named exactly STEM[HI:LO].
 #[inline(always)]
-fn range_field(f: &Fields, stem: Sym, hi: i8, lo: i8) -> R<Int> {
-    for e in f.kv {
+fn range_field(f: Fields, stem: Sym, hi: i8, lo: i8) -> R<Int> {
+    for e in f.entries() {
         if e.1 == stem && e.2 == hi && e.3 == lo {
             return Ok(e.4);
         }
@@ -469,14 +477,14 @@ fn range_field(f: &Fields, stem: Sym, hi: i8, lo: i8) -> R<Int> {
 
 /// encoding._wide: STEM[31:16] << 16 | STEM[15:0].
 #[inline(always)]
-pub fn _wide(_s: &St, f: &Fields, stem: Sym) -> R<Int> {
+pub fn _wide(_s: &St, f: Fields, stem: Sym) -> R<Int> {
     Ok((range_field(f, stem, 31, 16)? << 16) | range_field(f, stem, 15, 0)?)
 }
 
 /// encoding._split_compute_fields: the generator already added
 /// compute[22:16] and compute[15:0] wherever an instruction has compute.
 #[inline(always)]
-pub fn _split_compute_fields(_s: &St, f: &'static Fields) -> &'static Fields {
+pub fn _split_compute_fields(_s: &St, f: Fields) -> Fields {
     f
 }
 
@@ -485,8 +493,60 @@ pub fn _split_compute_fields(_s: &St, f: &'static Fields) -> &'static Fields {
 // ---------------------------------------------------------------------------
 
 #[inline(always)]
-pub fn decode_at(s: &St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<&'static Insn> {
-    (s.insn_at)(pc_sw).ok_or(TRAP_NO_INSN)
+pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<Insn> {
+    if !s.runtime_decode {
+        return (s.insn_at)(pc_sw).ok_or(TRAP_NO_INSN);
+    }
+    let pc = u32::try_from(pc_sw).map_err(|_| TRAP_NO_INSN)?;
+    let read_sw = s.read_sw;
+    if let Some(cached) = s.decode_cache.get(&pc) {
+        if cached
+            .words
+            .iter()
+            .all(|&(at, word)| read_sw(&s.mem, at) == word)
+        {
+            return Ok(cached.insn);
+        }
+    }
+    let mut words = Vec::new();
+    let decoded = crate::decode::decode_at(
+        |at| {
+            let word = read_sw(&s.mem, at);
+            if !words.iter().any(|&(seen, _)| seen == at) {
+                words.push((at, word));
+            }
+            word
+        },
+        pc,
+    );
+    if decoded.kind == crate::decode::DecodeKind::Unknown {
+        return Err(TRAP_NO_INSN);
+    }
+    let type_name = crate::sym_of(decoded.type_name).ok_or(TRAP_NO_INSN)?;
+    let kind = crate::sym_of(decoded.kind.as_str()).ok_or(TRAP_NO_INSN)?;
+    let mut entries = [FieldEntry(S_EMPTY, S_EMPTY, -1, -1, 0); MAX_INSN_FIELDS];
+    let fields = decoded.fields();
+    if fields.len() > entries.len() {
+        return Err(TRAP_NO_INSN);
+    }
+    for (dst, field) in entries.iter_mut().zip(fields) {
+        *dst = FieldEntry(
+            crate::sym_of(field.key).ok_or(TRAP_NO_INSN)?,
+            crate::sym_of(field.stem).ok_or(TRAP_NO_INSN)?,
+            field.hi,
+            field.lo,
+            field.value as Int,
+        );
+    }
+    let insn = Insn {
+        type_name,
+        fields: Fields::from_entries(entries, fields.len() as u8),
+        length_bytes: decoded.length_bytes.map(Int::from),
+        kind,
+        offset: 0,
+    };
+    s.decode_cache.insert(pc, CachedInsn { insn, words });
+    Ok(insn)
 }
 
 // ---------------------------------------------------------------------------
@@ -657,9 +717,31 @@ fn plain_address_b(address: VI) -> Option<u32> {
     }
 }
 
+#[inline(always)]
+fn access_address(address: VI, normal_word: bool) -> VI {
+    if normal_word {
+        let concrete = match address {
+            VI::I(a) => Some(a),
+            VI::V(v) if v.is_c() => Some(v.val()),
+            _ => None,
+        };
+        if let Some(a) = concrete.and_then(crate::addressing::normal_word_to_byte) {
+            return VI::I(a);
+        }
+    }
+    address
+}
+
 /// _dm_read for block code.
 #[inline(always)]
-pub fn _dm_read_b(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>> {
+pub fn _dm_read_b(
+    s: &St,
+    address: VI,
+    width: Int,
+    signed: bool,
+    normal_word: bool,
+) -> R<Option<V>> {
+    let address = access_address(address, normal_word);
     if let Some(a) = plain_address_b(address)
         && matches!(width, 1 | 2 | 4)
         && let Some(raw) = s.mem.fast_read(a, width as u32)
@@ -677,12 +759,13 @@ pub fn _dm_read_b(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>>
         };
         return Ok(Some(V::c(value)));
     }
-    _dm_read_full(s, address, width, signed)
+    _dm_read_full(s, address, width, signed, false)
 }
 
 /// _dm_write for block code.
 #[inline(always)]
-pub fn _dm_write_b(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+pub fn _dm_write_b(s: &mut St, address: VI, width: Int, value: V, normal_word: bool) -> R<bool> {
+    let address = access_address(address, normal_word);
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
         && s.un < UNDO_CAP
@@ -693,12 +776,19 @@ pub fn _dm_write_b(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
         s.log(Undo::MemWord(c, width as u8, old))?;
         return Ok(true);
     }
-    _dm_write_full(s, address, width, value)
+    _dm_write_full(s, address, width, value, false)
 }
 
 /// _dm_write_nolog for block code.
 #[inline(always)]
-pub fn _dm_write_nolog_b(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+pub fn _dm_write_nolog_b(
+    s: &mut St,
+    address: VI,
+    width: Int,
+    value: V,
+    normal_word: bool,
+) -> R<bool> {
+    let address = access_address(address, normal_word);
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
         && let Some(a) = plain_address_b(address)
@@ -706,13 +796,14 @@ pub fn _dm_write_nolog_b(s: &mut St, address: VI, width: Int, value: V) -> R<boo
     {
         return Ok(true);
     }
-    _dm_write_nolog_full(s, address, width, value)
+    _dm_write_nolog_full(s, address, width, value, false)
 }
 
 /// memory._dm_read. Inline: a plain-RAM read of present bytes; the rest
 /// out of line.
 #[inline(always)]
-pub fn _dm_read(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>> {
+pub fn _dm_read(s: &St, address: VI, width: Int, signed: bool, normal_word: bool) -> R<Option<V>> {
+    let address = access_address(address, normal_word);
     if let Some(a) = plain_address(s, address)
         && matches!(width, 1 | 2 | 4)
         && let Some(raw) = plain_read(s, a, width as u32)
@@ -730,12 +821,19 @@ pub fn _dm_read(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>> {
         };
         return Ok(Some(V::c(value)));
     }
-    _dm_read_full(s, address, width, signed)
+    _dm_read_full(s, address, width, signed, false)
 }
 
 /// memory._dm_read, every rule.
 #[inline(never)]
-pub fn _dm_read_full(s: &St, address: VI, width: Int, signed: bool) -> R<Option<V>> {
+pub fn _dm_read_full(
+    s: &St,
+    address: VI,
+    width: Int,
+    signed: bool,
+    normal_word: bool,
+) -> R<Option<V>> {
+    let address = access_address(address, normal_word);
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(None);
     };
@@ -837,9 +935,17 @@ pub fn _load_normal_ureg(s: &mut St, space: Sym, address: VI, code: Int) -> R<Op
         }
         s.set_r(UREG_PX1, V::UNK)?;
         s.set_r(UREG_PX2, V::UNK)?;
-    } else if space == S_DM {
-        let loaded = _dm_read(s, address, 4, false)?;
-        s_set_r(s, code, loaded.unwrap_or(V::UNK))?;
+    } else if space == S_DM || space == S_PM {
+        let loaded = _dm_read(s, address, 4, false, true)?;
+        #[cfg(sharc_gen)]
+        crate::generated::core_g::state::_write_ureg(s, code, loaded.unwrap_or(V::UNK))?;
+        #[cfg(not(sharc_gen))]
+        {
+            if matches!(code, 100 | 101) {
+                return Err(TRAP_INDEX);
+            }
+            s_set_r(s, code, loaded.unwrap_or(V::UNK))?;
+        }
         return Ok(loaded);
     }
     s_set_r(s, code, V::UNK)?;
@@ -857,6 +963,9 @@ pub fn _load_normal_ureg_rf(
     address: VI,
     code: Int,
 ) -> R<Option<V>> {
+    if matches!(code, 100 | 101) {
+        return Err(TRAP_BLOCK_UNKNOWN);
+    }
     if code == UREG_PX as Int {
         if let Some((px1, px2)) = _read_px48(s, address)? {
             rf_put(rf, UREG_PX as Int, V::UNK)?;
@@ -866,8 +975,8 @@ pub fn _load_normal_ureg_rf(
         }
         rf_put(rf, UREG_PX1 as Int, V::UNK)?;
         rf_put(rf, UREG_PX2 as Int, V::UNK)?;
-    } else if space == S_DM {
-        let loaded = _dm_read(s, address, 4, false)?;
+    } else if space == S_DM || space == S_PM {
+        let loaded = _dm_read(s, address, 4, false, true)?;
         match loaded {
             Some(v) => rf_set(rf, code, v)?,
             None => return Err(TRAP_BLOCK_UNKNOWN),
@@ -881,7 +990,8 @@ pub fn _load_normal_ureg_rf(
 /// memory._dm_write. Inline: a plain-RAM write over overlay bytes; the
 /// rest out of line.
 #[inline(always)]
-pub fn _dm_write(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+pub fn _dm_write(s: &mut St, address: VI, width: Int, value: V, normal_word: bool) -> R<bool> {
+    let address = access_address(address, normal_word);
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
         && s.un < UNDO_CAP
@@ -892,12 +1002,13 @@ pub fn _dm_write(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
         s.log(Undo::MemWord(c, width as u8, old))?;
         return Ok(true);
     }
-    _dm_write_full(s, address, width, value)
+    _dm_write_full(s, address, width, value, false)
 }
 
 /// memory._dm_write, every rule.
 #[inline(never)]
-pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V, normal_word: bool) -> R<bool> {
+    let address = access_address(address, normal_word);
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(false);
     };
@@ -925,7 +1036,14 @@ pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V) -> R<bool> 
 /// write is not logged (a trap later in the instruction leaves it; the
 /// instruction runs again and stores the same bytes).
 #[inline(always)]
-pub fn _dm_write_nolog(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+pub fn _dm_write_nolog(
+    s: &mut St,
+    address: VI,
+    width: Int,
+    value: V,
+    normal_word: bool,
+) -> R<bool> {
+    let address = access_address(address, normal_word);
     if value.is_c()
         && matches!(width, 1 | 2 | 4)
         && let Some(a) = plain_address(s, address)
@@ -933,11 +1051,18 @@ pub fn _dm_write_nolog(s: &mut St, address: VI, width: Int, value: V) -> R<bool>
     {
         return Ok(true);
     }
-    _dm_write_nolog_full(s, address, width, value)
+    _dm_write_nolog_full(s, address, width, value, false)
 }
 
 #[inline(never)]
-fn _dm_write_nolog_full(s: &mut St, address: VI, width: Int, value: V) -> R<bool> {
+fn _dm_write_nolog_full(
+    s: &mut St,
+    address: VI,
+    width: Int,
+    value: V,
+    normal_word: bool,
+) -> R<bool> {
+    let address = access_address(address, normal_word);
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(false);
     };

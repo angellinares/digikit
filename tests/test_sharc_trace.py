@@ -2046,6 +2046,38 @@ class TraceTest(unittest.TestCase):
         fields.update(changes)
         return fields
 
+    def test_type8a_loop_abort_only_pops_stacks_when_taken(self):
+        for delayed in (0, 1):
+            for taken in (False, True):
+                with self.subTest(delayed=delayed, taken=taken):
+                    state = T.State(
+                        10,
+                        {
+                            T.UREG_CODES["MODE1"]: T.Const(0),
+                            T.UREG_CODES["ASTATX"]: T.Const((1 << 11) if taken else 0),
+                        },
+                        call_stack=[0x99, 0x13],
+                        loops=[T.Loop(0x13, 0x20, 2, 1)],
+                    )
+                    branch = insn(
+                        "8a_rel",
+                        {
+                            "a": 1,
+                            "b": 0,
+                            "j": delayed,
+                            "cond[4:0]": 7,
+                            "reladdr[23:16]": 0,
+                            "reladdr[15:0]": 30,
+                        },
+                        6,
+                    )
+                    advanced = self.run_one(state, branch)
+                    self.assertEqual(len(advanced.loops), 0 if taken else 1)
+                    self.assertEqual(
+                        advanced.call_stack, [0x99] if taken else [0x99, 0x13]
+                    )
+                    self.assertEqual(advanced.pc_sw, 13 if delayed or not taken else 40)
+
     def test_type9a_abs_rejects_ci_modifier(self):
         # PGR p.9-36/PRM p.4-45: (CI) clears the currently-serviced
         # interrupt's IRPTL/IMASKP bit; this tracer does not track which

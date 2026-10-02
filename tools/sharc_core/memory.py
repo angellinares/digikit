@@ -8,6 +8,7 @@ from __future__ import annotations
 from sharcimm import name_address
 from sharcldr import SW_ALIAS_BASE, LoadedMemory, sw_to_byte
 
+from .addressing import normal_word_to_byte
 from .encoding import (
     CORE_MMR_RANGE,
     CORE_MMR_RESET_VALUES,
@@ -24,6 +25,7 @@ from .state import (
     _json_value,
     _render,
     _simd_active,
+    _write_ureg,
 )
 from .values import (
     Const,
@@ -161,12 +163,20 @@ def dm_write_range(state: State, address: int, width: int) -> tuple[int, int] | 
 
 
 def _dm_read(
-    state: State, address: Value | int, width: int, signed: bool = False
+    state: State,
+    address: Value | int,
+    width: int,
+    signed: bool = False,
+    normal_word: bool = False,
 ) -> Const | None:
     """Read little-endian loader-backed DM bytes plus this path's overlay."""
     concrete = _concrete_address(address)
     if state.concrete is None or concrete is None or width not in (1, 2, 4, 8):
         return None
+    if normal_word:
+        mapped = normal_word_to_byte(concrete)
+        if mapped is not None:
+            concrete = mapped
     fixed_width_mmr = (
         concrete in CORE_MMR_RESET_VALUES or name_address(concrete) is not None
     )
@@ -276,23 +286,37 @@ def _load_normal_ureg(
         halves = _read_px48(state, address)
         if halves is not None:
             px1, px2 = halves
-            state.uregs[UREG_CODES["PX"]] = Unknown(
-                "combined PX represented by PX1/PX2"
+            _write_ureg(
+                state, UREG_CODES["PX"], Unknown("combined PX represented by PX1/PX2")
             )
-            state.uregs[UREG_CODES["PX1"]] = px1
-            state.uregs[UREG_CODES["PX2"]] = px2
+            _write_ureg(state, UREG_CODES["PX1"], px1)
+            _write_ureg(state, UREG_CODES["PX2"], px2)
             return {"PX1": px1.value, "PX2": px2.value}
-        state.uregs[UREG_CODES["PX1"]] = Unknown("memory-address " + _render(address))
-        state.uregs[UREG_CODES["PX2"]] = Unknown("memory-address " + _render(address))
-    elif space == "DM":
-        loaded = _dm_read(state, address, 4)
-        state.uregs[code] = loaded or Unknown("memory-address " + _render(address))
+        _write_ureg(
+            state, UREG_CODES["PX1"], Unknown("memory-address " + _render(address))
+        )
+        _write_ureg(
+            state, UREG_CODES["PX2"], Unknown("memory-address " + _render(address))
+        )
+    elif space in ("DM", "PM"):
+        # PRM p.7-2: both data buses use one unified physical address
+        # space. The bus selection does not create a separate RAM image.
+        loaded = _dm_read(state, address, 4, normal_word=True)
+        _write_ureg(
+            state, code, loaded or Unknown("memory-address " + _render(address))
+        )
         return loaded
-    state.uregs[code] = Unknown("memory-address " + _render(address))
+    _write_ureg(state, code, Unknown("memory-address " + _render(address)))
     return None
 
 
-def _dm_write(state: State, address: Value | int, width: int, value: Value) -> bool:
+def _dm_write(
+    state: State,
+    address: Value | int,
+    width: int,
+    value: Value,
+    normal_word: bool = False,
+) -> bool:
     concrete = _concrete_address(address)
     if (
         state.concrete is None
@@ -301,6 +325,10 @@ def _dm_write(state: State, address: Value | int, width: int, value: Value) -> b
         or width not in (1, 2, 4)
     ):
         return False
+    if normal_word:
+        mapped = normal_word_to_byte(concrete)
+        if mapped is not None:
+            concrete = mapped
     fixed_width_mmr = (
         concrete in CORE_MMR_RESET_VALUES or name_address(concrete) is not None
     )
@@ -438,12 +466,14 @@ def _simd_ureg_mem_companion(
             "unsupported SIMD companion access width %r for %s"
             % (access_width, UREG_NAMES[code])
         )
-    k = _access_modifier_scale("normal-word", state.assume_nw32)
+    k = _access_modifier_scale("normal-word", state.assume_nw32, address)
     companion_address = _add(address, Const(k), "%s + %d" % (_render(address), k))
     return cureg, companion_address
 
 
-def _access_modifier_scale(access_width: str, assume_nw32: bool) -> int:
+def _access_modifier_scale(
+    access_width: str, assume_nw32: bool, address: Value | int | None = None
+) -> int:
     """Return SHARC+ byte-space scaled-address arithmetic width.
 
     A load/store modifier is scaled by the size of the access in byte
@@ -453,6 +483,13 @@ def _access_modifier_scale(access_width: str, assume_nw32: bool) -> int:
     (lw)" the same rows as the unqualified access, scaled_mod = mod << 2
     in byte space. So a long word steps in normal-word units, like
     Type15b's (lw) displacement already does here."""
+    concrete = _concrete_address(address) if address is not None else None
+    if (
+        access_width in ("normal-word", "long-word")
+        and concrete is not None
+        and normal_word_to_byte(concrete) is not None
+    ):
+        return 1
     if access_width.startswith("short-word"):
         return 2
     if access_width in ("normal-word", "long-word") and assume_nw32:
@@ -460,7 +497,22 @@ def _access_modifier_scale(access_width: str, assume_nw32: bool) -> int:
     return 1
 
 
-def _modify_scale(option: str | None, assume_nw32: bool) -> int:
+def _normal_word_stride(address: Value | int) -> int:
+    """Distance between halves of a fixed-width 64-bit transfer.
+
+    Long-word accesses always consist of two 32-bit halves even when the
+    width of an unqualified internal access is not assumed. Their second
+    half is one word ahead in a mapped word space and four bytes elsewhere.
+    """
+    concrete = _concrete_address(address)
+    if concrete is not None and normal_word_to_byte(concrete) is not None:
+        return 1
+    return 4
+
+
+def _modify_scale(
+    option: str | None, assume_nw32: bool, address: Value | int | None = None
+) -> int:
     """Scale of an M register in MODIFY (Type7a/7b). OPTION is None for the
     plain form, "short-word" for (sw), "normal-word" for (nw).
 
@@ -472,7 +524,7 @@ def _modify_scale(option: str | None, assume_nw32: bool) -> int:
     (0x245c4c)."""
     if option is None:
         return 1
-    return _access_modifier_scale(option, assume_nw32)
+    return _access_modifier_scale(option, assume_nw32, address)
 
 
 def _circular_wrap_const(index: int, base: int, length: int, delta: int) -> int | None:

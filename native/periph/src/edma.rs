@@ -171,8 +171,14 @@ impl<'a> TcdView<'a> {
     pub fn citer(&self) -> u16 {
         self.regs.u16_at(self.base + CITER) & 0x7FFF
     }
+    pub fn citer_raw(&self) -> u16 {
+        self.regs.u16_at(self.base + CITER)
+    }
     pub fn biter(&self) -> u16 {
         self.regs.u16_at(self.base + BITER) & 0x7FFF
+    }
+    pub fn biter_raw(&self) -> u16 {
+        self.regs.u16_at(self.base + BITER)
     }
     pub fn set_citer(&mut self, v: u16) {
         self.regs.set_u16_at(self.base + CITER, v)
