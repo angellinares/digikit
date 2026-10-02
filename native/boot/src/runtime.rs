@@ -86,6 +86,10 @@ pub struct Emulator {
     uart_handler: u32,
     current_tcb_addr: u32,
     idle_spins: BTreeSet<u32>,
+    /// Over-approximate bitset (one bit per halfword of the main image) of
+    /// every PC the per-instruction observers compare against; a miss lets
+    /// `step_once` skip all of those exact comparisons.
+    watch: Vec<u64>,
     idle_passes: u64,
     task_create_hits: u64,
     mainloop_hits: u64,
@@ -365,6 +369,7 @@ impl Emulator {
             uart_handler,
             current_tcb_addr,
             idle_spins,
+            watch: Vec::new(),
             idle_passes: 0,
             task_create_hits: 0,
             mainloop_hits: 0,
@@ -414,6 +419,7 @@ impl Emulator {
             flash_hle_calls: 0,
             dspi2_capture: None,
         };
+        emulator.rebuild_watch();
         emulator.mark(Mark::Entry, "before_instruction");
         Ok(emulator)
     }
@@ -434,6 +440,11 @@ impl Emulator {
                     iterations += count;
                     continue;
                 }
+            }
+            let fast = self.run_fast(budget - iterations);
+            if fast != 0 {
+                iterations += fast;
+                continue;
             }
             let previous_pc = self.cpu.pc;
             self.step_once();
@@ -788,6 +799,126 @@ impl Emulator {
         count
     }
 
+    /// Rebuild the observed-PC bitset. Every PC that `step_once` compares
+    /// against a stored address must be set; extra bits only cost the exact
+    /// comparisons, never change behaviour.
+    fn rebuild_watch(&mut self) {
+        let mut watch = vec![0u64; (self.main.len() / 2 + 1).div_ceil(64)];
+        let mut pcs: Vec<u32> = self.idle_spins.iter().copied().collect();
+        pcs.extend([
+            self.task_create,
+            self.mainloop,
+            self.job_pump,
+            self.panel_diff,
+            self.flash_read,
+            self.intro_done,
+            self.display_start,
+            self.set_pixel,
+            self.uart_wait,
+        ]);
+        pcs.extend(self.softfloat.entries());
+        if let Some(clear) = &self.ram_clear {
+            pcs.push(clear.loop_pc);
+        }
+        pcs.extend(self.frames.pending.iter().map(|p| p.return_pc));
+        pcs.extend(self.intro_frames.pending.map(|(_, return_pc, _)| return_pc));
+        if let Some((entry, completion, _, _)) = self.fs_worker {
+            pcs.extend([entry, completion.wrapping_add(12)]);
+        }
+        for pc in pcs {
+            if let Some(off) = pc.checked_sub(MAIN_LOAD) {
+                let i = (off >> 1) as usize;
+                if let Some(word) = watch.get_mut(i / 64) {
+                    *word |= 1 << (i % 64);
+                }
+            }
+        }
+        self.watch = watch;
+    }
+
+    #[inline]
+    fn watched(&self, pc: u32) -> bool {
+        let i = (pc.wrapping_sub(MAIN_LOAD) >> 1) as usize;
+        self.watch
+            .get(i / 64)
+            .is_none_or(|word| word >> (i % 64) & 1 != 0)
+    }
+
+    /// Run plain instructions without the per-instruction observer, SSI and
+    /// timer bookkeeping while none of it can do anything: the PC is not one
+    /// the observers compare against, no device register was touched, the
+    /// guest tick is below the SSI/timer deadlines, and the timer IRQ state is
+    /// unchanged. The boundary where any of that stops holding runs through
+    /// `finish_step`, so the machine is bit-identical to the one-instruction
+    /// loop. Returns the instructions run (0: use `step_once`).
+    fn run_fast(&mut self, budget: u32) -> u32 {
+        if budget == 0
+            || self.error.is_some()
+            || self.rx_pending
+            || !self.input_packets.is_empty()
+            || self.fs_clear_pending.is_some()
+            || self.cpu.state != coldfire::RunState::Running
+            || self.bus.board.has_host_events()
+        {
+            return 0;
+        }
+        let Some((timer_limit, level)) = self
+            .bus
+            .board
+            .time_mut()
+            .and_then(|time| time.idle_window())
+        else {
+            return 0;
+        };
+        let Some(ssi_limit) = self.bus.board.ssi_batch_limit() else {
+            return 0;
+        };
+        let limit = timer_limit.min(ssi_limit);
+        let calls = self.softfloat.counts.calls();
+        let epoch = self.bus.board.mmio_epoch();
+        let last_pc_offset = self.main.len().saturating_sub(6);
+        let mut n = 0;
+        while n < budget {
+            let pc = self.cpu.pc;
+            if pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset || self.watched(pc) {
+                break;
+            }
+            let Some(before) = self.cpu.icount.checked_add(calls) else {
+                break;
+            };
+            if let Some(capture) = &self.dspi2_capture {
+                capture.set_icount(self.cpu.icount);
+            }
+            self.bus.current_icount = before;
+            self.bus.clear();
+            self.bus.current_pc = pc;
+            let icount = self.cpu.icount;
+            let result = self
+                .cpu
+                .step(&mut self.bus)
+                .map_err(|error| format!("{error:?}"));
+            self.interpreted_instructions += self.cpu.icount.saturating_sub(icount);
+            n += 1;
+            let done = self.cpu.icount.wrapping_add(calls);
+            if result.is_err()
+                || done >= limit
+                || self.cpu.last_exception.is_some()
+                || self.cpu.state != coldfire::RunState::Running
+                || self.bus.board.mmio_epoch() != epoch
+                || ((self.cpu.sr >> 8) & 7) < u16::from(level)
+            {
+                self.finish_step(result);
+                return n;
+            }
+        }
+        // The skipped services would have seeded the IPL tracker each time.
+        let sr = self.cpu.sr;
+        if let Some(time) = self.bus.board.time_mut() {
+            time.seed_sr(sr);
+        }
+        n
+    }
+
     fn step_once(&mut self) {
         let pc = self.cpu.pc;
         if let Some(capture) = &self.dspi2_capture {
@@ -819,9 +950,16 @@ impl Emulator {
                 self.mark(Mark::IntroPixel, "before_instruction");
                 self.intro_frames
                     .observe_pixel(&mut self.bus.board, self.cpu.a[7]);
+                if self.intro_frames.pending.is_some() {
+                    // The completed raster returns to a new PC: observe it.
+                    self.rebuild_watch();
+                }
             }
         }
-        self.observe_marks(pc);
+        let watched = self.watched(pc);
+        if watched {
+            self.observe_marks(pc);
+        }
         self.frames.complete_at_return(
             &mut self.bus.board,
             self.current_tcb_addr,
@@ -846,6 +984,8 @@ impl Emulator {
                 self.set_error(error);
                 return;
             }
+            // A new pending frame completes at its return PC: observe it.
+            self.rebuild_watch();
         }
         match service_tx35_wait(
             &mut self.bus,
@@ -864,15 +1004,18 @@ impl Emulator {
                 return;
             }
         }
-        match self.service_input() {
-            Ok(true) => return,
-            Ok(false) => {}
-            Err(error) => {
-                self.set_error(error);
-                return;
+        // `service_input` is a no-op unless a packet is queued or acknowledged.
+        if self.rx_pending || !self.input_packets.is_empty() {
+            match self.service_input() {
+                Ok(true) => return,
+                Ok(false) => {}
+                Err(error) => {
+                    self.set_error(error);
+                    return;
+                }
             }
         }
-        if self.idle_spins.contains(&pc) {
+        if watched && self.idle_spins.contains(&pc) {
             self.idle_passes += 1;
             if self.idle_passes.is_multiple_of(20_000)
                 && let Err(error) =
@@ -885,18 +1028,20 @@ impl Emulator {
         }
         self.bus.clear();
         self.bus.current_pc = pc;
-        let result = if pc == self.flash_read {
+        let result = if watched && pc == self.flash_read {
             let result = hle_flash_read(&mut self.bus, &mut self.cpu, &self.flash, &mut Vec::new());
             if result.is_ok() {
                 self.cpu.icount += 1;
                 self.flash_hle_calls += 1;
             }
             result
-        } else if self.softfloat.try_call(
-            &mut self.cpu,
-            &mut self.bus.board,
-            MAIN_LOAD + self.main.len() as u32,
-        ) {
+        } else if watched
+            && self.softfloat.try_call(
+                &mut self.cpu,
+                &mut self.bus.board,
+                MAIN_LOAD + self.main.len() as u32,
+            )
+        {
             Ok(())
         } else {
             #[cfg(feature = "diagnostic-profile")]
@@ -919,7 +1064,15 @@ impl Emulator {
             self.interpreted_instructions += self.cpu.icount.saturating_sub(before);
             result
         };
-        self.observe_fs_completion(result.is_ok());
+        self.finish_step(result);
+    }
+
+    /// Everything after the CPU step of one instruction: host-event drain, the
+    /// SSI and timer boundary services, and the exception check.
+    fn finish_step(&mut self, result: Result<(), String>) {
+        if self.fs_clear_pending.is_some() {
+            self.observe_fs_completion(result.is_ok());
+        }
         self.drain_board();
         let mut timer_delivered = false;
         if result.is_ok() {
@@ -1030,6 +1183,9 @@ impl Emulator {
     }
 
     fn drain_board(&mut self) {
+        if !self.bus.board.has_host_events() {
+            return;
+        }
         let completions = self.bus.board.take_completion_events();
         self.completion_events += completions.len() as u64;
         #[cfg(feature = "diagnostic-events")]
@@ -1943,6 +2099,7 @@ impl Emulator {
         {
             self.dspi_frames_observed = self.bus.board.dma.dspi2.frames;
         }
+        self.rebuild_watch();
         Ok(())
     }
 
@@ -2196,6 +2353,7 @@ mod tests {
             emu.cpu.pc = pc;
             emu.bus.board.write16(pc, 0x60fe).unwrap();
             emu.idle_spins.insert(pc);
+            emu.rebuild_watch();
         }
         for _ in 0..400 {
             slow.step_once();
@@ -2208,6 +2366,57 @@ mod tests {
         assert_eq!(fast.interpreted_instructions, 1);
         assert_eq!(fast.idle_fast_forwarded_instructions, 399);
         assert_eq!(fast.bus.current_icount, slow.bus.current_icount);
+    }
+
+    /// `step_chunk` (batched `run_fast`) must leave exactly the machine the
+    /// one-instruction `step_once` loop leaves, across cold-boot code with
+    /// reset RAM clears, timers and MMIO.
+    #[test]
+    fn batched_chunks_match_single_steps_from_cold_boot() {
+        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let mut slow = Emulator::new(&syx, None).unwrap();
+        let mut fast = Emulator::new(&syx, None).unwrap();
+        let mut done = 0u64;
+        let chunks = [1u32, 7, 1000].into_iter().chain([250_000; 24]);
+        for chunk in chunks {
+            let before = slow.cpu.icount;
+            fast.step_chunk(chunk);
+            // Reference: single steps with the same analytic idle/RAM-clear
+            // steps `step_chunk` applies, but never the batched loop.
+            let mut iterations = 0;
+            while iterations < chunk && slow.error.is_none() {
+                if ACCELERATE_RAM_CLEAR
+                    && slow
+                        .ram_clear
+                        .as_ref()
+                        .is_some_and(|clear| slow.cpu.pc == clear.loop_pc)
+                {
+                    let count = slow.advance_ram_clear(chunk - iterations);
+                    if count != 0 {
+                        iterations += count;
+                        continue;
+                    }
+                }
+                let previous_pc = slow.cpu.pc;
+                slow.step_once();
+                iterations += 1;
+                iterations += slow.advance_idle(previous_pc, chunk - iterations);
+            }
+            slow.refresh_frame();
+            done += slow.cpu.icount - before;
+            assert_eq!(fast.error, slow.error);
+            assert_eq!(fast.cpu, slow.cpu, "after {done} instructions");
+            assert_eq!(fast.oracle_ticks(), slow.oracle_ticks());
+            assert_eq!(fast.interpreted_instructions, slow.interpreted_instructions);
+            assert_eq!(
+                fast.state_digest().unwrap(),
+                slow.state_digest().unwrap(),
+                "after {done} instructions"
+            );
+        }
+        assert!(done > 5_000_000);
     }
 
     #[test]

@@ -50,6 +50,8 @@ node_modules/
 .astro/
 dist/
 packages/web/public/emulator-core.wasm
+# Contains DSP code generated from firmware: never commit.
+packages/web/public/emulator-core-sharc.wasm
 packages/desktop/src-tauri/target/
 packages/desktop/src-tauri/gen/
 

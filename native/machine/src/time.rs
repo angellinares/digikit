@@ -46,6 +46,11 @@ pub struct Time {
     /// Earliest boundary worth servicing after a pass with no pending IRQ.
     /// Keep the banks' floating-point clock representation exactly.
     service_not_before: Option<f64>,
+    /// `(earliest deadline, level)` while IRQs are pending but every one is
+    /// declined by its INTC level or the CPU IPL: `service_with` then changes
+    /// nothing until a deadline, an IPL below `level`, or any register write
+    /// or load (which clears this). Host-only cache, not checkpointed.
+    blocked: Option<(f64, u8)>,
 }
 
 impl Time {
@@ -76,6 +81,7 @@ impl Time {
             policy,
             host_writes: Vec::new(),
             service_not_before: None,
+            blocked: None,
         }
     }
 
@@ -84,6 +90,7 @@ impl Time {
     /// these banks (`import_timers` validates both sources before mutation).
     pub fn restore_timer_component(&mut self, state: &MachineState) -> Result<(), TimerStateError> {
         self.service_not_before = None;
+        self.blocked = None;
         let mut lane = Timers {
             pit: std::mem::take(&mut self.pit),
             dtim: std::mem::take(&mut self.dtim),
@@ -162,6 +169,7 @@ impl Time {
     /// Write an oracle PIT or INTC register. PIT handles PCSR PIF clearing.
     pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
         self.service_not_before = None;
+        self.blocked = None;
         Self::owns_access(addr, size)
             && (self.pit.write(addr, size, value)
                 || self.dtim.write(addr, size, value)
@@ -171,6 +179,7 @@ impl Time {
     /// Load one complete PIT-channel or INTC register page.
     pub fn load_page(&mut self, base: u32, data: &[u8]) -> bool {
         self.service_not_before = None;
+        self.blocked = None;
         self.pit.load_page(base, data)
             || self.dtim.load_page(base, data)
             || self.intc.load_page(base, data)
@@ -194,16 +203,44 @@ impl Time {
     /// Same boundary cache as service_with, including queued host writes.
     /// Owners may avoid transferring the timer facade when it has no work.
     pub fn can_skip_service(&self, done: u64) -> bool {
-        self.policy == TimerPolicy::Oracle
-            && self.host_writes.is_empty()
-            && self
-                .service_not_before
-                .is_some_and(|next| (done as f64) < next)
+        self.policy == TimerPolicy::Oracle && self.host_writes.is_empty() && self.idle_at(done)
+    }
+
+    /// For a host that skips `can_skip_service` at every instruction: while the
+    /// guest tick `done` stays below `limit` and the CPU's IPL (SR bits 10-8)
+    /// is at least `level`, servicing changes nothing. `None` when the timers
+    /// need an offer at every boundary (a pending IRQ the CPU could take,
+    /// unknown deadlines, queued host writes, or the Device policy).
+    pub fn idle_window(&self) -> Option<(u64, u8)> {
+        if self.policy != TimerPolicy::Oracle || !self.host_writes.is_empty() {
+            return None;
+        }
+        let (next, level) = match (self.service_not_before, self.blocked) {
+            (Some(next), _) => (next, 0),
+            (None, Some((next, level))) => (next, level),
+            (None, None) => return None,
+        };
+        // `(done as f64) < next` for integer `done` below 2^53.
+        if next == f64::INFINITY {
+            return Some((u64::MAX, level)); // no timer is armed
+        }
+        (next >= 0.0 && next < 9.0e15).then(|| (next.ceil() as u64, level))
+    }
+
+    /// `service_with(done, _)` is known to change nothing.
+    #[inline]
+    fn idle_at(&self, done: u64) -> bool {
+        let donef = done as f64;
+        self.service_not_before.is_some_and(|next| donef < next)
+            || self
+                .blocked
+                .is_some_and(|(next, level)| donef < next && self.sr.ipl() >= level)
     }
 
     /// Return the first PIT/DTIM deadline, arming enabled timers at `done`.
     pub fn deadline(&mut self, done: u64) -> Option<u64> {
         self.service_not_before = None;
+        self.blocked = None;
         match (self.pit.deadline(done), self.dtim.deadline(done)) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
@@ -232,10 +269,7 @@ impl Time {
         if self.policy == TimerPolicy::Device {
             return Err(TimeError::DeviceInterruptDeliveryUnsupported);
         }
-        if self
-            .service_not_before
-            .is_some_and(|next| (done as f64) < next)
-        {
+        if self.idle_at(done) {
             return Ok(Vec::new());
         }
         let mut raised = self
@@ -254,7 +288,30 @@ impl Time {
         // can unmask it even before the next timer tick. MMIO writes, page
         // loads, checkpoint restores and deadline arming invalidate this
         // cache. With no pending IRQ, only the earliest tick can do work.
-        self.service_not_before = if (0..4).any(|i| self.pit.pending(i) || self.dtim.pending(i)) {
+        let any_pending = (0..4).any(|i| self.pit.pending(i) || self.dtim.pending(i));
+        self.blocked = if any_pending && !self.pit.is_held() && !self.dtim.is_held() {
+            let level = self
+                .pit
+                .max_pending_level(&self.intc)
+                .max(self.dtim.max_pending_level(&self.intc));
+            // Pending channels that were just declined by IPL stay declined
+            // while IPL >= every pending level; one declined by the offer
+            // callback (IPL below its level) must be retried at each boundary.
+            (self.sr.ipl() >= level)
+                .then(|| {
+                    (0..4)
+                        .flat_map(|i| [self.pit.next_deadline(i), self.dtim.next_deadline(i)])
+                        .flatten()
+                        .try_fold(f64::INFINITY, |next, deadline| {
+                            (!deadline.is_nan()).then(|| next.min(deadline))
+                        })
+                })
+                .flatten()
+                .map(|next| (next, level))
+        } else {
+            None
+        };
+        self.service_not_before = if any_pending {
             None
         } else {
             (0..4)
@@ -338,6 +395,7 @@ mod tests {
             };
             let mut fast = make();
             let mut reference = make();
+            let mut blocked_idle = 0;
             for offset in 0..1000 {
                 let done = start + offset;
                 for time in [&mut fast, &mut reference] {
@@ -377,13 +435,25 @@ mod tests {
                     }
                 }
                 reference.service_not_before = None;
+                reference.blocked = None;
                 let offer = |_, _| offset % 11 != 0;
+                // The host-batching window must agree with the reference: if
+                // it says "idle" here, servicing may change nothing.
+                let ipl: u8 = if offset % 37 < 9 { 7 } else { 0 };
+                let window_idle = fast
+                    .idle_window()
+                    .is_some_and(|(limit, level)| done < limit && ipl >= level);
                 let actual = if fast.can_skip_service(done) {
                     Ok(Vec::new())
                 } else {
                     fast.service_with(done, offer)
                 };
-                assert_eq!(actual, reference.service_with(done, offer));
+                let expected = reference.service_with(done, offer);
+                if window_idle {
+                    assert_eq!(expected, Ok(Vec::new()), "offset {offset}");
+                    blocked_idle += usize::from(fast.blocked.is_some());
+                }
+                assert_eq!(actual, expected);
                 assert_eq!(fast.take_host_writes(), reference.take_host_writes());
                 for i in 0..4 {
                     assert_eq!(fast.pit.pending(i), reference.pit.pending(i));
@@ -397,6 +467,13 @@ mod tests {
                     assert_eq!(fast.dtim.missed(i), reference.dtim.missed(i));
                     assert_eq!(fast.dtim.cleared(i), reference.dtim.cleared(i));
                 }
+            }
+            // Beyond 2^53 the integer deadline window is deliberately unavailable.
+            if start == 0 {
+                assert!(
+                    blocked_idle > 0,
+                    "the pending-IRQ window was never exercised"
+                );
             }
         }
     }

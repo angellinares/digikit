@@ -190,7 +190,31 @@ impl Ssi0Dma {
         Some(done.saturating_add(self.step(done, None)))
     }
 
+    /// First `done` for which [`Self::due`] can be true, `u64::MAX` while no
+    /// channel is enabled (enabling is a register write the caller observes),
+    /// `None` when the clock is unarmed or an interrupt is still owed (the
+    /// caller must then service at every boundary).
+    pub fn batch_limit(&self) -> Option<u64> {
+        if self.vector170_owed() || self.vector191_owed() {
+            return None;
+        }
+        if !self.enabled.iter().any(|&enabled| enabled) {
+            return Some(u64::MAX);
+        }
+        let q = self.q?;
+        // done * request_hz >= q  <=>  done >= ceil(q / request_hz)
+        (self.request_hz != 0).then(|| q.div_ceil(self.request_hz))
+    }
+
     pub fn due(&mut self, done: u64) -> bool {
+        // Hot path (every interpreted instruction): an armed deadline that has
+        // not been reached answers false whatever `enabled` holds, so the
+        // 64-flag scan below is skipped.
+        if let Some(q) = self.q
+            && done.saturating_mul(self.request_hz) < q
+        {
+            return false;
+        }
         if !self.enabled.iter().any(|&enabled| enabled) {
             return false;
         }

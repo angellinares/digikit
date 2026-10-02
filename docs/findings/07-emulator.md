@@ -5109,3 +5109,17 @@ threading hides only the ColdFire share (about 7%).
   produced (silence on underrun); `AUDIO_BUFFER=SECONDS` holds the audio back,
   then plays it in real time and plays out the rest at the end. No device:
   a message and the run goes on.
+
+### ColdFire interpreter and machine speedups (native, exact) **[D]**
+
+Time, board, SSI, PIT and DTIM paths of the Rust machine and the boot runtime
+were made cheaper (batched timer/peripheral deadlines, fewer per-instruction
+checks, soft-float and idle-loop fast paths) without changing any guest-visible
+state. DN2 1.11 coupled snapshot, trig, ready+100M ColdFire instructions:
+ColdFire-only (`DSP_PERIOD=1`) 5.3 s before, 1.7 s now (about 3x, 58M logical
+ticks/s); coupled `DSP_THREAD=1` 14.8 s before, 5.8 s now; headless WASM
+coupled core 21.3 s before, 13.5 s now. State digests are unchanged: coupled
+ColdFire `fbace0f0...`, DSP export `05ac2ac2...`, PCM `38d2a322...` (WASM PCM
+identical); ColdFire-only digest `4b569189...`. `sharc_live` prints a
+`cf_clock` line (logical ticks, interpreted and idle-skipped instructions,
+ticks per wall second) after the run. Not re-checked against the device.

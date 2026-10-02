@@ -15,7 +15,15 @@ parser.add_argument(
     action="store_true",
     help="include bounded PC profiling and event history",
 )
+parser.add_argument(
+    "--sharc",
+    action="store_true",
+    help="dev build with the coupled SHARC+ engine (needs SHARC_GEN_DIR, firmware-derived "
+    "generated code) written to emulator-core-sharc.wasm; the default core is left alone",
+)
 args = parser.parse_args()
+if args.sharc and not os.environ.get("SHARC_GEN_DIR"):
+    raise SystemExit("--sharc needs SHARC_GEN_DIR (a directory written by tools/sharc_transpile.py and sharc_rsgen.py)")
 root = pathlib.Path(__file__).resolve().parents[1]
 rustc = shutil.which("rustup")
 if rustc is not None:
@@ -44,8 +52,13 @@ command = [
     "--target",
     "wasm32-unknown-unknown",
 ]
+features = []
 if args.diagnostics:
-    command.extend(["--features", "diagnostic-profile,diagnostic-events"])
+    features += ["diagnostic-profile", "diagnostic-events"]
+if args.sharc:
+    features.append("sharc")
+if features:
+    command.extend(["--features", ",".join(features)])
 try:
     subprocess.run(command, cwd=root, env=env, check=True)
 except subprocess.CalledProcessError:
@@ -56,6 +69,8 @@ target_dir = pathlib.Path(env.get("CARGO_TARGET_DIR", root / "native/boot/target
 if not target_dir.is_absolute():
     target_dir = root / target_dir
 source = target_dir / "wasm32-unknown-unknown/release/elektron_native_boot.wasm"
-target = root / "packages/web/public/emulator-core.wasm"
+target = root / "packages/web/public" / (
+    "emulator-core-sharc.wasm" if args.sharc else "emulator-core.wasm"
+)
 target.parent.mkdir(parents=True, exist_ok=True)
 shutil.copyfile(source, target)

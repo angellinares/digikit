@@ -364,8 +364,24 @@ impl DtimBank {
         }
     }
 
+    pub fn is_held(&self) -> bool {
+        self.held
+    }
+
     pub fn pending(&self, ch: usize) -> bool {
         self.ch[ch].pending
+    }
+    /// Highest INTC level among pending channels that `service_with` would
+    /// consider (0 for a pending channel without a deliverable level). While
+    /// the CPU's IPL is at or above this and no deadline is reached,
+    /// `service_with` changes nothing.
+    pub fn max_pending_level(&self, intc: &IntcBank) -> u8 {
+        self.channels
+            .iter()
+            .filter(|&&ci| self.ch[ci].pending)
+            .map(|&ci| intc.level_for_vector(VECTORS[ci]).unwrap_or(0))
+            .max()
+            .unwrap_or(0)
     }
     pub fn next_deadline(&self, ch: usize) -> Option<f64> {
         self.ch[ch].next

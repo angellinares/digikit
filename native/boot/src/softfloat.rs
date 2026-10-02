@@ -101,6 +101,11 @@ impl SoftfloatAbi {
         }
     }
 
+    /// The three routine entry PCs (0 when unresolved).
+    pub(crate) fn entries(&self) -> [u32; 3] {
+        [self.add, self.mul, self.div]
+    }
+
     pub(crate) fn try_call(&mut self, cpu: &mut Cpu, board: &mut Board, main_end: u32) -> bool {
         let op = match cpu.pc {
             pc if pc == self.add => Op::Add,

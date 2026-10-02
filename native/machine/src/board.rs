@@ -21,6 +21,10 @@ use periph::{
 
 use crate::{host_state::HostState, state::OverlaySectorRecord, time::Time};
 
+/// SDRAM and internal SRAM: [0x4000_0000, 0x8C00_0000). No device register
+/// (every owner sits at 0x8C00_0000 or above) and no forced word may lie in it.
+const SDRAM_BASE: u32 = 0x4000_0000;
+const SDRAM_SIZE: u32 = 0x4C00_0000;
 const PAGE_SIZE: usize = 1024 * 1024;
 const PAGE_SHIFT: u32 = 20;
 const PAGE_COUNT: usize = 4096;
@@ -110,6 +114,13 @@ pub struct Board {
     /// Oracle read hooks: each value overlays four big-endian bytes before a
     /// guest read, without changing the backing page or later guest writes.
     forced_mmio: BTreeMap<u32, u32>,
+    /// False when a forced read word overlaps SDRAM; otherwise SDRAM accesses
+    /// skip every MMIO ownership check (no device owns that range).
+    sdram_fast: bool,
+    /// Counts guest accesses that reached device-owned registers (eDMA, DSPI,
+    /// SSI/DSP slots, eSDHC, PIT/DTIM/INTC writes, GPIO sense). A host loop may
+    /// batch plain RAM instructions until this changes.
+    mmio_epoch: u64,
     /// Opt-in only: ordinary long-running execution must not retain every Bus access.
     capture_guest_accesses: bool,
     guest_reads: Vec<GuestAccess>,
@@ -133,6 +144,23 @@ impl Board {
         self.dma.enable_ssi_diagnostic(request_hz, ips)
     }
 
+    /// Device-register accesses so far; see the field docs.
+    #[inline]
+    pub fn mmio_epoch(&self) -> u64 {
+        self.mmio_epoch
+    }
+
+    /// First guest tick at which [`Self::service_ssi`] can do any work, for a
+    /// host that skips the per-instruction call. `u64::MAX` when SSI is off or
+    /// idle; `None` when it must be called every instruction (unarmed clock,
+    /// or an interrupt it still owes the CPU).
+    pub fn ssi_batch_limit(&self) -> Option<u64> {
+        match self.dma.ssi.as_ref() {
+            None => Some(u64::MAX),
+            Some(ssi) => ssi.batch_limit(),
+        }
+    }
+
     pub fn ssi_deadline(&mut self, done: u64) -> Option<u64> {
         self.dma.ssi.as_mut()?.deadline(done)
     }
@@ -141,14 +169,17 @@ impl Board {
     /// descriptors and ranges are rejected before any TCD or RAM mutation.
     /// Returned ranges require CPU decode-cache invalidation by the owner.
     pub fn service_ssi(&mut self, done: u64) -> Vec<(u32, usize)> {
-        let Some(mut ssi) = self.dma.ssi.take() else {
-            return Vec::new();
-        };
-        let due = ssi.due(done);
-        if !due {
-            self.dma.ssi = Some(ssi);
-            return Vec::new();
+        // Called after every interpreted instruction: decide "not due"
+        // without moving the (large) SSI state out of and back into the Option.
+        match self.dma.ssi.as_mut() {
+            None => return Vec::new(),
+            Some(ssi) => {
+                if !ssi.due(done) {
+                    return Vec::new();
+                }
+            }
         }
+        let mut ssi = self.dma.ssi.take().expect("checked above");
         struct Planned {
             channel: usize,
             tcd: edma::TcdSnapshot,
@@ -298,6 +329,8 @@ impl Board {
             last_error: None,
             time: None,
             forced_mmio: BTreeMap::new(),
+            sdram_fast: true,
+            mmio_epoch: 0,
             capture_guest_accesses: false,
             guest_reads: vec![],
             guest_writes: vec![],
@@ -481,6 +514,9 @@ impl Board {
         }) {
             return Err(());
         }
+        self.sdram_fast = !words
+            .keys()
+            .any(|&base| base.wrapping_sub(SDRAM_BASE.wrapping_sub(3)) < SDRAM_SIZE + 3);
         self.forced_mmio = words;
         Ok(())
     }
@@ -657,6 +693,12 @@ impl Board {
     }
     pub fn completion_events(&self) -> &[CompletionEvent] {
         &self.events
+    }
+    /// True when `take_completion_events`, `take_dma_written_ranges` or
+    /// `take_uart_tx` would return anything.
+    #[inline]
+    pub fn has_host_events(&self) -> bool {
+        !self.events.is_empty() || !self.dma_written.is_empty() || !self.uart_tx.is_empty()
     }
     pub fn take_completion_events(&mut self) -> Vec<CompletionEvent> {
         std::mem::take(&mut self.events)
@@ -1190,7 +1232,19 @@ impl Board {
         }
         Ok(())
     }
+    #[inline]
     fn read_inner(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
+        if self.sdram_fast
+            && addr.wrapping_sub(SDRAM_BASE) < SDRAM_SIZE
+            && let Some(value) = self.ram_read(addr, size)
+        {
+            // Mapped SDRAM: exactly what the cascade below ends in.
+            return Ok(value);
+        }
+        self.read_inner_slow(addr, size)
+    }
+
+    fn read_inner_slow(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
         if let Some((mut value, prefix)) = self.forced_prefix(addr, size) {
             for offset in prefix..size {
                 value = (value << 8) | self.read_inner_unforced(addr + u32::from(offset), 1)?;
@@ -1209,9 +1263,11 @@ impl Board {
                 .ok_or(Self::bus_error(addr, false));
         }
         if let Some(value) = self.dma.read(addr, size) {
+            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
             return Ok(value);
         }
         if let Some(value) = self.esdhc.read(addr, size) {
+            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
             self.drain_esdhc_host_writes();
             return Ok(value);
         }
@@ -1219,6 +1275,7 @@ impl Board {
             && size == 1
             && let Some(gate) = self.sd_gate.as_mut()
         {
+            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
             let sensed = gate.sense();
             let wrote = self.ram_write(addr, 1, u32::from(sensed));
             debug_assert!(wrote);
@@ -1230,9 +1287,22 @@ impl Board {
         self.ram_read(addr, size)
             .ok_or(Self::bus_error(addr, false))
     }
+    #[inline]
     fn write_inner(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
         self.last_error = None;
+        if self.sdram_fast
+            && addr.wrapping_sub(SDRAM_BASE) < SDRAM_SIZE
+            && self.ram_write(addr, size, value)
+        {
+            // Mapped SDRAM: exactly what the cascade below ends in.
+            return Ok(());
+        }
+        self.write_inner_slow(addr, size, value)
+    }
+
+    fn write_inner_slow(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
         if Time::owns(addr) {
+            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
             if let Some(time) = self.time.as_mut()
                 && time.write(addr, size, value)
             {
@@ -1250,6 +1320,7 @@ impl Board {
             return Err(BoardWriteError::Bus(Self::bus_error(addr, true)));
         }
         if DmaLink::owns(addr) {
+            self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
             let tx35_citer =
                 edma::TcdView::new(&mut self.dma.edma_regs, self.dma.tx35.chan).citer();
             let is_tx35_serq = addr == edma::SERQ
@@ -1330,6 +1401,7 @@ impl Board {
             }
             return wrote;
         }
+        self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
         let xfer = (addr == esdhc::BASE + esdhc::XFERTYP && size == 4).then_some(value);
         let command = xfer.map(|v| ((v >> 24) & 0x3f) as u8);
         let data = xfer.is_some_and(|v| v & (1 << 21) != 0);

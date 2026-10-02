@@ -11,7 +11,15 @@ export interface RuntimeDiagnostics {
   sharc_execution_connected: boolean; pcm_output_connected: boolean;
   [key: string]: unknown;
 }
+/** Dev-only inputs of the coupled core: user-supplied, never bundled. */
+export interface CoupledFiles { syx: Uint8Array; image: Uint8Array; dsp: Uint8Array; snapshot?: Uint8Array }
+export interface CoupledStats { frames: number; dsp_instructions: number; halted: string | null; nonzero_replies: number; missing_blocks: number; pcm_values: number }
 export interface EmulatorRuntime {
+  /** Browser worker only, and only with a core built with the `sharc` feature. */
+  loadCoupled?(files: CoupledFiles, audioPort: MessagePort): Promise<RuntimeSnapshot>;
+  coupledStats?(): Promise<CoupledStats>;
+  /** Press a key, release it after `hold` guest instructions (emulation time, not wall time). */
+  tap?(code: number, hold?: number): Promise<void>;
   diagnostics(): Promise<RuntimeDiagnostics>;
   load(bytes: Uint8Array, name: string): Promise<RuntimeSnapshot>; restart(): Promise<RuntimeSnapshot>;
   pause(): void; resume(): void; press(code: number): Promise<void>; release(code: number): Promise<void>;
@@ -46,6 +54,14 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
   });
   return {
     diagnostics: () => request<RuntimeDiagnostics>('diagnostics'),
+    async loadCoupled(files, audioPort) {
+      generation += 1; paused = false; source = undefined;
+      worker.postMessage({ type: 'audio-port', generation, port: audioPort }, [audioPort]);
+      const copy = (bytes?: Uint8Array) => bytes?.slice().buffer;
+      return request<RuntimeSnapshot>('load-coupled', { bytes: copy(files.syx), image: copy(files.image), dsp: copy(files.dsp), snapshot: copy(files.snapshot) });
+    },
+    coupledStats: () => request<CoupledStats>('coupled-stats'),
+    tap: (code, hold) => request<void>('tap', { code, hold }),
     async load(bytes, selectedName) { generation += 1; paused = false; source = bytes.slice(); name = selectedName; return request<RuntimeSnapshot>('load', { bytes: bytes.buffer, name: selectedName }); },
     async restart() { if (!source) throw new Error('No firmware selected'); generation += 1; paused = false; return request<RuntimeSnapshot>('load', { bytes: source.slice().buffer, name }); },
     pause() { paused = true; worker.postMessage({ type: 'pause', generation }); },

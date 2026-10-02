@@ -238,9 +238,13 @@ fn main() {
     emu.set_dspi2_peer(peer);
     let mut audio = Audio::from_env();
     let mut next = 0;
+    let mut last_status: Option<elektron_native_boot::Status>;
+    let mut first_status: Option<elektron_native_boot::Status> = None;
     let end = loop {
         let snap = emu.step_chunk(250_000);
         let s = &snap.status;
+        first_status.get_or_insert_with(|| s.clone());
+        last_status = Some(s.clone());
         if let Some(p) = &snap_path {
             if common::save_if_ready(&mut emu, p, &script, s.ready, &mut saved) && !attach_at_ready
             {
@@ -281,6 +285,19 @@ fn main() {
     };
     dsp.sync();
     let wall = t0.elapsed().as_secs_f64();
+    if let (Some(s), Some(f)) = (&last_status, &first_status) {
+        let ready_ticks = f.oracle_ticks;
+        // The run's logical clock (1 tick = 1/132 MHz) against the host work.
+        println!(
+            "cf_clock oracle_ticks={} interpreted={} idle_skipped={} softfloat_calls={} flash_hle={} ticks_per_wall_s={:.1}M",
+            s.oracle_ticks - f.oracle_ticks,
+            s.interpreted_instructions - f.interpreted_instructions,
+            s.idle_fast_forwarded_instructions - f.idle_fast_forwarded_instructions,
+            s.softfloat_hle_calls - f.softfloat_hle_calls,
+            s.flash_hle_calls - f.flash_hle_calls,
+            (s.oracle_ticks - s.oracle_ticks.min(ready_ticks)) as f64 / wall / 1e6
+        );
+    }
     if env::var_os("CF_DIGEST").is_some() {
         let sh = shared.borrow();
         let pcm: Vec<u8> = sh.pcm[pcm_base..]
