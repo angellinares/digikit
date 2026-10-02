@@ -425,3 +425,46 @@ pub struct RunMinorResult {
 fn advance(addr: u32, off: i64, count: usize) -> u32 {
     ((addr as i64 + off * count as i64) & 0xFFFF_FFFF) as u32
 }
+
+impl Ssi0Dma {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.u64(self.request_hz);
+        w.u64(self.ips);
+        w.u64(self.now);
+        w.opt_u64(self.q);
+        for e in &self.enabled {
+            w.bool(*e);
+        }
+        w.bool(self.int50_asserted);
+        w.bool(self.int50_delivered);
+        w.bool(self.force_asserted);
+        w.bool(self.force_delivered);
+        w.u64(self.requests);
+        w.u64(self.major_loops_rx);
+        w.u64(self.major_loops_tx);
+        w.u64(self.tx_bytes);
+        w.u64(self.rejected_requests);
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        let hz = r.u64()?;
+        let ips = r.u64()?;
+        if hz != self.request_hz || ips != self.ips {
+            return Err("snapshot SSI clock differs from the enabled diagnostic".into());
+        }
+        self.now = r.u64()?;
+        self.q = r.opt_u64()?;
+        for e in &mut self.enabled {
+            *e = r.bool()?;
+        }
+        self.int50_asserted = r.bool()?;
+        self.int50_delivered = r.bool()?;
+        self.force_asserted = r.bool()?;
+        self.force_delivered = r.bool()?;
+        self.requests = r.u64()?;
+        self.major_loops_rx = r.u64()?;
+        self.major_loops_tx = r.u64()?;
+        self.tx_bytes = r.u64()?;
+        self.rejected_requests = r.u64()?;
+        Ok(())
+    }
+}

@@ -331,3 +331,17 @@ impl TxChannel {
         true
     }
 }
+
+impl TxChannel {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.u64(self.pending);
+        w.u64(self.bytes);
+        w.u64(self.transfers);
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.pending = r.u64()?;
+        self.bytes = r.u64()?;
+        self.transfers = r.u64()?;
+        Ok(())
+    }
+}

@@ -9,6 +9,14 @@
 //!   per frame, default 666667), DSP_CLOCK_BASE (default 573627620),
 //!   DSP_ATTACH=start|ready (default start: the DSP sees every frame from the
 //!   first one; ready: zero replies and no DSP time until the panel is ready).
+//!   CF_SNAPSHOT=path: if the file exists, restore the ColdFire machine from
+//!   it and `path.dsp` (the SHARC engine's canonical state at the same point,
+//!   so the DSP sees the same boot history) and skip the boot; otherwise boot
+//!   with the DSP attached, save both files at ready (before the QA inputs)
+//!   and continue. The SSI diagnostic (96 kHz) must match the saving run.
+//!   DSP_ATTACH=ready with a snapshot is the old uncoupled mode (no .dsp).
+//!   CF_DIGEST=1 prints the ColdFire state digest, the DSP export sha256 and
+//!   the sha256 of the PCM produced since ready.
 //! Build: SHARC_GEN_DIR=<generated dir> cargo build --release --features sharc
 //!   --example sharc_live
 //! The DSP state is a mid-run continuation, so it does not match the
@@ -18,9 +26,19 @@ mod common;
 
 use elektron_native_boot::{
     Emulator,
-    sharc_peer::{DEFAULT_PERIOD, NativeDsp, SharcPeer, open_dn2_engine},
+    sharc_peer::{DEFAULT_PERIOD, SharcPeer, SharedDsp, open_dn2_engine},
 };
+use sha2::{Digest, Sha256};
 use std::{env, fs, io::Write, time::Instant};
+
+fn sha_hex(b: &[u8]) -> String {
+    Sha256::digest(b)
+        .iter()
+        .map(|x| format!("{x:02x}"))
+        .collect()
+}
+
+const DSP_MAGIC: &[u8; 8] = b"DT2DSP01";
 
 fn wav_f32(pcm: &[f32]) -> Vec<u8> {
     let data = (pcm.len() * 4) as u32;
@@ -56,21 +74,72 @@ fn main() {
     let extra: u64 = args.get(5).map_or(250_000_000, |v| v.parse().unwrap());
     let period: u32 = env::var("DSP_PERIOD").map_or(DEFAULT_PERIOD, |v| v.parse().unwrap());
     let base: u64 = env::var("DSP_CLOCK_BASE").map_or(573_627_620, |v| v.parse().unwrap());
+    // CF_SNAPSHOT=path: coupled snapshot (ColdFire + DSP engine state at
+    // ready). Only DSP_ATTACH=ready gives the old uncoupled mode.
+    let snap_path = common::snapshot_path();
     let attach_at_ready = env::var("DSP_ATTACH").as_deref() == Ok("ready");
+    let dsp_path = snap_path.as_ref().map(|p| {
+        let mut o = p.clone().into_os_string();
+        o.push(".dsp");
+        std::path::PathBuf::from(o)
+    });
+    // A coupled restore replaces the DSP state with the saved one.
+    let restoring = !attach_at_ready
+        && snap_path.as_ref().is_some_and(|p| p.exists())
+        && dsp_path.as_ref().is_some_and(|p| p.exists());
+    let mut dsp_instructions0 = 0u64;
+    let mut base = base;
+    let state = match (&dsp_path, restoring) {
+        (Some(p), true) => {
+            let f = fs::read(p).unwrap();
+            assert_eq!(&f[..8], DSP_MAGIC, "bad .dsp file");
+            // The instruction clock continues from the saved tick.
+            base = u64::from_le_bytes(f[8..16].try_into().unwrap());
+            dsp_instructions0 = u64::from_le_bytes(f[16..24].try_into().unwrap());
+            f[24..].to_vec()
+        }
+        _ => state,
+    };
 
-    let engine = open_dn2_engine(&image, &state, base).expect("DSP engine");
-    let (peer, shared) = SharcPeer::new(NativeDsp(engine), period);
+    let dsp = SharedDsp::new(open_dn2_engine(&image, &state, base).expect("DSP engine"));
+    let (peer, shared) = SharcPeer::new(dsp.clone(), period);
     shared.borrow_mut().attached = !attach_at_ready;
+    shared.borrow_mut().dsp_instructions = dsp_instructions0;
     let mut emu = Emulator::new(&syx, None).unwrap();
     emu.enable_ssi_diagnostic(96_000).unwrap();
-    emu.set_dspi2_peer(peer.boxed());
 
     let mut script = common::Script::from_env();
     let t0 = Instant::now();
+    let mut saved = false;
+    let mut pcm_base = 0usize;
+    if let Some(p) = snap_path.as_deref()
+        && common::restore(&mut emu, p, &mut script).is_some()
+    {
+        shared.borrow_mut().attached = true;
+        assert!(
+            attach_at_ready || restoring,
+            "coupled restore needs {}",
+            dsp_path.as_ref().unwrap().display()
+        );
+    }
+    emu.set_dspi2_peer(peer.boxed());
     let mut next = 0;
     let end = loop {
         let snap = emu.step_chunk(250_000);
         let s = &snap.status;
+        if let Some(p) = &snap_path {
+            if common::save_if_ready(&mut emu, p, &script, s.ready, &mut saved) && !attach_at_ready
+            {
+                let mut f = DSP_MAGIC.to_vec();
+                let tick = base.wrapping_add(dsp.0.borrow().s.icount);
+                f.extend(tick.to_le_bytes());
+                f.extend(shared.borrow().dsp_instructions.to_le_bytes());
+                f.extend(dsp.export());
+                fs::write(dsp_path.as_ref().unwrap(), &f).unwrap();
+                pcm_base = shared.borrow().pcm.len();
+                println!("saved DSP state ({} KB)", f.len() >> 10);
+            }
+        }
         if script.poll(&mut emu, s.icount, s.ready) && attach_at_ready {
             shared.borrow_mut().attached = true;
         }
@@ -95,6 +164,20 @@ fn main() {
         }
     };
     let wall = t0.elapsed().as_secs_f64();
+    if env::var_os("CF_DIGEST").is_some() {
+        let sh = shared.borrow();
+        let pcm: Vec<u8> = sh.pcm[pcm_base..]
+            .iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect();
+        println!("cf_state_digest={}", emu.state_digest().unwrap());
+        println!("dsp_export_sha256={}", sha_hex(&dsp.export()));
+        println!(
+            "pcm_since_ready_sha256={} samples={}",
+            sha_hex(&pcm),
+            pcm.len() / 4
+        );
+    }
     let sh = shared.borrow();
     fs::write(out, wav_f32(&sh.pcm)).unwrap();
     let raw: Vec<u8> = sh.raw.iter().flat_map(|w| w.to_le_bytes()).collect();

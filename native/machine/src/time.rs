@@ -98,6 +98,39 @@ impl Time {
         result
     }
 
+    /// Opt-in machine snapshot of the PIT/DTIM/INTC/SR state and the
+    /// scheduling cache. Channel sets and clock are construction settings.
+    pub fn snap_save(&self, w: &mut periph::snap::Writer) {
+        w.tag("TIME");
+        self.pit.snap_save(w);
+        self.dtim.snap_save(w);
+        self.intc.snap_save(w);
+        self.sr.snap_save(w);
+        w.u64(self.host_writes.len() as u64);
+        for hw in &self.host_writes {
+            w.u32(hw.addr);
+            w.u8(hw.byte);
+        }
+        w.opt_f64(self.service_not_before);
+    }
+
+    pub fn snap_load(&mut self, r: &mut periph::snap::Reader) -> periph::snap::Result<()> {
+        r.tag("TIME")?;
+        self.pit.snap_load(r)?;
+        self.dtim.snap_load(r)?;
+        self.intc.snap_load(r)?;
+        self.sr.snap_load(r)?;
+        let n = r.len(1 << 20)?;
+        self.host_writes.clear();
+        for _ in 0..n {
+            let addr = r.u32()?;
+            let byte = r.u8()?;
+            self.host_writes.push(HostWrite { addr, byte });
+        }
+        self.service_not_before = r.opt_f64()?;
+        Ok(())
+    }
+
     /// True when this seam owns a PIT, DTIM or INTC MMIO address.
     pub fn owns(addr: u32) -> bool {
         PitBank::owns(addr) || DtimBank::owns(addr) || IntcBank::owns(addr)

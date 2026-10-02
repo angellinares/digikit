@@ -214,7 +214,57 @@ pub struct Engine {
     pub trans: Option<std::collections::HashMap<(u32, u32), u64>>,
     /// The PC the last interpreted instruction left (to tell a run's start).
     last_interp_next: Int,
+    /// Opt-in idle-loop skip (option 23): the loop head PC, and the PC range
+    /// every instruction of the loop must lie in (options 24, 25).
+    pub idle_head: Option<u32>,
+    pub idle_lo: u32,
+    pub idle_hi: u32,
+    idle_snap: Option<Box<IdleSnap>>,
+    pub idle_stats: IdleStats,
 }
+
+/// Idle-skip counters (diagnostic).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IdleStats {
+    /// Loop iterations replayed analytically, and the instructions they cover.
+    pub iterations: u64,
+    pub instructions: u64,
+    /// Skips taken, and verified-but-empty / failed fixed-point checks.
+    pub skips: u64,
+    pub empty: u64,
+    pub rejected: u64,
+}
+
+/// The architectural state at the idle loop head (everything an iteration
+/// can change except the instruction count, the clock registers and TCOUNT).
+struct IdleSnap {
+    icount: u64,
+    r: [V; rt::NUREG],
+    bank_alt: [V; 96],
+    masks: [Int; 3],
+    loop_depth: Int,
+    loop_slots: Vec<(V, V)>,
+    pc_stack_pending: Int,
+    pc_stack_requested: Int,
+    special: [rt::Spec; 7],
+    special_present: [bool; 7],
+    pending: Option<rt::Pending>,
+    steps: Int,
+    at_loaded_entry: bool,
+    loops: Vec<rt::Loop>,
+    call_stack: Vec<Int>,
+    pc_stack: Vec<Int>,
+    status_stack: Vec<(V, V, V)>,
+}
+
+/// Register codes the idle skip treats analytically.
+const R_EMUCLK: usize = 105;
+const R_EMUCLK2: usize = 106;
+const R_TPERIOD: usize = 110;
+const R_TCOUNT: usize = 111;
+const R_MODE2: usize = 116;
+/// Longest loop (instructions) the idle skip will watch for a return to head.
+const IDLE_MAX_LOOP: u64 = 512;
 
 /// Swap the two bytes of every 16-bit unit: SPI words are MSB first on
 /// the wire and little-endian in DSP memory.
@@ -279,7 +329,12 @@ pub fn exec_insn(s: &mut St, insn: Insn) -> R<()> {
         }
         s.begin();
         match generated::core_g::forms::_execute(s, insn) {
-            Ok(()) => s.commit(),
+            Ok(()) => {
+                if s.probe.is_some() {
+                    s.probe_note();
+                }
+                s.commit()
+            }
             Err(t) => {
                 s.rollback();
                 return Err(t);
@@ -371,6 +426,11 @@ impl Engine {
             trans: None,
             prof: None,
             last_interp_next: -1,
+            idle_head: None,
+            idle_lo: 0,
+            idle_hi: 0x00ff_ffff,
+            idle_snap: None,
+            idle_stats: IdleStats::default(),
         }
     }
 
@@ -413,6 +473,14 @@ impl Engine {
         self.halt = None;
         self.last_trap = None;
         Ok(())
+    }
+
+    /// Canonical state blob with every overlay byte as an explicit range,
+    /// so `import` on a fresh engine over the same image restores it fully.
+    /// The instruction clock is not part of it: carry `instruction_clock_base
+    /// + s.icount` and pass it as option 6 to the importing engine.
+    pub fn export(&self) -> Vec<u8> {
+        canon::export_state(&self.s, true)
     }
 
     /// memory._dm_write(ADDRESS + k*WIDTH, WIDTH, value) per WIDTH-byte
@@ -609,6 +677,26 @@ impl Engine {
                     return -1;
                 }
             }
+            23 => {
+                if value == -1 {
+                    self.idle_head = None;
+                } else if (0..=0x00ff_ffff).contains(&value) {
+                    self.idle_head = Some(value as u32);
+                } else {
+                    return -1;
+                }
+                self.idle_snap = None;
+            }
+            24 | 25 => {
+                if !(0..=0x00ff_ffff).contains(&value) {
+                    return -1;
+                }
+                if key == 24 {
+                    self.idle_lo = value as u32;
+                } else {
+                    self.idle_hi = value as u32;
+                }
+            }
             6 => {
                 if value < 0 {
                     return -1;
@@ -665,6 +753,8 @@ impl Engine {
         }
         let start = self.s.icount;
         let limit = start + n as u64;
+        self.idle_snap = None;
+        self.s.probe = None;
         while self.s.icount < limit {
             if self.stop_pc.is_some_and(|pc| self.s.pc_sw == pc as Int) {
                 self.halt = Some("diagnostic: PC breakpoint".into());
@@ -733,12 +823,19 @@ impl Engine {
                     break;
                 }
             }
+            if let Some(head) = self.idle_head {
+                self.idle_visit(head, limit);
+                if self.s.icount >= limit {
+                    break;
+                }
+            }
             if self.instruction_clock {
                 let tick = self.instruction_clock_base.wrapping_add(self.s.icount);
                 self.s.r[105] = V::c((tick as u32) as Int);
                 self.s.r[106] = V::c((tick >> 32) as Int);
             }
             if !self.instruction_clock
+                && self.idle_head.is_none()
                 && !self.software_interrupts
                 && !self.stop_software_interrupt
                 && self.stop_pc.is_none()
@@ -833,7 +930,177 @@ impl Engine {
                 break;
             }
         }
+        self.idle_snap = None;
+        self.s.probe = None;
         (self.s.icount - start) as u32
+    }
+
+    fn idle_snapshot(&self) -> Box<IdleSnap> {
+        let s = &self.s;
+        Box::new(IdleSnap {
+            icount: s.icount,
+            r: s.r,
+            bank_alt: s.bank_alt,
+            masks: [
+                s.bank_active_mask,
+                s.bank_pending_mask,
+                s.bank_requested_mask,
+            ],
+            loop_depth: s.loop_depth,
+            loop_slots: s.loop_slots.items().to_vec(),
+            pc_stack_pending: s.pc_stack_pending,
+            pc_stack_requested: s.pc_stack_requested,
+            special: s.special,
+            special_present: s.special_present,
+            pending: s.pending,
+            steps: s.steps,
+            at_loaded_entry: s.at_loaded_entry,
+            loops: s.loops.items().to_vec(),
+            call_stack: s.call_stack.items().to_vec(),
+            pc_stack: s.pc_stack.items().to_vec(),
+            status_stack: s.status_stack.items().to_vec(),
+        })
+    }
+
+    /// True when the state now equals SN's, apart from the instruction
+    /// count, `steps` (a bookkeeping counter nothing reads), the EMUCLK
+    /// registers and TCOUNT (which the skip advances) and
+    /// the iteration changed no memory or MMR.
+    fn idle_fixed_point(&self, sn: &IdleSnap) -> bool {
+        let s = &self.s;
+        if s.probe_bad || s.pending.is_some() {
+            return false;
+        }
+        for (code, (a, b)) in s.r.iter().zip(sn.r.iter()).enumerate() {
+            if a != b && !matches!(code, R_EMUCLK | R_EMUCLK2 | R_TCOUNT) {
+                return false;
+            }
+        }
+        if s.bank_alt != sn.bank_alt
+            || [
+                s.bank_active_mask,
+                s.bank_pending_mask,
+                s.bank_requested_mask,
+            ] != sn.masks
+            || s.loop_depth != sn.loop_depth
+            || s.loop_slots.items() != sn.loop_slots
+            || s.pc_stack_pending != sn.pc_stack_pending
+            || s.pc_stack_requested != sn.pc_stack_requested
+            || s.special != sn.special
+            || s.special_present != sn.special_present
+            || s.pending != sn.pending
+            || s.at_loaded_entry != sn.at_loaded_entry
+            || s.loops.items() != sn.loops
+            || s.call_stack.items() != sn.call_stack
+            || s.pc_stack.items() != sn.pc_stack
+            || s.status_stack.items() != sn.status_stack
+        {
+            return false;
+        }
+        // Memory: the first write to each byte recorded its old value.
+        let mut first: std::collections::HashMap<u32, (u8, u8)> = std::collections::HashMap::new();
+        for &(a, byte, flags) in s.probe.as_deref().unwrap_or(&[]) {
+            first.entry(a).or_insert((byte, flags));
+        }
+        first.iter().all(|(&a, &(byte, flags))| {
+            let now = (s.mem.present(a) as u8) | ((s.mem.dirty(a) as u8) << 1);
+            now == flags && (flags & 1 == 0 || s.mem.byte(a) == byte)
+        })
+    }
+
+    /// Ticks of the core timer that can pass without a latch, or None when
+    /// the timer cannot be advanced analytically.
+    fn idle_timer_safe(&self) -> Option<u64> {
+        if !self.s.cfg.core_timer {
+            return Some(u64::MAX);
+        }
+        let mode = self.s.r[R_MODE2];
+        if !mode.is_c() {
+            return None;
+        }
+        if mode.b & 0x20 == 0 {
+            return Some(u64::MAX);
+        }
+        let (count, period) = (self.s.r[R_TCOUNT], self.s.r[R_TPERIOD]);
+        if !count.is_c() || !period.is_c() {
+            return None;
+        }
+        Some(if count.b > 0 {
+            count.b as u64 - 1
+        } else {
+            period.b as u64
+        })
+    }
+
+    /// At an instruction boundary with the idle skip armed: at the loop head
+    /// verify one iteration was a fixed point and replay the rest.
+    fn idle_visit(&mut self, head: u32, limit: u64) {
+        let pc = self.s.pc_sw;
+        if pc < self.idle_lo as Int || pc > self.idle_hi as Int {
+            self.idle_snap = None;
+            self.s.probe = None;
+            return;
+        }
+        if pc != head as Int {
+            if self
+                .idle_snap
+                .as_ref()
+                .is_some_and(|sn| self.s.icount - sn.icount > IDLE_MAX_LOOP)
+            {
+                self.idle_snap = None;
+                self.s.probe = None;
+            }
+            return;
+        }
+        if let Some(sn) = self.idle_snap.take() {
+            if self.idle_fixed_point(&sn) {
+                let k = self.s.icount - sn.icount;
+                let mut m = (limit - self.s.icount) / k;
+                match self.idle_timer_safe() {
+                    Some(safe) => m = m.min(safe / k),
+                    None => m = 0,
+                }
+                if m > 0 {
+                    self.idle_replay(m, k, self.s.steps - sn.steps);
+                } else {
+                    self.idle_stats.empty += 1;
+                }
+            } else {
+                self.idle_stats.rejected += 1;
+            }
+        }
+        self.idle_snap = Some(self.idle_snapshot());
+        self.s.probe = Some(Vec::new());
+        self.s.probe_bad = false;
+    }
+
+    /// Advance M whole iterations of K instructions each (no latch, no
+    /// state change besides the counters).
+    fn idle_replay(&mut self, m: u64, k: u64, steps: Int) {
+        let ticks = m * k;
+        if self.s.cfg.core_timer {
+            let (mode, count, period) =
+                (self.s.r[R_MODE2], self.s.r[R_TCOUNT], self.s.r[R_TPERIOD]);
+            if mode.is_c() && mode.b & 0x20 != 0 {
+                let v = if count.b > 0 {
+                    count.b as u64 - ticks
+                } else {
+                    period.b as u64 - (ticks - 1)
+                };
+                self.s.r[R_TCOUNT] = V::c(v as Int);
+            }
+        }
+        self.s.icount += ticks;
+        self.s.steps += steps * m as Int;
+        if self.instruction_clock {
+            // The last replayed instruction set the clock at its own start.
+            let tick = self.instruction_clock_base.wrapping_add(self.s.icount - 1);
+            self.s.r[R_EMUCLK] = V::c((tick as u32) as Int);
+            self.s.r[R_EMUCLK2] = V::c((tick >> 32) as Int);
+        }
+        self.idle_stats.skips += 1;
+        self.idle_stats.iterations += m;
+        self.idle_stats.instructions += ticks;
     }
 }
 
@@ -1028,7 +1295,8 @@ pub unsafe extern "C" fn sharc_native_exec_insn(
 }
 
 /// Counters: [instructions, block entries, block instructions, single
-/// steps, traps, blocks in the image, special-slot presence bits].
+/// steps, traps, blocks in the image, special-slot presence bits, idle-skipped
+/// instructions].
 /// Returns how many were written.
 ///
 /// # Safety
@@ -1049,6 +1317,7 @@ pub unsafe extern "C" fn sharc_native_stats(
         e.stats.traps,
         e.dispatch.count as u64,
         (0..7).map(|i| (e.s.special_present[i] as u64) << i).sum(),
+        e.idle_stats.instructions,
     ];
     let n = v.len().min(out_cap);
     // SAFETY: OUT has OUT_CAP >= n u64s.

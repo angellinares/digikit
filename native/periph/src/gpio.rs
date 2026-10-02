@@ -71,3 +71,15 @@ impl SdGate {
         (addr == PPDSDR_C && size == 1).then(|| self.regs.read(addr, size))
     }
 }
+
+impl SdGate {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        self.regs.snap_save(w);
+        w.bool(self.driven);
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.regs.snap_load(r)?;
+        self.driven = r.bool()?;
+        Ok(())
+    }
+}

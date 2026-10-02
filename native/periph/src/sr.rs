@@ -83,3 +83,13 @@ impl SrTracker {
         self.current = sr;
     }
 }
+
+impl SrTracker {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.u16(self.current);
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.current = r.u16()?;
+        Ok(())
+    }
+}

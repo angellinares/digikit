@@ -251,6 +251,13 @@ OPT_STOP_PC = 8
 OPT_SOFTWARE_INTERRUPTS = 9
 OPT_CORE_TIMER = 21
 OPT_PERIPHERAL_MODEL = 22
+# Idle-loop skip (native only): loop head PC (-1 off) and the inclusive PC
+# range every loop instruction must lie in. Exact; see findings 07.
+OPT_IDLE_HEAD = 23
+OPT_IDLE_LO = 24
+OPT_IDLE_HI = 25
+DN2_IDLE_HEAD = 0xB88AAB
+DN2_IDLE_RANGE = (0xB88A49, 0xB88ABB)
 
 
 # How to rebuild DEFAULT_LIB (native-opt's inputs, all under out/native/opt).
@@ -378,6 +385,7 @@ class NativeCore(sd.NativeEngine):
             "traps",
             "blocks",
             "special_present",
+            "idle_instructions",
         )
         return {names[i]: int(arr[i]) for i in range(min(n, len(names)))}
 

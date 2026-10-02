@@ -700,6 +700,11 @@ pub struct St {
     pub bank_pending_mask: Int,
     pub bank_requested_mask: Int,
     pub timer_written: bool,
+    /// Idle-skip probe: the overlay bytes (address, old byte, old
+    /// present/dirty flags) the probed iteration wrote, oldest first.
+    pub probe: Option<Vec<(u32, u8, u8)>>,
+    /// The probed iteration did something a replay cannot reproduce.
+    pub probe_bad: bool,
     pub loop_depth: Int,
     pub loop_slots: Stk<(V, V), 6>,
     pub pc_stack_pending: Int,
@@ -780,6 +785,8 @@ impl St {
             bank_pending_mask: -1,
             bank_requested_mask: -1,
             timer_written: false,
+            probe: None,
+            probe_bad: false,
             loop_depth: 0,
             loop_slots: Stk {
                 a: [(V::UNK, V::UNK); 6],
@@ -871,6 +878,27 @@ impl St {
             .items()
             .iter()
             .all(|l| ends.binary_search(&l.end_sw).is_ok());
+    }
+
+    /// Idle-skip probe: note the finishing instruction's memory writes (an
+    /// MMR write or a long log makes the iteration unreplayable).
+    pub fn probe_note(&mut self) {
+        let Some(p) = &mut self.probe else { return };
+        for u in &self.undo[..self.un] {
+            match *u {
+                Undo::Mem(a, byte, flags) => p.push((a, byte, flags)),
+                Undo::MemWord(a, w, old) => {
+                    for k in 0..w as u32 {
+                        p.push((a.wrapping_add(k), (old >> (8 * k)) as u8, 3));
+                    }
+                }
+                Undo::Mmr(..) => self.probe_bad = true,
+                _ => {}
+            }
+        }
+        if p.len() > 4096 {
+            self.probe_bad = true;
+        }
     }
 
     /// Start an instruction: nothing to undo yet.

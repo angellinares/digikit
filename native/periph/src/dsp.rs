@@ -80,3 +80,17 @@ impl Fifo {
         }
     }
 }
+
+impl Fifo {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.u64(self.polls);
+        w.u64(self.words);
+        w.u64(self.bursts);
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.polls = r.u64()?;
+        self.words = r.u64()?;
+        self.bursts = r.u64()?;
+        Ok(())
+    }
+}

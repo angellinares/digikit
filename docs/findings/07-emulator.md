@@ -4918,3 +4918,66 @@ audio is bit-identical between two runs and matches the zero-reply replay
   about 335k (50% of a 1 GHz period; assumed clock). Overall idle share 80%.
 - The DSP state is a mid-run continuation attached from the first ColdFire
   frame (435M), not from the DSP's own boot **[O]**.
+
+### ColdFire ready snapshot (native)
+
+**[V]** `Emulator::save_state` / `load_state` (`native/boot/src/runtime.rs`,
+format `DT2SNP01`) serialize the mutable ColdFire machine at a `step_chunk`
+boundary: CPU, board RAM (zero 4 KiB blocks elided, 62 MB for DN2 at ready),
+DMA/DSPI2/SSI link, eSDHC and card overlay, PIT/DTIM/INTC, SD gate, input
+queue, frame trackers and readiness counters. Construction facts (firmware
+signatures, panel profile, card backing, peers) come from building the same
+`Emulator` again; the load needs a fresh emulator for the same firmware with
+the same SSI diagnostic enabled. Telemetry marks, bus trace vectors and the
+DSPI capture recorder are not state.
+- Determinism, DN2 1.11, SSI 96 kHz, ready at 851,236,347 + 20M: boot-straight
+  (no save), boot-and-save-then-continue, and restore-in-a-fresh-process give
+  the same state digest (SHA-256 of the serialized state) and the same
+  DSPI2 capture hash; 33 s boot vs 1.9 s restore plus run.
+- `CF_SNAPSHOT=path` in `examples/dspi2_capture.rs` restores the file if it
+  exists, else boots and saves at ready, before the QA inputs.
+- Coupled snapshot **[V]** (`examples/sharc_live.rs`): the DSP is attached from
+  the first frame, and at ready the ColdFire state goes to `path` and the
+  SHARC engine's canonical state (`Engine::export`, memory as explicit ranges,
+  6.5 MB) to `path.dsp`, with the instruction-clock tick and the DSP
+  instruction counter. A restore imports it, continues the clock from the
+  saved tick, and attaches at once, so the DSP has seen the boot-time
+  command-1 frames. (The canonical export without ranges drops memory; a
+  restore from it halts at pc 0. `DSP_ATTACH=ready` keeps the old uncoupled
+  mode.) Determinism, DN2 1.11, ready+50M: boot-and-save and restore in a fresh
+  process give the same ColdFire state digest, the same SHA-256 of the DSP
+  export and the same SHA-256 of the PCM since ready (`CF_DIGEST=1`).
+- `sharc_live` from the coupled snapshot (NOTE_EVENTS=trig, ready+250M, idle
+  skip on): 162 s wall, 85.6x slower than real time on the 1.90 s of audio
+  after ready (the straight run from boot took 732 s without the skip). The
+  PCM words after ready are identical to the straight coupled run, word for
+  word (181,952 words). The earlier uncoupled attach at ready gave different
+  samples **[C]**.
+
+**[D]** Idle-loop skip (native engine options 23 head PC / 24 and 25 inclusive
+PC range, -1 turns off; `SharcPeer` enables it for DN2 with head `0xb88aab`,
+range `0xb88a49..0xb88abb`, `DSP_IDLE_SKIP=0` disables). Exact by
+construction, per `step()` call: at the head the engine snapshots registers,
+banks, loop/call/PC/status stacks, specials and pending state, runs one
+iteration through the normal interpreter, and returns to the head. If the
+state is unchanged (apart from the instruction count, EMUCLK, TCOUNT and
+the `steps` counter, which is advanced by its own per-iteration delta), no
+MMR was written, and every memory byte written has its old value back, the
+iteration is a fixed point, so M whole iterations are replayed by adding
+`icount`, EMUCLK and `steps`. M is limited by the step budget and by the
+core timer: only ticks before the next TCOUNT==0 are skipped, so the latch
+and interrupt entry happen at the same instruction as before. Any host event
+(SPI2, SPORT, pokes) lands between `step()` calls, so each call re-verifies.
+Not covered: side-effecting MMR *reads* in the loop (the PC range plus the
+absence of EMUCLK/TCOUNT use in `0xb88a49..0xb88abb` stands in for that
+check). The Python Runner keeps stepping every instruction: this is a host
+scheduling change with identical results, and the native and Python engines
+are already compared on canonical state.
+- Note capture replay (frames 4600..6400, 1.2G DSP instructions): export_state
+  hashes at frames 4700, 5000, 5399, 5400, 5900, 6399, 6400 and the PCM hash are
+  identical with and without the skip. 599M of 1,201M instructions (50%, the
+  note section is busy) were replayed. Frames 5400..6400: 101 s -> 56.7 s.
+- Unit test `idle_skip_matches_plain_stepping_across_timer_events` compares
+  all registers, `steps`, icount and EMUCLK after odd step sizes across timer
+  periods 0, 1, 2, 7, 100 and 1000.
+

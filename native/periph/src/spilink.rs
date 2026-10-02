@@ -329,4 +329,65 @@ impl DmaLink {
     }
 }
 
+impl DmaLink {
+    /// Mutable state of the register files, eDMA TX35, DSPI2 link, DSP FIFO,
+    /// forced-MMIO table and the optional SSI lane. The peer is host-owned
+    /// and is not saved; the loader must have enabled the SSI diagnostic
+    /// exactly as the saving run did.
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.tag("DMAL");
+        for regs in [
+            &self.edma_regs,
+            &self.dspi2_regs,
+            &self.dspi1_regs,
+            &self.dsp_regs,
+        ] {
+            regs.snap_save(w);
+        }
+        self.tx35.snap_save(w);
+        self.dspi2.snap_save(w);
+        self.dsp.snap_save(w);
+        let mut forced: Vec<_> = self.forced.iter().collect();
+        forced.sort();
+        w.u64(forced.len() as u64);
+        for (k, v) in forced {
+            w.u32(*k);
+            w.u32(*v);
+        }
+        w.bool(self.ssi.is_some());
+        if let Some(ssi) = &self.ssi {
+            ssi.snap_save(w);
+        }
+    }
+
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        r.tag("DMAL")?;
+        for regs in [
+            &mut self.edma_regs,
+            &mut self.dspi2_regs,
+            &mut self.dspi1_regs,
+            &mut self.dsp_regs,
+        ] {
+            regs.snap_load(r)?;
+        }
+        self.tx35.snap_load(r)?;
+        self.dspi2.snap_load(r)?;
+        self.dsp.snap_load(r)?;
+        let n = r.len(1 << 20)?;
+        self.forced.clear();
+        for _ in 0..n {
+            let k = r.u32()?;
+            let v = r.u32()?;
+            self.forced.insert(k, v);
+        }
+        let saved_ssi = r.bool()?;
+        match self.ssi.as_mut() {
+            Some(ssi) if saved_ssi => ssi.snap_load(r)?,
+            None if !saved_ssi => {}
+            _ => return Err("snapshot SSI diagnostic presence differs".into()),
+        }
+        Ok(())
+    }
+}
+
 const STATUS_OFFSET: usize = (dsp::STATUS - dsp::BASE) as usize;

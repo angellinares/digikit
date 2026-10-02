@@ -399,3 +399,39 @@ impl DtimBank {
     pub const FRR_BIT: u16 = FRR;
     pub const DMAEN_BIT: u8 = DMAEN;
 }
+
+impl DtimBank {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.bool(self.held);
+        w.u64(self.stale.len() as u64);
+        for s in &self.stale {
+            w.u64(*s as u64);
+        }
+        for (regs, ch) in self.regs.iter().zip(&self.ch) {
+            regs.snap_save(w);
+            w.opt_f64(ch.next);
+            w.bool(ch.pending);
+            w.u64(ch.missed);
+            w.u64(ch.cleared);
+            w.u64(ch.fired);
+            w.u64(ch.transitions);
+        }
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.held = r.bool()?;
+        let n = r.len(1 << 16)?;
+        self.stale = (0..n)
+            .map(|_| r.u64().map(|v| v as usize))
+            .collect::<Result<_, _>>()?;
+        for (regs, ch) in self.regs.iter_mut().zip(&mut self.ch) {
+            regs.snap_load(r)?;
+            ch.next = r.opt_f64()?;
+            ch.pending = r.bool()?;
+            ch.missed = r.u64()?;
+            ch.cleared = r.u64()?;
+            ch.fired = r.u64()?;
+            ch.transitions = r.u64()?;
+        }
+        Ok(())
+    }
+}

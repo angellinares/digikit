@@ -210,6 +210,47 @@ impl Card {
         self.overlay_bytes
     }
 
+    /// Opt-in machine snapshot: identity state and the sparse write overlay.
+    /// The backing media is rebuilt by the owner.
+    pub fn snap_save(&self, w: &mut periph::snap::Writer) {
+        w.u32(self.blocks);
+        w.u16(self.rca);
+        w.bool(self.selected);
+        w.u64(self.overlay.len() as u64);
+        for (sector, page) in &self.overlay {
+            w.u64(*sector);
+            w.raw(&page.data);
+            for word in &page.written {
+                w.u64(*word);
+            }
+        }
+    }
+
+    pub fn snap_load(&mut self, r: &mut periph::snap::Reader) -> periph::snap::Result<()> {
+        if r.u32()? != self.blocks {
+            return Err("snapshot card capacity differs".into());
+        }
+        self.rca = r.u16()?;
+        self.selected = r.bool()?;
+        let n = r.len(self.blocks as usize)?;
+        let mut overlay = BTreeMap::<u64, Box<OverlaySector>>::new();
+        let mut bytes = 0usize;
+        for _ in 0..n {
+            let sector = r.u64()?;
+            let mut page = Box::new(OverlaySector::new());
+            page.data.copy_from_slice(r.raw(SECTOR_SIZE)?);
+            for word in &mut page.written {
+                *word = r.u64()?;
+            }
+            page.count = page.written.iter().map(|w| w.count_ones() as usize).sum();
+            bytes += page.count;
+            overlay.insert(sector, page);
+        }
+        self.overlay = overlay;
+        self.overlay_bytes = bytes;
+        Ok(())
+    }
+
     /// Restore host card identity and sparse writes without modifying media.
     /// Capacity is checked before touching the current card. In particular a
     /// written zero byte must mask a nonzero backing byte after restoration.

@@ -19,6 +19,8 @@ use periph::dspi::Peer;
 
 /// DN2 RTOS idle loop, short-word PCs (inclusive start, exclusive end).
 pub const DN2_IDLE_RANGE: (u32, u32) = (0xb8_8a49, 0xb8_8abb);
+/// Head of the idle task's spin loop (a linked call to `0xb88a49`).
+pub const DN2_IDLE_HEAD: u32 = 0xb8_8aab;
 /// 1 GHz DSP clock / 1.5 kHz frame rate.
 pub const DEFAULT_PERIOD: u32 = 666_667;
 const CHUNK: u32 = 1024;
@@ -108,7 +110,13 @@ impl<E: DspEngine> SharcPeer<E> {
         let mut done = 0u32;
         let mut busy = None;
         while done < self.period {
-            let n = CHUNK.min(self.period - done);
+            // Once idle is reached the chunking only costs time (the idle
+            // skip is per step call); results do not depend on step sizes.
+            let n = if busy.is_some() {
+                self.period - done
+            } else {
+                CHUNK.min(self.period - done)
+            };
             let ran = self.engine.step(n);
             done += ran;
             if busy.is_none() && (self.idle.0..self.idle.1).contains(&self.engine.pc()) {
@@ -241,6 +249,45 @@ impl DspEngine for NativeDsp {
     }
 }
 
+/// A native engine that the host keeps a handle to, so it can export the
+/// canonical state (coupled snapshots) while the peer owns the engine.
+#[derive(Clone)]
+pub struct SharedDsp(pub Rc<RefCell<sharc_native::Engine>>);
+
+impl SharedDsp {
+    pub fn new(e: sharc_native::Engine) -> Self {
+        Self(Rc::new(RefCell::new(e)))
+    }
+    /// Canonical state blob of the engine right now.
+    pub fn export(&self) -> Vec<u8> {
+        self.0.borrow().export()
+    }
+}
+
+impl DspEngine for SharedDsp {
+    fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, String> {
+        self.0
+            .borrow_mut()
+            .spi2_exchange(frame)
+            .map_err(|t| format!("spi2_exchange trap {}", sharc_native::trap_name(t)))
+    }
+    fn step(&mut self, n: u32) -> u32 {
+        self.0.borrow_mut().step(n)
+    }
+    fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
+        self.0
+            .borrow_mut()
+            .sport_block(None)
+            .map_err(|t| format!("sport_block trap {}", sharc_native::trap_name(t)))
+    }
+    fn pc(&self) -> u32 {
+        self.0.borrow().s.pc_sw as u32
+    }
+    fn halt_reason(&self) -> Option<String> {
+        self.0.borrow().halt.clone()
+    }
+}
+
 /// Build the DN2 continuation engine from a packed image blob
 /// (`tools/sharc_pack_image.py`) and a canonical state blob, with the option
 /// set the audio runs use. `clock_base` seeds the diagnostic instruction
@@ -256,7 +303,7 @@ pub fn open_dn2_engine(
     // 4 runtime decode, 5 instruction clock, 6 clock base, 9 software IRQs,
     // 10 explicit memory model off, 11 approx recips, 12 assume NW32,
     // 21 core timer, 22 peripheral model (19/20 come from the state).
-    for (k, v) in [
+    let mut options = vec![
         (4, 1),
         (5, 1),
         (6, clock_base as i64),
@@ -266,7 +313,17 @@ pub fn open_dn2_engine(
         (12, 1),
         (21, 1),
         (22, 1),
-    ] {
+    ];
+    // 23-25 idle-loop skip (exact: see docs/findings/07-emulator.md);
+    // DSP_IDLE_SKIP=0 turns it off.
+    if std::env::var("DSP_IDLE_SKIP").as_deref() != Ok("0") {
+        options.extend([
+            (23, DN2_IDLE_HEAD as i64),
+            (24, DN2_IDLE_RANGE.0 as i64),
+            (25, DN2_IDLE_RANGE.1 as i64),
+        ]);
+    }
+    for (k, v) in options {
         if e.set_option(k, v) != 0 {
             return Err(format!("set_option {k} rejected"));
         }

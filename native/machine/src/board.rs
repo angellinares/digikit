@@ -309,6 +309,101 @@ impl Board {
         }
     }
 
+    /// Opt-in machine snapshot: RAM pages (zero 4 KiB blocks elided), DMA/DSPI/
+    /// SSI link, eSDHC and card, timers, SD gate and counters. Restore into a
+    /// board built by the same construction code (same pages mapped by the
+    /// loader, same optional lanes enabled); host-owned peers are untouched.
+    /// Fails if completion events or DMA ranges are still undrained.
+    pub fn snap_save(&self, w: &mut periph::snap::Writer) -> Result<(), String> {
+        if !self.events.is_empty() || !self.dma_written.is_empty() {
+            return Err("board has undrained completion events or DMA ranges".into());
+        }
+        const BLOCK: usize = 4096;
+        w.tag("BORD");
+        let mapped: Vec<usize> = (0..PAGE_COUNT)
+            .filter(|&i| self.pages[i].is_some())
+            .collect();
+        w.u64(mapped.len() as u64);
+        for i in mapped {
+            let page = self.pages[i].as_ref().expect("mapped");
+            w.u32(i as u32);
+            for block in page.chunks(BLOCK) {
+                let zero = block.iter().all(|&b| b == 0);
+                w.bool(!zero);
+                if !zero {
+                    w.raw(block);
+                }
+            }
+        }
+        self.dma.snap_save(w);
+        w.tag("ESDH");
+        self.esdhc.snap_save(w);
+        self.esdhc_card().snap_save(w);
+        w.bool(self.armed_dma59);
+        w.u64(self.esdhc_dma_bytes);
+        w.u8(self.oracle_fault_pages);
+        w.bool(self.time.is_some());
+        if let Some(time) = &self.time {
+            time.snap_save(w);
+        }
+        w.bool(self.sd_gate.is_some());
+        if let Some(gate) = &self.sd_gate {
+            gate.snap_save(w);
+        }
+        w.bytes(&self.uart_tx);
+        Ok(())
+    }
+
+    pub fn snap_load(&mut self, r: &mut periph::snap::Reader) -> Result<(), String> {
+        const BLOCK: usize = 4096;
+        r.tag("BORD")?;
+        let n = r.len(PAGE_COUNT)?;
+        let mut saved = vec![false; PAGE_COUNT];
+        for _ in 0..n {
+            let i = r.u32()? as usize;
+            if i >= PAGE_COUNT {
+                return Err("snapshot page index out of range".into());
+            }
+            saved[i] = true;
+            let page = self.pages[i].get_or_insert_with(|| vec![0; PAGE_SIZE].into_boxed_slice());
+            for block in page.chunks_mut(BLOCK) {
+                if r.bool()? {
+                    block.copy_from_slice(r.raw(BLOCK)?);
+                } else {
+                    block.fill(0);
+                }
+            }
+        }
+        if (0..PAGE_COUNT).any(|i| self.pages[i].is_some() && !saved[i]) {
+            return Err("board maps a page the snapshot does not hold".into());
+        }
+        self.events.clear();
+        self.dma_written.clear();
+        self.dma.snap_load(r)?;
+        r.tag("ESDH")?;
+        self.esdhc.snap_load(r)?;
+        self.esdhc.card_mut().snap_load(r)?;
+        self.armed_dma59 = r.bool()?;
+        self.esdhc_dma_bytes = r.u64()?;
+        self.oracle_fault_pages = r.u8()?;
+        match (r.bool()?, self.time.as_mut()) {
+            (true, Some(time)) => time.snap_load(r)?,
+            (false, None) => {}
+            _ => return Err("snapshot timer facade presence differs".into()),
+        }
+        match (r.bool()?, self.sd_gate.as_mut()) {
+            (true, Some(gate)) => gate.snap_load(r)?,
+            (false, None) => {}
+            _ => return Err("snapshot SD gate presence differs".into()),
+        }
+        self.uart_tx = r.bytes()?.to_vec();
+        Ok(())
+    }
+
+    fn esdhc_card(&self) -> &Card {
+        self.esdhc.card_ref()
+    }
+
     /// Enable the board's port-D4-to-port-C3 SD continuity gate. The caller
     /// supplies the hook state separately from checkpoint GPIO bytes, as the
     /// Python oracle does. GPIO itself remains backed by sparse RAM.
@@ -1549,6 +1644,58 @@ mod tests {
         assert_eq!(b.read8(PPDSDR_C).unwrap(), 0xad);
         b.write8(periph::gpio::PCLRR_D, 0xef).unwrap();
         assert_eq!(b.read8(PPDSDR_C).unwrap(), 0xa5);
+    }
+
+    fn snapshot_of(b: &Board) -> Vec<u8> {
+        let mut w = periph::snap::Writer::new();
+        b.snap_save(&mut w).unwrap();
+        w.buf
+    }
+
+    #[test]
+    fn snapshot_round_trips_ram_gate_timers_and_ssi() {
+        let build = || {
+            let mut b = board(CompletionPolicy::Oracle);
+            b.enable_sd_gate(true).unwrap();
+            b.attach_time(Time::with_dtims(
+                crate::time::TimerPolicy::Oracle,
+                vec![3, 2, 0],
+                vec![3, 1],
+                132_000_000.0,
+            ));
+            b.enable_ssi_diagnostic(96_000, 132_000_000);
+            b
+        };
+        let mut a = build();
+        a.map_ram_page(0x4000_0000).unwrap();
+        a.map_ram_page(0x4010_0000).unwrap();
+        a.write32(0x4000_1234, 0xdead_beef).unwrap();
+        a.write8(0x4010_ffff, 0x5a).unwrap();
+        a.write8(PPDSDR_C, 0x40).unwrap();
+        a.dma.dspi2.frames = 7;
+        a.dma.ssi.as_mut().unwrap().requests = 11;
+        a.time_mut().unwrap().deadline(5);
+        let saved = snapshot_of(&a);
+
+        // The target maps one page the snapshot also holds, plus nothing else.
+        let mut b = build();
+        b.map_ram_page(0x4000_0000).unwrap();
+        b.map_ram_page(0x4010_0000).unwrap();
+        b.write32(0x4000_0000, 1).unwrap(); // must be overwritten by the load
+        b.snap_load(&mut periph::snap::Reader::new(&saved)).unwrap();
+        assert_eq!(b.read32(0x4000_1234).unwrap(), 0xdead_beef);
+        assert_eq!(b.read32(0x4000_0000).unwrap(), 0);
+        assert_eq!(b.read8(0x4010_ffff).unwrap(), 0x5a);
+        assert_eq!(b.dma.dspi2.frames, 7);
+        assert_eq!(snapshot_of(&b), saved);
+
+        // A board that maps a page the snapshot lacks is refused.
+        let mut c = build();
+        c.map_ram_page(0x4020_0000).unwrap();
+        assert!(c.snap_load(&mut periph::snap::Reader::new(&saved)).is_err());
+        // So is one built without the SSI lane.
+        let mut d = board(CompletionPolicy::Oracle);
+        assert!(d.snap_load(&mut periph::snap::Reader::new(&saved)).is_err());
     }
 
     #[test]

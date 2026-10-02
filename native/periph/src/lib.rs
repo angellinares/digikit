@@ -24,6 +24,7 @@ pub mod intc;
 pub mod machine;
 pub mod pit;
 pub mod regfile;
+pub mod snap;
 pub mod spilink;
 pub mod sr;
 pub mod ssi;

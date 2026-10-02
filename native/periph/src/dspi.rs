@@ -385,3 +385,32 @@ fn reload(tcd: &mut TcdView) {
         tcd.set_citer(biter);
     }
 }
+
+impl Dspi2Link {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.bool(self.raise_completion);
+        w.bool(self.tx_ready.is_some());
+        w.bytes(self.tx_ready.as_deref().unwrap_or(&[]));
+        w.bool(self.rx_armed);
+        w.u64(self.pending_vector.len() as u64);
+        for v in &self.pending_vector {
+            w.u64(*v as u64);
+        }
+        w.u64(self.frames);
+        w.u64(self.tx_bytes);
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.raise_completion = r.bool()?;
+        let some = r.bool()?;
+        let data = r.bytes()?.to_vec();
+        self.tx_ready = some.then_some(data);
+        self.rx_armed = r.bool()?;
+        let n = r.len(1 << 16)?;
+        self.pending_vector = (0..n)
+            .map(|_| r.u64().map(|v| v as usize))
+            .collect::<Result<_, _>>()?;
+        self.frames = r.u64()?;
+        self.tx_bytes = r.u64()?;
+        Ok(())
+    }
+}

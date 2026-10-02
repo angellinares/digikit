@@ -1537,6 +1537,422 @@ fn idle_advance_limit(remaining: u32, passes: u64, now: u64, deadline: Option<u6
     u64::from(remaining).min(before_yield).min(before_timer) as u32
 }
 
+/// Opt-in machine snapshot ("DT2SNP01"). It holds the mutable run state at a
+/// `step_chunk` boundary: CPU, board (RAM, DMA/DSPI/SSI link, eSDHC and card,
+/// timers), input queue, frame trackers and the counters that gate
+/// readiness. Construction-time facts (firmware signatures, panel profile,
+/// peer, card backing) come from building the same `Emulator` again, so a
+/// snapshot only restores into a fresh emulator for the same firmware with
+/// the same optional lanes enabled (SSI diagnostic), before any execution.
+/// Telemetry marks, bus trace vectors and the DSPI capture recorder are not
+/// state and start empty after a restore.
+const SNAPSHOT_MAGIC: &[u8; 8] = b"DT2SNP01";
+
+fn snap_frame(w: &mut periph::snap::Writer, f: &Frame) {
+    w.u32(f.owner_tcb);
+    w.u32(f.ptr);
+    w.u64(f.icount);
+    w.bytes(f.hash.as_bytes());
+    w.u64(f.lit_bytes as u64);
+    w.bytes(&f.raw);
+}
+
+fn load_frame(r: &mut periph::snap::Reader) -> Result<Frame, String> {
+    Ok(Frame {
+        owner_tcb: r.u32()?,
+        ptr: r.u32()?,
+        icount: r.u64()?,
+        hash: String::from_utf8(r.bytes()?.to_vec()).map_err(|_| "snapshot frame hash")?,
+        lit_bytes: r.u64()? as usize,
+        raw: r.bytes()?.to_vec(),
+    })
+}
+
+fn snap_opt3(w: &mut periph::snap::Writer, v: Option<(u32, u32, u32)>) {
+    w.bool(v.is_some());
+    let (a, b, c) = v.unwrap_or((0, 0, 0));
+    w.u32(a);
+    w.u32(b);
+    w.u32(c);
+}
+
+fn load_opt3(r: &mut periph::snap::Reader) -> Result<Option<(u32, u32, u32)>, String> {
+    let some = r.bool()?;
+    let v = (r.u32()?, r.u32()?, r.u32()?);
+    Ok(some.then_some(v))
+}
+
+fn snap_opt_bytes(w: &mut periph::snap::Writer, v: &Option<Vec<u8>>) {
+    w.bool(v.is_some());
+    w.bytes(v.as_deref().unwrap_or(&[]));
+}
+
+fn load_opt_bytes(r: &mut periph::snap::Reader) -> Result<Option<Vec<u8>>, String> {
+    let some = r.bool()?;
+    let v = r.bytes()?.to_vec();
+    Ok(some.then_some(v))
+}
+
+impl Emulator {
+    /// Serialize the machine state (see `SNAPSHOT_MAGIC`). Call between
+    /// `step_chunk` calls. Fails if the machine is faulted or holds state
+    /// the format does not carry (FPU, unimplemented-form marker).
+    pub fn save_state(&mut self) -> Result<Vec<u8>, String> {
+        use periph::snap::Writer;
+        if self.error.is_some() {
+            return Err("cannot snapshot a faulted emulator".into());
+        }
+        self.cpu.resolve_nzv();
+        if self.cpu.fpu.is_some() || self.cpu.last_unimplemented.is_some() {
+            return Err("CPU holds state the snapshot does not carry".into());
+        }
+        let mut w = Writer::new();
+        w.raw(SNAPSHOT_MAGIC);
+        w.bytes(digest(&self.main).as_bytes());
+        w.bytes(self.device.as_bytes());
+        w.bytes(self.version.as_bytes());
+        w.tag("CPU_");
+        let c = &self.cpu;
+        for v in c.d.iter().chain(&c.a) {
+            w.u32(*v);
+        }
+        w.u32(c.other_a7);
+        w.u32(c.pc);
+        w.u16(c.sr);
+        w.u32(c.ctrl.vbr);
+        w.u32(c.ctrl.cacr);
+        w.u32(c.ctrl.asid);
+        for v in &c.ctrl.acr {
+            w.u32(*v);
+        }
+        w.u32(c.ctrl.mmubar);
+        w.u32(c.ctrl.rgpiobar);
+        w.u32(c.ctrl.rambar);
+        w.u32(c.emac.macsr);
+        for v in &c.emac.acc {
+            w.u32(*v);
+        }
+        w.u32(c.emac.accext01);
+        w.u32(c.emac.accext23);
+        w.u32(c.emac.mask);
+        w.u8(match c.state {
+            coldfire::RunState::Running => 0,
+            coldfire::RunState::Stopped => 1,
+            coldfire::RunState::Halted => 2,
+        });
+        w.u64(c.icount);
+        w.u8(c.last_exception.unwrap_or(0));
+        w.bool(c.last_exception.is_some());
+        self.bus.board.snap_save(&mut w)?;
+        w.tag("BUS_");
+        w.u32(self.bus.current_pc);
+        w.u64(self.bus.current_icount);
+        w.u64(self.bus.access_dropped);
+        w.u64(self.bus.cmdarg_writes);
+        w.u64(self.bus.xfertyp_writes);
+        w.u64(self.bus.gpio_reads);
+        w.u64(self.bus.gpio_writes);
+        w.u32(self.bus.last_cmdarg);
+        w.u64(self.bus.unknown_touches.len() as u64);
+        for page in self.bus.unknown_touches.keys() {
+            w.u32(*page);
+        }
+        w.tag("EMU_");
+        for v in [
+            self.idle_passes,
+            self.task_create_hits,
+            self.mainloop_hits,
+            self.job_pump_hits,
+            self.intro_done_hits,
+            self.display_start_hits,
+            self.fs_starts,
+            self.fs_completions,
+            self.delivery_dropped,
+            self.completion_events,
+            self.dma_ranges,
+            self.dma_bytes,
+            self.uart_bytes,
+            self.input_irqs,
+            self.interpreted_instructions,
+            self.idle_fast_forwarded_instructions,
+            self.ram_clear_fast_forwarded_instructions,
+            self.flash_hle_calls,
+            self.frame_revision,
+        ] {
+            w.u64(v);
+        }
+        w.u32(self.mainloop_tcb);
+        w.opt_u64(self.fs_last_complete);
+        w.u8(match self.fs_success_result {
+            None => 0,
+            Some(false) => 1,
+            Some(true) => 2,
+        });
+        snap_opt3(&mut w, self.fs_clear_pending);
+        w.bool(self.fs_active);
+        w.bool(self.main_frame_latched);
+        snap_opt_bytes(&mut w, &self.current_frame);
+        w.bool(self.frame_source.is_some());
+        w.bytes(self.frame_source.as_deref().unwrap_or("").as_bytes());
+        w.opt_u64(self.emitted_revision);
+        for v in &self.delivery_counts {
+            w.u64(*v);
+        }
+        w.u64(self.deliveries.len() as u64);
+        for (vector, level) in &self.deliveries {
+            w.u16(*vector);
+            w.u8(*level);
+        }
+        for v in &self.completion_kind_counts {
+            w.u64(*v);
+        }
+        w.raw(&self.held_masks);
+        w.bytes(&self.input_packets.iter().copied().collect::<Vec<_>>());
+        w.bool(self.rx_pending);
+        w.bool(self.input_ready);
+        w.bool(self.input_attempted_in_chunk);
+        let k = &self.softfloat.counts;
+        for v in [
+            k.add_hits,
+            k.mul_hits,
+            k.div_hits,
+            k.add_defers,
+            k.mul_defers,
+            k.div_defers,
+        ] {
+            w.u64(v);
+        }
+        w.tag("FRMS");
+        w.u64(self.frames.pending.len() as u64);
+        for p in &self.frames.pending {
+            w.u32(p.owner_tcb);
+            w.u32(p.return_pc);
+            w.u32(p.expected_a7);
+            snap_frame(&mut w, &p.frame);
+        }
+        w.u64(self.frames.completed.len() as u64);
+        for (owner, queue) in &self.frames.completed {
+            w.u32(*owner);
+            w.u64(queue.len() as u64);
+            for f in queue {
+                snap_frame(&mut w, f);
+            }
+        }
+        w.u64(self.frames.pending_dropped);
+        w.u64(self.frames.completed_dropped);
+        let t = &self.intro_frames;
+        w.opt_u32(t.bitmap);
+        for v in &t.seen {
+            w.u64(*v);
+        }
+        w.u32(t.seen_pixels);
+        snap_opt3(&mut w, t.pending);
+        snap_opt_bytes(&mut w, &t.latest);
+        w.tag("END_");
+        Ok(w.buf)
+    }
+
+    /// Restore a `save_state` blob into this freshly built emulator.
+    pub fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        use periph::snap::Reader;
+        if self.cpu.icount != 0 || self.interpreted_instructions != 0 {
+            return Err("load_state needs an emulator that has not executed".into());
+        }
+        let mut r = Reader::new(data);
+        if r.raw(8)? != SNAPSHOT_MAGIC {
+            return Err("not a DT2SNP01 snapshot".into());
+        }
+        let main_sha = r.bytes()?;
+        let device = r.bytes()?;
+        let version = r.bytes()?;
+        if main_sha != digest(&self.main).as_bytes()
+            || device != self.device.as_bytes()
+            || version != self.version.as_bytes()
+        {
+            return Err("snapshot was taken from different firmware".into());
+        }
+        r.tag("CPU_")?;
+        let c = &mut self.cpu;
+        for v in c.d.iter_mut().chain(c.a.iter_mut()) {
+            *v = r.u32()?;
+        }
+        c.other_a7 = r.u32()?;
+        c.pc = r.u32()?;
+        c.sr = r.u16()?;
+        c.ctrl.vbr = r.u32()?;
+        c.ctrl.cacr = r.u32()?;
+        c.ctrl.asid = r.u32()?;
+        for v in &mut c.ctrl.acr {
+            *v = r.u32()?;
+        }
+        c.ctrl.mmubar = r.u32()?;
+        c.ctrl.rgpiobar = r.u32()?;
+        c.ctrl.rambar = r.u32()?;
+        c.emac.macsr = r.u32()?;
+        for v in &mut c.emac.acc {
+            *v = r.u32()?;
+        }
+        c.emac.accext01 = r.u32()?;
+        c.emac.accext23 = r.u32()?;
+        c.emac.mask = r.u32()?;
+        c.state = match r.u8()? {
+            0 => coldfire::RunState::Running,
+            1 => coldfire::RunState::Stopped,
+            2 => coldfire::RunState::Halted,
+            _ => return Err("snapshot run state".into()),
+        };
+        c.icount = r.u64()?;
+        let exc = r.u8()?;
+        c.last_exception = r.bool()?.then_some(exc);
+        c.last_unimplemented = None;
+        self.bus.board.snap_load(&mut r)?;
+        r.tag("BUS_")?;
+        self.bus.current_pc = r.u32()?;
+        self.bus.current_icount = r.u64()?;
+        self.bus.access_dropped = r.u64()?;
+        self.bus.cmdarg_writes = r.u64()?;
+        self.bus.xfertyp_writes = r.u64()?;
+        self.bus.gpio_reads = r.u64()?;
+        self.bus.gpio_writes = r.u64()?;
+        self.bus.last_cmdarg = r.u32()?;
+        let n = r.len(1 << 16)?;
+        self.bus.unknown_touches.clear();
+        for _ in 0..n {
+            let page = r.u32()?;
+            self.bus.unknown_touches.insert(
+                page,
+                UnknownTouch {
+                    pc: 0,
+                    kind: "snapshot",
+                    addr: page,
+                    size: 0,
+                    value: 0,
+                },
+            );
+        }
+        r.tag("EMU_")?;
+        for slot in [
+            &mut self.idle_passes,
+            &mut self.task_create_hits,
+            &mut self.mainloop_hits,
+            &mut self.job_pump_hits,
+            &mut self.intro_done_hits,
+            &mut self.display_start_hits,
+            &mut self.fs_starts,
+            &mut self.fs_completions,
+            &mut self.delivery_dropped,
+            &mut self.completion_events,
+            &mut self.dma_ranges,
+            &mut self.dma_bytes,
+            &mut self.uart_bytes,
+            &mut self.input_irqs,
+            &mut self.interpreted_instructions,
+            &mut self.idle_fast_forwarded_instructions,
+            &mut self.ram_clear_fast_forwarded_instructions,
+            &mut self.flash_hle_calls,
+            &mut self.frame_revision,
+        ] {
+            *slot = r.u64()?;
+        }
+        self.mainloop_tcb = r.u32()?;
+        self.fs_last_complete = r.opt_u64()?;
+        self.fs_success_result = match r.u8()? {
+            0 => None,
+            1 => Some(false),
+            2 => Some(true),
+            _ => return Err("snapshot fs result".into()),
+        };
+        self.fs_clear_pending = load_opt3(&mut r)?;
+        self.fs_active = r.bool()?;
+        self.main_frame_latched = r.bool()?;
+        self.current_frame = load_opt_bytes(&mut r)?;
+        let has_source = r.bool()?;
+        let source = String::from_utf8(r.bytes()?.to_vec()).map_err(|_| "snapshot frame source")?;
+        self.frame_source = has_source.then_some(source);
+        self.emitted_revision = r.opt_u64()?;
+        for v in &mut self.delivery_counts {
+            *v = r.u64()?;
+        }
+        let n = r.len(1 << 24)?;
+        self.deliveries.clear();
+        for _ in 0..n {
+            let vector = r.u16()?;
+            let level = r.u8()?;
+            self.deliveries.push((vector, level));
+        }
+        for v in &mut self.completion_kind_counts {
+            *v = r.u64()?;
+        }
+        self.held_masks.copy_from_slice(r.raw(16)?);
+        self.input_packets = r.bytes()?.iter().copied().collect();
+        self.rx_pending = r.bool()?;
+        self.input_ready = r.bool()?;
+        self.input_attempted_in_chunk = r.bool()?;
+        let k = &mut self.softfloat.counts;
+        for slot in [
+            &mut k.add_hits,
+            &mut k.mul_hits,
+            &mut k.div_hits,
+            &mut k.add_defers,
+            &mut k.mul_defers,
+            &mut k.div_defers,
+        ] {
+            *slot = r.u64()?;
+        }
+        r.tag("FRMS")?;
+        let n = r.len(1 << 16)?;
+        self.frames.pending.clear();
+        for _ in 0..n {
+            let owner_tcb = r.u32()?;
+            let return_pc = r.u32()?;
+            let expected_a7 = r.u32()?;
+            let frame = load_frame(&mut r)?;
+            self.frames.pending.push_back(PendingFrame {
+                owner_tcb,
+                return_pc,
+                expected_a7,
+                frame,
+            });
+        }
+        let owners = r.len(1 << 16)?;
+        self.frames.completed.clear();
+        for _ in 0..owners {
+            let owner = r.u32()?;
+            let n = r.len(1 << 16)?;
+            let mut queue = VecDeque::new();
+            for _ in 0..n {
+                queue.push_back(load_frame(&mut r)?);
+            }
+            self.frames.completed.insert(owner, queue);
+        }
+        self.frames.pending_dropped = r.u64()?;
+        self.frames.completed_dropped = r.u64()?;
+        let t = &mut self.intro_frames;
+        t.bitmap = r.opt_u32()?;
+        for v in &mut t.seen {
+            *v = r.u64()?;
+        }
+        t.seen_pixels = r.u32()?;
+        t.pending = load_opt3(&mut r)?;
+        t.latest = load_opt_bytes(&mut r)?;
+        r.tag("END_")?;
+        if !r.is_empty() {
+            return Err("snapshot has trailing bytes".into());
+        }
+        #[cfg(feature = "diagnostic-events")]
+        {
+            self.dspi_frames_observed = self.bus.board.dma.dspi2.frames;
+        }
+        Ok(())
+    }
+
+    /// SHA-256 of the serialized machine state: a deterministic digest of
+    /// CPU, RAM, peripherals and counters for determinism checks.
+    pub fn state_digest(&mut self) -> Result<String, String> {
+        Ok(digest(&self.save_state()?))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

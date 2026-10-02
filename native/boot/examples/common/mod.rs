@@ -75,3 +75,52 @@ impl Script {
         became_ready
     }
 }
+
+/// `CF_SNAPSHOT=path`: restore the ColdFire machine from `path` if it exists
+/// (skipping the ~850M-instruction boot), otherwise boot normally and save
+/// the file at the first `ready` chunk boundary, before the QA inputs.
+/// The DSPI2 peer/recorder therefore sees traffic from ready onward in both
+/// modes. Enable any SSI diagnostic before calling `restore`.
+pub fn snapshot_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("CF_SNAPSHOT").map(Into::into)
+}
+
+/// Restore `path` into the fresh `emu` if it exists. On success returns the
+/// ready-point instruction count, with `script` primed as if ready had just
+/// been seen; returns None when the file is absent.
+pub fn restore(emu: &mut Emulator, path: &std::path::Path, script: &mut Script) -> Option<u64> {
+    let bytes = std::fs::read(path).ok()?;
+    let t = std::time::Instant::now();
+    emu.load_state(&bytes)
+        .unwrap_or_else(|e| panic!("restore {}: {e}", path.display()));
+    let s = emu.snapshot().status;
+    assert!(s.ready, "snapshot was not taken at ready");
+    println!(
+        "restored {} ({} MB) at icount={} in {:.1}s",
+        path.display(),
+        bytes.len() >> 20,
+        s.icount,
+        t.elapsed().as_secs_f64()
+    );
+    script.poll(emu, s.icount, true);
+    Some(s.icount)
+}
+
+/// Save at the ready boundary (call after `step_chunk`, before `poll`).
+/// Returns true on the call that wrote the file.
+pub fn save_if_ready(
+    emu: &mut Emulator,
+    path: &std::path::Path,
+    script: &Script,
+    ready: bool,
+    saved: &mut bool,
+) -> bool {
+    if *saved || !ready || script.ready_at.is_some() {
+        return false;
+    }
+    let bytes = emu.save_state().expect("save snapshot");
+    std::fs::write(path, &bytes).expect("write snapshot");
+    println!("saved {} ({} MB)", path.display(), bytes.len() >> 20);
+    *saved = true;
+    true
+}

@@ -283,3 +283,17 @@ impl IntcBank {
         SWIACK
     }
 }
+
+impl IntcBank {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        for c in &self.ctrl {
+            c.snap_save(w);
+        }
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        for c in &mut self.ctrl {
+            c.snap_load(r)?;
+        }
+        Ok(())
+    }
+}

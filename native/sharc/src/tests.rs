@@ -692,3 +692,64 @@ fn sport_block_returns_the_tx_unit_and_raises_the_group_source() {
     assert_eq!(e.s.mmr_get(periph::SEC_CSID), Some(V::c(191)));
     assert_eq!(e.s.mem.read_le(0x2810_0200, 4), 0x0302_0100);
 }
+
+/// `JUMP 0` at PC 0 (Type8a, non-delayed, relative 0): a one-instruction
+/// loop that is a fixed point apart from the clocks.
+#[cfg(sharc_gen)]
+fn spin_engine(skip: bool, period: i64) -> crate::Engine {
+    let mut mem = Mem::new();
+    mem.load(0, &[0x3e, 0x07, 0, 0, 0, 0]);
+    mem.reset();
+    let mut e = crate::Engine::new(mem);
+    e.enable_runtime_decode(direct_short_word);
+    for (k, v) in [(5, 1), (6, 12345), (21, 1)] {
+        assert_eq!(e.set_option(k, v), 0);
+    }
+    e.s.r[116] = V::c(0x20); // MODE2.TIMEN
+    e.s.r[114] = V::c(0); // MODE1
+    e.s.r[122] = V::c(0); // IRPTL
+    e.s.r[123] = V::c(0); // IMASK
+    e.s.r[124] = V::c(0); // IMASKP
+    e.s.r[110] = V::c(period as Int);
+    e.s.r[111] = V::c(period as Int);
+    if skip {
+        assert_eq!(e.set_option(23, 0), 0);
+        assert_eq!(e.set_option(24, 0), 0);
+        assert_eq!(e.set_option(25, 0), 0);
+    }
+    e
+}
+
+#[cfg(sharc_gen)]
+#[test]
+fn idle_skip_matches_plain_stepping_across_timer_events() {
+    for period in [0, 1, 2, 7, 100, 1000] {
+        let mut plain = spin_engine(false, period);
+        let mut fast = spin_engine(true, period);
+        for n in [1, 2, 3, 50, 99, 100, 101, 977, 5000, 12345, 1] {
+            assert_eq!(plain.step(n), n, "{:?}", plain.halt);
+            assert_eq!(fast.step(n), n);
+            assert_eq!(plain.s.icount, fast.s.icount);
+            assert_eq!(plain.s.pc_sw, fast.s.pc_sw);
+            assert_eq!(
+                plain.s.steps, fast.s.steps,
+                "steps period {period} n {n} {:?}",
+                fast.idle_stats
+            );
+            for code in 0..crate::rt::NUREG {
+                assert_eq!(
+                    plain.s.r[code], fast.s.r[code],
+                    "r{code} period {period} n {n}"
+                );
+            }
+        }
+        if period >= 2 {
+            assert!(
+                fast.idle_stats.iterations > 0,
+                "period {period} {:?}",
+                fast.idle_stats
+            );
+        }
+        assert_eq!(plain.idle_stats.iterations, 0);
+    }
+}

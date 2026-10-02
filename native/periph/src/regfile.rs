@@ -104,3 +104,13 @@ impl RegFile {
         &self.bytes
     }
 }
+
+impl RegFile {
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        w.raw(&self.bytes[..]);
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.bytes.copy_from_slice(r.raw(SLOT_SIZE)?);
+        Ok(())
+    }
+}

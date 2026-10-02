@@ -277,6 +277,11 @@ impl<P: CardPort> Esdhc<P> {
         &mut self.card
     }
 
+    /// Shared access to the attached card (snapshot save).
+    pub fn card_ref(&self) -> &P {
+        &self.card
+    }
+
     /// Restore the DATPORT bus-test word retained by Python `Esdhc` v1.
     /// Register pages are loaded separately; this is host-only state.
     pub fn restore_pattern(&mut self, pattern: u32) {
@@ -371,5 +376,31 @@ impl<P: CardPort> Esdhc<P> {
                 self.put(IRQSTAT, irq);
             }
         }
+    }
+}
+
+impl<P> Esdhc<P> {
+    /// Register file, DATPORT pattern and queued host writes; the card is
+    /// saved by its owner.
+    pub fn snap_save(&self, w: &mut crate::snap::Writer) {
+        self.regs.snap_save(w);
+        w.u32(self.pattern);
+        w.u64(self.host_writes.len() as u64);
+        for (addr, bytes) in &self.host_writes {
+            w.u32(*addr);
+            w.raw(bytes);
+        }
+    }
+    pub fn snap_load(&mut self, r: &mut crate::snap::Reader) -> crate::snap::Result<()> {
+        self.regs.snap_load(r)?;
+        self.pattern = r.u32()?;
+        let n = r.len(1 << 20)?;
+        self.host_writes.clear();
+        for _ in 0..n {
+            let addr = r.u32()?;
+            let bytes: [u8; 4] = r.raw(4)?.try_into().unwrap();
+            self.host_writes.push_back((addr, bytes));
+        }
+        Ok(())
     }
 }
