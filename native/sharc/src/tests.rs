@@ -1048,3 +1048,39 @@ fn bank_codes_are_the_selected_register_groups() {
     );
     assert!(bank_codes(0).is_empty());
 }
+
+/// A range that no longer hashes to what it was generated from retires the
+/// block functions entered inside it, and only those: a patched image keeps
+/// running its unchanged code as blocks.
+#[test]
+fn a_changed_code_range_retires_only_its_own_regions() {
+    fn region_a(_s: &mut St) -> u32 {
+        crate::EXIT_NEXT
+    }
+    fn region_b(_s: &mut St) -> u32 {
+        crate::EXIT_BUDGET
+    }
+    let mut e = crate::Engine::new(Mem::new());
+    e.enable_runtime_decode(direct_short_word);
+    // region_a is entered at 0x100 and 0x180 (two blocks of one region),
+    // region_b at 0x200; the changed range covers only 0x100..0x108
+    e.dispatch = crate::Dispatch::new(
+        &[(0x100, region_a as crate::BlockFn), (0x180, region_a), (0x200, region_b)],
+        &[],
+    );
+    e.stale_blocks = e.blocks_in(&[(0x100, 8)]);
+    e.code_known = true;
+    e.code_ok = false;
+    e.code_checked = e.s.mem.code_gen;
+    let a_far = e.dispatch.get_entry(0x180).unwrap();
+    let b = e.dispatch.get_entry(0x200).unwrap();
+    // the region's other entry, outside the range, is retired with it
+    assert!(!e.blocks_code_ok(Some(&a_far)));
+    assert!(e.blocks_code_ok(Some(&b)));
+    // a PC only the fast tier runs (no generated block) is refused on any change
+    assert!(!e.blocks_code_ok(None));
+    // and with every range matching, everything runs
+    e.code_ok = true;
+    assert!(e.blocks_code_ok(Some(&a_far)));
+    assert!(e.blocks_code_ok(None));
+}

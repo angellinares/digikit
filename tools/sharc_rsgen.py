@@ -1271,6 +1271,10 @@ def generate(
         "pub static MODEL_SAFE: &[u32] = &[%s];"
         % ", ".join("%#x" % st for st in sorted(MODEL_SAFE_STARTS & generated)),
         "",
+        "/// Whether blocks call other regions' blocks directly (--chain): the",
+        "/// engine then cannot retire only the regions of a changed range.",
+        "pub static CHAINED: bool = %s;" % ("true" if CHAINING else "false"),
+        "",
         "/// The short-word ranges the blocks were generated from (with the words",
         "/// the decoder looks ahead at) and the SHA-256 of their loaded bytes (an",
         "/// absent word counts as DE AD BE): with runtime decoding the engine runs",
