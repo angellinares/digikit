@@ -4,6 +4,7 @@ body { margin: 0; min-width: 320px; }
 main { min-height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: radial-gradient(circle at 50% 0, #25272b, #101114 64%); color: #d6d8dc; }
 .toolbar { display: flex; flex-shrink: 0; align-items: center; gap: .7rem; padding: .7rem 1rem; border-bottom: 1px solid #36383c; background: #191a1d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .73rem; }
 .file { border: 1px solid #55585d; background: #2b2d31; border-radius: 3px; padding: .42rem .6rem; color: #eee; cursor: pointer; white-space: nowrap; }
+.exec-ranges { display: flex; align-items: center; gap: .4rem; color: #aeb2b8; white-space: nowrap; } .exec-ranges input { width: 15rem; background: #232529; border: 1px solid #55585d; color: #e6e7e8; border-radius: 3px; padding: .43rem; font: inherit; }
 .file input { display: none; } select, button { background: #232529; border: 1px solid #55585d; color: #e6e7e8; border-radius: 3px; padding: .43rem; font: inherit; } button:disabled { color: #777b80; } output { color: #aeb2b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 main > .coupled { flex-shrink: 0; }
 .panel-wrap { display: grid; flex: 1; place-items: center; min-height: 0; padding: clamp(.7rem, 3vw, 2.5rem); overflow: auto; container-type: size; }

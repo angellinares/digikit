@@ -1,6 +1,6 @@
 import { hostMetrics } from './runtime-metrics';
 export interface RuntimeStatus {
-  device: string; version: string; icount: number; pc: number; ready: boolean; phase: string;
+  device: string; version: string; modified?: boolean; icount: number; pc: number; ready: boolean; phase: string;
   error: string | null; frame_revision: number; frame_source: string | null;
   main_ui_reached: boolean; filesystem_verified: boolean | null; input_ready: boolean;
   input_pending: number; input_irqs: number;
@@ -34,6 +34,8 @@ export interface EmulatorRuntime {
   nativeAudio?(): Promise<NativeAudioStatus | undefined>;
   /** Press a key, release it after `hold` guest instructions (emulation time, not wall time). */
   tap?(code: number, hold?: number): Promise<void>;
+  /** Extra executable ranges for the runaway check, e.g. "0x4670c000-0x4670ef48" (browser worker only). */
+  setExecRanges?(text: string): Promise<void>;
   diagnostics(): Promise<RuntimeDiagnostics>;
   load(bytes: Uint8Array, name: string): Promise<RuntimeSnapshot>; restart(): Promise<RuntimeSnapshot>;
   pause(): void; resume(): void; press(code: number): Promise<void>; release(code: number): Promise<void>;
@@ -77,6 +79,7 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
     coupledStats: () => request<CoupledStats>('coupled-stats'),
     coupledAvailable: () => request<boolean>('coupled-capable'),
     tap: (code, hold) => request<void>('tap', { code, hold }),
+    setExecRanges: (text) => request<void>('exec-ranges', { text }),
     async load(bytes, selectedName) { generation += 1; paused = false; source = bytes.slice(); name = selectedName; return request<RuntimeSnapshot>('load', { bytes: bytes.buffer, name: selectedName }); },
     async restart() { if (!source) throw new Error('No firmware selected'); generation += 1; paused = false; return request<RuntimeSnapshot>('load', { bytes: source.slice().buffer, name }); },
     pause() { paused = true; worker.postMessage({ type: 'pause', generation }); },

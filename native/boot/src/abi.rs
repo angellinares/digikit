@@ -56,6 +56,36 @@ unsafe fn load_with_policy(ptr: *const u8, len: usize, policy: ExecutionPolicy) 
     }
 }
 
+/// Declares extra executable ranges for the runaway check, as UTF-8 text
+/// ("0x4670c000-0x4670ef48, ..."; empty clears them). Applies to the loaded
+/// emulator only: call it again after every load or restart.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn digi_exec_ranges(ptr: *const u8, len: usize) -> i32 {
+    let text = if len == 0 {
+        ""
+    } else if ptr.is_null() || len > 4096 {
+        return failure("invalid executable-range text");
+    } else {
+        match std::str::from_utf8(unsafe { slice::from_raw_parts(ptr, len) }) {
+            Ok(text) => text,
+            Err(_) => return failure("executable-range text is not UTF-8"),
+        }
+    };
+    let ranges = match crate::runtime::parse_exec_ranges(text) {
+        Ok(ranges) => ranges,
+        Err(error) => return failure(error),
+    };
+    EMULATOR.with(|slot| match slot.borrow_mut().as_mut() {
+        Some(emulator) => {
+            let declared = ranges.len();
+            emulator.set_exec_ranges(ranges);
+            result(serde_json::json!({"exec_ranges": declared}));
+            0
+        }
+        None => failure("no emulator is loaded"),
+    })
+}
+
 /// Loads the reference-compatible default runtime.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn digi_load(ptr: *const u8, len: usize) -> i32 {

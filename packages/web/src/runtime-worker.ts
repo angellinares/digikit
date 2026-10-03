@@ -19,6 +19,9 @@ let pcmValues = 0;
 let audioStartedAt = 0;
 let lastIcount = 0;
 const pendingRelease: { code: number; at: number }[] = [];
+// Executable ranges the developer declares for the runaway check (text form,
+// "0x4670c000-0x4670ef48, ..."), applied to every emulator this worker loads.
+let execRanges = '';
 // A coupled step runs ~3 DSP frames, so loop steps inside one task (setTimeout
 // would clamp to 4 ms between them) and yield about every 20 ms for input.
 const COUPLED_SLICE_MS = 20;
@@ -57,6 +60,12 @@ function put(bytes: Uint8Array) {
   new Uint8Array(memory(), pointer, bytes.length).set(bytes);
   return pointer;
 }
+/** Hand the declared executable ranges to the loaded emulator (empty text clears them). */
+function applyExecRanges() {
+  if (!wasm?.digi_exec_ranges) { if (execRanges.trim()) throw new Error('this emulator core predates declared executable ranges: rebuild it'); return; }
+  const bytes = new TextEncoder().encode(execRanges); const pointer = put(bytes);
+  try { call('digi_exec_ranges', pointer, bytes.length); } finally { wasm!.digi_dealloc(pointer, bytes.length); }
+}
 function core() {
   corePromise ??= WebAssembly.instantiateStreaming(fetch('/emulator-core.wasm'), {}).then(({ instance }) => { plain = instance.exports as unknown as Abi; wasm ??= plain; return plain; });
   return corePromise;
@@ -90,7 +99,7 @@ async function pump(token: number, epoch: number) {
   setTimeout(() => { void pump(token, epoch); }, 0);
 }
 function reject(data: { id?: string }, error: string) { if (data.id) postMessage({ reply: data.id, error }); }
-type Message = { type: string; id?: string; generation: number; bytes?: ArrayBuffer; image?: ArrayBuffer; dsp?: ArrayBuffer; snapshot?: ArrayBuffer; port?: MessagePort; hold?: number; code?: number; down?: boolean; encoder?: number; detents?: number };
+type Message = { type: string; id?: string; generation: number; bytes?: ArrayBuffer; image?: ArrayBuffer; dsp?: ArrayBuffer; snapshot?: ArrayBuffer; port?: MessagePort; text?: string; hold?: number; code?: number; down?: boolean; encoder?: number; detents?: number };
 async function handle(data: Message) {
   await core();
   if (data.type === 'audio-port') { audioPort = data.port; return; }
@@ -103,6 +112,13 @@ async function handle(data: Message) {
     }
     return;
   }
+  if (data.type === 'exec-ranges') {
+    execRanges = data.text ?? '';
+    // applied now when an emulator is running, and to every later load
+    try { if (wasm) applyExecRanges(); }
+    catch (error) { if (!String(error).includes('no emulator is loaded')) return reject(data, String(error)); }
+    if (data.id) postMessage({ reply: data.id, value: undefined }); return;
+  }
   if (data.type === 'load') {
     if (data.generation < generation) return reject(data, 'stale emulator session');
     generation = data.generation; running = false; runEpoch += 1; stopCore(); wasm = plain;
@@ -112,7 +128,7 @@ async function handle(data: Message) {
     if (pointer === 0 && bytes.length !== 0) return reject(data, 'native allocation failed');
     try {
         new Uint8Array((wasm!.memory as unknown as WebAssembly.Memory).buffer, pointer, bytes.length).set(bytes);
-      metrics.reset(); const snapshot = call('digi_load', pointer, bytes.length); metrics.loaded();
+      metrics.reset(); const snapshot = call('digi_load', pointer, bytes.length); applyExecRanges(); metrics.loaded();
       publish(snapshot, generation); running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0);
       if (data.id) postMessage({ reply: data.id, value: snapshot });
     } finally { wasm!.digi_dealloc(pointer, bytes.length); }
@@ -129,7 +145,7 @@ async function handle(data: Message) {
     try {
       for (const part of parts) pointers.push(put(part));
       metrics.reset();
-      const snapshot = call('digi_load_coupled', ...parts.flatMap((part, i) => [pointers[i], part.length]));
+      const snapshot = call('digi_load_coupled', ...parts.flatMap((part, i) => [pointers[i], part.length])); applyExecRanges();
       metrics.loaded(); coupled = true; pcmValues = 0; audioStartedAt = performance.now();
       publish(snapshot, generation); running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0);
       if (data.id) postMessage({ reply: data.id, value: snapshot });
