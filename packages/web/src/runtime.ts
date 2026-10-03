@@ -13,7 +13,7 @@ export interface RuntimeDiagnostics {
 }
 /** Dev-only inputs of the coupled core: user-supplied, never bundled. */
 export interface CoupledFiles { syx: Uint8Array; image: Uint8Array; dsp: Uint8Array; snapshot?: Uint8Array }
-export interface CoupledStats { frames: number; dsp_instructions: number; halted: string | null; nonzero_replies: number; missing_blocks: number; pcm_values: number }
+export interface CoupledStats { frames: number; dsp_instructions: number; halted: string | null; nonzero_replies: number; missing_blocks: number; pcm_values: number; pcm_produced_seconds: number; production_elapsed_wall_seconds: number; pcm_seconds_per_wall_second: number; dsp_attached: boolean; pcm_port_connected: boolean; host: Record<string, unknown> }
 export interface EmulatorRuntime {
   /** Browser worker only, and only with a core built with the `sharc` feature. */
   loadCoupled?(files: CoupledFiles, audioPort: MessagePort): Promise<RuntimeSnapshot>;

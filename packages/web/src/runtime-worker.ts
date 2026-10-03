@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { hostMetrics } from './runtime-metrics';
+import { hostMetrics, pcmMetrics } from './runtime-metrics';
 const metrics = hostMetrics('wasm_abi');
 
 type Abi = Record<string, CallableFunction>;
@@ -16,6 +16,7 @@ let serial = Promise.resolve();
 let coupled = false;
 let audioPort: MessagePort | undefined;
 let pcmValues = 0;
+let audioStartedAt = 0;
 let lastIcount = 0;
 const pendingRelease: { code: number; at: number }[] = [];
 // A coupled step runs ~3 DSP frames, so loop steps inside one task (setTimeout
@@ -44,6 +45,10 @@ function sendPcm() {
   const block = new Float32Array(memory(), wasm!.digi_pcm_ptr() as number, count).slice();
   pcmValues += count;
   audioPort.postMessage(block, [block.buffer]);
+}
+/** On-demand observational report; no stepping or new device reads. */
+function coupledReport() {
+  return { ...call('digi_sharc_stats'), pcm_values: pcmValues, ...pcmMetrics(pcmValues, performance.now() - audioStartedAt), dsp_attached: coupled, pcm_port_connected: Boolean(audioPort), host: metrics.report() };
 }
 /** Copy a page-supplied buffer into the module; returns its pointer. */
 function put(bytes: Uint8Array) {
@@ -114,7 +119,7 @@ async function handle(data: Message) {
       for (const part of parts) pointers.push(put(part));
       metrics.reset();
       const snapshot = call('digi_load_coupled', ...parts.flatMap((part, i) => [pointers[i], part.length]));
-      metrics.loaded(); coupled = true; pcmValues = 0;
+      metrics.loaded(); coupled = true; pcmValues = 0; audioStartedAt = performance.now();
       publish(snapshot, generation); running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0);
       if (data.id) postMessage({ reply: data.id, value: snapshot });
     } finally { parts.forEach((part, i) => { if (i < pointers.length) wasm!.digi_dealloc(pointers[i], part.length); }); }
@@ -125,9 +130,9 @@ async function handle(data: Message) {
     generation = data.generation; running = false; runEpoch += 1; stopCore(); if (data.id) postMessage({ reply: data.id, value: undefined }); return;
   }
   if (data.generation !== generation) return reject(data, 'stale emulator session');
-  if (data.type === 'coupled-stats') { if (!coupled) return reject(data, 'not a coupled session'); const stats = call('digi_sharc_stats'); if (data.id) postMessage({ reply: data.id, value: { ...stats, pcm_values: pcmValues } }); return; }
+  if (data.type === 'coupled-stats') { if (!coupled) return reject(data, 'not a coupled session'); if (data.id) postMessage({ reply: data.id, value: coupledReport() }); return; }
   if (data.type === 'tap') { call('digi_button', data.code!, 1); pendingRelease.push({ code: data.code!, at: lastIcount + (data.hold ?? 40_000_000) }); if (data.id) postMessage({ reply: data.id, value: undefined }); return; }
-  if (data.type === 'diagnostics') { const report = { ...call('digi_diagnostics'), host: metrics.report() }; if (data.id) postMessage({ reply: data.id, value: report }); return; }
+  if (data.type === 'diagnostics') { const report = { ...call('digi_diagnostics'), host: metrics.report(), audio: coupled ? coupledReport() : undefined }; if (data.id) postMessage({ reply: data.id, value: report }); return; }
   if (data.type === 'pause') { running = false; runEpoch += 1; return; }
   if (data.type === 'resume') { if (!running) { running = true; const epoch = ++runEpoch; setTimeout(() => { void pump(generation, epoch); }, 0); } return; }
   if (data.type === 'button') { call('digi_button', data.code!, data.down ? 1 : 0); if (data.id) postMessage({ reply: data.id, value: undefined }); return; }

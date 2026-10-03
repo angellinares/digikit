@@ -22,8 +22,17 @@ export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRun
     try {
       const stats = await runtime?.coupledStats?.();
       const a = sink?.stats;
-      if (stats && a) setReport(`DSP frames ${stats.frames} (${(stats.frames * 32 / 48000).toFixed(2)} s emulated) · queued ${a.queuedSeconds.toFixed(2)} s · ${a.playing ? 'playing' : 'buffering'} · underruns ${a.underruns}${stats.halted ? ` · DSP HALTED: ${stats.halted}` : ''}`);
+      if (stats && a) setReport(`DSP frames ${stats.frames} · produced ${stats.pcm_produced_seconds.toFixed(2)} s · ${stats.pcm_seconds_per_wall_second.toFixed(2)} audio s/wall s · queued ${a.queuedSeconds.toFixed(2)} s (peak ${a.highWaterSeconds.toFixed(2)}) · ${a.playing ? 'playing' : 'buffering'} · underruns ${a.underruns} (${a.underrunSeconds.toFixed(2)} s)${stats.halted ? ` · DSP HALTED: ${stats.halted}` : ''}`);
     } catch { /* session replaced */ }
+  };
+  const exportHealth = async () => {
+    try {
+      if (!runtime?.coupledStats || !sink) return;
+      const report = { schema_version: 1, core: await runtime.coupledStats(), sink: sink.report() };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'audio-health.json'; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) { props.onError(String(error)); }
   };
   const start = async () => {
     try {
@@ -48,6 +57,7 @@ export default function CoupledAudio(props: { runtime: () => Promise<EmulatorRun
     <label>Buffer s <input type="number" min="0" step="0.5" value={buffer()} style={{ width: '4rem' }} onInput={(e) => { const v = Number(e.currentTarget.value); setBuffer(v); sink?.setBuffer(v); }} /></label>
     <button onClick={() => void start()}>Start coupled audio</button>
     <button disabled={!active()} onClick={() => void runtime?.tap?.(25).catch((e) => props.onError(String(e)))}>Trig 1</button>
+    <button disabled={!active()} onClick={() => void exportHealth()}>Export audio health</button>
     <output>{report()}</output>
   </div>;
 }

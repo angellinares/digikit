@@ -15,12 +15,17 @@ class PcmProcessor extends AudioWorkletProcessor {
     this.underruns = 0;
     this.played = 0;
     this.received = 0;
+    this.highWater = 0;
+    this.silence = 0;
+    this.underrunFrames = 0;
+    this.portAttached = false;
     this.sinceReport = 0;
     const onData = ({ data }) => {
       if (data instanceof Float32Array) {
         this.queue.push(data);
         this.queued += data.length / 2;
         this.received += data.length / 2;
+        this.highWater = Math.max(this.highWater, this.queued);
       } else if (data && data.type === 'config') {
         this.start = Math.max(0, data.startSeconds) * sampleRate;
       } else if (data && data.type === 'flush') {
@@ -29,7 +34,7 @@ class PcmProcessor extends AudioWorkletProcessor {
     };
     this.port.onmessage = ({ data }) => {
       // The emulator worker's PCM port arrives here.
-      if (data && data.port) data.port.onmessage = onData;
+      if (data && data.port) { this.portAttached = true; data.port.onmessage = onData; }
       else onData({ data });
     };
   }
@@ -53,6 +58,10 @@ class PcmProcessor extends AudioWorkletProcessor {
       this.played += i;
       if (i < n) { this.playing = false; this.underruns += 1; }
     }
+    this.silence += n - i;
+    // Initial buffering is silence, not an underrun. Include all rebuffering
+    // silence after the first consumed PCM frame, not just the event quantum.
+    if (this.played > 0) this.underrunFrames += n - i;
     for (; i < n; i += 1) { left[i] = 0; right[i] = 0; }
     this.sinceReport += n;
     if (this.sinceReport >= sampleRate / 4) {
@@ -61,6 +70,11 @@ class PcmProcessor extends AudioWorkletProcessor {
         queuedSeconds: this.queued / sampleRate, playing: this.playing,
         underruns: this.underruns, playedSeconds: this.played / sampleRate,
         receivedSeconds: this.received / sampleRate,
+        highWaterSeconds: this.highWater / sampleRate,
+        silenceSeconds: this.silence / sampleRate,
+        underrunSeconds: this.underrunFrames / sampleRate,
+        portAttached: this.portAttached,
+        receivedPcm: this.received > 0, renderedPcm: this.played > 0,
       });
     }
     return true;

@@ -1,11 +1,11 @@
 /** Browser PCM sink for the coupled core: AudioContext + AudioWorklet. */
-export interface AudioStats { queuedSeconds: number; playing: boolean; underruns: number; playedSeconds: number; receivedSeconds: number }
+export interface AudioStats { queuedSeconds: number; playing: boolean; underruns: number; playedSeconds: number; receivedSeconds: number; highWaterSeconds: number; silenceSeconds: number; underrunSeconds: number; portAttached: boolean; receivedPcm: boolean; renderedPcm: boolean }
 
 export class PcmSink {
   readonly context: AudioContext;
   private node?: AudioWorkletNode;
   /** Latest worklet report. */
-  stats: AudioStats = { queuedSeconds: 0, playing: false, underruns: 0, playedSeconds: 0, receivedSeconds: 0 };
+  stats: AudioStats = { queuedSeconds: 0, playing: false, underruns: 0, playedSeconds: 0, receivedSeconds: 0, highWaterSeconds: 0, silenceSeconds: 0, underrunSeconds: 0, portAttached: false, receivedPcm: false, renderedPcm: false };
 
   /** Construct from a user gesture. 48 kHz is the DSP rate; the browser resamples to the device. */
   constructor() { this.context = new AudioContext({ sampleRate: 48_000, latencyHint: 'playback' }); }
@@ -25,5 +25,7 @@ export class PcmSink {
 
   /** Start playing once this much audio is queued (0: immediately). */
   setBuffer(seconds: number) { this.node?.port.postMessage({ type: 'config', startSeconds: seconds }); }
-  close() { this.node?.disconnect(); void this.context.close(); }
+  /** Worklet observations plus host connection state; not proof of audibility. */
+  report() { return { ...this.stats, contextState: this.context.state, sampleRate: this.context.sampleRate, nodeConnected: Boolean(this.node) }; }
+  close() { this.node?.disconnect(); this.node = undefined; void this.context.close(); }
 }

@@ -5334,3 +5334,81 @@ not covered.
 so a store inside a region that rewrites code the same region (or a chained
 one) runs later is seen one dispatch late. Not reachable in the DN2 capture and
 not exercised by any gate. **[O]**
+
+## DN2 audio triage: launcher, stage baselines and sink health (2026-10-03)
+
+**[D]** `mise run emu` was reproduced with the pinned Rust 1.98.1 toolchain:
+the plain WASM/web build succeeded, then Cargo rejected the stale desktop lock
+under `--locked`. An offline update of the local `elektron-native-boot` package
+added its direct `periph` dependency reference and selected the already-locked
+`syn 2.0.119` for `cssparser-macros`; no registry package versions/checksums
+were added or changed. Locked/offline metadata then passed. A second bounded
+launch compiled the desktop in about 49 s and kept the application process
+alive for eight seconds before intentional SIGTERM. No firmware was loaded in
+that launch; this is not a desktop audio or rendered-UI gate. A non-fatal
+`rust-objcopy`/`libLLVM.dylib` stripping warning remains.
+
+**[D]** Serialized, bounded DN2 1.11 stage baselines reused existing local
+release artifacts, the paired ready snapshot and `NOTE_EVENTS=trig`, with
+playback off. Native/headless WASM windows were ready+100M ticks; DSP replay
+used frames 4600..5600, timing [5400,5600). Single-run observations, not a
+performance distribution:
+
+| stage | wall time | audio window / interpretation |
+|---|---|---|
+| CF-only diagnostic (`DSP_PERIOD=1`) | about 0.8 s | about 0.759 s nominal; little CF headroom |
+| DSP replay busy window | 0.314 s | 200 blocks = 0.133 s; about 213M non-idle instructions/s |
+| coupled native, threaded | about 2.1 s | 0.759 s PCM, about 2.8x slower than real time |
+| coupled native, synchronous | about 3.0 s | same PCM, about 3.9x slower |
+| headless Node WASM | about 5.8 s | same PCM, about 7.6x slower |
+
+All seven replay state-hash prefixes and PCM `581339b332e9...` matched the
+previous gate. Threaded/synchronous native CF `fbace0f0...`, DSP export
+`05ac2ac2...`, and PCM `38d2a3224d10...` matched; headless WASM produced the
+same PCM (72,896 interleaved values). CF-only digest was `4b569189...`.
+No coupled run halted or missed a SPORT block. This supports a native DSP
+throughput bottleneck, not proof that every workload or link behavior is correct.
+The extra WASM cost still needs CF/DSP host-profile attribution.
+
+Artifact provenance is bounded: the measured native example SHA-256 starts
+`cfb4bbe0`, native library `70e69f17`, and WASM `b53c378d`. The generated tree
+currently hashes to `e0e97d72...`, not the handover's `0e73c5c1...`; no fresh
+source-bound build/provenance claim is made. The old pipeline-c manifest is
+generator 9 and is not a manifest for these artifacts. Input hashes matched
+the recorded firmware/capture/snapshot hashes, including DN2's own extracted
+section source marker. The root `sections/` marker belongs to DT2, not DN2.
+
+**[D]** An actual headless Chromium worker-to-AudioWorklet smoke used the same
+WASM hash and snapshot, scripted menu/note input, a 0.1 s diagnostic buffer,
+and a 15 s observation. AudioContext was running; the worklet acknowledged its
+port, received and consumed PCM. It reported 15 underrun events and about
+12 s of starvation/rebuffer silence after first playback. The worker produced
+1.825 s PCM over 15.538 s session wall time (0.117 audio s/wall s), with 2,738
+frames, no missing block, no DSP halt and no runtime error. This establishes
+pipeline activity and production starvation, not speaker audibility, waveform
+quality or sustained real time. Sink reports are periodic, so core/sink counter
+snapshots are not simultaneous.
+
+**[D]** The browser coupled UI now shows PCM production rate, queue high-water
+mark and underrun duration, and exports an `audio-health.json` containing core
+and sink observations. Worker diagnostics include the audio report; host
+response timings use eight fixed buckets. Initial buffering silence is
+separate from starvation after playback begins. Production duration comes
+from newly emitted PCM, not cumulative DSP instructions restored from a
+snapshot. The elapsed production clock excludes load but includes pause and
+worker-yield time. Scheduling, buffer defaults and firmware semantics did not
+change. Four Node audio-accounting/worklet tests, Astro check (zero errors and
+warnings; one existing hint), locked offline desktop metadata and diff checks
+passed. The full firmware/Python suite was not rerun for these host-only edits.
+
+**[O]** Ordinary Tauri still constructs the CF-only runtime: no SSI pacing,
+SHARC peer or audio sink is attached. Wiring its coupled loader/player is a
+separate integration task. Native coupled sink statistics remain hidden by
+`PcmPlayer`. Neither frontend is established as real-time audio. Next performance
+work should use comparable native/WASM profiles and preserve the state/PCM gates,
+not lower instruction budgets or hide starvation with a larger buffer.
+
+The private continuation, image, paired ready snapshot and note capture have
+hash-identical backups in ignored `snapshots/dn2-audio-ready-2026-10-03/`.
+Triage logs and the local Chromium smoke harness are under
+`/private/tmp/dn2-audio-triage-20261003/`; they are not durable distribution assets.

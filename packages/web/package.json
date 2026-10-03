@@ -8,7 +8,8 @@
     "dev": "astro dev",
     "prebuild": "../../tools/native_wasm.sh",
     "build": "astro build",
-    "check": "astro check"
+    "check": "astro check",
+    "test:audio": "node --test ../../tests/test_audio_health.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.1",
