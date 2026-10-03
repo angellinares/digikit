@@ -212,6 +212,10 @@ pub struct Engine {
     /// `step_until_in`'s PC range [lo, hi): the step ends (without a halt)
     /// at the first instruction boundary whose PC lies in it.
     stop_range: Option<(u32, u32)>,
+    /// `step_until_in_aligned`'s (chunk, base instruction count): with
+    /// `stop_range`, only boundaries a positive multiple of `chunk`
+    /// instructions after `base` stop the step.
+    stop_align: Option<(u32, u64)>,
     /// Opt-in functional software IRQ delivery through the L1 ISA IVT.
     pub software_interrupts: bool,
     pub export_ranges: bool,
@@ -509,6 +513,7 @@ impl Engine {
             stop_software_interrupt: false,
             stop_pc: None,
             stop_range: None,
+            stop_align: None,
             software_interrupts: false,
             export_ranges: false,
             dispatch: Dispatch::new(image_blocks(), image_model_safe()),
@@ -1098,6 +1103,10 @@ impl Engine {
         while self.s.icount < limit {
             if let Some((lo, hi)) = self.stop_range
                 && (lo as Int..hi as Int).contains(&self.s.pc_sw)
+                && self.stop_align.is_none_or(|(chunk, base)| {
+                    let d = self.s.icount - base;
+                    d > 0 && d % chunk as u64 == 0
+                })
             {
                 break;
             }
@@ -1169,9 +1178,30 @@ impl Engine {
                 }
             }
             if let Some(head) = self.idle_head {
-                self.idle_visit(head, limit);
+                // The idle skip advances whole iterations at once: with an
+                // aligned stop active it must not pass the next aligned
+                // boundary, where the PC may be in the stop range.
+                let skip_limit = match self.stop_align {
+                    Some((chunk, base)) if self.stop_range.is_some() => {
+                        let chunk = chunk as u64;
+                        let next = base + ((self.s.icount - base) / chunk + 1) * chunk;
+                        limit.min(next)
+                    }
+                    _ => limit,
+                };
+                let before_skip = self.s.icount;
+                self.idle_visit(head, skip_limit);
                 if self.s.icount >= limit {
                     break;
+                }
+                if self.stop_align.is_some() && self.s.icount != before_skip {
+                    // The skip may have landed on the aligned boundary:
+                    // look at the stop range there (with no snapshot, as at
+                    // the start of a step: one taken here is at this very
+                    // count).
+                    self.idle_snap = None;
+                    self.s.probe = None;
+                    continue;
                 }
             }
             if self.instruction_clock {
@@ -1330,6 +1360,27 @@ impl Engine {
         self.stop_range = Some((lo, hi));
         let ran = self.step(n);
         self.stop_range = None;
+        ran
+    }
+
+    /// `step_until_in(n, lo, hi)` that stops only at a boundary whose
+    /// instruction count is a positive multiple of `chunk` past `base_icount`
+    /// (the chunk ends of a caller that would step in `chunk`-sized pieces).
+    /// Boundaries strictly inside a generated block cannot be in [LO, HI)
+    /// (see `step_until_in`), so blocks and chains run through aligned
+    /// boundaries unharmed; the idle skip is clamped to the next one.
+    pub fn step_until_in_aligned(
+        &mut self,
+        n: u32,
+        lo: u32,
+        hi: u32,
+        chunk: u32,
+        base_icount: u64,
+    ) -> u32 {
+        assert!(chunk > 0, "chunk must be positive");
+        self.stop_align = Some((chunk, base_icount));
+        let ran = self.step_until_in(n, lo, hi);
+        self.stop_align = None;
         ran
     }
 

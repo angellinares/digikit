@@ -1,5 +1,12 @@
 # DN2 native/browser audio continuation — 2026-10-03
 
+Latest stopping-point handover:
+[DSP PGO and region-cap results](HANDOVER-2026-10-03-dn2-dsp-pgo-and-region-cap.md).
+The region-cap experiment below is now complete: both regenerated trees were
+rejected as replacements for the current core. All owned jobs have finished.
+The user's latest instruction is **no further commits**; the final handover
+and findings update are intentionally uncommitted.
+
 ## Active underrun work: DSP throughput (2026-10-03)
 
 The user confirmed that the actual GUI pre-sink WAV is a clean tone while
@@ -80,10 +87,21 @@ regions). This supports investigating region register pressure, not claiming
 all stack traffic is removable or that instruction-cache misses dominate.
 The original full-generation command for the current 746-region cache is
 unavailable; adjacent manifests produce different trees. A one-knob region cap
-trial therefore needs a separately regenerated BASE and candidate using the
-same recorded inputs/flags, then comparison to the current artifact as well.
+trial used a separately regenerated BASE and candidate with the same recorded
+inputs/flags, then compared BASE to the current artifact as well.
 Do not silently compare a newly generated tree to the old cache and attribute
 the whole difference to the cap. Preserve the 0x1c253f unknown fallback.
+
+The completed trial changed only `--region-regs 36` to `28` between new trees.
+Seven alternating pairs passed exact coupled gates; median paired DSP wall
+ratio was 0.974966 (2.503% less), with variable results. However, three pairs
+comparing regenerated BASE to current unprofiled showed a median paired DSP
+ratio of 1.479871 (47.987% more). The isolated cap gain does not recover that
+regression: median workload BASE/cap was 2.792952/2.732294 s for 0.759333 s
+audio. Neither tree replaces the current cache, and no cap/PGO combination was
+trained or accepted. Artifacts: `/private/tmp/dn2-region-regs-20261003/`.
+The original PGO/control binaries were preserved in its `accepted-current/`
+directory before reusing the scratch Cargo target; use those immutable copies.
 
 ## Previous continuation: default audio, startup fixes and live sound capture
 

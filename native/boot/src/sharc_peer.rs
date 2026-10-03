@@ -45,6 +45,18 @@ pub trait DspEngine {
     fn step_until_in(&mut self, _n: u32, _range: (u32, u32)) -> Option<u32> {
         None
     }
+    /// `step_until_in` that stops only at a boundary whose instruction count
+    /// is a positive multiple of `chunk` past `base_icount`, which is an
+    /// `icount()` value. None: not supported (the peer steps in chunks).
+    fn step_until_in_aligned(
+        &mut self,
+        _n: u32,
+        _range: (u32, u32),
+        _chunk: u32,
+        _base_icount: u64,
+    ) -> Option<u32> {
+        None
+    }
     /// One SPORT4 block (zero input); `Ok(None)` while the SPORTs are off.
     fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String>;
     /// Short-word PC.
@@ -177,10 +189,12 @@ impl<E: DspEngine> Core<E> {
         let in_idle = |pc: u32, idle: (u32, u32)| (idle.0..idle.1).contains(&pc);
         // `busy` is the first chunk end (a multiple of CHUNK, or the period
         // end) with the PC in the idle range. No chunk end before the PC
-        // first enters the range can be one, so when the engine can stop
-        // there, run to it at once and take the chunks from there on: the
-        // same chunk ends are looked at, without the cost of stopping at the
-        // ones before (blocks cut short there run one by one).
+        // first enters the range can be one, so run to its first entry at
+        // once; if that is not a chunk end, run to the first chunk end with
+        // the PC in the range (the engine looks at the same ends, without
+        // cutting the generated blocks at the ones before). Engines without
+        // these stops are stepped in chunks below.
+        let base = self.engine.icount();
         if let Some(ran) = self.engine.step_until_in(self.period, self.idle) {
             done = ran;
             if !in_idle(self.engine.pc(), self.idle) {
@@ -189,6 +203,17 @@ impl<E: DspEngine> Core<E> {
             }
             if (done > 0 && done % CHUNK == 0) || done == self.period {
                 busy = Some(done);
+            } else if let Some(more) =
+                self.engine
+                    .step_until_in_aligned(self.period - done, self.idle, CHUNK, base)
+            {
+                // Stopped at a chunk end or the period end in the range
+                // (busy, as in the chunk loop, even if the engine stopped
+                // there), or elsewhere out of it (not busy).
+                done += more;
+                if in_idle(self.engine.pc(), self.idle) {
+                    busy = Some(done);
+                }
             }
         }
         while done < self.period {
@@ -691,6 +716,18 @@ impl DspEngine for NativeDsp {
     fn step_until_in(&mut self, n: u32, range: (u32, u32)) -> Option<u32> {
         Some(self.0.step_until_in(n, range.0, range.1))
     }
+    fn step_until_in_aligned(
+        &mut self,
+        n: u32,
+        range: (u32, u32),
+        chunk: u32,
+        base_icount: u64,
+    ) -> Option<u32> {
+        Some(
+            self.0
+                .step_until_in_aligned(n, range.0, range.1, chunk, base_icount),
+        )
+    }
     fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
         self.0
             .sport_block(None)
@@ -737,6 +774,19 @@ impl DspEngine for SharedDsp {
     }
     fn step_until_in(&mut self, n: u32, range: (u32, u32)) -> Option<u32> {
         Some(self.0.borrow_mut().step_until_in(n, range.0, range.1))
+    }
+    fn step_until_in_aligned(
+        &mut self,
+        n: u32,
+        range: (u32, u32),
+        chunk: u32,
+        base_icount: u64,
+    ) -> Option<u32> {
+        Some(
+            self.0
+                .borrow_mut()
+                .step_until_in_aligned(n, range.0, range.1, chunk, base_icount),
+        )
     }
     fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
         self.0
@@ -1168,5 +1218,107 @@ mod threaded_tests {
             DN2_IDLE_RANGE,
         );
         assert_eq!(r.err().as_deref(), Some("no engine"));
+    }
+}
+
+/// `Core::run_period` against the plain chunked loop on the real DN2 engine
+/// (private fixtures; run with `--ignored`, see the test).
+#[cfg(test)]
+mod aligned_stop_tests {
+    use super::*;
+
+    /// The native engine with only `step`: `run_period` falls back to the
+    /// chunk loop alone, the reference the stops must not differ from.
+    struct ChunkedOnly(NativeDsp);
+
+    impl DspEngine for ChunkedOnly {
+        fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, String> {
+            self.0.spi2_exchange(frame)
+        }
+        fn step(&mut self, n: u32) -> u32 {
+            self.0.step(n)
+        }
+        fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
+            self.0.sport_block()
+        }
+        fn pc(&self) -> u32 {
+            self.0.pc()
+        }
+        fn halt_reason(&self) -> Option<String> {
+            self.0.halt_reason()
+        }
+        fn export(&self) -> Vec<u8> {
+            self.0.export()
+        }
+        fn icount(&self) -> u64 {
+            self.0.icount()
+        }
+    }
+
+    fn read_frames(path: &str) -> Vec<Vec<u8>> {
+        let data = std::fs::read(path).expect("frames file");
+        let u32_at = |o: usize| u32::from_le_bytes(data[o..o + 4].try_into().unwrap()) as usize;
+        let mut out = Vec::new();
+        let mut o = 4;
+        for _ in 0..u32_at(0) {
+            let len = u32_at(o);
+            out.push(data[o + 4..o + 4 + len].to_vec());
+            o += 4 + len;
+        }
+        out
+    }
+
+    fn env(name: &str) -> String {
+        std::env::var(name).unwrap_or_else(|_| panic!("set {name}"))
+    }
+
+    /// DN2_EQUIV_IMAGE (packed image), DN2_EQUIV_STATE (canonical state the
+    /// frames START continues), DN2_EQUIV_FRAMES (`u32 count`, then `u32
+    /// length, bytes` per DSPI2 TX frame); optional DN2_EQUIV_START /
+    /// DN2_EQUIV_END (default 4600 / 5600) and DN2_EQUIV_CLOCK. Every period
+    /// must return the same (executed, busy, reached_idle) and the engines
+    /// must end in the same state.
+    #[test]
+    #[ignore = "needs the DN2 replay fixtures"]
+    fn run_period_matches_chunk_loop() {
+        let image = std::fs::read(env("DN2_EQUIV_IMAGE")).unwrap();
+        let state = std::fs::read(env("DN2_EQUIV_STATE")).unwrap();
+        let frames = read_frames(&env("DN2_EQUIV_FRAMES"));
+        let num = |k: &str, d: usize| std::env::var(k).map_or(d, |v| v.parse().unwrap());
+        let (start, end) = (num("DN2_EQUIV_START", 4600), num("DN2_EQUIV_END", 5600));
+        let clock = num("DN2_EQUIV_CLOCK", 573_627_620) as u64;
+        let period = 667_000;
+        let open = || NativeDsp(open_dn2_engine(&image, &state, clock).unwrap());
+        let mut new = Core::new(open(), period);
+        let mut old = Core::new(ChunkedOnly(open()), period);
+        let (mut busy_before_end, mut nonidle) = (0, 0);
+        for (i, frame) in frames.iter().enumerate().take(end).skip(start) {
+            let (r_new, _) = new.exchange(frame, true, None);
+            let (r_old, _) = old.exchange(frame, true, None);
+            assert_eq!(r_new, r_old, "SPI2 reply, frame {i}");
+            let got = new.run_period();
+            let want = old.run_period();
+            assert_eq!(got, want, "(executed, busy, reached_idle), frame {i}");
+            busy_before_end += (want.2 && want.1 < want.0) as u32;
+            nonidle += !want.2 as u32;
+            assert_eq!(
+                new.engine.sport_block().unwrap(),
+                old.engine.sport_block().unwrap(),
+                "SPORT4 block, frame {i}"
+            );
+        }
+        assert!(new.engine.halt_reason().is_none() && old.engine.halt_reason().is_none());
+        new.engine.0.export_ranges = true;
+        old.engine.0.0.export_ranges = true;
+        let (a, b) = (new.engine.export(), old.engine.export());
+        assert!(a == b, "final state differs");
+        eprintln!(
+            "{} periods equal; idle reached before the period end in {busy_before_end}, idle never reached in \
+             {nonidle}; state fnv {:016x} ({} bytes)",
+            end - start,
+            fnv1a(&a),
+            a.len()
+        );
+        assert!(busy_before_end > 0, "the idle stops were never exercised");
     }
 }

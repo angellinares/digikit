@@ -14,6 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
     "tools/native_emu.sh",
+    "tools/native_pgo.py",
     "tests/test_native_emu_launcher.py",
     "tools/sharc_mmr_reset.py",
     "tools/sharc_reset_check.py",
@@ -159,6 +160,7 @@ CLEAN = [
     "tools/sharc_transpile_run.py",
     "tools/sharc_dn2_replay.py",
     "tools/sharc_dn2_aot.py",
+    "tools/sharc_entries_merge.py",
     "tests/test_sharc_dn2_aot.py",
     "tools/sharc_widthaudit.py",
     "tools/sharcldr.py",

@@ -5904,3 +5904,110 @@ metadata lacks the original full-generation invocation. Available commands
 produce materially different trees, so a cap comparison requires its own
 reproducible regenerated baseline rather than silently treating the old cache
 as a one-variable control.
+
+### Underrun work: region-register-cap trial rejected (2026-10-03)
+
+**[O]** The completed experiment generated a matched BASE (`--region-regs 36`)
+and candidate (`28`) using the same coverage, entries, transitions, version-11
+generator flags and `0x1c253f` unknown fallback. The trees contain 490 and 545
+regions respectively. They differ materially from the accepted 746-region
+cache, whose original full-generation invocation remains unavailable.
+
+Seven alternating BASE/candidate pairs passed the coupled CF/DSP/PCM gates,
+1,139 SPORT blocks and zero missing blocks. Median paired candidate/BASE
+ratios were 0.975261 workload wall (2.474% less), 0.974966 DSP wall (2.503%
+less), 0.984962 total-process CPU, 0.997766 retired instructions and 0.985520
+cycles. Five of seven workload pairs improved; the first two regressed.
+These hardware counters cover the whole process, not only DSP execution.
+
+Three alternating current-unprofiled/BASE pairs showed a median paired BASE/
+current DSP ratio of 1.479871 (47.987% more). This measures the regeneration/
+configuration change as a whole, not the isolated register-cap change. Median
+workload BASE/candidate was 2.792952/2.732294 s for 0.759333 s audio, about
+13,050/13,340 sample frames/s. Both regenerated trees were therefore rejected
+as normal replacements. The proven PGO candidate on the accepted cache remains
+the best measured native result; no combined gain or real-time fix is claimed.
+
+Short holdouts matched state, instruction and PCM gates but were silent; a
+delayed candidate holdout also matched and was silent. Python fallback checks
+passed 9 tests with one slow test skipped; the explicit slow budget/mask/trap
+rollback check then passed separately. Artifacts, input/file hashes, provenance,
+actual run order and immutable executables are under
+`/private/tmp/dn2-region-regs-20261003/`. The normal generated cache was not
+changed. A scratch executable overwrite was repaired by preserving the
+candidate and rebuilding BASE once; future runs must copy each executable
+before changing generated inputs or flags.
+
+### Underrun work: app PGO, aligned period stop, gen provenance (2026-10-04)
+
+**[V]** Native PGO now reaches the desktop app. `tools/native_pgo.py train`
+builds an instrumented `cargo test` binary of `digiemu-desktop`
+(`--features coupled-audio --target aarch64-apple-darwin`, rustup 1.98.1),
+runs `coupled_ready_exactness` four times and merges the profile into
+`out/native/pgo/dn2/<triple>/profiles/<sha256>.profdata`. The manifest key
+covers every local crate in the build graph, the generated cache, `rustc -vV`,
+the target and features; `check` takes about 0.02 s. `tools/native_emu.sh`
+uses the profile on the coupled path when the key matches, through
+`rustup run 1.98.1 cargo run ... --target aarch64-apple-darwin --target-dir
+out/native/pgo/dn2/<triple>/target` with `-Cprofile-use`; otherwise it prints
+one line and builds as before. `DIGI_EMU_PGO=0` or a user `RUSTFLAGS` turns it
+off. The app build reuses the same `sharc-native` and `elektron-native-boot`
+artifacts as the profiled test build (cargo reports them `Fresh`), so the app
+runs the measured code. A plain control rebuilt from the same tree matched the
+archived control byte for byte (sha256 `875e2331…`). Five pairs, profile-use
+over control: workload wall 0.811, DSP wall 0.809, user+sys 0.868.
+
+**[V]** `Core::run_period` (`native/boot/src/sharc_peer.rs`) stepped in
+1,024-instruction chunks after the first idle entry until a chunk end fell in
+the idle range. Each chunk end cut a generated block, and the interpreter ran
+until the next block entry. `Engine::step_until_in_aligned` now stops only at
+an idle-range boundary a whole number of chunks after the period start, and
+clamps the idle skip to the next such boundary. Generated blocks hold no
+idle-range PC, so only block exits and interpreter boundaries can qualify. The
+ignored test `aligned_stop_tests::run_period_matches_chunk_loop` compares it
+with the old chunk loop over 1,000 replay periods: identical
+(executed, busy, reached_idle), SPI2 replies, SPORT blocks and final export.
+In the replay, interpreted instructions fell from 2,772,946 to 1,564,616 and
+partial block exits from 307,314 to 4,321. Plain release, five pairs,
+new/old: workload wall 0.828, DSP wall 0.824. With a profile retrained on the
+new source, profile-use/control is 0.794. The coupled workload now takes
+about 1.075 s for 0.759333 s of audio (about 1.42 times real time), down from
+1.754 s before PGO. DSP is still the critical path: the ColdFire step window
+is about 632 ms of the same 1.075 s, and ColdFire waits on DSP replies for
+about 40% of it.
+
+**[V]** The accepted cache `out/native/dn2-audio/gen` is reproducible. At HEAD
+`eecf7b8`, `tools/sharc_transpile.py --strict` followed by
+`tools/sharc_rsgen.py dn2-1.11 --coverage cov6.txt --entries ent9.txt
+--transitions trans9.txt --model-safe --explicit-memory-model 0 --chain
+--exclude 0xb88a49:0xb88abc --unknown-fallbacks 0x1c253f` (same `--work` and
+`--out`) regenerates 50 of 52 files byte for byte. `blocks_05.rs` differs by
+three blank lines from a hand splice; the two report JSONs carry old metadata.
+There are no `--region-insns` or `--region-regs` flags, which explains why the
+region-cap BASE differed. Inputs (sha256 `2d05d551…`, `6336776b…`,
+`d3bec1b2…`) and the command are kept under
+`out/native/gen-provenance-20261003/`. The generator does not yet record its
+arguments in the output.
+
+Post-change cost map (xctrace, three runs, in-window DSP thread 1,075 ms):
+generated regions 78.7%, interpreter 13.7%, peripheral glue 5.2%, memory and
+float helpers about 2%. Region bodies hold about 98% of region time. The hot
+regions (`r_1C399A`, `r_1C3862`, `r_1C364F`) are 64-trip FP DO loops at about
+40 host instructions per SHARC instruction.
+
+**[O]** Tried and not kept:
+- More block entries at interpreter resume points (125 added; 746 to 841
+  regions) removed no interpreted instructions: `--model-safe` rejects
+  blocks that start at bank-switch, PCSTK/loop-register or RTI instructions.
+  Adding `0x1c2518,0x1c254e` to `--unknown-fallbacks` cut replay interpreted
+  steps by 17.4% but the coupled workload only by 0.9% (wall 0.991, five
+  pairs). Tool: `tools/sharc_entries_merge.py`; trees under
+  `out/native/gen-entries-20261003/`.
+- Float fast paths in generated code: i64 truncation in `_trunc_int` (1.012,
+  slower), a NaN-check collapse for add/sub/mul (0.984 alone) and a normal-result
+  multiplier flag path (0.994 on top). Together 0.995, within noise, so they
+  were reverted. All passed differential tests (58M comparisons, 0 mismatches).
+  Patch: `out/native/codegen-fast-20261004/c1-c2-float-fastpaths.patch`.
+  Removing static host instructions from these loops does not cut time in
+  proportion. The loops look latency-bound, so further codegen work needs a
+  measured critical-path target, not instruction counts.
