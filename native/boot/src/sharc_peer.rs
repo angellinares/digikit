@@ -13,7 +13,7 @@
 //! The engine is generic over [`DspEngine`] so the plumbing is testable
 //! without firmware.
 
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc, thread};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::mpsc, thread, time::Instant};
 
 use periph::dspi::Peer;
 
@@ -78,6 +78,45 @@ pub struct FrameStat {
     pub block: bool,
 }
 
+/// Cumulative host/worker timing for the opt-in threaded DSP link profiler.
+/// Durations are nanoseconds and overlap across pipelined frames, so they are
+/// explanatory stage totals rather than additive wall time.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ThreadedTimingProfile {
+    pub frames_sent: u64,
+    pub frames_completed: u64,
+    pub host_enqueue_ns: u64,
+    pub host_reply_wait_ns: u64,
+    pub host_done_wait_ns: u64,
+    pub host_collect_ns: u64,
+    pub worker_queue_ns: u64,
+    pub worker_spi_ns: u64,
+    pub worker_dsp_ns: u64,
+    pub worker_sport_ns: u64,
+}
+
+impl ThreadedTimingProfile {
+    fn add_worker(&mut self, timing: WorkerTiming) {
+        self.frames_completed = self.frames_completed.saturating_add(1);
+        self.worker_queue_ns = self.worker_queue_ns.saturating_add(timing.queue_ns);
+        self.worker_spi_ns = self.worker_spi_ns.saturating_add(timing.spi_ns);
+        self.worker_dsp_ns = self.worker_dsp_ns.saturating_add(timing.dsp_ns);
+        self.worker_sport_ns = self.worker_sport_ns.saturating_add(timing.sport_ns);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct WorkerTiming {
+    queue_ns: u64,
+    spi_ns: u64,
+    dsp_ns: u64,
+    sport_ns: u64,
+}
+
+fn elapsed_ns(start: Instant) -> u64 {
+    start.elapsed().as_nanos().min(u64::MAX as u128) as u64
+}
+
 #[derive(Default)]
 pub struct Shared {
     /// L/R interleaved, `-(q / 2^31)`.
@@ -118,6 +157,7 @@ struct Done {
     skipped: bool,
     block: Option<Vec<u8>>,
     halted: Option<String>,
+    timing: Option<WorkerTiming>,
 }
 
 impl<E: DspEngine> Core<E> {
@@ -172,7 +212,12 @@ impl<E: DspEngine> Core<E> {
     }
 
     /// First half: deliver the frame through the SPI2 model, take the reply.
-    fn exchange(&mut self, tx: &[u8], attached: bool) -> (Vec<u8>, Exchanged) {
+    fn exchange(
+        &mut self,
+        tx: &[u8],
+        attached: bool,
+        timing: Option<&mut WorkerTiming>,
+    ) -> (Vec<u8>, Exchanged) {
         let first_word = tx.get(..2).map_or(0, |b| u16::from_be_bytes([b[0], b[1]]));
         let mut stat = FrameStat {
             first_word,
@@ -188,7 +233,12 @@ impl<E: DspEngine> Core<E> {
                 },
             );
         }
-        let reply = match self.engine.spi2_exchange(tx) {
+        let spi_start = timing.as_ref().map(|_| Instant::now());
+        let exchange = self.engine.spi2_exchange(tx);
+        if let (Some(timing), Some(start)) = (timing, spi_start) {
+            timing.spi_ns = timing.spi_ns.saturating_add(elapsed_ns(start));
+        }
+        let reply = match exchange {
             Ok(r) if r.len() == tx.len() => r,
             Ok(r) => {
                 eprintln!("sharc_peer: reply length {} != {}", r.len(), tx.len());
@@ -214,7 +264,7 @@ impl<E: DspEngine> Core<E> {
 
     /// Second half: run the DSP for the period and take the audio block.
     /// Reads only the engine state left by the exchange.
-    fn render(&mut self, ex: Exchanged) -> Done {
+    fn render(&mut self, ex: Exchanged, mut timing: Option<&mut WorkerTiming>) -> Done {
         let Exchanged { mut stat, skipped } = ex;
         if skipped {
             return Done {
@@ -222,11 +272,16 @@ impl<E: DspEngine> Core<E> {
                 skipped,
                 block: None,
                 halted: self.halted.clone(),
+                timing: timing.copied(),
             };
         }
         let mut halted = self.halted.clone();
         if halted.is_none() {
+            let dsp_start = timing.as_ref().map(|_| Instant::now());
             let (executed, busy, idle) = self.run_period();
+            if let (Some(timing), Some(start)) = (timing.as_deref_mut(), dsp_start) {
+                timing.dsp_ns = timing.dsp_ns.saturating_add(elapsed_ns(start));
+            }
             stat.executed = executed;
             stat.busy = busy;
             stat.reached_idle = idle;
@@ -239,7 +294,12 @@ impl<E: DspEngine> Core<E> {
             }
         }
         let block = if halted.is_none() {
-            match self.engine.sport_block() {
+            let sport_start = timing.as_ref().map(|_| Instant::now());
+            let block = self.engine.sport_block();
+            if let (Some(timing), Some(start)) = (timing.as_deref_mut(), sport_start) {
+                timing.sport_ns = timing.sport_ns.saturating_add(elapsed_ns(start));
+            }
+            match block {
                 Ok(b) => b,
                 Err(e) => {
                     eprintln!("sharc_peer: sport_block failed: {e}");
@@ -258,6 +318,7 @@ impl<E: DspEngine> Core<E> {
             skipped,
             block,
             halted: self.halted.clone(),
+            timing: timing.copied(),
         }
     }
 }
@@ -269,6 +330,7 @@ fn commit(sh: &mut Shared, d: Done) {
         skipped,
         block,
         halted,
+        timing: _,
     } = d;
     *sh.first_words.entry(stat.first_word).or_default() += 1;
     if skipped {
@@ -326,8 +388,8 @@ impl<E: DspEngine> SharcPeer<E> {
 
     fn frame(&mut self, tx: &[u8]) -> Vec<u8> {
         let attached = self.shared.borrow().attached;
-        let (reply, ex) = self.core.exchange(tx, attached);
-        let done = self.core.render(ex);
+        let (reply, ex) = self.core.exchange(tx, attached, None);
+        let done = self.core.render(ex, None);
         commit(&mut self.shared.borrow_mut(), done);
         reply
     }
@@ -346,7 +408,11 @@ impl<E: DspEngine> Peer for SharcPeer<E> {
 }
 
 enum Msg {
-    Frame { tx: Vec<u8>, attached: bool },
+    Frame {
+        tx: Vec<u8>,
+        attached: bool,
+        enqueued: Option<Instant>,
+    },
     Export,
 }
 
@@ -358,6 +424,7 @@ struct Link {
     export_rx: mpsc::Receiver<(Vec<u8>, u64)>,
     /// Frames sent whose [`Done`] has not been committed yet.
     outstanding: usize,
+    timing: Option<ThreadedTimingProfile>,
     shared: Rc<RefCell<Shared>>,
     worker: Option<thread::JoinHandle<()>>,
 }
@@ -365,13 +432,33 @@ struct Link {
 impl Link {
     fn commit_ready(&mut self, block: bool) {
         while self.outstanding > 0 {
+            let done_wait_start = if block && self.timing.is_some() {
+                Some(Instant::now())
+            } else {
+                None
+            };
             let done = if block {
                 self.done_rx.recv().ok()
             } else {
                 self.done_rx.try_recv().ok()
             };
+            if let (Some(profile), Some(start)) = (&mut self.timing, done_wait_start) {
+                profile.host_done_wait_ns =
+                    profile.host_done_wait_ns.saturating_add(elapsed_ns(start));
+            }
             let Some(d) = done else { break };
+            let collect_start = self.timing.as_ref().map(|_| Instant::now());
+            let worker_timing = d.timing;
             commit(&mut self.shared.borrow_mut(), d);
+            if let Some(profile) = &mut self.timing {
+                if let Some(timing) = worker_timing {
+                    profile.add_worker(timing);
+                }
+                if let Some(start) = collect_start {
+                    profile.host_collect_ns =
+                        profile.host_collect_ns.saturating_add(elapsed_ns(start));
+                }
+            }
             self.outstanding -= 1;
         }
     }
@@ -426,6 +513,20 @@ impl ThreadedPeer {
         E: DspEngine + 'static,
         F: FnOnce() -> Result<E, String> + Send + 'static,
     {
+        Self::spawn_with_timing(make, period, idle, false)
+    }
+
+    /// Start the worker with optional cumulative host/worker timing.
+    pub fn spawn_with_timing<E, F>(
+        make: F,
+        period: u32,
+        idle: (u32, u32),
+        timing_enabled: bool,
+    ) -> Result<(Self, ThreadedHandle, Rc<RefCell<Shared>>), String>
+    where
+        E: DspEngine + 'static,
+        F: FnOnce() -> Result<E, String> + Send + 'static,
+    {
         let (tx, rx) = mpsc::channel::<Msg>();
         let (reply_tx, reply_rx) = mpsc::channel::<Vec<u8>>();
         let (done_tx, done_rx) = mpsc::channel::<Done>();
@@ -448,12 +549,20 @@ impl ThreadedPeer {
                 core.idle = idle;
                 while let Ok(msg) = rx.recv() {
                     match msg {
-                        Msg::Frame { tx, attached } => {
-                            let (reply, ex) = core.exchange(&tx, attached);
+                        Msg::Frame {
+                            tx,
+                            attached,
+                            enqueued,
+                        } => {
+                            let mut timing = enqueued.map(|start| WorkerTiming {
+                                queue_ns: elapsed_ns(start),
+                                ..WorkerTiming::default()
+                            });
+                            let (reply, ex) = core.exchange(&tx, attached, timing.as_mut());
                             if reply_tx.send(reply).is_err() {
                                 return;
                             }
-                            if done_tx.send(core.render(ex)).is_err() {
+                            if done_tx.send(core.render(ex, timing.as_mut())).is_err() {
                                 return;
                             }
                         }
@@ -477,6 +586,7 @@ impl ThreadedPeer {
             done_rx,
             export_rx,
             outstanding: 0,
+            timing: timing_enabled.then(ThreadedTimingProfile::default),
             shared: shared.clone(),
             worker: Some(worker),
         }));
@@ -492,32 +602,65 @@ impl Peer for ThreadedPeer {
     fn exchange(&mut self, tx: &[u8]) -> Vec<u8> {
         let mut l = self.link.borrow_mut();
         let attached = l.shared.borrow().attached;
+        let enqueue_start = l.timing.as_ref().map(|_| Instant::now());
+        let tx = tx.to_vec();
+        let tx_len = tx.len();
+        let enqueued = l.timing.as_ref().map(|_| Instant::now());
         let sent = l.tx.as_ref().is_some_and(|c| {
             c.send(Msg::Frame {
-                tx: tx.to_vec(),
+                tx,
                 attached,
+                enqueued,
             })
             .is_ok()
         });
+        if let (Some(profile), Some(start)) = (&mut l.timing, enqueue_start) {
+            profile.host_enqueue_ns = profile.host_enqueue_ns.saturating_add(elapsed_ns(start));
+        }
         if !sent {
-            return l.worker_died(tx.len());
+            return l.worker_died(tx_len);
         }
         l.outstanding += 1;
+        if let Some(profile) = &mut l.timing {
+            profile.frames_sent = profile.frames_sent.saturating_add(1);
+        }
+        let reply_wait_start = l.timing.as_ref().map(|_| Instant::now());
         match l.reply_rx.recv() {
             Ok(r) => {
+                if let (Some(profile), Some(start)) = (&mut l.timing, reply_wait_start) {
+                    profile.host_reply_wait_ns =
+                        profile.host_reply_wait_ns.saturating_add(elapsed_ns(start));
+                }
                 l.commit_ready(false);
                 r
             }
-            Err(_) => l.worker_died(tx.len()),
+            Err(_) => {
+                if let (Some(profile), Some(start)) = (&mut l.timing, reply_wait_start) {
+                    profile.host_reply_wait_ns =
+                        profile.host_reply_wait_ns.saturating_add(elapsed_ns(start));
+                }
+                l.worker_died(tx_len)
+            }
         }
     }
 }
 
 impl ThreadedHandle {
+    /// Commit completed frames without waiting; streaming hosts use this between steps.
+    /// Call `sync` instead before reading final totals or exporting state.
+    pub fn poll(&self) {
+        self.link.borrow_mut().commit_ready(false);
+    }
+
     /// Wait for the DSP to finish every frame sent so far and commit them to
     /// [`Shared`]. Call before reading `Shared` for totals or a snapshot.
     pub fn sync(&self) {
         self.link.borrow_mut().commit_ready(true);
+    }
+
+    /// Cumulative opt-in timing, or `None` when the peer was started without it.
+    pub fn timing_profile(&self) -> Option<ThreadedTimingProfile> {
+        self.link.borrow().timing
     }
 
     /// Canonical DSP state and instruction counter after every frame sent so

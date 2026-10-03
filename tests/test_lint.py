@@ -13,6 +13,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/native_emu.sh",
+    "tests/test_native_emu_launcher.py",
     "tools/sharc_mmr_reset.py",
     "tools/sharc_reset_check.py",
     "tests/test_sharc_mmr_reset.py",

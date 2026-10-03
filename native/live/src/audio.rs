@@ -47,6 +47,19 @@ pub struct PendingDevice {
     pub used_fallback: bool,
 }
 
+/// Rare output-error observations; no locks or allocations when recording.
+#[derive(Clone, Default)]
+pub struct StreamErrors(Arc<AtomicU64>);
+impl StreamErrors {
+    pub fn record(&self) {
+        self.0.fetch_add(1, Ordering::Release);
+    }
+    pub fn error(&self) -> Option<String> {
+        let count = self.0.load(Ordering::Acquire);
+        (count != 0).then(|| format!("output stream error ({count} events; details in stderr)"))
+    }
+}
+
 pub fn default_output() -> Result<PendingDevice, String> {
     let host = cpal::default_host();
     let device = host
@@ -77,6 +90,23 @@ impl PendingDevice {
         callback_frames: Arc<AtomicU64>,
         producer_thread: Thread,
     ) -> Result<OpenedDevice, String> {
+        self.start_with_errors(
+            ring,
+            underruns,
+            callback_frames,
+            producer_thread,
+            StreamErrors::default(),
+        )
+    }
+
+    pub fn start_with_errors(
+        self,
+        ring: Arc<SpscRing>,
+        underruns: Arc<AtomicU64>,
+        callback_frames: Arc<AtomicU64>,
+        producer_thread: Thread,
+        stream_errors: StreamErrors,
+    ) -> Result<OpenedDevice, String> {
         let stream = build_stream(
             &self.device,
             &self.config,
@@ -85,6 +115,7 @@ impl PendingDevice {
             underruns,
             callback_frames,
             producer_thread,
+            stream_errors,
         )?;
         stream
             .play()
@@ -146,9 +177,13 @@ fn build_stream(
     underruns: Arc<AtomicU64>,
     callback_frames: Arc<AtomicU64>,
     producer_thread: Thread,
+    stream_errors: StreamErrors,
 ) -> Result<cpal::Stream, String> {
     let channels = config.channels as usize;
-    let err_fn = |err| eprintln!("live-audio: output stream error: {err}");
+    let err_fn = move |err| {
+        stream_errors.record();
+        eprintln!("live-audio: output stream error: {err}");
+    };
 
     macro_rules! build {
         ($t:ty) => {

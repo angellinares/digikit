@@ -6,7 +6,9 @@ use std::{
     thread,
 };
 
-use elektron_native_boot::{DiagnosticReport, Emulator, Snapshot};
+use elektron_native_boot::Snapshot;
+mod desktop_runtime;
+use desktop_runtime::{AudioOptions, DesktopRuntime};
 use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead, SMALL_CAPACITY_BLOCKS};
 use serde::Deserialize;
 use tauri::State;
@@ -61,19 +63,20 @@ fn card(path: PathBuf) -> Result<(Card, Arc<Mutex<Option<String>>>), String> {
 fn runtime_from(
     bytes: &[u8],
     image: Option<PathBuf>,
-) -> Result<(Emulator, Option<Arc<Mutex<Option<String>>>>), String> {
+    audio: Option<&AudioOptions>,
+) -> Result<(DesktopRuntime, Option<Arc<Mutex<Option<String>>>>), String> {
     match image {
         Some(path) => card(path).and_then(|(card, error)| {
-            Emulator::new(bytes, Some(card)).map(|runtime| (runtime, Some(error)))
+            DesktopRuntime::new(bytes, Some(card), audio).map(|runtime| (runtime, Some(error)))
         }),
-        None => Emulator::new(bytes, None).map(|runtime| (runtime, None)),
+        None => DesktopRuntime::new(bytes, None, audio).map(|runtime| (runtime, None)),
     }
 }
 
 enum Command {
     Diagnostics {
         session: u64,
-        reply: mpsc::Sender<Result<DiagnosticReport, String>>,
+        reply: mpsc::Sender<Result<serde_json::Value, String>>,
     },
     Startup {
         reply: Reply,
@@ -119,10 +122,12 @@ struct Host {
 struct StartupArgs {
     syx: Option<PathBuf>,
     card_image: Option<PathBuf>,
+    #[serde(skip)]
+    audio: Option<AudioOptions>,
 }
 
-fn actor(receiver: mpsc::Receiver<Command>) {
-    let mut runtime: Option<Emulator> = None;
+fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
+    let mut runtime: Option<DesktopRuntime> = None;
     let mut session = 0u64;
     let mut cached: Option<(Vec<u8>, Option<PathBuf>)> = None;
     let mut read_error: Option<Arc<Mutex<Option<String>>>> = None;
@@ -136,8 +141,8 @@ fn actor(receiver: mpsc::Receiver<Command>) {
                     Err("stale emulator session".into())
                 } else {
                     runtime
-                        .as_ref()
-                        .map(Emulator::diagnostics)
+                        .as_mut()
+                        .map(DesktopRuntime::diagnostics)
                         .ok_or_else(|| "No firmware selected".into())
                 };
                 let _ = reply.send(result);
@@ -183,7 +188,7 @@ fn actor(receiver: mpsc::Receiver<Command>) {
                     if bytes.len() > MAX_SYX {
                         Err("firmware image exceeds 32 MiB cache limit".into())
                     } else {
-                        match runtime_from(&bytes, image.clone()) {
+                        match runtime_from(&bytes, image.clone(), audio.as_ref()) {
                             Ok((next_runtime, error)) => {
                                 cached = Some((bytes, image));
                                 read_error = error;
@@ -196,16 +201,17 @@ fn actor(receiver: mpsc::Receiver<Command>) {
                 }
             }
             Command::Restart { next_session, .. } => match cached.clone() {
-                Some((bytes, image)) if next_session > session => match runtime_from(&bytes, image)
-                {
-                    Ok((next, error)) => {
-                        session = next_session;
-                        read_error = error;
-                        runtime = Some(next);
-                        Ok(runtime.as_mut().expect("restarted runtime").snapshot())
+                Some((bytes, image)) if next_session > session => {
+                    match runtime_from(&bytes, image, audio.as_ref()) {
+                        Ok((next, error)) => {
+                            session = next_session;
+                            read_error = error;
+                            runtime = Some(next);
+                            Ok(runtime.as_mut().expect("restarted runtime").snapshot())
+                        }
+                        Err(error) => Err(error),
                     }
-                    Err(error) => Err(error),
-                },
+                }
                 Some(_) => Err("stale emulator session".into()),
                 None => Err("No firmware selected".into()),
             },
@@ -280,7 +286,7 @@ async fn send(
 async fn emu_diagnostics(
     host: State<'_, Host>,
     session_id: u64,
-) -> Result<DiagnosticReport, String> {
+) -> Result<serde_json::Value, String> {
     let sender = host.sender.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let (reply, response) = mpsc::channel();
@@ -397,7 +403,8 @@ fn main() {
         std::process::exit(2)
     });
     let (sender, receiver) = mpsc::channel();
-    thread::spawn(|| actor(receiver));
+    let audio = startup.audio.clone();
+    thread::spawn(move || actor(receiver, audio));
     if let Some(path) = startup.syx {
         let bytes = std::fs::read(&path).unwrap_or_else(|error| {
             eprintln!("firmware input: {error}");
@@ -440,17 +447,123 @@ fn main() {
         .expect("tauri runtime error");
 }
 fn parse_args() -> Result<StartupArgs, String> {
-    let mut values = std::env::args_os().skip(1);
-    let mut syx = None;
-    let mut card_image = None;
+    parse_values(std::env::args_os().skip(1))
+}
+fn parse_values(
+    values: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Result<StartupArgs, String> {
+    let mut values = values.into_iter();
+    let (mut syx, mut card_image, mut image, mut state, mut snapshot) =
+        (None, None, None, None, None);
+    let mut coupled = false;
+    let mut buffer = None;
+    let mut no_audio = false;
     while let Some(value) = values.next() {
+        let mut path = |label: &str| -> Result<PathBuf, String> {
+            values
+                .next()
+                .map(Into::into)
+                .ok_or_else(|| format!("{label} requires a file"))
+        };
         if value == "--card-image" {
-            card_image = Some(values.next().ok_or("--card-image requires a file")?.into());
+            card_image = Some(path("--card-image")?);
+        } else if value == "--coupled" {
+            coupled = true;
+        } else if value == "--dsp-image" {
+            image = Some(path("--dsp-image")?);
+        } else if value == "--dsp-state" {
+            state = Some(path("--dsp-state")?);
+        } else if value == "--cf-snapshot" {
+            snapshot = Some(path("--cf-snapshot")?);
+        } else if value == "--no-audio" {
+            no_audio = true;
+        } else if value == "--audio-buffer" {
+            let seconds = values.next().ok_or("--audio-buffer requires seconds")?;
+            let seconds: f64 = seconds
+                .to_str()
+                .ok_or("invalid --audio-buffer")?
+                .parse()
+                .map_err(|_| "invalid --audio-buffer")?;
+            if !seconds.is_finite() || !(0.0..=10.0).contains(&seconds) {
+                return Err("--audio-buffer must be finite and between 0 and 10 seconds".into());
+            }
+            buffer = Some(seconds);
+        } else if value.to_string_lossy().starts_with("--") {
+            return Err(format!("unknown option: {}", value.to_string_lossy()));
         } else if syx.is_none() {
             syx = Some(value.into());
         } else {
-            return Err("usage: digiemu [SYX] [--card-image FILE]".into());
+            return Err("usage: digiemu [SYX] [--card-image FILE] [--coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--audio-buffer SECONDS] [--no-audio]]".into());
         }
     }
-    Ok(StartupArgs { syx, card_image })
+    let audio = if coupled {
+        if syx.is_none() {
+            return Err("--coupled requires a startup SYX".into());
+        }
+        Some(AudioOptions {
+            image: image.ok_or("--coupled requires --dsp-image")?,
+            state: state.ok_or("--coupled requires --dsp-state")?,
+            snapshot: snapshot.ok_or("--coupled requires --cf-snapshot")?,
+            buffer_seconds: buffer.unwrap_or(0.0),
+            playback: !no_audio,
+        })
+    } else {
+        if image.is_some() || state.is_some() || snapshot.is_some() || buffer.is_some() || no_audio
+        {
+            return Err("audio options require --coupled".into());
+        }
+        None
+    };
+    Ok(StartupArgs {
+        syx,
+        card_image,
+        audio,
+    })
+}
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    fn parse(args: &[&str]) -> Result<StartupArgs, String> {
+        parse_values(args.iter().map(std::ffi::OsString::from))
+    }
+    #[test]
+    fn default_is_cf_only_and_card_path_is_preserved() {
+        assert!(parse(&[]).unwrap().audio.is_none());
+        let args = parse(&["file.syx", "--card-image", "card.img"]).unwrap();
+        assert_eq!(args.syx, Some("file.syx".into()));
+        assert_eq!(args.card_image, Some("card.img".into()));
+        assert!(args.audio.is_none());
+    }
+    #[test]
+    fn coupled_requires_all_private_inputs_and_valid_buffer() {
+        for args in [
+            &["--coupled"][..],
+            &["x", "--coupled"],
+            &["x", "--dsp-state", "state"],
+            &["--unknown"],
+            &["x", "--audio-buffer", "NaN"],
+            &["x", "--audio-buffer", "-1"],
+            &["x", "--audio-buffer", "11"],
+        ] {
+            assert!(parse(args).is_err(), "{args:?}");
+        }
+        let parsed = parse(&[
+            "x",
+            "--coupled",
+            "--dsp-image",
+            "image",
+            "--dsp-state",
+            "state",
+            "--cf-snapshot",
+            "snapshot",
+            "--no-audio",
+            "--audio-buffer",
+            "0.1",
+        ])
+        .unwrap();
+        let audio = parsed.audio.unwrap();
+        assert_eq!(audio.image, PathBuf::from("image"));
+        assert_eq!(audio.buffer_seconds, 0.1);
+        assert!(!audio.playback);
+    }
 }

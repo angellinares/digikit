@@ -17,7 +17,11 @@
 
 use std::{
     any::Any,
-    sync::{Arc, atomic::AtomicU64, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc,
+    },
     thread,
     time::Duration,
 };
@@ -139,6 +143,13 @@ pub trait Opener {
     /// Device rate and name, without starting a stream.
     fn probe(&mut self) -> Result<(u32, String), String>;
     fn start(&mut self, ring: Arc<SpscRing>, wake: thread::Thread) -> Result<Opened, String>;
+    /// Underrun callbacks and maximum callback size (not a rendered-frame count).
+    fn counters(&self) -> (u64, u64) {
+        (0, 0)
+    }
+    fn error(&self) -> Option<String> {
+        None
+    }
 }
 
 /// The default cpal output device through `live_audio::audio`.
@@ -146,6 +157,8 @@ pub trait Opener {
 pub struct CpalOpener {
     pending: Option<audio::PendingDevice>,
     underruns: Arc<AtomicU64>,
+    callback_max_frames: Arc<AtomicU64>,
+    stream_errors: audio::StreamErrors,
 }
 
 impl Opener for CpalOpener {
@@ -157,11 +170,12 @@ impl Opener for CpalOpener {
     }
     fn start(&mut self, ring: Arc<SpscRing>, wake: thread::Thread) -> Result<Opened, String> {
         let p = self.pending.take().ok_or("device not probed")?;
-        let opened = p.start(
+        let opened = p.start_with_errors(
             ring,
             self.underruns.clone(),
-            Arc::new(AtomicU64::new(0)),
+            self.callback_max_frames.clone(),
             wake,
+            self.stream_errors.clone(),
         )?;
         Ok((
             opened.sample_rate,
@@ -169,11 +183,34 @@ impl Opener for CpalOpener {
             Box::new(opened),
         ))
     }
+    fn counters(&self) -> (u64, u64) {
+        (
+            self.underruns.load(Ordering::Relaxed),
+            self.callback_max_frames.load(Ordering::Relaxed),
+        )
+    }
+    fn error(&self) -> Option<String> {
+        self.stream_errors.error()
+    }
+}
+
+/// Feeder snapshots; no mutex or observation work runs in the audio callback.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct PlaybackStats {
+    pub stream_started: bool,
+    pub source_received_frames: u64,
+    pub feeder_pending_source_frames: u64,
+    pub queued_device_frames: u64,
+    pub underrun_events: u64,
+    pub callback_max_frames: u64,
+    pub error: Option<String>,
 }
 
 pub struct PcmPlayer {
     tx: Option<mpsc::Sender<Vec<f32>>>,
     worker: Option<thread::JoinHandle<()>>,
+    stop: Arc<AtomicBool>,
+    stats: Arc<Mutex<PlaybackStats>>,
     pub device: String,
     pub device_rate: u32,
 }
@@ -194,9 +231,13 @@ impl PcmPlayer {
     {
         let (tx, rx) = mpsc::channel::<Vec<f32>>();
         let (info_tx, info_rx) = mpsc::channel::<Result<(u32, String), String>>();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stats = Arc::new(Mutex::new(PlaybackStats::default()));
+        let worker_stop = stop.clone();
+        let worker_stats = stats.clone();
         let worker = thread::Builder::new()
             .name("pcm-feeder".into())
-            .spawn(move || feeder_thread(make(), mode, rx, info_tx))
+            .spawn(move || feeder_thread(make(), mode, rx, info_tx, worker_stop, worker_stats))
             .map_err(|e| format!("spawn feeder: {e}"))?;
         match info_rx.recv() {
             Ok(Ok((device_rate, device))) => Ok(PcmPlayer {
@@ -204,6 +245,8 @@ impl PcmPlayer {
                 worker: Some(worker),
                 device,
                 device_rate,
+                stop,
+                stats,
             }),
             Ok(Err(e)) => {
                 let _ = worker.join();
@@ -220,6 +263,20 @@ impl PcmPlayer {
         }
     }
 
+    /// Snapshot feeder/device observations. Queues exclude channel messages not yet received.
+    pub fn stats(&self) -> PlaybackStats {
+        let mut stats = self.stats.lock().expect("playback stats mutex").clone();
+        if self
+            .worker
+            .as_ref()
+            .is_some_and(thread::JoinHandle::is_finished)
+            && stats.error.is_none()
+        {
+            stats.error = Some("feeder thread stopped".into());
+        }
+        stats
+    }
+
     /// No more audio: play what is queued (even below the buffer threshold)
     /// and return when it has been played out.
     pub fn finish(mut self) {
@@ -230,11 +287,25 @@ impl PcmPlayer {
     }
 }
 
+/// Dropping a session cancels immediately rather than draining its queued audio.
+impl Drop for PcmPlayer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        self.tx = None;
+        if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
+            let _ = worker.join();
+        }
+    }
+}
+
 fn feeder_thread<O: Opener>(
     mut opener: O,
     mode: Mode,
     rx: mpsc::Receiver<Vec<f32>>,
     info_tx: mpsc::Sender<Result<(u32, String), String>>,
+    stop: Arc<AtomicBool>,
+    stats: Arc<Mutex<PlaybackStats>>,
 ) {
     let (rate, _name) = match opener.probe() {
         Ok(i) => {
@@ -251,28 +322,55 @@ fn feeder_thread<O: Opener>(
     let mut feeder = Feeder::new(ring.clone(), rate, mode);
     let mut stream: Option<Opened> = None;
     let mut done = false;
+    let mut received = 0u64;
     loop {
+        if stop.load(Ordering::Acquire) {
+            return;
+        }
         // Intake: wait briefly for audio so the loop also services the ring.
         match rx.recv_timeout(Duration::from_millis(5)) {
             Ok(v) => {
+                received += (v.len() / 2) as u64;
                 feeder.accept(&v);
                 while let Ok(v) = rx.try_recv() {
+                    if stop.load(Ordering::Acquire) {
+                        return;
+                    }
+                    received += (v.len() / 2) as u64;
                     feeder.accept(&v);
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => done = true,
         }
+        if stop.load(Ordering::Acquire) {
+            return;
+        }
         if stream.is_none() && feeder.may_start(done) {
             match opener.start(ring.clone(), thread::current()) {
                 Ok(s) => stream = Some(s),
                 Err(e) => {
+                    stats.lock().expect("playback stats mutex").error = Some(e.clone());
                     eprintln!("pcm_play: cannot start output: {e}");
                     return;
                 }
             }
         }
         feeder.pump(done);
+        if let Some(error) = opener.error() {
+            stats.lock().expect("playback stats mutex").error = Some(error);
+            return;
+        }
+        let (underrun_events, callback_max_frames) = opener.counters();
+        *stats.lock().expect("playback stats mutex") = PlaybackStats {
+            stream_started: stream.is_some(),
+            source_received_frames: received,
+            feeder_pending_source_frames: feeder.queued().saturating_sub(1) as u64,
+            queued_device_frames: ring.len() as u64,
+            underrun_events,
+            callback_max_frames,
+            error: None,
+        };
         if done && feeder.drained() {
             break;
         }
@@ -283,16 +381,31 @@ fn feeder_thread<O: Opener>(
     }
     // Let the device play the ring out (a ring is at most 1 s).
     while !ring.is_empty() {
+        if stop.load(Ordering::Acquire) {
+            return;
+        }
+        if let Some(error) = opener.error() {
+            stats.lock().expect("playback stats mutex").error = Some(error);
+            return;
+        }
         thread::sleep(Duration::from_millis(10));
     }
-    thread::sleep(Duration::from_millis(100));
+    for _ in 0..10 {
+        if stop.load(Ordering::Acquire) {
+            return;
+        }
+        if let Some(error) = opener.error() {
+            stats.lock().expect("playback stats mutex").error = Some(error);
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
     drop(stream);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
     fn ramp(n: usize) -> Vec<f32> {
         (0..n).flat_map(|i| [i as f32, -(i as f32)]).collect()
@@ -424,5 +537,125 @@ mod tests {
     fn missing_device_fails_gracefully() {
         let r = PcmPlayer::spawn_with(|| NoDevice, Mode::Live);
         assert_eq!(r.err().as_deref(), Some("no default output device"));
+    }
+    #[test]
+    fn drop_cancels_a_full_fake_device_and_joins_the_feeder() {
+        let slot = Arc::new(Mutex::new(None));
+        let player = PcmPlayer::spawn_with(
+            {
+                let slot = slot.clone();
+                move || FakeOpener {
+                    rate: 48_000,
+                    started: slot,
+                }
+            },
+            Mode::Live,
+        )
+        .unwrap();
+        player.push(&ramp(100_000));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !player.stats().stream_started && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        let stats = player.stats();
+        assert!(stats.stream_started);
+        assert_eq!(stats.source_received_frames, 100_000);
+        assert!(stats.queued_device_frames > 0);
+        let start = std::time::Instant::now();
+        drop(player); // The fake device never consumes: draining would hang.
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert_eq!(
+            Arc::strong_count(&slot),
+            1,
+            "feeder/opener must have been dropped"
+        );
+    }
+    #[test]
+    fn drop_before_buffer_threshold_never_starts_the_device() {
+        let slot = Arc::new(Mutex::new(None));
+        let player = PcmPlayer::spawn_with(
+            {
+                let slot = slot.clone();
+                move || FakeOpener {
+                    rate: 48_000,
+                    started: slot,
+                }
+            },
+            Mode::Buffer(2.0),
+        )
+        .unwrap();
+        player.push(&ramp(64));
+        drop(player);
+        assert!(slot.lock().unwrap().is_none());
+        assert_eq!(Arc::strong_count(&slot), 1);
+    }
+    struct BadStart;
+    impl Opener for BadStart {
+        fn probe(&mut self) -> Result<(u32, String), String> {
+            Ok((48_000, "fake".into()))
+        }
+        fn start(&mut self, _: Arc<SpscRing>, _: thread::Thread) -> Result<Opened, String> {
+            Err("fake start failure".into())
+        }
+    }
+    #[test]
+    fn late_device_failure_is_observable() {
+        let player = PcmPlayer::spawn_with(|| BadStart, Mode::Live).unwrap();
+        player.push(&ramp(64));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while player.stats().error.is_none() && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(player.stats().error.as_deref(), Some("fake start failure"));
+    }
+    struct PostStartError {
+        errors: audio::StreamErrors,
+    }
+    impl Opener for PostStartError {
+        fn probe(&mut self) -> Result<(u32, String), String> {
+            Ok((48_000, "fake".into()))
+        }
+        fn start(&mut self, _: Arc<SpscRing>, _: thread::Thread) -> Result<Opened, String> {
+            Ok((48_000, "fake".into(), Box::new(())))
+        }
+        fn error(&self) -> Option<String> {
+            self.errors.error()
+        }
+    }
+    #[test]
+    fn error_after_successful_start_is_latched_and_finish_does_not_hang() {
+        let errors = audio::StreamErrors::default();
+        let player = PcmPlayer::spawn_with(
+            {
+                let errors = errors.clone();
+                move || PostStartError { errors }
+            },
+            Mode::Live,
+        )
+        .unwrap();
+        player.push(&ramp(100_000));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !player.stats().stream_started && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(player.stats().stream_started);
+        assert!(player.stats().error.is_none());
+        errors.record(); // Exactly the same signal used by the CPAL error callback.
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while player.stats().error.is_none() && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            player.stats().error.as_deref(),
+            Some("output stream error (1 events; details in stderr)")
+        );
+        thread::sleep(Duration::from_millis(15));
+        assert!(
+            player.stats().error.is_some(),
+            "error must remain latched after worker exits"
+        );
+        let start = std::time::Instant::now();
+        player.finish(); // Fake stream never drains its ring; error must terminate it.
+        assert!(start.elapsed() < Duration::from_secs(1));
     }
 }
