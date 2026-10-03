@@ -231,6 +231,31 @@ fn fpu_opcode_without_fpu_is_line_f() {
 }
 
 #[test]
+fn index_scale_8_is_an_address_error_without_an_fpu() {
+    // move.l (0,a0,d0.l*8),d1 ; the same with *4 ; *8 again on a core with an FPU
+    let (mut cpu, mut ram) = machine(&[0x2230, 0x0e00]);
+    cpu.a[0] = 0x2000;
+    cpu.d[0] = 1;
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.pc, 0x4000 + 0x10 * vector::ADDRESS_ERROR as u32);
+
+    let (mut cpu, mut ram) = machine(&[0x2230, 0x0c00]);
+    ram.write32(0x2004, 0x1122_3344).unwrap();
+    cpu.a[0] = 0x2000;
+    cpu.d[0] = 1;
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.d[1], 0x1122_3344);
+
+    let (mut cpu, mut ram) = machine(&[0x2230, 0x0e00]);
+    ram.write32(0x2008, 0x5566_7788).unwrap();
+    cpu.fpu = Some(Default::default());
+    cpu.a[0] = 0x2000;
+    cpu.d[0] = 1;
+    cpu.step(&mut ram).unwrap();
+    assert_eq!(cpu.d[1], 0x5566_7788);
+}
+
+#[test]
 fn unimplemented_leaves_the_core_at_the_instruction() {
     // pulse (CFPRM p.134) is not used by either image and has no semantics
     // yet in this skeleton.
