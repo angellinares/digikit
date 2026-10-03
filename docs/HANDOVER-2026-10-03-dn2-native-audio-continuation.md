@@ -1,5 +1,105 @@
 # DN2 native/browser audio continuation — 2026-10-03
 
+## Current continuation: default audio, startup fixes and live sound capture
+
+Committed before profiling: `4660aee` (native audio integration) and `dc6863f`
+(verified unknown-value loop fallback). Default-audio/UI/capture work and its validation are recorded in the
+continuation commit containing this update. The user authorized commits and direct work; preserve
+the three pre-existing dirty handovers listed below. Real-time audio is still
+not achieved. Do not claim that exact replay PCM validates the factory-init
+sound on hardware.
+
+Normal `mise run emu` now uses local ready inputs plus
+`out/native/dn2-audio/gen` without `--coupled`. The stable ignored cache is a
+byte-identical copy of the measured version-11 candidate. Firmware selection
+compares against an independent known ready profile before automatically
+restoring its continuation. `--no-audio` retains DSP coupling while muting;
+`--cf-only` is the explicit CF diagnostic escape. Native launcher and Tauri
+frontend builds skip the browser WASM prebuild. Browser setup is visible by
+default; normal WASM builds include SHARC when the local core is available,
+but private image/state inputs must still be selected and audio started by
+a browser gesture. The fresh default coupled WASM build and ABI smoke passed: 72,896 PCM
+values, canonical `38d2a322...3ff1f8` hash, 1,139 frames and no missing blocks.
+The normal artifact SHA is
+`4b1321270c853c8c2667cef166c3562fdb29d369a65161d3df2145b9eddc169b`;
+its first separate-cache build took 276.69 s. This is ABI/correctness validation,
+not browser playback or real-time performance validation.
+
+The first default build now includes 77 MiB / 2.08M lines of generated DSP
+Rust. Progress staying at one crate does not mean a hang. Follow-up native
+builds took 14–17 s and reused SHARC; do not cancel the user's active build
+or launch competing heavy jobs. Native and WASM caches are separate.
+
+Fixed two restored-display losses: preserve saved `emitted_revision` for
+byte-exact save/load, with a nonserialized once-only frame replay flag; cache
+the actor's initial load reply for `emu_startup`, since main consumes it before
+the frontend exists. Tap now preserves the latest frame while holding across
+250k chunks. Fixed faceplate disappearance: the inserted audio row had consumed
+the old two-row grid's sized panel region. Flex-column layout retains the
+remaining panel height. Private actor startup and nonzero LCD tests, existing
+100M CF/DSP/PCM exactness, cross-chunk Tap, launcher 7/7, browser worker/audio
+6/6, Astro check and scoped review passed. Native GUI showed the LCD and panel
+after pad/audition interaction. Host CPAL smoke passed outside the sandbox;
+the sandbox-only CoreAudio OSStatus did not imply missing physical speakers.
+
+Fresh improved DSP profile is complete and independently audited. Marker scope:
+6,415 uniquely joined samples; generated-block leaves 82.245%, generated-core
+helpers 6.516%. Hot regions: `r_1C399A` 9.930%, `r_1C3862` 4.832%, `r_1C364F`
+4.801%. The retained fallback is only 0.826% leaf cost. Whole-scope sampled
+families are numeric/address/bit-conversion 12.814%, memory 11.473%, and
+ASTAT/status 8.839%; these labels are investigation leads, not causal costs or
+projected speedups. Data/scripts are under
+`/private/tmp/dn2-postgain-profile-20261003/`. The cost map supersedes the
+pre-improvement profile. Next performance work must identify a concrete cost
+in generated bodies, then use paired exactness/performance controls.
+
+Latest user issue: startup → choose DN2 firmware → Audition Trig 1, no other
+controls, continuous noise while held. An immediate short restored desktop
+test captured 0.302667 s of exact zero PCM; delayed/keyboard tests were also
+zero. The QA+note reference is a different workload (NO/NO/encoder) with
+nonzero ~263 Hz PCM, peak 0.693 and no clipping. Do not conclude the user's
+noise is solely underruns from the short silent test.
+
+Added opt-in bounded live capture: `DIGI_EMU_PCM_F32LE=PATH mise run emu`.
+It records pre-player f32LE stereo for at most 10 source seconds, resets the
+file on a new coupled session, batches file writes outside the CPAL callback,
+and reports capture errors separately from device errors. Unset means no
+recorder/file/buffer. Helper tests and the normal coupled suite passed (7,
+with 5 private tests ignored). The newest release binary includes the recorder.
+
+The parent reproduced firmware selection and Audition in a private native app
+copy. `gui-pre-sink.f32le` under
+`/private/tmp/dn2-audio-listening-20261003/` holds 10 s, nonzero finite PCM,
+peak 0.693, no clipping, whole-capture RMS 0.08646, SHA
+`b50148499af2b3f3c27d5243f3c05dab34f04ec36a3bdf05ef4ed94335fc7b16`.
+Analysis confirms a clean sine-like tone near 263 Hz: 99.9903% of non-DC power
+around the fundamental, no clipping or repeated 32-frame discontinuities.
+The unnormalized `gui-pre-sink-active-1p6s.wav` is the gap-free comparison.
+The reported noise now points to playback starvation/host output rather than
+this captured pre-sink waveform. The user listened to the gap-free WAV and
+confirmed it is a clean tone while live playback is noisy. That comparison
+localizes the audible fault to live delivery/output; the exact contribution
+of starvation versus other host output faults is still to be measured. The initial private UI
+check app was paused; do not restart or close a user-owned emulator implicitly.
+Source ownership is with parent; signal analysis is complete. A subsequent
+uninterrupted native profiling session ran with `DN2_PROFILE_LINK=1`, but
+Computer Use timed out after clicking Export diagnostics, so no timing report
+was obtained; do not treat that attempt as a measured GUI performance result. Browser connector
+discovery returned no available browser;
+native GUI was checked with the Computer Use skill instead.
+
+The next host measurement should separate IPC step response time from active
+wall outside steps. Existing `host` metrics include pauses and load time, so
+subtract load time and use an uninterrupted run. Periodic native audio status
+currently requests full diagnostics every second, including a blocking
+`audio.sync()` and a SHA-256 of the 3,192,192-byte main image. This is a concrete
+avoidable observation cost, but its playback impact has not been measured.
+Do not assume a timer clamp or call the hash/sync the main cause. A dedicated
+nonblocking audio status endpoint is a possible controlled experiment; the
+headless fixture already establishes the remaining DSP throughput deficit.
+
+See the [profile, startup and live sound records](findings/07-emulator.md#improved-dsp-profile-and-default-audio-startup-2026-10-03).
+
 ## Latest continuation: verified improvement (2026-10-03)
 
 The user subsequently authorized direct work in this checkout (“would it be

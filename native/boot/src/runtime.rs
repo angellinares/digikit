@@ -111,6 +111,9 @@ pub struct Emulator {
     frame_source: Option<String>,
     frame_revision: u64,
     emitted_revision: Option<u64>,
+    // A restore has a new host observer. This is intentionally not saved:
+    // serializing it would change a load/save state digest.
+    replay_restored_frame: bool,
     delivery_counts: [u64; 256],
     deliveries: Vec<(u16, u8)>,
     delivery_dropped: u64,
@@ -397,6 +400,7 @@ impl Emulator {
             frame_source: None,
             frame_revision: 0,
             emitted_revision: None,
+            replay_restored_frame: false,
             delivery_counts: [0; 256],
             deliveries: Vec::new(),
             delivery_dropped: 0,
@@ -479,11 +483,12 @@ impl Emulator {
 
     pub fn snapshot(&mut self) -> Snapshot {
         let status = self.status();
-        let frame = (self.emitted_revision != Some(self.frame_revision))
+        let frame = (self.replay_restored_frame || self.emitted_revision != Some(self.frame_revision))
             .then(|| self.current_frame.clone())
             .flatten();
         if frame.is_some() {
             self.emitted_revision = Some(self.frame_revision);
+            self.replay_restored_frame = false;
         }
         Snapshot { status, frame }
     }
@@ -2188,6 +2193,7 @@ impl Emulator {
             self.dspi_frames_observed = self.bus.board.dma.dspi2.frames;
         }
         self.rebuild_watch();
+        self.replay_restored_frame = true;
         Ok(())
     }
 
@@ -2407,6 +2413,29 @@ mod tests {
         assert_eq!(runtime.snapshot().frame.unwrap(), vec![0xa5; PANEL_BYTES]);
         runtime.diagnostics();
         assert!(runtime.snapshot().frame.is_none());
+    }
+
+    #[test]
+    fn restored_frame_is_published_once_to_a_fresh_observer() {
+        let Ok(syx) = std::fs::read("../../Digitakt_II_OS1.16.syx") else {
+            return;
+        };
+        let mut saved = Emulator::new(&syx, None).unwrap();
+        saved.current_frame = Some(vec![0xa5; PANEL_BYTES]);
+        saved.frame_revision = 42;
+        saved.frame_source = Some("main".into());
+        assert_eq!(saved.snapshot().frame, Some(vec![0xa5; PANEL_BYTES]));
+        let state = saved.save_state().unwrap();
+
+        let mut restored = Emulator::new(&syx, None).unwrap();
+        restored.load_state(&state).unwrap();
+        assert_eq!(restored.frame_revision, 42);
+        assert_eq!(restored.frame_source.as_deref(), Some("main"));
+        assert_eq!(restored.save_state().unwrap(), state);
+        assert_eq!(restored.snapshot().frame, Some(vec![0xa5; PANEL_BYTES]));
+        assert!(restored.snapshot().frame.is_none());
+        assert_eq!(restored.frame_revision, 42);
+        assert_eq!(restored.frame_source.as_deref(), Some("main"));
     }
 
     #[test]

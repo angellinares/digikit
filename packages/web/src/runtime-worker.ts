@@ -61,8 +61,11 @@ function core() {
   corePromise ??= WebAssembly.instantiateStreaming(fetch('/emulator-core.wasm'), {}).then(({ instance }) => { plain = instance.exports as unknown as Abi; wasm ??= plain; return plain; });
   return corePromise;
 }
-/** The dev core with the SHARC+ engine (`tools/native_wasm.sh --sharc`); its DSP code comes from firmware, so it is never bundled or committed. */
-function sharcCore() {
+/** The ordinary core includes the local SHARC engine when it was built with
+ * SHARC_GEN_DIR. The legacy separate file remains a fallback for old builds. */
+async function sharcCore() {
+  const ordinary = await core();
+  if (typeof ordinary.digi_load_coupled === 'function') return ordinary;
   sharcPromise ??= WebAssembly.instantiateStreaming(fetch('/emulator-core-sharc.wasm'), {}).then(({ instance }) => instance.exports as unknown as Abi);
   return sharcPromise;
 }
@@ -70,11 +73,9 @@ function publish(snapshot: unknown, token: number) { postMessage({ type: 'snapsh
 function step() {
   const snapshot = call('digi_step', 250_000);
   lastIcount = snapshot.status.icount;
-  if (coupled) {
-    sendPcm();
-    for (let i = pendingRelease.length - 1; i >= 0; i -= 1) {
-      if (snapshot.status.icount >= pendingRelease[i].at) { call('digi_button', pendingRelease[i].code, 0); pendingRelease.splice(i, 1); }
-    }
+  if (coupled) sendPcm();
+  for (let i = pendingRelease.length - 1; i >= 0; i -= 1) {
+    if (snapshot.status.icount >= pendingRelease[i].at) { call('digi_button', pendingRelease[i].code, 0); pendingRelease.splice(i, 1); }
   }
   return snapshot;
 }
@@ -93,6 +94,15 @@ type Message = { type: string; id?: string; generation: number; bytes?: ArrayBuf
 async function handle(data: Message) {
   await core();
   if (data.type === 'audio-port') { audioPort = data.port; return; }
+  if (data.type === 'coupled-capable') {
+    try {
+      const candidate = await sharcCore();
+      if (data.id) postMessage({ reply: data.id, value: typeof candidate.digi_load_coupled === 'function' });
+    } catch {
+      if (data.id) postMessage({ reply: data.id, value: false });
+    }
+    return;
+  }
   if (data.type === 'load') {
     if (data.generation < generation) return reject(data, 'stale emulator session');
     generation = data.generation; running = false; runEpoch += 1; stopCore(); wasm = plain;
@@ -111,7 +121,8 @@ async function handle(data: Message) {
   if (data.type === 'load-coupled') {
     if (data.generation < generation) return reject(data, 'stale emulator session');
     generation = data.generation; running = false; runEpoch += 1; stopCore();
-    try { wasm = await sharcCore(); } catch (error) { wasm = plain; return reject(data, `emulator-core-sharc.wasm is not available (build it with tools/native_wasm.sh --sharc): ${error}`); }
+    try { wasm = await sharcCore(); } catch (error) { wasm = plain; return reject(data, `Audio setup needs a browser core built with SHARC support: ${error}`); }
+    if (typeof wasm.digi_load_coupled !== 'function') { wasm = plain; return reject(data, 'Audio setup needs a browser core built with SHARC support.'); }
     if (!data.bytes || !data.image || !data.dsp) return reject(data, 'firmware, DSP image and DSP state are required');
     const parts = [new Uint8Array(data.bytes), new Uint8Array(data.image), new Uint8Array(data.dsp), new Uint8Array(data.snapshot ?? new ArrayBuffer(0))];
     const pointers: number[] = [];

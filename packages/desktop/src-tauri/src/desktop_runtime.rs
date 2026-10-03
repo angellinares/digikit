@@ -1,4 +1,4 @@
-//! Actor-owned desktop core. Coupling is an explicit, local-only build/run opt-in.
+//! Actor-owned desktop core. Configured local DN2 ready assets attach coupled audio on normal startup.
 use elektron_native_boot::{Emulator, Snapshot};
 use emmc_card::Card;
 use serde_json::Value;
@@ -15,12 +15,24 @@ pub struct AudioOptions {
     pub snapshot: PathBuf,
     pub buffer_seconds: f64,
     pub playback: bool,
+    /// The launcher-provided ready session may fall back for files picked in
+    /// the normal panel. Explicit --coupled remains strict.
+    pub automatic: bool,
+    pub expected_syx: Option<PathBuf>,
 }
 
 pub struct DesktopRuntime {
     emulator: Emulator,
     #[cfg(feature = "coupled-audio")]
     audio: Option<coupled::AudioSession>,
+}
+fn matches_automatic_profile(options: &AudioOptions, syx: &[u8]) -> bool {
+    !options.automatic
+        || options
+            .expected_syx
+            .as_ref()
+            .and_then(|path| std::fs::read(path).ok())
+            .is_some_and(|expected| expected == syx)
 }
 impl Deref for DesktopRuntime {
     type Target = Emulator;
@@ -39,6 +51,7 @@ impl DesktopRuntime {
         card: Option<Card>,
         options: Option<&AudioOptions>,
     ) -> Result<Self, String> {
+        let options = options.filter(|options| matches_automatic_profile(options, syx));
         let mut runtime = Self {
             emulator: Emulator::new(syx, card)?,
             #[cfg(feature = "coupled-audio")]
@@ -118,7 +131,73 @@ mod coupled {
         },
     };
     use serde_json::json;
-    use std::{cell::RefCell, rc::Rc, time::Instant};
+    use std::{
+        cell::RefCell,
+        fs::File,
+        io::{self, Write},
+        rc::Rc,
+        time::Instant,
+    };
+
+    const PCM_CAPTURE_LIMIT: u64 = SOURCE_RATE as u64 * 2 * 10;
+
+    struct PcmCapture {
+        file: Option<File>,
+        path: String,
+        count: u64,
+        error: Option<String>,
+    }
+
+    impl PcmCapture {
+        fn from_env() -> Option<Self> {
+            let path = std::env::var_os("DIGI_EMU_PCM_F32LE")?;
+            let path = PathBuf::from(path);
+            let name = path.display().to_string();
+            match File::create(&path) {
+                Ok(file) => Some(Self {
+                    file: Some(file),
+                    path: name,
+                    count: 0,
+                    error: None,
+                }),
+                Err(error) => Some(Self {
+                    file: None,
+                    path: name,
+                    count: 0,
+                    error: Some(format!("PCM capture open: {error}")),
+                }),
+            }
+        }
+
+        fn write(&mut self, pcm: &[f32]) {
+            let Some(file) = &mut self.file else {
+                return;
+            };
+            match write_pcm_f32le(file, &mut self.count, pcm) {
+                Ok(()) => {}
+                Err(error) => {
+                    self.file = None;
+                    self.error = Some(format!("PCM capture write: {error}"));
+                }
+            }
+        }
+    }
+
+    fn write_pcm_f32le(writer: &mut impl Write, count: &mut u64, pcm: &[f32]) -> io::Result<()> {
+        let samples = pcm
+            .len()
+            .min(PCM_CAPTURE_LIMIT.saturating_sub(*count) as usize);
+        if samples == 0 {
+            return Ok(());
+        }
+        let mut bytes = Vec::with_capacity(samples * size_of::<f32>());
+        for sample in &pcm[..samples] {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        writer.write_all(&bytes)?;
+        *count += samples as u64;
+        Ok(())
+    }
 
     fn continuation(data: &[u8]) -> Result<(u64, u64, &[u8]), String> {
         if data.len() <= 24 || &data[..8] != b"DT2DSP01" {
@@ -146,6 +225,7 @@ mod coupled {
         pcm_handoff_ns: u64,
         audio_poll_wall_ns: u64,
         audio_sync_wall_ns: u64,
+        pcm_capture: Option<PcmCapture>,
         #[cfg(test)]
         captured_pcm: Vec<f32>,
     }
@@ -194,6 +274,7 @@ mod coupled {
             } else {
                 (None, None)
             };
+            let pcm_capture = PcmCapture::from_env();
             Ok(Self {
                 handle,
                 shared,
@@ -210,6 +291,7 @@ mod coupled {
                 pcm_handoff_ns: 0,
                 audio_poll_wall_ns: 0,
                 audio_sync_wall_ns: 0,
+                pcm_capture,
                 #[cfg(test)]
                 captured_pcm: Vec::new(),
             })
@@ -233,6 +315,9 @@ mod coupled {
             let mut shared = self.shared.borrow_mut();
             self.frames += shared.frames.len() as u64;
             self.samples += shared.pcm.len() as u64;
+            if let Some(capture) = &mut self.pcm_capture {
+                capture.write(&shared.pcm);
+            }
             if let Some(player) = &self.player {
                 player.push(&shared.pcm);
             }
@@ -272,6 +357,7 @@ mod coupled {
         pub(super) fn report(&self) -> Value {
             let shared = self.shared.borrow();
             let sink = self.player.as_ref().map(PcmPlayer::stats);
+            let output_device = self.player.as_ref().map(|player| player.device.clone());
             let connected = sink.as_ref().is_some_and(|s| s.error.is_none());
             let wall = self.started.elapsed().as_secs_f64();
             let audio = self.samples as f64 / 2.0 / SOURCE_RATE as f64;
@@ -285,8 +371,13 @@ mod coupled {
                 "missing_blocks": shared.missing_blocks, "nonzero_replies": shared.nonzero_replies,
                 "halted": shared.halted, "flow_started": self.samples > 0,
                 "playback_requested": self.playback_requested, "sink_connected": connected,
-                "device_error": self.device_error, "sink": sink,
+                "device_error": self.device_error, "output_device": output_device, "sink": sink,
             });
+            if let Some(capture) = &self.pcm_capture {
+                report["pcm_capture_path"] = capture.path.clone().into();
+                report["pcm_capture_count"] = capture.count.into();
+                report["pcm_capture_error"] = capture.error.clone().into();
+            }
             if self.link_timing {
                 let timing = self.handle.timing_profile().expect("enabled link timing");
                 report["link_timing"] = link_timing_json(
@@ -346,6 +437,43 @@ mod coupled {
             data.extend([7, 8]);
             assert_eq!(continuation(&data).unwrap(), (123, 456, &[7, 8][..]));
         }
+        #[test]
+        fn pcm_capture_writer_uses_little_endian_and_respects_the_limit() {
+            let mut bytes = Vec::new();
+            let mut count = 0;
+            write_pcm_f32le(&mut bytes, &mut count, &[-1.0, 0.0, 0.5]).unwrap();
+            assert_eq!(count, 3);
+            assert_eq!(
+                bytes,
+                [
+                    (-1.0f32).to_le_bytes(),
+                    0.0f32.to_le_bytes(),
+                    0.5f32.to_le_bytes()
+                ]
+                .concat()
+            );
+
+            let mut bounded = Vec::new();
+            let mut count = PCM_CAPTURE_LIMIT - 1;
+            write_pcm_f32le(&mut bounded, &mut count, &[0.25, 0.75]).unwrap();
+            assert_eq!(count, PCM_CAPTURE_LIMIT);
+            assert_eq!(bounded, 0.25f32.to_le_bytes());
+        }
+        #[test]
+        fn pcm_capture_writer_returns_the_write_error_without_advancing_count() {
+            struct FailingWriter;
+            impl std::io::Write for FailingWriter {
+                fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                    Err(std::io::Error::other("expected write failure"))
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+            let mut count = 0;
+            assert!(write_pcm_f32le(&mut FailingWriter, &mut count, &[0.5]).is_err());
+            assert_eq!(count, 0);
+        }
         fn options() -> AudioOptions {
             let dir = PathBuf::from(
                 std::env::var_os("DIGI_COUPLED_FIXTURES").expect("fixture directory"),
@@ -356,6 +484,8 @@ mod coupled {
                 snapshot: dir.join("digi-audio-m5.snap"),
                 buffer_seconds: 0.0,
                 playback: false,
+                automatic: false,
+                expected_syx: None,
             }
         }
         fn syx() -> Vec<u8> {
@@ -389,7 +519,15 @@ mod coupled {
         fn coupled_ready_exactness() {
             use sha2::{Digest, Sha256};
             let mut runtime = DesktopRuntime::new(&syx(), None, Some(&options())).unwrap();
-            let initial = runtime.snapshot().status;
+            let initial_snapshot = runtime.snapshot();
+            assert!(
+                initial_snapshot
+                    .frame
+                    .as_ref()
+                    .is_some_and(|frame| frame.iter().any(|byte| *byte != 0)),
+                "ready fixture should restore a visible LCD frame"
+            );
+            let initial = initial_snapshot.status;
             assert!(initial.ready);
             let mut script = crate::desktop_runtime::common::Script::from_env();
             script.poll(&mut runtime.emulator, initial.icount, true);
@@ -453,6 +591,9 @@ mod coupled {
                 .iter()
                 .flat_map(|v| v.to_le_bytes())
                 .collect();
+            if let Some(path) = std::env::var_os("DIGI_COUPLED_PCM_F32LE") {
+                std::fs::write(path, &pcm).unwrap();
+            }
             assert_eq!(audio.captured_pcm.len(), 72_896);
             assert_eq!(
                 format!("{:x}", Sha256::digest(&pcm)),
@@ -471,6 +612,75 @@ mod coupled {
             assert_eq!(report["pcm_output_connected"], false);
             println!("native_audio_health={}", report["native_audio"]);
         }
+
+        #[test]
+        #[ignore = "private DN2 ready fixtures; captures the desktop Audition Trig 1 path without the shared QA script"]
+        fn desktop_trig1_capture_without_qa_script() {
+            use sha2::{Digest, Sha256};
+
+            let mut runtime = DesktopRuntime::new(&syx(), None, Some(&options())).unwrap();
+            let initial = runtime.snapshot().status;
+            assert!(initial.ready);
+
+            let press_after = std::env::var("DIGI_DESKTOP_TRIG1_PRESS_AFTER")
+                .ok()
+                .map(|value| value.parse::<u64>().expect("valid press delay"))
+                .unwrap_or(0);
+            let hold = 40_000_000u64;
+            let press_at = initial.icount + press_after;
+            let mut status = initial;
+            for _ in 0..1000 {
+                if status.icount >= press_at {
+                    break;
+                }
+                status = runtime
+                    .step_chunk((press_at - status.icount).min(250_000) as u32)
+                    .status;
+                assert!(status.error.is_none(), "{:?}", status.error);
+            }
+            assert!(
+                status.icount >= press_at,
+                "did not reach Trig 1 press boundary"
+            );
+            runtime.button(25, true).unwrap();
+            let held_from = runtime.snapshot().status.icount;
+            for _ in 0..1000 {
+                if status.icount.saturating_sub(held_from) >= hold {
+                    break;
+                }
+                status = runtime
+                    .step_chunk(
+                        (hold - status.icount.saturating_sub(held_from)).min(250_000) as u32,
+                    )
+                    .status;
+                assert!(status.error.is_none(), "{:?}", status.error);
+            }
+            assert!(
+                status.icount.saturating_sub(held_from) >= hold,
+                "did not hold Trig 1 for {hold} instructions"
+            );
+            runtime.button(25, false).unwrap();
+            runtime.snapshot();
+
+            let audio = runtime.audio.as_ref().unwrap();
+            assert!(!audio.captured_pcm.is_empty(), "Trig 1 produced no PCM");
+            assert!(audio.captured_pcm.iter().all(|sample| sample.is_finite()));
+            let pcm: Vec<u8> = audio
+                .captured_pcm
+                .iter()
+                .flat_map(|sample| sample.to_le_bytes())
+                .collect();
+            let digest = format!("{:x}", Sha256::digest(&pcm));
+            println!(
+                "desktop_trig1_pcm press_after={press_after} held={} samples={} sha256={digest}",
+                status.icount.saturating_sub(held_from),
+                audio.captured_pcm.len(),
+            );
+            if let Some(path) = std::env::var_os("DIGI_DESKTOP_TRIG1_PCM_F32LE") {
+                std::fs::write(path, pcm).unwrap();
+            }
+        }
+
         #[test]
         #[ignore = "private DN2 fixtures; missing-device path must leave coupling intact"]
         fn missing_device_keeps_coupled_runtime_and_records_error() {
@@ -488,6 +698,89 @@ mod coupled {
             assert_eq!(audio.report()["sink_connected"], false);
             assert!(audio.shared.borrow().halted.is_none());
         }
+
+        #[test]
+        #[ignore = "private DN2 fixtures and an audible default output device"]
+        fn default_output_receives_nonzero_emulated_pcm_and_tears_down() {
+            let mut options = options();
+            options.playback = true;
+            {
+                let mut runtime = DesktopRuntime::new(&syx(), None, Some(&options)).unwrap();
+                let initial = runtime.snapshot().status;
+                assert!(initial.ready);
+                let mut script = crate::desktop_runtime::common::Script::from_env();
+                script.poll(&mut runtime.emulator, initial.icount, true);
+                for _ in 0..400 {
+                    let status = runtime.step_chunk(250_000).status;
+                    assert!(status.error.is_none(), "{:?}", status.error);
+                    script.poll(&mut runtime.emulator, status.icount, status.ready);
+                    if runtime
+                        .diagnostics()
+                        .get("native_audio")
+                        .and_then(|audio| audio.get("source_pcm_frames"))
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0)
+                        > 0
+                    {
+                        break;
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let report = runtime.diagnostics();
+                let audio = &report["native_audio"];
+                if audio["sink_connected"] != true {
+                    assert!(
+                        audio["device_error"].as_str().is_some(),
+                        "missing sink without a device error: {audio}"
+                    );
+                    eprintln!("default output unavailable: {}", audio["device_error"]);
+                    return;
+                }
+                assert_eq!(audio["sink_connected"], true, "{audio}");
+                assert_eq!(audio["flow_started"], true, "{audio}");
+                assert!(
+                    audio["source_pcm_frames"].as_u64().unwrap_or(0) > 0,
+                    "{audio}"
+                );
+                assert!(
+                    audio["sink"]["source_received_frames"]
+                        .as_u64()
+                        .unwrap_or(0)
+                        > 0,
+                    "{audio}"
+                );
+            }
+        }
+    }
+}
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    fn automatic(profile: PathBuf) -> AudioOptions {
+        AudioOptions {
+            image: PathBuf::new(),
+            state: PathBuf::new(),
+            snapshot: PathBuf::new(),
+            buffer_seconds: 0.0,
+            playback: false,
+            automatic: true,
+            expected_syx: Some(profile),
+        }
+    }
+
+    #[test]
+    fn automatic_profile_accepts_identical_bytes_and_rejects_another_firmware() {
+        let path = std::env::temp_dir().join(format!(
+            "digi-auto-profile-{}-{}.syx",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        std::fs::write(&path, [1, 2, 3, 4]).unwrap();
+        let options = automatic(path.clone());
+        assert!(matches_automatic_profile(&options, &[1, 2, 3, 4]));
+        assert!(!matches_automatic_profile(&options, &[1, 2, 3, 5]));
+        std::fs::remove_file(path).unwrap();
     }
 }
 #[cfg(all(test, feature = "coupled-audio"))]

@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 import { hostMetrics, pcmMetrics } from '../packages/web/src/runtime-metrics.ts';
+const require = createRequire(import.meta.url);
+const ts = require('../packages/web/node_modules/typescript/lib/typescript.js');
 
 function processor() {
   let Processor;
@@ -20,6 +23,59 @@ function processor() {
     return [Array.from(left), Array.from(right)];
   };
   return { p, send, render, reports };
+}
+
+function workerHarness({ ordinaryHasCoupling = false } = {}) {
+  let result = {};
+  let icount = 0;
+  const buttons = [];
+  const timers = [];
+  const replies = new Map();
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const writeResult = (value) => {
+    result = value;
+    const bytes = new TextEncoder().encode(JSON.stringify(value));
+    new Uint8Array(memory.buffer).set(bytes, 0);
+    return 0;
+  };
+  const abi = {
+    memory,
+    digi_result_ptr: () => 0,
+    digi_result_len: () => new TextEncoder().encode(JSON.stringify(result)).length,
+    digi_stop: () => writeResult({}),
+    digi_alloc: () => 8,
+    digi_dealloc: () => {},
+    digi_load: () => writeResult({ snapshot: { status: { icount } } }),
+    digi_step: () => { icount += 100; return writeResult({ snapshot: { status: { icount } } }); },
+    digi_button: (code, down) => { buttons.push([code, down]); return writeResult({}); },
+  };
+  if (ordinaryHasCoupling) abi.digi_load_coupled = () => writeResult({ snapshot: { status: { icount } } });
+  const source = fs.readFileSync(new URL('../packages/web/src/runtime-worker.ts', import.meta.url), 'utf8')
+    .replace("import { hostMetrics, pcmMetrics } from './runtime-metrics';", 'const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, report() { return {}; } }); const pcmMetrics = () => ({});');
+  const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const context = {
+    WebAssembly: { Memory: WebAssembly.Memory, instantiateStreaming: async (response) => {
+      await response;
+      return { instance: { exports: abi } };
+    } },
+    fetch: async (url) => {
+      if (String(url).includes('sharc')) throw new Error('missing sharc core');
+      return {};
+    },
+    TextDecoder, TextEncoder, Uint8Array, Float32Array, performance: { now: () => 0 },
+    setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    postMessage: (message) => { if (message.reply) replies.get(message.reply)?.(message); },
+    self: {}, console,
+  };
+  vm.runInNewContext(js, context);
+  const send = (data) => new Promise((resolve, reject) => {
+    replies.set(data.id, (message) => {
+      replies.delete(data.id);
+      message.error ? reject(new Error(message.error)) : resolve(message.value);
+    });
+    context.self.onmessage({ data });
+  });
+  return { send, buttons, runTimer: async () => { const timer = timers.shift(); if (timer) await timer(); } };
 }
 
 test('PCM rate is emitted stereo duration over this session wall time', () => {
@@ -65,4 +121,18 @@ test('underrun duration includes the partial quantum and subsequent rebuffering'
   assert.equal(report.portAttached, true);
   assert.equal(report.receivedPcm, true); assert.equal(report.renderedPcm, true);
   send({ type: 'flush' }); assert.equal(p.queued, 0); assert.equal(p.playing, false);
+});
+
+test('missing SHARC exports report unavailable capability before any coupled load', async () => {
+  const worker = workerHarness();
+  assert.equal(await worker.send({ type: 'coupled-capable', id: 'capability', generation: 0 }), false);
+  assert.deepEqual(worker.buttons, []);
+});
+
+test('a deferred tap releases after an ordinary CF step', async () => {
+  const worker = workerHarness();
+  await worker.send({ type: 'load', id: 'load', generation: 1, bytes: new Uint8Array([1]).buffer });
+  await worker.send({ type: 'tap', id: 'tap', generation: 1, code: 25, hold: 100 });
+  await worker.runTimer();
+  assert.deepEqual(worker.buttons, [[25, 1], [25, 0]]);
 });

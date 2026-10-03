@@ -3,7 +3,7 @@
   "productName": "Digiemu",
   "version": "0.1.0",
   "identifier": "dev.digiemu.panel",
-  "build": { "beforeBuildCommand": "pnpm --filter @digi/web build", "frontendDist": "../../web/dist" },
+  "build": { "beforeBuildCommand": "pnpm --filter @digi/web exec astro build", "frontendDist": "../../web/dist" },
   "app": {
     "windows": [{ "title": "Digiemu", "width": 1120, "height": 1000, "minWidth": 700, "minHeight": 600 }],
     "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost" }

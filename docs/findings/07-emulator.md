@@ -5655,3 +5655,156 @@ Next attribution should profile the improved artifact on the same marker
 window, recompute the remaining interpreter and generated-body cost, and choose
 one change from that evidence. Do not reuse the old cost map as though it
 profiles the optimized binary. Sustained real-time audio remains open.
+
+### Improved DSP profile and default audio startup (2026-10-03)
+
+**[O]** After commits `4660aee` (native audio integration) and `dc6863f`
+(unknown-value loop fallback), the version-11 candidate was profiled again.
+The symbol-bearing release replay used the same `5400..5600` marker window,
+repeated 25 times. Binary UUID `22548728-F14C-325C-9A7E-DF5C107CF9C7`, its
+trace load address and marker PC range reconcile with the raw and symbolicated
+tables. All 6,415 marker-scoped samples join uniquely; 6,408 retain
+`Engine::step`, and all retain `step_workload`. The decoded wrapper name is
+absent because of inlining, so selection uses the raw marker address range.
+An independent evidence audit checked the scope, binary identity, category
+totals and exact instruction counters.
+
+The disjoint sampled leaf costs are generated blocks 82.245%, generated-core
+helpers 6.516%, other 5.066%, `Engine::step` 3.601%, `exec_insn` 2.089%, and
+`memmove` 0.483%. The largest generated regions are `r_1C399A` (9.930%),
+`r_1C3862` (4.832%) and `r_1C364F` (4.801%). The retained unknown-value
+fallback has only 0.826% leaf cost. Generated-core helpers can also be called
+from the interpreter; these categories are not an AOT ancestry decomposition.
+Exact counters still show 66,692,132 generated and 298,452 single-step
+instructions out of 66,990,584 busy instructions (99.5545%/0.4455%). These
+instruction shares are not CPU shares. The 19,465 zero-progress entry bails
+also do not establish costly remaining fallback candidates.
+
+Whole-scope innermost source attribution groups numeric/address/bit-conversion
+helpers at 12.814%, memory helpers at 11.473%, and status/ASTAT helpers at
+8.839%. These are name-token families of sampled leaves, not causal cost
+decompositions or projected gains. In particular, address translation and
+`f32::from_bits` are included in the first family; it is not a measurement of
+expensive floating arithmetic. Memory attribution does not prove bandwidth
+or cache pressure. The next performance experiment should target a demonstrated
+cost within the generated bodies and repeat the paired fidelity/performance
+gates, rather than ranking optimizations by entry frequency alone.
+
+Private reproduction records are in
+`/private/tmp/dn2-postgain-profile-20261003/results/`, including
+`marker-scoped-symbolicated-costmap.json`, `counter-summary.json`,
+`trace-attribution-reconciliation.json`, `hot-r_1C399A-inline-operations.json`
+and `whole-scope-inline-operations.json`. The later generated-cache hash
+inventory is explicitly retrospective, not a pre-build source attestation.
+The measured private candidate was copied byte-identically to the stable
+application location `out/native/dn2-audio/gen`; generated code and firmware
+remain ignored and local.
+
+**[O]** `mise run emu` now attaches the locally available matching DN2 ready
+session and live audio by default. `--no-audio` mutes playback while retaining
+the DSP; `--cf-only` selects the CF diagnostic path. Automatic setup compares
+the selected firmware bytes with the independently configured ready profile,
+so selecting different firmware does not reuse its DSP continuation. Explicit
+manual coupled inputs remain trusted local configuration. Native and Tauri
+frontend builds invoke Astro directly, avoiding the browser package's WASM
+prebuild. The normal browser build includes SHARC when its local generated
+core is available; visible setup still requires the user to select private
+image/state inputs and use a browser audio gesture. No private assets are
+bundled into the repository.
+
+Two startup/display regressions were corrected. A saved frame's serialized
+delivery revision described the old observer; restore now uses a separate,
+nonserialized replay flag to deliver the saved LCD once while preserving
+load/save byte equality. The desktop actor also retains the initial CLI load
+snapshot for the frontend startup request, since the CLI consumes that reply
+before the window exists. Tap retains the latest display frame across its
+bounded hold. The optional audio row had occupied the faceplate's sole sized
+grid row; a flex column now gives the panel the remaining height regardless
+of optional rows. Native GUI inspection confirmed visible LCD/panel and
+continued panel visibility after pad and audition interactions.
+
+Focused checks passed: restored-frame byte equality and once-only delivery,
+private actor startup/nonzero LCD, existing private 100M coupled exactness,
+Tap holding across chunks, seven launcher tests, six browser worker/audio
+tests, Astro check and independent review. A default-speaker CPAL smoke passed
+outside the sandbox; a sandbox CoreAudio failure did not establish device
+unavailability. Follow-up native builds took about 14–17 s and reused SHARC.
+The first new default build compiles roughly 77 MiB / 2.08 million generated
+Rust lines that the former CF-only default did not compile; Cargo's crate
+counter does not indicate progress inside that compilation. Native and WASM
+artifacts have separate caches. These build timings do not measure playback
+speed, and sustained real-time audio remains open.
+
+### Live native sound investigation (2026-10-03)
+
+**[O]** The user reported mostly noise from a fresh firmware selection and
+Audition Trig 1, with no intervening controls. A restored desktop-only test
+holding Trig 1 for 40M guest instructions immediately produced 29,056 f32
+values / 0.302667 s of exact silence; a delayed press and keyboard-mode trial
+also produced silence. The immediate hash is
+`a50586e86b2d0246bd05181dd1f877b1b2570f2c1eb74b7613c9b17dbd4eb75a`.
+Those short runs do not reproduce the later live GUI state. The existing
+QA-plus-note fixture produces nonzero PCM, RMS 0.2950, peak 0.6930,
+no clipping and a dominant frequency near 263 Hz; its canonical PCM hash
+remains `38d2a322...3ff1f8`. It runs two NO presses and an encoder turn that
+desktop startup does not run. Neither this reference nor an UNTITLED display
+proves hardware factory-init patch fidelity.
+
+An opt-in native pre-sink capture now uses `DIGI_EMU_PCM_F32LE=PATH`. It opens
+or truncates the explicit local path on each new coupled session, writes
+interleaved f32LE batches before the player, and stops at 960,000 values
+(10 source-audio seconds). With the variable unset it creates no recorder,
+file or capture buffer. File work does not run on the real-time callback;
+errors latch in conditional `native_audio.pcm_capture_path/count/error`
+diagnostics independently of output-device errors. Byte order, limit and
+write-error tests passed; the coupled desktop suite passed 7 tests with
+5 expected private-fixture skips. Capture is diagnostic, not a throughput
+benchmark.
+
+A fresh native GUI run selected the DN2 firmware through the picker and used
+only Audition Trig 1. Its bounded 10 s pre-sink capture contains finite,
+nonzero PCM, peak 0.6930, no clipping, and whole-capture RMS 0.08646. SHA-256:
+`b50148499af2b3f3c27d5243f3c05dab34f04ec36a3bdf05ef4ed94335fc7b16`.
+The output device opened as MacBook Pro Speakers while underruns accumulated.
+The callback explicitly substitutes silence for missing frames; its underrun
+counter counts callbacks with any shortage, not missing-frame duration. A
+raw-signal spectrum shows a clean, sine-like tone: active source interval
+8.39–9.49 s, active RMS 0.21863, near-zero DC, no clipping. A stable in-note
+window has a fundamental near 263 Hz with 99.9903% of non-DC power in its
+±20 Hz band, and 0.00969% inharmonic energy. There is no repeated discontinuity
+at the 32-frame DSP block boundary (largest boundary jump 0.02698 versus
+0.02821 elsewhere; none above 0.1). These measurements reject pre-sink
+broadband noise for this actual GUI reproduction. Playback starvation/host
+output is now the appropriate investigation boundary; they do not by
+themselves measure physical output or prove that gaps explain every audible
+artifact. The unnormalized `gui-pre-sink-active-1p6s.wav` provides a gap-free
+comparison. The user listened to that WAV and confirmed a clean tone while
+live emulator playback remained noisy. This independently supports the
+live delivery/output boundary; it does not yet quantify which host delays
+produce the audible artifacts. Private captures and analysis live under
+`/private/tmp/dn2-audio-listening-20261003/`.
+
+
+**[O]** A fresh default coupled browser WASM build completed in 276.69 s in its
+separate cache. The normal `emulator-core.wasm` exports `digi_load_coupled`,
+restored the ready fixture and delivered the initial LCD. The bounded QA-plus-
+note ABI smoke produced 72,896 PCM values with canonical SHA
+`38d2a3224d10e0b59cafa602ba1b8f8be31562efa07491b963ff4e127f3ff1f8`,
+1,139 frames and no missing blocks. Artifact SHA:
+`4b1321270c853c8c2667cef166c3562fdb29d369a65161d3df2145b9eddc169b`.
+This validates the optimized default artifact's ABI/PCM correctness, not
+real-time browser playback. The focused native boot restored-frame test also
+passed with the current byte-equality and once-only delivery assertions.
+
+**[O]** Source inspection found a separate host observation cost: the native
+audio UI polls `emu_diagnostics` every second. On the actor, that call waits
+for outstanding DSP work via `audio.sync()` and recomputes SHA-256 over the
+3,192,192-byte DN2 main image before returning audio health. Full profile/event
+collection is disabled in the default launcher feature set. The cost and
+audible impact of periodic sync/hash remain unmeasured; source inspection
+does not establish that they dominate the already DSP-bound workload. Existing
+`host` metrics measure whole IPC step responses. Their wall residual includes
+load, pauses and user time, so only an uninterrupted run with load subtracted
+can estimate off-step overhead. No effective timer-clamp cost was measured.
+A native GUI export attempt with `DN2_PROFILE_LINK=1` timed out in Computer Use
+after Export diagnostics; it yielded no report and is not performance evidence.

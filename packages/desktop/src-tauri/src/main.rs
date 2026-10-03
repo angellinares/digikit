@@ -109,6 +109,12 @@ enum Command {
         detents: i32,
         reply: Reply,
     },
+    Tap {
+        session: u64,
+        code: u8,
+        hold: u32,
+        reply: Reply,
+    },
     Stop {
         session: u64,
         reply: Reply,
@@ -131,6 +137,7 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
     let mut session = 0u64;
     let mut cached: Option<(Vec<u8>, Option<PathBuf>)> = None;
     let mut read_error: Option<Arc<Mutex<Option<String>>>> = None;
+    let mut startup_snapshot: Option<Snapshot> = None;
     while let Ok(command) = receiver.recv() {
         let command = match command {
             Command::Diagnostics {
@@ -150,6 +157,9 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
             }
             command => command,
         };
+        if !matches!(&command, Command::Load { .. } | Command::Startup { .. }) {
+            startup_snapshot = None;
+        }
         let (request_session, reply) = match &command {
             Command::Diagnostics { .. } => unreachable!("diagnostics handled above"),
             Command::Startup { reply } => (session, reply.clone()),
@@ -158,6 +168,7 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
             | Command::Step { session, reply, .. }
             | Command::Button { session, reply, .. }
             | Command::Turn { session, reply, .. }
+            | Command::Tap { session, reply, .. }
             | Command::Stop { session, reply } => (*session, reply.clone()),
         };
         if request_session != session
@@ -168,16 +179,19 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
         }
         let result = match command {
             Command::Diagnostics { .. } => unreachable!("diagnostics handled above"),
-            Command::Startup { .. } => runtime
-                .as_mut()
-                .ok_or_else(|| "No startup firmware selected".to_string())
-                .map(|runtime| runtime.snapshot()),
+            Command::Startup { .. } => startup_snapshot.take().map(Ok).unwrap_or_else(|| {
+                runtime
+                    .as_mut()
+                    .ok_or_else(|| "No startup firmware selected".to_string())
+                    .map(|runtime| runtime.snapshot())
+            }),
             Command::Load {
                 session: next,
                 bytes,
                 card: image,
                 ..
             } => {
+                startup_snapshot = None;
                 if next <= session {
                     Err("stale emulator session".into())
                 } else {
@@ -193,7 +207,9 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
                                 cached = Some((bytes, image));
                                 read_error = error;
                                 runtime = Some(next_runtime);
-                                Ok(runtime.as_mut().expect("new runtime").snapshot())
+                                let snapshot = runtime.as_mut().expect("new runtime").snapshot();
+                                startup_snapshot = Some(snapshot.clone());
+                                Ok(snapshot)
                             }
                             Err(error) => Err(error),
                         }
@@ -244,6 +260,36 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
                 .and_then(|runtime| {
                     runtime.turn(encoder, detents)?;
                     Ok(runtime.snapshot())
+                }),
+            Command::Tap { code, hold, .. } => runtime
+                .as_mut()
+                .ok_or_else(|| "No firmware selected".into())
+                .and_then(|runtime| {
+                    runtime.button(code, true)?;
+                    let held = (hold.clamp(1, 100_000_000)) as u64;
+                    let initial = runtime.snapshot();
+                    let start = initial.status.icount;
+                    let mut status = initial.status;
+                    let mut frame = initial.frame;
+                    let result = loop {
+                        let remaining = held.saturating_sub(status.icount.saturating_sub(start));
+                        if remaining == 0 {
+                            break Ok(Snapshot { status, frame });
+                        }
+                        let snapshot = runtime.step_chunk(remaining.min(250_000) as u32);
+                        if let Some(error) = snapshot.status.error.clone() {
+                            break Err(error);
+                        }
+                        status = snapshot.status;
+                        if snapshot.frame.is_some() {
+                            frame = snapshot.frame;
+                        }
+                    };
+                    let released = runtime.button(code, false);
+                    match (result, released) {
+                        (Ok(snapshot), Ok(())) => Ok(snapshot),
+                        (Err(error), _) | (_, Err(error)) => Err(error),
+                    }
                 }),
             Command::Stop { .. } => {
                 if request_session < session {
@@ -385,6 +431,21 @@ async fn emu_turn(
     .await
 }
 #[tauri::command]
+async fn emu_tap(
+    host: State<'_, Host>,
+    session_id: u64,
+    code: u8,
+    hold: Option<u32>,
+) -> Result<Snapshot, String> {
+    send(host, move |reply| Command::Tap {
+        session: session_id,
+        code,
+        hold: hold.unwrap_or(40_000_000),
+        reply,
+    })
+    .await
+}
+#[tauri::command]
 async fn emu_stop(host: State<'_, Host>, session_id: u64) -> Result<(), String> {
     match send(host, move |reply| Command::Stop {
         session: session_id,
@@ -441,6 +502,7 @@ fn main() {
             emu_step,
             emu_button,
             emu_turn,
+            emu_tap,
             emu_stop
         ])
         .run(tauri::generate_context!())
@@ -455,7 +517,9 @@ fn parse_values(
     let mut values = values.into_iter();
     let (mut syx, mut card_image, mut image, mut state, mut snapshot) =
         (None, None, None, None, None);
+    let mut audio_profile_syx = None;
     let mut coupled = false;
+    let mut automatic = false;
     let mut buffer = None;
     let mut no_audio = false;
     while let Some(value) = values.next() {
@@ -469,6 +533,11 @@ fn parse_values(
             card_image = Some(path("--card-image")?);
         } else if value == "--coupled" {
             coupled = true;
+        } else if value == "--auto-coupled" {
+            coupled = true;
+            automatic = true;
+        } else if value == "--audio-profile-syx" {
+            audio_profile_syx = Some(path("--audio-profile-syx")?);
         } else if value == "--dsp-image" {
             image = Some(path("--dsp-image")?);
         } else if value == "--dsp-state" {
@@ -493,7 +562,7 @@ fn parse_values(
         } else if syx.is_none() {
             syx = Some(value.into());
         } else {
-            return Err("usage: digiemu [SYX] [--card-image FILE] [--coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--audio-buffer SECONDS] [--no-audio]]".into());
+            return Err("usage: digiemu [SYX] [--card-image FILE] [--coupled|--auto-coupled --dsp-image FILE --dsp-state FILE --cf-snapshot FILE [--audio-buffer SECONDS] [--no-audio]]".into());
         }
     }
     let audio = if coupled {
@@ -506,10 +575,19 @@ fn parse_values(
             snapshot: snapshot.ok_or("--coupled requires --cf-snapshot")?,
             buffer_seconds: buffer.unwrap_or(0.0),
             playback: !no_audio,
+            automatic,
+            expected_syx: if automatic {
+                Some(audio_profile_syx.unwrap_or_else(|| {
+                    std::env::var_os("DIGI_EMU_SYX")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("Digitone_II_OS1.11.syx"))
+                }))
+            } else {
+                None
+            },
         })
     } else {
-        if image.is_some() || state.is_some() || snapshot.is_some() || buffer.is_some() || no_audio
-        {
+        if image.is_some() || state.is_some() || snapshot.is_some() || buffer.is_some() {
             return Err("audio options require --coupled".into());
         }
         None
@@ -565,5 +643,86 @@ mod cli_tests {
         assert_eq!(audio.image, PathBuf::from("image"));
         assert_eq!(audio.buffer_seconds, 0.1);
         assert!(!audio.playback);
+    }
+
+    #[test]
+    fn tap_holds_for_the_requested_guest_instructions_across_chunks() {
+        let syx = std::env::var_os("DIGI_COUPLED_SYX")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("../../../Digitone_II_OS1.11.syx"));
+        let Ok(bytes) = std::fs::read(syx) else {
+            return;
+        };
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || actor(receiver, None));
+        let (load_reply, load_response) = mpsc::channel();
+        sender
+            .send(Command::Load {
+                session: 1,
+                bytes,
+                card: None,
+                reply: load_reply,
+            })
+            .unwrap();
+        let before = load_response.recv().unwrap().unwrap().status.icount;
+        let (tap_reply, tap_response) = mpsc::channel();
+        sender
+            .send(Command::Tap {
+                session: 1,
+                code: 25,
+                hold: 250_001,
+                reply: tap_reply,
+            })
+            .unwrap();
+        let after = tap_response.recv().unwrap().unwrap().status.icount;
+        assert!(after - before >= 250_001);
+    }
+
+    #[test]
+    #[ignore = "private DN2 ready fixture and generated DSP"]
+    fn startup_returns_the_coupled_restore_frame_once() {
+        let (Some(fixture_dir), Some(syx)) = (
+            std::env::var_os("DIGI_COUPLED_FIXTURES").map(PathBuf::from),
+            std::env::var_os("DIGI_COUPLED_SYX").map(PathBuf::from),
+        ) else {
+            return;
+        };
+        let Ok(bytes) = std::fs::read(syx) else {
+            return;
+        };
+        let audio = AudioOptions {
+            image: fixture_dir.join("digi-audio-dn2-image.bin"),
+            state: fixture_dir.join("digi-audio-m5.snap.dsp"),
+            snapshot: fixture_dir.join("digi-audio-m5.snap"),
+            buffer_seconds: 0.0,
+            playback: false,
+            automatic: false,
+            expected_syx: None,
+        };
+        let (sender, receiver) = mpsc::channel();
+        let actor = thread::spawn(move || actor(receiver, Some(audio)));
+        let (load_reply, load_response) = mpsc::channel();
+        sender
+            .send(Command::Load {
+                session: 1,
+                bytes,
+                card: None,
+                reply: load_reply,
+            })
+            .unwrap();
+        let loaded = load_response.recv().unwrap().unwrap();
+        let frame = loaded.frame.clone().expect("load should observe restored LCD");
+        assert!(frame.iter().any(|byte| *byte != 0));
+        let revision = loaded.status.frame_revision;
+        let (startup_reply, startup_response) = mpsc::channel();
+        sender.send(Command::Startup { reply: startup_reply }).unwrap();
+        let startup = startup_response.recv().unwrap().unwrap();
+        assert_eq!(startup.frame, Some(frame));
+        assert_eq!(startup.status.frame_revision, revision);
+        let (second_reply, second_response) = mpsc::channel();
+        sender.send(Command::Startup { reply: second_reply }).unwrap();
+        assert!(second_response.recv().unwrap().unwrap().frame.is_none());
+        drop(sender);
+        actor.join().unwrap();
     }
 }

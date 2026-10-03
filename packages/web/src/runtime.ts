@@ -11,13 +11,27 @@ export interface RuntimeDiagnostics {
   sharc_execution_connected: boolean; pcm_output_connected: boolean;
   [key: string]: unknown;
 }
+export interface NativeAudioStatus {
+  sink_connected: boolean; playback_requested: boolean; flow_started: boolean;
+  setup_needed?: boolean;
+  source_audio_seconds: number; session_wall_seconds: number;
+  output_device?: string;
+  device_error: string | null;
+  sink?: {
+    stream_started: boolean; source_received_frames: number; queued_device_frames: number;
+    underrun_events: number; error: string | null;
+  } | null;
+}
 /** Dev-only inputs of the coupled core: user-supplied, never bundled. */
 export interface CoupledFiles { syx: Uint8Array; image: Uint8Array; dsp: Uint8Array; snapshot?: Uint8Array }
 export interface CoupledStats { frames: number; dsp_instructions: number; halted: string | null; nonzero_replies: number; missing_blocks: number; pcm_values: number; pcm_produced_seconds: number; production_elapsed_wall_seconds: number; pcm_seconds_per_wall_second: number; dsp_attached: boolean; pcm_port_connected: boolean; host: Record<string, unknown> }
 export interface EmulatorRuntime {
   /** Browser worker only, and only with a core built with the `sharc` feature. */
   loadCoupled?(files: CoupledFiles, audioPort: MessagePort): Promise<RuntimeSnapshot>;
+  coupledAvailable?(): Promise<boolean>;
   coupledStats?(): Promise<CoupledStats>;
+  /** Native desktop only: observational status for its default output sink. */
+  nativeAudio?(): Promise<NativeAudioStatus | undefined>;
   /** Press a key, release it after `hold` guest instructions (emulation time, not wall time). */
   tap?(code: number, hold?: number): Promise<void>;
   diagnostics(): Promise<RuntimeDiagnostics>;
@@ -61,6 +75,7 @@ export function browserRuntime(onUpdate: (update: RuntimeUpdate) => void): Emula
       return request<RuntimeSnapshot>('load-coupled', { bytes: copy(files.syx), image: copy(files.image), dsp: copy(files.dsp), snapshot: copy(files.snapshot) });
     },
     coupledStats: () => request<CoupledStats>('coupled-stats'),
+    coupledAvailable: () => request<boolean>('coupled-capable'),
     tap: (code, hold) => request<void>('tap', { code, hold }),
     async load(bytes, selectedName) { generation += 1; paused = false; source = bytes.slice(); name = selectedName; return request<RuntimeSnapshot>('load', { bytes: bytes.buffer, name: selectedName }); },
     async restart() { if (!source) throw new Error('No firmware selected'); generation += 1; paused = false; return request<RuntimeSnapshot>('load', { bytes: source.slice().buffer, name }); },
@@ -105,10 +120,32 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
   }
   return {
     async diagnostics() { const session = activeSession; if (session === undefined) throw new Error('No firmware selected'); const report = await api.invoke<RuntimeDiagnostics>('emu_diagnostics', { sessionId: session }); if (disposed || activeSession !== session) throw new Error('Firmware session changed during diagnostic export'); return { ...report, host: metrics.report() }; },
+    async nativeAudio() {
+      const session = activeSession;
+      if (session === undefined) return undefined;
+      const report = await api.invoke<RuntimeDiagnostics & { native_audio?: NativeAudioStatus }>('emu_diagnostics', { sessionId: session });
+      if (disposed || activeSession !== session) throw new Error('Firmware session changed while reading audio status');
+      return report.native_audio ?? {
+        sink_connected: false,
+        playback_requested: false,
+        flow_started: false,
+        source_audio_seconds: 0,
+        session_wall_seconds: 0,
+        device_error: null,
+        setup_needed: true,
+      };
+    },
     async load(bytes, _name) { const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { metrics.reset(); const snapshot = await api.invoke<RuntimeSnapshot>('emu_load', bytes, { headers: { 'x-session-id': String(token) } }); if (disposed || token !== generation) return snapshot; metrics.loaded(); activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
     async restart() { const old = activeSession; if (!loaded || old === undefined) throw new Error('No firmware selected'); const token = ++generation; clearPump(); loaded = false; activeSession = undefined; const work = lifecycle.catch(() => {}).then(async () => { metrics.reset(); const snapshot = await api.invoke<RuntimeSnapshot>('emu_restart', { sessionId: old, nextSessionId: token }); if (disposed || token !== generation) return snapshot; metrics.loaded(); activeSession = token; loaded = true; onUpdate({ type: 'snapshot', snapshot }); start(token); return snapshot; }); lifecycle = work.then(() => {}, () => {}); return work.catch((error) => { if (token === generation) fault(error); throw error; }); },
     pause() { clearPump(); }, resume() { if (loaded && activeSession !== undefined && paused) start(activeSession); },
     press: (code) => queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: true })), release: (code) => queueInput((session) => api.invoke<void>('emu_button', { sessionId: session, code, down: false })), turn: (encoder, detents) => queueInput((session) => api.invoke<void>('emu_turn', { sessionId: session, encoder, detents })),
+    tap: (code, hold) => {
+      const token = generation;
+      return queueInput(async (session) => {
+        const snapshot = await api.invoke<RuntimeSnapshot>('emu_tap', { sessionId: session, code, hold });
+        if (!disposed && token === generation && activeSession === session) onUpdate({ type: 'snapshot', snapshot });
+      });
+    },
     async stop() { const token = ++generation; clearPump(); loaded = false; activeSession = undefined; await (lifecycle = lifecycle.catch(() => {}).then(() => api.invoke<void>('emu_stop', { sessionId: token }))); }, dispose() { disposed = true; const token = ++generation; clearPump(); loaded = false; activeSession = undefined; void api.invoke<void>('emu_stop', { sessionId: token }); },
   };
 }
