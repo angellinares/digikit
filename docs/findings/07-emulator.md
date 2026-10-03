@@ -5857,3 +5857,50 @@ which do not share that native invalidation contract. Node checks passed
 review found no residual correctness issue. Astro check had zero errors and
 warnings (one style hint); frontend and native release builds passed. These
 checks do not establish sustained live playback or a host scheduling speedup.
+
+### Underrun work: measured native PGO candidate (2026-10-03)
+
+**[O]** Profile-guided optimization of the integrated native root reduced DSP
+wall time in all seven alternating control/use pairs. A copied Homebrew-built
+baseline was rejected as a compiler-distribution confound; the accepted control
+and candidate use pinned Rust 1.98.1 commit 48a229cea / LLVM 22.1.8, explicit
+aarch64-apple-darwin target, identical source/generated core and release flags
+except profile-use and missing-function warnings. Instrumented timings were
+excluded. Four uniquely named QA profiles were merged; the separate audition
+paths were not training inputs. All three previously hottest generated regions
+have nonzero profile counts, and no missing-profile warning identifies a
+generated image block. Untrained runtime/framework functions still warn.
+
+Median paired use/control ratios were 0.791387 workload wall (20.861% less),
+0.789116 DSP wall (21.088% less), 0.857616 process user+system CPU (14.238%
+less), 0.923736 retired instructions (7.626% less) and 0.857875 elapsed cycles
+(14.212% less). The hardware counts cover the entire process, including CF and
+fixture setup, and cannot establish DSP-only IPC, CPU-core placement or an
+instruction-cache bottleneck. Median workload elapsed was 1.754423 -> 1.386955 s
+for exactly 0.759333 s audio: 20,775 -> 26,279 sample frames/s, still below the
+48,000/s requirement and headroom needed for uninterrupted playback.
+
+Every pair passed the fixed CF/DSP/PCM exactness assertions, 1,139 SPORT blocks
+and zero missing blocks. An enhanced ignored audition test separately records
+CF/DSP hashes and clocks, PCM hashes/counts and held-window timing after draining
+prepress work. Short and delayed 1.2B-before-press/100M-held control/use runs
+matched all those values, but both were silent. The optional nonzero gate
+correctly failed on the delayed control, so these holdouts do not validate the
+user's audible held-note scenario. No input-parameter sweep was used. Running
+without link profiling also passed with optional timing absent. Independent
+review found no residual issue in the test enhancement.
+
+The profile and executables remain private under
+`/private/tmp/dn2-pgo-20261003/`; `summary.json`, `bench.tsv` and `logs/bench-*`
+record actual order, per-run measurements and artifact hashes. PGO has not yet
+been installed in the normal launcher. These are native Mac measurements, not
+Windows/WASM performance or a completed underrun fix.
+
+**[O]** A matched-binary lookup in the existing marker-scoped DSP replay found
+360 stack-slot-access samples across `r_1C399A`, `r_1C3862` and `r_1C364F`,
+5.61% of the full 6,415-sample window. This supports a controlled register-
+pressure experiment; it does not establish removable spill cost. Current cache
+metadata lacks the original full-generation invocation. Available commands
+produce materially different trees, so a cap comparison requires its own
+reproducible regenerated baseline rather than silently treating the old cache
+as a one-variable control.

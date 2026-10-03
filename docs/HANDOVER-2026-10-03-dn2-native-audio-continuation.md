@@ -16,7 +16,7 @@ missing blocks. All requests succeeded, but both settings still needed roughly
 so run order limits attribution. The toggle was removed rather than promoted
 as a throughput fix. Raw logs: `/private/tmp/dn2-qos-20261003/`.
 
-The current source experiment simplifies only `_astatx_define` in
+The retained source improvement simplifies only `_astatx_define` in
 `native/sharc/src/rt/bnd.rs`: merge known-bit masks and result bits directly,
 preserving the old value when the merged mask is zero. CACC/forget semantics
 remain untouched. This is grounded in the improved profile's repeated flag
@@ -38,9 +38,52 @@ Explicit diagnostic export retains its existing barrier. Native pump gap
 metrics now measure accepted adjacent responses and invalidate across lifecycle
 and input completion; they are omitted for WASM, which lacks that native
 invalidation contract. Focused Node checks passed 9/9 and actor no-runtime,
-stale-session and CF-only-null checks passed. The source diff is uncommitted.
+stale-session and CF-only-null checks passed. The retained DSP/helper and host-cleanup changes are committed as `d35d76d`.
 Final Astro check (zero errors/warnings, one style hint), frontend build and
 native release embedding passed after the timing runs.
+
+The bounded PGO trial is complete and demonstrates a repeatable gain. Its
+original copied baseline used Homebrew Rust; this was caught before accepting
+comparisons, and a new uninstrumented control was compiled with the exact same
+pinned rustup compiler, explicit target, source, generated tree and release
+settings as the candidate. Only profile-use/warning flags differ. The compiler
+is Rust 1.98.1 commit 48a229cea, LLVM 22.1.8, aarch64-apple-darwin. The matching
+LLVM tools were installed through an approved CLI component installation.
+Training used four uniquely named QA profiles; holdouts were excluded. Nonzero
+profile coverage includes all three hottest generated regions. Missing-profile
+warnings remain in untrained code; there were none for generated image blocks.
+
+Seven alternating pairs passed exact QA CF/DSP/PCM assertions, 1,139 SPORT
+blocks, 36,448 sample frames and zero missing blocks. Median paired use/control
+ratios: workload wall 0.791387, DSP wall 0.789116, total-process user+system CPU
+0.857616, retired instructions 0.923736 and cycles 0.857875. Whole-process
+counters include CF, DSP and setup; they do not establish DSP IPC or a cache
+bottleneck. Median workload 1.754423 -> 1.386955 s produces 0.759333 s audio:
+20,775 -> 26,279 sample frames/s, still 1.827x slower than real time.
+PGO is a proven private native performance candidate, not yet installed in the
+normal launcher and not a Windows/WASM profile or an underrun fix.
+
+The existing ignored audition test now prints CF/DSP state hashes and explicit
+instruction counters, PCM hash/count and a separately synchronized held window.
+Timing remains optional. Both short and delayed 1.2B-before-press/100M-held
+holdouts matched every state/clock/PCM/count check, but both were silent; this
+does not validate the user's audible held-note scenario. Requiring nonzero PCM
+correctly failed on the delayed control. No input-parameter sweep was attempted.
+The no-profiling invocation also passed. Independent review found no residual
+test issue. Private rustc harness attempts were abandoned after link failures;
+Cargo rebuilt only the desktop tests and reused SHARC for the final gates.
+Artifacts: `/private/tmp/dn2-pgo-20261003/summary.json`, `bench.tsv`, and logs.
+
+Matched instruction samples also confirm compiler stack accesses in the three
+hottest replay regions: 360/6,415 samples (5.61% overall, 360/1,255 within those
+regions). This supports investigating region register pressure, not claiming
+all stack traffic is removable or that instruction-cache misses dominate.
+The original full-generation command for the current 746-region cache is
+unavailable; adjacent manifests produce different trees. A one-knob region cap
+trial therefore needs a separately regenerated BASE and candidate using the
+same recorded inputs/flags, then comparison to the current artifact as well.
+Do not silently compare a newly generated tree to the old cache and attribute
+the whole difference to the cap. Preserve the 0x1c253f unknown fallback.
 
 ## Previous continuation: default audio, startup fixes and live sound capture
 
@@ -130,14 +173,14 @@ was obtained; do not treat that attempt as a measured GUI performance result. Br
 discovery returned no available browser;
 native GUI was checked with the Computer Use skill instead.
 
-The next host measurement should separate IPC step response time from active
+The previously proposed host measurement should separate IPC step response time from active
 wall outside steps. Existing `host` metrics include pauses and load time, so
 subtract load time and use an uninterrupted run. Periodic native audio status
-currently requests full diagnostics every second, including a blocking
+formerly requested full diagnostics every second, including a blocking
 `audio.sync()` and a SHA-256 of the 3,192,192-byte main image. This is a concrete
 avoidable observation cost, but its playback impact has not been measured.
 Do not assume a timer clamp or call the hash/sync the main cause. A dedicated
-nonblocking audio status endpoint is a possible controlled experiment; the
+nonblocking audio status endpoint has now been implemented (see the active section); the
 headless fixture already establishes the remaining DSP throughput deficit.
 
 See the [profile, startup and live sound records](findings/07-emulator.md#improved-dsp-profile-and-default-audio-startup-2026-10-03).

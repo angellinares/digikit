@@ -636,10 +636,22 @@ mod coupled {
                 .ok()
                 .map(|value| value.parse::<u64>().expect("valid press delay"))
                 .unwrap_or(0);
-            let hold = 40_000_000u64;
+            let hold = std::env::var("DIGI_DESKTOP_TRIG1_HOLD")
+                .ok()
+                .map(|value| value.parse::<u64>().expect("valid hold duration"))
+                .unwrap_or(40_000_000);
+            let require_nonzero = match std::env::var("DIGI_DESKTOP_TRIG1_REQUIRE_NONZERO") {
+                Ok(value) if value == "1" => true,
+                Ok(value) if value == "0" => false,
+                Ok(value) => {
+                    panic!("DIGI_DESKTOP_TRIG1_REQUIRE_NONZERO must be 0 or 1, got {value}")
+                }
+                Err(std::env::VarError::NotPresent) => false,
+                Err(error) => panic!("invalid DIGI_DESKTOP_TRIG1_REQUIRE_NONZERO: {error}"),
+            };
             let press_at = initial.icount + press_after;
             let mut status = initial;
-            for _ in 0..1000 {
+            for _ in 0..10_000 {
                 if status.icount >= press_at {
                     break;
                 }
@@ -652,6 +664,10 @@ mod coupled {
                 status.icount >= press_at,
                 "did not reach Trig 1 press boundary"
             );
+            runtime.snapshot();
+            let hold_timing_before = runtime.audio.as_ref().unwrap().handle.timing_profile();
+            let held_pcm_start = runtime.audio.as_ref().unwrap().captured_pcm.len();
+            let hold_window_start = Instant::now();
             runtime.button(25, true).unwrap();
             let held_from = runtime.snapshot().status.icount;
             for _ in 0..1000 {
@@ -670,9 +686,30 @@ mod coupled {
                 "did not hold Trig 1 for {hold} instructions"
             );
             runtime.button(25, false).unwrap();
-            runtime.snapshot();
+            let final_snapshot = runtime.snapshot();
+            let hold_window_elapsed = hold_window_start.elapsed();
+            let state_digest = runtime.emulator.state_digest().unwrap();
+            let (dsp_digest, dsp_icount) = {
+                let audio = runtime.audio.as_ref().unwrap();
+                let (dsp_state, dsp_icount) = audio.handle.export();
+                (format!("{:x}", Sha256::digest(dsp_state)), dsp_icount)
+            };
+            println!(
+                "desktop_trig1_state icount={} state_sha256={} dsp_icount={} dsp_sha256={}",
+                final_snapshot.status.icount, state_digest, dsp_icount, dsp_digest
+            );
 
             let audio = runtime.audio.as_ref().unwrap();
+            let hold_timing = hold_timing_before
+                .zip(audio.handle.timing_profile())
+                .map(|(before, after)| timing_delta(after, before));
+            let held_pcm = &audio.captured_pcm[held_pcm_start..];
+            let held_nonzero = held_pcm.iter().any(|sample| *sample != 0.0);
+            println!(
+                "desktop_trig1_hold_window_elapsed_seconds={:.6} held_samples={} native_audio_link_timing_window={hold_timing:?}",
+                hold_window_elapsed.as_secs_f64(),
+                held_pcm.len(),
+            );
             assert!(!audio.captured_pcm.is_empty(), "Trig 1 produced no PCM");
             assert!(audio.captured_pcm.iter().all(|sample| sample.is_finite()));
             let pcm: Vec<u8> = audio
@@ -686,6 +723,10 @@ mod coupled {
                 status.icount.saturating_sub(held_from),
                 audio.captured_pcm.len(),
             );
+            println!("desktop_trig1_held_nonzero={held_nonzero}");
+            if require_nonzero {
+                assert!(held_nonzero, "held Trig 1 produced only silent PCM");
+            }
             if let Some(path) = std::env::var_os("DIGI_DESKTOP_TRIG1_PCM_F32LE") {
                 std::fs::write(path, pcm).unwrap();
             }
