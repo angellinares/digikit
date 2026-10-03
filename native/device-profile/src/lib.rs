@@ -62,6 +62,10 @@ pub struct FirmwareProfile {
     pub version: String,
     pub sha256: String,
     pub filename: Option<String>,
+    /// The release's build stamp, section 5 (`meta`) of its ELE3 container,
+    /// e.g. "260908 14:25:18". A modified image keeps its release's stamp, so
+    /// this names the release it was derived from (see `boot_for_derived`).
+    pub build_stamp: Option<String>,
     pub boot: Option<BootProfile>,
     pub plusdrive_project_contract: Option<PlusdriveProjectContract>,
     pub readiness_contract: Option<ReadinessContract>,
@@ -159,6 +163,7 @@ struct SourceFirmware {
     version: String,
     sha256: String,
     filename: Option<String>,
+    build_stamp: Option<String>,
     main_sha256: Option<String>,
     boot_contract: Option<BootContract>,
     symbol_profile: Option<SymbolProfile>,
@@ -223,6 +228,7 @@ impl Registry {
                     version: firmware.version,
                     sha256,
                     filename: firmware.filename,
+                    build_stamp: firmware.build_stamp,
                     boot,
                     plusdrive_project_contract: firmware.plusdrive_project_contract,
                     readiness_contract: firmware.readiness_contract,
@@ -292,6 +298,36 @@ impl Registry {
                 actual,
             });
         }
+        Ok((device, firmware, boot))
+    }
+
+    /// A modified image: its hash is nobody's, but it keeps its release's
+    /// build stamp (section 5, `meta`), so the release it was derived from is
+    /// known. Returns that release's profile and boot contract, without the
+    /// MAIN check (the MAIN is what was modified); everything the runtime
+    /// needs past this point it finds by signature. The caller must report
+    /// the session as derived, never as the stock release.
+    pub fn boot_for_derived(
+        &self,
+        meta: &str,
+    ) -> Result<(&DeviceProfile, &FirmwareProfile, &BootProfile), RegistryError> {
+        let (device, firmware) = self
+            .devices
+            .iter()
+            .flat_map(|device| device.firmwares.iter().map(move |firmware| (device, firmware)))
+            .find(|(_, firmware)| {
+                firmware.build_stamp.as_deref().is_some_and(|stamp| meta.contains(stamp))
+            })
+            .ok_or_else(|| RegistryError::UnknownFirmware {
+                sha256: format!(
+                    "(meta {:?} names no known release)",
+                    meta.trim_matches(|c: char| c == '\0' || c.is_whitespace())
+                ),
+            })?;
+        let boot = firmware.boot.as_ref().ok_or_else(|| RegistryError::UnsupportedBoot {
+            version: firmware.version.clone(),
+            sha256: firmware.sha256.clone(),
+        })?;
         Ok((device, firmware, boot))
     }
 }
@@ -483,5 +519,33 @@ mod tests {
             Registry::parse(&[("dt2", &alias)]),
             Err(RegistryError::Invalid { .. })
         ));
+    }
+
+    #[test]
+    fn a_modified_image_is_named_by_its_release_build_stamp() {
+        let registry = Registry::embedded().unwrap();
+        // the meta section as the container carries it: the stamp, NUL-padded
+        let (device, firmware, _) = registry.boot_for_derived("260908 14:25:18\0").unwrap();
+        assert_eq!((device.short.as_str(), firmware.version.as_str()), ("dn2", "1.11"));
+        let (device, firmware, _) = registry.boot_for_derived("260908 14:25:26").unwrap();
+        assert_eq!((device.short.as_str(), firmware.version.as_str()), ("dt2", "1.16"));
+        // a release with no boot contract is named but not booted
+        assert!(matches!(
+            registry.boot_for_derived("250910 15:18:16"),
+            Err(RegistryError::UnsupportedBoot { .. })
+        ));
+        assert!(matches!(
+            registry.boot_for_derived("not a stamp"),
+            Err(RegistryError::UnknownFirmware { .. })
+        ));
+        // every stamp names one release only
+        let stamps: Vec<_> = registry
+            .devices()
+            .iter()
+            .flat_map(|device| device.firmwares.iter())
+            .filter_map(|firmware| firmware.build_stamp.as_deref())
+            .collect();
+        let unique: HashSet<_> = stamps.iter().collect();
+        assert_eq!(stamps.len(), unique.len());
     }
 }
