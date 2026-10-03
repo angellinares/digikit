@@ -226,6 +226,10 @@ pub struct Engine {
     /// Block exits into the interpreter, by (block pc, kind, pc after):
     /// kind 0 a bail at entry, 1 a trap, 2 a budget/pending exit later on.
     pub exits: Option<std::collections::HashMap<(u32, u8, u32), u64>>,
+    /// Register state at zero-progress bails with option 26: (PC, MODE1 bits, registers
+    /// whose masks are not fully known, delayed transfer pending) -> count.
+    /// This is observed state, not a diagnosis of which guard rejected it.
+    pub entry_bails: Option<std::collections::HashMap<(u32, u32, u128, bool), u64>>,
     /// Where runs of interpreted instructions start (with `cov`): the PCs
     /// block code is entered at but has no block for.
     pub entries: Option<std::collections::HashMap<u32, u64>>,
@@ -512,6 +516,7 @@ impl Engine {
             cov: None,
             one_dispatch: false,
             exits: None,
+            entry_bails: None,
             entries: None,
             trans: None,
             prof: None,
@@ -773,11 +778,13 @@ impl Engine {
                     self.entries.get_or_insert_with(Default::default);
                     self.trans.get_or_insert_with(Default::default);
                     self.exits.get_or_insert_with(Default::default);
+                    self.entry_bails.get_or_insert_with(Default::default);
                 } else {
                     self.cov = None;
                     self.entries = None;
                     self.trans = None;
                     self.exits = None;
+                    self.entry_bails = None;
                 }
             }
             7 => self.stop_software_interrupt = value != 0,
@@ -1213,6 +1220,20 @@ impl Engine {
                     let (kind, at) = if code == EXIT_TRAP {
                         (1, self.s.trap.map(|t| t.0).unwrap_or(0))
                     } else if self.s.icount == before {
+                        if let Some(bails) = &mut self.entry_bails {
+                            let unknown =
+                                self.s.r.iter().enumerate().fold(0u128, |m, (c, v)| {
+                                    m | if v.is_c() { 0 } else { 1u128 << c }
+                                });
+                            *bails
+                                .entry((
+                                    entry,
+                                    self.s.r[MODE1].b,
+                                    unknown,
+                                    self.s.pending.is_some(),
+                                ))
+                                .or_default() += 1;
+                        }
                         (0, self.s.pc_sw as u32)
                     } else {
                         (2, self.s.pc_sw as u32)
@@ -1718,7 +1739,8 @@ pub unsafe extern "C" fn sharc_native_stats(
 /// The profile maps (option 26) as text, for tools/sharc_rsgen.py: KIND 0
 /// coverage ("pc MODE1 known count", sharc-frames --coverage), 1 entries
 /// ("pc count"), 2 block transitions ("from to count"), 3 block exits
-/// ("block kind at count"). Returns the length, or -needed when OUT_CAP is
+/// ("block kind at count"), 4 entry-bail state
+/// ("pc MODE1 unknown-register-bitset pending count"). Returns the length, or -needed when OUT_CAP is
 /// too small, or -1 for a bad KIND or no profile.
 ///
 /// # Safety
@@ -1776,6 +1798,15 @@ impl Engine {
                 rows.sort();
                 rows.iter()
                     .map(|((b, k, at), c)| format!("{b:#x} {k} {at:#x} {c}\n"))
+                    .collect::<String>()
+            }),
+            4 => e.entry_bails.as_ref().map(|m| {
+                let mut rows: Vec<_> = m.iter().collect();
+                rows.sort();
+                rows.iter()
+                    .map(|((pc, mode, unknown, pending), c)| {
+                        format!("{pc:#x} {mode:#x} {unknown:#x} {} {c}\n", *pending as u8)
+                    })
                     .collect::<String>()
             }),
             _ => None,

@@ -5401,14 +5401,257 @@ change. Four Node audio-accounting/worklet tests, Astro check (zero errors and
 warnings; one existing hint), locked offline desktop metadata and diff checks
 passed. The full firmware/Python suite was not rerun for these host-only edits.
 
-**[O]** Ordinary Tauri still constructs the CF-only runtime: no SSI pacing,
-SHARC peer or audio sink is attached. Wiring its coupled loader/player is a
-separate integration task. Native coupled sink statistics remain hidden by
-`PcmPlayer`. Neither frontend is established as real-time audio. Next performance
-work should use comparable native/WASM profiles and preserve the state/PCM gates,
+**[C] [D]** Ordinary Tauri remains CF-only, but an explicit local
+`coupled-audio` desktop seam now restores the paired DN2 inputs, enables SSI
+pacing, owns a threaded SHARC peer and optionally connects the existing player.
+Its diagnostics expose `native_audio`, including sink state and post-start
+device errors. A CPAL callback error after a successful start is shared with
+the feeder, latched in health and terminates draining rather than hanging it.
+This is software integration evidence, not sustained real-time, speaker
+audibility or fidelity validation. Next work must preserve the state/PCM gates,
 not lower instruction budgets or hide starvation with a larger buffer.
 
 The private continuation, image, paired ready snapshot and note capture have
 hash-identical backups in ignored `snapshots/dn2-audio-ready-2026-10-03/`.
 Triage logs and the local Chromium smoke harness are under
 `/private/tmp/dn2-audio-triage-20261003/`; they are not durable distribution assets.
+
+### Native coupled acceptance and cross-link profiling (2026-10-03)
+
+**[D]** Focused acceptance covered live (66 tests), PCM player (9), threaded
+peer (6), and ignored private coupled fixtures, including missing device. Four
+current ready+100M workloads (one default and three profiled, playback off)
+preserved CF `fbace0f0...`, DSP `05ac2ac2...`, PCM `38d2a322...`, 72,896
+interleaved samples and zero missing SPORT blocks. The fixture emits 1,139
+sent/completed frames and 0.759333333333 s source audio. It is headless and
+bounded; it does not validate speakers, GUI, browser/WASM, sustained real time
+or waveform fidelity.
+
+`DN2_PROFILE_LINK=1` opts into cumulative, window-delta link timing under
+`native_audio.link_timing`; timing is off by default, stores no histories and
+adds no worker-shared lock. Units are nanoseconds. The worker replies before
+rendering the current DSP frame, so host reply wait commonly overlaps prior
+rendering; queue/render/CF and enclosing poll/sync durations are non-additive.
+Across the latest three workloads, elapsed wall was 2.121-2.189 s; worker DSP
+2.092-2.159 s, reply wait 1.390-1.455 s, SPI 9.358-9.565 ms, enqueue
+181-242 us, collect 502-542 us, poll 213-254 us, sync 1.600-1.927 ms and PCM
+handoff 167-198 us. DSP work sets the pace and the host waits for its worker;
+arithmetic versus memory-model versus generated-core CPU cost remains open.
+
+The standalone measured window has 66,212,132 generated and 778,452
+interpreted busy instructions, plus 66,409,416 idle; 98.8% of busy instructions
+are generated, not a CPU-time attribution. Ordinary DSP-only timing was
+0.32-0.35 s for about 0.133 s source audio with hashes verified every run.
+ThinLTO paired medians were 0.320 s ordinary and 0.322 s ThinLTO with
+overlapping ranges, so it was not adopted. The generation fingerprint was
+`e0e97d72ebbdfa97963772ef39d3519e0ef9a474da94488fc87d05e3ecad088a`.
+Evidence is under `/private/tmp/dn2-audio-restart-20261003/{cross-link-profile,dsp-profile,dsp-thinlto}`; separate binaries and instrumented timings are distinct baselines.
+
+Reproduce only with the private fixture and generated-tree environment used by
+the handover: pinned Rust 1.98.1, offline/locked Cargo, `SHARC_GEN_DIR`,
+`NOTE_EVENTS=trig`, `DIGI_COUPLED_FIXTURES` and `DIGI_COUPLED_SYX`, then run
+`cargo test --release --offline --locked --manifest-path packages/desktop/src-tauri/Cargo.toml --features coupled-audio desktop_runtime::coupled::tests::coupled_ready_exactness -- --ignored --nocapture --test-threads=1`.
+No hardware is involved.
+
+### DSP replay CPU sampling and rejected inlining experiments (2026-10-03)
+
+The 35 s, 1 ms native sample is a source-bound profiling observation, not a
+firmware verification or a real-time result. Build an optimized symbol-bearing
+replay artifact with `CARGO_PROFILE_RELEASE_DEBUG=1`, use the matching source
+and generated-tree hashes, set `DN2_REPLAY_REPEATS=25`, and run
+`/usr/bin/sample PID 35 1 -file measured-window-35s-1ms.sample.txt`. The
+durable artifact is
+`/private/tmp/dn2-audio-investigation-20261003/long-profile/measured-window-35s-1ms.sample.txt`.
+Its `measured_window_step` marker accounts for 4,937 of 29,193 raw samples.
+
+Direct-child self accounting under that marker is disjoint: generated blocks
+are 3,268 samples (66.19%), `exec_insn` ancestry 1,334 (27.02%),
+`Engine::step` dispatch 265 (5.37%), and other bookkeeping 70 (1.42%). The
+window counter has 778,452 interpreted instructions among 66,990,584 busy
+instructions (1.16%); that instruction fraction is not the 27.02% sampled CPU
+share. The marker wraps only the measured `Engine::step` workload, so it
+excludes import, SPI and SPORT and is not a universal CPU-cost attribution.
+
+Three narrowly source-bound inlining experiments preserved the replay hashes
+and exact window counters but did not show a repeatable gain. The empty-journal
+`St::old_of` guard had seven-pair candidate/base median 1.0063 (range
+0.9755-1.0219). Forcing `forms_move::_type_3a_transfer` inline had median
+1.0065 (0.9777-1.0192). Forcing `compute::_apply_compute_simd` inline removed
+its five direct calls and made the binary 96 bytes smaller, but its default
+seven-pair median was 1.00325 (0.9936-1.0358). Its repeat-five batches, with
+all 70 replay instances passing PCM/state/counter gates, had summed-window wall
+median 0.99936 (0.99037-1.01887; four wins, three losses) and CPU median 1.0.
+None was adopted.
+
+Global direct `memcpy` call count stayed 236 before and after the inlining
+experiments. The sampled 424-byte copies concern compute-result `Option`
+tuples, not `Fields`; a 200-byte `Fields` prologue also exists, but broad borrow
+changes are not ready. The next conservative lead is the compute-output `Tup8`
+representation: usual compute output is three items, yet the shift FIFO has
+four destinations and float flag lists reach seven. A global cap of three or
+four is unsafe and `from_slice` truncation would be silent. Any follow-up needs
+per-type capacity bounds, a default-eight fallback, and a consistent full
+generation rather than substituting core-only tables or symbols.
+
+For that future full generation, use the project database
+`out/sharcdb/dn2-1.11.sqlite` and section blob
+`out/sections/dn2-1.11/section_7_BLOB.bin` with a fresh work and output
+directory:
+`tools/sharc_rsgen.py dn2-1.11 --coverage /private/tmp/digi-r1-pipeline-a/prof/merged-final --entries /private/tmp/digi-r1-pipeline-a/prof/merged-final.entries --transitions /private/tmp/digi-r1-pipeline-a/prof/merged-final.trans --model-safe --explicit-memory-model 0 --chain --exclude 0xb88a49:0xb88abc --region-insns 120 --region-regs 36 --work FRESHscratch --out FRESHscratch`.
+The current canonical generated-tree report records 1,751 blocks and 20,722
+block instructions. It was made from a different accumulated profile set, so it
+is not a baseline for the controlled fresh generation below.
+
+### Controlled fixed-arity compute-result trial and raw-PC cost map (2026-10-03)
+
+**[O]** A fixed-arity (two/three/four) compute-result payload trial was
+source-bound and fully reversible. It passed its focused type, translator and
+compute-family checks, then a fresh, same-input baseline/candidate generation
+showed a material coverage difference: 1,277 baseline blocks versus 1,265
+candidate blocks. The candidate's fixed tuple union stopped block specialization
+at `_apply_compute`'s dynamic register-index write because `static_zip` does not
+project a union of fixed tuples. This is a code-generation coverage change, not
+evidence that the payload representation itself is faster.
+
+One controlled default replay per generated tree kept the PCM hash
+`581339b...889de6d`, state hash `eeeeda3a...ddf3e5b8`, 133,400,000 instructions,
+66,409,416 idle instructions and 66,990,584 busy instructions. The baseline
+measured 0.424 s CPU; the candidate measured 1.504 s CPU (3.55x slower), with
+about 2.0M versus 12.0M windowed interpreted steps. The candidate was rejected
+and all seven owned source/test paths were restored byte-for-byte. The result is
+the net outcome of the type and generated-coverage change; it is not a storage
+optimization measurement and does not establish real-time audio.
+
+An own-process Xcode Time Profiler capture of the existing symbol-bearing replay
+artifact exported 29,478 unaggregated 1 ms user-stack samples over 29.744 s. The
+separately supervised 25-repeat replay completed afterward with the same PCM,
+state and per-window counter gates on every repeat. Its raw PC and full-stack
+records are under
+`/private/tmp/dn2-audio-investigation-20261003/strategic-profile/`. The raw
+table contains two duplicate `Stackshot` rows at one timestamp; the decoded
+Time Profiler table contains 29,476 running rows and omits those two rows.
+
+The raw record's current-PC field is distinct from its unwound stack-vector
+addresses. The trace records the replay image load address as `0x102230000`;
+using it puts `measured_window_step` at `0x102230bd4..0x102230cb0`. That range
+selects 5,187 raw rows, all of which join the decoded table by timestamp. DWARF
+attributes the wrapper's body to `step_workload`, so the wrapper name is absent,
+but 5,183 selected stacks retain `Engine::step`; the other four are generated or
+interpreter tails whose `Engine::step` frame was not retained. This is a valid
+sampled scope for the 200-frame `5400..5600` workload window, repeated 25
+times, rather than a full-replay ranking.
+
+Within those 5,187 selected samples, generated block leaves account for 3,363
+(64.835%) and generated core helpers for 1,023 (19.722%); `Engine::step` is 298
+(5.745%), `exec_insn` 188 (3.624%), and `platform_memmove` 93 (1.793%). The
+remaining 222 leaves (4.280%) are other functions. The reproducible
+`scope_marker_profile.py` classifier emits all six mutually exclusive categories
+in `marker-scoped-symbolicated-costmap.json`, asserts that their counts total
+5,187, and checks that selected timestamps are unique. The
+largest leaves are generated block `r_1C399A` (391, 7.538%), `Engine::step`
+(298, 5.745%), generated `r_1C3862` (199, 3.837%), generated `r_1C364F` (197,
+3.798%), and generated `__compute` (196, 3.779%). No selected leaf is hashing,
+state import or state export. These are sampled leaf rankings, not cycle counts,
+and their overlapping stack ancestry must not be added. They can prioritize
+measured-window investigation, but do not establish an audio CPU saving,
+sustained real time, or a particular optimization. The symbolicated export
+contains no `_OUTLINED_FUNCTION_*` or anonymous frame, so it supplies no
+evidence that LLVM machine outlining is a dominant cost.
+
+The earlier 27.02% interpreter figure groups sampled self costs by an
+`exec_insn` ancestor; the 3.624% above counts only leaves named `exec_insn`.
+Shared helpers called by the interpreter belong to its ancestry cost but have
+their own leaf names. These percentages use different accounting and do not
+show an interpreter speedup.
+
+The same window's interpreter coverage narrows the largest fallback workload
+to five PCs, `0x1c253f`, `0x1c2542`, `0x1c2545`, `0x1c2548`, and `0x1c254b`:
+each runs 99,200 times, together 496,000 of 778,452 interpreted instructions
+(63.716%). This is instruction frequency, not a CPU percentage. Existing
+generated code for their loop returns without progress at entry 96,000 times.
+An option-26 register-state histogram now explains those entries: all have
+MODE1 `0x39003cf8`, no pending transfer, and unknown R0 and R15 masks. Both
+registers are required to be fully known by that region's first guard. The
+diagnostic replay retained the original PCM/state hashes, measured instruction
+counts, and windowed Stats/ModelStats. Its instrumentation time is not a
+throughput result.
+
+Option 26's new profile kind 4 records zero-progress entry bails as
+`pc MODE1 unknown-register-bitset pending count`; `dn2_replay` writes it as
+`.entry-bails.tsv`. It snapshots register masks at the bail, rather than
+asserting that every unknown register caused it. Recording occurs inside the
+existing optional exit-profile branch; normal playback does not collect it.
+Artifacts are in `strategic-profile/bail-window.*` under the scratch root above.
+
+
+### Unknown-value DSP loop fallback: measured CPU saving (2026-10-03)
+
+**[O]** The entry-bail histogram above identified a specific lost AOT path,
+rather than suggesting a general helper rewrite. Region `r_1C253F` already
+contains the five-instruction loop, but its known-register guard rejects R0
+and R15. A selected fallback now executes the same generated instruction
+bodies with runtime known-bit masks. The ordinary fully-known path remains;
+`Rf.allow_unknown` permits full `V` register writes and unknown memory loads in
+the fallback. Pending transfers, per-instruction budgets, special-register
+restrictions, instruction rollback and logged-memory rollback remain guarded.
+The first pilot only relaxed register writes and still trapped on unknown
+loads; it showed no gain and was superseded by the complete fallback.
+
+Seven alternating baseline/candidate pairs used the same original 1,751-block
+cache, replay inputs, release settings and measured `5400..5600` frame window.
+All 14 replays retained PCM
+`581339b332e936fa9204926f5087b66d9495f530b71272bf0aa24c7ff889de6d`, state
+`eeeeda3a581d3eec5f7d7f35f3ad8ec03b8d744d59c15e2c66ea8947ddf3e5b8`, and
+133,400,000 measured instructions (66,409,416 idle; 66,990,584 busy).
+The median paired candidate/baseline CPU ratio was 0.78443: **21.6% less CPU,
+1.275x throughput**. Every pair improved. Median CPU times were 0.321 s and
+0.255 s respectively. Windowed interpreted instructions fell from 778,452 to
+298,452; generated instructions rose from 66,212,132 to 66,692,132. Traps stayed
+zero and block traps stayed 12,932. The 480,000 instructions moved to AOT are
+not skipped work. This window represents about 0.133 s audio, so its improved
+DSP CPU time is still about 1.9x too slow for real time.
+
+The native coupled fixture also preserved the existing ColdFire, DSP and PCM
+hashes (`fbace0f0...1a2cb2c`, `05ac2ac2...f304e19`, `38d2a322...3ff1f8`),
+72,896 interleaved samples, 1,139 frames and zero missing SPORT frames. Its
+0.759333 s audio took 1.816159 s elapsed; DSP work took 1.786057 s, SPI
+0.009498 s and SPORT draining 0.005716 s. The final version-11 rebuild passed
+both fixtures; its first workload measured 2.161473 s. Three subsequent runs of
+that built exactness fixture measured 1.814975, 1.785510 and 1.818857 s (median
+1.814975 s), preserving all exactness gates. This variation reinforces the need
+for paired controls before quoting an integrated improvement percentage.
+The reply wait overlaps DSP work and
+must not be added to it. This integrated run remains about 2.4x slower than
+real time. Its historical baseline is not a contemporaneous paired control,
+so the 21.6% saving applies to the DSP replay window, not a measured integrated
+percentage. Browser/WASM and Windows have not been performance-tested for this
+change; the implementation uses portable Rust.
+
+`tools/sharc_rsgen.py` and `tools/sharc_dn2_aot.py` expose
+`--unknown-fallbacks 0x1c253f`. It selects regions containing the named block;
+it is opt-in, not a global removal of knownness guards. The AOT manifest records
+this choice. Generator version 11 identifies the new runtime register-file
+mode. Focused checks passed: 47 runtime unit tests and 17 generator/model-safe/
+AOT tests, including execution of emitted Rust with known, unknown and partial
+values, strict-path rejection, pending-transfer rejection, budget exits and
+register/memory rollback. Both ignored private native coupled fixtures passed, including a final
+version-11 rebuild. A separate replay check with 1,024-instruction stepping
+also preserved baseline/candidate PCM, state and measured instruction counts.
+
+Reproduction artifacts are in
+`/private/tmp/dn2-audio-investigation-20261003/unknown-loop-fallback/`:
+`paired-7.json`, individual replay logs, the failed register-only pilot,
+`emitter-equivalence.json`, `cache-provenance.json`, selected-region generation
+command/report, `chunk-1024-fidelity.json`, and coupled logs/repeats. The provenance manifest distinguishes the
+measured overlay from inherited generation reports; version-11 metadata changes
+no instruction code. The measured cache is a private derived copy in `candidate-gen`;
+only the selected region and generator-version constant differ from the
+immutable `/private/tmp/digi-r1-int-gen-dn2` baseline. Source-emitter equivalence
+checks match both the original region and the measured fallback. The separate
+`selected-gen` output has only one AOT block and is a generation check, not an
+application cache. Future full AOT generation must carry the new option.
+
+Next attribution should profile the improved artifact on the same marker
+window, recompute the remaining interpreter and generated-body cost, and choose
+one change from that evidence. Do not reuse the old cost map as though it
+profiles the optimized binary. Sustained real-time audio remains open.

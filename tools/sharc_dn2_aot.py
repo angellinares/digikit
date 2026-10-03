@@ -110,6 +110,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--region-insns", type=int, default=120)
     p.add_argument("--region-regs", type=int, default=36)
+    p.add_argument(
+        "--unknown-fallbacks",
+        default="",
+        help="comma-separated hex block starts to compile with unknown-value fallbacks",
+    )
     p.add_argument("--wasm", action="store_true", help="also build the wasm32 core")
     p.add_argument("--syx", help="DN2 .syx (coupled sharc_live run)")
     p.add_argument(
@@ -251,6 +256,8 @@ def rsgen_command(
     ]
     if a.chain:
         cmd.append("--chain")
+    if a.unknown_fallbacks:
+        cmd += ["--unknown-fallbacks", a.unknown_fallbacks]
     for rng in a.exclude:
         cmd += ["--exclude", rng]
     return cmd + ["--work", str(work), "--out", str(gen)]
@@ -258,7 +265,7 @@ def rsgen_command(
 
 def settings(a: argparse.Namespace) -> dict[str, Any]:
     """The arguments that decide the result (not paths or reporting)."""
-    return {
+    result = {
         "image": a.image,
         "cycles": a.cycles,
         "profile_frames": [a.profile_start, a.profile_end],
@@ -274,6 +281,11 @@ def settings(a: argparse.Namespace) -> dict[str, Any]:
         "coupled_extra": a.coupled_extra if a.cf_snapshot else None,
         "note_events": a.note_events if a.cf_snapshot else None,
     }
+    if a.unknown_fallbacks:
+        result["unknown_fallbacks"] = sorted(
+            {int(x, 16) for x in a.unknown_fallbacks.split(",") if x}
+        )
+    return result
 
 
 def compare_manifests(old: dict[str, Any], new: dict[str, Any]) -> list[str]:

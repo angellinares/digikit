@@ -1317,6 +1317,9 @@ impl RegView {
 pub struct Rf {
     pub r: [V; NUREG],
     pub o: [V; NUREG],
+    /// A generated fallback keeps runtime known-bit masks instead of
+    /// requiring every computed value to be fully known.
+    pub allow_unknown: bool,
     /// state.pc_sw and state.pending.
     pub pc: Int,
     pub pending: Option<Pending>,
@@ -1328,6 +1331,7 @@ impl Default for Rf {
         Rf {
             r: [V::UNK; NUREG],
             o: [V::UNK; NUREG],
+            allow_unknown: false,
             pc: 0,
             pending: None,
         }
@@ -1361,6 +1365,10 @@ pub fn rf_get(rf: &Rf, view: RegView, code: Int) -> V {
 pub fn rf_set(rf: &mut Rf, code: Int, v: V) -> R<()> {
     if !(0..NUREG as Int).contains(&code) {
         return Err(TRAP_INDEX);
+    }
+    if rf.allow_unknown {
+        rf.r[code as usize] = v;
+        return Ok(());
     }
     if v.m != u32::MAX {
         return Err(TRAP_BLOCK_UNKNOWN);

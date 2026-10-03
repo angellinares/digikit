@@ -498,13 +498,18 @@ def tr_logs(path: str) -> bool:
 
 
 def body_lines(
-    body: Body, by_start: dict, succ: set | None, chain: dict | None = None
+    body: Body,
+    by_start: dict,
+    succ: set | None,
+    chain: dict | None = None,
+    *,
+    allow_unknown: bool = False,
 ) -> list[str]:
     import sharc_transpile as tp
 
     ind = "            "
     n = len(body.steps)
-    known = sorted(body.read_any - tp.PARTIAL_REGS)
+    known = [] if allow_unknown else sorted(body.read_any - tp.PARTIAL_REGS)
     lines = [
         "        %d => {" % body.idx,
         "            // %#x%s"
@@ -606,7 +611,14 @@ def body_lines(
     return lines
 
 
-def region_text(name: str, bodies: list[Body], succ_of: dict | None) -> str:
+def region_text(
+    name: str,
+    bodies: list[Body],
+    succ_of: dict | None,
+    *,
+    unknown_fallback: bool = False,
+    allow_unknown: bool = False,
+) -> str:
     """One function for a region's bodies: the registers any of them uses
     live in a local register file (rt.rs Rf) from entry to exit, loaded
     once and written back once; control moves between bodies without the
@@ -630,7 +642,11 @@ def region_text(name: str, bodies: list[Body], succ_of: dict | None) -> str:
                 else set(range(128))
             )
 
-    known = sorted(set().union(*(b.read_any for b in bodies)) - tp.PARTIAL_REGS)
+    known = (
+        []
+        if allow_unknown
+        else sorted(set().union(*(b.read_any for b in bodies)) - tp.PARTIAL_REGS)
+    )
     lines = [
         "#[inline(never)]",
         "pub fn %s(s: &mut St, mut at: u32) -> u32 {" % name,
@@ -642,7 +658,11 @@ def region_text(name: str, bodies: list[Body], succ_of: dict | None) -> str:
         lines.append(
             "    if (%s) != u32::MAX {" % " & ".join("s.r[%d].m" % c for c in known)
         )
-        lines.append("        return crate::EXIT_BUDGET;")
+        lines.append(
+            "        return %s_unknown(s, at);" % name
+            if unknown_fallback
+            else "        return crate::EXIT_BUDGET;"
+        )
         lines.append("    }")
     # Bodies start with no delayed transfer pending: so does the region.
     lines.append("    if s.pending.is_some() {")
@@ -656,6 +676,8 @@ def region_text(name: str, bodies: list[Body], succ_of: dict | None) -> str:
         lines.append("        return crate::EXIT_BUDGET;")
         lines.append("    }")
     lines.append("    let mut rf = Rf::default();")
+    if allow_unknown:
+        lines.append("    rf.allow_unknown = true;")
     lines.append("    rf.pc = s.pc_sw;")
     lines.append("    rf.pending = None;")
     for c in loads:
@@ -677,7 +699,7 @@ def region_text(name: str, bodies: list[Body], succ_of: dict | None) -> str:
     chain: dict[int, int] | None = {} if CHAINING else None
     for b in bodies:
         succ = None if succ_of is None else succ_of.get(b.block.start, set())
-        lines.extend(body_lines(b, by_start, succ, chain))
+        lines.extend(body_lines(b, by_start, succ, chain, allow_unknown=allow_unknown))
     lines += [
         "            _ => break 'r crate::EXIT_BUDGET,",
         "        }",
@@ -719,7 +741,14 @@ def region_text(name: str, bodies: list[Body], succ_of: dict | None) -> str:
         "    exit",
         "}",
     ]
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    if unknown_fallback and known:
+        # Keep the usual known-mask path; only a rejected entry uses the
+        # same instruction bodies with runtime masks and full writeback.
+        text += "\n\n" + region_text(
+            name + "_unknown", bodies, succ_of, allow_unknown=True
+        )
+    return text
 
 
 def entry_text(start: int, region: str, bodies: list[Body]) -> str:
@@ -758,6 +787,7 @@ def build_regions(
     max_insns: int = 1200,
     counts: dict[tuple[int, int], int] | None = None,
     max_regs: int = 28,
+    unknown_fallbacks: set[int] | None = None,
 ) -> list[tuple[str, list[int], str]]:
     """Group the blocks into regions and generate each: [(name, block
     starts, text)].
@@ -855,7 +885,12 @@ def build_regions(
                 body.idx = len(bodies)
                 bodies.append(body)
         name = "r_%X" % g[0]
-        text = region_text(name, bodies, succ_of)
+        text = region_text(
+            name,
+            bodies,
+            succ_of,
+            unknown_fallback=bool(set(g) & (unknown_fallbacks or set())),
+        )
         ents = [
             entry_text(st, name, [b for b in bodies if b.block.start == st]) for st in g
         ]
@@ -1072,6 +1107,7 @@ def generate(
     transition_counts: dict[tuple[int, int], int] | None = None,
     region_regs: int = 28,
     decode_ranges: list[tuple[int, int]] | None = None,
+    unknown_fallbacks: set[int] | None = None,
 ) -> dict:
     import sharc
     import sharc_run as sr
@@ -1153,6 +1189,7 @@ def generate(
         region_insns,
         transition_counts,
         region_regs,
+        unknown_fallbacks,
     )
     by_start = {b.start: b for b in blocks}
     generated = {st for _n, starts_, _t in regions for st in starts_}
@@ -1306,6 +1343,11 @@ def generate(
         "specializer_failures": [["%#x" % pc, why] for pc, why in tr.block_failures],
         "transpile": out.report,
     }
+    fallback_regions = [
+        n for n, _starts, text in regions if "pub fn %s_unknown(" % n in text
+    ]
+    if fallback_regions:
+        report["unknown_fallback_regions"] = fallback_regions
     with open(os.path.join(out_dir, "rsgen-report.json"), "w") as fh:
         json.dump(report, fh, indent=1)
     return report
@@ -1316,6 +1358,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("image", help='program database image, e.g. "dt2-1.16"')
     p.add_argument("--out", default=DEFAULT_OUT, help="output directory (under out/)")
     p.add_argument("--blocks", default="", help="comma-separated hex block starts")
+    p.add_argument(
+        "--unknown-fallbacks",
+        default="",
+        help="comma-separated hex block starts whose regions should also compile "
+        "a fallback preserving unknown register values (use option-26 entry bails)",
+    )
     p.add_argument(
         "--decode-range",
         type=decode_range,
@@ -1477,6 +1525,7 @@ def main(argv: list[str] | None = None) -> int:
         region_regs=args.region_regs,
         decode_ranges=args.decode_range,
         work_dir=args.work,
+        unknown_fallbacks={int(x, 16) for x in args.unknown_fallbacks.split(",") if x},
     )
     print(
         "%d blocks (%d instructions), %d instructions in the table, %d files -> %s (%.1fs)"

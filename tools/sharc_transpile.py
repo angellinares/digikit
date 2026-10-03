@@ -5156,7 +5156,9 @@ FN_ID_BASE = 16
 # 10: model-safe bodies hold calls, returns and terminal MODE1/IRPTL/IMASK
 # writes (the engine completes a bank request after a block) and skip the
 # loop-register sync after an instruction that cannot change it.
-GENERATOR_VERSION = 10
+# 11: selected regions can use a generated fallback with runtime known-bit
+# masks (Rf.allow_unknown); older native runtimes lack this register-file mode.
+GENERATOR_VERSION = 11
 
 
 def core_hash() -> str:

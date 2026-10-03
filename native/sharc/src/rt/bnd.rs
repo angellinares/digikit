@@ -1066,6 +1066,7 @@ pub fn _load_normal_ureg_rf(
         let loaded = _dm_read(s, address, 4, false, true)?;
         match loaded {
             Some(v) => rf_set(rf, code, v)?,
+            None if rf.allow_unknown => rf_set(rf, code, V::UNK)?,
             None => return Err(TRAP_BLOCK_UNKNOWN),
         }
         return Ok(loaded);

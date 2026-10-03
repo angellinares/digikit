@@ -573,6 +573,39 @@ fn block_register_file_rules() {
     assert_eq!(rf_get(&rf, RegView::OLD, 2), V::c(8));
     // PEy's view reads S2 for R2.
     assert_eq!(rf_get(&rf, RegView(RegView::PEY), 2), V::c(5));
+    rf.allow_unknown = true;
+    rf_set(&mut rf, 4, V::UNK).unwrap();
+    assert_eq!(rf.r[4], V::UNK);
+    let partial = V { b: 5, m: 7 };
+    rf_set(&mut rf, 4, partial).unwrap();
+    assert_eq!(rf.r[4], partial);
+    assert_eq!(rf_set(&mut rf, NUREG as Int, V::UNK), Err(TRAP_INDEX));
+}
+
+#[test]
+fn block_unknown_load_matches_interpreter_value() {
+    let mut s = St::new(Mem::new());
+    s.cfg.explicit_memory_model = false;
+    s.cfg.refresh();
+    let mut rf = Rf::default();
+    rf.r[4] = V::c(123);
+    assert_eq!(
+        bnd::_load_normal_ureg_rf(&mut s, &mut rf, S_DM, VI::I(0x2800_1000), 4),
+        Err(TRAP_BLOCK_UNKNOWN)
+    );
+    assert_eq!(rf.r[4], V::c(123));
+    rf.allow_unknown = true;
+    assert_eq!(
+        bnd::_load_normal_ureg_rf(&mut s, &mut rf, S_DM, VI::I(0x2800_1000), 4),
+        Ok(None)
+    );
+    assert_eq!(rf.r[4], V::UNK);
+    s.r[4] = V::c(123);
+    assert_eq!(
+        bnd::_load_normal_ureg(&mut s, S_DM, VI::I(0x2800_1000), 4),
+        Ok(None)
+    );
+    assert_eq!(rf.r[4], V::UNK);
 }
 
 #[test]

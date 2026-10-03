@@ -101,6 +101,25 @@ def test_rsgen_command_names_every_profile(tmp_path: Path) -> None:
         assert part in text
 
 
+def test_unknown_fallback_selection_is_reproducible(tmp_path: Path) -> None:
+    base = aot.parse_args(["--out", str(tmp_path), *BASE])
+    selected = aot.parse_args(
+        ["--out", str(tmp_path), *BASE, "--unknown-fallbacks", "0x1c253f"]
+    )
+    cmd = aot.rsgen_command(
+        selected.image, tmp_path / "gen", tmp_path / "work", tmp_path / "p", selected
+    )
+    i = cmd.index("--unknown-fallbacks")
+    assert cmd[i + 1] == "0x1c253f"
+    assert "unknown_fallbacks" not in aot.settings(base)
+    assert aot.settings(selected)["unknown_fallbacks"] == [0x1C253F]
+    differences = aot.compare_manifests(
+        {"settings": aot.settings(base)}, {"settings": aot.settings(selected)}
+    )
+    assert len(differences) == 1
+    assert differences[0].startswith("settings.unknown_fallbacks")
+
+
 def test_tree_hash_ignores_reports(tmp_path: Path) -> None:
     (tmp_path / "a.rs").write_text("fn a() {}\n")
     (tmp_path / "insns.bin").write_bytes(b"\x01\x02")
