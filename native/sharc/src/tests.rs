@@ -439,6 +439,55 @@ fn astat_knowledge() {
 }
 
 #[test]
+fn astatx_define_matches_branch_reference_for_all_value_shapes() {
+    fn reference(old: V, mask: Int, bits: Int) -> V {
+        let mask = mask as u32;
+        let bits = bits as u32 & mask;
+        if old.is_c() {
+            return V::c(((old.b & !mask) | bits) as Int);
+        }
+        if old.is_partial() {
+            let new_mask = old.m | mask;
+            let new_bits = (old.b & !mask) | bits;
+            return V {
+                b: new_bits & new_mask,
+                m: new_mask,
+            };
+        }
+        if mask == 0 {
+            return old;
+        }
+        V { b: bits, m: mask }
+    }
+
+    let s = state();
+    let values = [
+        V::UNK,
+        V { b: 0xFFFF_FFFF, m: 0 },
+        V::partial(0x0000_0001, 0x0000_0001),
+        V::partial(0x8000_0042, 0x8000_0002),
+        V { b: 0xFFFF_FFFF, m: 0x0000_0042 },
+        V::c(0),
+        V::c(0x8000_0042),
+        V { b: 0xFFFF_FFFF, m: u32::MAX },
+    ];
+    let wide = (1i128 << 96) | (1i128 << 47) | 0x8000_0042;
+    let masks = [0, 1, -1, 0x0000_0042, 0xFFFF_0000, wide, -wide];
+    let bits = [0, -1, 0x8000_0042, wide, -wide];
+    for old in values {
+        for mask in masks {
+            for bits in bits {
+                assert_eq!(
+                    bnd::_astatx_define(&s, old, mask, bits),
+                    reference(old, mask, bits),
+                    "old={old:?} mask={mask:#x} bits={bits:#x}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn flag_update_algebra() {
     let s = state();
     let a = bnd::_flags_put(&s, bnd::FLAGS_NONE, 3, Some(true));

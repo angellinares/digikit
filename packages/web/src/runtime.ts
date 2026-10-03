@@ -92,7 +92,7 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
   if (!api.isTauri()) return undefined;
   const metrics = hostMetrics('native_ipc');
   let generation = 0, activeSession: number | undefined, loaded = false, paused = true, disposed = false, epoch = 0, timer: number | undefined, input = Promise.resolve(), lifecycle = Promise.resolve();
-  const clearPump = () => { paused = true; epoch += 1; if (timer) window.clearTimeout(timer); timer = undefined; };
+  const clearPump = () => { paused = true; epoch += 1; metrics.invalidatePumpGap(); if (timer) window.clearTimeout(timer); timer = undefined; };
   const fault = (error: unknown) => { clearPump(); loaded = false; onUpdate({ type: 'error', error: String(error) }); };
   const pump = async (token: number, run: number) => {
     if (disposed || paused || token !== generation || run !== epoch || activeSession !== token) return;
@@ -106,11 +106,16 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
       timer = window.setTimeout(() => { void pump(token, run); }, 0);
     } catch (error) { if (token === generation && run === epoch) fault(error); }
   };
-  const start = (token: number) => { paused = false; const run = ++epoch; timer = window.setTimeout(() => { void pump(token, run); }, 0); };
+  const start = (token: number) => { metrics.invalidatePumpGap(); paused = false; const run = ++epoch; timer = window.setTimeout(() => { void pump(token, run); }, 0); };
   const queueInput = (operation: (session: number) => Promise<void>) => {
     const token = generation, session = activeSession;
+    metrics.invalidatePumpGap();
     const next = input.catch(() => {}).then(async () => { if (!disposed && loaded && token === generation && session === activeSession && session !== undefined) await operation(session); });
-    input = next; return next.catch((error) => { if (token === generation) fault(error); throw error; });
+    input = next.then(
+      () => { if (!disposed && token === generation && session === activeSession) metrics.invalidatePumpGap(); },
+      (error) => { if (!disposed && token === generation && session === activeSession) metrics.invalidatePumpGap(); throw error; },
+    );
+    return input.catch((error) => { if (token === generation) fault(error); throw error; });
   };
   try {
     metrics.reset(); const startup = await api.invoke<RuntimeSnapshot>('emu_startup'); metrics.loaded();
@@ -123,9 +128,9 @@ export async function nativeRuntime(onUpdate: (update: RuntimeUpdate) => void): 
     async nativeAudio() {
       const session = activeSession;
       if (session === undefined) return undefined;
-      const report = await api.invoke<RuntimeDiagnostics & { native_audio?: NativeAudioStatus }>('emu_diagnostics', { sessionId: session });
+      const report = await api.invoke<NativeAudioStatus | null>('emu_audio_status', { sessionId: session });
       if (disposed || activeSession !== session) throw new Error('Firmware session changed while reading audio status');
-      return report.native_audio ?? {
+      return report ?? {
         sink_connected: false,
         playback_requested: false,
         flow_started: false,

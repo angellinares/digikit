@@ -118,6 +118,16 @@ impl DesktopRuntime {
         let _ = &mut report;
         report
     }
+    /// Lightweight native-output observation for the periodic desktop UI poll.
+    /// It deliberately does not synchronize the peer or serialize emulator diagnostics.
+    pub fn audio_status(&mut self) -> Option<Value> {
+        #[cfg(feature = "coupled-audio")]
+        if let Some(audio) = &mut self.audio {
+            audio.poll();
+            return Some(audio.report());
+        }
+        None
+    }
 }
 
 #[cfg(feature = "coupled-audio")]

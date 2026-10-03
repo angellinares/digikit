@@ -78,6 +78,22 @@ function workerHarness({ ordinaryHasCoupling = false } = {}) {
   return { send, buttons, runTimer: async () => { const timer = timers.shift(); if (timer) await timer(); } };
 }
 
+function nativeRuntimeHarness(invoke) {
+  const original = fs.readFileSync(new URL('../packages/web/src/runtime.ts', import.meta.url), 'utf8');
+  const source = ("const hostMetrics = () => ({ reset() {}, loaded() {}, step() {}, invalidatePumpGap() {}, report() { return {}; } });\n" + original.slice(original.indexOf('export async function nativeRuntime')))
+    .replace("await import('@tauri-apps/api/core')", 'await fakeTauri()')
+    .replaceAll('export ', '')
+    .concat('\nglobalThis.nativeRuntime = nativeRuntime;');
+  const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const timers = [];
+  const context = {
+    fakeTauri: async () => ({ isTauri: () => true, invoke }), performance: { now: () => 0 },
+    window: { setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout() {} }, console,
+  };
+  vm.runInNewContext(js, context);
+  return { runtime: (update = () => {}) => context.nativeRuntime(update), timers };
+}
+
 test('PCM rate is emitted stereo duration over this session wall time', () => {
   assert.deepEqual(pcmMetrics(96000, 2000), { pcm_produced_seconds: 1, production_elapsed_wall_seconds: 2, pcm_seconds_per_wall_second: 0.5 });
   assert.equal(pcmMetrics(0, 0).pcm_seconds_per_wall_second, 0);
@@ -93,6 +109,49 @@ test('host response histogram is bounded, resettable and exported by value', () 
   m.reset();
   assert.deepEqual(m.report().step_response_wall_ms_buckets.counts, Array(8).fill(0));
   assert.equal(report.step_response_wall_ms_buckets.counts[0], 2);
+  assert.equal('measured_pump_scheduling' in report, false);
+});
+
+test('desktop pump gaps exclude input queued while a step response is in flight', () => {
+  const m = hostMetrics('native_ipc'); m.reset();
+  const snapshot = { status: { ready: false } };
+  m.step(10, 14, snapshot);
+  m.invalidatePumpGap(); // input queues while the preceding emu_step is in flight
+  m.step(17, 22, snapshot); // that response must not bridge to post-input work
+  m.invalidatePumpGap(); // input completes before the following pump iteration
+  m.step(100, 110, snapshot); m.step(115, 120, snapshot);
+  const scheduling = m.report().measured_pump_scheduling;
+  assert.equal(scheduling.gaps, 1);
+  assert.equal(scheduling.gap_wall_ms, 5);
+  assert.deepEqual(scheduling.gap_wall_ms_buckets.counts, [0, 0, 1, 0, 0, 0, 0, 0]);
+});
+
+test('native audio health uses its lightweight endpoint and preserves CF setup fallback', async () => {
+  const calls = [];
+  const native = nativeRuntimeHarness(async (name, args) => {
+    calls.push([name, args]);
+    if (name === 'emu_startup') return { status: { ready: false } };
+    if (name === 'emu_audio_status') return null;
+    throw new Error(`unexpected ${name}`);
+  });
+  const runtime = await native.runtime();
+  assert.deepEqual(JSON.parse(JSON.stringify(await runtime.nativeAudio())), {
+    sink_connected: false, playback_requested: false, flow_started: false,
+    source_audio_seconds: 0, session_wall_seconds: 0, device_error: null, setup_needed: true,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    ['emu_startup', null],
+    ['emu_audio_status', { sessionId: 1 }],
+  ]);
+});
+
+test('native audio health has no session before startup firmware exists', async () => {
+  const native = nativeRuntimeHarness(async (name) => {
+    assert.equal(name, 'emu_startup');
+    throw new Error('No startup firmware selected');
+  });
+  const runtime = await native.runtime();
+  assert.equal(await runtime.nativeAudio(), undefined);
 });
 
 test('buffer threshold and stereo output are unchanged; initial silence is not underrun', () => {

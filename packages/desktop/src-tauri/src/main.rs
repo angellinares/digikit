@@ -76,7 +76,11 @@ fn runtime_from(
 enum Command {
     Diagnostics {
         session: u64,
-        reply: mpsc::Sender<Result<serde_json::Value, String>>,
+        reply: JsonReply,
+    },
+    AudioStatus {
+        session: u64,
+        reply: JsonReply,
     },
     Startup {
         reply: Reply,
@@ -121,6 +125,7 @@ enum Command {
     },
 }
 type Reply = mpsc::Sender<Result<Snapshot, String>>;
+type JsonReply = mpsc::Sender<Result<serde_json::Value, String>>;
 struct Host {
     sender: mpsc::Sender<Command>,
 }
@@ -155,13 +160,30 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
                 let _ = reply.send(result);
                 continue;
             }
+            Command::AudioStatus {
+                session: token,
+                reply,
+            } => {
+                let result = if token != session {
+                    Err("stale emulator session".into())
+                } else {
+                    runtime
+                        .as_mut()
+                        .map(|runtime| runtime.audio_status().unwrap_or(serde_json::Value::Null))
+                        .ok_or_else(|| "No firmware selected".into())
+                };
+                let _ = reply.send(result);
+                continue;
+            }
             command => command,
         };
         if !matches!(&command, Command::Load { .. } | Command::Startup { .. }) {
             startup_snapshot = None;
         }
         let (request_session, reply) = match &command {
-            Command::Diagnostics { .. } => unreachable!("diagnostics handled above"),
+            Command::Diagnostics { .. } | Command::AudioStatus { .. } => {
+                unreachable!("JSON command handled above")
+            }
             Command::Startup { reply } => (session, reply.clone()),
             Command::Load { session, reply, .. }
             | Command::Restart { session, reply, .. }
@@ -178,7 +200,9 @@ fn actor(receiver: mpsc::Receiver<Command>, audio: Option<AudioOptions>) {
             continue;
         }
         let result = match command {
-            Command::Diagnostics { .. } => unreachable!("diagnostics handled above"),
+            Command::Diagnostics { .. } | Command::AudioStatus { .. } => {
+                unreachable!("JSON command handled above")
+            }
             Command::Startup { .. } => startup_snapshot.take().map(Ok).unwrap_or_else(|| {
                 runtime
                     .as_mut()
@@ -351,6 +375,28 @@ async fn emu_diagnostics(
 }
 
 #[tauri::command]
+async fn emu_audio_status(
+    host: State<'_, Host>,
+    session_id: u64,
+) -> Result<serde_json::Value, String> {
+    let sender = host.sender.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (reply, response) = mpsc::channel();
+        sender
+            .send(Command::AudioStatus {
+                session: session_id,
+                reply,
+            })
+            .map_err(|_| "emulator actor stopped")?;
+        response
+            .recv()
+            .map_err(|_| "emulator actor dropped reply")?
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn emu_load(
     host: State<'_, Host>,
     request: tauri::ipc::Request<'_>,
@@ -496,6 +542,7 @@ fn main() {
         .manage(host)
         .invoke_handler(tauri::generate_handler![
             emu_diagnostics,
+            emu_audio_status,
             emu_startup,
             emu_load,
             emu_restart,
@@ -676,6 +723,63 @@ mod cli_tests {
             .unwrap();
         let after = tap_response.recv().unwrap().unwrap().status.icount;
         assert!(after - before >= 250_001);
+    }
+
+    #[test]
+    fn audio_status_validates_session_and_reports_no_coupled_audio_as_null() {
+        let (sender, receiver) = mpsc::channel();
+        let actor = thread::spawn(move || actor(receiver, None));
+        let (missing_reply, missing_response) = mpsc::channel();
+        sender
+            .send(Command::AudioStatus {
+                session: 0,
+                reply: missing_reply,
+            })
+            .unwrap();
+        assert_eq!(
+            missing_response.recv().unwrap().unwrap_err(),
+            "No firmware selected"
+        );
+        let (stale_reply, stale_response) = mpsc::channel();
+        sender
+            .send(Command::AudioStatus {
+                session: 1,
+                reply: stale_reply,
+            })
+            .unwrap();
+        assert_eq!(
+            stale_response.recv().unwrap().unwrap_err(),
+            "stale emulator session"
+        );
+
+        let syx = std::env::var_os("DIGI_COUPLED_SYX")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("../../../Digitone_II_OS1.11.syx"));
+        let Ok(bytes) = std::fs::read(syx) else {
+            drop(sender);
+            actor.join().unwrap();
+            return;
+        };
+        let (load_reply, load_response) = mpsc::channel();
+        sender
+            .send(Command::Load {
+                session: 1,
+                bytes,
+                card: None,
+                reply: load_reply,
+            })
+            .unwrap();
+        load_response.recv().unwrap().unwrap();
+        let (status_reply, status_response) = mpsc::channel();
+        sender
+            .send(Command::AudioStatus {
+                session: 1,
+                reply: status_reply,
+            })
+            .unwrap();
+        assert_eq!(status_response.recv().unwrap().unwrap(), serde_json::Value::Null);
+        drop(sender);
+        actor.join().unwrap();
     }
 
     #[test]

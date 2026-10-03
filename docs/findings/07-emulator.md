@@ -5808,3 +5808,52 @@ load, pauses and user time, so only an uninterrupted run with load subtracted
 can estimate off-step overhead. No effective timer-clamp cost was measured.
 A native GUI export attempt with `DN2_PROFILE_LINK=1` timed out in Computer Use
 after Export diagnostics; it yielded no report and is not performance evidence.
+
+
+### Underrun work: retained flag-update improvement (2026-10-03)
+
+**[O]** The clean pre-sink/live-noisy comparison identifies the delivery
+boundary, but the existing integrated DSP deficit remains the primary
+throughput problem. An interactive-QoS probe on the coupled DSP worker reused
+the native live helper. Five off/on pairs all preserved exactness and all
+requests succeeded, yet both settings still needed about 2 s for 0.759333 s
+audio. Variation and fixed off-before-on ordering limit attribution. The
+probe was removed; it is not a real-time fix. Logs are private under
+`/private/tmp/dn2-qos-20261003/`.
+
+The improved profile identified repeated `_astatx_define` work. Its three
+value-shape cases were replaced with one known-mask merge and bit merge, with
+the zero-merged-mask case preserving the old value verbatim. This retains
+known, partial and unknown values, including noncanonical public `V` fields
+and wide `i128` inputs that truncate to zero. CACC and forget behavior remain
+unchanged. An independent review and an old-branch reference differential
+test accepted the equivalence.
+
+Seven baseline/candidate pairs alternated run order and passed the existing
+ColdFire, DSP and PCM hash assertions. Each completed 1,139 frames with zero
+missing SPORT blocks. Every pair improved DSP wall, workload wall and
+whole-process CPU. Median paired ratios were 0.978344 DSP wall (2.166% less),
+0.978559 workload wall (2.144% less) and 0.986885 process user+system CPU
+(1.311% less). The last measurement covers the whole test process, not DSP
+thread CPU alone. Candidate median workload elapsed was 1.757835 s versus
+1.793367 s baseline for the same 0.759333 s audio: still 2.315x too slow.
+The profile family's 8.839% share was an investigation lead, not the gain.
+The change is retained as a modest measured improvement, not an underrun fix.
+
+Private records under `/private/tmp/dn2-astat-20261003/` preserve the actual
+14-run order, executable SHA-256 values, stable generated-file inventory,
+per-run workload/DSP wall and POSIX process CPU, and exactness logs.
+`summary.json` contains raw observations; `paired-analysis.json` contains
+computed ratios. No firmware/generated payloads or profiles are committed.
+
+**[O]** Secondary host cleanup adds a session-validated `emu_audio_status`
+endpoint for the periodic UI query, using nonblocking poll/report without
+full CF diagnostics, firmware hashing or a DSP barrier. Explicit diagnostic
+export retains its original synchronization. Bounded native pump-gap metrics
+exclude load/pause/resume and queued input completion, including an input
+enqueued during an outstanding step. They are omitted from WASM reports,
+which do not share that native invalidation contract. Node checks passed
+9/9; actor no-runtime, stale-session and CF-only-null checks passed. Independent
+review found no residual correctness issue. Astro check had zero errors and
+warnings (one style hint); frontend and native release builds passed. These
+checks do not establish sustained live playback or a host scheduling speedup.

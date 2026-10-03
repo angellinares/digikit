@@ -149,21 +149,14 @@ pub fn _astatx_known_bit(_s: &St, value: V, bit: Int) -> Option<bool> {
 pub fn _astatx_define(_s: &St, old: V, mask: Int, bits: Int) -> V {
     let mask = mask as u32;
     let bits = bits as u32 & mask;
-    if old.is_c() {
-        return V::c(((old.b & !mask) | bits) as Int);
-    }
-    if old.is_partial() {
-        let new_mask = old.m | mask;
-        let new_bits = (old.b & !mask) | bits;
-        return V {
-            b: new_bits & new_mask,
-            m: new_mask,
-        };
-    }
-    if mask == 0 {
+    let new_mask = old.m | mask;
+    if new_mask == 0 {
         return old;
     }
-    V { b: bits, m: mask }
+    V {
+        m: new_mask,
+        b: ((old.b & !mask) | bits) & new_mask,
+    }
 }
 
 /// values._astatx_forget

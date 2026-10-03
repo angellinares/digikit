@@ -1,6 +1,48 @@
 # DN2 native/browser audio continuation — 2026-10-03
 
-## Current continuation: default audio, startup fixes and live sound capture
+## Active underrun work: DSP throughput (2026-10-03)
+
+The user confirmed that the actual GUI pre-sink WAV is a clean tone while
+live playback is noisy, and explicitly asked to fix underruns. DSP effective
+throughput below real time is already established; do not spend the next
+iteration re-establishing it or claim status polling is the primary cause.
+Commit `49f7125` contains the validated default audio/display/capture work.
+
+A bounded scheduler experiment requested interactive QoS on the coupled DSP
+worker, reusing the existing native live helper. Five same-binary off/on
+pairs preserved every coupled PCM/state assertion, 1,139 frames and zero
+missing blocks. All requests succeeded, but both settings still needed roughly
+2 s for 0.759333 s audio. Results varied, and every pair ran off before on,
+so run order limits attribution. The toggle was removed rather than promoted
+as a throughput fix. Raw logs: `/private/tmp/dn2-qos-20261003/`.
+
+The current source experiment simplifies only `_astatx_define` in
+`native/sharc/src/rt/bnd.rs`: merge known-bit masks and result bits directly,
+preserving the old value when the merged mask is zero. CACC/forget semantics
+remain untouched. This is grounded in the improved profile's repeated flag
+updates; the full ASTAT family share (8.839%) is not the expected saving.
+Independent review accepted the algebra and differential coverage, including
+noncanonical unknown values and wide input truncation. Seven alternating pairs
+preserved all coupled PCM/state assertions and each was faster. Median paired
+DSP wall ratio 0.978344 (2.166% less), workload wall ratio 0.978559
+(2.144% less), total-process user+system CPU ratio 0.986885 (1.311% less).
+Candidate median 1.757835 s for 0.759333 s audio is still 2.315x slower than
+real time. Retain this modest improvement; do not claim underruns fixed.
+Artifacts: `/private/tmp/dn2-astat-20261003/summary.json` and
+`paired-analysis.json`; baseline/candidate executables are preserved. The
+standalone helper differential test and all fourteen coupled checks passed.
+
+Secondary host cleanup replaces the periodic full diagnostic/sync/hash request
+with session-validated `emu_audio_status`, using nonblocking poll/report.
+Explicit diagnostic export retains its existing barrier. Native pump gap
+metrics now measure accepted adjacent responses and invalidate across lifecycle
+and input completion; they are omitted for WASM, which lacks that native
+invalidation contract. Focused Node checks passed 9/9 and actor no-runtime,
+stale-session and CF-only-null checks passed. The source diff is uncommitted.
+Final Astro check (zero errors/warnings, one style hint), frontend build and
+native release embedding passed after the timing runs.
+
+## Previous continuation: default audio, startup fixes and live sound capture
 
 Committed before profiling: `4660aee` (native audio integration) and `dc6863f`
 (verified unknown-value loop fallback). Default-audio/UI/capture work and its validation are recorded in the
