@@ -5,7 +5,7 @@
 //! References: CFPRM (ColdFire Family Programmer's Reference Manual, Rev. 2)
 //! and the MCF5441x Reference Manual (RM); page numbers are PDF pages.
 
-use crate::decode::{Ea, Insn, Operand, Size, decode};
+use crate::decode::{Ea, Insn, Operand, Size, TRAP_FPU, TRAP_PRIVILEGED, decode};
 use crate::decode_gen::Form;
 
 /// A bus access that failed (unmapped, or refused by a peripheral model).
@@ -27,6 +27,14 @@ pub trait Bus {
     /// Instruction fetch; a separate hook so a bus can count or cache fetches.
     fn fetch16(&mut self, addr: u32) -> Result<u16, BusError> {
         self.read16(addr)
+    }
+    /// Whether every access within `len` bytes at `addr` is to plain
+    /// memory: it succeeds and has no effect beyond those bytes (no device
+    /// register, fault or recording). `false` is always correct; it only
+    /// keeps `Cpu::run_fused` from running.
+    fn plain_ram(&self, addr: u32, len: u32) -> bool {
+        let _ = (addr, len);
+        false
     }
 }
 
@@ -147,13 +155,16 @@ const DC_CACHE_PAGES: usize = 256;
 
 #[derive(Clone, Debug, PartialEq)]
 struct DecodePage {
-    slots: Box<[Option<Insn>]>,
+    /// Fixed length, so a slot index (< DC_SLOTS by construction) needs no
+    /// bounds check.
+    slots: Box<[Option<Insn>; DC_SLOTS]>,
 }
 
 impl DecodePage {
     fn new() -> DecodePage {
+        let slots: Box<[Option<Insn>]> = vec![None; DC_SLOTS].into_boxed_slice();
         DecodePage {
-            slots: vec![None; DC_SLOTS].into_boxed_slice(),
+            slots: slots.try_into().unwrap_or_else(|_| unreachable!()),
         }
     }
 }
@@ -196,6 +207,18 @@ impl DecodeCache {
             *entry = Some((page, DecodePage::new()));
         }
         entry.as_mut().unwrap().1.slots[slot] = Some(insn);
+    }
+
+    /// Whether a write of `len` bytes (1-8) at `addr` would evict a cached
+    /// page, i.e. whether `invalidate(addr, len)` would change anything.
+    #[inline]
+    fn covers(&self, addr: u32, len: u32) -> bool {
+        let last = addr.wrapping_add(len - 1);
+        let p0 = addr & !DC_PAGE_MASK;
+        let p1 = last & !DC_PAGE_MASK;
+        matches!(&self.pages[Self::page_index(p0)], Some((tag, _)) if *tag == p0)
+            || (p1 != p0
+                && matches!(&self.pages[Self::page_index(p1)], Some((tag, _)) if *tag == p1))
     }
 
     /// Evict every decoded instruction in the 4 KiB page(s) a write of
@@ -313,17 +336,35 @@ pub struct Cpu {
 
 /// A fault raised while executing: the vector and the PC to stack
 /// (0 = the faulting instruction's own PC, filled in by `step`).
-struct Exc {
-    vector: u8,
-    pc: u32,
+///
+/// Packed into one non-zero word (bit 40 set) so that `Result<(), Exc>`
+/// is returned in a register.
+#[derive(Clone, Copy)]
+pub(crate) struct Exc(core::num::NonZeroU64);
+
+impl Exc {
+    #[inline(always)]
+    fn new(vector: u8, pc: u32) -> Exc {
+        match core::num::NonZeroU64::new(1 << 40 | u64::from(vector) << 32 | u64::from(pc)) {
+            Some(v) => Exc(v),
+            None => unreachable!(),
+        }
+    }
+
+    #[inline(always)]
+    fn vector(self) -> u8 {
+        (self.0.get() >> 32) as u8
+    }
+
+    #[inline(always)]
+    fn pc(self) -> u32 {
+        self.0.get() as u32
+    }
 }
 
 impl From<BusError> for Exc {
     fn from(_: BusError) -> Exc {
-        Exc {
-            vector: vector::ACCESS_ERROR,
-            pc: 0,
-        }
+        Exc::new(vector::ACCESS_ERROR, 0)
     }
 }
 
@@ -331,6 +372,26 @@ impl Default for Cpu {
     fn default() -> Cpu {
         Cpu::new()
     }
+}
+
+/// Operand `k` of `i` as an EA or an immediate: the decoder fixes each
+/// form's operand kinds. Indexes the whole operand array (k < nops for every
+/// use) with constant indices, so no slice bounds checks.
+macro_rules! ea {
+    ($i:expr, $k:expr) => {
+        match $i.ops[$k] {
+            Operand::Ea(e) => e,
+            _ => unreachable!("operand {} of {} is not an EA", $k, $i.id()),
+        }
+    };
+}
+macro_rules! imm {
+    ($i:expr, $k:expr) => {
+        match $i.ops[$k] {
+            Operand::Imm(v) => v,
+            _ => unreachable!("operand {} of {} is not an immediate", $k, $i.id()),
+        }
+    };
 }
 
 impl Cpu {
@@ -393,6 +454,8 @@ impl Cpu {
 
     /// Exception entry (CFPRM p.286-287 11.1.2): a two-longword frame on the
     /// supervisor stack, format 4-7 recording A7[1:0], then PC from VBR.
+    #[cold]
+    #[inline(never)]
     fn exception(&mut self, bus: &mut impl Bus, vec: u8, pc: u32) -> Result<(), Stop> {
         self.last_exception = Some(vec);
         self.resolve_nzv(); // `old` below is pushed to the stack, so it
@@ -455,6 +518,20 @@ impl Cpu {
         Ok(true)
     }
 
+    /// Whether the instruction at `pc` is in the decode cache (stepping it
+    /// would not decode or insert anything).
+    #[inline]
+    pub fn decoded_at(&self, pc: u32) -> bool {
+        self.decode_cache.get(pc).is_some()
+    }
+
+    /// Whether a CPU write of `len` bytes (1-8) at `addr` would evict
+    /// decoded instructions (see `fused`).
+    #[inline]
+    pub fn decode_cached(&self, addr: u32, len: u32) -> bool {
+        self.decode_cache.covers(addr, len)
+    }
+
     /// Evict touched decode pages and the page immediately before the first
     /// touched page; a cached instruction may begin there and consume extension
     /// words across the boundary.
@@ -499,8 +576,43 @@ impl Cpu {
         Ok(insn)
     }
 
+    /// Decode-cache miss: fetch, decode and cache the instruction at `pc`,
+    /// or take the illegal/line-A/line-F/access-error exception (the
+    /// instruction completes: `Err` holds what `step` returns).
+    #[cold]
+    #[inline(never)]
+    fn fetch_miss(&mut self, bus: &mut impl Bus, pc: u32) -> Result<Insn, Result<(), Stop>> {
+        match self.fetch(bus) {
+            Ok(Some(i)) => {
+                self.decode_cache.insert(pc, i);
+                Ok(i)
+            }
+            Ok(None) => {
+                // line A (0xAxxx) and line F (0xFxxx) have their own vectors
+                let w0 = bus.fetch16(pc).unwrap_or(0);
+                let vec = match w0 >> 12 {
+                    0xa => vector::LINE_A,
+                    0xf => vector::LINE_F,
+                    _ => vector::ILLEGAL,
+                };
+                self.icount += 1;
+                Err(self.exception(bus, vec, pc))
+            }
+            Err(_) => {
+                self.icount += 1;
+                Err(self.exception(bus, vector::ACCESS_ERROR, pc))
+            }
+        }
+    }
+
     /// Execute one instruction.
     pub fn step(&mut self, bus: &mut impl Bus) -> Result<(), Stop> {
+        self.step_inline(bus)
+    }
+
+    /// `step`, always inlined: for a caller's hot instruction loop.
+    #[inline(always)]
+    pub fn step_inline(&mut self, bus: &mut impl Bus) -> Result<(), Stop> {
         self.last_exception = None;
         self.last_unimplemented = None;
         if self.state == RunState::Halted {
@@ -512,45 +624,30 @@ impl Cpu {
         // and every write this core issues evicts the page it lands in --
         // see `DecodeCache`'s doc comment), so it skips straight to the
         // privilege/unit checks below.
-        let insn = if let Some(i) = self.decode_cache.get(pc) {
-            i
-        } else {
-            match self.fetch(bus) {
-                Ok(Some(i)) => {
-                    self.decode_cache.insert(pc, i);
-                    i
-                }
-                Ok(None) => {
-                    // line A (0xAxxx) and line F (0xFxxx) have their own vectors
-                    let w0 = bus.fetch16(pc).unwrap_or(0);
-                    let vec = match w0 >> 12 {
-                        0xa => vector::LINE_A,
-                        0xf => vector::LINE_F,
-                        _ => vector::ILLEGAL,
-                    };
-                    self.icount += 1;
-                    return self.exception(bus, vec, pc);
-                }
-                Err(_) => {
-                    self.icount += 1;
-                    return self.exception(bus, vector::ACCESS_ERROR, pc);
-                }
-            }
+        let insn = match self.decode_cache.get(pc) {
+            Some(i) => i,
+            None => match self.fetch_miss(bus, pc) {
+                Ok(i) => i,
+                Err(r) => return r,
+            },
         };
-        if insn.privileged() && self.sr & sr::S == 0 {
-            self.icount += 1;
-            return self.exception(bus, vector::PRIVILEGE, pc);
-        }
-        if insn.unit() == "fpu" && self.fpu.is_none() {
-            self.icount += 1;
-            return self.exception(bus, vector::LINE_F, pc);
+        let traps = insn.traps();
+        if traps != 0 {
+            if traps & TRAP_PRIVILEGED != 0 && self.sr & sr::S == 0 {
+                self.icount += 1;
+                return self.exception(bus, vector::PRIVILEGE, pc);
+            }
+            if traps & TRAP_FPU != 0 && self.fpu.is_none() {
+                self.icount += 1;
+                return self.exception(bus, vector::LINE_F, pc);
+            }
         }
         self.pc = pc.wrapping_add(insn.len as u32);
         let r = self.execute(bus, &insn, pc);
         self.icount += 1;
         match r {
             Ok(()) => Ok(()),
-            Err(Ok(e)) => self.exception(bus, e.vector, if e.pc == 0 { pc } else { e.pc }),
+            Err(Ok(e)) => self.exception(bus, e.vector(), if e.pc() == 0 { pc } else { e.pc() }),
             Err(Err(stop)) => {
                 if let Stop::Unimplemented(f) = stop {
                     // nothing was executed: leave the core at the instruction
@@ -565,6 +662,7 @@ impl Cpu {
 
     // -- operand access ------------------------------------------------------
 
+    #[inline(always)]
     fn index_value(&self, xn: u8, scale: u8) -> u32 {
         let x = if xn < 8 {
             self.d[xn as usize]
@@ -575,6 +673,7 @@ impl Cpu {
     }
 
     /// The address of a memory EA, applying (An)+/-(An) updates.
+    #[inline(always)]
     fn ea_addr(&mut self, ea: &Ea, size: Size) -> Result<u32, Exc> {
         let n = match size {
             Size::B => 1,
@@ -602,10 +701,7 @@ impl Cpu {
                 d8,
             } => {
                 if !wl {
-                    return Err(Exc {
-                        vector: vector::ADDRESS_ERROR,
-                        pc: 0,
-                    });
+                    return Err(Exc::new(vector::ADDRESS_ERROR, 0));
                 }
                 self.a[an as usize]
                     .wrapping_add(self.index_value(xn, scale))
@@ -615,25 +711,22 @@ impl Cpu {
             Ea::AbsL(v) => v,
             Ea::PcDisp { base, d16 } => base.wrapping_add(d16 as i32 as u32),
             Ea::PcIdx {
-                base,
+                disp,
                 xn,
                 wl,
                 scale,
-                d8,
             } => {
                 if !wl {
-                    return Err(Exc {
-                        vector: vector::ADDRESS_ERROR,
-                        pc: 0,
-                    });
+                    return Err(Exc::new(vector::ADDRESS_ERROR, 0));
                 }
-                base.wrapping_add(self.index_value(xn, scale))
-                    .wrapping_add(d8 as i32 as u32)
+                // disp = base + d8; wrapping addition is associative
+                disp.wrapping_add(self.index_value(xn, scale))
             }
             Ea::Dn(_) | Ea::An(_) | Ea::Imm(_) => unreachable!("not a memory EA"),
         })
     }
 
+    #[inline(always)]
     fn read(&mut self, bus: &mut impl Bus, ea: &Ea, size: Size) -> Result<u32, Exc> {
         match *ea {
             Ea::Dn(r) => Ok(self.d[r as usize]),
@@ -652,6 +745,7 @@ impl Cpu {
 
     /// Write `v` (size bits) to an EA whose address is already computed
     /// (`addr` for memory), merging into Dn for byte and word sizes.
+    #[inline(always)]
     fn write_at(
         &mut self,
         bus: &mut impl Bus,
@@ -687,6 +781,7 @@ impl Cpu {
         Ok(())
     }
 
+    #[inline(always)]
     fn write(&mut self, bus: &mut impl Bus, ea: &Ea, size: Size, v: u32) -> Result<(), Exc> {
         let addr = match ea {
             Ea::Dn(_) | Ea::An(_) => 0,
@@ -695,6 +790,7 @@ impl Cpu {
         self.write_at(bus, ea, addr, size, v)
     }
 
+    #[inline(always)]
     fn push32(&mut self, bus: &mut impl Bus, v: u32) -> Result<(), Exc> {
         self.a[7] = self.a[7].wrapping_sub(4);
         self.decode_cache.invalidate(self.a[7], 4);
@@ -702,6 +798,7 @@ impl Cpu {
         Ok(())
     }
 
+    #[inline(always)]
     fn pop32(&mut self, bus: &mut impl Bus) -> Result<u32, Exc> {
         let v = bus.read32(self.a[7])?;
         self.a[7] = self.a[7].wrapping_add(4);
@@ -728,15 +825,25 @@ impl Cpu {
     /// consumers, which all call it already -- must call it first to see
     /// N/Z/V that `step`'s own doc-visible behaviour has actually settled
     /// on, not a stale value left over from an earlier instruction.
+    #[inline]
     pub fn resolve_nzv(&mut self) {
-        let p = self.pending_nzv;
-        if p == PendingNzv::None {
-            return;
+        if !matches!(self.pending_nzv, PendingNzv::None) {
+            self.apply_nzv();
         }
+    }
+
+    #[inline(never)]
+    fn apply_nzv(&mut self) {
+        self.sr = self.resolved_sr();
         self.pending_nzv = PendingNzv::None;
+    }
+
+    /// `sr` as `resolve_nzv` would leave it, without changing anything.
+    #[inline(always)]
+    fn resolved_sr(&self) -> u16 {
         let mut ccr = self.sr & !(sr::N | sr::Z | sr::V);
-        match p {
-            PendingNzv::None => unreachable!(),
+        match self.pending_nzv {
+            PendingNzv::None => return self.sr,
             PendingNzv::Nz { v, size } => {
                 let (m, s) = mask_sign(size);
                 if v & m == 0 {
@@ -783,17 +890,19 @@ impl Cpu {
                 }
             }
         }
-        self.sr = ccr;
+        ccr
     }
 
-    fn set_nz(&mut self, v: u32, size: Size) {
+    #[inline(always)]
+    pub(crate) fn set_nz(&mut self, v: u32, size: Size) {
         self.sr &= !sr::C;
         self.pending_nzv = PendingNzv::Nz { v, size };
     }
 
     /// Flags of dst + src = r (ADD, ADDQ): X and C are the carry, computed
     /// (and written) immediately; N/Z/V are deferred (`PendingNzv::Add`).
-    fn flags_add(&mut self, src: u32, dst: u32, r: u32, size: Size) {
+    #[inline(always)]
+    pub(crate) fn flags_add(&mut self, src: u32, dst: u32, r: u32, size: Size) {
         let (m, s) = mask_sign(size);
         let (src, dst, r) = (src & m, dst & m, r & m);
         if (src & dst | !r & (src | dst)) & s != 0 {
@@ -807,7 +916,8 @@ impl Cpu {
     /// Flags of dst - src = r. `cmp` leaves X unchanged (CMP, CMPA); C is
     /// always freshly computed either way and written immediately, same as
     /// `flags_add`. N/Z/V are deferred (`PendingNzv::Sub`).
-    fn flags_sub(&mut self, src: u32, dst: u32, r: u32, size: Size, cmp: bool) {
+    #[inline(always)]
+    pub(crate) fn flags_sub(&mut self, src: u32, dst: u32, r: u32, size: Size, cmp: bool) {
         let (m, s) = mask_sign(size);
         let (src, dst, r) = (src & m, dst & m, r & m);
         let c = (src & !dst | r & !dst | src & r) & s != 0;
@@ -832,6 +942,7 @@ impl Cpu {
     /// Unlike the other flags_* functions, this stays fully eager: its own
     /// Z bit depends on `sr`'s *current* Z (the preserve rule above), so it
     /// resolves any pending N/Z/V first rather than deferring its own.
+    #[inline]
     fn flags_addx(&mut self, src: u32, dst: u32, r: u32, size: Size) {
         self.resolve_nzv();
         let (m, s) = mask_sign(size);
@@ -855,6 +966,7 @@ impl Cpu {
     /// Flags of dst - src - X_in = r (SUBX/NEGX, CFPRM p.127,145): same Z
     /// rule (and same "stays eager" reasoning) as `flags_addx`; `src`
     /// already includes X_in.
+    #[inline]
     fn flags_subx(&mut self, src: u32, dst: u32, r: u32, size: Size) {
         self.resolve_nzv();
         let (m, s) = mask_sign(size);
@@ -881,6 +993,7 @@ impl Cpu {
     /// leaving it alone is correct with no resolve); V is set only by ASL,
     /// if the msb changed value at any point during the shift. C/X are
     /// written immediately; N/Z/V are deferred (`PendingNzv::Shift`).
+    #[inline]
     fn flags_shift(&mut self, count: u32, last_out: bool, v: bool, r: u32, size: Size) {
         if count != 0 {
             if last_out {
@@ -897,6 +1010,7 @@ impl Cpu {
     /// Shift `v` (size bits) by `count` one bit at a time (CFPRM p.79-80,
     /// 109-110). Returns (result, last bit shifted out, ASL's V: the msb
     /// changed value at some point during the shift).
+    #[inline]
     fn shift(&self, v: u32, count: u32, left: bool, arith: bool, size: Size) -> (u32, bool, bool) {
         let (m, s) = mask_sign(size);
         let mut v = v & m;
@@ -952,6 +1066,7 @@ impl Cpu {
     /// The 16-bit extension register of accumulator `n` (CFPRM p.178-179):
     /// ACCext01 holds ACC0's extension in its low half and ACC1's in its
     /// high half; ACCext23 holds ACC2 low, ACC3 high.
+    #[inline]
     fn ext16(&self, n: usize) -> u16 {
         let w = if n < 2 {
             self.emac.accext01
@@ -965,6 +1080,7 @@ impl Cpu {
         }
     }
 
+    #[inline]
     fn set_ext16(&mut self, n: usize, v: u16) {
         let w = if n < 2 {
             &mut self.emac.accext01
@@ -978,14 +1094,17 @@ impl Cpu {
         };
     }
 
+    #[inline]
     fn pav_bit(n: usize) -> u32 {
         1 << (8 + n)
     }
 
+    #[inline]
     fn get_pav(&self, n: usize) -> bool {
         self.emac.macsr & Self::pav_bit(n) != 0
     }
 
+    #[inline]
     fn set_pav(&mut self, n: usize, v: bool) {
         if v {
             self.emac.macsr |= Self::pav_bit(n);
@@ -997,6 +1116,7 @@ impl Cpu {
     /// The operand bits for a MAC source register (CFPRM p.171 U/Lx, U/Ly):
     /// the raw register value, or the selected 16-bit half (in the result's
     /// low bits) for a word-sized operation.
+    #[inline(always)]
     fn select_mac_reg(&self, r: u8, upper: bool, word: bool) -> u32 {
         let v = if r < 8 {
             self.d[r as usize]
@@ -1013,6 +1133,7 @@ impl Cpu {
     /// The 48-bit "complete accumulator" (RM p.150-151): the concatenation
     /// of ACCn and its extension is laid out differently in integer mode
     /// ({ext16, acc32}) and fractional mode ({ext_hi8, acc32, ext_lo8}).
+    #[inline]
     fn acc48(&self, n: usize) -> u64 {
         let acc32 = self.emac.acc[n] as u64;
         let ext = self.ext16(n) as u64;
@@ -1023,6 +1144,7 @@ impl Cpu {
         }
     }
 
+    #[inline]
     fn set_acc48(&mut self, n: usize, v: u64) {
         let v = v & 0xffff_ffff_ffff;
         if self.emac.macsr & 0x20 != 0 {
@@ -1037,6 +1159,7 @@ impl Cpu {
     /// Set MACSR's N/Z/V from the final accumulator value and PAVn, and its
     /// EV flag: "set if accumulation overflows the lower 32 bits in integer
     /// mode or the lower 40 bits in fractional mode" (CFPRM MAC/MSAC pages).
+    #[inline]
     fn mac_flags(&mut self, acc: usize) {
         let v48 = self.acc48(acc);
         let fractional = self.emac.macsr & 0x20 != 0;
@@ -1276,6 +1399,7 @@ impl Cpu {
     /// bits. Firmware (both images) only runs this with MACSR = 0x00 or
     /// 0x20 (OMC=0, R/T=0), so only those two branches are lockstep-checked
     /// so far; the rest is transcribed from the same pseudocode.
+    #[inline]
     fn acc_to_reg(&self, acc: usize) -> u32 {
         let v = self.acc48(acc);
         let macsr = self.emac.macsr;
@@ -1359,9 +1483,17 @@ impl Cpu {
     }
 
     /// Bcc/Scc condition (CFPRM p.82 Bcc condition table).
-    fn cond(&mut self, c: u8) -> bool {
-        self.resolve_nzv();
-        let f = |b: u16| self.sr & b != 0;
+    #[inline(always)]
+    pub(crate) fn cond(&mut self, c: u8) -> bool {
+        // Resolve (inline): `sr` is observed between instructions (the
+        // timer model's IPL tracker records it), so it must hold the same
+        // bits it always did after a condition test.
+        if !matches!(self.pending_nzv, PendingNzv::None) {
+            self.sr = self.resolved_sr();
+            self.pending_nzv = PendingNzv::None;
+        }
+        let sr = self.sr;
+        let f = |b: u16| sr & b != 0;
         let (n, z, v, cy) = (f(sr::N), f(sr::Z), f(sr::V), f(sr::C));
         match c {
             0 => true,
@@ -1385,174 +1517,591 @@ impl Cpu {
 
     // -- the handful ---------------------------------------------------------
 
+    /// Dispatch: the hot forms run in their own small functions (each
+    /// with a small frame); the rest in `execute_slow`.
+    #[inline(always)]
+    pub(crate) fn execute(
+        &mut self,
+        bus: &mut impl Bus,
+        i: &Insn,
+        pc: u32,
+    ) -> Result<(), Result<Exc, Stop>> {
+        match i.form {
+            Form::Moveq => self.x_moveq(bus, i, pc).map_err(Ok),
+            Form::Move | Form::Mov3q => self.x_move(bus, i, pc).map_err(Ok),
+            Form::Movea => self.x_movea(bus, i, pc).map_err(Ok),
+            Form::Lea => self.x_lea(bus, i, pc).map_err(Ok),
+            Form::Clr => self.x_clr(bus, i, pc).map_err(Ok),
+            Form::Tst => self.x_tst(bus, i, pc).map_err(Ok),
+            Form::Addq | Form::Subq => self.x_addq_subq(bus, i, pc).map_err(Ok),
+            Form::AddToD | Form::SubToD => self.x_add_sub_to_d(bus, i, pc).map_err(Ok),
+            Form::Cmp | Form::CmpaW | Form::CmpaL => self.x_cmp(bus, i, pc).map_err(Ok),
+            Form::Bra | Form::Bcc => self.x_branch(bus, i, pc).map_err(Ok),
+            Form::Bsr => self.x_bsr(bus, i, pc).map_err(Ok),
+            Form::Jmp | Form::Jsr => self.x_jmp_jsr(bus, i, pc).map_err(Ok),
+            Form::Rts => self.x_rts(bus, i, pc).map_err(Ok),
+            Form::Ori | Form::Andi | Form::Subi | Form::Addi | Form::Eori => {
+                self.x_imm_dn(bus, i, pc).map_err(Ok)
+            }
+            Form::Cmpi => self.x_cmpi(bus, i, pc).map_err(Ok),
+            Form::Swap => self.x_swap(bus, i, pc).map_err(Ok),
+            Form::Sats => self.x_sats(bus, i, pc).map_err(Ok),
+            Form::MovemStore => self.x_movem_store(bus, i, pc).map_err(Ok),
+            Form::MovemLoad => self.x_movem_load(bus, i, pc).map_err(Ok),
+            Form::Adda | Form::Suba => self.x_adda_suba(bus, i, pc).map_err(Ok),
+            Form::AsrI | Form::AslI | Form::LsrI | Form::LslI => {
+                self.x_shift_imm(bus, i, pc).map_err(Ok)
+            }
+            Form::Mvs => self.x_mvs(bus, i, pc).map_err(Ok),
+            Form::Mvz => self.x_mvz(bus, i, pc).map_err(Ok),
+            Form::Mac | Form::Msac => self.x_mac(bus, i, pc).map_err(Ok),
+            Form::MacLoad | Form::MsacLoad => self.x_mac_load(bus, i, pc).map_err(Ok),
+            Form::Movclr => self.x_movclr(bus, i, pc).map_err(Ok),
+            _ => self.execute_slow(bus, i, pc),
+        }
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_moveq(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let v = imm!(i, 0);
+        self.write(bus, &ea!(i, 1), Size::L, v)?;
+        self.set_nz(v, Size::L);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_move(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let v = if i.form == Form::Move {
+            self.read(bus, &ea!(i, 0), size)?
+        } else {
+            imm!(i, 0)
+        };
+        let sz = if i.form == Form::Move { size } else { Size::L };
+        self.write(bus, &ea!(i, 1), sz, v)?;
+        self.set_nz(v, sz);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_movea(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let v = self.read(bus, &ea!(i, 0), size)?;
+        let v = if size == Size::W {
+            v as u16 as i16 as i32 as u32
+        } else {
+            v
+        };
+        self.write(bus, &ea!(i, 1), Size::L, v)?;
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_lea(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let addr = self.ea_addr(&ea!(i, 0), Size::L)?;
+        self.write(bus, &ea!(i, 1), Size::L, addr)?;
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_clr(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        self.write(bus, &ea!(i, 0), size, 0)?;
+        self.set_nz(0, size);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_tst(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let v = self.read(bus, &ea!(i, 0), size)?;
+        self.set_nz(v, size);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_addq_subq(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let q = imm!(i, 0);
+        let dst_ea = ea!(i, 1);
+        let add = i.form == Form::Addq;
+        if let Ea::An(r) = dst_ea {
+            // address register destination: no flags (CFPRM p.74)
+            let a = &mut self.a[r as usize];
+            *a = if add {
+                a.wrapping_add(q)
+            } else {
+                a.wrapping_sub(q)
+            };
+        } else {
+            let addr = match dst_ea {
+                Ea::Dn(_) => 0,
+                _ => self.ea_addr(&dst_ea, Size::L)?,
+            };
+            let d = match dst_ea {
+                Ea::Dn(r) => self.d[r as usize],
+                _ => bus.read32(addr).map_err(Exc::from)?,
+            };
+            let r = if add {
+                d.wrapping_add(q)
+            } else {
+                d.wrapping_sub(q)
+            };
+            self.write_at(bus, &dst_ea, addr, Size::L, r)?;
+            if add {
+                self.flags_add(q, d, r, Size::L);
+            } else {
+                self.flags_sub(q, d, r, Size::L, false);
+            }
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_add_sub_to_d(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let s = self.read(bus, &ea!(i, 0), Size::L)?;
+        let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
+        let d = self.d[r as usize];
+        if i.form == Form::AddToD {
+            let v = d.wrapping_add(s);
+            self.d[r as usize] = v;
+            self.flags_add(s, d, v, Size::L);
+        } else {
+            let v = d.wrapping_sub(s);
+            self.d[r as usize] = v;
+            self.flags_sub(s, d, v, Size::L, false);
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_cmp(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let s = self.read(bus, &ea!(i, 0), size)?;
+        let (d, s, sz) = match ea!(i, 1) {
+            Ea::Dn(r) => (self.d[r as usize], s, size),
+            // CMPA.W sign-extends the source to 32 bits (CFPRM p.95)
+            Ea::An(r) => (
+                self.a[r as usize],
+                if size == Size::W {
+                    s as u16 as i16 as i32 as u32
+                } else {
+                    s
+                },
+                Size::L,
+            ),
+            _ => unreachable!(),
+        };
+        self.flags_sub(s, d, d.wrapping_sub(s), sz, true);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_branch(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let ops = &i.ops;
+        let Operand::Target(t) = ops[0] else {
+            unreachable!()
+        };
+        if i.form == Form::Bra || self.cond(i.cond) {
+            self.pc = t;
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_bsr(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let ops = &i.ops;
+        let Operand::Target(t) = ops[0] else {
+            unreachable!()
+        };
+        let next = self.pc;
+        self.push32(bus, next)?;
+        self.pc = t;
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_jmp_jsr(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let t = self.ea_addr(&ea!(i, 0), Size::L)?;
+        if i.form == Form::Jsr {
+            let next = self.pc;
+            self.push32(bus, next)?;
+        }
+        self.pc = t;
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_rts(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        self.pc = self.pop32(bus)?;
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_imm_dn(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let v = imm!(i, 0);
+        let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
+        let d = self.d[r as usize];
+        let (result, is_add, is_sub) = match i.form {
+            Form::Ori => (d | v, false, false),
+            Form::Andi => (d & v, false, false),
+            Form::Eori => (d ^ v, false, false),
+            Form::Addi => (d.wrapping_add(v), true, false),
+            _ => (d.wrapping_sub(v), false, true),
+        };
+        self.d[r as usize] = result;
+        if is_add {
+            self.flags_add(v, d, result, Size::L);
+        } else if is_sub {
+            self.flags_sub(v, d, result, Size::L, false);
+        } else {
+            self.set_nz(result, Size::L);
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_cmpi(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let v = imm!(i, 0);
+        let d = self.read(bus, &ea!(i, 1), size)?;
+        self.flags_sub(v, d, d.wrapping_sub(v), size, true);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_swap(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
+        let v = self.d[r as usize].rotate_left(16);
+        self.d[r as usize] = v;
+        self.set_nz(v, Size::L);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_sats(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        // CFPRM p.138: only touches Dx when CCR[V] is already set
+        // (saturating an accumulation this SATS follows), but N/Z
+        // are (re)computed from Dx either way ("condition codes are
+        // set according to the result").
+        let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
+        self.resolve_nzv();
+        if self.sr & sr::V != 0 {
+            let d = self.d[r as usize];
+            self.d[r as usize] = if d & 0x8000_0000 == 0 {
+                0x8000_0000
+            } else {
+                0x7fff_ffff
+            };
+        }
+        self.set_nz(self.d[r as usize], Size::L);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_movem_store(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let ops = &i.ops;
+        let Operand::RegList(mask) = ops[0] else {
+            unreachable!()
+        };
+        let mask = mask as u32;
+        let target = ea!(i, 1);
+        // Only (An)+/-(An) auto-update the address register; for the
+        // other modes ColdFire allows (CFPRM p.115-116: (An) and
+        // (d16,An)) the transfer still walks four bytes at a time
+        // from a fixed base, computed once.
+        let auto = matches!(target, Ea::Pre(_) | Ea::Post(_));
+        let predec = matches!(target, Ea::Pre(_));
+        let base = if auto {
+            0
+        } else {
+            self.ea_addr(&target, Size::L)?
+        };
+        let mut k = 0u32;
+        for bit in 0..16u32 {
+            if mask & (1 << bit) == 0 {
+                continue;
+            }
+            let reg = if predec { 15 - bit } else { bit } as u8;
+            let addr = if auto {
+                self.ea_addr(&target, Size::L)?
+            } else {
+                base.wrapping_add(4 * k)
+            };
+            let v = if reg < 8 {
+                self.d[reg as usize]
+            } else {
+                self.a[(reg - 8) as usize]
+            };
+            self.decode_cache.invalidate(addr, 4);
+            bus.write32(addr, v).map_err(Exc::from)?;
+            k += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_movem_load(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let ops = &i.ops;
+        let target = ea!(i, 0);
+        let Operand::RegList(mask) = ops[1] else {
+            unreachable!()
+        };
+        let mask = mask as u32;
+        let auto = matches!(target, Ea::Pre(_) | Ea::Post(_));
+        let predec = matches!(target, Ea::Pre(_));
+        let base = if auto {
+            0
+        } else {
+            self.ea_addr(&target, Size::L)?
+        };
+        let mut k = 0u32;
+        for bit in 0..16u32 {
+            if mask & (1 << bit) == 0 {
+                continue;
+            }
+            let reg = if predec { 15 - bit } else { bit } as u8;
+            let addr = if auto {
+                self.ea_addr(&target, Size::L)?
+            } else {
+                base.wrapping_add(4 * k)
+            };
+            let v = bus.read32(addr).map_err(Exc::from)?;
+            if reg < 8 {
+                self.d[reg as usize] = v;
+            } else {
+                self.a[(reg - 8) as usize] = v;
+            }
+            k += 1;
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_adda_suba(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let s = self.read(bus, &ea!(i, 0), size)?;
+        let s = if size == Size::W {
+            s as u16 as i16 as i32 as u32
+        } else {
+            s
+        };
+        let Ea::An(r) = ea!(i, 1) else { unreachable!() };
+        self.a[r as usize] = if i.form == Form::Adda {
+            self.a[r as usize].wrapping_add(s)
+        } else {
+            self.a[r as usize].wrapping_sub(s)
+        };
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_shift_imm(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let count = imm!(i, 0) & 63;
+        let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
+        let left = matches!(i.form, Form::AslI | Form::LslI);
+        let arith = matches!(i.form, Form::AsrI | Form::AslI);
+        let (res, last, vflag) = self.shift(self.d[r as usize], count, left, arith, Size::L);
+        self.d[r as usize] = res;
+        self.flags_shift(count, last, vflag, res, Size::L);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_mvs(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let v = self.read(bus, &ea!(i, 0), size)?;
+        let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
+        let sx = match size {
+            Size::B => v as u8 as i8 as i32 as u32,
+            _ => v as u16 as i16 as i32 as u32,
+        };
+        self.d[r as usize] = sx;
+        self.set_nz(sx, Size::L);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_mvz(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let v = self.read(bus, &ea!(i, 0), size)?;
+        let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
+        let zx = match size {
+            Size::B => v & 0xff,
+            _ => v & 0xffff,
+        };
+        self.d[r as usize] = zx;
+        self.set_nz(zx, Size::L);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_mac(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let (ry, uy) = i.mac_ry();
+        let (rx, ux) = i.mac_rx();
+        let sf = i.mac_scale();
+        let acc = i.mac_acc();
+        let word = size == Size::W;
+        let ry = self.select_mac_reg(ry, uy, word);
+        let rx = self.select_mac_reg(rx, ux, word);
+        self.mac_op(ry, rx, word, sf, acc as usize, i.form == Form::Msac);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_mac_load(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let size = i.size;
+        let (ry, uy) = i.mac_ry();
+        let (rx, ux) = i.mac_rx();
+        let sf = i.mac_scale();
+        // the stored operands: the load EA and the loaded register
+        let load_ea = ea!(i, 0);
+        let use_mask = i.mac_mask();
+        let rw_ea = ea!(i, 1);
+        let acc = i.mac_acc();
+        let word = size == Size::W;
+        let ryv = self.select_mac_reg(ry, uy, word);
+        let rxv = self.select_mac_reg(rx, ux, word);
+        // The memory load happens "in parallel" with the compute; we
+        // just sequence it first since neither reads the other's
+        // result (RM p.172-173).
+        let addr = self.ea_addr(&load_ea, Size::L)?;
+        let addr = if use_mask {
+            addr & self.emac.mask
+        } else {
+            addr
+        };
+        let loaded = bus.read32(addr).map_err(Exc::from)?;
+        match rw_ea {
+            Ea::Dn(r) => self.d[r as usize] = loaded,
+            Ea::An(r) => self.a[r as usize] = loaded,
+            _ => unreachable!(),
+        }
+        self.mac_op(ryv, rxv, word, sf, acc as usize, i.form == Form::MsacLoad);
+        Ok(())
+    }
+
+    #[inline(never)]
+    #[allow(unused_variables)]
+    fn x_movclr(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Exc> {
+        let ops = &i.ops;
+        let Operand::Acc(a) = ops[0] else {
+            unreachable!()
+        };
+        let a = a as usize;
+        let v = self.acc_to_reg(a);
+        self.write(bus, &ea!(i, 1), Size::L, v)?;
+        self.emac.acc[a] = 0;
+        self.set_ext16(a, 0);
+        self.set_pav(a, false);
+        Ok(())
+    }
+
     /// Err(Ok(exception)) takes an exception; Err(Err(stop)) stops the core.
-    fn execute(&mut self, bus: &mut impl Bus, i: &Insn, pc: u32) -> Result<(), Result<Exc, Stop>> {
-        let ops = i.operands();
-        let ea = |k: usize| match ops[k] {
-            Operand::Ea(e) => e,
-            _ => unreachable!("operand {} of {} is not an EA", k, i.id()),
-        };
-        let imm = |k: usize| match ops[k] {
-            Operand::Imm(v) => v,
-            _ => unreachable!("operand {} of {} is not an immediate", k, i.id()),
-        };
+    #[inline(never)]
+    fn execute_slow(
+        &mut self,
+        bus: &mut impl Bus,
+        i: &Insn,
+        pc: u32,
+    ) -> Result<(), Result<Exc, Stop>> {
+        let ops = &i.ops;
         let size = i.size;
         match i.form {
+            Form::Moveq
+            | Form::Move
+            | Form::Mov3q
+            | Form::Movea
+            | Form::Lea
+            | Form::Clr
+            | Form::Tst
+            | Form::Addq
+            | Form::Subq
+            | Form::AddToD
+            | Form::SubToD
+            | Form::Cmp
+            | Form::CmpaW
+            | Form::CmpaL
+            | Form::Bra
+            | Form::Bcc
+            | Form::Bsr
+            | Form::Jmp
+            | Form::Jsr
+            | Form::Rts
+            | Form::Ori
+            | Form::Andi
+            | Form::Subi
+            | Form::Addi
+            | Form::Eori
+            | Form::Cmpi
+            | Form::Swap
+            | Form::Sats
+            | Form::MovemStore
+            | Form::MovemLoad
+            | Form::Adda
+            | Form::Suba
+            | Form::AsrI
+            | Form::AslI
+            | Form::LsrI
+            | Form::LslI
+            | Form::Mvs
+            | Form::Mvz
+            | Form::Mac
+            | Form::Msac
+            | Form::MacLoad
+            | Form::MsacLoad
+            | Form::Movclr => {
+                unreachable!("{} is dispatched by execute", i.id())
+            }
             Form::Nop => {}
-            Form::Moveq => {
-                let v = imm(0);
-                self.write(bus, &ea(1), Size::L, v).map_err(Ok)?;
-                self.set_nz(v, Size::L);
-            }
-            Form::Move | Form::Mov3q => {
-                let v = if i.form == Form::Move {
-                    self.read(bus, &ea(0), size).map_err(Ok)?
-                } else {
-                    imm(0)
-                };
-                let sz = if i.form == Form::Move { size } else { Size::L };
-                self.write(bus, &ea(1), sz, v).map_err(Ok)?;
-                self.set_nz(v, sz);
-            }
-            Form::Movea => {
-                let v = self.read(bus, &ea(0), size).map_err(Ok)?;
-                let v = if size == Size::W {
-                    v as u16 as i16 as i32 as u32
-                } else {
-                    v
-                };
-                self.write(bus, &ea(1), Size::L, v).map_err(Ok)?;
-            }
-            Form::Lea => {
-                let addr = self.ea_addr(&ea(0), Size::L).map_err(Ok)?;
-                self.write(bus, &ea(1), Size::L, addr).map_err(Ok)?;
-            }
             Form::Pea => {
-                let addr = self.ea_addr(&ea(0), Size::L).map_err(Ok)?;
+                let addr = self.ea_addr(&ea!(i, 0), Size::L).map_err(Ok)?;
                 self.push32(bus, addr).map_err(Ok)?;
             }
-            Form::Clr => {
-                self.write(bus, &ea(0), size, 0).map_err(Ok)?;
-                self.set_nz(0, size);
-            }
-            Form::Tst => {
-                let v = self.read(bus, &ea(0), size).map_err(Ok)?;
-                self.set_nz(v, size);
-            }
-            Form::Addq | Form::Subq => {
-                let q = imm(0);
-                let dst_ea = ea(1);
-                let add = i.form == Form::Addq;
-                if let Ea::An(r) = dst_ea {
-                    // address register destination: no flags (CFPRM p.74)
-                    let a = &mut self.a[r as usize];
-                    *a = if add {
-                        a.wrapping_add(q)
-                    } else {
-                        a.wrapping_sub(q)
-                    };
-                } else {
-                    let addr = match dst_ea {
-                        Ea::Dn(_) => 0,
-                        _ => self.ea_addr(&dst_ea, Size::L).map_err(Ok)?,
-                    };
-                    let d = match dst_ea {
-                        Ea::Dn(r) => self.d[r as usize],
-                        _ => bus.read32(addr).map_err(|e| Ok(e.into()))?,
-                    };
-                    let r = if add {
-                        d.wrapping_add(q)
-                    } else {
-                        d.wrapping_sub(q)
-                    };
-                    self.write_at(bus, &dst_ea, addr, Size::L, r).map_err(Ok)?;
-                    if add {
-                        self.flags_add(q, d, r, Size::L);
-                    } else {
-                        self.flags_sub(q, d, r, Size::L, false);
-                    }
-                }
-            }
-            Form::AddToD | Form::SubToD => {
-                let s = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
-                let d = self.d[r as usize];
-                if i.form == Form::AddToD {
-                    let v = d.wrapping_add(s);
-                    self.d[r as usize] = v;
-                    self.flags_add(s, d, v, Size::L);
-                } else {
-                    let v = d.wrapping_sub(s);
-                    self.d[r as usize] = v;
-                    self.flags_sub(s, d, v, Size::L, false);
-                }
-            }
-            Form::Cmp | Form::CmpaW | Form::CmpaL => {
-                let s = self.read(bus, &ea(0), size).map_err(Ok)?;
-                let (d, s, sz) = match ea(1) {
-                    Ea::Dn(r) => (self.d[r as usize], s, size),
-                    // CMPA.W sign-extends the source to 32 bits (CFPRM p.95)
-                    Ea::An(r) => (
-                        self.a[r as usize],
-                        if size == Size::W {
-                            s as u16 as i16 as i32 as u32
-                        } else {
-                            s
-                        },
-                        Size::L,
-                    ),
-                    _ => unreachable!(),
-                };
-                self.flags_sub(s, d, d.wrapping_sub(s), sz, true);
-            }
-            Form::Bra | Form::Bcc | Form::Bsr => {
-                let Operand::Target(t) = ops[0] else {
-                    unreachable!()
-                };
-                if i.form == Form::Bsr {
-                    let next = self.pc;
-                    self.push32(bus, next).map_err(Ok)?;
-                    self.pc = t;
-                } else if i.form == Form::Bra || self.cond(i.cond) {
-                    self.pc = t;
-                }
-            }
-            Form::Jmp | Form::Jsr => {
-                let t = self.ea_addr(&ea(0), Size::L).map_err(Ok)?;
-                if i.form == Form::Jsr {
-                    let next = self.pc;
-                    self.push32(bus, next).map_err(Ok)?;
-                }
-                self.pc = t;
-            }
-            Form::Rts => {
-                self.pc = self.pop32(bus).map_err(Ok)?;
-            }
             Form::Link => {
-                let Ea::An(r) = ea(0) else { unreachable!() };
+                let Ea::An(r) = ea!(i, 0) else { unreachable!() };
                 let v = self.a[r as usize];
                 self.push32(bus, v).map_err(Ok)?;
                 self.a[r as usize] = self.a[7];
-                self.a[7] = self.a[7].wrapping_add(imm(1));
+                self.a[7] = self.a[7].wrapping_add(imm!(i, 1));
             }
             Form::Unlk => {
-                let Ea::An(r) = ea(0) else { unreachable!() };
+                let Ea::An(r) = ea!(i, 0) else { unreachable!() };
                 self.a[7] = self.a[r as usize];
                 let v = self.pop32(bus).map_err(Ok)?;
                 self.a[r as usize] = v;
             }
             Form::Illegal => {
-                return Err(Ok(Exc {
-                    vector: vector::ILLEGAL,
-                    pc,
-                }));
+                return Err(Ok(Exc::new(vector::ILLEGAL, pc)));
             }
             Form::Trap => {
                 let next = self.pc;
-                return Err(Ok(Exc {
-                    vector: vector::TRAP0 + imm(0) as u8,
-                    pc: next,
-                }));
+                return Err(Ok(Exc::new(vector::TRAP0 + imm!(i, 0) as u8, next)));
             }
             Form::Halt => {
                 self.state = RunState::Halted;
@@ -1560,31 +2109,6 @@ impl Cpu {
             }
 
             // -- immediate logic/arithmetic on Dn (CFPRM p.132,78,143,73,102) --
-            Form::Ori | Form::Andi | Form::Subi | Form::Addi | Form::Eori => {
-                let v = imm(0);
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
-                let d = self.d[r as usize];
-                let (result, is_add, is_sub) = match i.form {
-                    Form::Ori => (d | v, false, false),
-                    Form::Andi => (d & v, false, false),
-                    Form::Eori => (d ^ v, false, false),
-                    Form::Addi => (d.wrapping_add(v), true, false),
-                    _ => (d.wrapping_sub(v), false, true),
-                };
-                self.d[r as usize] = result;
-                if is_add {
-                    self.flags_add(v, d, result, Size::L);
-                } else if is_sub {
-                    self.flags_sub(v, d, result, Size::L, false);
-                } else {
-                    self.set_nz(result, Size::L);
-                }
-            }
-            Form::Cmpi => {
-                let v = imm(0);
-                let d = self.read(bus, &ea(1), size).map_err(Ok)?;
-                self.flags_sub(v, d, d.wrapping_sub(v), size, true);
-            }
 
             // -- bit instructions (CFPRM p.83-92) --
             Form::BtstR
@@ -1597,12 +2121,12 @@ impl Cpu {
             | Form::BsetI => {
                 let bitnum = match i.form {
                     Form::BtstR | Form::BchgR | Form::BclrR | Form::BsetR => {
-                        let Ea::Dn(r) = ea(0) else { unreachable!() };
+                        let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                         self.d[r as usize]
                     }
-                    _ => imm(0),
+                    _ => imm!(i, 0),
                 };
-                let dst = ea(1);
+                let dst = ea!(i, 1);
                 let bit = bitnum & (if size == Size::L { 31 } else { 7 });
                 let addr = match dst {
                     Ea::Dn(_) => 0,
@@ -1639,41 +2163,42 @@ impl Cpu {
             // -- moves and register ops (CFPRM p.245-248,118-119,126-129,103,146) --
             Form::MoveFromSr => {
                 self.resolve_nzv();
-                self.write(bus, &ea(1), size, self.sr as u32).map_err(Ok)?;
+                self.write(bus, &ea!(i, 1), size, self.sr as u32)
+                    .map_err(Ok)?;
             }
             Form::MoveToSr => {
-                let v = self.read(bus, &ea(0), size).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), size).map_err(Ok)?;
                 self.set_sr(v as u16);
             }
             Form::MoveFromCcr => {
                 self.resolve_nzv();
-                self.write(bus, &ea(1), size, (self.sr & sr::CCR) as u32)
+                self.write(bus, &ea!(i, 1), size, (self.sr & sr::CCR) as u32)
                     .map_err(Ok)?;
             }
             Form::MoveToCcr => {
-                let v = self.read(bus, &ea(0), size).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), size).map_err(Ok)?;
                 // Fully overwrites every CCR bit from `v`; no dependency on
                 // (and so no need to resolve) whatever was pending.
                 self.sr = (self.sr & !sr::CCR) | (v as u16 & sr::CCR);
                 self.pending_nzv = PendingNzv::None;
             }
             Form::MoveToUsp => {
-                let Ea::An(r) = ea(0) else { unreachable!() };
+                let Ea::An(r) = ea!(i, 0) else { unreachable!() };
                 self.other_a7 = self.a[r as usize];
             }
             Form::MoveFromUsp => {
-                let Ea::An(r) = ea(1) else { unreachable!() };
+                let Ea::An(r) = ea!(i, 1) else { unreachable!() };
                 self.a[r as usize] = self.other_a7;
             }
             Form::Neg => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let d = self.d[r as usize];
                 let v = 0u32.wrapping_sub(d);
                 self.d[r as usize] = v;
                 self.flags_sub(d, 0, v, Size::L, false);
             }
             Form::Negx => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let d = self.d[r as usize];
                 let x = (self.sr & sr::X != 0) as u32;
                 let src = d.wrapping_add(x);
@@ -1682,55 +2207,32 @@ impl Cpu {
                 self.flags_subx(src, 0, v, Size::L);
             }
             Form::Not => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let v = !self.d[r as usize];
                 self.d[r as usize] = v;
                 self.set_nz(v, Size::L);
             }
-            Form::Swap => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
-                let v = self.d[r as usize].rotate_left(16);
-                self.d[r as usize] = v;
-                self.set_nz(v, Size::L);
-            }
             Form::ExtW => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let d = &mut self.d[r as usize];
                 let w = (*d as u8 as i8 as i16 as u16) as u32;
                 *d = (*d & 0xffff_0000) | w;
                 self.set_nz(w, Size::W);
             }
             Form::ExtL => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let l = self.d[r as usize] as u16 as i16 as i32 as u32;
                 self.d[r as usize] = l;
                 self.set_nz(l, Size::L);
             }
             Form::ExtbL => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let l = self.d[r as usize] as u8 as i8 as i32 as u32;
                 self.d[r as usize] = l;
                 self.set_nz(l, Size::L);
             }
-            Form::Sats => {
-                // CFPRM p.138: only touches Dx when CCR[V] is already set
-                // (saturating an accumulation this SATS follows), but N/Z
-                // are (re)computed from Dx either way ("condition codes are
-                // set according to the result").
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
-                self.resolve_nzv();
-                if self.sr & sr::V != 0 {
-                    let d = self.d[r as usize];
-                    self.d[r as usize] = if d & 0x8000_0000 == 0 {
-                        0x8000_0000
-                    } else {
-                        0x7fff_ffff
-                    };
-                }
-                self.set_nz(self.d[r as usize], Size::L);
-            }
             Form::Tas => {
-                let dst = ea(0);
+                let dst = ea!(i, 0);
                 let addr = match dst {
                     Ea::Dn(_) => 0,
                     _ => self.ea_addr(&dst, Size::B).map_err(Ok)?,
@@ -1745,83 +2247,12 @@ impl Cpu {
             }
 
             // -- MOVEM (CFPRM p.115-116) --
-            Form::MovemStore => {
-                let Operand::RegList(mask) = ops[0] else {
-                    unreachable!()
-                };
-                let mask = mask as u32;
-                let target = ea(1);
-                // Only (An)+/-(An) auto-update the address register; for the
-                // other modes ColdFire allows (CFPRM p.115-116: (An) and
-                // (d16,An)) the transfer still walks four bytes at a time
-                // from a fixed base, computed once.
-                let auto = matches!(target, Ea::Pre(_) | Ea::Post(_));
-                let predec = matches!(target, Ea::Pre(_));
-                let base = if auto {
-                    0
-                } else {
-                    self.ea_addr(&target, Size::L).map_err(Ok)?
-                };
-                let mut k = 0u32;
-                for bit in 0..16u32 {
-                    if mask & (1 << bit) == 0 {
-                        continue;
-                    }
-                    let reg = if predec { 15 - bit } else { bit } as u8;
-                    let addr = if auto {
-                        self.ea_addr(&target, Size::L).map_err(Ok)?
-                    } else {
-                        base.wrapping_add(4 * k)
-                    };
-                    let v = if reg < 8 {
-                        self.d[reg as usize]
-                    } else {
-                        self.a[(reg - 8) as usize]
-                    };
-                    self.decode_cache.invalidate(addr, 4);
-                    bus.write32(addr, v).map_err(|e| Ok(e.into()))?;
-                    k += 1;
-                }
-            }
-            Form::MovemLoad => {
-                let target = ea(0);
-                let Operand::RegList(mask) = ops[1] else {
-                    unreachable!()
-                };
-                let mask = mask as u32;
-                let auto = matches!(target, Ea::Pre(_) | Ea::Post(_));
-                let predec = matches!(target, Ea::Pre(_));
-                let base = if auto {
-                    0
-                } else {
-                    self.ea_addr(&target, Size::L).map_err(Ok)?
-                };
-                let mut k = 0u32;
-                for bit in 0..16u32 {
-                    if mask & (1 << bit) == 0 {
-                        continue;
-                    }
-                    let reg = if predec { 15 - bit } else { bit } as u8;
-                    let addr = if auto {
-                        self.ea_addr(&target, Size::L).map_err(Ok)?
-                    } else {
-                        base.wrapping_add(4 * k)
-                    };
-                    let v = bus.read32(addr).map_err(|e| Ok(e.into()))?;
-                    if reg < 8 {
-                        self.d[reg as usize] = v;
-                    } else {
-                        self.a[(reg - 8) as usize] = v;
-                    }
-                    k += 1;
-                }
-            }
 
             // -- arithmetic/logic to D or to EA (CFPRM p.70-78,101-102,
             // 130-131,140-145) --
             Form::OrToD | Form::AndToD => {
-                let s = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 let v = if i.form == Form::OrToD {
                     self.d[r as usize] | s
                 } else {
@@ -1831,9 +2262,9 @@ impl Cpu {
                 self.set_nz(v, Size::L);
             }
             Form::OrToEa | Form::AndToEa | Form::Eor => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let s = self.d[r as usize];
-                let dst = ea(1);
+                let dst = ea!(i, 1);
                 let addr = match dst {
                     Ea::Dn(_) => 0,
                     _ => self.ea_addr(&dst, Size::L).map_err(Ok)?,
@@ -1851,9 +2282,9 @@ impl Cpu {
                 self.set_nz(v, Size::L);
             }
             Form::SubToEa | Form::AddToEa => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 let s = self.d[r as usize];
-                let dst = ea(1);
+                let dst = ea!(i, 1);
                 let addr = match dst {
                     Ea::Dn(_) => 0,
                     _ => self.ea_addr(&dst, Size::L).map_err(Ok)?,
@@ -1875,23 +2306,9 @@ impl Cpu {
                     self.flags_sub(s, d, v, Size::L, false);
                 }
             }
-            Form::Adda | Form::Suba => {
-                let s = self.read(bus, &ea(0), size).map_err(Ok)?;
-                let s = if size == Size::W {
-                    s as u16 as i16 as i32 as u32
-                } else {
-                    s
-                };
-                let Ea::An(r) = ea(1) else { unreachable!() };
-                self.a[r as usize] = if i.form == Form::Adda {
-                    self.a[r as usize].wrapping_add(s)
-                } else {
-                    self.a[r as usize].wrapping_sub(s)
-                };
-            }
             Form::Addx | Form::Subx => {
-                let Ea::Dn(y) = ea(0) else { unreachable!() };
-                let Ea::Dn(x) = ea(1) else { unreachable!() };
+                let Ea::Dn(y) = ea!(i, 0) else { unreachable!() };
+                let Ea::Dn(x) = ea!(i, 1) else { unreachable!() };
                 let xin = (self.sr & sr::X != 0) as u32;
                 let src = self.d[y as usize].wrapping_add(xin);
                 let dst = self.d[x as usize];
@@ -1907,20 +2324,10 @@ impl Cpu {
             }
 
             // -- shifts (CFPRM p.79-80,109-110) --
-            Form::AsrI | Form::AslI | Form::LsrI | Form::LslI => {
-                let count = imm(0) & 63;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
-                let left = matches!(i.form, Form::AslI | Form::LslI);
-                let arith = matches!(i.form, Form::AsrI | Form::AslI);
-                let (res, last, vflag) =
-                    self.shift(self.d[r as usize], count, left, arith, Size::L);
-                self.d[r as usize] = res;
-                self.flags_shift(count, last, vflag, res, Size::L);
-            }
             Form::AsrR | Form::AslR | Form::LsrR | Form::LslR => {
-                let Ea::Dn(y) = ea(0) else { unreachable!() };
+                let Ea::Dn(y) = ea!(i, 0) else { unreachable!() };
                 let count = self.d[y as usize] & 63;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 let left = matches!(i.form, Form::AslR | Form::LslR);
                 let arith = matches!(i.form, Form::AsrR | Form::AslR);
                 let (res, last, vflag) =
@@ -1931,8 +2338,8 @@ impl Cpu {
 
             // -- multiply/divide (CFPRM p.97-100,120-123,135-136) --
             Form::MuluL | Form::MuluW => {
-                let s = self.read(bus, &ea(0), size).map_err(Ok)?;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), size).map_err(Ok)?;
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 let d = self.d[r as usize];
                 let (a, b): (u64, u64) = if size == Size::W {
                     (d as u16 as u64, s as u16 as u64)
@@ -1944,8 +2351,8 @@ impl Cpu {
                 self.set_nz(v, Size::L);
             }
             Form::MulsL | Form::MulsW => {
-                let s = self.read(bus, &ea(0), size).map_err(Ok)?;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), size).map_err(Ok)?;
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 let d = self.d[r as usize];
                 let (a, b): (i64, i64) = if size == Size::W {
                     (d as u16 as i16 as i64, s as u16 as i16 as i64)
@@ -1957,13 +2364,10 @@ impl Cpu {
                 self.set_nz(v, Size::L);
             }
             Form::DivuW => {
-                let s = self.read(bus, &ea(0), Size::W).map_err(Ok)? as u16 as u32;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), Size::W).map_err(Ok)? as u16 as u32;
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 if s == 0 {
-                    return Err(Ok(Exc {
-                        vector: vector::DIVIDE_BY_ZERO,
-                        pc,
-                    }));
+                    return Err(Ok(Exc::new(vector::DIVIDE_BY_ZERO, pc)));
                 }
                 let d = self.d[r as usize];
                 let q = d / s;
@@ -1980,13 +2384,10 @@ impl Cpu {
                 }
             }
             Form::DivsW => {
-                let s = self.read(bus, &ea(0), Size::W).map_err(Ok)? as u16 as i16;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), Size::W).map_err(Ok)? as u16 as i16;
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 if s == 0 {
-                    return Err(Ok(Exc {
-                        vector: vector::DIVIDE_BY_ZERO,
-                        pc,
-                    }));
+                    return Err(Ok(Exc::new(vector::DIVIDE_BY_ZERO, pc)));
                 }
                 let d = self.d[r as usize] as i32;
                 let s32 = s as i32;
@@ -2004,26 +2405,20 @@ impl Cpu {
                 }
             }
             Form::DivuL => {
-                let s = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 if s == 0 {
-                    return Err(Ok(Exc {
-                        vector: vector::DIVIDE_BY_ZERO,
-                        pc,
-                    }));
+                    return Err(Ok(Exc::new(vector::DIVIDE_BY_ZERO, pc)));
                 }
                 let q = self.d[r as usize] / s;
                 self.d[r as usize] = q;
                 self.set_nz(q, Size::L);
             }
             Form::DivsL => {
-                let s = self.read(bus, &ea(0), Size::L).map_err(Ok)? as i32;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)? as i32;
+                let Ea::Dn(r) = ea!(i, 1) else { unreachable!() };
                 if s == 0 {
-                    return Err(Ok(Exc {
-                        vector: vector::DIVIDE_BY_ZERO,
-                        pc,
-                    }));
+                    return Err(Ok(Exc::new(vector::DIVIDE_BY_ZERO, pc)));
                 }
                 let d = self.d[r as usize] as i32;
                 if d == i32::MIN && s == -1 {
@@ -2044,14 +2439,11 @@ impl Cpu {
                 // writes a quotient back into it ("To determine the
                 // quotient, use DIVU", CFPRM p.136); only Dw (the
                 // remainder) and the flags (from the quotient) change.
-                let s = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
-                let Ea::Dn(w) = ea(1) else { unreachable!() };
-                let Ea::Dn(q) = ea(2) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
+                let Ea::Dn(w) = ea!(i, 1) else { unreachable!() };
+                let Ea::Dn(q) = ea!(i, 2) else { unreachable!() };
                 if s == 0 {
-                    return Err(Ok(Exc {
-                        vector: vector::DIVIDE_BY_ZERO,
-                        pc,
-                    }));
+                    return Err(Ok(Exc::new(vector::DIVIDE_BY_ZERO, pc)));
                 }
                 let d = self.d[q as usize];
                 let (quot, rem) = (d / s, d % s);
@@ -2060,14 +2452,11 @@ impl Cpu {
             }
             Form::RemsL => {
                 // See RemuL: the dividend register is never overwritten.
-                let s = self.read(bus, &ea(0), Size::L).map_err(Ok)? as i32;
-                let Ea::Dn(w) = ea(1) else { unreachable!() };
-                let Ea::Dn(q) = ea(2) else { unreachable!() };
+                let s = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)? as i32;
+                let Ea::Dn(w) = ea!(i, 1) else { unreachable!() };
+                let Ea::Dn(q) = ea!(i, 2) else { unreachable!() };
                 if s == 0 {
-                    return Err(Ok(Exc {
-                        vector: vector::DIVIDE_BY_ZERO,
-                        pc,
-                    }));
+                    return Err(Ok(Exc::new(vector::DIVIDE_BY_ZERO, pc)));
                 }
                 let d = self.d[q as usize] as i32;
                 if d == i32::MIN && s == -1 {
@@ -2085,49 +2474,29 @@ impl Cpu {
 
             // -- ISA_C (RM p.97 Table 3-4; not documented as affecting CCR) --
             Form::Bitrev => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 self.d[r as usize] = self.d[r as usize].reverse_bits();
             }
             Form::Byterev => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 self.d[r as usize] = self.d[r as usize].swap_bytes();
             }
             Form::Ff1 => {
-                let Ea::Dn(r) = ea(0) else { unreachable!() };
+                let Ea::Dn(r) = ea!(i, 0) else { unreachable!() };
                 self.d[r as usize] = self.d[r as usize].leading_zeros();
             }
 
             // -- ISA_B moves (CFPRM p.124-125) --
-            Form::Mvs => {
-                let v = self.read(bus, &ea(0), size).map_err(Ok)?;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
-                let sx = match size {
-                    Size::B => v as u8 as i8 as i32 as u32,
-                    _ => v as u16 as i16 as i32 as u32,
-                };
-                self.d[r as usize] = sx;
-                self.set_nz(sx, Size::L);
-            }
-            Form::Mvz => {
-                let v = self.read(bus, &ea(0), size).map_err(Ok)?;
-                let Ea::Dn(r) = ea(1) else { unreachable!() };
-                let zx = match size {
-                    Size::B => v & 0xff,
-                    _ => v & 0xffff,
-                };
-                self.d[r as usize] = zx;
-                self.set_nz(zx, Size::L);
-            }
 
             // -- flow/system (CFPRM p.139,148,238,249-251) --
             Form::Scc => {
                 let v = if self.cond(i.cond) { 0xffu32 } else { 0 };
-                self.write(bus, &ea(0), Size::B, v).map_err(Ok)?;
+                self.write(bus, &ea!(i, 0), Size::B, v).map_err(Ok)?;
             }
             Form::Tpf => {}
             Form::Cpushl => {}
             Form::Movec => {
-                let v = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 let Operand::Ctrl(rc) = ops[1] else {
                     unreachable!()
                 };
@@ -2138,10 +2507,7 @@ impl Cpu {
                 let new_pc = self.pop32(bus).map_err(Ok)?;
                 let format = fv >> 28;
                 if !(4..=7).contains(&format) {
-                    return Err(Ok(Exc {
-                        vector: vector::FORMAT_ERROR,
-                        pc,
-                    }));
+                    return Err(Ok(Exc::new(vector::FORMAT_ERROR, pc)));
                 }
                 self.a[7] = self.a[7].wrapping_add(format.wrapping_sub(4));
                 self.set_sr(fv as u16);
@@ -2149,64 +2515,8 @@ impl Cpu {
             }
 
             // -- EMAC (CFPRM chapter 6; RM chapter 5) --
-            Form::Mac | Form::Msac => {
-                let Operand::MacReg { r: ry, upper: uy } = ops[0] else {
-                    unreachable!()
-                };
-                let Operand::MacReg { r: rx, upper: ux } = ops[1] else {
-                    unreachable!()
-                };
-                let Operand::Scale(sf) = ops[2] else {
-                    unreachable!()
-                };
-                let Operand::Acc(acc) = ops[3] else {
-                    unreachable!()
-                };
-                let word = size == Size::W;
-                let ry = self.select_mac_reg(ry, uy, word);
-                let rx = self.select_mac_reg(rx, ux, word);
-                self.mac_op(ry, rx, word, sf, acc as usize, i.form == Form::Msac);
-            }
-            Form::MacLoad | Form::MsacLoad => {
-                let Operand::MacReg { r: ry, upper: uy } = ops[0] else {
-                    unreachable!()
-                };
-                let Operand::MacReg { r: rx, upper: ux } = ops[1] else {
-                    unreachable!()
-                };
-                let Operand::Scale(sf) = ops[2] else {
-                    unreachable!()
-                };
-                let load_ea = ea(3);
-                let Operand::MaskFlag(use_mask) = ops[4] else {
-                    unreachable!()
-                };
-                let rw_ea = ea(5);
-                let Operand::Acc(acc) = ops[6] else {
-                    unreachable!()
-                };
-                let word = size == Size::W;
-                let ryv = self.select_mac_reg(ry, uy, word);
-                let rxv = self.select_mac_reg(rx, ux, word);
-                // The memory load happens "in parallel" with the compute; we
-                // just sequence it first since neither reads the other's
-                // result (RM p.172-173).
-                let addr = self.ea_addr(&load_ea, Size::L).map_err(Ok)?;
-                let addr = if use_mask {
-                    addr & self.emac.mask
-                } else {
-                    addr
-                };
-                let loaded = bus.read32(addr).map_err(|e| Ok(e.into()))?;
-                match rw_ea {
-                    Ea::Dn(r) => self.d[r as usize] = loaded,
-                    Ea::An(r) => self.a[r as usize] = loaded,
-                    _ => unreachable!(),
-                }
-                self.mac_op(ryv, rxv, word, sf, acc as usize, i.form == Form::MsacLoad);
-            }
             Form::MoveToAcc => {
-                let v = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 let Operand::Acc(a) = ops[1] else {
                     unreachable!()
                 };
@@ -2237,49 +2547,38 @@ impl Cpu {
                     unreachable!()
                 };
                 let v = self.acc_to_reg(a as usize);
-                self.write(bus, &ea(1), Size::L, v).map_err(Ok)?;
-            }
-            Form::Movclr => {
-                let Operand::Acc(a) = ops[0] else {
-                    unreachable!()
-                };
-                let a = a as usize;
-                let v = self.acc_to_reg(a);
-                self.write(bus, &ea(1), Size::L, v).map_err(Ok)?;
-                self.emac.acc[a] = 0;
-                self.set_ext16(a, 0);
-                self.set_pav(a, false);
+                self.write(bus, &ea!(i, 1), Size::L, v).map_err(Ok)?;
             }
             Form::MoveToMacsr => {
-                let v = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 self.emac.macsr = v & 0x0fff;
             }
             Form::MoveFromMacsr => {
-                self.write(bus, &ea(1), Size::L, self.emac.macsr)
+                self.write(bus, &ea!(i, 1), Size::L, self.emac.macsr)
                     .map_err(Ok)?;
             }
             Form::MoveToAccext01 => {
-                let v = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 self.emac.accext01 = v;
             }
             Form::MoveFromAccext01 => {
-                self.write(bus, &ea(1), Size::L, self.emac.accext01)
+                self.write(bus, &ea!(i, 1), Size::L, self.emac.accext01)
                     .map_err(Ok)?;
             }
             Form::MoveToAccext23 => {
-                let v = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 self.emac.accext23 = v;
             }
             Form::MoveFromAccext23 => {
-                self.write(bus, &ea(1), Size::L, self.emac.accext23)
+                self.write(bus, &ea!(i, 1), Size::L, self.emac.accext23)
                     .map_err(Ok)?;
             }
             Form::MoveToMask => {
-                let v = self.read(bus, &ea(0), Size::L).map_err(Ok)?;
+                let v = self.read(bus, &ea!(i, 0), Size::L).map_err(Ok)?;
                 self.emac.mask = 0xffff_0000 | (v & 0xffff);
             }
             Form::MoveFromMask => {
-                self.write(bus, &ea(1), Size::L, self.emac.mask)
+                self.write(bus, &ea!(i, 1), Size::L, self.emac.mask)
                     .map_err(Ok)?;
             }
 
@@ -2289,6 +2588,7 @@ impl Cpu {
     }
 }
 
+#[inline]
 fn mask_sign(size: Size) -> (u32, u32) {
     match size {
         Size::B => (0xff, 0x80),

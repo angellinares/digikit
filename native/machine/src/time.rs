@@ -139,6 +139,7 @@ impl Time {
     }
 
     /// True when this seam owns a PIT, DTIM or INTC MMIO address.
+    #[inline]
     pub fn owns(addr: u32) -> bool {
         PitBank::owns(addr) || DtimBank::owns(addr) || IntcBank::owns(addr)
     }

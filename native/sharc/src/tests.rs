@@ -887,3 +887,81 @@ fn peripheral_stores_that_act_leave_block_code() {
     s.begin();
     assert!(bnd::_dm_write(&mut s, VI::I(periph::SEC_RAISE as Int), 4, V::c(70), false).is_ok());
 }
+
+/// The bracketed normal_word_to_byte maps exactly as the plain range table
+/// (Rev. D Tables 2--6) it shortcuts: around every bound and on a sweep.
+#[test]
+fn normal_word_to_byte_bracket_matches_the_table() {
+    const T: [(i128, i128, i128); 11] = [
+        (0x90000, 0x9c000, 0x28240000),
+        (0xb0000, 0xbc000, 0x282c0000),
+        (0xc0000, 0xc8000, 0x28300000),
+        (0xe0000, 0xe8000, 0x28380000),
+        (0x4000000, 0x8000000, 0x60000000),
+        (0x8000000, 0x8046000, 0x20000000),
+        (0xa090000, 0xa09c000, 0x28240000),
+        (0xa0b0000, 0xa0bc000, 0x282c0000),
+        (0xa0c0000, 0xa0c8000, 0x28300000),
+        (0xa0e0000, 0xa0e8000, 0x28380000),
+        (0x10000000, 0x18000000, 0x80000000),
+    ];
+    let table = |a: i128| {
+        T.iter()
+            .find(|(lo, hi, _)| (*lo..*hi).contains(&a))
+            .map(|(lo, _, base)| base + (a - lo) * 4)
+    };
+    let mut points: Vec<i128> = vec![-1, 0, 0xe8000, 0x400_0000, 0x1800_0000, 1 << 32];
+    for (lo, hi, _) in T {
+        for d in -2..=2 {
+            points.extend([lo + d, hi + d]);
+        }
+    }
+    points.extend((0..1i128 << 32).step_by(0x1001));
+    for a in points {
+        assert_eq!(
+            crate::addressing::normal_word_to_byte(a),
+            table(a),
+            "{a:#x}"
+        );
+    }
+}
+
+/// The bank_codes tables are the register groups MODE1's bank bits select
+/// (R0-R7/S0-S7, R8-R15/S8-S15, and four of each I/M/L/B group).
+#[test]
+fn bank_codes_are_the_selected_register_groups() {
+    use crate::rt::bank_codes;
+    assert_eq!(
+        bank_codes(10),
+        &[0, 1, 2, 3, 4, 5, 6, 7, 80, 81, 82, 83, 84, 85, 86, 87]
+    );
+    assert_eq!(
+        bank_codes(7),
+        &[8, 9, 10, 11, 12, 13, 14, 15, 88, 89, 90, 91, 92, 93, 94, 95]
+    );
+    assert_eq!(
+        bank_codes(4),
+        &[
+            16, 17, 18, 19, 32, 33, 34, 35, 48, 49, 50, 51, 64, 65, 66, 67
+        ]
+    );
+    assert_eq!(
+        bank_codes(3),
+        &[
+            20, 21, 22, 23, 36, 37, 38, 39, 52, 53, 54, 55, 68, 69, 70, 71
+        ]
+    );
+    assert_eq!(
+        bank_codes(6),
+        &[
+            24, 25, 26, 27, 40, 41, 42, 43, 56, 57, 58, 59, 72, 73, 74, 75
+        ]
+    );
+    assert_eq!(
+        bank_codes(5),
+        &[
+            28, 29, 30, 31, 44, 45, 46, 47, 60, 61, 62, 63, 76, 77, 78, 79
+        ]
+    );
+    assert!(bank_codes(0).is_empty());
+}

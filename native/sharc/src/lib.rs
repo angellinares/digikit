@@ -209,6 +209,9 @@ pub struct Engine {
     pub stop_software_interrupt: bool,
     /// Opt-in instruction-boundary breakpoint; no guest state is changed.
     pub stop_pc: Option<u32>,
+    /// `step_until_in`'s PC range [lo, hi): the step ends (without a halt)
+    /// at the first instruction boundary whose PC lies in it.
+    stop_range: Option<(u32, u32)>,
     /// Opt-in functional software IRQ delivery through the L1 ISA IVT.
     pub software_interrupts: bool,
     pub export_ranges: bool,
@@ -278,6 +281,11 @@ struct BlockPlan {
     limit: u64,
     models: bool,
     timer_count: Option<u32>,
+    /// A bank selection completed ahead of the block (its pending mask): it
+    /// selects the banks already active, so completing it changes only the
+    /// pending mask, which the block's first instruction would clear. Put
+    /// back if the block completes no instruction.
+    bank_pre: Option<Int>,
 }
 
 /// Idle-skip counters (diagnostic).
@@ -496,6 +504,7 @@ impl Engine {
             instruction_clock_base: 0,
             stop_software_interrupt: false,
             stop_pc: None,
+            stop_range: None,
             software_interrupts: false,
             export_ranges: false,
             dispatch: Dispatch::new(image_blocks(), image_model_safe()),
@@ -543,6 +552,7 @@ impl Engine {
     pub fn enable_runtime_decode(&mut self, read_sw: fn(&mem::Mem, u32) -> Option<u16>) {
         self.s.runtime_decode = true;
         self.s.read_sw = read_sw;
+        self.s.dec_watch = false;
         self.s.decode_cache.clear();
         self.s.insn_at = |_| None;
         self.watch_block_code();
@@ -752,6 +762,7 @@ impl Engine {
                     return -1;
                 }
                 self.enable_runtime_decode(mem::Mem::read_sw);
+                self.s.dec_watch = true;
             }
             5 => self.instruction_clock = value != 0,
             26 => {
@@ -976,6 +987,7 @@ impl Engine {
             limit,
             models: false,
             timer_count: None,
+            bank_pre: None,
         };
         if self.models_active() {
             if !entry.model_safe {
@@ -983,7 +995,18 @@ impl Engine {
                 return None;
             }
             let s = &self.s;
-            if (s.cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0))
+            if s.cfg.bank_model
+                && s.bank_requested_mask < 0
+                && s.bank_pending_mask >= 0
+                && s.bank_pending_mask == s.bank_active_mask
+            {
+                // St::bank_complete would swap nothing: only the pending
+                // mask changes (step completes it ahead of the block).
+                plan.bank_pre = Some(s.bank_pending_mask);
+            }
+            if (s.cfg.bank_model
+                && ((s.bank_pending_mask >= 0 && plan.bank_pre.is_none())
+                    || s.bank_requested_mask >= 0))
                 || (s.cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0))
             {
                 self.model_stats.timer_gated += 1;
@@ -1066,6 +1089,11 @@ impl Engine {
         self.idle_snap = None;
         self.s.probe = None;
         while self.s.icount < limit {
+            if let Some((lo, hi)) = self.stop_range
+                && (lo as Int..hi as Int).contains(&self.s.pc_sw)
+            {
+                break;
+            }
             if self.stop_pc.is_some_and(|pc| self.s.pc_sw == pc as Int) {
                 self.halt = Some("diagnostic: PC breakpoint".into());
                 break;
@@ -1091,7 +1119,7 @@ impl Engine {
                     } else {
                         0
                     });
-                    if self.s.cfg.peripheral_model {
+                    if self.s.cfg.peripheral_model && rt::periph::sec_line_active(&self.s) {
                         // The SEC request line latches SECI at the boundary
                         // (tools/sharc_run.py calls periph._sec_line here).
                         self.s.begin();
@@ -1151,9 +1179,22 @@ impl Engine {
                 let entry_pc = self.s.pc_sw as u32;
                 self.last_interp_next = -1;
                 let t0 = if self.prof.is_some() { ticks() } else { 0 };
+                if plan.bank_pre.is_some() {
+                    self.s.bank_pending_mask = -1;
+                }
                 self.s.in_block = plan.models;
                 let code = (entry.f)(&mut self.s);
                 self.s.in_block = false;
+                if self.s.icount == before {
+                    if let Some(p) = plan.bank_pre {
+                        self.s.bank_pending_mask = p;
+                    }
+                } else if self.s.cfg.bank_model && self.s.bank_requested_mask >= 0 {
+                    // The block's last instruction wrote MODE1 (tools/
+                    // sharc_rsgen.py TERMINAL): its completion, as St::commit
+                    // does after an interpreted instruction.
+                    self.s.bank_complete();
+                }
                 self.block_models_after(&plan, before);
                 let entry = entry_pc;
                 if let Some(p) = &mut self.prof {
@@ -1258,6 +1299,19 @@ impl Engine {
         (self.s.icount - start) as u32
     }
 
+    /// `step(n)` that also ends, without a halt, at the first instruction
+    /// boundary (the first one included) whose PC lies in [LO, HI); the
+    /// state is the one a `step` ending at that instruction count leaves,
+    /// as step sizes never change results. A block exits at the first PC it
+    /// has no body for, so the boundary is exact when no generated body
+    /// covers [LO, HI) (tools/sharc_rsgen.py --exclude).
+    pub fn step_until_in(&mut self, n: u32, lo: u32, hi: u32) -> u32 {
+        self.stop_range = Some((lo, hi));
+        let ran = self.step(n);
+        self.stop_range = None;
+        ran
+    }
+
     fn idle_snapshot(&self) -> Box<IdleSnap> {
         let s = &self.s;
         Box::new(IdleSnap {
@@ -1360,8 +1414,12 @@ impl Engine {
     fn idle_visit(&mut self, head: u32, limit: u64) {
         let pc = self.s.pc_sw;
         if pc < self.idle_lo as Int || pc > self.idle_hi as Int {
-            self.idle_snap = None;
-            self.s.probe = None;
+            if self.idle_snap.is_some() {
+                self.idle_snap = None;
+            }
+            if self.s.probe.is_some() {
+                self.s.probe = None;
+            }
             return;
         }
         if pc != head as Int {
@@ -1674,44 +1732,55 @@ pub unsafe extern "C" fn sharc_native_profile(
 ) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
-    let text = match kind {
-        0 => e.cov.as_ref().map(|m| {
-            let mut rows: Vec<_> = m.iter().collect();
-            rows.sort();
-            rows.iter()
-                .map(|((pc, mode, known), c)| format!("{pc:#x} {mode:#x} {} {c}\n", *known as u8))
-                .collect::<String>()
-        }),
-        1 => e.entries.as_ref().map(|m| {
-            let mut rows: Vec<_> = m.iter().collect();
-            rows.sort();
-            rows.iter()
-                .map(|(pc, c)| format!("{pc:#x} {c}\n"))
-                .collect::<String>()
-        }),
-        2 => e.trans.as_ref().map(|m| {
-            let mut rows: Vec<_> = m.iter().collect();
-            rows.sort();
-            rows.iter()
-                .map(|((a, b), c)| format!("{a:#x} {b:#x} {c}\n"))
-                .collect::<String>()
-        }),
-        3 => e.exits.as_ref().map(|m| {
-            let mut rows: Vec<_> = m.iter().collect();
-            rows.sort();
-            rows.iter()
-                .map(|((b, k, at), c)| format!("{b:#x} {k} {at:#x} {c}\n"))
-                .collect::<String>()
-        }),
-        _ => None,
+    let Some(text) = e.profile_text(kind) else {
+        return -1;
     };
-    let Some(text) = text else { return -1 };
     if text.len() > out_cap {
         return -(text.len() as i32);
     }
     // SAFETY: OUT has OUT_CAP >= len writable bytes.
     unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), out, text.len()) };
     text.len() as i32
+}
+
+impl Engine {
+    /// The profile maps (option 26) as text (sharc_native_profile's KIND).
+    pub fn profile_text(&self, kind: u32) -> Option<String> {
+        let e = self;
+        match kind {
+            0 => e.cov.as_ref().map(|m| {
+                let mut rows: Vec<_> = m.iter().collect();
+                rows.sort();
+                rows.iter()
+                    .map(|((pc, mode, known), c)| {
+                        format!("{pc:#x} {mode:#x} {} {c}\n", *known as u8)
+                    })
+                    .collect::<String>()
+            }),
+            1 => e.entries.as_ref().map(|m| {
+                let mut rows: Vec<_> = m.iter().collect();
+                rows.sort();
+                rows.iter()
+                    .map(|(pc, c)| format!("{pc:#x} {c}\n"))
+                    .collect::<String>()
+            }),
+            2 => e.trans.as_ref().map(|m| {
+                let mut rows: Vec<_> = m.iter().collect();
+                rows.sort();
+                rows.iter()
+                    .map(|((a, b), c)| format!("{a:#x} {b:#x} {c}\n"))
+                    .collect::<String>()
+            }),
+            3 => e.exits.as_ref().map(|m| {
+                let mut rows: Vec<_> = m.iter().collect();
+                rows.sort();
+                rows.iter()
+                    .map(|((b, k, at), c)| format!("{b:#x} {k} {at:#x} {c}\n"))
+                    .collect::<String>()
+            }),
+            _ => None,
+        }
+    }
 }
 
 /// Set UREG CODE to (KIND 0 Unknown / 1 Const / 2 PartialConst, VALUE,

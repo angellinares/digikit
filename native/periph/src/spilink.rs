@@ -108,10 +108,12 @@ impl DmaLink {
         self.ssi = Some(Ssi0Dma::new(request_hz, ips));
         true
     }
+    #[inline]
     pub fn owns(addr: u32) -> bool {
         Self::slot(addr).is_some()
     }
 
+    #[inline]
     fn slot(addr: u32) -> Option<u32> {
         [edma::EDMA_BASE, DSPI2_SLOT, DSPI1_SLOT, DSP_SLOT]
             .into_iter()

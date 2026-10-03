@@ -538,13 +538,22 @@ MEM_WRITES = {"sharc_core.memory._dm_write"}
 MEM_FAST = {"sharc_core.memory._dm_read", "sharc_core.memory._dm_write"}
 # Facts that are settings, not machine state: kept across loops.
 SETTING_FACTS = ("nolog",)
+# Block code: fact "loop_synced" says LADDR/CURLCNTR already hold what
+# _execute's leading _sync_empty_loop_registers would write (the previous
+# instruction of the block synced them and changed neither them nor the loop
+# stack), so that first call is left out (tools/sharc_rsgen.py plan_body).
+LOOP_SYNC = "sharc_core.state._sync_empty_loop_registers"
+LOOP_SYNCED_FACT = "loop_synced"
 
 # Registers that are PartialConst in practice (ASTATX, ASTATY: the CACC bits
-# are not known): block code keeps their known-bit masks at run time.
-PARTIAL_REGS = frozenset({118, 119})
+# are not known; STKYX, STKYY: once a status restore or move brings in an
+# unknown value, until the guest rewrites them, which in the coupled DN2 run
+# is for long stretches): block code keeps their known-bit masks at run time
+# instead of requiring them known at entry.
+PARTIAL_REGS = frozenset({118, 119, 120, 121})
 # Their usual known-bit masks (the CACC compare history, ASTATX bits 24-31,
 # is never known): block code requires these at entry, so they fold.
-PARTIAL_MASKS = {118: 0x00FFFFFF, 119: 0xFFFFFFFF}
+PARTIAL_MASKS = {118: 0x00FFFFFF, 119: 0xFFFFFFFF, 120: 0xFFFFFFFF, 121: 0xFFFFFFFF}
 
 # Function values the runtime knows by number (rt.rs FN_OP_*).
 RT_FN_IDS = {
@@ -3409,6 +3418,15 @@ class FnT:
                 return E(self.trap_expr(e, kind), t)
             if fullname in ERASED_CALLS:
                 return E("()", NONE)
+            if (
+                self.blk
+                and fullname == LOOP_SYNC
+                and self.facts.pop(LOOP_SYNCED_FACT, False)
+            ):
+                # Block code whose loop-stack register view is known to be in
+                # step (tools/sharc_rsgen.py): the sync would rewrite the
+                # same values. The fact covers this one call only.
+                return E("()", NONE)
             if fullname in DYN_CALLS:
                 t = DYN_CALLS[fullname]
                 return E("SYM_DYN" if t == STR else "()", t)
@@ -5135,7 +5153,10 @@ FN_ID_BASE = 16
 # what generated code does, so native libraries built by an older generator
 # are refused (tools/sharc_transpile_run.check_build_info). A native library
 # also carries core_hash(), so a tools/sharc_core change needs no bump.
-GENERATOR_VERSION = 9
+# 10: model-safe bodies hold calls, returns and terminal MODE1/IRPTL/IMASK
+# writes (the engine completes a bank request after a block) and skip the
+# loop-register sync after an instruction that cannot change it.
+GENERATOR_VERSION = 10
 
 
 def core_hash() -> str:

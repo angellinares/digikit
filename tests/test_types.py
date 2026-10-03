@@ -32,6 +32,7 @@ TYPED = [
     "tools/sharc_dac.py",
     "tools/sharc_diff.py",
     "tools/sharc_disasm.py",
+    "tools/sharc_dn2_aot.py",
     "tools/sharc_framemap.py",
     "tools/sharc_harness.py",
     "tools/sharc_inputs.py",

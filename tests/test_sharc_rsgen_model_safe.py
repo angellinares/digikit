@@ -55,20 +55,31 @@ def test_register_moves_that_name_model_state_are_not() -> None:
     assert _reason("5a_move", **fields) == "register PCSTK"
 
 
-def test_plain_jumps_are_safe_calls_returns_and_aborts_are_not() -> None:
+def test_jumps_calls_and_returns_are_safe_aborts_and_ci_are_not() -> None:
+    # A call's or return's stack pushes and pops are the core's own steps;
+    # only a PCSTKP write asks the engine for a PC-stack completion.
     plain = {"b": 0, "a": 0, "ci": 0, "j": 1, "cond": 0, "pmm": 0}
     assert _reason("9a_abs", **plain) is None
     assert _reason("8a_rel", **plain) is None
-    assert _reason("9a_abs", **{**plain, "b": 1}) is not None  # call
+    assert _reason("9a_abs", **{**plain, "b": 1}) is None  # call
+    assert _reason("8a_rel", **{**plain, "b": 1}) is None  # call
     assert _reason("9a_abs", **{**plain, "a": 1}) is not None  # loop abort
     assert _reason("9a_abs", **{**plain, "ci": 1}) is not None
     ret = {**plain, "cond": 0x1F, "pmm": 6}
-    assert _reason("9a_abs", **ret) == "return idiom"
+    assert _reason("9b_abs", **ret) is None  # the (DB) return idiom
     assert _reason("9a_abs", **{**ret, "j": 0}) is None  # not delayed
 
 
+def test_rts_cjump_rframe_and_nops_are_safe_rti_is_not() -> None:
+    for form in ("11a", "11c"):
+        assert _reason(form, x=0, j=1, lr=0) is None, form  # RTS
+        assert _reason(form, x=1, j=1, lr=0) == "RTI", form
+    for form in ("25a_direct", "25a_pcrel", "25c_rframe", "21a", "21c"):
+        assert _reason(form) is None, form
+
+
 def test_stack_interrupt_and_system_forms_are_not() -> None:
-    for form in ("11a", "11c", "25a_direct", "25c_rframe", "18a", "20a", "21a", "22c"):
+    for form in ("18a", "20a", "22c", "26a"):
         assert _reason(form, x=0, j=0, lr=0) is not None, form
     assert (_reason("21p_undoc16") or "").startswith("form")
 

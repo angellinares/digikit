@@ -20,6 +20,10 @@
 //!   DSP_THREAD=1: the DSP renders each period on its own thread while the
 //!   ColdFire runs the next frame (`ThreadedPeer`); results are identical to
 //!   the default synchronous run (compare CF_DIGEST output).
+//!   DSP_PROFILE=PREFIX (synchronous runs only): the DSP interpreter profile
+//!   (coverage, .entries, .trans, .exits) for tools/sharc_rsgen.py, so blocks
+//!   can be generated for what the coupled run executes. DSP_EXPORT=PATH:
+//!   write the DSP's canonical state at the end.
 //!   AUDIO=1 (needs `--features play`): play the PCM through the default
 //!   output device as it is produced (silence while the emulator is behind,
 //!   which is nearly always: it runs far slower than real time).
@@ -213,6 +217,10 @@ fn main() {
         (p.boxed(), DspCtl::Worker(h), sh)
     } else {
         let d = SharedDsp::new(open_dn2_engine(&image, &state, base).expect("DSP engine"));
+        if env::var_os("DSP_PROFILE").is_some() {
+            // The interpreter profile for tools/sharc_rsgen.py (option 26).
+            d.0.borrow_mut().set_option(26, 1);
+        }
         let (p, sh) = SharcPeer::new(d.clone(), period);
         (p.boxed(), DspCtl::Local(d), sh)
     };
@@ -311,6 +319,21 @@ fn main() {
             sha_hex(&pcm),
             pcm.len() / 4
         );
+    }
+    if let Some(path) = env::var_os("DSP_EXPORT") {
+        // The DSP's canonical state at the end (private: firmware-derived).
+        fs::write(path, dsp.export().0).unwrap();
+    }
+    if let (Some(prefix), DspCtl::Local(d)) = (env::var_os("DSP_PROFILE"), &dsp) {
+        // PREFIX (coverage), PREFIX.entries, .trans, .exits: the inputs of
+        // tools/sharc_rsgen.py --coverage/--entries/--transitions.
+        let prefix = prefix.to_string_lossy().into_owned();
+        let e = d.0.borrow();
+        for (kind, suffix) in ["", ".entries", ".trans", ".exits"].iter().enumerate() {
+            if let Some(text) = e.profile_text(kind as u32) {
+                fs::write(format!("{prefix}{suffix}"), text).unwrap();
+            }
+        }
     }
     audio.feed(&shared);
     let sh = shared.borrow();

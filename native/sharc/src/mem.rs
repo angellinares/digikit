@@ -48,12 +48,18 @@ pub struct Mem {
     /// for an MMR page (`mmr`) or none. Kept in step with `pages`.
     eff: Box<[*mut Page; NPAGES]>,
     mmr: Vec<bool>,
-    /// Pages (and their short-word alias pages) that hold generated block
-    /// code, and a count of the writes that touched them (`code_gen`): the
-    /// engine re-verifies the code it was generated for when it changes.
-    code_pg: Vec<bool>,
+    /// Per page: bit 0, the page (or its short-word alias page) holds
+    /// generated block code; bit 1, it holds a word a cached runtime decode
+    /// read (`watch_sw`). A write to a bit-0 page bumps `code_gen` (the
+    /// engine re-verifies the code the blocks were generated for), to a
+    /// bit-1 page `dec_gen` (cached decodes are re-checked word by word).
+    watch: Vec<u8>,
     pub code_gen: u64,
+    pub dec_gen: u64,
 }
+
+const WATCH_CODE: u8 = 1;
+const WATCH_DECODE: u8 = 2;
 
 /// The short-word alias base in pages (memory.SW_ALIAS_BASE >> 16).
 const ALIAS_PAGES: usize = 0x2800_0000 >> PAGE_BITS;
@@ -79,8 +85,9 @@ impl Mem {
                 .try_into()
                 .expect("NPAGES entries"),
             mmr: vec![false; NPAGES],
-            code_pg: vec![false; NPAGES],
+            watch: vec![0; NPAGES],
             code_gen: 0,
+            dec_gen: 0,
         }
     }
 
@@ -91,22 +98,46 @@ impl Mem {
             return;
         }
         for idx in (lo >> PAGE_BITS)..=((hi - 1) >> PAGE_BITS) {
-            let idx = idx as usize;
-            self.code_pg[idx] = true;
-            if idx >= ALIAS_PAGES {
-                self.code_pg[idx - ALIAS_PAGES] = true;
-            }
+            self.watch_page(idx as usize, WATCH_CODE);
         }
     }
 
     pub fn unwatch_code(&mut self) {
-        self.code_pg.fill(false);
+        for w in self.watch.iter_mut() {
+            *w &= !WATCH_CODE;
+        }
+    }
+
+    /// Mark page IDX (and its short-word alias page, through which a fast
+    /// write can reach it) with BIT.
+    fn watch_page(&mut self, idx: usize, bit: u8) {
+        self.watch[idx] |= bit;
+        if idx >= ALIAS_PAGES {
+            self.watch[idx - ALIAS_PAGES] |= bit;
+        }
+    }
+
+    /// Watch the bytes `read_sw(pc)` reads: any write there bumps `dec_gen`.
+    pub fn watch_sw(&mut self, pc: u32) {
+        if pc >= (1 << 24) {
+            return;
+        }
+        let a = 0x2800_0000 + pc * 2;
+        self.watch_page((a >> PAGE_BITS) as usize, WATCH_DECODE);
+        self.watch_page(((a + 1) >> PAGE_BITS) as usize, WATCH_DECODE);
+        if (0xb80000..0xc00000).contains(&pc) {
+            let b = 0x2000_0000 + (pc - 0xb80000) * 2;
+            self.watch_page((b >> PAGE_BITS) as usize, WATCH_DECODE);
+            self.watch_page(((b + 1) >> PAGE_BITS) as usize, WATCH_DECODE);
+        }
     }
 
     #[inline(always)]
     fn note_write(&mut self, a: u32) {
-        if self.code_pg[(a >> PAGE_BITS) as usize] {
-            self.code_gen += 1;
+        let w = self.watch[(a >> PAGE_BITS) as usize];
+        if w != 0 {
+            self.code_gen += (w & WATCH_CODE) as u64;
+            self.dec_gen += ((w & WATCH_DECODE) >> 1) as u64;
         }
     }
 
@@ -221,6 +252,7 @@ impl Mem {
     /// Add loader-image bytes at byte address A (building the image).
     pub fn load(&mut self, a: u32, bytes: &[u8]) {
         self.code_gen += 1;
+        self.dec_gen += 1;
         for (k, &b) in bytes.iter().enumerate() {
             let addr = a.wrapping_add(k as u32);
             let idx = (addr >> PAGE_BITS) as usize;
@@ -234,6 +266,7 @@ impl Mem {
     /// Discard every overlay byte: memory is the loader image again.
     pub fn reset(&mut self) {
         self.code_gen += 1;
+        self.dec_gen += 1;
         for idx in 0..NPAGES {
             match &self.loader[idx] {
                 Some(src) => {

@@ -156,6 +156,8 @@ CLEAN = [
     "tools/sharc_transpile_infer.py",
     "tools/sharc_transpile_run.py",
     "tools/sharc_dn2_replay.py",
+    "tools/sharc_dn2_aot.py",
+    "tests/test_sharc_dn2_aot.py",
     "tools/sharc_widthaudit.py",
     "tools/sharcldr.py",
     "tools/snapeq.py",

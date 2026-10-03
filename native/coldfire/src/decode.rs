@@ -67,7 +67,9 @@ pub(crate) fn ea_mode(mode: u32, reg: u32) -> Option<u8> {
 /// and 8-15 for A0-A7. `wl` is the brief extension word's W/L bit: 0 (word
 /// index) is not supported and takes an address error (CFPRM p.36 Table 2-1).
 /// `scale` is the scale code 0-3 (x1, x2, x4, x8; x8 only with an FPU).
-/// PC-relative modes carry `base`, the address of their extension word.
+/// PC-relative modes carry `base`, the address of their extension word;
+/// `PcIdx` carries `base + d8` instead (`disp`), the address before the
+/// index is added, so an `Ea` (and an `Operand`) fits in 8 bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Ea {
     Dn(u8),
@@ -90,11 +92,10 @@ pub enum Ea {
         d16: i16,
     },
     PcIdx {
-        base: u32,
+        disp: u32,
         xn: u8,
         wl: bool,
         scale: u8,
-        d8: i8,
     },
     Imm(u32),
 }
@@ -164,7 +165,78 @@ pub enum Operand {
     Fpiar,
 }
 
+/// The most operands an instruction has (MAC with load has seven).
 pub const MAX_OPS: usize = 7;
+/// Operands an `Insn` stores as `Operand`s: every form except the four
+/// EMAC MAC/MSAC forms has at most three; those keep their register,
+/// scale, mask and accumulator fields packed in `Insn::mac` instead.
+const STORED_OPS: usize = 3;
+
+// The decode cache stores one `Insn` per code halfword; keep it compact.
+const _: () = assert!(core::mem::size_of::<Ea>() == 8);
+const _: () = assert!(core::mem::size_of::<Operand>() == 8);
+const _: () = assert!(core::mem::size_of::<Insn>() == 32);
+
+/// `Insn::mac` layout: Ry (4-bit register, upper-half flag) in bits 0-4,
+/// Rx in bits 5-9, the scale factor in 10-11, the MASK flag in 12, the
+/// accumulator in 13-14; bit 15 records that Ry was pushed (decode only).
+const MAC_RY_SET: u16 = 1 << 15;
+
+/// The operand list `Insn::operands` returns (at most `MAX_OPS`).
+#[derive(Clone, Copy, Debug)]
+pub struct Operands {
+    ops: [Operand; MAX_OPS],
+    n: u8,
+}
+
+impl core::ops::Deref for Operands {
+    type Target = [Operand];
+    fn deref(&self) -> &[Operand] {
+        &self.ops[..self.n as usize]
+    }
+}
+
+impl<'a> IntoIterator for &'a Operands {
+    type Item = &'a Operand;
+    type IntoIter = core::slice::Iter<'a, Operand>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+const fn str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut k = 0;
+    while k < a.len() {
+        if a[k] != b[k] {
+            return false;
+        }
+        k += 1;
+    }
+    true
+}
+
+/// Per form: `TRAP_PRIVILEGED` (PRIVILEGED) and `TRAP_FPU` (unit "fpu"),
+/// the two checks `Cpu::step` makes before executing, in one load.
+pub(crate) const TRAP_PRIVILEGED: u8 = 1;
+pub(crate) const TRAP_FPU: u8 = 2;
+pub(crate) const FORM_TRAPS: [u8; FORM_COUNT] = {
+    let mut t = [0u8; FORM_COUNT];
+    let mut k = 0;
+    while k < FORM_COUNT {
+        if PRIVILEGED[k] {
+            t[k] |= TRAP_PRIVILEGED;
+        }
+        if str_eq(UNITS[k], "fpu") {
+            t[k] |= TRAP_FPU;
+        }
+        k += 1;
+    }
+    t
+};
 
 /// A decoded instruction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,8 +247,11 @@ pub struct Insn {
     pub len: u8,
     /// Condition code for Bcc/Scc (CONDITIONS) and FBcc (FP_CONDITIONS).
     pub cond: u8,
-    pub nops: u8,
-    pub ops: [Operand; MAX_OPS],
+    /// Stored operands (`ops[..nops]`); see `operands` for the full list.
+    pub(crate) nops: u8,
+    /// MAC/MSAC (with or without load) packed fields; 0 for other forms.
+    pub(crate) mac: u16,
+    pub(crate) ops: [Operand; STORED_OPS],
 }
 
 impl Insn {
@@ -187,18 +262,111 @@ impl Insn {
             len: 0,
             cond: 0,
             nops: 0,
-            ops: [Operand::None; MAX_OPS],
+            mac: 0,
+            ops: [Operand::None; STORED_OPS],
         }
     }
 
     #[inline]
+    fn is_mac(&self) -> bool {
+        matches!(
+            self.form,
+            Form::Mac | Form::Msac | Form::MacLoad | Form::MsacLoad
+        )
+    }
+
+    #[inline]
     pub(crate) fn push(&mut self, op: Operand) {
+        if self.is_mac() {
+            let reg = |r: u8, upper: bool| u16::from(r & 15) | u16::from(upper) << 4;
+            match op {
+                Operand::MacReg { r, upper } if self.mac & MAC_RY_SET == 0 => {
+                    self.mac |= reg(r, upper) | MAC_RY_SET;
+                    return;
+                }
+                Operand::MacReg { r, upper } => {
+                    self.mac |= reg(r, upper) << 5;
+                    return;
+                }
+                Operand::Scale(sf) => {
+                    self.mac |= u16::from(sf & 3) << 10;
+                    return;
+                }
+                Operand::MaskFlag(m) => {
+                    self.mac |= u16::from(m) << 12;
+                    return;
+                }
+                Operand::Acc(a) => {
+                    self.mac |= u16::from(a & 3) << 13;
+                    return;
+                }
+                _ => {}
+            }
+        }
         self.ops[self.nops as usize] = op;
         self.nops += 1;
     }
 
-    pub fn operands(&self) -> &[Operand] {
-        &self.ops[..self.nops as usize]
+    /// MAC Ry: (register 0-15, upper half).
+    #[inline(always)]
+    pub(crate) fn mac_ry(&self) -> (u8, bool) {
+        ((self.mac & 15) as u8, self.mac & 0x10 != 0)
+    }
+
+    /// MAC Rx: (register 0-15, upper half).
+    #[inline(always)]
+    pub(crate) fn mac_rx(&self) -> (u8, bool) {
+        ((self.mac >> 5 & 15) as u8, self.mac & 0x200 != 0)
+    }
+
+    #[inline(always)]
+    pub(crate) fn mac_scale(&self) -> u8 {
+        (self.mac >> 10 & 3) as u8
+    }
+
+    #[inline(always)]
+    pub(crate) fn mac_mask(&self) -> bool {
+        self.mac & 0x1000 != 0
+    }
+
+    #[inline(always)]
+    pub(crate) fn mac_acc(&self) -> u8 {
+        (self.mac >> 13 & 3) as u8
+    }
+
+    /// Every operand in the table's order (the MAC forms rebuilt from their
+    /// packed fields).
+    pub fn operands(&self) -> Operands {
+        let mut ops = [Operand::None; MAX_OPS];
+        let mut n = 0;
+        let mut put = |op: Operand| {
+            ops[n] = op;
+            n += 1;
+        };
+        if self.is_mac() {
+            let (ry, uy) = self.mac_ry();
+            let (rx, ux) = self.mac_rx();
+            put(Operand::MacReg { r: ry, upper: uy });
+            put(Operand::MacReg { r: rx, upper: ux });
+            put(Operand::Scale(self.mac_scale()));
+            if matches!(self.form, Form::MacLoad | Form::MsacLoad) {
+                put(self.ops[0]);
+                put(Operand::MaskFlag(self.mac_mask()));
+                put(self.ops[1]);
+            }
+            put(Operand::Acc(self.mac_acc()));
+        } else {
+            for &op in &self.ops[..self.nops as usize] {
+                put(op);
+            }
+        }
+        Operands { ops, n: n as u8 }
+    }
+
+    /// `FORM_TRAPS` for this form.
+    #[inline(always)]
+    pub(crate) fn traps(&self) -> u8 {
+        FORM_TRAPS[self.form as usize]
     }
 
     pub fn id(&self) -> &'static str {
@@ -323,11 +491,10 @@ impl Cur {
                 let base = self.next_addr();
                 let (xn, wl, scale, d8) = self.index()?;
                 Ea::PcIdx {
-                    base,
+                    disp: base.wrapping_add(d8 as i32 as u32),
                     xn,
                     wl,
                     scale,
-                    d8,
                 }
             }
             M_IMM => Ea::Imm(self.imm(size)?),
@@ -452,14 +619,12 @@ pub fn fmt_ea(ea: &Ea, size: Size) -> String {
         Ea::AbsL(a) => format!("({}).l", hex(a as i32 as i64)),
         Ea::PcDisp { d16, .. } => format!("({},pc)", hex(d16 as i64)),
         Ea::PcIdx {
-            base,
+            disp,
             xn,
             wl,
             scale,
-            d8,
         } => {
-            let t = base.wrapping_add(d8 as i32 as u32);
-            format!("({},pc,{})", hex(t as i32 as i64), index(xn, wl, scale))
+            format!("({},pc,{})", hex(disp as i32 as i64), index(xn, wl, scale))
         }
         Ea::Imm(v) => format!("#{}", hex(sext(v, size))),
     }
@@ -478,7 +643,7 @@ impl fmt::Display for Insn {
         write!(f, "{}{}", self.mnemonic(), self.size.suffix())?;
         let word_mac = self.size == Size::W;
         let mut parts: Vec<String> = Vec::new();
-        for op in self.operands() {
+        for op in &self.operands() {
             let s = match *op {
                 Operand::None => continue,
                 Operand::Ea(ref ea) => fmt_ea(ea, self.size),

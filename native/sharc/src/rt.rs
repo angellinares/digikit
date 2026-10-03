@@ -453,6 +453,10 @@ impl<T: Copy + Default + PartialEq> Tup<T> {
     }
     #[inline(always)]
     fn index(&self, i: Int) -> R<usize> {
+        if (i as u128) < self.n as u128 {
+            // 0 <= i < n, the usual case: one compare.
+            return Ok(i as usize);
+        }
         let n = self.n as Int;
         let j = if i < 0 { i + n } else { i };
         if j < 0 || j >= n {
@@ -557,6 +561,10 @@ impl<T: Copy + Default + PartialEq, const N: usize> Stk<T, N> {
     }
     #[inline(always)]
     fn index(&self, i: Int) -> R<usize> {
+        if (i as u128) < self.n as u128 {
+            // 0 <= i < n, the usual case: one compare.
+            return Ok(i as usize);
+        }
         let n = self.n as Int;
         let j = if i < 0 { i + n } else { i };
         if j < 0 || j >= n {
@@ -596,6 +604,9 @@ pub const MAX_STATUS: usize = 16;
 pub struct CachedInsn {
     pub insn: Insn,
     pub words: Vec<(u32, Option<u16>)>,
+    /// `Mem::dec_gen` when the words were last seen to match (with
+    /// `St::dec_watch`, an unchanged generation means unchanged words).
+    pub seen: u64,
 }
 
 /// Run configuration (State fields that do not change during a run).
@@ -786,6 +797,9 @@ pub struct St {
     /// with this state, unlike the process-lifetime AOT instruction table.
     pub runtime_decode: bool,
     pub read_sw: fn(&Mem, u32) -> Option<u16>,
+    /// `read_sw` is `Mem::read_sw`, so `Mem::watch_sw` knows the bytes it
+    /// reads and a cached decode stays valid while `Mem::dec_gen` does.
+    pub dec_watch: bool,
     pub decode_cache: std::collections::HashMap<u32, CachedInsn, PcHash>,
     /// Addresses named by sharcimm.name_address: exact addresses and
     /// [lo, hi) ranges, from the image blob.
@@ -861,6 +875,7 @@ impl St {
             insn_at: no_insn,
             runtime_decode: false,
             read_sw: no_read_sw,
+            dec_watch: false,
             decode_cache: Default::default(),
             named_mmrs: Vec::new(),
             named_ranges: Vec::new(),
@@ -1004,7 +1019,7 @@ impl St {
                 if changed & (1 << bit) == 0 {
                     continue;
                 }
-                for code in bank_codes(bit) {
+                for &code in bank_codes(bit) {
                     std::mem::swap(&mut self.r[code], &mut self.bank_alt[code]);
                 }
             }
@@ -1240,24 +1255,42 @@ pub const BANK_MASK: Int = 0x4f8;
 /// Transient bank_requested_mask marker for a delayed RTI (state._BANK_HOLD).
 pub const BANK_HOLD: Int = 0x10000;
 
-pub fn bank_codes(bit: Int) -> Vec<usize> {
-    match bit {
-        10 => (0..8).chain(80..88).collect(),
-        7 => (8..16).chain(88..96).collect(),
-        4 | 3 | 6 | 5 => {
-            let start = match bit {
-                4 => 0,
-                3 => 4,
-                6 => 8,
-                5 => 12,
-                _ => unreachable!(),
-            };
-            [16, 32, 48, 64]
-                .into_iter()
-                .flat_map(|base| base + start..base + start + 4)
-                .collect()
+pub fn bank_codes(bit: Int) -> &'static [usize] {
+    /// R0-R7 / R8-R15 and their S partners.
+    const fn data(start: usize) -> [usize; 16] {
+        let mut out = [0; 16];
+        let mut k = 0;
+        while k < 8 {
+            out[k] = start + k;
+            out[k + 8] = 80 + start + k;
+            k += 1;
         }
-        _ => Vec::new(),
+        out
+    }
+    /// Four I/M/L/B registers from START of each of the 16-code groups.
+    const fn dag(start: usize) -> [usize; 16] {
+        let mut out = [0; 16];
+        let mut k = 0;
+        while k < 16 {
+            out[k] = 16 * (1 + k / 4) + start + k % 4;
+            k += 1;
+        }
+        out
+    }
+    static B10: [usize; 16] = data(0);
+    static B7: [usize; 16] = data(8);
+    static B4: [usize; 16] = dag(0);
+    static B3: [usize; 16] = dag(4);
+    static B6: [usize; 16] = dag(8);
+    static B5: [usize; 16] = dag(12);
+    match bit {
+        10 => &B10,
+        7 => &B7,
+        4 => &B4,
+        3 => &B3,
+        6 => &B6,
+        5 => &B5,
+        _ => &[],
     }
 }
 

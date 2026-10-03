@@ -5084,10 +5084,29 @@ call against the interpreter for every entry (the replay hashes are the only
 end-to-end evidence, over this one capture); a unit test that takes a real
 interrupt after a timer-limited block (the replay crosses several hundred timer
 periods, but no unit test takes one); an independent audit of the classification against the core
-before this is marked **[V]**; a one-command pipeline (profile, generate with
-`--entries/--transitions`, build, replay); WASM and `SharcPeer`/`sharc_live`
-builds of a DN2 library; the cost of re-hashing when a data store shares a
-64 KiB page with generated code (not measured; `code_mismatch` stayed 0).
+before this is marked **[V]**; the cost of re-hashing when a data store shares a
+64 KiB page with generated code (not measured; `code_mismatch` stayed 0). The
+one-command pipeline and the WASM and `sharc_live` builds of a DN2 library are
+done (below).
+
+**[D]** `tools/sharc_dn2_aot.py` builds the DN2 block library from scratch in
+one command: strict transpile, a core-only build, `--cycles` (3) profiling
+replays (cycle 0 interpreter-only, then rsgen + build + replay with blocks),
+the final rsgen on all cycles' profiles merged (counts summed per key,
+sorted), the build, optionally the wasm32 `--features sharc` core, the
+five-way replay gate and optionally the coupled `sharc_live` run (threaded and
+ColdFire-only). Everything goes under `--out` (refused inside a git tree);
+`manifest.json` holds input, profile, gen-tree and library hashes;
+`--compare` and `--expect` make it fail on a difference. The native library
+is built with the gen path remapped and a fixed macOS install name, so its
+bytes do not depend on the output directory. Two runs from scratch in
+different directories: identical gen tree (`5cc4b4a0...`, 931 blocks),
+profiles, native library (`a6336cae...`) and wasm (`bf106458...`), 0 manifest
+differences. Gate: the replay hashes above (PCM `581339b3...`) in all five
+runs; coupled ColdFire `fbace0f0...`, DSP export `05ac2ac2...`, PCM
+`38d2a322...` (72,896 samples); ColdFire-only `4b569189...`. Its replay speed
+equals the earlier hand-built 967-block library (frames 4600..5600, blocks and
+skip: 5.96/5.78 s against 5.99/6.27 s back to back).
 
 ### Threaded coupling and native playback (2026-10-03)
 
@@ -5123,3 +5142,195 @@ ColdFire `fbace0f0...`, DSP export `05ac2ac2...`, PCM `38d2a322...` (WASM PCM
 identical); ColdFire-only digest `4b569189...`. `sharc_live` prints a
 `cf_clock` line (logical ticks, interpreted and idle-skipped instructions,
 ticks per wall second) after the run. Not re-checked against the device.
+
+### DSP block path: wider model-safe blocks and cheaper boundaries (2026-10-03)
+
+**[D]** Exact speedups of the native SHARC engine with AOT blocks and all models on
+(DN2 1.11). Where the time went first (native replay of the note capture,
+macOS Time Profiler, leaf frames resolved through inlining): blocks ran
+312M of 334M non-skipped instructions but the interpreter took as long as
+all of them (about 1,700 host instructions per interpreted SHARC
+instruction against about 130 in a block); inside blocks the loop-register
+sync (`_sync_empty_loop_registers`, every instruction) and the
+normal-word address test (`normal_word_to_byte`, twice per access) were
+about 40% of block time; the runtime decode cache re-read every cached
+word on every interpreted instruction. Changes:
+
+- **Runtime**: cached runtime decodes stay valid while no write reaches a
+  page holding one of their words (`Mem::watch_sw`, `dec_gen`; only for the
+  engine's own `Mem::read_sw`); the boundary skips `begin`/`commit_host`
+  when the SEC line is idle (`periph::sec_line_active`); `bank_codes` is
+  static; `normal_word_to_byte` brackets its ranges first (also in
+  `tools/sharc_core/addressing.py`, same mapping); `Stk::index` has a
+  one-compare path.
+- **Generator** (`GENERATOR_VERSION` 10): model-safe bodies now hold calls,
+  the (DB) return idiom, RTS (Type 11a/11c with x=0; RTI stays out), CJUMP,
+  RFRAME and the 21a/21c no-ops: their stack pushes and pops are the core's
+  own steps, and only a PCSTKP write requests the PC-stack completion the
+  engine does between instructions. Instructions that name a model register
+  are decided by what their variant reads and writes: reads are safe except
+  EMUCLK/EMUCLK2/TCOUNT; a write of MODE1, IRPTL, IMASK, IMASKP or MMASK
+  ends the body ("terminal"), after which the engine completes the bank
+  request as `St::commit` would and checks interrupts at the next boundary
+  (the body saves `bank_requested_mask` for a trap); other model-register
+  writes stay interpreted. A body skips the loop-register sync after an
+  instruction that is not a DO or at a loop end (`loop_synced` fact).
+  STKYX/STKYY keep run-time masks like ASTATX/ASTATY. Model-safe bodies
+  check the limit before each instruction when the whole body does not fit
+  (the core timer's limit cut them often in the coupled run). `--chain` is
+  used; `--exclude 0xb88a49:0xb88abc` keeps bodies out of the idle-skip range
+  (a chained call or route would otherwise run the idle loop in block code).
+- **Engine**: a pending bank selection that changes no bank is completed
+  ahead of a block (put back if the block completes nothing).
+- **Coupling**: `SharcPeer` no longer steps the busy part in 1,024-instruction
+  chunks: `Engine::step_until_in` stops at the first boundary in the idle
+  range, then the chunk ends from there on are looked at as before, so
+  `busy` (and the per-frame csv) is unchanged; blocks cut short at every
+  chunk end ran their tails one instruction at a time (+26% host
+  instructions on the replay window).
+- **Tools**: `native/sharc/examples/dn2_replay.rs` (the replay without
+  Python; `SAVE_AT`/`CLOCK` continue from a saved state, `CHUNK` imitates the
+  old peer); `sharc_live` `DSP_PROFILE=PREFIX` (synchronous runs: coverage,
+  entries, transitions for `sharc_rsgen.py`) and `DSP_EXPORT=PATH`.
+
+Recipe of the measured library: `sharc_transpile.py --strict`, then
+`sharc_rsgen.py dn2-1.11 --model-safe --explicit-memory-model 0 --chain
+--exclude 0xb88a49:0xb88abc` with the replay's no-block coverage plus the
+coupled run's interpreter profile (`--coverage` both files concatenated),
+`--entries` from the replay and coupled profiles plus the PC after every
+flagged instruction and the coupled run's hot interpreted PCs (3,000+ over
+the run, outside the unknown-data loop), and `--transitions` from the same
+profiles: 1,751 blocks, 20,722 instructions.
+
+Results, same machine, runs alternated (the machine was shared, so
+instructions retired from `time -l` back the wall times):
+- Gates: the 5-way replay (`tools/sharc_dn2_replay.py`, frames 4600..5600)
+  matches every state hash and PCM `581339b3...` in all five
+  configurations; the coupled run (snapshot m5, trig, ready+100M,
+  `DSP_THREAD=1` and synchronous) gives ColdFire `fbace0f0...`, DSP export
+  `05ac2ac2...`, PCM `38d2a322...` (72,896 samples), and wav, q31 and the
+  per-frame csv are byte-identical to the old peer's; ColdFire-only
+  `4b569189...`.
+- Replay window 5400..5600 (67.0M non-skipped instructions, native, from a
+  saved state, three alternated pairs): 0.820-0.837 s before (80-82M
+  instr/s), 0.325-0.332 s after (202-206M instr/s), 2.5x; host instructions
+  15.5G -> 6.3G, cycles 3.1G -> 1.2G. Python replay with blocks and skip:
+  5.9 s -> 3.3 s for the whole 1,000 frames.
+- Coupled `DSP_THREAD=1` (HEAD built with the same block set as before, two
+  alternated pairs): 5.8 s (7.6x slower than real time) -> 2.3 s (3.0x
+  slower), 2.5x; synchronous 4.0 s. The DSP is still the bound (ColdFire
+  alone 1.7 s).
+- Still interpreted in the coupled run (5.8M instructions, 5k per frame):
+  half of it is the loop at `0x1c253f` (5 instructions x 496 per call), which
+  loads data that is not in the state (Unknown) every iteration; blocks need
+  known registers, so it stays in the interpreter. The rest is mostly
+  interrupt returns into the middle of bodies.
+- With `DSP_IDLE_SKIP=0` the idle loop is now interpreted (no blocks in its
+  range): the 5-way no-skip replay takes 27 s instead of 14 s.
+
+**[O]** Blocks for registers known to be Unknown (the `0x1c253f` loop); the
+interpreter's cost per instruction (`bnd::_field` scans are 29% of it);
+entries for interrupt return points without listing hot PCs by hand; a
+one-command pipeline; the WASM build of a DN2 library.
+### ColdFire interpreter round 2: compact decode, split handlers, fused loops (2026-10-03) **[D]**
+
+Exact speedups of the native ColdFire path (`native/coldfire`, `machine`,
+`periph`, `boot`). No guest-visible state changes; every gate below is
+byte-identical to the previous build.
+
+- `Insn` is 32 bytes (was 92): `Ea`/`Operand` are 8 bytes (`Ea::PcIdx` stores
+  `base + d8`), three stored operands, and the MAC/MSAC register, scale, mask
+  and accumulator fields packed in one word; `Insn::operands()` rebuilds the
+  full list. Decoder text (`cfdis`) is identical to the previous build at every
+  halfword of DN2 1.11 and DT2 1.16 MAIN and for all 65,536 opwords with 16
+  extension-word patterns.
+- `Cpu::step`: privileged/FPU checks from one per-form table; the cache-miss
+  path is out of line; `Exc` packs into one non-zero word, so the hot handlers
+  return `Result<(), Exc>` in a register. The 25 most frequent forms run in
+  their own small functions (`x_*`), the rest in `execute_slow`.
+- Lazy flags: `cond` must still resolve N/Z/V into `sr`. A version that only
+  read the resolved value changed the ColdFire state digest: the timer model's
+  IPL tracker records the raw `sr` (`Time::seed_sr`), so the resolve points
+  are observable state.
+- Bus: `LoggingBus` returns the board result directly when untraced (zero-page
+  and logging tails are cold), `Board` reads/writes SDRAM through an in-page
+  fast path, and `owned_mmio` rejects addresses below the end of SDRAM (a
+  const assertion checks every device slot starts above it).
+- `run_fast` adds the interpreted-instruction count and formats an error once
+  per exit instead of per instruction.
+- Fused loops (`coldfire::fused`): five loops found by their exact encoding at
+  load (any address): a word interleave (`move.w #0x8001,(a0)` + source word;
+  source register a2 on DT2, a3 on DN2), a 16-byte MOVEM copy, a 16-byte clear
+  and two EMAC filter loops (DN2 0x400db160, 0x400db1f4; DT2 0x400d92d8,
+  0x400d936c). Their heads are watched; at a head `run_fast` runs whole
+  iterations while (a) the loop branch is taken, (b) every access is plain
+  mapped RAM (`Bus::plain_ram`) and no write hits a decoded page, (c) every
+  body instruction is already in the decode cache, and (d) the batch ends
+  before the timer/SSI tick limit. The first three are written out; the EMAC
+  loops call the interpreter's own handlers on the decoded instructions. The
+  instructions count as interpreted, and the bus/capture bookkeeping is left
+  as the last instruction sets it. `tests/fused.rs` compares fused against
+  single-stepped iterations (whole `Cpu` incl. lazy flags and decode cache,
+  and memory) over random registers, MACSR modes, overlaps, non-plain holes
+  and writes into decoded code; mutating one flag update or one EMAC step
+  makes it fail. In 300M ticks from the DN2 coupled snapshot, 7.04M
+  interleave/copy/clear iterations (21% of instructions) were fused.
+- Tried and dropped: a generic short-loop runner from pre-decoded bodies (84
+  host instructions per guest instruction against 104; no net gain after its
+  entry checks), and register-only leaf fast paths (no gain).
+
+Measurements (this Mac, otherwise idle, `sharc_live` from
+`digi-audio-m5.snap`, NOTE_EVENTS=trig, four alternating runs, median):
+
+| run | before | after |
+|---|---|---|
+| CF-only (`DSP_PERIOD=1`), ready+100M | 56.7M ticks/s, 1.8 s | 127.3M ticks/s, 0.8 s |
+| CF-only, ready+300M | 75.2M ticks/s, 4.0 s | 173.3M ticks/s, 1.7 s |
+| coupled `DSP_THREAD=1`, ready+100M | 6.3 s wall | 6.3 s wall (DSP bound; CPU cycles -11%) |
+| DT2 1.16 cold boot to ready+20M (`dspi2_capture`) | 10.0 s | 5.8 s |
+| `cfrealmix` boot280M.cfdump, 100M | 78.4M instr/s | 132.9M instr/s |
+
+Real time is 132M ticks/s: the CF-only run is at 0.96x in the first 100M after
+ready (note-on) and 1.31x over 300M.
+
+Gates, all identical to the previous build: CF-only digest `4b569189...`
+(100M) and `bd39b037...` (300M); coupled ColdFire `fbace0f0...`, DSP export
+`05ac2ac2...`, PCM `38d2a322...` (72,896 samples); DT2 cold boot capture
+`33e7918c...` and state `78dba198...`; `cfrealmix` hash `0x0bb544e65d49266b`;
+`cf_lockstep` fuzz (DT2/DN2, seed 42, 20k) without divergence, `emac` output
+byte-identical to the previous build (its known oracle exemptions), `snap`
+boot280M 20k clean; `cargo test --release` in coldfire, periph, machine,
+card, boot (with and without `sharc`, firmware present), including
+`batched_chunks_match_single_steps_from_cold_boot`; boot builds for
+wasm32-unknown-unknown. Not re-checked against the device.
+
+### Merged speed streams: integration notes (2026-10-03)
+
+**[D]** The ColdFire speed-up (fused loops, 32-byte `Insn`), the DSP block
+speed-up (generator 10, `step_until_in`) and `tools/sharc_dn2_aot.py` were
+merged on `e5f61f0`. The merged generator, run with the DSP stream's coverage,
+entries and transitions inputs, reproduces that stream's DN2 gen tree
+byte for byte (`0e73c5c1...`, 1751 blocks, 20,722 instructions; sha256 of the
+sorted `*.rs`/`*.bin` hashes). Merged tree, back to back on one machine: replay
+frames 4600..5600 with blocks and skip 2.95 s (busy window 0.31 s, 217M
+instr/s), against 5.9 s before; threaded coupled run 2.0 s for 0.757 s of audio
+(2.7x slower than real time), ColdFire-only 0.8 s, synchronous 2.8 s. All
+five replay runs and the coupled and ColdFire-only digests match the
+references above.
+
+**[D]** A DN2 library used with `SharcPeer` must be generated with `--chain`
+and `--exclude 0xb88a49:0xb88abc` (the idle loop). `Engine::step_until_in`
+stops at the first idle-range boundary only if no block or route enters that
+range; nothing records or checks the exclusion in the library (build info and
+`GENERATOR_VERSION` do not carry it). Without it only the busy and per-frame
+diagnostics can change, not state or PCM. `tools/sharc_dn2_aot.py` therefore
+takes `--chain` and `--exclude` (both recorded in the manifest settings); its
+earlier 931-block gen (no chaining) predates generator 10 and is stale.
+**[O]** carry the excluded ranges in the library build info and make
+`NativeDsp`/`SharedDsp` fall back to chunked stepping when the idle range is
+not covered.
+
+**[D]** A block or chain re-checks `blocks_code_ok` only at dispatcher entry,
+so a store inside a region that rewrites code the same region (or a chained
+one) runs later is seen one dispatch late. Not reachable in the DN2 capture and
+not exercised by any gate. **[O]**

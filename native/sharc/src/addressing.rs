@@ -2,6 +2,12 @@
 //! Access space is supplied by the instruction, never inferred from width.
 #[inline(always)]
 pub fn normal_word_to_byte(address: i128) -> Option<i128> {
+    // Every range below lies in [0x90000, 0x18000000), none in
+    // [0xe8000, 0x4000000): most data addresses fail here at once
+    // (tools/sharc_core/addressing.py does the same).
+    if !(0x90000..0x1800_0000).contains(&address) || (0xe8000..0x400_0000).contains(&address) {
+        return None;
+    }
     if (0x90000..0x9c000).contains(&address) {
         return Some(0x28240000 + (address - 0x90000) * 4 / 1);
     }

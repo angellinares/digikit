@@ -144,6 +144,17 @@ fn sec_end(s: &mut St, sid: u32) -> R<()> {
     sec_arbitrate(s)
 }
 
+/// Whether `sec_line` could do anything here (it changes nothing and cannot
+/// fail without a valid SEC core-interface request; a non-concrete CSTAT
+/// is left to `sec_line` itself to report).
+#[inline(always)]
+pub fn sec_line_active(s: &St) -> bool {
+    match s.mmr_get(SEC_CSTAT) {
+        None => false,
+        Some(v) => !v.is_c() || v.b & CSTAT_SIDV != 0,
+    }
+}
+
 /// periph._sec_line: the SEC request latches IRPTL.SECI at an instruction
 /// boundary unless SECI is being serviced. A hardware latch, not a guest
 /// IRPTL write.

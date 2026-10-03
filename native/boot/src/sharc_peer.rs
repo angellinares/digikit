@@ -38,6 +38,13 @@ pub trait DspEngine {
     fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, String>;
     /// Run up to `n` instructions; fewer than `n` means the engine stopped.
     fn step(&mut self, n: u32) -> u32;
+    /// Like `step(n)`, but also end at the first instruction boundary whose
+    /// PC lies in `range` (start inclusive, end exclusive). None: not
+    /// supported (the peer then steps in chunks). Results never depend on
+    /// step sizes, so this only saves the chunk boundaries' cost.
+    fn step_until_in(&mut self, _n: u32, _range: (u32, u32)) -> Option<u32> {
+        None
+    }
     /// One SPORT4 block (zero input); `Ok(None)` while the SPORTs are off.
     fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String>;
     /// Short-word PC.
@@ -127,17 +134,34 @@ impl<E: DspEngine> Core<E> {
     fn run_period(&mut self) -> (u32, u32, bool) {
         let mut done = 0u32;
         let mut busy = None;
+        let in_idle = |pc: u32, idle: (u32, u32)| (idle.0..idle.1).contains(&pc);
+        // `busy` is the first chunk end (a multiple of CHUNK, or the period
+        // end) with the PC in the idle range. No chunk end before the PC
+        // first enters the range can be one, so when the engine can stop
+        // there, run to it at once and take the chunks from there on: the
+        // same chunk ends are looked at, without the cost of stopping at the
+        // ones before (blocks cut short there run one by one).
+        if let Some(ran) = self.engine.step_until_in(self.period, self.idle) {
+            done = ran;
+            if !in_idle(self.engine.pc(), self.idle) {
+                // The period ended (or the engine stopped) first.
+                return (done, done, false);
+            }
+            if (done > 0 && done % CHUNK == 0) || done == self.period {
+                busy = Some(done);
+            }
+        }
         while done < self.period {
             // Once idle is reached the chunking only costs time (the idle
             // skip is per step call); results do not depend on step sizes.
             let n = if busy.is_some() {
                 self.period - done
             } else {
-                CHUNK.min(self.period - done)
+                ((done / CHUNK + 1) * CHUNK).min(self.period) - done
             };
             let ran = self.engine.step(n);
             done += ran;
-            if busy.is_none() && (self.idle.0..self.idle.1).contains(&self.engine.pc()) {
+            if busy.is_none() && in_idle(self.engine.pc(), self.idle) {
                 busy = Some(done);
             }
             if ran < n {
@@ -521,6 +545,9 @@ impl DspEngine for NativeDsp {
     fn step(&mut self, n: u32) -> u32 {
         self.0.step(n)
     }
+    fn step_until_in(&mut self, n: u32, range: (u32, u32)) -> Option<u32> {
+        Some(self.0.step_until_in(n, range.0, range.1))
+    }
     fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
         self.0
             .sport_block(None)
@@ -564,6 +591,9 @@ impl DspEngine for SharedDsp {
     }
     fn step(&mut self, n: u32) -> u32 {
         self.0.borrow_mut().step(n)
+    }
+    fn step_until_in(&mut self, n: u32, range: (u32, u32)) -> Option<u32> {
+        Some(self.0.borrow_mut().step_until_in(n, range.0, range.1))
     }
     fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
         self.0
@@ -684,6 +714,96 @@ mod tests {
             halt_at_frame,
             frames: 0,
             reply_byte: 0xab,
+        }
+    }
+
+    /// A PC that is in the idle range exactly while the instruction count
+    /// lies in one of `idle` ([start, end) intervals), optionally able to
+    /// stop at the first such boundary (`fast`), and halting at `halt`.
+    struct Spans {
+        t: u32,
+        idle: Vec<(u32, u32)>,
+        halt: Option<u32>,
+        fast: bool,
+    }
+
+    impl Spans {
+        fn idle_at(&self, t: u32) -> bool {
+            self.idle.iter().any(|&(a, b)| (a..b).contains(&t))
+        }
+        fn run(&mut self, n: u32, stop_in_idle: bool) -> u32 {
+            let start = self.t;
+            for _ in 0..n {
+                if stop_in_idle && self.idle_at(self.t) {
+                    break;
+                }
+                if self.halt == Some(self.t) {
+                    break;
+                }
+                self.t += 1;
+            }
+            self.t - start
+        }
+    }
+
+    impl DspEngine for Spans {
+        fn spi2_exchange(&mut self, f: &[u8]) -> Result<Vec<u8>, String> {
+            Ok(vec![0; f.len()])
+        }
+        fn step(&mut self, n: u32) -> u32 {
+            self.run(n, false)
+        }
+        fn step_until_in(&mut self, n: u32, _range: (u32, u32)) -> Option<u32> {
+            self.fast.then(|| self.run(n, true))
+        }
+        fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
+            Ok(None)
+        }
+        fn pc(&self) -> u32 {
+            if self.idle_at(self.t) {
+                DN2_IDLE_RANGE.0
+            } else {
+                0x1c0000
+            }
+        }
+        fn halt_reason(&self) -> Option<String> {
+            (self.halt == Some(self.t)).then(|| "halt".into())
+        }
+    }
+
+    #[test]
+    fn stopping_at_idle_entry_finds_the_same_chunk_end() {
+        let period = 10_000;
+        let cases: Vec<(Vec<(u32, u32)>, Option<u32>)> = vec![
+            (vec![], None),
+            (vec![(0, period)], None),
+            (vec![(2048, period)], None),
+            (vec![(2047, period)], None),
+            (vec![(2049, period)], None),
+            (vec![(3000, 3100), (5000, period)], None),
+            (vec![(3000, 3072), (3073, period)], None),
+            (vec![(3000, 3073), (3080, period)], None),
+            (vec![(9999, period)], None),
+            (vec![(period - 10, period + 1)], None),
+            (vec![(5000, period)], Some(4000)),
+            (vec![(5000, period)], Some(5500)),
+            (vec![(1000, 1500), (6000, period)], Some(7000)),
+        ];
+        for (idle, halt) in cases {
+            let mut got = Vec::new();
+            for fast in [false, true] {
+                let mut core = Core::new(
+                    Spans {
+                        t: 0,
+                        idle: idle.clone(),
+                        halt,
+                        fast,
+                    },
+                    period,
+                );
+                got.push(core.run_period());
+            }
+            assert_eq!(got[0], got[1], "idle {idle:?} halt {halt:?}");
         }
     }
 

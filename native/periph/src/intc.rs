@@ -100,6 +100,7 @@ impl IntcBank {
 
     /// -> (controller index, offset within its slot), or None if `addr` is
     /// outside all three controllers' 16 KiB slots.
+    #[inline]
     fn locate(addr: u32) -> Option<(usize, u32)> {
         for (i, base) in BASES.iter().enumerate() {
             if addr >= *base && addr < base + crate::regfile::SLOT_SIZE as u32 {
@@ -109,6 +110,7 @@ impl IntcBank {
         None
     }
 
+    #[inline]
     pub fn owns(addr: u32) -> bool {
         Self::locate(addr).is_some()
     }

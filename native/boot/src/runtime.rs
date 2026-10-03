@@ -14,6 +14,7 @@ use crate::softfloat::{ExecutionPolicy, SoftfloatAbi, SoftfloatCounts};
 #[cfg(feature = "diagnostic-events")]
 use crate::telemetry::EventKind;
 use crate::telemetry::{DiagnosticReport, Mark, Position, Recorder};
+use coldfire::fused::Loop;
 
 const CHUNK_MAX: u32 = 250_000;
 const CAPTURE_BUS_TRACE: bool = cfg!(feature = "diagnostic-trace");
@@ -133,6 +134,11 @@ pub struct Emulator {
     policy: ExecutionPolicy,
     softfloat: SoftfloatAbi,
     ram_clear: Option<RamClear>,
+    /// Heads of the loops `Cpu::run_fused` runs, with their code bytes
+    /// (watched: `run_fast` stops there and tries a fused batch).
+    fused_loops: Vec<(u32, Loop, Vec<u8>)>,
+    /// The watched PCs other than fused-loop heads, sorted.
+    observed_pcs: Vec<u32>,
     interpreted_instructions: u64,
     idle_fast_forwarded_instructions: u64,
     ram_clear_fast_forwarded_instructions: u64,
@@ -340,6 +346,7 @@ impl Emulator {
         };
         let bus = LoggingBus::new(board, true, true, 160, ENTRY);
         let ram_clear = RamClear::resolve(&main);
+        let fused_loops = resolve_fused_loops(&main);
         let mut cpu = Cpu::new();
         cpu.pc = ENTRY;
         cpu.sr = 0x2700;
@@ -413,6 +420,8 @@ impl Emulator {
             policy,
             softfloat,
             ram_clear,
+            fused_loops,
+            observed_pcs: Vec::new(),
             interpreted_instructions: 0,
             idle_fast_forwarded_instructions: 0,
             ram_clear_fast_forwarded_instructions: 0,
@@ -825,6 +834,11 @@ impl Emulator {
         if let Some((entry, completion, _, _)) = self.fs_worker {
             pcs.extend([entry, completion.wrapping_add(12)]);
         }
+        let mut observed = pcs.clone();
+        observed.sort_unstable();
+        observed.dedup();
+        self.observed_pcs = observed;
+        pcs.extend(self.fused_loops.iter().map(|(head, _, _)| *head));
         for pc in pcs {
             if let Some(off) = pc.checked_sub(MAIN_LOAD) {
                 let i = (off >> 1) as usize;
@@ -877,11 +891,27 @@ impl Emulator {
         let calls = self.softfloat.counts.calls();
         let epoch = self.bus.board.mmio_epoch();
         let last_pc_offset = self.main.len().saturating_sub(6);
+        // `step` only adds to icount (one per instruction, none when it
+        // stops), so the per-step deltas sum to the difference at exit.
+        let start_icount = self.cpu.icount;
         let mut n = 0;
         while n < budget {
             let pc = self.cpu.pc;
-            if pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset || self.watched(pc) {
+            if pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset {
                 break;
+            }
+            if self.watched(pc) {
+                // Only fused-loop heads are handled here (0: step the head
+                // like any other instruction); any other observed PC goes
+                // to `step_once`.
+                match self.at_watched(pc, budget - n, limit, calls) {
+                    None => break,
+                    Some(0) => {}
+                    Some(fused) => {
+                        n += fused;
+                        continue;
+                    }
+                }
             }
             let Some(before) = self.cpu.icount.checked_add(calls) else {
                 break;
@@ -892,12 +922,7 @@ impl Emulator {
             self.bus.current_icount = before;
             self.bus.clear();
             self.bus.current_pc = pc;
-            let icount = self.cpu.icount;
-            let result = self
-                .cpu
-                .step(&mut self.bus)
-                .map_err(|error| format!("{error:?}"));
-            self.interpreted_instructions += self.cpu.icount.saturating_sub(icount);
+            let result = self.cpu.step_inline(&mut self.bus);
             n += 1;
             let done = self.cpu.icount.wrapping_add(calls);
             if result.is_err()
@@ -907,16 +932,79 @@ impl Emulator {
                 || self.bus.board.mmio_epoch() != epoch
                 || ((self.cpu.sr >> 8) & 7) < u16::from(level)
             {
-                self.finish_step(result);
+                self.interpreted_instructions += self.cpu.icount.saturating_sub(start_icount);
+                self.finish_step(result.map_err(|error| format!("{error:?}")));
                 return n;
             }
         }
+        self.interpreted_instructions += self.cpu.icount.saturating_sub(start_icount);
         // The skipped services would have seeded the IPL tracker each time.
         let sr = self.cpu.sr;
         if let Some(time) = self.bus.board.time_mut() {
             time.seed_sr(sr);
         }
         n
+    }
+
+    /// A watched PC inside `run_fast`: `None` for an observed PC (stop for
+    /// `step_once`); at a fused-loop head, the instructions it ran (0: step
+    /// the head like any other instruction).
+    #[inline(never)]
+    fn at_watched(&mut self, pc: u32, budget: u32, limit: u64, calls: u64) -> Option<u32> {
+        if self.observed_pcs.binary_search(&pc).is_ok()
+            || !self.fused_loops.iter().any(|(head, _, _)| *head == pc)
+        {
+            return None;
+        }
+        Some(self.run_fused_loop(pc, budget, limit, calls))
+    }
+
+    /// At a fused-loop head inside `run_fast`: run whole iterations with
+    /// `Cpu::run_fused` while stepping them would not have stopped
+    /// `run_fast` (the batch ends before the guest tick, icount + `calls`,
+    /// reaches `limit`, and within `budget`). Same machine state as
+    /// stepping: the instructions are counted as interpreted (`run_fast`
+    /// adds the icount difference), and the bus/capture bookkeeping is left
+    /// as the batch's last instruction set it. Returns the instructions run
+    /// (0: step normally).
+    fn run_fused_loop(&mut self, pc: u32, budget: u32, limit: u64, calls: u64) -> u32 {
+        let Some(&(head, lp, ref code)) = self.fused_loops.iter().find(|(head, _, _)| *head == pc)
+        else {
+            return 0;
+        };
+        let offsets = lp.offsets();
+        // The code is still what was recognised, every instruction is
+        // decoded already (stepping would only hit the decode cache), and
+        // no other observer watches a PC inside the body.
+        if !self.bus.board.ram_matches(head, code)
+            || offsets.iter().any(|&o| !self.cpu.decoded_at(head + o))
+            || offsets[1..]
+                .iter()
+                .any(|&o| self.observed_pcs.binary_search(&(head + o)).is_ok())
+        {
+            return 0;
+        }
+        let per = lp.instructions();
+        // `run_fast` stops after an instruction once the tick reaches the
+        // limit; the batch's last instruction must stay below it.
+        let room = limit
+            .saturating_sub(self.cpu.icount.saturating_add(calls))
+            .saturating_sub(1);
+        let max = (budget / per).min(u32::try_from(room / u64::from(per)).unwrap_or(u32::MAX));
+        if max == 0 {
+            return 0;
+        }
+        let iterations = self.cpu.run_fused(&mut self.bus, lp, max);
+        if iterations == 0 {
+            return 0;
+        }
+        let last = self.cpu.icount - 1;
+        if let Some(capture) = &self.dspi2_capture {
+            capture.set_icount(last);
+        }
+        self.bus.current_icount = last + calls;
+        self.bus.current_pc = head + offsets[offsets.len() - 1];
+        iterations * per
     }
 
     fn step_once(&mut self) {
@@ -2108,6 +2196,17 @@ impl Emulator {
     pub fn state_digest(&mut self) -> Result<String, String> {
         Ok(digest(&self.save_state()?))
     }
+}
+
+/// Every fused loop in MAIN (`Loop::recognise` at each halfword).
+fn resolve_fused_loops(main: &[u8]) -> Vec<(u32, Loop, Vec<u8>)> {
+    (0..main.len())
+        .step_by(2)
+        .filter_map(|at| {
+            let lp = Loop::recognise(&main[at..])?;
+            Some((MAIN_LOAD + at as u32, lp, lp.code()))
+        })
+        .collect()
 }
 
 #[cfg(test)]

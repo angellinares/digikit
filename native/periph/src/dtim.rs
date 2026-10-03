@@ -107,6 +107,7 @@ impl DtimBank {
         }
     }
 
+    #[inline]
     pub fn owns(addr: u32) -> bool {
         BASES
             .iter()

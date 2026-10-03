@@ -288,6 +288,7 @@ impl<P: CardPort> Esdhc<P> {
         self.pattern = pattern;
     }
 
+    #[inline]
     pub fn owns(addr: u32) -> bool {
         (BASE..BASE + SIZE).contains(&addr)
     }

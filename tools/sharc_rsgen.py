@@ -152,14 +152,17 @@ def insn_static(syms, pc: int, insn) -> str:
 #   CURLCNTR (stack models), IRPTL/IMASK/IMASKP/MMASK (interrupt state),
 #   TCOUNT/TPERIOD/MODE2 (timer) and neither reads nor writes EMUCLK, TCOUNT
 #   (they are advanced by instruction count, not per instruction);
-# - it holds no instruction that pushes or pops a stack explicitly, calls,
-#   returns (RTS, RTI, CJUMP, RFRAME) or enters/leaves an interrupt, and no
-#   system-register form (DO loops and the instruction at a loop's last
-#   address are allowed: block code runs the core's own loop logic, with
+# - it holds no instruction that pushes or pops a stack explicitly (PUSH/POP),
+#   aborts a loop, returns from or enters/leaves an interrupt (RTI, CI), and
+#   no other system-register form (DO loops and the instruction at a loop's
+#   last address are allowed: block code runs the core's own loop logic, with
 #   loop_depth restored if the instruction traps);
-# - what it has left is compute, moves, DAG modifies, memory accesses and
-#   plain (non-call, non-return, non-loop-abort) jumps. Stores the peripheral
-#   model acts on leave the block at run time (TRAP_BLOCK_MODEL).
+# - what it has left is compute, moves, DAG modifies, memory accesses, jumps,
+#   calls and RTS (also the (DB) return idiom, CJUMP and RFRAME: the stack
+#   pushes and pops of a call or return are the core's own steps, and only a
+#   PCSTKP write requests the PC-stack completion the engine does between
+#   instructions) and the 21a/21c no-operations. Stores the peripheral model
+#   acts on leave the block at run time (TRAP_BLOCK_MODEL).
 MODEL_REG_NAMES = (
     "PCSTK",
     "PCSTKP",
@@ -177,9 +180,17 @@ MODEL_REG_NAMES = (
     "IMASKP",
     "MODE1STK",
 )
-# Plain jumps are model-safe when they are not calls (b), loop aborts (a) or
-# interrupt-driven (ci), and not the (DB) register-indirect return idiom.
+# Jumps are model-safe when they are not loop aborts (a) or interrupt-driven
+# (ci). Calls (b) and the (DB) register-indirect return idiom are too: the PC
+# and call stacks they push and pop are the core's own (translated) steps, and
+# neither requests a PC-stack truncation (only a PCSTKP write does, which the
+# register rule below excludes), so nothing the engine completes between
+# instructions differs. The same holds for RTS (Type 11a/11c with x=0; RTI,
+# x=1, changes IMASKP/IRPTL/MODE1 and is excluded), CJUMP and RFRAME (frame
+# pointer moves plus a jump or call) and the Type 21a/21c no-operations.
 JUMP_FORMS = ("8a_abs", "8a_rel", "9a_abs", "9a_rel", "9b_abs", "9b_rel")
+RETURN_FORMS = ("11a", "11c")
+SAFE_FLOW_FORMS = ("25a_direct", "25a_pcrel", "25c_rframe", "21a", "21c")
 SAFE_FORM_MODULES = ("forms_compute", "forms_move", "forms_dag")
 # DO loop setup. With the physical stacks a DO also pushes a loop slot and a PC
 # stack entry and the loop's last instruction pops or updates them; those are
@@ -227,15 +238,12 @@ def model_unsafe_reason(insn, pc: int, loop_end_set: frozenset) -> str | None:
     if handler is None:
         return "no handler"
     if name in JUMP_FORMS:
-        if _field_or(f, "b") or _field_or(f, "a") or _field_or(f, "ci"):
-            return "call, loop abort or CI jump"
-        if (
-            _field_or(f, "cond", -1) == 0x1F
-            and _field_or(f, "pmm", -1) == 6
-            and _field_or(f, "j") == 1
-        ):
-            return "return idiom"
-    elif name not in LOOP_FORMS:
+        if _field_or(f, "a") or _field_or(f, "ci"):
+            return "loop abort or CI jump"
+    elif name in RETURN_FORMS:
+        if _field_or(f, "x"):
+            return "RTI"
+    elif name not in LOOP_FORMS and name not in SAFE_FLOW_FORMS:
         module = handler.__module__.rsplit(".", 1)[-1]
         if module not in SAFE_FORM_MODULES or "undoc" in name:
             return "form %s (%s)" % (name, module)
@@ -245,6 +253,80 @@ def model_unsafe_reason(insn, pc: int, loop_end_set: frozenset) -> str | None:
         names = {v: k for k, v in UREG_CODES.items()}
         return "register " + ", ".join(sorted(names[c] for c in named))
     return None
+
+
+# Named model registers decided by what the instruction's variant reads and
+# writes (model_regs_verdict) rather than by naming alone:
+# - reading one is safe, except EMUCLK/EMUCLK2/TCOUNT, which the engine
+#   advances per instruction only outside block code;
+# - writing MODE1, IRPTL, IMASK, IMASKP or MMASK is safe as a body's last
+#   instruction (TERMINAL): the engine then does what the interpreter's
+#   commit does after it (St::bank_complete moves a MODE1 bank request to
+#   pending) and takes an interrupt it enabled at the next boundary, as
+#   after an interpreted instruction;
+# - writing any other model register is not.
+# Type 18a bit operations name their system register in "sreg" (USTAT1 +
+# sreg), which the same rule decides.
+TERMINAL = "terminal"
+TERMINAL_WRITE_NAMES = ("MODE1", "IRPTL", "IMASK", "IMASKP", "MMASK")
+UNSAFE_READ_NAMES = ("EMUCLK", "EMUCLK2", "TCOUNT")
+
+
+def keeps_loop_sync(pc: int, insn) -> bool:
+    """Whether a model-safe body's instruction INSN at PC leaves the loop
+    stack (loop_depth, loop_slots) and LADDR/CURLCNTR as they were after its
+    own leading sync, so the next instruction's sync (forms._execute) would
+    write the same values. In a model-safe body only a DO and the
+    instruction at a DO loop's end change them: loop aborts, PUSH/POP and
+    writes of LADDR, CURLCNTR or the PC stack registers are never in one
+    (model_unsafe_reason, model_regs_verdict), and calls and returns leave
+    the loop stack alone. Outside --model-safe every instruction syncs."""
+    if not MODEL_SAFE_ONLY:
+        return False
+    return not (pc in LOOP_END_SET or (insn.type_name or "") in LOOP_FORMS)
+
+
+def model_regs_decide(why: str) -> bool:
+    """Whether a model_unsafe_reason WHY is about named registers only, so
+    the instruction's register reads and writes decide."""
+    return why.startswith("register ") or why == "form 18a (forms_system)"
+
+
+def _named_model_regs(insn) -> set[int]:
+    from sharc_core.encoding import UREG_CODES
+
+    named = ureg_codes(insn.fields)
+    if (insn.type_name or "") == "18a":
+        named.add(UREG_CODES["USTAT1"] + _field_or(insn.fields, "sreg"))
+    return named & {UREG_CODES[n] for n in MODEL_REG_NAMES}
+
+
+def model_regs_verdict(insn, regs: tuple) -> str | None:
+    """None (model-safe), TERMINAL (safe as a body's last instruction) or
+    why not, from the variant's (reads, snapshot reads, writes) REGS of the
+    model registers INSN names."""
+    from sharc_core.encoding import UREG_CODES
+
+    names = {v: k for k, v in UREG_CODES.items()}
+    reads, olds, writes = regs
+    named = _named_model_regs(insn)
+    bad_read = {c for c in named & (reads | olds) if names[c] in UNSAFE_READ_NAMES}
+    if bad_read:
+        return "reads " + ", ".join(sorted(names[c] for c in bad_read))
+    written = named & writes
+    if not written:
+        return None
+    bad = {c for c in written if names[c] not in TERMINAL_WRITE_NAMES}
+    if bad:
+        return "register " + ", ".join(sorted(names[c] for c in bad))
+    return TERMINAL
+
+
+def terminal_names(insn, regs: tuple) -> str:
+    from sharc_core.encoding import UREG_CODES
+
+    names = {v: k for k, v in UREG_CODES.items()}
+    return ", ".join(sorted(names[c] for c in _named_model_regs(insn) & regs[2]))
 
 
 @dataclass
@@ -269,17 +351,18 @@ def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
     while it is known (tracking the value an instruction leaves)."""
     import sharc_transpile as tp
 
-    steps = []
+    steps: list = []
     pending_none = True
     stopped: tuple | None = None
     entry_mode1 = mode1
     for i, (pc, insn) in enumerate(block.insns):
+        why = None
         if MODEL_SAFE_ONLY:
             # --model-safe: the body ends before the first instruction a
             # model could make differ; the interpreter runs it and the
             # blocks resume at the next entry.
             why = model_unsafe_reason(insn, pc, LOOP_END_SET)
-            if why is not None:
+            if why is not None and not model_regs_decide(why):
                 if i == 0:
                     UNSAFE_REASONS[block.start] = why
                     return None
@@ -290,6 +373,11 @@ def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
             facts["pending"] = None
         if mode1 is not None:
             facts["MODE1"] = mode1
+        if steps and keeps_loop_sync(steps[-1][0], steps[-1][1]):
+            # Step i-1 ran right before this one (a body is straight-line;
+            # any other way in enters at a body's first step, which syncs)
+            # and changed neither the loop stack nor LADDR/CURLCNTR.
+            facts["loop_synced"] = True
         try:
             path = tr.variant("sharc_core.forms._execute", {"insn": insn}, facts)
         except tp.TranspileError as exc:
@@ -309,12 +397,35 @@ def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
                     {"insn": insn},
                     {**facts, "nolog": True},
                 )
+        terminal = False
+        if why is not None:
+            # Named model registers: what the variant reads and writes of
+            # them decides (model_regs_verdict).
+            verdict = model_regs_verdict(insn, tr.variant_regs[path])
+            if verdict not in (None, TERMINAL):
+                if i == 0:
+                    UNSAFE_REASONS[block.start] = verdict
+                    return None
+                stopped = (pc, insn, verdict)
+                break
+            terminal = verdict == TERMINAL
         effects = tr.variant_effects.get(path, {"pending", "MODE1"})
         if "pending" in effects:
             pending_none = False
         if "MODE1" in effects:
             mode1 = tr.variant_facts_out.get(path, {}).get("MODE1")
         steps.append((pc, insn, path, tr.variant_regs[path], "pending" in facts, mode1))
+        if terminal:
+            # The body ends after it: the engine completes the instruction
+            # (a requested bank change) and checks interrupts at the next
+            # boundary, as after an interpreted instruction.
+            after = block.insns[i + 1] if i + 1 < len(block.insns) else (pc, insn)
+            stopped = (
+                after[0],
+                after[1],
+                "after a write of " + terminal_names(insn, tr.variant_regs[path]),
+            )
+            break
     read_any = set().union(*(r | o for _p, _i, _x, (r, o, _w), _n, _m in steps))
     writes = set().union(*(w for _p, _i, _x, (_r, _o, w), _n, _m in steps))
     return Body(block, entry_mode1, idx, steps, stopped, read_any, writes)
@@ -414,12 +525,30 @@ def body_lines(
         "            'b%d: loop {" % body.idx,
         "            // Entered at the start with no delayed transfer pending (the",
         "            // dispatcher single-steps otherwise).",
-        "            if s.icount + ic + %d > s.limit || rf.pending.is_some() {" % n,
-        "                break 'r crate::EXIT_BUDGET;",
-        "            }",
     ]
+    if MODEL_SAFE_ONLY:
+        # With the models on, the limit is often the core timer's (the
+        # instruction before its expiry), which a whole body would often
+        # overshoot: then check before each instruction and stop there, so
+        # the interpreter only runs from the limit on.
+        lines += [
+            "            if rf.pending.is_some() {",
+            "                break 'r crate::EXIT_BUDGET;",
+            "            }",
+            "            let short = s.icount + ic + %d > s.limit;" % n,
+        ]
+    else:
+        lines += [
+            "            if s.icount + ic + %d > s.limit || rf.pending.is_some() {" % n,
+            "                break 'r crate::EXIT_BUDGET;",
+            "            }",
+        ]
     for i, (pc, insn, path, (_r, o, w), no_pending, m_after) in enumerate(body.steps):
         lines.append(ind + "// %#x %s" % (pc, insn.type_name))
+        if MODEL_SAFE_ONLY:
+            lines.append(ind + "if short && s.icount + ic >= s.limit {")
+            lines.append(ind + "    break 'r crate::EXIT_BUDGET;")
+            lines.append(ind + "}")
         for c in sorted(o):
             lines.append(ind + "rf.o[%d] = rf.r[%d];" % (c, c))
         for c in sorted(w):
@@ -433,6 +562,10 @@ def body_lines(
         if loopy:
             # The physical loop stack's depth is not in the undo log.
             lines.append(ind + "let ld%d = s.loop_depth;" % i)
+        banky = MODE1 in w
+        if banky:
+            # Nor is a MODE1 write's bank request.
+            lines.append(ind + "let bk%d = s.bank_requested_mask;" % i)
         if TR is not None and path in TR.variant_inline:
             # The instruction only moves the PC.
             lines.append(ind + TR.variant_inline[path])
@@ -444,6 +577,8 @@ def body_lines(
             lines.append(ind + "    rf.r[%d] = sv%d;" % (c, c))
         if loopy:
             lines.append(ind + "    s.loop_depth = ld%d;" % i)
+        if banky:
+            lines.append(ind + "    s.bank_requested_mask = bk%d;" % i)
         lines.append(ind + "    rf.pc = %#x;" % pc)
         lines.append(ind + "    rf.pending = %s;" % ("None" if no_pending else "pd0"))
         lines.append(ind + "    s.trap = Some(t);")
@@ -1228,6 +1363,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--no-chain", action="store_true", help=argparse.SUPPRESS)
     p.add_argument(
+        "--exclude",
+        type=decode_range,
+        action="append",
+        default=[],
+        help="no block starts in START:END short-word PCs (repeatable): code the "
+        "engine never dispatches, such as an idle-skip range, which a --chain "
+        "call would otherwise enter",
+    )
+    p.add_argument(
         "--region-regs",
         type=int,
         default=36,
@@ -1302,6 +1446,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.only:
         keep = {int(x, 16) for x in args.only.split(",") if x}
         starts = [st for st in starts if st in keep]
+    for lo, hi in args.exclude:
+        starts = [st for st in starts if not lo <= st < hi]
     starts = sorted(set(starts))
     global CHAINING, MODEL_SAFE_ONLY, GEN_EXPLICIT_MEMORY_MODEL
     GEN_EXPLICIT_MEMORY_MODEL = bool(args.explicit_memory_model)

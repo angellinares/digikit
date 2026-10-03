@@ -541,6 +541,7 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
             self.accesses.clear();
         }
     }
+    #[inline]
     fn log<T: TraceValue>(
         &mut self,
         kind: &'static str,
@@ -583,6 +584,7 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
                 .push((self.current_icount, addr, kind, value.unwrap_or(0)));
         }
     }
+    #[inline]
     fn log_write<T: TraceValue>(
         &mut self,
         kind: &'static str,
@@ -601,6 +603,7 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
             }
         }
     }
+    #[inline]
     fn zero_page(
         &mut self,
         kind: &'static str,
@@ -615,6 +618,11 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
         if !failed || !self.zero_page_mmio {
             return false;
         }
+        self.zero_page_map(kind, addr, size, value)
+    }
+    #[cold]
+    #[inline(never)]
+    fn zero_page_map(&mut self, kind: &'static str, addr: u32, size: u8, value: u32) -> bool {
         let page = addr & !0x000f_ffff;
         if !self.unknown_touches.contains_key(&page)
             && self.unknown_touches.len() == self.zero_page_limit
@@ -633,22 +641,26 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
         });
         true
     }
+    #[inline]
     fn note_timer_write(&mut self, addr: u32, size: u8, value: u32) {
         if TRACE && Time::owns(addr) && self.timer_writes.len() < 64 {
             self.timer_writes.push((self.current_pc, addr, size, value));
         }
     }
+    #[inline]
     fn note_uart8_write(&mut self, addr: u32, size: u8, value: u32) {
         if TRACE && addr == UART8_UDR && self.uart8_tx.len() < 256 {
             self.uart8_tx.push((self.current_pc, size, value));
         }
     }
+    #[inline]
     fn note_dspi2_dma_write(&mut self, addr: u32, size: u8, value: u32) {
         if TRACE && (0xfc04_4000..0xfc04_6000).contains(&addr) && self.dspi2_dma_writes.len() < 64 {
             self.dspi2_dma_writes
                 .push((self.current_pc, addr, size, value));
         }
     }
+    #[inline]
     fn note_esdhc_write(&mut self, addr: u32, value: u32) {
         if addr == ESDHC_CMDARG {
             self.cmdarg_writes += 1;
@@ -672,8 +684,94 @@ impl<const TRACE: bool> LoggingBus<TRACE> {
     }
 }
 impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
+    /// A traced bus records every access per instruction: never plain.
+    #[inline]
+    fn plain_ram(&self, addr: u32, len: u32) -> bool {
+        !TRACE && self.board.plain_ram(addr, len)
+    }
+    #[inline(always)]
     fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
         let r = self.board.read8(addr);
+        if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
+            // zero_page() is false and log() a no-op: the board's result.
+            return r;
+        }
+        self.read8_tail(addr, r)
+    }
+    #[inline(always)]
+    fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
+        let r = self.board.read16(addr);
+        if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
+            // zero_page() is false and log() a no-op: the board's result.
+            return r;
+        }
+        self.read16_tail(addr, r)
+    }
+    #[inline(always)]
+    fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
+        let r = self.board.read32(addr);
+        if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
+            // zero_page() is false and log() a no-op: the board's result.
+            return r;
+        }
+        self.read32_tail(addr, r)
+    }
+    #[inline]
+    fn fetch16(&mut self, addr: u32) -> Result<u16, BusError> {
+        let r = self.board.fetch16(addr);
+        self.log("fetch", addr, 2, &r);
+        r
+    }
+    #[inline(always)]
+    fn write8(&mut self, addr: u32, value: u8) -> Result<(), BusError> {
+        // docs/contracts/early-init-v1.json identifies these as write-only
+        // SCM PPM clear registers; accepting writes is enough for this narrow
+        // probe and intentionally models no other SCM register.
+        if self.ppmcr_contract && matches!(addr, 0xfc04_002d | 0xfc04_002f) {
+            let r = Ok(());
+            self.log_write("ppmcr-contract-write", addr, 1, u32::from(value), &r);
+            return r;
+        }
+        self.note_timer_write(addr, 1, u32::from(value));
+        self.note_uart8_write(addr, 1, u32::from(value));
+        self.note_dspi2_dma_write(addr, 1, u32::from(value));
+        let r = self.board.write8(addr, value);
+        if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
+            // zero_page() is false and log() a no-op: the board's result.
+            return r;
+        }
+        self.write8_tail(addr, value, r)
+    }
+    #[inline(always)]
+    fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
+        self.note_timer_write(addr, 2, u32::from(value));
+        self.note_uart8_write(addr, 2, u32::from(value));
+        self.note_dspi2_dma_write(addr, 2, u32::from(value));
+        let r = self.board.write16(addr, value);
+        if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
+            // zero_page() is false and log() a no-op: the board's result.
+            return r;
+        }
+        self.write16_tail(addr, value, r)
+    }
+    #[inline(always)]
+    fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
+        self.note_timer_write(addr, 4, value);
+        self.note_uart8_write(addr, 4, value);
+        self.note_dspi2_dma_write(addr, 4, value);
+        self.note_esdhc_write(addr, value);
+        let r = self.board.write32(addr, value);
+        if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
+            // zero_page() is false and log() a no-op: the board's result.
+            return r;
+        }
+        self.write32_tail(addr, value, r)
+    }
+}
+impl<const TRACE: bool> LoggingBus<TRACE> {
+    #[cold]
+    #[inline(never)]
+    fn read8_tail(&mut self, addr: u32, r: Result<u8, BusError>) -> Result<u8, BusError> {
         if self.zero_page("read", addr, 1, 0, r.is_err()) {
             let retry = self.board.read8(addr);
             self.log("zero-page-read-retry", addr, 1, &retry);
@@ -683,8 +781,10 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
             r
         }
     }
-    fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
-        let r = self.board.read16(addr);
+
+    #[cold]
+    #[inline(never)]
+    fn read16_tail(&mut self, addr: u32, r: Result<u16, BusError>) -> Result<u16, BusError> {
         if self.zero_page("read", addr, 2, 0, r.is_err()) {
             let retry = self.board.read16(addr);
             self.log("zero-page-read-retry", addr, 2, &retry);
@@ -694,8 +794,10 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
             r
         }
     }
-    fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
-        let r = self.board.read32(addr);
+
+    #[cold]
+    #[inline(never)]
+    fn read32_tail(&mut self, addr: u32, r: Result<u32, BusError>) -> Result<u32, BusError> {
         if self.zero_page("read", addr, 4, 0, r.is_err()) {
             let retry = self.board.read32(addr);
             if TRACE && addr == DSPI2_SR && self.dspi2_status_reads.len() < 64 {
@@ -715,24 +817,15 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
             r
         }
     }
-    fn fetch16(&mut self, addr: u32) -> Result<u16, BusError> {
-        let r = self.board.fetch16(addr);
-        self.log("fetch", addr, 2, &r);
-        r
-    }
-    fn write8(&mut self, addr: u32, value: u8) -> Result<(), BusError> {
-        // docs/contracts/early-init-v1.json identifies these as write-only
-        // SCM PPM clear registers; accepting writes is enough for this narrow
-        // probe and intentionally models no other SCM register.
-        if self.ppmcr_contract && matches!(addr, 0xfc04_002d | 0xfc04_002f) {
-            let r = Ok(());
-            self.log_write("ppmcr-contract-write", addr, 1, u32::from(value), &r);
-            return r;
-        }
-        self.note_timer_write(addr, 1, u32::from(value));
-        self.note_uart8_write(addr, 1, u32::from(value));
-        self.note_dspi2_dma_write(addr, 1, u32::from(value));
-        let r = self.board.write8(addr, value);
+
+    #[cold]
+    #[inline(never)]
+    fn write8_tail(
+        &mut self,
+        addr: u32,
+        value: u8,
+        r: Result<(), BusError>,
+    ) -> Result<(), BusError> {
         if self.zero_page("write", addr, 1, u32::from(value), r.is_err()) {
             let retry = self.board.write8(addr, value);
             self.log_write("zero-page-write-retry", addr, 1, u32::from(value), &retry);
@@ -742,11 +835,15 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
             r
         }
     }
-    fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
-        self.note_timer_write(addr, 2, u32::from(value));
-        self.note_uart8_write(addr, 2, u32::from(value));
-        self.note_dspi2_dma_write(addr, 2, u32::from(value));
-        let r = self.board.write16(addr, value);
+
+    #[cold]
+    #[inline(never)]
+    fn write16_tail(
+        &mut self,
+        addr: u32,
+        value: u16,
+        r: Result<(), BusError>,
+    ) -> Result<(), BusError> {
         if self.zero_page("write", addr, 2, u32::from(value), r.is_err()) {
             let retry = self.board.write16(addr, value);
             self.log_write("zero-page-write-retry", addr, 2, u32::from(value), &retry);
@@ -756,12 +853,15 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
             r
         }
     }
-    fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
-        self.note_timer_write(addr, 4, value);
-        self.note_uart8_write(addr, 4, value);
-        self.note_dspi2_dma_write(addr, 4, value);
-        self.note_esdhc_write(addr, value);
-        let r = self.board.write32(addr, value);
+
+    #[cold]
+    #[inline(never)]
+    fn write32_tail(
+        &mut self,
+        addr: u32,
+        value: u32,
+        r: Result<(), BusError>,
+    ) -> Result<(), BusError> {
         if self.zero_page("write", addr, 4, value, r.is_err()) {
             let retry = self.board.write32(addr, value);
             self.log_write("zero-page-write-retry", addr, 4, value, &retry);

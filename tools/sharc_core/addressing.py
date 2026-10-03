@@ -10,6 +10,12 @@ from __future__ import annotations
 
 
 def normal_word_to_byte(address: int) -> int | None:
+    # Every range below lies in [0x00090000, 0x18000000), none in
+    # [0x000E8000, 0x04000000): most data addresses fail here at once.
+    if address < 0x00090000 or address >= 0x18000000:
+        return None
+    if 0x000E8000 <= address < 0x04000000:
+        return None
     if 0x00090000 <= address < 0x0009C000:
         return 0x28240000 + (address - 0x00090000) * 4
     if 0x000B0000 <= address < 0x000BC000:

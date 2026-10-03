@@ -554,12 +554,19 @@ pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<
     }
     let pc = u32::try_from(pc_sw).map_err(|_| TRAP_NO_INSN)?;
     let read_sw = s.read_sw;
-    if let Some(cached) = s.decode_cache.get(&pc) {
+    let dec_gen = s.mem.dec_gen;
+    if let Some(cached) = s.decode_cache.get_mut(&pc) {
+        if s.dec_watch && cached.seen == dec_gen {
+            // No write reached a page holding one of its words since they
+            // last matched (Mem::watch_sw).
+            return Ok(cached.insn);
+        }
         if cached
             .words
             .iter()
             .all(|&(at, word)| read_sw(&s.mem, at) == word)
         {
+            cached.seen = dec_gen;
             return Ok(cached.insn);
         }
     }
@@ -575,7 +582,20 @@ pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<
         pc,
     );
     let insn = decoded_insn(decoded)?;
-    s.decode_cache.insert(pc, CachedInsn { insn, words });
+    if s.dec_watch {
+        for &(at, _) in &words {
+            s.mem.watch_sw(at);
+        }
+    }
+    let dec_gen = s.mem.dec_gen;
+    s.decode_cache.insert(
+        pc,
+        CachedInsn {
+            insn,
+            words,
+            seen: dec_gen,
+        },
+    );
     Ok(insn)
 }
 

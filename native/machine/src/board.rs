@@ -34,6 +34,27 @@ const PAGE_MASK: u32 = PAGE_SIZE as u32 - 1;
 const TX35_MAX_BYTES: usize = 4096;
 type RamPage = Box<[u8]>;
 
+// `owned_mmio`'s fast reject: no owned device slot starts below the end of
+// SDRAM.
+const _: () = {
+    let end = SDRAM_BASE + SDRAM_SIZE;
+    let mut k = 0;
+    while k < 4 {
+        assert!(PIT_BASES[k] >= end && DTIM_BASES[k] >= end);
+        k += 1;
+    }
+    let mut k = 0;
+    while k < 3 {
+        assert!(INTC_BASES[k] >= end);
+        k += 1;
+    }
+    assert!(edma::EDMA_BASE >= end);
+    assert!(periph::spilink::DSPI1_SLOT >= end);
+    assert!(periph::spilink::DSPI2_SLOT >= end);
+    assert!(periph::spilink::DSP_SLOT >= end);
+    assert!(esdhc::BASE >= end);
+};
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SemaphoreAddresses {
     pub dma_sem: Option<u32>,
@@ -497,8 +518,12 @@ impl Board {
         Ok(())
     }
 
+    #[inline]
     fn owned_mmio(addr: u32) -> bool {
-        Time::owns(addr) || DmaLink::owns(addr) || Esdhc::<Card>::owns(addr)
+        // Every owner sits at or above the end of SDRAM (checked below), so
+        // SDRAM/SRAM addresses skip the per-owner range scans.
+        addr >= SDRAM_BASE + SDRAM_SIZE
+            && (Time::owns(addr) || DmaLink::owns(addr) || Esdhc::<Card>::owns(addr))
     }
 
     /// Validate and install Oracle forced read words. A forced word may
@@ -742,6 +767,8 @@ impl Board {
         self.guest_writes.clear();
         self.guest_ordered.clear();
     }
+    #[cold]
+    #[inline(never)]
     fn record_guest_access(&mut self, kind: GuestAccessKind, access: GuestAccess) {
         self.guest_ordered.push(GuestBusAccess { kind, access });
         match kind {
@@ -815,6 +842,7 @@ impl Board {
         }
         true
     }
+    #[inline]
     fn ram_read(&self, addr: u32, size: u8) -> Option<u32> {
         let end = addr.checked_add(size as u32)?;
         if end <= ((addr & !PAGE_MASK).checked_add(PAGE_SIZE as u32)?) {
@@ -833,6 +861,7 @@ impl Board {
         }
         Some(value)
     }
+    #[inline]
     fn ram_write(&mut self, addr: u32, size: u8, value: u32) -> bool {
         let Some(end) = addr.checked_add(size as u32) else {
             return false;
@@ -1232,11 +1261,45 @@ impl Board {
         }
         Ok(())
     }
-    #[inline]
+    /// `ram_read` for an address in SDRAM, where `addr + size` cannot
+    /// overflow: the same result with a cheaper in-page test.
+    #[inline(always)]
+    fn sdram_read(&self, addr: u32, size: u8) -> Option<u32> {
+        let o = Self::page_offset(addr);
+        if o + usize::from(size) > PAGE_SIZE {
+            return self.ram_read(addr, size);
+        }
+        let p = self.page(addr)?;
+        Some(match size {
+            1 => p[o] as u32,
+            2 => u16::from_be_bytes([p[o], p[o + 1]]) as u32,
+            4 => u32::from_be_bytes([p[o], p[o + 1], p[o + 2], p[o + 3]]),
+            _ => return None,
+        })
+    }
+    /// `ram_write` for an address in SDRAM (see `sdram_read`).
+    #[inline(always)]
+    fn sdram_write(&mut self, addr: u32, size: u8, value: u32) -> bool {
+        let o = Self::page_offset(addr);
+        if o + usize::from(size) > PAGE_SIZE {
+            return self.ram_write(addr, size, value);
+        }
+        let Some(p) = self.page_mut(addr) else {
+            return false;
+        };
+        match size {
+            1 => p[o] = value as u8,
+            2 => p[o..o + 2].copy_from_slice(&(value as u16).to_be_bytes()),
+            4 => p[o..o + 4].copy_from_slice(&value.to_be_bytes()),
+            _ => return false,
+        };
+        true
+    }
+    #[inline(always)]
     fn read_inner(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
         if self.sdram_fast
             && addr.wrapping_sub(SDRAM_BASE) < SDRAM_SIZE
-            && let Some(value) = self.ram_read(addr, size)
+            && let Some(value) = self.sdram_read(addr, size)
         {
             // Mapped SDRAM: exactly what the cascade below ends in.
             return Ok(value);
@@ -1244,6 +1307,7 @@ impl Board {
         self.read_inner_slow(addr, size)
     }
 
+    #[inline(never)]
     fn read_inner_slow(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
         if let Some((mut value, prefix)) = self.forced_prefix(addr, size) {
             for offset in prefix..size {
@@ -1287,12 +1351,14 @@ impl Board {
         self.ram_read(addr, size)
             .ok_or(Self::bus_error(addr, false))
     }
-    #[inline]
+    #[inline(always)]
     fn write_inner(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
-        self.last_error = None;
+        if self.last_error.is_some() {
+            self.last_error = None;
+        }
         if self.sdram_fast
             && addr.wrapping_sub(SDRAM_BASE) < SDRAM_SIZE
-            && self.ram_write(addr, size, value)
+            && self.sdram_write(addr, size, value)
         {
             // Mapped SDRAM: exactly what the cascade below ends in.
             return Ok(());
@@ -1300,6 +1366,7 @@ impl Board {
         self.write_inner_slow(addr, size, value)
     }
 
+    #[inline(never)]
     fn write_inner_slow(&mut self, addr: u32, size: u8, value: u32) -> Result<(), BoardWriteError> {
         if Time::owns(addr) {
             self.mmio_epoch = self.mmio_epoch.wrapping_add(1);
@@ -1467,6 +1534,21 @@ impl Board {
     }
 }
 impl Bus for Board {
+    /// Mapped SDRAM/SRAM on the fast path, with access recording off: the
+    /// access cannot fault and touches nothing but the bytes.
+    #[inline]
+    fn plain_ram(&self, addr: u32, len: u32) -> bool {
+        let Some(last) = len.checked_sub(1).and_then(|l| addr.checked_add(l)) else {
+            return false;
+        };
+        self.sdram_fast
+            && !self.capture_guest_accesses
+            && addr.wrapping_sub(SDRAM_BASE) < SDRAM_SIZE
+            && last.wrapping_sub(SDRAM_BASE) < SDRAM_SIZE
+            && self.page(addr).is_some()
+            && self.page(last).is_some()
+    }
+    #[inline(always)]
     fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
         let result = self.read_inner(addr, 1).map(|value| value as u8);
         if self.capture_guest_accesses
@@ -1483,6 +1565,7 @@ impl Bus for Board {
         }
         result
     }
+    #[inline(always)]
     fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
         let result = self.read_inner(addr, 2).map(|value| value as u16);
         if self.capture_guest_accesses
@@ -1500,9 +1583,11 @@ impl Bus for Board {
         result
     }
     /// Fetches share normal board dispatch but are not guest data reads.
+    #[inline]
     fn fetch16(&mut self, addr: u32) -> Result<u16, BusError> {
         self.read_inner(addr, 2).map(|value| value as u16)
     }
+    #[inline(always)]
     fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
         let result = self.read_inner(addr, 4);
         if self.capture_guest_accesses
@@ -1519,6 +1604,7 @@ impl Bus for Board {
         }
         result
     }
+    #[inline(always)]
     fn write8(&mut self, addr: u32, value: u8) -> Result<(), BusError> {
         let result = self.write_inner(addr, 1, value as u32).map_err(|e| {
             self.last_error = Some(e);
@@ -1536,6 +1622,7 @@ impl Bus for Board {
         }
         result
     }
+    #[inline(always)]
     fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
         let result = self.write_inner(addr, 2, value as u32).map_err(|e| {
             self.last_error = Some(e);
@@ -1553,6 +1640,7 @@ impl Bus for Board {
         }
         result
     }
+    #[inline(always)]
     fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
         let result = self.write_inner(addr, 4, value).map_err(|e| {
             self.last_error = Some(e);
