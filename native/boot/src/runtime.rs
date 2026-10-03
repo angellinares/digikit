@@ -101,6 +101,8 @@ pub struct Emulator {
     /// every PC the per-instruction observers compare against; a miss lets
     /// `step_once` skip all of those exact comparisons.
     watch: Vec<u64>,
+    /// PCs a host asked to count (`watch_pcs`): (pc, hits, icount of the first).
+    pc_watch: Vec<(u32, u64, u64)>,
     idle_passes: u64,
     task_create_hits: u64,
     mainloop_hits: u64,
@@ -412,6 +414,7 @@ impl Emulator {
             current_tcb_addr,
             idle_spins,
             watch: Vec::new(),
+            pc_watch: Vec::new(),
             idle_passes: 0,
             task_create_hits: 0,
             mainloop_hits: 0,
@@ -523,6 +526,20 @@ impl Emulator {
             self.replay_restored_frame = false;
         }
         Snapshot { status, frame }
+    }
+
+    /// Counts every execution of PCS inside MAIN (replacing an earlier list):
+    /// a host's breakpoint without a hook, e.g. a firmware's own fault reporter,
+    /// read back with `pc_hits`. Watched PCs leave the fast path, so they are
+    /// never skipped.
+    pub fn watch_pcs(&mut self, pcs: &[u32]) {
+        self.pc_watch = pcs.iter().map(|&pc| (pc, 0, 0)).collect();
+        self.rebuild_watch();
+    }
+
+    /// (pc, executions, instruction count at the first) for each `watch_pcs` PC.
+    pub fn pc_hits(&self) -> &[(u32, u64, u64)] {
+        &self.pc_watch
     }
 
     /// Declares extra executable ranges for the runaway check (replacing any
@@ -884,6 +901,7 @@ impl Emulator {
         observed.dedup();
         self.observed_pcs = observed;
         pcs.extend(self.fused_loops.iter().map(|(head, _, _)| *head));
+        pcs.extend(self.pc_watch.iter().map(|&(pc, _, _)| pc));
         for pc in pcs {
             if let Some(off) = pc.checked_sub(MAIN_LOAD) {
                 let i = (off >> 1) as usize;
@@ -1104,6 +1122,14 @@ impl Emulator {
         let watched = self.watched(pc);
         if watched {
             self.observe_marks(pc);
+            for (at, hits, first) in &mut self.pc_watch {
+                if *at == pc {
+                    if *hits == 0 {
+                        *first = self.cpu.icount;
+                    }
+                    *hits += 1;
+                }
+            }
         }
         self.frames.complete_at_return(
             &mut self.bus.board,
