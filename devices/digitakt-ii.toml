@@ -21,11 +21,15 @@ short = "dt2"
 version = "1.15C"
 sha256 = "62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c"
 filename = "Digitakt_II_OS1.15C.syx"
+# section 5 (meta) of the container: names this release in a modified image
+build_stamp = "250910 15:18:30"
 
 [[firmware]]
 version = "1.16"
 sha256 = "278541e466edcd77d6b3e018a91fb90185932d3c7de224dd3e68294dddf3a9ec"
 filename = "Digitakt_II_OS1.16.syx"
+# section 5 (meta) of the container: names this release in a modified image
+build_stamp = "260908 14:25:26"
 # This identifies the existing explicit Oracle MAIN diagnostic contract. It
 # does not describe hardware topology; that needs separate evidence.
 main_sha256 = "57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d"
