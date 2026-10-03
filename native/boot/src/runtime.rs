@@ -28,6 +28,9 @@ const RX_VECTOR: u8 = 154;
 pub struct Status {
     pub device: String,
     pub version: String,
+    /// The image is not the stock release `version` but derived from it
+    /// (unknown SHA-256, the release's build stamp; see `boot_for_derived`).
+    pub modified: bool,
     pub icount: u64,
     pub pc: u32,
     pub ready: bool,
@@ -71,6 +74,13 @@ pub struct Emulator {
     dspi_frames_observed: u64,
     device: String,
     version: String,
+    modified: bool,
+    /// Where a modified image's own code runs, from its `DNFW` area (empty
+    /// when it has none): the only places outside MAIN it may execute.
+    code_ranges: Vec<(u32, u32)>,
+    /// Ranges a developer declares executable (`set_exec_ranges`), on top of
+    /// MAIN and the image's own declaration: an override for experiments.
+    declared_ranges: Vec<(u32, u32)>,
     contract: device_profile::ReadinessContract,
     task_create: u32,
     mainloop: u32,
@@ -247,9 +257,27 @@ impl Emulator {
         }
         let registry = device_profile::Registry::embedded().map_err(|e| e.to_string())?;
         let syx_sha = digest(syx);
-        let (device, profile, _) = registry
-            .boot_for_main(&syx_sha, &main)
-            .map_err(|e| e.to_string())?;
+        let (device, profile, modified) = match registry.boot_for_main(&syx_sha, &main) {
+            Ok((device, profile, _)) => (device, profile, false),
+            // A modified image: no profile knows its hash, but its meta section
+            // still carries its release's build stamp. Run it on that release's
+            // contract (all else is found by signature) and say it is modified.
+            Err(device_profile::RegistryError::UnknownFirmware { .. }) => {
+                let meta = firmware
+                    .sections
+                    .iter()
+                    .find(|section| section.id == 5)
+                    .map(|section| String::from_utf8_lossy(&section.bytes).into_owned())
+                    .ok_or(format!(
+                        "no device profile recognizes firmware SHA-256 {syx_sha}, and it has no meta section (5) naming its release"
+                    ))?;
+                let (device, profile, _) = registry
+                    .boot_for_derived(&meta)
+                    .map_err(|e| format!("firmware SHA-256 {syx_sha} is not a known release: {e}"))?;
+                (device, profile, true)
+            }
+            Err(e) => return Err(e.to_string()),
+        };
         let contract = profile
             .readiness_contract
             .ok_or("firmware has no readiness contract")?;
@@ -354,6 +382,7 @@ impl Emulator {
         cpu.pc = ENTRY;
         cpu.sr = 0x2700;
         cpu.a[7] = STACK;
+        let code_ranges = if modified { dnfw_code_ranges(&main) } else { Vec::new() };
         let mut emulator = Self {
             main,
             cpu,
@@ -363,6 +392,9 @@ impl Emulator {
             dspi_frames_observed: 0,
             device: device.short.clone(),
             version: profile.version.clone(),
+            modified,
+            code_ranges,
+            declared_ranges: Vec::new(),
             contract,
             task_create,
             mainloop,
@@ -493,6 +525,13 @@ impl Emulator {
         Snapshot { status, frame }
     }
 
+    /// Declares extra executable ranges for the runaway check (replacing any
+    /// declared before), for any image: code a developer placed by other means
+    /// than an image declaration. `parse_exec_ranges` reads the text form.
+    pub fn set_exec_ranges(&mut self, ranges: Vec<(u32, u32)>) {
+        self.declared_ranges = ranges;
+    }
+
     /// Export observations without stepping, reading guest memory, or consuming a frame.
     pub fn diagnostics(&self) -> DiagnosticReport {
         DiagnosticReport {
@@ -619,6 +658,7 @@ impl Emulator {
         Status {
             device: self.device.clone(),
             version: self.version.clone(),
+            modified: self.modified,
             icount: self.cpu.icount,
             pc: self.cpu.pc,
             ready,
@@ -1024,11 +1064,23 @@ impl Emulator {
                 return;
             }
         }
-        let Some(offset) = pc.checked_sub(MAIN_LOAD).map(|value| value as usize) else {
-            self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
-            return;
-        };
-        if self.main.get(offset..offset + 6).is_none() {
+        let in_main = pc
+            .checked_sub(MAIN_LOAD)
+            .map(|value| value as usize)
+            .is_some_and(|offset| self.main.get(offset..offset + 6).is_some());
+        // Stock firmware only executes its MAIN image, so a PC outside it is a
+        // runaway. A modified image may run code it copied into RAM (a mod
+        // platform's loader places its routines above MAIN at boot): the CPU
+        // fetches through the bus. With a `DNFW` area (dnfw's mod platform) only
+        // its CODE chunks may run; without one, anywhere in RAM.
+        let in_mod_code = self.modified
+            && if self.code_ranges.is_empty() {
+                (0x4000_0000..0x4800_0000).contains(&pc)
+            } else {
+                self.code_ranges.iter().any(|&(lo, hi)| (lo..hi).contains(&pc))
+            };
+        let in_declared = self.declared_ranges.iter().any(|&(lo, hi)| (lo..hi).contains(&pc));
+        if !in_main && !in_mod_code && !in_declared {
             self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
             return;
         }
@@ -2658,5 +2710,124 @@ mod tests {
         assert_eq!(runtime.input_packets, before);
         assert!(runtime.turn(1, i32::MAX).is_err());
         assert_eq!(runtime.input_packets, before);
+    }
+}
+
+/// The `CODE` chunks of a `DNFW` area appended to MAIN (the mod platform of
+/// angellinares/dn2_firmware_explore, `src/dnfw/patch/area.py`): `'DNFW'`, u32
+/// total length, u32 chunk count, then per chunk a 4-byte id, u32 offset from
+/// the area's start and u32 length, all big-endian. A `CODE` chunk begins with
+/// its u32 load address and u32 image length; the loader copies the image
+/// there at boot. Returns each image's `[load, load + length)`.
+fn dnfw_code_ranges(main: &[u8]) -> Vec<(u32, u32)> {
+    let be32 = |at: usize| -> Option<u32> {
+        main.get(at..at + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    // the area runs to the end of MAIN: the last aligned 'DNFW' whose length fits
+    let Some(start) = (0..main.len().saturating_sub(12)).step_by(4).rev().find(|&at| {
+        &main[at..at + 4] == b"DNFW"
+            && be32(at + 4).is_some_and(|total| at + total as usize <= main.len())
+    }) else {
+        return Vec::new();
+    };
+    let count = be32(start + 8).unwrap_or(0) as usize;
+    let mut ranges = Vec::new();
+    for k in 0..count.min(256) {
+        let entry = start + 12 + 12 * k;
+        let (Some(id), Some(offset), Some(length)) =
+            (main.get(entry..entry + 4), be32(entry + 4), be32(entry + 8))
+        else {
+            break;
+        };
+        if id != b"CODE" || length < 16 {
+            continue;
+        }
+        let chunk = start + offset as usize;
+        if let (Some(load), Some(image)) = (be32(chunk), be32(chunk + 4)) {
+            ranges.push((load, load.saturating_add(image)));
+        }
+    }
+    ranges
+}
+
+#[cfg(test)]
+mod dnfw_area_tests {
+    use super::dnfw_code_ranges;
+
+    fn area(chunks: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+        let head = 12 + 12 * chunks.len();
+        let mut body = Vec::new();
+        let mut table = Vec::new();
+        for (id, data) in chunks {
+            table.extend_from_slice(*id);
+            table.extend_from_slice(&((head + body.len()) as u32).to_be_bytes());
+            table.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            body.extend_from_slice(data);
+        }
+        let mut out = b"DNFW".to_vec();
+        out.extend_from_slice(&((head + body.len()) as u32).to_be_bytes());
+        out.extend_from_slice(&(chunks.len() as u32).to_be_bytes());
+        out.extend(table);
+        out.extend(body);
+        out
+    }
+
+    #[test]
+    fn only_code_chunk_images_are_executable() {
+        let mut code = Vec::new();
+        for word in [0x4670_c000u32, 0x100, 0x40, 0] {
+            code.extend_from_slice(&word.to_be_bytes());
+        }
+        code.extend(vec![0x4e; 0x100]);
+        let mut main = vec![0u8; 0x1000]; // stands in for the stock MAIN bytes
+        main.extend(area(&[(b"BOOT", vec![1; 24]), (b"CODE", code)]));
+        assert_eq!(dnfw_code_ranges(&main), vec![(0x4670_c000, 0x4670_c100)]);
+        assert!(dnfw_code_ranges(&vec![0u8; 0x1000]).is_empty());
+    }
+}
+
+/// "0x4670c000-0x4670ef48, 0x46720000-0x46721000" -> `[lo, hi)` pairs. Each
+/// range is `LO-HI` or `LO:HI` (hex with `0x`, or decimal), separated by
+/// commas, semicolons or whitespace; empty text declares none.
+pub fn parse_exec_ranges(text: &str) -> Result<Vec<(u32, u32)>, String> {
+    let number = |word: &str| -> Result<u32, String> {
+        let word = word.trim();
+        let parsed = match word.strip_prefix("0x").or_else(|| word.strip_prefix("0X")) {
+            Some(hex) => u32::from_str_radix(&hex.replace('_', ""), 16),
+            None => word.replace('_', "").parse::<u32>(),
+        };
+        parsed.map_err(|_| format!("{word:?} is not an address"))
+    };
+    text.split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+        .filter(|item| !item.is_empty())
+        .map(|item| {
+            let (lo, hi) = item
+                .split_once('-')
+                .or_else(|| item.split_once(':'))
+                .ok_or(format!("{item:?} is not LO-HI"))?;
+            let (lo, hi) = (number(lo)?, number(hi)?);
+            if lo >= hi {
+                return Err(format!("{item:?} is empty or reversed"));
+            }
+            Ok((lo, hi))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod exec_range_tests {
+    use super::parse_exec_ranges;
+
+    #[test]
+    fn reads_the_text_form() {
+        assert_eq!(
+            parse_exec_ranges("0x4670c000-0x4670ef48, 0x46720000:0x46721000;16-32").unwrap(),
+            vec![(0x4670_c000, 0x4670_ef48), (0x4672_0000, 0x4672_1000), (16, 32)]
+        );
+        assert_eq!(parse_exec_ranges("  ").unwrap(), vec![]);
+        assert!(parse_exec_ranges("0x10-0x10").is_err());
+        assert!(parse_exec_ranges("0x20-0x10").is_err());
+        assert!(parse_exec_ranges("0x4670c000").is_err());
+        assert!(parse_exec_ranges("0xzz-0x10").is_err());
     }
 }
