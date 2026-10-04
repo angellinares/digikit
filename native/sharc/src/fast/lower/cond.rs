@@ -26,7 +26,8 @@
 //! an entry requirement (`Req::FlagsKnown`).
 
 use super::*;
-use crate::fast::glue::{AC, AF, ALU_MASK, AN, AV, AZ, MN, MULT_MASK, SS, SV, SZ};
+use crate::fast::MAX_FLAG_ID;
+use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MULT_MASK, SS, SV, SZ};
 
 /// The forms whose condition gates the whole instruction (transfer, index
 /// update and compute), as `forms_compute`/`forms_move` execute them for
@@ -43,9 +44,6 @@ pub const COND_FORMS: &[&str] = &[
     "6a_mem",
     "6b_shiftimm",
 ];
-
-/// The largest writer id within a flag group (`FlagKind::group_id`).
-pub const MAX_FLAG_ID: u32 = 6;
 
 const BTF: u32 = 1 << 18;
 const MV: u32 = 1 << 7;
@@ -321,6 +319,98 @@ impl Lower {
                 let (_, b) = self.flag_bits(FlagKind::Isub, srcs, want);
                 mask = m;
                 parts.push(self.bin(Bin::Or, a, b));
+            }
+            FlagKind::Fabs => {
+                // AF set, AZ from the result bits (source 0), AS from the
+                // input sign (source 1), AN cleared.
+                mask = ALU_MASK;
+                if want & AZ != 0 {
+                    let r = self.to_i(srcs[0]);
+                    let m = self.ci(0x7fff_ffff);
+                    let mag = self.bin(Bin::And, r, m);
+                    let z = self.ci(0);
+                    parts.push(self.bin(Bin::Eq, mag, z));
+                }
+                if want & AS != 0 {
+                    let i = self.to_i(srcs[1]);
+                    parts.push(self.sign_to(i, 4));
+                }
+                if want & AF != 0 {
+                    parts.push(self.ci(AF));
+                }
+            }
+            FlagKind::Compare { float } => {
+                // The value is eq | lt << 2 | gt << 31: AZ is bit 0, AN is
+                // bit 2; AF for the float form.
+                mask = ALU_MASK;
+                let v = self.to_i(srcs[0]);
+                if want & AZ != 0 {
+                    let m = self.ci(AZ);
+                    parts.push(self.bin(Bin::And, v, m));
+                }
+                if want & AN != 0 {
+                    let m = self.ci(AN);
+                    parts.push(self.bin(Bin::And, v, m));
+                }
+                if float && want & AF != 0 {
+                    parts.push(self.ci(AF));
+                }
+            }
+            FlagKind::Btst => {
+                // Source bit 0 is SZ, bit 1 is SV.
+                mask = SHIFT_MASK;
+                let v = self.to_i(srcs[0]);
+                if want & SZ != 0 {
+                    let m = self.ci(1);
+                    let b = self.bin(Bin::And, v, m);
+                    let k = self.ci(12);
+                    parts.push(self.bin(Bin::Shl, b, k));
+                }
+                if want & SV != 0 {
+                    let m = self.ci(2);
+                    let b = self.bin(Bin::And, v, m);
+                    let k = self.ci(10);
+                    parts.push(self.bin(Bin::Shl, b, k));
+                }
+            }
+            FlagKind::Leftz => {
+                // SZ is the operand's MSB, SV is "the operand is zero".
+                mask = SHIFT_MASK;
+                let v = self.to_i(srcs[0]);
+                if want & SZ != 0 {
+                    parts.push(self.sign_to(v, 12));
+                }
+                if want & SV != 0 {
+                    let z = self.ci(0);
+                    let is0 = self.bin(Bin::Eq, v, z);
+                    let k = self.ci(11);
+                    parts.push(self.bin(Bin::Shl, is0, k));
+                }
+            }
+            FlagKind::ShiftDyn => {
+                // SZ from the shifted value (source 0), SV from the amount
+                // (source 1) being non-zero.
+                mask = SHIFT_MASK;
+                if want & SZ != 0 {
+                    let v = self.to_i(srcs[0]);
+                    let z = self.ci(0);
+                    let is0 = self.bin(Bin::Eq, v, z);
+                    let k = self.ci(12);
+                    parts.push(self.bin(Bin::Shl, is0, k));
+                }
+                if want & SV != 0 {
+                    let a = self.to_i(srcs[1]);
+                    let z = self.ci(0);
+                    let is0 = self.bin(Bin::Eq, a, z);
+                    let one = self.ci(1);
+                    let nz = self.bin(Bin::Xor, is0, one);
+                    let k = self.ci(11);
+                    parts.push(self.bin(Bin::Shl, nz, k));
+                }
+            }
+            FlagKind::Recips => {
+                // Never noted: `falu_recips` refuses kernel flags.
+                unreachable!("recips leaves AF unchanged and is not a lazy flag writer");
             }
             FlagKind::Fmul => {
                 mask = MULT_MASK;

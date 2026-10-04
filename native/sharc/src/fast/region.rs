@@ -56,6 +56,8 @@ pub struct Region {
     /// with writers write their last writer out (`glue::apply_groups`).
     pub flag_v: bool,
     pub flag_groups: [bool; 3],
+    /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
+    pub cacc: bool,
     /// Registers the kernel reads (their values go into the context) and
     /// those it writes, with the instruction of the first write.
     pub inputs: Vec<u8>,
@@ -100,6 +102,7 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         assume_nw32: s.cfg.assume_nw32,
         mode1: s.r[MODE1].b,
         flag_v,
+        approx_recips: s.cfg.approx_recips,
     }
 }
 
@@ -246,6 +249,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
             .collect(),
         flag_v: out.flag_v,
         flag_groups: out.flag_groups,
+        cacc: out.cacc,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
@@ -455,6 +459,7 @@ fn assemble_cfg(
             .collect(),
         flag_v: true,
         flag_groups: out.flag_groups,
+        cacc: out.cacc,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()

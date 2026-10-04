@@ -107,7 +107,38 @@ impl Lower {
             (0, 0xa2) => self.falu_neg(rn, rx),
             (0, 0xca) => self.falu_float(rn, rx),
             (0, 0xcd) => self.falu_trunc(rn, rx),
+            (0, 0x29) => {
+                let a = self.rd_i(rx)?;
+                self.ialu_inc(rn, a)
+            }
+            (0, 0x2a) => {
+                let a = self.rd_i(rx)?;
+                self.ialu_dec(rn, a)
+            }
+            (0, 0x0a | 0x0b) => {
+                let (a, b) = (self.rd_i(rx)?, self.rd_i(ry)?);
+                self.ialu_compare(a, b, opcode == 0x0a)
+            }
+            (0, 0x61 | 0x62) => {
+                let (a, b) = (self.rd_i(rx)?, self.rd_i(ry)?);
+                self.ialu_minmax(rn, a, b, opcode == 0x62)
+            }
+            (0, 0xa1) => self.falu_pass(rn, rx),
+            (0, 0xb0) => self.falu_abs(rn, rx),
+            (0, 0xe3) => self.falu_clip(rn, rx, ry),
+            (0, 0x8a) => self.falu_compare(rx, ry),
+            (0, 0xc1) => self.falu_logb(rn, rx),
+            (0, 0xbd) => self.falu_scalb(rn, rx, ry),
+            (0, 0xc4) => self.falu_recips(rn, rx),
+            (0, 0xc9) => self.falu_fix(rn, rx, None, false),
+            (0, 0xd9) => self.falu_fix(rn, rx, Some(ry), false),
+            (0, 0xdd) => self.falu_fix(rn, rx, Some(ry), true),
+            (0, 0xda) => self.falu_float_by(rn, rx, ry),
             (1, 0x30) => self.fmul(rn, rx, ry, false),
+            (1, 0x70) => self.mul_ssi(rn, rx, ry),
+            (2, 0x00 | 0x04 | 0x20) => self.shift_reg(opcode, rn, rx, ry),
+            (2, 0x88) => self.shift_leftz(rn, rx),
+            (2, 0xcc) => self.shift_btst(rx, ry),
             _ => refuse(format!("compute cu={cu} opcode={opcode:#x}")),
         }
     }
@@ -130,6 +161,25 @@ impl Lower {
                 let b = self.rd_i(rx)?;
                 self.ialu_logical(rn, b)
             }
+            0x3 => {
+                let (a, b) = (self.rd_i(rn)?, self.rd_i(rx)?);
+                self.ialu_compare(a, b, true)
+            }
+            0x4 => {
+                let a = self.rd_i(rx)?;
+                let r = self.un(Un::Not, a);
+                self.ialu_logical(rn, r)
+            }
+            0x5 => {
+                let a = self.rd_i(rx)?;
+                self.ialu_inc(rn, a)
+            }
+            0x6 => {
+                let a = self.rd_i(rx)?;
+                self.ialu_dec(rn, a)
+            }
+            0x7 => self.mul_short(rn, rx),
+            0xb => self.falu_compare(rn, rx),
             0x8 => self.falu_binary(Bin::FAdd, rn, rn, rx),
             0x9 => self.falu_binary(Bin::FSub, rn, rn, rx),
             0xa => self.falu_float(rn, rx),

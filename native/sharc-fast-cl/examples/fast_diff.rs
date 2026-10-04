@@ -358,6 +358,17 @@ enum Check {
     /// MUL dual add/subtract operand registers.
     MfDual([u32; 4]),
     DualF(u32, u32),
+    FAbs(u32),
+    FPass(u32),
+    FClip(u32, u32),
+    FComp(u32, u32),
+    Logb(u32),
+    Scalb(u32, u32),
+    Recips(u32),
+    /// fix / trunc, optionally by a scale register.
+    Fix(u32, Option<u32>),
+    FloatBy(u32, u32),
+    MulSsi(u32, u32),
 }
 
 struct Unit {
@@ -376,6 +387,17 @@ fn compute_check(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> Check {
         (0, 0xa2) => Check::FNeg(rx),
         (0, 0xcd) => Check::Trunc(rx),
         (1, 0x30) => Check::FMul(rx, ry),
+        (0, 0xb0) => Check::FAbs(rx),
+        (0, 0xa1) => Check::FPass(rx),
+        (0, 0xe3) => Check::FClip(rx, ry),
+        (0, 0x8a) => Check::FComp(rx, ry),
+        (0, 0xc1) => Check::Logb(rx),
+        (0, 0xbd) => Check::Scalb(rx, ry),
+        (0, 0xc4) => Check::Recips(rx),
+        (0, 0xc9) => Check::Fix(rx, None),
+        (0, 0xd9 | 0xdd) => Check::Fix(rx, Some(ry)),
+        (0, 0xda) => Check::FloatBy(rx, ry),
+        (1, 0x70) => Check::MulSsi(rx, ry),
         _ => Check::None,
     }
 }
@@ -395,6 +417,29 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("float", 0, 0xca),
     ("trunc", 0, 0xcd),
     ("fmul", 1, 0x30),
+    ("inc", 0, 0x29),
+    ("dec", 0, 0x2a),
+    ("comp", 0, 0x0a),
+    ("compu", 0, 0x0b),
+    ("min", 0, 0x61),
+    ("max", 0, 0x62),
+    ("fpass", 0, 0xa1),
+    ("fabs", 0, 0xb0),
+    ("fclip", 0, 0xe3),
+    ("fcomp", 0, 0x8a),
+    ("logb", 0, 0xc1),
+    ("scalb", 0, 0xbd),
+    ("recips", 0, 0xc4),
+    ("fix", 0, 0xc9),
+    ("fix_by", 0, 0xd9),
+    ("trunc_by", 0, 0xdd),
+    ("float_by", 0, 0xda),
+    ("mul_ssi", 1, 0x70),
+    ("lshift_r", 2, 0x00),
+    ("ashift_r", 2, 0x04),
+    ("lshift_or_r", 2, 0x20),
+    ("leftz", 2, 0x88),
+    ("btst", 2, 0xcc),
 ];
 
 const SHORT_OPS: &[(&str, u32)] = &[
@@ -408,6 +453,12 @@ const SHORT_OPS: &[(&str, u32)] = &[
     ("or", 0xd),
     ("xor", 0xe),
     ("fmul", 0xf),
+    ("comp", 0x3),
+    ("not", 0x4),
+    ("inc", 0x5),
+    ("dec", 0x6),
+    ("mul", 0x7),
+    ("fcomp", 0xb),
 ];
 
 const SHIFT_OPS: &[(&str, u32)] = &[
@@ -562,6 +613,7 @@ fn units() -> Vec<Unit> {
                     0x8 => Check::FAdd(rn, rx),
                     0x9 => Check::FSub(rn, rx),
                     0xf => Check::FMul(rn, rx),
+                    0xb => Check::FComp(rn, rx),
                     _ => Check::None,
                 };
                 (raw.0, check)
@@ -893,6 +945,7 @@ fn rand_int(r: &mut Rng) -> u32 {
         4 => 0x7fff_ffff,
         5 => r.below(64),
         6 => r.u32() >> r.below(32),
+        7 => (r.below(700) as i32 - 350) as u32,
         _ => r.u32(),
     }
 }
@@ -987,6 +1040,64 @@ fn expect_special(c: Check, s: &St) -> bool {
         }
         Check::DualF(x, y) => {
             not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
+        }
+        Check::FAbs(x) => f(x).is_nan(),
+        Check::FPass(x) => not_finite(s.r[x as usize].b),
+        Check::FClip(x, y) => {
+            let (a, b) = (f(x), f(y));
+            if a.is_nan() || b.is_nan() {
+                true
+            } else {
+                let r = if a.abs() < b.abs() {
+                    a
+                } else {
+                    b.abs().copysign(a)
+                };
+                !r.is_finite()
+            }
+        }
+        Check::FComp(x, y) => f(x).is_nan() || f(y).is_nan(),
+        Check::Logb(x) => !(1..=254).contains(&((s.r[x as usize].b >> 23) & 0xff)),
+        Check::Scalb(x, y) => {
+            let sh = s.r[y as usize].b as i32 as i64;
+            let bits = s.r[x as usize].b;
+            let e = ((bits >> 23) & 0xff) as i64;
+            if !(-1000..1000).contains(&sh) {
+                true
+            } else if bits & 0x7fff_ffff == 0 {
+                false
+            } else {
+                !(1..=254).contains(&e) || e + sh > 254
+            }
+        }
+        Check::Recips(x) => !(1..=252).contains(&((s.r[x as usize].b >> 23) & 0xff)),
+        Check::Fix(x, by) => {
+            let sh = by.map_or(0, |y| s.r[y as usize].b as i32 as i64);
+            let bits = s.r[x as usize].b;
+            let e = ((bits >> 23) & 0xff) as i64;
+            if !(-1000..1000).contains(&sh) {
+                true
+            } else if bits & 0x7fff_ffff == 0 {
+                false
+            } else {
+                !(1..=254).contains(&e) || e + sh >= 158
+            }
+        }
+        Check::FloatBy(x, y) => {
+            let sh = s.r[y as usize].b as i32 as i64;
+            let v = s.r[x as usize].b as i32 as f32;
+            let e = ((v.to_bits() >> 23) & 0xff) as i64;
+            if !(-1000..1000).contains(&sh) {
+                true
+            } else if v == 0.0 {
+                false
+            } else {
+                !(2..=254).contains(&(e + sh))
+            }
+        }
+        Check::MulSsi(x, y) => {
+            let p = (s.r[x as usize].b as i32 as i64) * (s.r[y as usize].b as i32 as i64);
+            p != p as i32 as i64
         }
     }
 }
@@ -1135,6 +1246,10 @@ fn forms(args: &[String]) {
             }
             let s = &mut e.s;
             randomise(s, &mut rng, &ms);
+            // MODE1 at build time: every region requires TRUNCATE (bit 15)
+            // clear.
+            let mode_build = 0x3900_1cf8u32;
+            s.r[114] = V::c(mode_build as Int);
             let nwords = match unit.form {
                 "2c" | "3c" => 1,
                 "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" => 2,
@@ -1180,6 +1295,12 @@ fn forms(args: &[String]) {
                     s.r[48 + k] = V::c(1 + rng.below(64) as Int);
                     lflip = Some(48 + k as u8);
                 }
+                // TRUNCATE flips now and then: the MODE1 requirement fails.
+                let mode_flip = trial % 37 == 36;
+                s.r[114] = V::c((mode_build ^ ((mode_flip as u32) << 15)) as Int);
+                // TRUNCATE flips now and then: a requirement on MODE1 fails.
+                let mode_flip = trial % 37 == 36;
+                s.r[114] = V::c((mode_build ^ ((mode_flip as u32) << 15)) as Int);
                 let mut unknown = None;
                 if rng.chance(12) {
                     // A register becomes unknown.
@@ -1214,6 +1335,7 @@ fn forms(args: &[String]) {
                         Req::FlagsKnown(mask) => s.r[118].m & mask != mask,
                         Req::Known(c) => Some(c) == unknown,
                         Req::Eq(c, _) => Some(c) == unknown || Some(c) == flip || Some(c) == lflip,
+                        Req::Mode1 { .. } => mode_flip,
                         Req::NwPlain {
                             base: Base::Reg(c), ..
                         } => Some(c) == unknown,
@@ -1339,6 +1461,7 @@ fn main() {
         Some("region") => region(&args[1..]),
         Some("cfg") => cfgprog(&args[1..]),
         Some("capture") => capture(&args[1..]),
+        Some("loops") => loops(&args[1..]),
         _ => {
             eprintln!("usage: fast_diff forms|region|cfg ...");
             std::process::exit(2);
@@ -1435,6 +1558,142 @@ fn inject(e: &mut Engine, seed: u64, what: &mut String) {
             }
         }
     }
+}
+
+/// `loops IMAGE STATE_DIR PC_HEX [--seeds N] [--ops a,b,..] [--words W]`: the
+/// body of a captured DO loop is replaced with random one-word short computes
+/// (the first W words from the listed opcodes, the rest passes) and the loop
+/// is run for the whole count and for budgets that end inside an iteration,
+/// against the interpreter (`exec_insn` instruction by instruction; the fast
+/// run is followed by the interpreter up to the same instruction count).
+/// Registers and ASTATX are randomised, so special values exit mid-iteration.
+/// This is what checks the compare ops' carry-history over many iterations.
+fn loops(args: &[String]) {
+    let image = std::fs::read(&args[0]).expect("image");
+    let dir = &args[1];
+    let pc = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("pc");
+    let seeds: u64 = flag(args, "--seeds").map_or(200, |x| x.parse().unwrap());
+    let ops: Vec<u32> = flag(args, "--ops")
+        .unwrap_or("3,b,0,2,8,5,6,4")
+        .split(',')
+        .map(|x| u32::from_str_radix(x, 16).unwrap())
+        .collect();
+    let active: u32 = flag(args, "--words").map_or(12, |x| x.parse().unwrap());
+    let state = std::fs::read(format!("{dir}/r_{pc:X}.state")).expect("state");
+    let clock = meta_clock(&format!("{dir}/r_{pc:X}.meta"));
+    let mut be = backend(flag(args, "--backend").unwrap_or("cl"));
+    let make = |seed: u64| -> Engine {
+        let mut e = open(&image, &state, clock);
+        e.enable_runtime_decode(Mem::read_sw);
+        e.s.cfg.core_timer = false;
+        // The captured loop may run in SIMD mode; the fast tier handles SISD
+        // only (and TRUNCATE clear), so test it with the plain mode.
+        e.s.r[114] = V::c(0x3900_1cf8);
+        let top = *e.s.loops.items().last().expect("loop at entry");
+        let mut r = Rng(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+        let words = (top.end_sw - top.start_sw + 1) as u32;
+        for k in 0..words {
+            let opc = if k == 0 && r.chance(2) {
+                [0x3, 0xb][r.below(2) as usize]
+            } else if k >= active {
+                0x2
+            } else {
+                ops[r.below(ops.len() as u32) as usize]
+            };
+            let w = 0xc000u32 | (opc << 8) | (r.below(16) << 4) | r.below(16);
+            let a = 0x2800_0000 + (top.start_sw as u32 + k) * 2;
+            e.s.mem.write_byte(a, w as u8);
+            e.s.mem.write_byte(a + 1, (w >> 8) as u8);
+        }
+        for c in 0..16 {
+            let v = if r.chance(5) {
+                0x7fc0_0000
+            } else {
+                rand_word(&mut r)
+            };
+            e.s.r[c] = V::c(v as Int);
+        }
+        let m = if r.chance(4) { r.u32() } else { u32::MAX };
+        e.s.r[118] = V { b: r.u32() & m, m };
+        e
+    };
+    let interp_to = |s: &mut St, target: u64| {
+        while s.icount < target {
+            let pc = s.pc_sw;
+            let insn = sharc_native::rt::bnd::decode_at(s, (), None, pc).expect("decode");
+            if exec_insn(s, insn).is_err() {
+                break;
+            }
+        }
+    };
+    let probe = make(0);
+    let top = *probe.s.loops.items().last().unwrap();
+    let k = (top.end_sw - top.start_sw + 1) as u64;
+    let rem = top.remaining as u64;
+    drop(probe);
+    let mut rng = Rng(0x5eed_1234);
+    let mut ctx = Ctx::default();
+    let (mut bad, mut ran_fast, mut total, mut refused) = (0u64, 0u64, 0u64, 0u64);
+    let mut declines: BTreeMap<String, u64> = BTreeMap::new();
+    for seed in 0..seeds {
+        let full = k * rem;
+        let budgets = [
+            full,
+            full + 26,
+            1 + rng.below(full as u32) as u64,
+            1 + rng.below(full as u32) as u64,
+            k + 1 + rng.below(3 * k as u32) as u64,
+        ];
+        let probe = make(seed);
+        let region = match sharc_native::fast::region::build_loop(&probe.s, pc) {
+            Ok(r) => r,
+            Err(err) => {
+                refused += 1;
+                if refused <= 3 {
+                    println!("seed {seed}: refused: {}", err.0);
+                }
+                continue;
+            }
+        };
+        let kernel = be.compile(&region.kernel).expect("compile");
+        drop(probe);
+        for n in budgets {
+            let mut ea = make(seed);
+            ea.s.limit = ea.s.icount + n;
+            let target = ea.s.icount + n;
+            interp_to(&mut ea.s, target);
+            let sa = Snap::take_with(&ea.s, true);
+            let mut eb = make(seed);
+            eb.s.limit = eb.s.icount + n;
+            let target = eb.s.icount + n;
+            let out = fast_run(&mut eb.s, &region, &*kernel, &mut ctx);
+            match &out {
+                Ok(_) => ran_fast += 1,
+                Err(d) => *declines.entry(format!("{d:?}")).or_default() += 1,
+            }
+            interp_to(&mut eb.s, target);
+            let sb = Snap::take_with(&eb.s, true);
+            let msgs = diff(&sa, &sb);
+            total += 1;
+            if !msgs.is_empty() {
+                bad += 1;
+                if bad <= 5 {
+                    println!("FAIL seed {seed} budget {n} ({out:?})");
+                    for m in msgs.iter().take(6) {
+                        println!("      {m}");
+                    }
+                }
+            }
+        }
+    }
+    println!(
+        "loops {pc:X}: {total} runs, {ran_fast} used the fast tier, {refused} seeds refused, {bad} differ"
+    );
+    println!("declines: {declines:?}");
+    if bad > 0 {
+        std::process::exit(1);
+    }
+    println!("PASS");
 }
 
 fn region(args: &[String]) {
@@ -1582,6 +1841,22 @@ fn region(args: &[String]) {
                 c.stops.len(),
                 c.stops.iter().take(6).collect::<Vec<_>>()
             );
+        }
+        {
+            // Which requirements fail at the captured entry state.
+            let (entry, _) = make(Mode::Interp);
+            let bad: Vec<_> = r
+                .reqs
+                .iter()
+                .filter(|q| !sharc_native::fast::glue::eval_req(&entry.s, q, rem as i64))
+                .collect();
+            println!("entry requirements failing: {bad:?}");
+            for q in &bad {
+                if let sharc_native::fast::Req::Known(c) | sharc_native::fast::Req::Eq(c, _) = q {
+                    let v = entry.s.r[*c as usize];
+                    println!("  r[{c}] = {:08x}/{:08x}", v.b, v.m);
+                }
+            }
         }
         println!(
             "region {pc:X}: {} instructions ({:?}), kernel {} ops, {} windows, compile {} us [{}]",
@@ -2206,6 +2481,26 @@ fn cfgprog(args: &[String]) {
         asm.insn(i_17a(R_MINUS1, 0xffff_ffff));
         asm.items(&items);
         asm.insn(i_jump(0x1f, false, 0));
+        // Debugging aid: CFG_NOP=hexpc,.. replaces three-word instructions
+        // with `R15 = 0`.
+        if let Ok(list) = std::env::var("CFG_NOP") {
+            for pcs in list.split(',') {
+                let off = u32::from_str_radix(pcs, 16).unwrap() - CODE_PC;
+                let end = asm
+                    .starts
+                    .iter()
+                    .find(|&&x| x > off)
+                    .copied()
+                    .unwrap_or(asm.words.len() as u32);
+                assert_eq!(
+                    end - off,
+                    3,
+                    "CFG_NOP: {pcs} is not a three-word instruction"
+                );
+                let w = i_17a(15, 0);
+                asm.words[off as usize..end as usize].copy_from_slice(&w);
+            }
+        }
         let mut entries: Vec<u32> = if simple {
             asm.starts.iter().skip(1).map(|st| CODE_PC + st).collect()
         } else {

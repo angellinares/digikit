@@ -67,7 +67,31 @@ pub enum FlagKind {
     Fext {
         sv: bool,
     },
+    /// Float abs: AF set, AZ from the result bits, AN cleared, AS from the
+    /// input sign (sources: result, input).
+    Fabs,
+    /// comp, compu, fcomp (source: value = eq | lt << 2 | gt << 31): AZ AN
+    /// from the value, AF set for the float form, AC AV AS AI cleared. The
+    /// CACC shift register is not part of this effect: the kernel tracks it
+    /// in `PSEUDO_CACC` (`glue::apply_cacc`).
+    Compare {
+        float: bool,
+    },
+    /// btst (source: bit 0 = SZ, bit 1 = SV), SS cleared.
+    Btst,
+    /// leftz (source: the operand): SZ = its MSB, SV = it is zero.
+    Leftz,
+    /// Register-amount shift (sources: shifted value, amount > 0): SZ from
+    /// the shifted value, SV from the amount, SS cleared.
+    ShiftDyn,
+    /// recips: AC AS AI AV AZ cleared, AN from the input sign (source: the
+    /// input); AF unchanged. It defines only part of the ALU group, so a
+    /// kernel that tracks flags lazily (one last writer per group) refuses it.
+    Recips,
 }
+
+/// The largest writer id within a flag group (`FlagKind::group_id`).
+pub const MAX_FLAG_ID: u32 = 10;
 
 impl FlagKind {
     /// The flag group the writer belongs to and its id there (1..=4), as the
@@ -80,12 +104,19 @@ impl FlagKind {
             FlagKind::Logical => (0, 4),
             FlagKind::FaluOr => (0, 5),
             FlagKind::IaddSubOr => (0, 6),
+            FlagKind::Fabs => (0, 7),
+            FlagKind::Compare { float: false } => (0, 8),
+            FlagKind::Compare { float: true } => (0, 9),
+            FlagKind::Recips => (0, 10),
             FlagKind::Fmul => (1, 1),
             FlagKind::FmulForget => (1, 2),
             FlagKind::Shift { sv: false } => (2, 1),
             FlagKind::Shift { sv: true } => (2, 2),
             FlagKind::Fext { sv: false } => (2, 3),
             FlagKind::Fext { sv: true } => (2, 4),
+            FlagKind::Btst => (2, 5),
+            FlagKind::Leftz => (2, 6),
+            FlagKind::ShiftDyn => (2, 7),
         }
     }
 
@@ -97,12 +128,19 @@ impl FlagKind {
             (0, 4) => FlagKind::Logical,
             (0, 5) => FlagKind::FaluOr,
             (0, 6) => FlagKind::IaddSubOr,
+            (0, 7) => FlagKind::Fabs,
+            (0, 8) => FlagKind::Compare { float: false },
+            (0, 9) => FlagKind::Compare { float: true },
+            (0, 10) => FlagKind::Recips,
             (1, 1) => FlagKind::Fmul,
             (1, 2) => FlagKind::FmulForget,
             (2, 1) => FlagKind::Shift { sv: false },
             (2, 2) => FlagKind::Shift { sv: true },
             (2, 3) => FlagKind::Fext { sv: false },
             (2, 4) => FlagKind::Fext { sv: true },
+            (2, 5) => FlagKind::Btst,
+            (2, 6) => FlagKind::Leftz,
+            (2, 7) => FlagKind::ShiftDyn,
             _ => return None,
         })
     }
@@ -499,4 +537,25 @@ pub fn from_env() -> Option<FastEngine> {
         return None;
     }
     Some(FastEngine::new(default_backend(), &pcs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every writer id of a group is within `MAX_FLAG_ID` and round-trips.
+    #[test]
+    fn flag_ids_round_trip() {
+        for g in 0..3 {
+            let mut n = 0;
+            for id in 1..=MAX_FLAG_ID + 4 {
+                if let Some(k) = FlagKind::from_group_id(g, id) {
+                    assert!(id <= MAX_FLAG_ID, "group {g} id {id} above MAX_FLAG_ID");
+                    assert_eq!(k.group_id(), (g, id));
+                    n += 1;
+                }
+            }
+            assert!(n > 0);
+        }
+    }
 }

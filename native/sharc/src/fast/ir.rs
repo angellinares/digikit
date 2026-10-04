@@ -51,6 +51,8 @@ pub enum Un {
     Zext,
     /// Bitwise not (i32).
     Not,
+    /// Count of leading zero bits (i32; 32 for 0).
+    Clz,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -83,6 +85,9 @@ pub enum Bin {
     /// u64 add / subtract.
     Add64,
     Sub64,
+    /// f32 divide; high 32 bits of the signed 64-bit product.
+    FDiv,
+    MulHs,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -182,7 +187,7 @@ pub const CONST_POOL: [u32; 3] = [0x7f80_0000, 0x0080_0000, 0];
 /// Pseudo registers (the kernel's ASTATX bits and known mask, in/out), the
 /// instruction budget and the counters of CFG kernels. All of this lies after
 /// the original layout, so a kernel that does not use it is unchanged.
-pub const NPSEUDO: u32 = 10;
+pub const NPSEUDO: u32 = 11;
 pub const CTX_PSEUDO_IN: u32 = (CTX_CONSTS + 4 * CONST_POOL.len() as u32 + 7) & !7;
 pub const CTX_PSEUDO_OUT: u32 = CTX_PSEUDO_IN + 4 * NPSEUDO;
 /// Instructions the kernel may run (CFG kernels): `limit - icount`, clamped.
@@ -241,6 +246,9 @@ pub const NGROUPS: u32 = 3;
 pub const fn pseudo_flag(group: u32, part: u32) -> u32 {
     NREGS + 1 + 3 * group + part
 }
+/// The CACC compare history (ASTATX bits 24-31) as the compare ops shift it:
+/// initialised from the entry ASTATX, written out for the glue.
+pub const PSEUDO_CACC: u32 = NREGS + 1 + 3 * NGROUPS;
 
 pub const fn win_ptr(w: u32) -> u32 {
     CTX_WIN + WIN_STRIDE * w
@@ -378,7 +386,7 @@ impl Kernel {
                                     Un::FToBits | Un::FToI => (Ty::F32, Ty::I32),
                                     Un::IToF => (Ty::I32, Ty::F32),
                                     Un::Zext => (Ty::I32, Ty::I64),
-                                    Un::Not => (Ty::I32, Ty::I32),
+                                    Un::Not | Un::Clz => (Ty::I32, Ty::I32),
                                 };
                                 if ty(a) != Some(need) {
                                     return err("unary operand type");
@@ -390,7 +398,9 @@ impl Kernel {
                                     return err("operand not defined");
                                 }
                                 let (need, out) = match b {
-                                    Bin::FAdd | Bin::FSub | Bin::FMul => (Ty::F32, Ty::F32),
+                                    Bin::FAdd | Bin::FSub | Bin::FMul | Bin::FDiv => {
+                                        (Ty::F32, Ty::F32)
+                                    }
                                     Bin::FLt | Bin::FGe | Bin::FEq => (Ty::F32, Ty::I32),
                                     Bin::Add64 | Bin::Sub64 => (Ty::I64, Ty::I64),
                                     _ => (Ty::I32, Ty::I32),
@@ -535,7 +545,7 @@ pub trait KernelBackend {
 
 // -- serialisation (the plug-in boundary) ----------------------------------------
 
-const UNS: [Un; 8] = [
+const UNS: [Un; 9] = [
     Un::FNeg,
     Un::FAbs,
     Un::BitsToF,
@@ -544,9 +554,10 @@ const UNS: [Un; 8] = [
     Un::IToF,
     Un::Zext,
     Un::Not,
+    Un::Clz,
 ];
 
-const BINS: [Bin; 25] = [
+const BINS: [Bin; 27] = [
     Bin::Add,
     Bin::Sub,
     Bin::Mul,
@@ -572,6 +583,8 @@ const BINS: [Bin; 25] = [
     Bin::FMul,
     Bin::Add64,
     Bin::Sub64,
+    Bin::FDiv,
+    Bin::MulHs,
 ];
 
 fn un_code(u: Un) -> u32 {

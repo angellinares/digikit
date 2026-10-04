@@ -217,6 +217,8 @@ pub struct Env {
     /// see `cond`); otherwise flag writers are replayed at exit from
     /// remembered sources.
     pub flag_v: bool,
+    /// `cfg.approx_recips`: the recips seed is a numeric value (else unknown).
+    pub approx_recips: bool,
 }
 
 /// Registers the lowering tracks: R, I, M and the pseudo registers (the
@@ -299,6 +301,9 @@ pub struct Lower {
     pub extras: Vec<Extra>,
     /// Exit-site bookkeeping of a CFG kernel.
     pub cfgx: Option<CfgX>,
+    /// A compare op was lowered: the CACC history is tracked in a pseudo
+    /// register (`compare_flag`) and the entry ASTATX must be fully known.
+    pub has_compare: bool,
 }
 
 /// A kernel variable that is not a register: loaded from the context in
@@ -374,6 +379,7 @@ impl Lower {
             var_abs: Vec::new(),
             extras: Vec::new(),
             cfgx: None,
+            has_compare: false,
         };
         l.var_abs = (0..NREGS as usize).map(|c| l.init_abs(c)).collect();
         l
@@ -482,7 +488,7 @@ impl Lower {
             _ => None,
         };
         let ty = match b {
-            Bin::FAdd | Bin::FSub | Bin::FMul => Ty::F32,
+            Bin::FAdd | Bin::FSub | Bin::FMul | Bin::FDiv => Ty::F32,
             Bin::Add64 => Ty::I64,
             _ => Ty::I32,
         };
@@ -492,7 +498,7 @@ impl Lower {
     pub fn un(&mut self, u: Un, x: Val) -> Val {
         let ty = match u {
             Un::FNeg | Un::FAbs | Un::BitsToF | Un::IToF => Ty::F32,
-            Un::FToBits | Un::FToI | Un::Not => Ty::I32,
+            Un::FToBits | Un::FToI | Un::Not | Un::Clz => Ty::I32,
             Un::Zext => Ty::I64,
         };
         self.emit(ty, Op::Un(u, x))
@@ -1097,6 +1103,17 @@ impl Lower {
             return refuse("a condition reads a flag that a writer in the region forgets");
         }
         let mut reqs = std::mem::take(&mut self.reqs);
+        if self.has_compare {
+            // The CACC shift register is exact only while ASTATX is fully
+            // known before each compare (`values._apply_flag_update`): known
+            // at entry, and no writer in the region forgets bits.
+            if self.flags.iter().any(|w| w.kind == FlagKind::FmulForget)
+                || self.flag_kinds_out[1] >> FlagKind::FmulForget.group_id().1 & 1 != 0
+            {
+                return refuse("compare next to a flag-forgetting multiply");
+            }
+            reqs.push(Req::FlagsKnown(u32::MAX));
+        }
         if self.need_flags_known != 0 {
             reqs.push(Req::FlagsKnown(self.need_flags_known));
         }
@@ -1149,6 +1166,7 @@ impl Lower {
             reqs,
             flag_v,
             flag_groups,
+            cacc: self.has_compare,
             wins: self.wins,
             flags: self.flags,
             next,
@@ -1161,6 +1179,8 @@ pub struct Lowered {
     /// writers (their last writer's kind and sources are written out).
     pub flag_v: bool,
     pub flag_groups: [bool; 3],
+    /// The kernel tracks the CACC compare history (`PSEUDO_CACC`).
+    pub cacc: bool,
     pub kernel: Kernel,
     pub regs: Vec<RegInfo>,
     pub reqs: Vec<Req>,

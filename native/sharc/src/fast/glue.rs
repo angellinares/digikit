@@ -97,6 +97,7 @@ pub const MN: u32 = 1 << 6;
 pub const SV: u32 = 1 << 11;
 pub const SZ: u32 = 1 << 12;
 pub const SS: u32 = 1 << 13;
+pub const CACC: u32 = 0xff00_0000;
 
 fn define(v: V, mask: u32, bits: u32) -> V {
     V {
@@ -189,6 +190,61 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
                 bits |= SZ;
             }
             define(v, SV | SZ | SS, bits)
+        }
+        FlagKind::Fabs => {
+            let mut bits = AF;
+            if src[0] & 0x7fff_ffff == 0 {
+                bits |= AZ;
+            }
+            if src[1] >> 31 != 0 {
+                bits |= AS;
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::Compare { float } => {
+            // AZ and AN only; the CACC shift register is `apply_cacc`'s.
+            let mut bits = if float { AF } else { 0 };
+            if src[0] & 1 != 0 {
+                bits |= AZ;
+            }
+            if src[0] & 4 != 0 {
+                bits |= AN;
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::Btst => {
+            let mut bits = 0;
+            if src[0] & 1 != 0 {
+                bits |= SZ;
+            }
+            if src[0] & 2 != 0 {
+                bits |= SV;
+            }
+            define(v, SV | SZ | SS, bits)
+        }
+        FlagKind::Leftz => {
+            let mut bits = 0;
+            if src[0] >> 31 != 0 {
+                bits |= SZ;
+            }
+            if src[0] == 0 {
+                bits |= SV;
+            }
+            define(v, SV | SZ | SS, bits)
+        }
+        FlagKind::ShiftDyn => {
+            let mut bits = 0;
+            if src[1] != 0 {
+                bits |= SV;
+            }
+            if src[0] == 0 {
+                bits |= SZ;
+            }
+            define(v, SV | SZ | SS, bits)
+        }
+        FlagKind::Recips => {
+            let bits = if src[0] >> 31 != 0 { AN } else { 0 };
+            define(v, AC | AS | AI | AN | AV | AZ, bits)
         }
     }
 }
@@ -438,6 +494,7 @@ pub fn run(
     }
     apply_flags(s, r, ctx, full, done, kk);
     apply_groups(s, r, ctx);
+    apply_cacc(s, r, ctx);
     s.at_loaded_entry = false;
     if s.cfg.core_timer {
         s.timer_written = false;
@@ -490,6 +547,7 @@ fn collapse_loop_backs(s: &mut St, rem: i64, n: i64) {
 fn input_of(s: &St, c: u8) -> u32 {
     match c as u32 {
         PSEUDO_FB0 => s.r[118].b,
+        PSEUDO_CACC => s.r[118].b & CACC,
         c if c >= NREGS => 0,
         c => s.r[c as usize].b,
     }
@@ -555,6 +613,22 @@ fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64
     if any {
         s.r[118] = v;
     }
+}
+
+/// The CACC compare history (ASTATX bits 24-31) after the compares that ran:
+/// the kernel shifts each result in (`Lower::compare_flag`) starting from the
+/// entry value, and the region requires ASTATX to be fully known at entry, so
+/// the value is exact.
+fn apply_cacc(s: &mut St, r: &Region, ctx: &Ctx) {
+    if !r.cacc {
+        return;
+    }
+    let h = ctx.get32(ctx_reg_out(PSEUDO_CACC)) & CACC;
+    let v = s.r[118];
+    s.r[118] = V {
+        b: (v.b & !CACC) | h,
+        m: v.m | CACC,
+    };
 }
 
 #[allow(dead_code)]
@@ -936,6 +1010,7 @@ pub fn run_cfg(
         };
     }
     apply_groups(s, r, ctx);
+    apply_cacc(s, r, ctx);
     s.pc_sw = site.pc as Int;
     s.icount += completed;
     s.steps += completed as Int;

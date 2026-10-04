@@ -131,9 +131,19 @@ impl Emit<'_, '_> {
         // Rarely taken: laid out after the loop so the guards fall through.
         self.b.set_cold_block(blk);
         self.b.switch_to_block(blk);
+        // A 0/1 word made from a comparison here lives in this block only:
+        // the cache must not hand it to the code after the guard.
+        let fresh: Vec<Val> = self.k.exits[exit as usize]
+            .iter()
+            .map(|&(_, x)| x)
+            .filter(|&x| self.vals[x as usize].is_none())
+            .collect();
         for &(var, x) in &self.k.exits[exit as usize] {
             let v = self.as_var_ty(var, x);
             self.b.def_var(self.vars[var.0 as usize], v);
+        }
+        for x in fresh {
+            self.vals[x as usize] = None;
         }
         let kv = self.b.ins().iconst(types::I32, k as i64);
         self.b
@@ -293,6 +303,7 @@ impl Emit<'_, '_> {
                     Un::IToF => self.b.ins().fcvt_from_sint(types::F32, x),
                     Un::Zext => self.b.ins().uextend(types::I64, x),
                     Un::Not => self.b.ins().bnot(x),
+                    Un::Clz => self.b.ins().clz(x),
                 }
             }
             Op::Bin(bin, x, y) => {
@@ -321,6 +332,8 @@ impl Emit<'_, '_> {
                     Bin::FAdd => self.b.ins().fadd(x, y),
                     Bin::FSub => self.b.ins().fsub(x, y),
                     Bin::FMul => self.b.ins().fmul(x, y),
+                    Bin::FDiv => self.b.ins().fdiv(x, y),
+                    Bin::MulHs => self.b.ins().smulhi(x, y),
                 }
             }
             Op::Select(c, a, b) => {

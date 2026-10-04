@@ -120,6 +120,7 @@ impl InterpKernel {
                                 Un::IToF => fb(a as u32 as i32 as f32),
                                 Un::Zext => a as u32 as u64,
                                 Un::Not => (!(a as u32)) as u64,
+                                Un::Clz => (a as u32).leading_zeros() as u64,
                             }
                         }
                         Op::Bin(b, x, y) => {
@@ -151,6 +152,10 @@ impl InterpKernel {
                                 Bin::FMul => fb(f(x) * f(y)),
                                 Bin::Add64 => x.wrapping_add(y),
                                 Bin::Sub64 => x.wrapping_sub(y),
+                                Bin::FDiv => fb(f(x) / f(y)),
+                                Bin::MulHs => {
+                                    (((xu as i32 as i64) * (yu as i32 as i64)) >> 32) as u32 as u64
+                                }
                             }
                         }
                         Op::Select(c, a, b) => {
