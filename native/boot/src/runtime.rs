@@ -63,6 +63,18 @@ pub struct Snapshot {
     pub frame: Option<Vec<u8>>,
 }
 
+/// The registers at one execution of a PC `record_regs_at` names.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct RegHit {
+    pub pc: u32,
+    pub icount: u64,
+    pub d: [u32; 8],
+    pub a: [u32; 8],
+}
+
+/// How many executions `record_regs_at` keeps; later ones are counted only.
+pub const REG_LOG_MAX: usize = 4096;
+
 /// Persistent, bounded Oracle diagnostic state. It has no host I/O and does
 /// not claim a hardware or interrupt-device model.
 pub struct Emulator {
@@ -103,6 +115,11 @@ pub struct Emulator {
     watch: Vec<u64>,
     /// PCs a host asked to count (`watch_pcs`): (pc, hits, icount of the first).
     pc_watch: Vec<(u32, u64, u64)>,
+    /// PCs whose registers a host asked to record (`record_regs_at`), and the
+    /// record: every execution, up to `REG_LOG_MAX`, then the count only.
+    reg_watch: Vec<u32>,
+    reg_log: Vec<RegHit>,
+    reg_log_dropped: u64,
     idle_passes: u64,
     task_create_hits: u64,
     mainloop_hits: u64,
@@ -415,6 +432,9 @@ impl Emulator {
             idle_spins,
             watch: Vec::new(),
             pc_watch: Vec::new(),
+            reg_watch: Vec::new(),
+            reg_log: Vec::new(),
+            reg_log_dropped: 0,
             idle_passes: 0,
             task_create_hits: 0,
             mainloop_hits: 0,
@@ -571,6 +591,22 @@ impl Emulator {
         }
         self.cpu.invalidate_external_write(addr, bytes.len());
         Ok(())
+    }
+
+    /// Records D0-D7 and A0-A7 each time one of PCS is about to execute (replacing
+    /// any PCs asked for before, and the record): a debugger's breakpoint that
+    /// logs and goes on. See `reg_log`.
+    pub fn record_regs_at(&mut self, pcs: &[u32]) {
+        self.reg_watch = pcs.to_vec();
+        self.reg_log.clear();
+        self.reg_log_dropped = 0;
+        self.rebuild_watch();
+    }
+
+    /// What `record_regs_at` recorded, oldest first, and how many executions past
+    /// `REG_LOG_MAX` were only counted.
+    pub fn reg_log(&self) -> (&[RegHit], u64) {
+        (&self.reg_log, self.reg_log_dropped)
     }
 
     /// Declares extra executable ranges for the runaway check (replacing any
@@ -933,6 +969,7 @@ impl Emulator {
         self.observed_pcs = observed;
         pcs.extend(self.fused_loops.iter().map(|(head, _, _)| *head));
         pcs.extend(self.pc_watch.iter().map(|&(pc, _, _)| pc));
+        pcs.extend(self.reg_watch.iter().copied());
         for pc in pcs {
             if let Some(off) = pc.checked_sub(MAIN_LOAD) {
                 let i = (off >> 1) as usize;
@@ -1159,6 +1196,18 @@ impl Emulator {
                         *first = self.cpu.icount;
                     }
                     *hits += 1;
+                }
+            }
+            if self.reg_watch.contains(&pc) {
+                if self.reg_log.len() < REG_LOG_MAX {
+                    self.reg_log.push(RegHit {
+                        pc,
+                        icount: self.cpu.icount,
+                        d: self.cpu.d,
+                        a: self.cpu.a,
+                    });
+                } else {
+                    self.reg_log_dropped += 1;
                 }
             }
         }
