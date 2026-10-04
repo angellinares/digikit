@@ -13,6 +13,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CLEAN = [
+    "tools/benchlock.py",
+    "tests/test_benchlock.py",
     "tools/native_emu.sh",
     "tools/native_pgo.py",
     "tests/test_native_emu_launcher.py",

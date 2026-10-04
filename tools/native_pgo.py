@@ -54,6 +54,16 @@ SKIP_DIRS = {"target", ".git", "node_modules"}
 SKIP_FILES = {".DS_Store"}
 
 
+def benchlock(mode: str, label: str):
+    """Lock for builds (shared) and timed runs (exclusive), see benchlock.py."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    try:
+        import benchlock as module
+    finally:
+        sys.path.pop(0)
+    return module.hold(mode, label)
+
+
 def supported_host() -> bool:
     return sys.platform == "darwin" and platform.machine() == "arm64"
 
@@ -351,7 +361,7 @@ def build_tests(
         "--message-format=json",
     ]
     log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("w") as handle:
+    with benchlock("shared", "pgo cargo build"), log.open("w") as handle:
         proc = subprocess.run(
             command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=handle, text=True
         )
@@ -490,14 +500,15 @@ def cmd_train(args: argparse.Namespace) -> None:
 
     gates = []
     for number in range(1, args.runs + 1):
-        result = run_workload(
-            binary,
-            state / f"train-{number}.log",
-            {
-                "LLVM_PROFILE_FILE": str(raw / f"train-{number}-%m.profraw"),
-                "SHARC_FAST_REGIONS": fast,
-            },
-        )
+        with benchlock("shared", "pgo train"):
+            result = run_workload(
+                binary,
+                state / f"train-{number}.log",
+                {
+                    "LLVM_PROFILE_FILE": str(raw / f"train-{number}-%m.profraw"),
+                    "SHARC_FAST_REGIONS": fast,
+                },
+            )
         gates.append(result.line)
         print(
             f"train run {number}: elapsed {result.elapsed:.3f} s frames {result.frames}",
@@ -639,28 +650,29 @@ def paired_bench(
 ) -> None:
     """Alternate A,B / B,A runs of the workload; write bench.tsv, summary.json."""
     rows = []
-    for pair in range(1, pairs + 1):
-        order = [label_a, label_b] if pair % 2 else [label_b, label_a]
-        results = {}
-        for label in order:
-            dst, deps = binaries[label]
-            results[label] = run_workload(
-                dst,
-                out / f"run-{pair:02d}-{label}.log",
-                {
-                    "DYLD_LIBRARY_PATH": str(deps),
-                    **_label_env(env, label),
-                },
+    with benchlock("exclusive", "pgo bench"):
+        for pair in range(1, pairs + 1):
+            order = [label_a, label_b] if pair % 2 else [label_b, label_a]
+            results = {}
+            for label in order:
+                dst, deps = binaries[label]
+                results[label] = run_workload(
+                    dst,
+                    out / f"run-{pair:02d}-{label}.log",
+                    {
+                        "DYLD_LIBRARY_PATH": str(deps),
+                        **_label_env(env, label),
+                    },
+                )
+            for label in (label_a, label_b):
+                r = results[label]
+                rows.append(
+                    (pair, label, r.elapsed, r.dsp_ns, r.frames, r.real, r.user, r.sys)
+                )
+            print(
+                f"pair {pair} order {','.join(order)}: ratio wall {results[label_b].elapsed / results[label_a].elapsed:.3f}",
+                flush=True,
             )
-        for label in (label_a, label_b):
-            r = results[label]
-            rows.append(
-                (pair, label, r.elapsed, r.dsp_ns, r.frames, r.real, r.user, r.sys)
-            )
-        print(
-            f"pair {pair} order {','.join(order)}: ratio wall {results[label_b].elapsed / results[label_a].elapsed:.3f}",
-            flush=True,
-        )
     with (out / "bench.tsv").open("w") as handle:
         handle.write(
             "pair\tlabel\telapsed_s\tworker_dsp_ns\tframes\treal_s\tuser_s\tsys_s\n"

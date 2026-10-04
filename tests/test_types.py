@@ -13,6 +13,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 TYPED = [
+    "tools/benchlock.py",
     "emu/livesharc.py",
     "emu/mmiotrace.py",
     "emu/sharc_peer.py",

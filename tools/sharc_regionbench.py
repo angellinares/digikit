@@ -199,20 +199,14 @@ def cmd_gen(args, extra: list[str]) -> None:
 # -- build -----------------------------------------------------------------
 
 
-def wait_for_other_builds(limit_s: int = 1200) -> None:
-    """Em builds the desktop app in the same tree: wait until no
-    sharc_native rustc runs that this tool did not start."""
-    t = time.time()
-    while True:
-        out = subprocess.run(
-            ["pgrep", "-f", "crate-name sharc_native"], capture_output=True, text=True
-        ).stdout.split()
-        if not out:
-            return
-        if time.time() - t > limit_s:
-            sys.exit("another sharc_native build is still running")
-        print("waiting for another sharc_native build (pids %s)" % out, flush=True)
-        time.sleep(30)
+def benchlock(mode: str, label: str):
+    """Lock for builds (shared) and timed runs (exclusive), see benchlock.py."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        import benchlock as module
+    finally:
+        sys.path.pop(0)
+    return module.hold(mode, label)
 
 
 def cmd_build(args) -> str:
@@ -265,7 +259,6 @@ def cmd_build(args) -> str:
             if json.load(fh).get("key") == key:
                 print("build %s: up to date" % args.variant)
                 return exe
-    wait_for_other_builds()
     env = dict(os.environ, SHARC_GEN_DIR=gen, **PROFILE_ENV)
     if os.path.isfile(SOL):
         env["SHARC_REGIONBENCH_SOL"] = SOL
@@ -274,13 +267,14 @@ def cmd_build(args) -> str:
             os.path.abspath(pgo)
         )
     target = os.path.join(vdir, "target")
-    secs = run(
-        ["rustup", "run", TOOLCHAIN, "cargo", "build", "--release", "--locked"]
-        + ["--example", "region_bench", "--target", TRIPLE]
-        + ["--manifest-path", os.path.join(ROOT, "native", "sharc", "Cargo.toml")]
-        + ["--target-dir", target],
-        env=env,
-    )
+    with benchlock("shared", "regionbench build"):
+        secs = run(
+            ["rustup", "run", TOOLCHAIN, "cargo", "build", "--release", "--locked"]
+            + ["--example", "region_bench", "--target", TRIPLE]
+            + ["--manifest-path", os.path.join(ROOT, "native", "sharc", "Cargo.toml")]
+            + ["--target-dir", target],
+            env=env,
+        )
     built = os.path.join(target, TRIPLE, "release", "examples", "region_bench")
     with open(built, "rb") as fh:
         digest = hashlib.sha256(fh.read()).hexdigest()
@@ -402,7 +396,8 @@ def cmd_bench(args) -> None:
     exe = cmd_build(args)
     names = args.regions.split(",")
     t = time.perf_counter()
-    rows = run_bench(exe, names, args.reps, args.calls)
+    with benchlock("exclusive", "regionbench bench"):
+        rows = run_bench(exe, names, args.reps, args.calls)
     secs = time.perf_counter() - t
     path = os.path.join(variant_dir(args.variant), "bench-%d.jsonl" % int(time.time()))
     with open(path, "w") as fh:
@@ -420,14 +415,15 @@ def cmd_fast_bench(args) -> None:
     names = args.regions.split(",")
     entries = pick_entries(names)
     back = {e: n for n, e in entries.items()}
-    out = subprocess.run(
-        [exe, "fast-bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
-        + ["--reps", str(args.reps), "--calls", str(args.calls)],
-        check=True,
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    ).stdout
+    with benchlock("exclusive", "regionbench fast-bench"):
+        out = subprocess.run(
+            [exe, "fast-bench", PACKED_IMAGE, states_dir(), ",".join(entries.values())]
+            + ["--reps", str(args.reps), "--calls", str(args.calls)],
+            check=True,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        ).stdout
     rows = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
     path = os.path.join(
         variant_dir(args.variant), "fastbench-%d.jsonl" % int(time.time())
@@ -464,11 +460,12 @@ def cmd_compare(args) -> None:
     meds: dict[str, dict[str, list[float]]] = {
         n: {args.a: [], args.b: []} for n in names
     }
-    for i in range(args.rounds):
-        order = (args.a, args.b) if i % 2 == 0 else (args.b, args.a)
-        for v in order:
-            for r in run_bench(exes[v], names, 1, args.calls):
-                meds[r["region"]][v].append(r["trim_ns"])
+    with benchlock("exclusive", "regionbench compare"):
+        for i in range(args.rounds):
+            order = (args.a, args.b) if i % 2 == 0 else (args.b, args.a)
+            for v in order:
+                for r in run_bench(exes[v], names, 1, args.calls):
+                    meds[r["region"]][v].append(r["trim_ns"])
     print("region   ratio B/A (median of paired)  min..max   A ns   B ns")
     for n in names:
         a, b = meds[n][args.a], meds[n][args.b]
