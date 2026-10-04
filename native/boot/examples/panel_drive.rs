@@ -61,7 +61,10 @@ fn hex_bytes(text: &str) -> Option<Vec<u8>> {
     if text.len() % 2 != 0 {
         return None;
     }
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).ok()).collect()
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).ok())
+        .collect()
 }
 
 fn pbm(frame: &[u8]) -> Vec<u8> {
@@ -105,8 +108,11 @@ impl Run {
                 return Err(error.clone());
             }
             let faults = &self.faults;
-            if let Some(&(pc, _, _)) =
-                self.emulator.pc_hits().iter().find(|&&(pc, hits, _)| hits > 0 && faults.contains(&pc))
+            if let Some(&(pc, _, _)) = self
+                .emulator
+                .pc_hits()
+                .iter()
+                .find(|&&(pc, hits, _)| hits > 0 && faults.contains(&pc))
             {
                 return Err(format!("watched pc {pc:#010x} ran"));
             }
@@ -116,8 +122,10 @@ impl Run {
 }
 
 fn usage(message: &str) -> ExitCode {
-    eprintln!("{message}\nusage: panel_drive SYX [--state IN] [--save-state OUT] [--after N] [--max N] \
-               [--watch PC,...] [--out DIR] [--hold N] --steps STEP,...");
+    eprintln!(
+        "{message}\nusage: panel_drive SYX [--state IN] [--save-state OUT] [--after N] [--max N] \
+               [--watch PC,...] [--count PC,...] [--out DIR] [--hold N] --steps STEP,..."
+    );
     ExitCode::from(3)
 }
 
@@ -126,20 +134,40 @@ fn main() -> ExitCode {
     let Some(syx_path) = args.first() else {
         return usage("no image");
     };
-    let flag = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
-    let after = flag("--after").and_then(|n| number(&n)).unwrap_or(100_000_000);
-    let max = flag("--max").and_then(|n| number(&n)).unwrap_or(2_000_000_000);
-    let hold = flag("--hold").and_then(|n| number(&n)).unwrap_or(10_000_000);
+    let flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let after = flag("--after")
+        .and_then(|n| number(&n))
+        .unwrap_or(100_000_000);
+    let max = flag("--max")
+        .and_then(|n| number(&n))
+        .unwrap_or(2_000_000_000);
+    let hold = flag("--hold")
+        .and_then(|n| number(&n))
+        .unwrap_or(10_000_000);
     let out = PathBuf::from(flag("--out").unwrap_or_else(|| ".".into()));
     let pcs = |name: &str| -> Vec<u32> {
         flag(name)
-            .map(|list| list.split(',').filter_map(|pc| number(pc).map(|v| v as u32)).collect())
+            .map(|list| {
+                list.split(',')
+                    .filter_map(|pc| number(pc).map(|v| v as u32))
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let watch = pcs("--watch");
     let counted = pcs("--count");
     let steps: Vec<String> = flag("--steps")
-        .map(|s| s.split(',').map(|step| step.trim().to_string()).filter(|s| !s.is_empty()).collect())
+        .map(|s| {
+            s.split(',')
+                .map(|step| step.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
 
     let syx = match fs::read(syx_path) {
@@ -150,11 +178,19 @@ fn main() -> ExitCode {
     let emulator = match Emulator::new(&syx, None) {
         Ok(emulator) => emulator,
         Err(error) => {
-            println!("{}", json!({"outcome": "fault", "stage": "load", "error": error}));
+            println!(
+                "{}",
+                json!({"outcome": "fault", "stage": "load", "error": error})
+            );
             return ExitCode::from(1);
         }
     };
-    let mut run = Run { emulator, frame: None, icount: 0, faults: watch.clone() };
+    let mut run = Run {
+        emulator,
+        frame: None,
+        icount: 0,
+        faults: watch.clone(),
+    };
 
     // The start: a saved state, or a boot from reset to the main UI and past it.
     let mut boot = json!(null);
@@ -164,19 +200,26 @@ fn main() -> ExitCode {
             Err(error) => return usage(&format!("cannot read {path}: {error}")),
         };
         if let Err(error) = run.emulator.load_state(&state) {
-            println!("{}", json!({"outcome": "fault", "stage": "state", "error": error}));
+            println!(
+                "{}",
+                json!({"outcome": "fault", "stage": "state", "error": error})
+            );
             return ExitCode::from(1);
         }
         let snapshot = run.emulator.snapshot();
         run.icount = snapshot.status.icount;
         run.frame = snapshot.frame;
     }
-    run.emulator.watch_pcs(&[watch.as_slice(), counted.as_slice()].concat());
+    run.emulator
+        .watch_pcs(&[watch.as_slice(), counted.as_slice()].concat());
     if flag("--state").is_none() {
         let mut ui_at = None;
         while ui_at.is_none() {
             if let Err(error) = run.advance(u64::from(CHUNK)) {
-                println!("{}", json!({"outcome": "fault", "stage": "boot", "error": error, "icount": run.icount}));
+                println!(
+                    "{}",
+                    json!({"outcome": "fault", "stage": "boot", "error": error, "icount": run.icount})
+                );
                 return ExitCode::from(1);
             }
             if run.emulator.snapshot().status.main_ui_reached {
@@ -187,7 +230,10 @@ fn main() -> ExitCode {
             }
         }
         if let Err(error) = run.advance(after) {
-            println!("{}", json!({"outcome": "fault", "stage": "boot", "error": error, "icount": run.icount}));
+            println!(
+                "{}",
+                json!({"outcome": "fault", "stage": "boot", "error": error, "icount": run.icount})
+            );
             return ExitCode::from(1);
         }
         boot = json!({"main_ui_at": ui_at, "seconds": started.elapsed().as_secs_f64()});
@@ -200,7 +246,10 @@ fn main() -> ExitCode {
                 }
             }
             Err(error) => {
-                println!("{}", json!({"outcome": "fault", "stage": "save-state", "error": error}));
+                println!(
+                    "{}",
+                    json!({"outcome": "fault", "stage": "save-state", "error": error})
+                );
                 return ExitCode::from(1);
             }
         }
@@ -213,7 +262,13 @@ fn main() -> ExitCode {
         let parts: Vec<&str> = step.split(':').collect();
         let outcome: Result<(), String> = (|| {
             let bad = || format!("step {step:?}: not understood");
-            let code = |i: usize| parts.get(i).and_then(|p| number(p)).map(|n| n as u8).ok_or_else(bad);
+            let code = |i: usize| {
+                parts
+                    .get(i)
+                    .and_then(|p| number(p))
+                    .map(|n| n as u8)
+                    .ok_or_else(bad)
+            };
             match parts[0] {
                 "wait" => run.advance(parts.get(1).and_then(|p| number(p)).ok_or_else(bad)?),
                 "press" => run.emulator.button(code(1)?, true),
@@ -231,10 +286,15 @@ fn main() -> ExitCode {
                 }
                 "frame" => {
                     let name = parts.get(1).ok_or_else(bad)?;
-                    let frame = run.frame.as_ref().filter(|f| f.len() == 1024).ok_or("no frame yet")?;
+                    let frame = run
+                        .frame
+                        .as_ref()
+                        .filter(|f| f.len() == 1024)
+                        .ok_or("no frame yet")?;
                     let path = out.join(format!("{name}.pbm"));
                     fs::write(&path, pbm(frame)).map_err(|e| format!("{}: {e}", path.display()))?;
-                    results.push(json!({"frame": path.display().to_string(), "icount": run.icount}));
+                    results
+                        .push(json!({"frame": path.display().to_string(), "icount": run.icount}));
                     Ok(())
                 }
                 "peek" => {
@@ -242,7 +302,9 @@ fn main() -> ExitCode {
                     let len = parts.get(2).and_then(|p| number(p)).ok_or_else(bad)? as usize;
                     let bytes = run.emulator.peek(addr, len)?;
                     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-                    results.push(json!({"peek": format!("{addr:#010x}"), "hex": hex, "icount": run.icount}));
+                    results.push(
+                        json!({"peek": format!("{addr:#010x}"), "hex": hex, "icount": run.icount}),
+                    );
                     Ok(())
                 }
                 "poke" => {
