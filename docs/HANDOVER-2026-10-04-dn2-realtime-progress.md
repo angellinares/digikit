@@ -46,22 +46,19 @@ Pre-existing dirty docs from earlier sessions are untouched.
 
 ## Next steps
 
-The direction is a load-time translator (the fast tier) with Cranelift for
-native and a WebAssembly backend for the browser, so that a GitHub Pages
-build carries no firmware-derived code and runs any uploaded or patched
-.syx. The AOT generated cache stays a local development path.
+State: desktop app about 1.22x real time with PGO and three fast regions.
+The fast tier covers most of the hot set, but its fixed per-call cost makes
+small regions slower than the generated code, so wider coverage does not pay
+yet.
 
-1. Widen the fast tier to the top 19 regions (about 50% of DSP time):
-   multifunction computes, the 4a/15b/4b/15a memory forms, conditions and
-   flag reads inside bodies, nested and in-region DO loops, non-loop regions
-   with jumps and calls, rare ALU ops. Each family is a separate lowering
-   file with its own differential test, so the work runs in parallel.
-2. Pick hot regions at run time from entry counts instead of
-   `SHARC_FAST_REGIONS`.
-3. Replace chain capping: let generated blocks end at fast-tier entries.
-4. WebAssembly backend for the same kernels (`native/sharc-jit` already
-   splits modules that share memory and a function table).
-5. Firmware-free inputs: Rust loader-stream image parser, DSP cold start
-   compared with the ready state, idle addresses per firmware, then a
-   .syx-only `digi_load_coupled`.
-6. Live check on the desktop app after each step.
+1. Cut the per-call cost: profile the glue (register copies, window
+   resolution, flag replay) and let kernels read and write `St` directly by
+   offset (works in WebAssembly too: `St` lives in linear memory).
+2. Measure the fast tier as the only compiled tier (interpreter plus fast
+   tier, no generated cache) with run-time hot-region selection. That is what
+   the browser will run, and it removes the 4-minute builds.
+3. Grow regions across CALL/RTS and chains, so each call does more work.
+4. ColdFire becomes the limit near 0.83x real time (its step window was 632 ms
+   of the 0.759 s workload); profile it once the DSP is below real time.
+5. WebAssembly backend; firmware-free inputs (loader-stream image, cold start
+   checked against the ready state).

@@ -6064,3 +6064,30 @@ to Rust. A cold start from that image alone, with runtime decode, reached
 the DN2 idle range at about 573.6M instructions (the default clock base is
 573,627,620). That cold state has not yet been compared with the private
 ready state. Notes: `out/native/fwfree-20261004/`.
+
+### Fast tier: wider coverage, app integration (2026-10-04)
+
+**[V]** The fast tier now lowers multifunction and dual add/subtract,
+immediate-offset memory forms (4a, 4b, 4d, 15a, 15b, 14a, 19a, 7b), the
+remaining compute ops of the hot set, conditions with lazily computed flags,
+and a CFG shape (jumps, delayed branches, nested and in-region DO loops). Every
+index update requires L == 0: the interpreter's post-modify does not wrap
+circular buffers, so the tier declines rather than copy that. After the
+merges: `fast_diff forms` 25.6M states, `forms --cond`, `cfg` 15,000 random
+programs and `region` all show 0 mismatches. 32 entries of the top-19 work set
+build and run on their captured states with full-state equality. Five decline
+on a non-zero L, four on SIMD MODE1, one on an unknown register.
+
+**[V]** Coverage is not speed. Per call, large loops gain 2-4.5x over the
+generated code (`r_1C3862` 3,405 vs 792 ns, `r_1C5765` 1,772 vs 398 ns), but
+regions of 3-5 instructions run at 0.4-0.56x because the fixed per-call cost
+(about 125 ns: registers copied between `St` and the kernel context, window
+resolution, flag replay) exceeds their work. On the coupled workload the three
+original regions give 0.883 wall over 7 pairs; enabling all 32 verified
+entries gives 1.38x (slower); single additions are within the ±2% noise. The
+launcher keeps the three regions. With PGO the desktop app's coupled workload
+runs at about 1.22x real time (0.924 s for 0.759 s of audio).
+
+**[O]** The generated-block-only run of entry `0x1c0ca9` differs from the
+interpreter in `at_loaded_entry`; the fast tier matches the interpreter there.
+Not investigated.
