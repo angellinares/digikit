@@ -550,7 +550,10 @@ impl Emulator {
         (0..len)
             .map(|i| {
                 let at = addr.wrapping_add(i as u32);
-                self.bus.board.read8(at).map_err(|e| format!("peek {at:#010x}: {e:?}"))
+                self.bus
+                    .board
+                    .read8(at)
+                    .map_err(|e| format!("peek {at:#010x}: {e:?}"))
             })
             .collect()
     }
@@ -561,7 +564,10 @@ impl Emulator {
     pub fn poke(&mut self, addr: u32, bytes: &[u8]) -> Result<(), String> {
         for (i, &value) in bytes.iter().enumerate() {
             let at = addr.wrapping_add(i as u32);
-            self.bus.board.write8(at, value).map_err(|e| format!("poke {at:#010x}: {e:?}"))?;
+            self.bus
+                .board
+                .write8(at, value)
+                .map_err(|e| format!("poke {at:#010x}: {e:?}"))?;
         }
         self.cpu.invalidate_external_write(addr, bytes.len());
         Ok(())
