@@ -29,6 +29,7 @@
 pub mod addressing;
 pub mod canon;
 pub mod decode;
+pub mod fast;
 pub mod frames;
 pub mod mem;
 pub mod rt;
@@ -260,6 +261,9 @@ pub struct Engine {
     code_checked: u64,
     code_known: bool,
     code_ok: bool,
+    /// Optional fast tier (src/fast): tried at its entry PCs before the
+    /// generated block. None by default; behaviour is unchanged without it.
+    pub fast: Option<Box<dyn fast::FastTier>>,
 }
 
 /// What the run-time model gate decided (diagnostic counters).
@@ -535,7 +539,13 @@ impl Engine {
             code_checked: 0,
             code_known: false,
             code_ok: false,
+            fast: None,
         }
+    }
+
+    /// Install (or remove) the fast tier.
+    pub fn set_fast(&mut self, fast: Option<Box<dyn fast::FastTier>>) {
+        self.fast = fast;
     }
 
     /// An engine over an image blob (tools/sharc_transpile_run.py
@@ -548,6 +558,9 @@ impl Engine {
         e.s.core_mmr_reset = img.core_reset;
         e.s.set_mmr_windows();
         e.s.mem.reset();
+        if let Some(f) = fast::from_env() {
+            e.fast = Some(Box::new(f));
+        }
         Ok(e)
     }
 
@@ -979,7 +992,7 @@ impl Engine {
     /// core timer at least two ticks from expiry (the block is limited to
     /// the ticks before that), and no peripheral store (those leave the block
     /// as TRAP_BLOCK_MODEL).
-    fn block_plan(&mut self, limit: u64) -> Option<(Entry, BlockPlan)> {
+    fn block_plan(&mut self, limit: u64) -> Option<(Option<Entry>, BlockPlan)> {
         if !(self.use_blocks
             && self.s.cfg.block_base_ok
             && !self.stop_software_interrupt
@@ -994,7 +1007,17 @@ impl Engine {
         {
             return None;
         }
-        let entry = self.dispatch.get_entry(self.s.pc_sw)?;
+        // A PC the fast tier handles needs no generated block (firmware-free
+        // mode): the same gates apply, the model-safety of its region being
+        // established by the fast tier's own register whitelist.
+        let mut entry = self.dispatch.get_entry(self.s.pc_sw);
+        let fast_pc = self
+            .fast
+            .as_ref()
+            .is_some_and(|f| f.wants(self.s.pc_sw as u32));
+        if entry.is_none() && !fast_pc {
+            return None;
+        }
         let mut plan = BlockPlan {
             limit,
             models: false,
@@ -1002,9 +1025,13 @@ impl Engine {
             bank_pre: None,
         };
         if self.models_active() {
-            if !entry.model_safe {
-                self.model_stats.unsafe_block += 1;
-                return None;
+            if entry.is_some_and(|e| !e.model_safe) {
+                if !fast_pc {
+                    self.model_stats.unsafe_block += 1;
+                    return None;
+                }
+                // Only the fast tier may run here.
+                entry = None;
             }
             let s = &self.s;
             if s.cfg.bank_model
@@ -1100,7 +1127,7 @@ impl Engine {
         let limit = start + n as u64;
         self.idle_snap = None;
         self.s.probe = None;
-        while self.s.icount < limit {
+        'steploop: while self.s.icount < limit {
             if let Some((lo, hi)) = self.stop_range
                 && (lo as Int..hi as Int).contains(&self.s.pc_sw)
                 && self.stop_align.is_none_or(|(chunk, base)| {
@@ -1210,96 +1237,119 @@ impl Engine {
                 self.s.r[106] = V::c((tick >> 32) as Int);
             }
             if let Some((entry, plan)) = self.block_plan(limit) {
-                self.s.limit = plan.limit;
-                self.s.chain = 0;
-                let before = self.s.icount;
-                let entry_pc = self.s.pc_sw as u32;
-                self.last_interp_next = -1;
-                let t0 = if self.prof.is_some() { ticks() } else { 0 };
-                if plan.bank_pre.is_some() {
-                    self.s.bank_pending_mask = -1;
-                }
-                self.s.in_block = plan.models;
-                let code = (entry.f)(&mut self.s);
-                self.s.in_block = false;
-                if self.s.icount == before {
-                    if let Some(p) = plan.bank_pre {
-                        self.s.bank_pending_mask = p;
+                'blk: {
+                    self.s.limit = plan.limit;
+                    self.s.chain = 0;
+                    let before = self.s.icount;
+                    let entry_pc = self.s.pc_sw as u32;
+                    self.last_interp_next = -1;
+                    let t0 = if self.prof.is_some() { ticks() } else { 0 };
+                    if plan.bank_pre.is_some() {
+                        self.s.bank_pending_mask = -1;
                     }
-                } else if self.s.cfg.bank_model && self.s.bank_requested_mask >= 0 {
-                    // The block's last instruction wrote MODE1 (tools/
-                    // sharc_rsgen.py TERMINAL): its completion, as St::commit
-                    // does after an interpreted instruction.
-                    self.s.bank_complete();
-                }
-                self.block_models_after(&plan, before);
-                let entry = entry_pc;
-                if let Some(p) = &mut self.prof {
-                    let t = ticks() - t0;
-                    let e = p.entry(entry).or_default();
-                    e.0 += t;
-                    e.1 += self.s.icount - before;
-                    e.2 += 1;
-                }
-                if let Some(t) = &mut self.trans {
-                    *t.entry((entry, self.s.pc_sw as u32)).or_default() += 1;
-                }
-                if code != EXIT_NEXT
-                    && let Some(x) = &mut self.exits
-                {
-                    let (kind, at) = if code == EXIT_TRAP {
-                        (1, self.s.trap.map(|t| t.0).unwrap_or(0))
-                    } else if self.s.icount == before {
-                        if let Some(bails) = &mut self.entry_bails {
-                            let unknown =
-                                self.s.r.iter().enumerate().fold(0u128, |m, (c, v)| {
-                                    m | if v.is_c() { 0 } else { 1u128 << c }
-                                });
-                            *bails
-                                .entry((
-                                    entry,
-                                    self.s.r[MODE1].b,
-                                    unknown,
-                                    self.s.pending.is_some(),
-                                ))
-                                .or_default() += 1;
+                    self.s.in_block = plan.models;
+                    let mut code = None;
+                    if let Some(f) = self.fast.as_mut() {
+                        code = f.run(&mut self.s, entry_pc);
+                    }
+                    if code.is_none()
+                        && let Some(entry) = entry
+                    {
+                        if self.fast.as_ref().is_some_and(|f| f.caps_chain()) {
+                            // End every chain at its first link: the fast tier
+                            // is only consulted from here.
+                            self.s.chain = CHAIN_MAX;
                         }
-                        (0, self.s.pc_sw as u32)
-                    } else {
-                        (2, self.s.pc_sw as u32)
+                        code = Some((entry.f)(&mut self.s));
+                    }
+                    self.s.in_block = false;
+                    // Neither the fast tier nor a block (none for this PC):
+                    // the interpreter runs one instruction.
+                    let Some(code) = code else {
+                        if let Some(p) = plan.bank_pre {
+                            self.s.bank_pending_mask = p;
+                        }
+                        break 'blk;
                     };
-                    *x.entry((entry, kind, at)).or_default() += 1;
-                }
-                self.stats.block_entries += 1;
-                self.stats.block_instructions += self.s.icount - before;
-                if self.one_dispatch && self.s.icount > before {
-                    break;
-                }
-                match code {
-                    EXIT_NEXT => continue,
-                    EXIT_TRAP => {
-                        // Undone: the one-instruction interpreter runs it
-                        // (and traps for good if the core does).
-                        self.stats.block_traps += 1;
-                        if self.s.trap == Some(TRAP_BLOCK_MODEL) {
-                            self.model_stats.mmr_exits += 1;
+                    if self.s.icount == before {
+                        if let Some(p) = plan.bank_pre {
+                            self.s.bank_pending_mask = p;
                         }
-                        self.s.trap = None;
-                        if self.s.icount >= limit {
-                            break;
-                        }
-                        if self.s.icount > before {
-                            // Instructions completed: the next boundary gets
-                            // its interrupt, clock and peripheral checks.
-                            continue;
-                        }
+                    } else if self.s.cfg.bank_model && self.s.bank_requested_mask >= 0 {
+                        // The block's last instruction wrote MODE1 (tools/
+                        // sharc_rsgen.py TERMINAL): its completion, as St::commit
+                        // does after an interpreted instruction.
+                        self.s.bank_complete();
                     }
-                    _ => {
-                        if self.s.icount >= limit {
-                            break;
+                    self.block_models_after(&plan, before);
+                    let entry = entry_pc;
+                    if let Some(p) = &mut self.prof {
+                        let t = ticks() - t0;
+                        let e = p.entry(entry).or_default();
+                        e.0 += t;
+                        e.1 += self.s.icount - before;
+                        e.2 += 1;
+                    }
+                    if let Some(t) = &mut self.trans {
+                        *t.entry((entry, self.s.pc_sw as u32)).or_default() += 1;
+                    }
+                    if code != EXIT_NEXT
+                        && let Some(x) = &mut self.exits
+                    {
+                        let (kind, at) = if code == EXIT_TRAP {
+                            (1, self.s.trap.map(|t| t.0).unwrap_or(0))
+                        } else if self.s.icount == before {
+                            if let Some(bails) = &mut self.entry_bails {
+                                let unknown =
+                                    self.s.r.iter().enumerate().fold(0u128, |m, (c, v)| {
+                                        m | if v.is_c() { 0 } else { 1u128 << c }
+                                    });
+                                *bails
+                                    .entry((
+                                        entry,
+                                        self.s.r[MODE1].b,
+                                        unknown,
+                                        self.s.pending.is_some(),
+                                    ))
+                                    .or_default() += 1;
+                            }
+                            (0, self.s.pc_sw as u32)
+                        } else {
+                            (2, self.s.pc_sw as u32)
+                        };
+                        *x.entry((entry, kind, at)).or_default() += 1;
+                    }
+                    self.stats.block_entries += 1;
+                    self.stats.block_instructions += self.s.icount - before;
+                    if self.one_dispatch && self.s.icount > before {
+                        break 'steploop;
+                    }
+                    match code {
+                        EXIT_NEXT => continue 'steploop,
+                        EXIT_TRAP => {
+                            // Undone: the one-instruction interpreter runs it
+                            // (and traps for good if the core does).
+                            self.stats.block_traps += 1;
+                            if self.s.trap == Some(TRAP_BLOCK_MODEL) {
+                                self.model_stats.mmr_exits += 1;
+                            }
+                            self.s.trap = None;
+                            if self.s.icount >= limit {
+                                break 'steploop;
+                            }
+                            if self.s.icount > before {
+                                // Instructions completed: the next boundary gets
+                                // its interrupt, clock and peripheral checks.
+                                continue 'steploop;
+                            }
                         }
-                        if self.s.icount > before {
-                            continue;
+                        _ => {
+                            if self.s.icount >= limit {
+                                break 'steploop;
+                            }
+                            if self.s.icount > before {
+                                continue 'steploop;
+                            }
                         }
                     }
                 }

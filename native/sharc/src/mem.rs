@@ -249,6 +249,49 @@ impl Mem {
         })
     }
 
+    /// A host pointer to the bytes [A, A+LEN) for a fast-tier window: all on
+    /// one plain-RAM page (the fast-path page `eff`, so an unwritten low page
+    /// is its alias), every byte present when READ and every byte an overlay
+    /// byte (dirty) when WRITE, exactly what `fast_read` / `fast_write`
+    /// need for each word inside. A write window counts as a write to its
+    /// pages for the code watch (`note_write`).
+    pub fn window(&mut self, a: u32, len: u32, read: bool, write: bool) -> Option<*mut u8> {
+        let p = self.eff[(a >> PAGE_BITS) as usize];
+        if p.is_null() || len == 0 {
+            return None;
+        }
+        let off = (a as usize) & (PAGE_SIZE - 1);
+        if off + len as usize > PAGE_SIZE {
+            return None;
+        }
+        // SAFETY: eff holds null or a page `pages` owns (kept in step).
+        let page = unsafe { &mut *p };
+        fn all(bits: &[u64; WORDS], off: usize, len: usize) -> bool {
+            let (first, last) = (off >> 6, (off + len - 1) >> 6);
+            let head = !0u64 << (off & 63);
+            let tail = !0u64 >> (63 - ((off + len - 1) & 63));
+            if first == last {
+                let m = head & tail;
+                return bits[first] & m == m;
+            }
+            if bits[first] & head != head || bits[last] & tail != tail {
+                return false;
+            }
+            bits[first + 1..last].iter().all(|&w| w == !0)
+        }
+        if read && !all(&page.present, off, len as usize) {
+            return None;
+        }
+        if write && !all(&page.dirty, off, len as usize) {
+            return None;
+        }
+        if write {
+            self.note_write(a);
+        }
+        // SAFETY: off + len is inside the page.
+        Some(unsafe { (&mut *p).data.as_mut_ptr().add(off) })
+    }
+
     /// Add loader-image bytes at byte address A (building the image).
     pub fn load(&mut self, a: u32, bytes: &[u8]) {
         self.code_gen += 1;

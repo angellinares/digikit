@@ -1,0 +1,25 @@
+[package]
+name = "sharc-fast-cl"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Cranelift backend for the SHARC fast tier's kernel IR (native/sharc/src/fast)"
+
+# Build with SHARC_GEN_DIR (a tools/sharc_transpile.py output): the tests and
+# examples drive the full interpreter next to the fast tier.
+[dependencies]
+sharc-native = { path = "../sharc" }
+cranelift-codegen = "0.136"
+cranelift-frontend = "0.136"
+cranelift-jit = "0.136"
+cranelift-module = "0.136"
+cranelift-native = "0.136"
+
+[lib]
+name = "sharc_fast_cl"
+crate-type = ["rlib", "cdylib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+incremental = false
