@@ -32,6 +32,7 @@ import os
 import pathlib
 import platform
 import re
+import runpy
 import shutil
 import statistics
 import subprocess
@@ -183,8 +184,27 @@ def local_package_dirs() -> list[str]:
     return sorted(dirs)
 
 
+def fast_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
+    """The fast-tier region list a coupled run uses ("" when off).
+
+    An explicit SHARC_FAST_REGIONS wins, DIGI_EMU_FAST=0 turns the tier off,
+    otherwise the launcher's per-firmware table is read for DIGI_COUPLED_SYX
+    (the launcher sets SHARC_FAST_REGIONS before it asks for a launch plan).
+    """
+    environ = os.environ if environ is None else environ
+    if "SHARC_FAST_REGIONS" in environ:
+        return environ["SHARC_FAST_REGIONS"]
+    if environ.get("DIGI_EMU_FAST") == "0":
+        return ""
+    launcher = runpy.run_path(
+        str(ROOT / "tools" / "native_emu.sh"), run_name="launcher"
+    )
+    syx = environ.get("DIGI_COUPLED_SYX", str(ROOT / "Digitone_II_OS1.11.syx"))
+    return str(launcher["fast_regions_for"](pathlib.Path(syx)))
+
+
 def compute_components(
-    packages: list[str], gen: pathlib.Path, hasher: FileHasher
+    packages: list[str], gen: pathlib.Path, hasher: FileHasher, fast: str = ""
 ) -> tuple[dict[str, str], int]:
     outer = hashlib.sha256()
     files = 0
@@ -202,6 +222,7 @@ def compute_components(
         "triple": TRIPLE,
         "features": FEATURES,
         "flags_template": FLAGS_TEMPLATE,
+        "fast_regions": fast,
     }
     return components, files + gen_count
 
@@ -217,7 +238,7 @@ def read_manifest() -> dict[str, object] | None:
         return None
 
 
-def check(gen: pathlib.Path | None = None) -> tuple[str, str]:
+def check(gen: pathlib.Path | None = None, fast: str = "") -> tuple[str, str]:
     """Return (status, detail): status is ok, stale or missing."""
     manifest = read_manifest()
     if manifest is None:
@@ -229,7 +250,7 @@ def check(gen: pathlib.Path | None = None) -> tuple[str, str]:
         return "stale", f"rustup toolchain {TOOLCHAIN} is not installed"
     hasher = FileHasher(state_dir() / "hash-cache.json")
     components, _ = compute_components(
-        list(manifest["packages"]), gen or generated_dir(), hasher
+        list(manifest["packages"]), gen or generated_dir(), hasher, fast
     )  # type: ignore[call-overload]
     hasher.save()
     old = manifest["components"]
@@ -262,7 +283,9 @@ def launch_plan(
         return None, ""
     if environ.get("RUSTFLAGS") or environ.get("CARGO_ENCODED_RUSTFLAGS"):
         return None, "native PGO: skipped (RUSTFLAGS is set)"
-    status, detail = check(generated_dir(environ))
+    status, detail = check(
+        generated_dir(environ), environ.get("SHARC_FAST_REGIONS", "")
+    )
     if status != "ok":
         suffix = f" ({detail})" if status == "stale" else ""
         return None, f"native PGO: {status}{suffix}; run tools/native_pgo.py train"
@@ -448,7 +471,8 @@ def cmd_train(args: argparse.Namespace) -> None:
     t = time.monotonic()
     packages = local_package_dirs()
     hasher = FileHasher(state / "hash-cache.json")
-    components, nfiles = compute_components(packages, gen, hasher)
+    fast = fast_regions()
+    components, nfiles = compute_components(packages, gen, hasher, fast)
     hasher.save()
     key = key_of(components)
     t = phase("key", t)
@@ -469,7 +493,10 @@ def cmd_train(args: argparse.Namespace) -> None:
         result = run_workload(
             binary,
             state / f"train-{number}.log",
-            {"LLVM_PROFILE_FILE": str(raw / f"train-{number}-%m.profraw")},
+            {
+                "LLVM_PROFILE_FILE": str(raw / f"train-{number}-%m.profraw"),
+                "SHARC_FAST_REGIONS": fast,
+            },
         )
         gates.append(result.line)
         print(
@@ -497,6 +524,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         "components": components,
         "packages": packages,
         "generated_dir": str(gen),
+        "fast_regions": fast,
         "file_count": nfiles,
         "rustc_vV": rustc_version(),
         "sysroot": str(toolchain_dir()),
@@ -525,14 +553,14 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 def cmd_check(_: argparse.Namespace) -> int:
     began = time.monotonic()
-    status, detail = check()
+    status, detail = check(None, fast_regions())
     print(f"{status} {detail}" if status != "missing" else f"missing ({detail})")
     print(f"check took {time.monotonic() - began:.3f} s", file=sys.stderr)
     return 0 if status == "ok" else 1
 
 
 def cmd_plan(_: argparse.Namespace) -> int:
-    plan, notice = launch_plan()
+    plan, notice = launch_plan({**os.environ, "SHARC_FAST_REGIONS": fast_regions()})
     print(notice or "native PGO: not used")
     if plan:
         print(
@@ -551,7 +579,8 @@ def median(values: list[float]) -> float:
 def cmd_bench(args: argparse.Namespace) -> None:
     gen = generated_dir()
     require_inputs(gen)
-    status, detail = check(gen)
+    fast = fast_regions()
+    status, detail = check(gen, fast)
     if status != "ok":
         raise SystemExit(f"profile is not current: {status} {detail}; run train first")
     state = state_dir()
@@ -581,8 +610,22 @@ def cmd_bench(args: argparse.Namespace) -> None:
         "control",
         "use",
         args.pairs,
-        {"binary_sha256": hashes, "profdata": detail},
+        {"binary_sha256": hashes, "profdata": detail, "fast_regions": fast},
+        {"SHARC_FAST_REGIONS": fast},
     )
+
+
+def _label_env(
+    env: dict[str, str] | dict[str, dict[str, str]] | None, label: str
+) -> dict[str, str]:
+    """Extra env for one label: either shared, or a {label: env} map."""
+    if not env:
+        return {}
+    if label in env and isinstance(env[label], dict):
+        return env[label]  # type: ignore[return-value]
+    if all(isinstance(v, dict) for v in env.values()):
+        return {}
+    return env  # type: ignore[return-value]
 
 
 def paired_bench(
@@ -592,6 +635,7 @@ def paired_bench(
     label_b: str,
     pairs: int,
     extra: dict[str, object],
+    env: dict[str, str] | dict[str, dict[str, str]] | None = None,
 ) -> None:
     """Alternate A,B / B,A runs of the workload; write bench.tsv, summary.json."""
     rows = []
@@ -603,7 +647,10 @@ def paired_bench(
             results[label] = run_workload(
                 dst,
                 out / f"run-{pair:02d}-{label}.log",
-                {"DYLD_LIBRARY_PATH": str(deps)},
+                {
+                    "DYLD_LIBRARY_PATH": str(deps),
+                    **_label_env(env, label),
+                },
             )
         for label in (label_a, label_b):
             r = results[label]
@@ -682,13 +729,22 @@ def cmd_bench_bins(args: argparse.Namespace) -> None:
         binaries[label] = (dst, src.parent)
         hashes[label] = sha256_file(dst)
         print(f"{label} binary sha256 {hashes[label]} ({src})")
+    env = {
+        labels["a"]: {"SHARC_FAST_REGIONS": args.fast_a},
+        labels["b"]: {"SHARC_FAST_REGIONS": args.fast_b},
+    }
     paired_bench(
         out,
         binaries,
         labels["a"],
         labels["b"],
         args.pairs,
-        {"binary_sha256": hashes, "sources": [args.a, args.b]},
+        {
+            "binary_sha256": hashes,
+            "sources": [args.a, args.b],
+            "fast_regions": {k: v["SHARC_FAST_REGIONS"] for k, v in env.items()},
+        },
+        env,
     )
 
 
@@ -711,6 +767,12 @@ def main(argv: list[str] | None = None) -> int:
     bins.add_argument("--pairs", type=int, default=5)
     bins.add_argument("--label-a", default="a")
     bins.add_argument("--label-b", default="b")
+    bins.add_argument(
+        "--fast-a", default="", help="SHARC_FAST_REGIONS for the baseline binary"
+    )
+    bins.add_argument(
+        "--fast-b", default="", help="SHARC_FAST_REGIONS for the compared binary"
+    )
     args = parser.parse_args(argv)
     if args.command == "train":
         cmd_train(args)

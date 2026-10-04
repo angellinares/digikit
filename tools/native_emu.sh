@@ -9,6 +9,7 @@ emulator available.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import pathlib
 import subprocess
@@ -17,6 +18,45 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 READY = ROOT / "snapshots" / "dn2-audio-ready-2026-10-03"
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
+
+
+# Fast-tier regions (DSP entry PCs, comma separated hex) verified exact for a
+# firmware, keyed by the SHA-256 of the DN2 .syx whose DSP they belong to.
+# Addresses only; they are not firmware content.
+FAST_REGIONS = {
+    # Digitone II OS 1.11
+    "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0": (
+        "0x1c399a,0x1c3862,0x1c364f"
+    ),
+}
+
+
+def fast_regions_for(syx: pathlib.Path) -> str:
+    """The verified fast regions for this firmware file, or "" if unknown."""
+    try:
+        digest = hashlib.sha256(syx.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+    return FAST_REGIONS.get(digest, "")
+
+
+def set_fast_regions(
+    args: list[str], environ: dict[str, str] | os._Environ[str]
+) -> None:
+    """Enable the fast tier for a coupled run unless the user chose otherwise.
+
+    SHARC_FAST_REGIONS set by the user wins; DIGI_EMU_FAST=0 leaves it off.
+    """
+    if "SHARC_FAST_REGIONS" in environ or environ.get("DIGI_EMU_FAST") == "0":
+        return
+    syx = (
+        pathlib.Path(args[args.index("--audio-profile-syx") + 1])
+        if "--audio-profile-syx" in args
+        else pathlib.Path(environ.get("DIGI_EMU_SYX", ROOT / "Digitone_II_OS1.11.syx"))
+    )
+    regions = fast_regions_for(syx)
+    if regions:
+        environ["SHARC_FAST_REGIONS"] = regions
 
 
 def generated_core() -> pathlib.Path:
@@ -134,6 +174,7 @@ def main(args: list[str] | None = None) -> None:
                 "--coupled needs SHARC_GEN_DIR pointing to a local generated DN2 core"
             )
         os.environ.setdefault("SHARC_GEN_DIR", str(generated))
+        set_fast_regions(args, os.environ)
     # The native shell serves the built panel; it does not load browser WASM.
     # Avoid rebuilding the browser core (and its local DSP code) for a desktop run.
     subprocess.run(

@@ -263,6 +263,9 @@ mod coupled {
             let link_timing = std::env::var("DN2_PROFILE_LINK").as_deref() == Ok("1");
             emulator.enable_ssi_diagnostic(96_000)?;
             emulator.load_state(&snapshot)?;
+            // The fast tier's Cranelift backend; the engine uses it only when
+            // SHARC_FAST_REGIONS names regions (the launcher sets that).
+            sharc_fast_cl::register();
             let (peer, handle, shared) = ThreadedPeer::spawn_with_timing(
                 move || open_dn2_engine(&image, &state, clock).map(NativeDsp),
                 DEFAULT_PERIOD,
