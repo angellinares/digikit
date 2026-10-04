@@ -344,6 +344,11 @@ enum Check {
     FNeg(u32),
     FMul(u32, u32),
     Trunc(u32),
+    /// MUL/ALU add or subtract: the four operand registers, true for subtract.
+    MfAdd([u32; 4], bool),
+    /// MUL dual add/subtract operand registers.
+    MfDual([u32; 4]),
+    DualF(u32, u32),
 }
 
 struct Unit {
@@ -406,8 +411,64 @@ const SHIFT_OPS: &[(&str, u32)] = &[
 
 fn units() -> Vec<Unit> {
     let mut v: Vec<Unit> = Vec::new();
-    // Full computes in every hosting form.
+    // Full computes in every hosting form. Each entry builds a 23-bit compute
+    // field (and what the result domain check needs).
+    type Gen = Rc<dyn Fn(&mut Rng) -> (u32, Check)>;
+    let mut computes: Vec<(String, Gen)> = Vec::new();
     for &(name, cu, opcode) in FULL_OPS {
+        computes.push((
+            name.to_string(),
+            Rc::new(move |r: &mut Rng| {
+                let (rn, rx, ry) = (r.below(16), r.below(16), r.below(16));
+                (
+                    (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry,
+                    compute_check(cu, opcode, rn, rx, ry),
+                )
+            }),
+        ));
+    }
+    // Multifunction: MUL/ALU add and subtract, MUL dual add/subtract, and the
+    // single-function dual add/subtract (fixed and float).
+    for (name, category) in [("mf-add", 0x18u32), ("mf-sub", 0x19), ("mf-dual", 0x30)] {
+        computes.push((
+            name.to_string(),
+            Rc::new(move |r: &mut Rng| {
+                let (rm, ra) = (r.below(16), r.below(16));
+                let (a, b, c, d) = (r.below(4), r.below(4), r.below(4), r.below(4));
+                let cat = if category == 0x30 {
+                    0x30 | r.below(16)
+                } else {
+                    category
+                };
+                let regs = [a, 4 + b, 8 + c, 12 + d];
+                let check = if category == 0x30 {
+                    Check::MfDual(regs)
+                } else {
+                    Check::MfAdd(regs, category == 0x19)
+                };
+                let f = (1 << 22) | (cat << 16) | (rm << 12) | (ra << 8);
+                (f | (a << 6) | (b << 4) | (c << 2) | d, check)
+            }),
+        ));
+    }
+    for (name, top) in [("dual-fixed", 0x7u32), ("dual-float", 0xf)] {
+        computes.push((
+            name.to_string(),
+            Rc::new(move |r: &mut Rng| {
+                let (rn, rx, ry, rs) = (r.below(16), r.below(16), r.below(16), r.below(16));
+                let check = if top == 0xf {
+                    Check::DualF(rx, ry)
+                } else {
+                    Check::None
+                };
+                (
+                    (((top << 4) | rs) << 12) | (rn << 8) | (rx << 4) | ry,
+                    check,
+                )
+            }),
+        ));
+    }
+    for (name, mkc) in computes {
         for form in [
             "2a",
             "2a_short",
@@ -427,13 +488,13 @@ fn units() -> Vec<Unit> {
                 _ => ("7a", ""),
             };
             let kind = kind.to_string();
+            let mkc = mkc.clone();
             v.push(Unit {
                 form: hform,
                 name: format!("{hform}/{kind}/{name}"),
                 check: Check::None,
                 make: Box::new(move |r| {
-                    let (rn, rx, ry) = (r.below(16), r.below(16), r.below(16));
-                    let compute = (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry;
+                    let (compute, check) = mkc(r);
                     let (mask, base) = form_base(hform);
                     let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
                     raw.set(22, 0, compute as u64);
@@ -472,7 +533,7 @@ fn units() -> Vec<Unit> {
                             raw.set(38, 38, r.below(2) as u64);
                         }
                     }
-                    (raw.0, compute_check(cu, opcode, rn, rx, ry))
+                    (raw.0, check)
                 }),
             });
         }
@@ -728,6 +789,18 @@ fn expect_special(c: Check, s: &St) -> bool {
         Check::FMul(x, y) => is_special((f(x) * f(y)).to_bits()),
         Check::FNeg(x) => not_finite((-f(x)).to_bits()),
         Check::Trunc(x) => s.r[x as usize].b & 0x7fff_ffff >= 0x4f00_0000,
+        Check::MfAdd([xm, ym, xa, ya], sub) => {
+            let a = if sub { f(xa) - f(ya) } else { f(xa) + f(ya) };
+            not_finite((f(xm) * f(ym)).to_bits()) || not_finite(a.to_bits())
+        }
+        Check::MfDual([xm, ym, xa, ya]) => {
+            not_finite((f(xm) * f(ym)).to_bits())
+                || not_finite((f(xa) + f(ya)).to_bits())
+                || not_finite((f(xa) - f(ya)).to_bits())
+        }
+        Check::DualF(x, y) => {
+            not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
+        }
     }
 }
 
@@ -1180,8 +1253,69 @@ fn region(args: &[String]) {
         .unwrap_or(if check_windows { "interp" } else { "cl" })
         .to_string();
     let injections: u64 = flag(args, "--inject").map_or(100, |x| x.parse().unwrap());
-    let state = std::fs::read(format!("{dir}/r_{pc:X}.state")).expect("state");
-    let clock = meta_clock(&format!("{dir}/r_{pc:X}.meta"));
+    // `--from HEX`: the captured state is at another entry of the region; run
+    // the interpreter from it to the loop entry PC and use that state.
+    let from = flag(args, "--from").map_or(pc, |x| {
+        u32::from_str_radix(x.trim_start_matches("0x"), 16).expect("from")
+    });
+    let mut state = std::fs::read(format!("{dir}/r_{from:X}.state")).expect("state");
+    let clock = meta_clock(&format!("{dir}/r_{from:X}.meta"));
+    if from != pc {
+        let mut e = open(&image, &state, clock);
+        e.use_blocks = false;
+        let mut n = 0;
+        while e.s.pc_sw != pc as Int || e.s.loops.items().is_empty() {
+            e.step(1);
+            n += 1;
+            assert!(n < 100_000, "no loop entry {pc:X} reached from {from:X}");
+        }
+        println!("advanced {n} steps from {from:X} to {pc:X}");
+        state = e.export();
+    }
+    // `--relocate`: point every index register that lies outside the plain
+    // normal-word range at a fresh window of plain RAM filled with random
+    // finite floats, so a region captured on other memory still runs.
+    if args.iter().any(|a| a == "--relocate") {
+        let mut e = open(&image, &state, clock);
+        let mut r = Rng(0x1234_5678_9abc);
+        for (k, c) in (16..24usize).enumerate() {
+            let v = e.s.r[c].b;
+            if (0xe8000..0x400_0000 - 0x10000).contains(&(v as i64)) {
+                continue;
+            }
+            let base = 0x30_0000 + 0x8000 * k as u32;
+            e.s.r[c] = V::c((base + 0x4000) as Int);
+            for w in 0..0x2000u32 {
+                let bits = 0x3f00_0000 | (r.u32() & 0x7f_ffff) | (r.below(2) << 31);
+                let a = e.s.mem.canonical_of(base + 4 * w);
+                for b in 0..4 {
+                    e.s.mem.write_byte(a + b, (bits >> (8 * b)) as u8);
+                }
+            }
+            println!("relocated I{} {v:#x} -> {:#x}", c - 16, base + 0x4000);
+        }
+        state = e.export();
+    }
+    // `--dump DIR`: write the (advanced, relocated) entry state and a meta file
+    // so that `region_bench` can time the region from it.
+    if let Some(out) = flag(args, "--dump") {
+        std::fs::create_dir_all(out).expect("dump dir");
+        std::fs::write(format!("{out}/r_{pc:X}.state"), &state).expect("dump state");
+        let meta = std::fs::read_to_string(format!("{dir}/r_{from:X}.meta")).expect("meta");
+        let meta: String = meta
+            .lines()
+            .map(|l| {
+                if l.starts_with("pc=") {
+                    format!("pc={pc:X}\n")
+                } else if l.starts_with("total_insns_in_window=") {
+                    "total_insns_in_window=1000000\n".to_string()
+                } else {
+                    format!("{l}\n")
+                }
+            })
+            .collect();
+        std::fs::write(format!("{out}/r_{pc:X}.meta"), meta).expect("dump meta");
+    }
     let want_aot = flag(args, "--no-aot").is_none();
     let make = |mode: Mode| -> (Engine, Option<Rc<RefCell<FastEngine>>>) {
         let mut e = open(&image, &state, clock);
@@ -1447,6 +1581,26 @@ fn calm_value(r: &mut Rng) -> u32 {
     }
 }
 
+/// A random multifunction or dual add/subtract compute field (R0-R12
+/// destinations): their flag writers must be right when a condition reads
+/// them.
+fn extra_compute(r: &mut Rng) -> u32 {
+    let (rm, ra) = (r.below(13), r.below(13));
+    match r.below(5) {
+        0..=2 => {
+            let cat = [0x18, 0x19, 0x30 | r.below(13)][r.below(3) as usize];
+            let (a, b, c, d) = (r.below(4), r.below(4), r.below(4), r.below(4));
+            let f = (1 << 22) | (cat << 16) | (rm << 12) | (ra << 8);
+            f | (a << 6) | (b << 4) | (c << 2) | d
+        }
+        n => {
+            let top = if n == 3 { 0x7 } else { 0xf };
+            let rs = r.below(13);
+            (((top << 4) | rs) << 12) | (rm << 8) | (r.below(16) << 4) | r.below(16)
+        }
+    }
+}
+
 /// One random instruction (R0-R12 as destinations).
 fn gen_insn(r: &mut Rng, allow_cond: bool) -> Vec<u16> {
     let cond = pick_cond(r, allow_cond);
@@ -1470,6 +1624,9 @@ fn gen_insn(r: &mut Rng, allow_cond: bool) -> Vec<u16> {
             words_of(raw.0, 3)
         }
         0..=3 => {
+            if r.chance(4) {
+                return i_2a(cond, extra_compute(r));
+            }
             let (_, cu, opc) = FULL_OPS[r.below(FULL_OPS.len() as u32) as usize];
             i_2a(cond, compute_field(cu, opc, rn, r.below(16), r.below(16)))
         }

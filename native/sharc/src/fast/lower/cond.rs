@@ -44,6 +44,9 @@ pub const COND_FORMS: &[&str] = &[
     "6b_shiftimm",
 ];
 
+/// The largest writer id within a flag group (`FlagKind::group_id`).
+pub const MAX_FLAG_ID: u32 = 6;
+
 const BTF: u32 = 1 << 18;
 const MV: u32 = 1 << 7;
 const ALUSAT: u32 = 1 << 13;
@@ -178,7 +181,7 @@ impl Lower {
         // The last writer is only known at run time: the entry bit, or the
         // bit of whichever kind of writer ran last.
         let mut v = self.entry_bit(b);
-        for id in 1..=4u32 {
+        for id in 1..=MAX_FLAG_ID {
             if self.plan.flag_kinds[g as usize] >> id & 1 == 0 {
                 continue;
             }
@@ -284,6 +287,40 @@ impl Lower {
                 if want & AF != 0 {
                     parts.push(self.ci(AF));
                 }
+            }
+            FlagKind::FaluOr => {
+                // AZ and AN over either of the two results (the sources).
+                mask = ALU_MASK;
+                let rs = [self.to_i(srcs[0]), self.to_i(srcs[1])];
+                if want & AZ != 0 {
+                    let m = self.ci(0x7fff_ffff);
+                    let z = self.ci(0);
+                    let mut or = None;
+                    for r in rs {
+                        let mag = self.bin(Bin::And, r, m);
+                        let e = self.bin(Bin::Eq, mag, z);
+                        or = Some(match or {
+                            Some(o) => self.bin(Bin::Or, o, e),
+                            None => e,
+                        });
+                    }
+                    parts.push(or.unwrap());
+                }
+                if want & AN != 0 {
+                    let a = self.sign_to(rs[0], 2);
+                    let b = self.sign_to(rs[1], 2);
+                    parts.push(self.bin(Bin::Or, a, b));
+                }
+                if want & AF != 0 {
+                    parts.push(self.ci(AF));
+                }
+            }
+            FlagKind::IaddSubOr => {
+                // The add's and the subtract's bits ORed.
+                let (m, a) = self.flag_bits(FlagKind::Iadd, srcs, want);
+                let (_, b) = self.flag_bits(FlagKind::Isub, srcs, want);
+                mask = m;
+                parts.push(self.bin(Bin::Or, a, b));
             }
             FlagKind::Fmul => {
                 mask = MULT_MASK;

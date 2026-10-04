@@ -52,6 +52,12 @@ pub enum FlagKind {
     /// Adder flags of `a + b` / `a - b`; AS AI AF cleared.
     Iadd,
     Isub,
+    /// Float dual add/subtract: AZ and AN ORed over the two results (the
+    /// sources); the rest as `Falu`.
+    FaluOr,
+    /// Fixed dual add/subtract: AC AV AN AZ of the add and of the subtract
+    /// ORed; the sources are the two operands.
+    IaddSubOr,
     /// Logical result: AN AZ, the rest of the ALU bits cleared.
     Logical,
     /// Shifter: SZ from the (shifted) value, SV fixed, SS cleared.
@@ -72,6 +78,8 @@ impl FlagKind {
             FlagKind::Iadd => (0, 2),
             FlagKind::Isub => (0, 3),
             FlagKind::Logical => (0, 4),
+            FlagKind::FaluOr => (0, 5),
+            FlagKind::IaddSubOr => (0, 6),
             FlagKind::Fmul => (1, 1),
             FlagKind::FmulForget => (1, 2),
             FlagKind::Shift { sv: false } => (2, 1),
@@ -87,6 +95,8 @@ impl FlagKind {
             (0, 2) => FlagKind::Iadd,
             (0, 3) => FlagKind::Isub,
             (0, 4) => FlagKind::Logical,
+            (0, 5) => FlagKind::FaluOr,
+            (0, 6) => FlagKind::IaddSubOr,
             (1, 1) => FlagKind::Fmul,
             (1, 2) => FlagKind::FmulForget,
             (2, 1) => FlagKind::Shift { sv: false },

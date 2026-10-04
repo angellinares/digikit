@@ -22,6 +22,7 @@ pub mod flow;
 pub mod mem_addr;
 pub mod move_misc;
 pub mod mult;
+pub mod multifn;
 pub mod shift;
 
 use super::cfg::Site;
@@ -227,6 +228,9 @@ struct Pending {
     writes: Vec<(u8, Val)>,
     stores: Vec<(Val, Val, Val)>,
     flag: Option<(FlagKind, Vec<Val>)>,
+    /// A second flag writer of the same instruction (multifunction: the
+    /// ALU and the multiplier both write flags).
+    flag2: Option<(FlagKind, Vec<Val>)>,
 }
 
 pub struct Lower {
@@ -784,6 +788,11 @@ impl Lower {
         self.pending.flag = Some((kind, srcs));
     }
 
+    /// A second flag writer for the same instruction (applied after the first).
+    pub fn pend_flag_also(&mut self, kind: FlagKind, srcs: Vec<Val>) {
+        self.pending.flag2 = Some((kind, srcs));
+    }
+
     /// The flag effect of an instruction that has no source to remember.
     pub fn pend_flag_none(&mut self, kind: FlagKind) {
         self.pending.flag = Some((kind, Vec::new()));
@@ -873,15 +882,18 @@ impl Lower {
     /// state is selected the same way.
     pub fn commit(&mut self) -> LR<()> {
         let cond = self.cond;
-        let flag = self.pending.flag.take();
-        let mut flag_srcs = None;
-        if let Some((kind, srcs)) = flag {
+        let mut flag_srcs = Vec::new();
+        // One writer per flag group (a multifunction instruction has two).
+        for (kind, srcs) in [self.pending.flag.take(), self.pending.flag2.take()]
+            .into_iter()
+            .flatten()
+        {
             if self.flag_v() {
                 // The kernel notes the writer in pseudo registers, written
                 // (and made conditional) with the others.
                 self.flag_note(kind, &srcs)?;
             } else {
-                flag_srcs = Some((kind, srcs));
+                flag_srcs.push((kind, srcs));
             }
         }
         let stores = std::mem::take(&mut self.pending.stores);
@@ -933,7 +945,7 @@ impl Lower {
             }
             self.cur[c] = Some(v);
         }
-        if let Some((kind, srcs)) = flag_srcs {
+        for (kind, srcs) in flag_srcs {
             let mut slots = [255u8; 2];
             for (i, v) in srcs.iter().enumerate() {
                 let n = self.nfsrc;
