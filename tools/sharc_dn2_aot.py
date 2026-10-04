@@ -410,12 +410,19 @@ class Pipeline:
         GEN and the target directory are: the gen path is remapped in the
         crate's own file names, and on macOS the install name (else the
         target path) is fixed. Two runs then give the same library bytes."""
-        env = dict(self.env, SHARC_GEN_DIR=str(gen), CARGO_TARGET_DIR=str(self.target))
+        # The generated code is its own crate (native/sharc-gen), so the remap
+        # goes in RUSTFLAGS: `cargo rustc -- ARGS` reaches only the last crate.
+        env = dict(
+            self.env,
+            SHARC_GEN_DIR=str(gen),
+            CARGO_TARGET_DIR=str(self.target),
+            RUSTFLAGS="--remap-path-prefix=%s=/sharc-gen" % gen,
+        )
         cmd = [str(self.tc / "bin" / "cargo"), "rustc", "--release", "--offline",
-               "--locked", "--lib", "--", "--remap-path-prefix=%s=/sharc-gen" % gen]  # fmt: skip
+               "--locked", "--lib"]  # fmt: skip
         ext = ".dylib" if platform.system() == "Darwin" else ".so"
         if ext == ".dylib":
-            cmd.append("-Clink-arg=-Wl,-install_name,@rpath/libsharc_native.dylib")
+            cmd += ["--", "-Clink-arg=-Wl,-install_name,@rpath/libsharc_native.dylib"]
         self.run(stage, cmd, cwd=ROOT / "native" / "sharc", env=env)
         lib = self.out / "lib" / (name + ext)
         shutil.copyfile(self.target / "release" / ("libsharc_native" + ext), lib)
@@ -499,7 +506,14 @@ class Pipeline:
                 ["git", *args], cwd=ROOT, capture_output=True, text=True
             ).stdout.strip()
 
-        paths = ["tools", "native/sharc", "native/boot", "emu"]
+        paths = [
+            "tools",
+            "native/sharc",
+            "native/sharc-rt",
+            "native/sharc-gen",
+            "native/boot",
+            "emu",
+        ]
         rustc = subprocess.run(
             [self.env["RUSTC"], "--version"],
             capture_output=True,

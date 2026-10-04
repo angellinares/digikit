@@ -394,7 +394,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharc-gen"
+version = "0.0.1"
+dependencies = [
+ "sharc-rt",
+]
+
+[[package]]
 name = "sharc-native"
+version = "0.0.1"
+dependencies = [
+ "sharc-gen",
+ "sharc-rt",
+]
+
+[[package]]
+name = "sharc-rt"
 version = "0.0.1"
 
 [[package]]

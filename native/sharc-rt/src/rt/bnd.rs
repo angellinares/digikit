@@ -534,13 +534,16 @@ pub fn _split_compute_fields(_s: &St, f: Fields) -> Fields {
 // sequencer.decode_at: the generated table of decoded instructions.
 // ---------------------------------------------------------------------------
 
+/// The generated crate wraps this with its string table (`sym_of`): the
+/// runtime holds no generated data. Always inline so the wrapper is as direct
+/// as when both lived in one crate.
 #[inline(always)]
-pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<Insn> {
+pub fn decode_at_with(s: &mut St, pc_sw: Int, sym_of: impl Fn(&str) -> Option<Sym>) -> R<Insn> {
     if (0x90000..0x90080).contains(&pc_sw) {
         let address = 0x2824_0000 + ((pc_sw - 0x90000) * 6) as u32;
         let low = s.mem.read_present(address, 4).ok_or(TRAP_NO_INSN)? as u64;
         let high = s.mem.read_present(address + 4, 2).ok_or(TRAP_NO_INSN)? as u64;
-        return decoded_insn(crate::decode::decode_isa(low | (high << 32)));
+        return decoded_insn(crate::decode::decode_isa(low | (high << 32)), sym_of);
     }
     if !s.runtime_decode {
         return (s.insn_at)(pc_sw).ok_or(TRAP_NO_INSN);
@@ -574,7 +577,7 @@ pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<
         },
         pc,
     );
-    let insn = decoded_insn(decoded)?;
+    let insn = decoded_insn(decoded, sym_of)?;
     if s.dec_watch {
         for &(at, _) in &words {
             s.mem.watch_sw(at);
@@ -592,12 +595,12 @@ pub fn decode_at(s: &mut St, _data: (), _base_sw: Option<Int>, pc_sw: Int) -> R<
     Ok(insn)
 }
 
-fn decoded_insn(decoded: crate::decode::Decoded) -> R<Insn> {
+fn decoded_insn(decoded: crate::decode::Decoded, sym_of: impl Fn(&str) -> Option<Sym>) -> R<Insn> {
     if decoded.kind == crate::decode::DecodeKind::Unknown {
         return Err(TRAP_NO_INSN);
     }
-    let type_name = crate::sym_of(decoded.type_name).ok_or(TRAP_NO_INSN)?;
-    let kind = crate::sym_of(decoded.kind.as_str()).ok_or(TRAP_NO_INSN)?;
+    let type_name = sym_of(decoded.type_name).ok_or(TRAP_NO_INSN)?;
+    let kind = sym_of(decoded.kind.as_str()).ok_or(TRAP_NO_INSN)?;
     let mut entries = [FieldEntry(S_EMPTY, S_EMPTY, -1, -1, 0); MAX_INSN_FIELDS];
     let fields = decoded.fields();
     if fields.len() > entries.len() {
@@ -605,8 +608,8 @@ fn decoded_insn(decoded: crate::decode::Decoded) -> R<Insn> {
     }
     for (dst, field) in entries.iter_mut().zip(fields) {
         *dst = FieldEntry(
-            crate::sym_of(field.key).ok_or(TRAP_NO_INSN)?,
-            crate::sym_of(field.stem).ok_or(TRAP_NO_INSN)?,
+            sym_of(field.key).ok_or(TRAP_NO_INSN)?,
+            sym_of(field.stem).ok_or(TRAP_NO_INSN)?,
             field.hi,
             field.lo,
             field.value,
@@ -1128,9 +1131,17 @@ pub fn _read_px48(s: &St, address: VI) -> R<Option<(V, V)>> {
 }
 
 /// memory._load_normal_ureg. Returns the loaded Const, or None (the
-/// combined-PX summary dict is observability-only).
+/// combined-PX summary dict is observability-only). WRITE_UREG is the
+/// generated core's `state._write_ureg` (or the runtime's own register
+/// write when there is none): the generated crate supplies it.
 #[inline(always)]
-pub fn _load_normal_ureg(s: &mut St, space: Sym, address: VI, code: Int) -> R<Option<V>> {
+pub fn _load_normal_ureg_with(
+    s: &mut St,
+    space: Sym,
+    address: VI,
+    code: Int,
+    write_ureg: impl FnOnce(&mut St, Int, V) -> R<()>,
+) -> R<Option<V>> {
     if code == UREG_PX as Int {
         if let Some((px1, px2)) = _read_px48(s, address)? {
             s.set_r(UREG_PX, V::UNK)?;
@@ -1142,15 +1153,7 @@ pub fn _load_normal_ureg(s: &mut St, space: Sym, address: VI, code: Int) -> R<Op
         s.set_r(UREG_PX2, V::UNK)?;
     } else if space == S_DM || space == S_PM {
         let loaded = _dm_read(s, address, 4, false, true)?;
-        #[cfg(sharc_gen)]
-        crate::generated::core_g::state::_write_ureg(s, code, loaded.unwrap_or(V::UNK))?;
-        #[cfg(not(sharc_gen))]
-        {
-            if matches!(code, 100 | 101) {
-                return Err(TRAP_INDEX);
-            }
-            s_set_r(s, code, loaded.unwrap_or(V::UNK))?;
-        }
+        write_ureg(s, code, loaded.unwrap_or(V::UNK))?;
         return Ok(loaded);
     }
     s_set_r(s, code, V::UNK)?;

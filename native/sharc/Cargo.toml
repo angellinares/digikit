@@ -5,10 +5,14 @@ edition = "2024"
 publish = false
 description = "Native SHARC+ core generated from tools/sharc_core (tools/sharc_transpile.py, tools/sharc_rsgen.py)"
 
-# std only: no crate dependencies. The Cranelift backend of the fast tier
+# std only: no external crate dependencies. The runtime (sharc-rt) and the
+# generated core (sharc-gen, ~4 min to build) are separate crates, so editing
+# this one leaves the generated core cached. The Cranelift backend of the fast tier
 # (native/sharc-fast-cl, which depends on this crate) is a dev-dependency
 # for the examples that drive it; nothing links it into the library.
 [dependencies]
+sharc-rt = { path = "../sharc-rt" }
+sharc-gen = { path = "../sharc-gen" }
 
 [dev-dependencies]
 sharc-fast-cl = { path = "../sharc-fast-cl" }

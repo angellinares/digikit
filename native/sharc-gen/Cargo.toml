@@ -1,0 +1,17 @@
+[package]
+name = "sharc-gen"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "The generated native SHARC+ core (SHARC_GEN_DIR), compiled once apart from the engine"
+
+# Only the include!s of the files tools/sharc_transpile.py and
+# tools/sharc_rsgen.py write, plus the glue that lets them say `crate::rt`,
+# `crate::EXIT_NEXT` and so on. Without SHARC_GEN_DIR this crate is empty
+# apart from the runtime fallbacks.
+[dependencies]
+sharc-rt = { path = "../sharc-rt" }
+
+[lib]
+name = "sharc_gen"
+crate-type = ["rlib"]

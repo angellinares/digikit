@@ -1,0 +1,16 @@
+[package]
+name = "sharc-rt"
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Runtime under the generated native SHARC+ core: machine state, memory, decoder, instruction table"
+
+# std only. The generated core (native/sharc-gen) calls into this crate; the
+# engine, fast tier and C ABI (native/sharc) sit above both. Nothing here may
+# reference generated data: a use of the string table or of a generated
+# function is passed in by the generated crate (see bnd::decode_at_with).
+[dependencies]
+
+[lib]
+name = "sharc_rt"
+crate-type = ["rlib"]

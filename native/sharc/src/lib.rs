@@ -26,59 +26,40 @@
 //! that instruction and halts with a reason starting `native-trap:`; the
 //! caller then lets the Python core execute it (tools/sharc_transpile_run.py).
 
-pub mod addressing;
 pub mod canon;
-pub mod decode;
 pub mod fast;
 pub mod frames;
-pub mod mem;
-pub mod rt;
 pub mod sha256;
 pub mod vectors;
+
+// The runtime and the generated core live in their own crates (so that
+// editing this one does not recompile them); the old paths stay.
+// `rt` is sharc-gen's: sharc-rt's with the two functions that need generated
+// data (bnd::decode_at, bnd::_load_normal_ureg) filled in.
+#[cfg(sharc_gen)]
+pub use sharc_gen::generated;
+pub use sharc_gen::rt;
+pub use sharc_gen::{sym_name, sym_of};
+pub use sharc_rt::{
+    BlockFn, CHAIN_MAX, EXIT_BUDGET, EXIT_CHAIN, EXIT_NEXT, EXIT_TRAP, addressing, decode, mem,
+    no_block,
+};
+
+/// `Cfg::refresh` for the image this build was generated with.
+pub trait CfgRefresh {
+    fn refresh(&mut self);
+}
+
+impl CfgRefresh for rt::Cfg {
+    fn refresh(&mut self) {
+        self.refresh_with(gen_explicit_memory_model());
+    }
+}
 
 #[cfg(test)]
 mod tests;
 
-#[cfg(sharc_gen)]
-#[allow(
-    clippy::all,
-    unused,
-    non_snake_case,
-    non_upper_case_globals,
-    unreachable_code
-)]
-pub mod generated {
-    pub mod syms {
-        include!(concat!(env!("SHARC_GEN_DIR"), "/syms.rs"));
-    }
-    pub mod tables {
-        include!(concat!(env!("SHARC_GEN_DIR"), "/tables.rs"));
-    }
-    /// The core with every function forced inline (block code).
-    pub mod core_i {
-        include!(concat!(env!("SHARC_GEN_DIR"), "/core_i.rs"));
-    }
-    /// The core with normal inlining (the one-instruction interpreter).
-    pub mod core_g {
-        include!(concat!(env!("SHARC_GEN_DIR"), "/core_g.rs"));
-    }
-    #[cfg(sharc_image)]
-    pub mod image {
-        include!(concat!(env!("SHARC_GEN_DIR"), "/image.rs"));
-    }
-}
-
 use rt::*;
-
-/// A block function's result.
-pub const EXIT_NEXT: u32 = 0;
-pub const EXIT_BUDGET: u32 = 1;
-pub const EXIT_TRAP: u32 = 2;
-/// Block code internal: EXIT_CHAIN + k continues in the k-th block its
-/// region calls directly.
-pub const EXIT_CHAIN: u32 = 16;
-/// Direct block-to-block calls in a row before returning to the dispatcher.
-pub const CHAIN_MAX: u32 = 32;
 
 /// A fine-grained monotonic counter (profiling only).
 #[inline(always)]
@@ -113,13 +94,6 @@ pub fn tick_hz() -> u64 {
         1_000_000_000
     }
 }
-
-/// A chained block that was not generated: back to the dispatcher.
-pub fn no_block(_s: &mut St) -> u32 {
-    EXIT_NEXT
-}
-
-pub type BlockFn = fn(&mut St) -> u32;
 
 /// A dispatch entry: the block function and whether the generator classed it
 /// model-safe (tools/sharc_rsgen.py model_safe), i.e. its instructions touch
@@ -365,34 +339,6 @@ pub fn trap_name(t: Trap) -> String {
         }
     }
     format!("trap {}", t.0)
-}
-
-#[cfg(sharc_gen)]
-pub fn sym_name(s: Sym) -> &'static str {
-    generated::syms::SYM_NAMES
-        .get(s as usize)
-        .copied()
-        .unwrap_or("?")
-}
-
-#[cfg(not(sharc_gen))]
-pub fn sym_name(s: Sym) -> &'static str {
-    RT_SYMS.get(s as usize).copied().unwrap_or("?")
-}
-
-/// Intern NAME into the generated string table (None if it is unknown).
-pub fn sym_of(name: &str) -> Option<Sym> {
-    #[cfg(sharc_gen)]
-    {
-        generated::syms::SYM_NAMES
-            .iter()
-            .position(|&n| n == name)
-            .map(|i| i as Sym)
-    }
-    #[cfg(not(sharc_gen))]
-    {
-        RT_SYMS.iter().position(|&n| n == name).map(|i| i as Sym)
-    }
 }
 
 /// Execute one decoded instruction through the generated core, undoing it

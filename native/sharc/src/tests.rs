@@ -1,5 +1,6 @@
 //! Runtime tests (no firmware, no generated code).
 
+use crate::CfgRefresh;
 use crate::canon;
 use crate::mem::Mem;
 use crate::rt::bnd;

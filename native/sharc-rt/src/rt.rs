@@ -671,8 +671,10 @@ impl Default for Cfg {
 }
 
 impl Cfg {
-    /// Recompute `block_ok` after a change.
-    pub fn refresh(&mut self) {
+    /// Recompute `block_ok` after a change. GEN_EXPLICIT_MEMORY_MODEL is the
+    /// setting the image's block code was generated for (the generated
+    /// image names it, so the caller passes it).
+    pub fn refresh_with(&mut self, gen_explicit_memory_model: bool) {
         let d = Cfg::default();
         self.fast_mem = self.has_concrete && self.assume_nw32 && !self.data_memory_tainted;
         self.block_base_ok = self.has_concrete == d.has_concrete
@@ -680,7 +682,7 @@ impl Cfg {
             && self.continue_external_calls == d.continue_external_calls
             && self.max_call_depth == d.max_call_depth
             && self.assume_nw32 == d.assume_nw32
-            && self.explicit_memory_model == crate::gen_explicit_memory_model()
+            && self.explicit_memory_model == gen_explicit_memory_model
             && self.approx_recips == d.approx_recips
             && self.data_memory_tainted == d.data_memory_tainted
             && self.dossier_bytes == d.dossier_bytes
@@ -1003,6 +1005,7 @@ impl St {
     /// instruction.  This runs only after a successful interpreter/block
     /// instruction, so traps leave the old bank state intact.
     /// A delayed RTI's held selection (BANK_HOLD) stays requested one more instruction.
+    #[inline]
     pub fn bank_complete(&mut self) {
         if !self.cfg.bank_model {
             return;
@@ -1032,6 +1035,7 @@ impl St {
         }
     }
 
+    #[inline]
     pub fn pc_stack_complete(&mut self) {
         if !self.cfg.stack_model {
             return;
@@ -1198,6 +1202,7 @@ impl St {
         self.snap = self.jn;
     }
 
+    #[inline]
     pub fn mmr_get(&self, a: u32) -> Option<V> {
         // `mmrs` is sorted with unique keys, so a matching hinted slot is
         // the entry; the hint only skips the binary search.
@@ -1226,6 +1231,7 @@ impl St {
         Ok(())
     }
 
+    #[inline]
     fn special_slot(key: Sym) -> Option<usize> {
         SPECIAL_SLOT_SYMS.iter().position(|&k| k == key)
     }
@@ -1785,6 +1791,7 @@ pub fn f_sqrt(x: f64) -> f64 {
 }
 
 /// C ldexp / scalbn (musl's algorithm): X * 2**N rounded once.
+#[inline]
 pub fn scalbn(x: f64, n: Int) -> f64 {
     let mut n: i32 = n.clamp(-100_000, 100_000) as i32;
     let x1p1023 = f64::from_bits(0x7fe0_0000_0000_0000);

@@ -6,7 +6,7 @@ core module (``ast`` underneath, with names resolved and every expression
 typed -- see tools/sharc_transpile_infer.py for how the core's
 unannotated handlers get their types), and emits one Rust module per core
 module. Every module-level function becomes a Rust ``fn`` over the native
-runtime in native/sharc/src/rt.rs:
+runtime in native/sharc-rt/src/rt.rs:
 
 - Python ``int`` -> ``Int`` (i128), ``float`` -> ``f64``, ``bool``,
   ``str`` -> ``Sym`` (an interned string id; strings that only feed
@@ -313,7 +313,7 @@ def from_mypy(t: mt.Type | None, where: str = "") -> T:
 # ---------------------------------------------------------------------------
 
 
-# Strings the runtime (native/sharc/src/rt.rs RT_SYMS) knows by number:
+# Strings the runtime (native/sharc-rt/src/rt.rs RT_SYMS) knows by number:
 # interned first, in this order, and defined there rather than in syms.rs.
 RT_SYMS = (
     "",
@@ -454,7 +454,7 @@ for _n in [
     BOUNDARY["sharc_core.state." + _n] = Bnd()
 BOUNDARY["sharc_core.state._bank_request"] = Bnd(traps=True)
 BOUNDARY["sharc_core.state._pc_stack_request"] = Bnd(traps=True)
-# Hand-written twins in native/sharc/src/rt/periph.rs, reached only from the
+# Hand-written twins in native/sharc-rt/src/rt/periph.rs, reached only from the
 # memory boundary and the host.
 for _n in [
     "_mmr",
@@ -556,7 +556,7 @@ PARTIAL_REGS = frozenset({118, 119, 120, 121})
 PARTIAL_MASKS = {118: 0x00FFFFFF, 119: 0xFFFFFFFF, 120: 0xFFFFFFFF, 121: 0xFFFFFFFF}
 
 # floats._float_binary called with one of these operations is replaced by a
-# hand-written fast path in native/sharc/src/rt/bnd.rs (Transpiler.
+# hand-written fast path in native/sharc-rt/src/rt/bnd.rs (Transpiler.
 # fast_float_call).
 FAST_FLOAT_BINARY = {
     "sharc_core.floats._f_add": "_float_binary_add",
@@ -3221,7 +3221,7 @@ class FnT:
         static: dict,
     ) -> E | None:
         """Calls of the float helpers that have a hand-written fast path in
-        native/sharc/src/rt/bnd.rs (bit-identical results and flags; a NaN
+        native/sharc-rt/src/rt/bnd.rs (bit-identical results and flags; a NaN
         result falls back to the original sequence there)."""
         bound = {
             p[0]: (p[1], a)
