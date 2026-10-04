@@ -20,6 +20,7 @@ pub mod fixed_alu;
 pub mod float_alu;
 pub mod flow;
 pub mod mem_addr;
+pub mod mem_imm;
 pub mod move_misc;
 pub mod mult;
 pub mod multifn;
@@ -1004,6 +1005,13 @@ impl Lower {
             "7a" => self.form_7a(d)?,
             "5a_move" | "5b_move" => self.form_5_move(d)?,
             "17a" => self.form_17a(d)?,
+            "4a" => self.form_4a(d)?,
+            "4b" | "4d" => self.form_4b_4d(d)?,
+            "15a" => self.form_15a(d)?,
+            "15b" => self.form_15b(d)?,
+            "14a" => self.form_14a(d)?,
+            "19a" | "19a_scaled" => self.form_19a(d)?,
+            "7b" => self.form_7b(d)?,
             other => return refuse(format!("form {other}")),
         }
         self.commit()

@@ -33,6 +33,17 @@ impl Lower {
         if !post {
             self.require_plain(addr, 4)?;
         }
+        self.mem_xfer(addr, x)?;
+        if post {
+            self.require_linear(ic)?;
+            self.wr_i(ic, modified)?;
+        }
+        Ok(())
+    }
+
+    /// The load or store at byte address ADDR (already checked to be a
+    /// plain normal-word address).
+    pub fn mem_xfer(&mut self, addr: Val, x: Xfer) -> LR<()> {
         match x {
             Xfer::Load(code) => {
                 let (p, o) = self.window_access(addr, 4, false)?;
@@ -45,8 +56,19 @@ impl Lower {
                 self.pend_store(p, o, val);
             }
         }
-        if post {
-            self.wr_i(ic, modified)?;
+        Ok(())
+    }
+
+    /// The kernel updates index register IC (UREG code 16..31): its length
+    /// register L must be zero (no circular buffer, so the update is
+    /// the plain sum whatever MODE1.CBUFEN says). A requirement on L at entry.
+    pub fn require_linear(&mut self, ic: u32) -> LR<()> {
+        if !(16..32).contains(&ic) {
+            return refuse("require_linear: not an index register");
+        }
+        let r = Req::Eq((ic + 32) as u8, 0);
+        if !self.reqs.contains(&r) {
+            self.reqs.push(r);
         }
         Ok(())
     }
@@ -158,6 +180,8 @@ impl Lower {
             self.bin(Bin::Mul, mv, k)
         };
         let new = self.bin(Bin::Add, iv, scaled);
+        self.require_linear(16 + src)?;
+        self.require_linear(16 + dst)?;
         self.wr_i(16 + dst, new)?;
         self.compute_full(d.compute().ok_or(Refuse("7a compute".into()))?)?;
         Ok(())

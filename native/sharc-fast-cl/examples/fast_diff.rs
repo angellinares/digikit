@@ -317,6 +317,15 @@ fn form_base(form: &str) -> (u64, u64) {
         "6b_shiftimm" => (0xffc187800000, 0x020000000000),
         "7a" => (0xff0000000000, 0x040000000000),
         "17a" => (0xff8000000000, 0x0f0000000000),
+        "4a" => (0xf00000000000, 0x600000000000),
+        "4b" => (0xf00000780000, 0x600000380000),
+        "4d" => (0xf00000780000, 0x600000300000),
+        "15a" => (0xe00000000000, 0xa00000000000),
+        "15b" => (0xf01c00000000, 0x900800000000),
+        "14a" => (0xfc0000000000, 0x100000000000),
+        "19a" => (0xff8000000000, 0x160000000000),
+        "19a_scaled" => (0xff0000000000, 0x150000000000),
+        "7b" => (0xff00007f0000, 0x0400003f0000),
         _ => panic!("form {form}"),
     }
 }
@@ -673,8 +682,181 @@ fn units() -> Vec<Unit> {
             (raw.0, Check::None)
         }),
     });
+    v.extend(units_mem());
     for u in &mut v {
         u.check = Check::None;
+    }
+    v
+}
+
+/// Immediate-offset transfers and immediate modifies (`lower::mem_imm`).
+fn units_mem() -> Vec<Unit> {
+    let mut v: Vec<Unit> = Vec::new();
+    // A small signed word offset that keeps I +- 4*off inside the data window.
+    fn small(r: &mut Rng, bits: u32) -> u64 {
+        let half = 1u32 << (bits - 1);
+        let k = if r.chance(8) {
+            [0, 1, half - 1, half][r.below(4) as usize]
+        } else {
+            r.below(1 << bits)
+        };
+        (k as u64) & ((1u64 << bits) - 1)
+    }
+    // 4a, 4b, 4d: index plus a signed 6-bit offset.
+    for (hform, kind) in [
+        ("4a", "load-post"),
+        ("4a", "load-pre"),
+        ("4a", "store-post"),
+        ("4a", "store-pre"),
+        ("4b", "load-post"),
+        ("4b", "load-pre"),
+        ("4b", "store-post"),
+        ("4b", "store-pre"),
+        ("4d", "load-post"),
+        ("4d", "load-pre"),
+        ("4d", "store-post"),
+        ("4d", "store-pre"),
+    ] {
+        v.push(Unit {
+            form: hform,
+            name: format!("{hform}/xfer/{kind}"),
+            check: Check::None,
+            make: Box::new(move |r| {
+                let (mask, base) = form_base(hform);
+                let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+                raw.set(43, 41, r.below(8) as u64);
+                raw.set(40, 40, r.below(2) as u64);
+                raw.set(39, 39, kind.starts_with("store") as u64);
+                raw.set(38, 38, kind.ends_with("post") as u64);
+                raw.set(37, 33, 0x1f);
+                let off = small(r, 6);
+                raw.set(32, 32, off >> 5);
+                raw.set(31, 27, off & 31);
+                raw.set(26, 23, r.below(16) as u64);
+                match hform {
+                    "4a" => raw.set(22, 0, 0),
+                    "4b" => {
+                        raw.set(18, 16, 0b111);
+                    }
+                    _ => {
+                        raw.set(18, 16, 0b011);
+                    }
+                }
+                (raw.0, Check::None)
+            }),
+        });
+    }
+    // 4a with a compute next to the transfer.
+    for &(name, cu, opcode) in FULL_OPS {
+        v.push(Unit {
+            form: "4a",
+            name: format!("4a/compute/{name}"),
+            check: Check::None,
+            make: Box::new(move |r| {
+                let (rn, rx, ry) = (r.below(16), r.below(16), r.below(16));
+                let compute = (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry;
+                let (mask, base) = form_base("4a");
+                let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+                raw.set(43, 41, r.below(8) as u64);
+                raw.set(40, 40, r.below(2) as u64);
+                raw.set(39, 39, r.below(2) as u64);
+                raw.set(38, 38, r.below(2) as u64);
+                raw.set(37, 33, 0x1f);
+                let off = small(r, 6);
+                raw.set(32, 32, off >> 5);
+                raw.set(31, 27, off & 31);
+                raw.set(26, 23, r.below(16) as u64);
+                raw.set(22, 0, compute as u64);
+                (raw.0, compute_check(cu, opcode, rn, rx, ry))
+            }),
+        });
+    }
+    // 15b and 15a: pre-modify by an immediate, any register in R, I, M.
+    for (hform, kind) in [
+        ("15b", "load"),
+        ("15b", "store"),
+        ("15a", "load"),
+        ("15a", "store"),
+    ] {
+        v.push(Unit {
+            form: hform,
+            name: format!("{hform}/xfer/{kind}"),
+            check: Check::None,
+            make: Box::new(move |r| {
+                let (mask, base) = form_base(hform);
+                let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+                raw.set(43, 41, r.below(8) as u64);
+                raw.set(40, 40, (kind == "store") as u64);
+                raw.set(39, 39, 0);
+                if hform == "15b" {
+                    raw.set(37, 37, r.below(2) as u64);
+                    raw.set(29, 23, r.below(48) as u64);
+                    raw.set(22, 16, small(r, 7));
+                } else {
+                    raw.set(44, 44, r.below(2) as u64);
+                    raw.set(38, 32, r.below(48) as u64);
+                    // A signed word offset; negative values are the
+                    // 0xfffffffN style of the firmware.
+                    let w = small(r, 8) as u32;
+                    let w = (((w ^ 0x80) as i32) - 0x80) as u32;
+                    raw.set(31, 0, w as u64);
+                }
+                (raw.0, Check::None)
+            }),
+        });
+    }
+    // 14a: an absolute address (a few outside the plain range: refused).
+    for kind in ["load", "store"] {
+        v.push(Unit {
+            form: "14a",
+            name: format!("14a/xfer/{kind}"),
+            check: Check::None,
+            make: Box::new(move |r| {
+                let (mask, base) = form_base("14a");
+                let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+                raw.set(41, 41, r.below(2) as u64);
+                raw.set(40, 40, (kind == "store") as u64);
+                raw.set(39, 39, 0);
+                raw.set(38, 32, r.below(48) as u64);
+                let mut a = DATA_LO + 4 * r.below(0x400);
+                if r.chance(8) {
+                    a += r.below(4);
+                }
+                if r.chance(32) {
+                    a = r.u32();
+                }
+                raw.set(31, 0, a as u64);
+                (raw.0, Check::None)
+            }),
+        });
+    }
+    // Immediate modifies.
+    for hform in ["19a", "19a_scaled", "7b"] {
+        v.push(Unit {
+            form: hform,
+            name: format!("{hform}/modify"),
+            check: Check::None,
+            make: Box::new(move |r| {
+                let (mask, base) = form_base(hform);
+                let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+                if hform == "7b" {
+                    raw.set(38, 38, r.below(2) as u64);
+                    raw.set(37, 33, 0x1f);
+                } else {
+                    raw.set(38, 38, r.below(2) as u64);
+                    if hform == "19a_scaled" {
+                        raw.set(39, 39, r.below(2) as u64);
+                    }
+                    let d = if r.chance(4) {
+                        r.u32()
+                    } else {
+                        (r.below(512) as i32 - 256) as u32
+                    };
+                    raw.set(31, 0, d as u64);
+                }
+                (raw.0, Check::None)
+            }),
+        });
     }
     v
 }
@@ -741,6 +923,11 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
     }
     for c in 32..48 {
         s.r[c] = V::c(ms[c - 32] as Int);
+    }
+    // Length registers: no circular buffer (a kernel that updates an index
+    // register requires it).
+    for c in 48..64 {
+        s.r[c] = V::c(0);
     }
     // ASTATX: random value with a random known mask.
     let known = KNOWN_FLAGS.load(std::sync::atomic::Ordering::Relaxed);
@@ -950,7 +1137,7 @@ fn forms(args: &[String]) {
             randomise(s, &mut rng, &ms);
             let nwords = match unit.form {
                 "2c" | "3c" => 1,
-                "2a_short" | "3b" | "5b_move" => 2,
+                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" => 2,
                 _ => 3,
             };
             write_code(s, raw, nwords);
@@ -986,6 +1173,13 @@ fn forms(args: &[String]) {
                     flip = Some(32 + k as u8);
                 }
                 randomise(s, &mut rng, &st_ms);
+                let mut lflip = None;
+                if trial % 50 == 24 {
+                    // A circular buffer is set up on a random index register.
+                    let k = rng.below(16) as usize;
+                    s.r[48 + k] = V::c(1 + rng.below(64) as Int);
+                    lflip = Some(48 + k as u8);
+                }
                 let mut unknown = None;
                 if rng.chance(12) {
                     // A register becomes unknown.
@@ -1019,7 +1213,7 @@ fn forms(args: &[String]) {
                     match *q {
                         Req::FlagsKnown(mask) => s.r[118].m & mask != mask,
                         Req::Known(c) => Some(c) == unknown,
-                        Req::Eq(c, _) => Some(c) == unknown || Some(c) == flip,
+                        Req::Eq(c, _) => Some(c) == unknown || Some(c) == flip || Some(c) == lflip,
                         Req::NwPlain {
                             base: Base::Reg(c), ..
                         } => Some(c) == unknown,
@@ -1319,6 +1513,30 @@ fn region(args: &[String]) {
     let want_aot = flag(args, "--no-aot").is_none();
     let make = |mode: Mode| -> (Engine, Option<Rc<RefCell<FastEngine>>>) {
         let mut e = open(&image, &state, clock);
+        // Test-only entry-state adjustments, the same for every mode: make
+        // unknown R/I/M registers concrete (FILL_UNKNOWN) and clear MODE1
+        // bits (MODE1_CLEAR, hex), so a loop captured in an unusual state
+        // still exercises the kernel.
+        if std::env::var_os("FILL_UNKNOWN").is_some() {
+            for c in 0..48usize {
+                if !e.s.r[c].is_c() {
+                    e.s.r[c] = V::c(0x3f80_0000 + 0x1234 * c as Int);
+                }
+            }
+        }
+        if let Some(list) = std::env::var_os("SET_REG") {
+            // SET_REG=code:hexvalue,... (decimal register code).
+            for item in list.to_str().unwrap().split(',') {
+                let (c, v) = item.split_once(':').unwrap();
+                e.s.r[c.parse::<usize>().unwrap()] =
+                    V::c(u32::from_str_radix(v, 16).unwrap() as Int);
+            }
+        }
+        if let Some(m) = std::env::var_os("MODE1_CLEAR") {
+            let m = u32::from_str_radix(m.to_str().unwrap(), 16).unwrap();
+            let v = e.s.r[114];
+            e.s.r[114] = V::c((v.b & !m) as Int);
+        }
         match mode {
             Mode::Interp => {
                 e.use_blocks = false;
@@ -1601,8 +1819,42 @@ fn extra_compute(r: &mut Rng) -> u32 {
     }
 }
 
+/// A random immediate-offset memory form or immediate modify (`units_mem`),
+/// confined to I0-I5 and R0-R12.
+fn mem_imm_insn(r: &mut Rng) -> Vec<u16> {
+    let units = units_mem();
+    let u = &units[r.below(units.len() as u32) as usize];
+    let (mut raw, _) = (u.make)(r);
+    let mut r64 = Raw(raw);
+    match u.form {
+        "4a" | "4b" | "4d" => {
+            r64.set(43, 41, r.below(6) as u64);
+            r64.set(26, 23, r.below(13) as u64);
+        }
+        "15b" => {
+            r64.set(43, 41, r.below(6) as u64);
+            r64.set(29, 23, r.below(13) as u64);
+        }
+        "15a" => {
+            r64.set(43, 41, r.below(6) as u64);
+            r64.set(38, 32, r.below(13) as u64);
+        }
+        "14a" => r64.set(38, 32, r.below(13) as u64),
+        _ => {}
+    }
+    raw = r64.0;
+    let n = match u.form {
+        "4b" | "15b" | "7b" => 2,
+        _ => 3,
+    };
+    words_of(raw, n)
+}
+
 /// One random instruction (R0-R12 as destinations).
 fn gen_insn(r: &mut Rng, allow_cond: bool) -> Vec<u16> {
+    if r.chance(10) {
+        return mem_imm_insn(r);
+    }
     let cond = pick_cond(r, allow_cond);
     let rn = r.below(13);
     match r.below(13) {

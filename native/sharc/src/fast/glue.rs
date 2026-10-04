@@ -219,8 +219,22 @@ fn advance_last(_s: &mut St, _len_bytes: u8) -> R<()> {
     Err(TRAP_NO_INSN)
 }
 
-const NW_LO: i64 = 0xE8000;
-const NW_HI: i64 = 0x400_0000;
+/// Ranges where a normal-word access is a plain byte address scaled by 4:
+/// not mapped by `addressing::normal_word_to_byte` (the mapped ranges all lie
+/// in [0x90000, 0x18000000)), and clear of the core MMRs (normal-word
+/// 0x30000..0x32000) and the peripheral space (0x30000000..0x40000000), which
+/// the memory windows refuse anyway.
+const NW_PLAIN: [(i64, i64); 5] = [
+    (0, 0x3_0000),
+    (0x3_2000, 0x9_0000),
+    (0xE_8000, 0x400_0000),
+    (0x1800_0000, 0x3000_0000),
+    (0x4000_0000, 1 << 32),
+];
+
+fn nw_plain(l: i64, h: i64) -> bool {
+    NW_PLAIN.iter().any(|&(lo, hi)| l >= lo && h < hi)
+}
 
 pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
     match *req {
@@ -245,7 +259,7 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
             let d = ts * (n - 1);
             let f = nf * n;
             let (l, h) = (b + lo + d.min(0) + f, b + hi + d.max(0) + f);
-            l >= NW_LO && h < NW_HI
+            nw_plain(l, h)
         }
     }
 }
@@ -273,8 +287,9 @@ pub fn run(
         return Err(Decline::Shape);
     }
     let mode1 = s.r[MODE1];
-    if !mode1.is_c() || mode1.b & (1 << 21) != 0 {
-        // Unknown MODE1, or SIMD (PEx and PEy both execute).
+    if !mode1.is_c() || mode1.b & (7 << 21) != 0 {
+        // Unknown MODE1, or SIMD (PEx and PEy both execute), or a broadcast
+        // load (BDCST9/BDCST1: a second register is loaded).
         return Err(Decline::Shape);
     }
     let k = r.insns.len() as u64;
@@ -781,8 +796,9 @@ pub fn run_cfg(
         return Err(shape("PC stack change in flight"));
     }
     let mode1 = s.r[MODE1];
-    if !mode1.is_c() || mode1.b & (1 << 21) != 0 {
-        return Err(shape("MODE1 unknown or SIMD"));
+    if !mode1.is_c() || mode1.b & (7 << 21) != 0 {
+        // Unknown MODE1, SIMD, or a broadcast load (BDCST9/BDCST1).
+        return Err(shape("MODE1 unknown, SIMD or broadcast load"));
     }
     // The loops active at entry that the region models.
     let n = meta.n_entry;
