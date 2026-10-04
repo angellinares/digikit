@@ -6011,3 +6011,56 @@ regions (`r_1C399A`, `r_1C3862`, `r_1C364F`) are 64-trip FP DO loops at about
   Removing static host instructions from these loops does not cut time in
   proportion. The loops look latency-bound, so further codegen work needs a
   measured critical-path target, not instruction counts.
+
+### Underrun work: native f32, the fast tier, firmware-free inputs (2026-10-04)
+
+**[V]** Hand-written versions of the two hottest DN2 loops (`r_1C399A`,
+`r_1C3862`), checked bit for bit against the generated regions on captured
+and fuzzed entry states, run 10.5x and 7.7x faster (292 vs about 3,060 ns
+and 538 vs 4,170 ns per call). Most of the generated cost is the model the
+transpiler emits: `V{b,m}` known-bit masks on every register, per-instruction
+budget and rollback bookkeeping, per-op `FlagUpdate` merges and f64 floats.
+The hand versions are firmware-derived and kept under `out/`.
+
+**[V]** Float add, subtract and multiply in generated code now use native
+f32 arithmetic (`rt/bnd.rs` `_float_binary_*`, redirected by
+`tools/sharc_transpile.py` `fast_float_call`). A double result of two f32
+operands rounds once to the same f32, so the results are identical; NaN
+results run the original sequence. Differential tests: 40,203,392 and
+18,017,865 comparisons, 0 mismatches. Coupled, plain release, 21 pairs:
+workload wall 0.941. A branchless ASTAT/STKY merge and `fcvtzs` truncation
+were tested and dropped (within noise).
+
+**[V]** A prototype fast tier (`native/sharc/src/fast/`, Cranelift backend
+in `native/sharc-fast-cl/`, design notes in `out/native/fasttier/DESIGN.md`)
+translates a DO-loop body region of the loaded image at run time into a
+typed kernel: plain u32/f32 values, one entry guard, memory through windows
+bounded once per call, flags replayed from their last writers at exit,
+budget checked per iteration, and side exits that leave the exact
+interpreter state before the failing instruction. It is generic: entries
+come from `SHARC_FAST_REGIONS`, and the kernel reads only a flat context
+buffer, so a WebAssembly backend can replace the Cranelift one. It is off by
+default.
+- Per-form differential tests (12 form families, 1,274,536 random states
+  against `exec_insn`): 0 mismatches. Out-of-domain results exit with state
+  untouched.
+- Region equality for `r_1C399A`, `r_1C3862` and `r_1C364F`: 312 cases
+  each (whole loop, mid-iteration budgets, 300 injected special values),
+  full state incl. every overlay byte, against an interpreter-only run: 0
+  differences.
+- Speed per call (fast vs generated): 507 vs 3,017 ns, 706 vs 4,130 ns,
+  1,008 vs 3,564 ns. Compile time 0.9-3 ms per region.
+- Coupled, plain release, five pairs, the three regions enabled: worker DSP
+  0.866, workload wall 0.868, all exactness gates passing. Generated blocks
+  chain into each other without returning to `Engine::step`, so the engine
+  ends chains while a fast tier is installed; that costs about 3.7%.
+
+**[D]** Firmware-free inputs. A generic build needs only the transpile
+output (`core_g.rs`, `core_i.rs`, `syms.rs`, `tables.rs`); the rsgen versions
+of `syms.rs` and `tables.rs` add image-derived names. The packed SHARC image
+is the section 7 boot stream flattened (16-byte headers, FILL blocks, last
+write wins) plus a tail of public register tables, about 100 lines to port
+to Rust. A cold start from that image alone, with runtime decode, reached
+the DN2 idle range at about 573.6M instructions (the default clock base is
+573,627,620). That cold state has not yet been compared with the private
+ready state. Notes: `out/native/fwfree-20261004/`.

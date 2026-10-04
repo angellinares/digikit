@@ -46,17 +46,22 @@ Pre-existing dirty docs from earlier sessions are untouched.
 
 ## Next steps
 
-1. Live check: run `mise run emu` (PGO path), hold Trig 1, and record
-   underrun counts against the 2026-10-03 run. Expect fewer underruns, but not
-   zero.
-2. Find the critical path in the hot region loops before more codegen work.
-   Instruction-count savings did not translate to time. Measure cycles per
-   iteration of `r_1C399A` with a microbenchmark of the generated function on
-   a captured entry state, then test one change at a time (DM store undo-log
-   avoidance with `_dm_write_nolog_b`, loop-stack model in locals, ASTAT/STKY
-   mask specialisation).
-3. Interpreter time (about 14%) now comes from model gates (irq_deferred,
-   bank-switch gates, RTI and loop-register instructions), not missing
-   entries. Handling those resume points in the runtime is a larger change.
-4. Make `tools/sharc_rsgen.py` write its arguments and input hashes into the
-   output directory.
+The direction is a load-time translator (the fast tier) with Cranelift for
+native and a WebAssembly backend for the browser, so that a GitHub Pages
+build carries no firmware-derived code and runs any uploaded or patched
+.syx. The AOT generated cache stays a local development path.
+
+1. Widen the fast tier to the top 19 regions (about 50% of DSP time):
+   multifunction computes, the 4a/15b/4b/15a memory forms, conditions and
+   flag reads inside bodies, nested and in-region DO loops, non-loop regions
+   with jumps and calls, rare ALU ops. Each family is a separate lowering
+   file with its own differential test, so the work runs in parallel.
+2. Pick hot regions at run time from entry counts instead of
+   `SHARC_FAST_REGIONS`.
+3. Replace chain capping: let generated blocks end at fast-tier entries.
+4. WebAssembly backend for the same kernels (`native/sharc-jit` already
+   splits modules that share memory and a function table).
+5. Firmware-free inputs: Rust loader-stream image parser, DSP cold start
+   compared with the ready state, idle addresses per firmware, then a
+   .syx-only `digi_load_coupled`.
+6. Live check on the desktop app after each step.
