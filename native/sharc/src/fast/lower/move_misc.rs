@@ -63,7 +63,7 @@ impl Lower {
             return refuse("MR data move");
         }
         if (field >> 22) & 1 == 1 {
-            return refuse("multifunction compute");
+            return self.multifn(field);
         }
         let cu = (field >> 20) & 3;
         let opcode = (field >> 12) & 0xff;
@@ -71,7 +71,7 @@ impl Lower {
         let rx = (field >> 4) & 0xf;
         let ry = field & 0xf;
         if cu == 0 && matches!(opcode >> 4, 0x7 | 0xf) {
-            return refuse("dual add/subtract");
+            return self.dual_addsub(field);
         }
         match (cu, opcode) {
             (0, 0x01) => {

@@ -147,6 +147,23 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
             }
             define(v, ALU_MASK, bits)
         }
+        FlagKind::FaluOr => {
+            let mut bits = AF;
+            for r in src {
+                if r & 0x7fff_ffff == 0 {
+                    bits |= AZ;
+                }
+                if r >> 31 != 0 {
+                    bits |= AN;
+                }
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::IaddSubOr => define(
+            v,
+            ALU_MASK,
+            arith_bits(src[0], src[1], false) | arith_bits(src[0], src[1], true),
+        ),
         FlagKind::Fmul => define(v, MULT_MASK, if src[0] >> 31 != 0 { MN } else { 0 }),
         FlagKind::FmulForget => forget(v, MULT_MASK),
         FlagKind::Iadd => define(v, ALU_MASK, arith_bits(src[0], src[1], false)),
