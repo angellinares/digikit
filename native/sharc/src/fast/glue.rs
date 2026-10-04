@@ -806,7 +806,9 @@ mod sites {
         }
         let ev = match ctx.get32(CTX_STK26) {
             1 => Some(false),
-            2 => Some(true),
+            // The stack empties only when no slot reserved by PUSH LOOP lies
+            // below the loops (the stack model's depth is then not zero).
+            2 => Some(!(s.cfg.stack_model && s.loop_depth > 0)),
             _ => None,
         };
         set_bit26(s, ev, entry_stkyx);
