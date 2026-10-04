@@ -14,6 +14,8 @@
 //!   --max         give up the boot after this many (default 2,000,000,000)
 //!   --watch       PCs to count; any execution stops the run as a fault
 //!   --count       PCs to count only (reported with the watched ones)
+//!   --regs-at     PCs at which to record D0-D7 and A0-A7, each time they run
+//!                 (the first 4,096 executions, then a count)
 //!   --out         where `frame:` writes (default .)
 //!   --hold        how long `tap:` holds a key (default 10,000,000; the web UI's
 //!                 40,000,000 runs into key repeat, so a DOWN tap moves twice)
@@ -161,6 +163,7 @@ fn main() -> ExitCode {
     };
     let watch = pcs("--watch");
     let counted = pcs("--count");
+    let regs_at = pcs("--regs-at");
     let steps: Vec<String> = flag("--steps")
         .map(|s| {
             s.split(',')
@@ -212,6 +215,7 @@ fn main() -> ExitCode {
     }
     run.emulator
         .watch_pcs(&[watch.as_slice(), counted.as_slice()].concat());
+    run.emulator.record_regs_at(&regs_at);
     if flag("--state").is_none() {
         let mut ui_at = None;
         while ui_at.is_none() {
@@ -327,11 +331,18 @@ fn main() -> ExitCode {
         .iter()
         .map(|&(pc, n, first)| json!({"pc": format!("{pc:#010x}"), "hits": n, "first_icount": first}))
         .collect();
+    let (log, regs_dropped) = run.emulator.reg_log();
+    let hex8 = |v: &[u32; 8]| v.iter().map(|x| format!("{x:#010x}")).collect::<Vec<_>>();
+    let regs: Vec<_> = log
+        .iter()
+        .map(|h| json!({"pc": format!("{:#010x}", h.pc), "icount": h.icount, "d": hex8(&h.d), "a": hex8(&h.a)}))
+        .collect();
     println!(
         "{}",
         json!({
             "outcome": if fault.is_some() { "fault" } else { "done" },
             "fault": fault, "boot": boot, "results": results, "watched": hits,
+            "regs": regs, "regs_dropped": regs_dropped,
             "icount": run.icount, "wall_seconds": started.elapsed().as_secs_f64(),
         })
     );
