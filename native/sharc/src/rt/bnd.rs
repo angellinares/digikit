@@ -661,6 +661,131 @@ pub fn _round_even_int(_s: &St, value: f64) -> Int {
     value.round_ties_even() as Int
 }
 
+// Fast paths of floats._float_binary (+ - *) and the multiplier half of
+// the multifunction ops. For add, subtract and multiply a NaN operand
+// always gives a NaN result, so a result that is not NaN proves both
+// operands are numbers and the NaN handling of the original sequence
+// (operand checks, `nan_order`, the NaN case of `_float32_bits`) can be
+// skipped. A NaN result runs the original sequence unchanged (cold).
+
+/// The original `_float_binary` body once the fast path saw a NaN result
+/// (inlined and marked cold: a call here would cost the enclosing block
+/// function its register allocation).
+#[inline(always)]
+fn float_binary_nan(
+    s: &St,
+    left: V,
+    right: V,
+    op: fn(f64, f64) -> f64,
+) -> (V, Option<bool>, Option<bool>) {
+    std::hint::cold_path();
+    let a = _f32_from_bits(s, left.val());
+    let b = _f32_from_bits(s, right.val());
+    if a.is_nan() || b.is_nan() {
+        return (V::c(0xFFFF_FFFF), Some(false), Some(true));
+    }
+    let raw = op(a, b);
+    let (bits, overflowed) = _float32_bits(s, raw);
+    (V::c(bits), Some(overflowed), Some(raw.is_nan()))
+}
+
+macro_rules! float_binary_fast {
+    ($name:ident, $op:tt, $slow:path) => {
+        /// floats._float_binary with the operation fixed.
+        #[inline(always)]
+        pub fn $name(s: &St, left: V, right: V) -> (V, Option<bool>, Option<bool>) {
+            if !left.is_c() || !right.is_c() {
+                return (V::UNK, None, None);
+            }
+            // Native single precision: the sum, difference or product of two
+            // float32 in double and rounded once to float32 equals the float32
+            // operation (double has more than 2p+2 bits), denormals included.
+            // Overflow to infinity needs finite operands (an infinite operand
+            // gives an infinite double, which `_float32_bits` does not count).
+            let (a, b) = (f32::from_bits(left.b), f32::from_bits(right.b));
+            let r = a $op b;
+            if !r.is_nan() {
+                let overflowed = r.is_infinite() && a.is_finite() && b.is_finite();
+                return (V::c(r.to_bits() as Int), Some(overflowed), Some(false));
+            }
+            float_binary_nan(s, left, right, $slow)
+        }
+    };
+}
+float_binary_fast!(_float_binary_add, +, fadd);
+float_binary_fast!(_float_binary_sub, -, fsub);
+float_binary_fast!(_float_binary_mul, *, fmul);
+
+/// compute_multi._multifn_fm_value: the bits of FXM * FYM.
+#[inline(always)]
+pub fn _multifn_fm_value(s: &St, fxm: V, fym: V) -> V {
+    if !fxm.is_c() || !fym.is_c() {
+        return V::UNK;
+    }
+    let r = f32::from_bits(fxm.b) * f32::from_bits(fym.b);
+    if !r.is_nan() {
+        return V::c(r.to_bits() as Int);
+    }
+    multifn_fm_nan(s, fxm, fym)
+}
+
+#[inline(always)]
+fn multifn_fm_nan(s: &St, fxm: V, fym: V) -> V {
+    std::hint::cold_path();
+    let a = _f32_from_bits(s, fxm.val());
+    let b = _f32_from_bits(s, fym.val());
+    V::c(_float32_bits(s, fmul(a, b)).0)
+}
+
+/// compute_mult._astatx_mult_float: the multiplier flags MN/MV/MU/MI
+/// (bits 6..9) of a float multiply result. A known result with a nonzero
+/// biased exponent cannot be a denormal (MU = 0); with no overflow and no
+/// invalid operation (both known false) the update is then MN = sign and
+/// the other three cleared, built directly. Everything else takes the
+/// original `_flags_put` sequence.
+#[inline(always)]
+pub fn _astatx_mult_float(
+    s: &St,
+    result: V,
+    overflowed: Option<bool>,
+    invalid: Option<bool>,
+) -> FlagUpdate {
+    if result.is_c()
+        && overflowed == Some(false)
+        && invalid == Some(false)
+        && result.b & 0x7F80_0000 != 0
+    {
+        return FlagUpdate {
+            define_mask: 0x3C0,
+            define_bits: ((result.b >> 31) as Int) << 6,
+            forget_mask: 0,
+            cacc: -1,
+        };
+    }
+    astatx_mult_float_general(s, result, overflowed, invalid)
+}
+
+#[inline(always)]
+fn astatx_mult_float_general(
+    s: &St,
+    result: V,
+    overflowed: Option<bool>,
+    invalid: Option<bool>,
+) -> FlagUpdate {
+    let (mut mn, mut mv, mut mu) = (None, None, None);
+    if result.is_c() {
+        let bits = result.val();
+        mn = Some(bits & 0x8000_0000 != 0);
+        mv = Some(overflowed.unwrap_or(false));
+        mu = Some(bits & 0x7F80_0000 == 0 && bits & 0x007F_FFFF != 0);
+    }
+    let mut update = FLAGS_NONE;
+    update = _flags_put(s, update, 6, mn);
+    update = _flags_put(s, update, 7, mv);
+    update = _flags_put(s, update, 8, mu);
+    _flags_put(s, update, 9, invalid)
+}
+
 /// floats._float32_bits: struct.pack('<f') rounds to nearest even and
 /// raises OverflowError when a finite value rounds to infinity.
 #[inline(always)]
@@ -1201,5 +1326,243 @@ impl St {
             self.log(Undo::Mem(addr, old, flags))?;
         }
         Ok(())
+    }
+}
+
+/// Differential tests of the fast paths above against the bodies they
+/// replaced (kept here as `*_ref`): result and every flag bit must agree.
+#[cfg(test)]
+mod fast_diff {
+    use super::*;
+
+    /// Deterministic xorshift64*.
+    pub(super) struct Rng(pub u64);
+    impl Rng {
+        pub fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+    }
+
+    // -- float32 operand generators -------------------------------------
+
+    pub(super) fn specials_f32() -> Vec<u32> {
+        let mut v = Vec::new();
+        for sign in [0u32, 0x8000_0000] {
+            for exp in [
+                0u32, 1, 2, 3, 64, 126, 127, 128, 150, 151, 152, 253, 254, 255,
+            ] {
+                for mant in [
+                    0u32, 1, 2, 0x3F_FFFF, 0x40_0000, 0x40_0001, 0x7F_FFFE, 0x7F_FFFF,
+                ] {
+                    v.push(sign | (exp << 23) | mant);
+                }
+            }
+        }
+        v
+    }
+
+    /// Operand pair biased towards overflow, underflow, cancellation and
+    /// denormal results, or fully random.
+    pub(super) fn pair(rng: &mut Rng) -> (u32, u32) {
+        let r = rng.next();
+        let r2 = rng.next();
+        let (a, b) = (r as u32, (r >> 32) as u32);
+        match r2 % 8 {
+            0 => (a, b),
+            1 => {
+                // exponent sum near the overflow edge (product), small mantissa
+                let ea = (r2 >> 8) as u32 % 256;
+                let eb =
+                    (254i32 + 127 - ea as i32 + ((r2 >> 20) as i32 % 5) - 2).clamp(0, 255) as u32;
+                (
+                    (a & 0x807F_FFFF) | (ea << 23),
+                    (b & 0x807F_FFFF) | (eb << 23),
+                )
+            }
+            2 => {
+                // exponent sum near the underflow edge
+                let ea = (r2 >> 8) as u32 % 256;
+                let eb = (127 - ea as i32 + ((r2 >> 20) as i32 % 5) - 2 + 0).clamp(0, 255) as u32;
+                (
+                    (a & 0x807F_FFFF) | (ea << 23),
+                    (b & 0x807F_FFFF) | (eb << 23),
+                )
+            }
+            3 => {
+                // x and -x to within a few ulp: cancellation
+                let d = (r2 >> 8) as u32 % 8;
+                (a, (a ^ 0x8000_0000).wrapping_add(d).wrapping_sub(4))
+            }
+            4 => {
+                // both denormal or tiny
+                (
+                    a & 0x80FF_FFFF & !0x7F00_0000,
+                    b & 0x80FF_FFFF & !0x7E00_0000,
+                )
+            }
+            5 => {
+                // large magnitudes: sum overflow
+                (
+                    (a & 0x8000_0000) | 0x7F00_0000 | (a & 0x00FF_FFFF),
+                    (b & 0x8000_0000) | 0x7F00_0000 | (b & 0x00FF_FFFF),
+                )
+            }
+            6 => {
+                // NaN / inf operand mixed in
+                let special = [
+                    0x7F80_0000u32,
+                    0xFF80_0000,
+                    0x7FC0_0000,
+                    0x7F80_0001,
+                    0xFFFF_FFFF,
+                    0,
+                    0x8000_0000,
+                ];
+                (special[(r2 >> 8) as usize % 7], b)
+            }
+            _ => (a, a),
+        }
+    }
+
+    fn float_binary_ref(
+        s: &St,
+        left: V,
+        right: V,
+        op: fn(f64, f64) -> f64,
+    ) -> (V, Option<bool>, Option<bool>) {
+        if !left.is_c() || !right.is_c() {
+            return (V::UNK, None, None);
+        }
+        let a = _f32_from_bits(s, left.val());
+        let b = _f32_from_bits(s, right.val());
+        if a.is_nan() || b.is_nan() {
+            return (V::c(0xFFFF_FFFF), Some(false), Some(true));
+        }
+        let raw = op(a, b);
+        let (bits, overflowed) = _float32_bits(s, raw);
+        (V::c(bits), Some(overflowed), Some(raw.is_nan()))
+    }
+
+    fn multifn_ref(s: &St, fxm: V, fym: V) -> V {
+        if !fxm.is_c() || !fym.is_c() {
+            return V::UNK;
+        }
+        let a = _f32_from_bits(s, fxm.val());
+        let b = _f32_from_bits(s, fym.val());
+        V::c(_float32_bits(s, fmul(a, b)).0)
+    }
+
+    #[test]
+    fn float_binary_fast_paths_match_reference() {
+        let s = St::new(crate::mem::Mem::new());
+        type Fast = fn(&St, V, V) -> (V, Option<bool>, Option<bool>);
+        let ops: [(Fast, fn(f64, f64) -> f64); 3] = [
+            (_float_binary_add, fadd),
+            (_float_binary_sub, fsub),
+            (_float_binary_mul, fmul),
+        ];
+        let mut count = 0u64;
+        let mut check = |a: V, b: V| {
+            for (fast, slow) in ops {
+                let got = fast(&s, a, b);
+                let want = float_binary_ref(&s, a, b, slow);
+                assert_eq!(got, want, "a={:#x}/{:#x} b={:#x}/{:#x}", a.b, a.m, b.b, b.m);
+                count += 1;
+            }
+            let got = _multifn_fm_value(&s, a, b);
+            assert_eq!(got, multifn_ref(&s, a, b), "fm a={:#x} b={:#x}", a.b, b.b);
+            count += 1;
+        };
+        let sp = specials_f32();
+        for &a in &sp {
+            for &b in &sp {
+                check(V::c(a as Int), V::c(b as Int));
+            }
+            check(V::UNK, V::c(a as Int));
+            check(V::c(a as Int), V::UNK);
+            check(V::partial(0xFFFF_0000, a as Int), V::c(a as Int));
+        }
+        let mut rng = Rng(0x1234_5678_9ABC_DEF1);
+        for _ in 0..10_000_000u64 {
+            let (a, b) = pair(&mut rng);
+            check(V::c(a as Int), V::c(b as Int));
+        }
+        assert!(count >= 40_000_000);
+        eprintln!("float_binary differential: {count} comparisons, 0 mismatches");
+    }
+
+    /// The original body of compute_mult._astatx_mult_float.
+    fn astatx_mult_float_ref(
+        s: &St,
+        result: V,
+        overflowed: Option<bool>,
+        invalid: Option<bool>,
+    ) -> FlagUpdate {
+        let (mut mn, mut mv, mut mu) = (None, None, None);
+        if result.is_c() {
+            let bits = result.val();
+            mn = Some(bits & 2147483648 != 0);
+            mv = Some(match overflowed {
+                Some(x) => x,
+                None => false,
+            });
+            mu = Some((bits & 2139095040 == 0) && (bits & 8388607 != 0));
+        }
+        let mut update = FlagUpdate {
+            define_mask: 0,
+            define_bits: 0,
+            forget_mask: 0,
+            cacc: -1,
+        };
+        update = _flags_put(s, update, 6, mn);
+        update = _flags_put(s, update, 7, mv);
+        update = _flags_put(s, update, 8, mu);
+        _flags_put(s, update, 9, invalid)
+    }
+
+    #[test]
+    fn astatx_mult_float_fast_path_matches_reference() {
+        let s = St::new(crate::mem::Mem::new());
+        let opts = [None, Some(false), Some(true)];
+        let mut count = 0u64;
+        let mut check = |r: V| {
+            for ov in opts {
+                for inv in opts {
+                    assert_eq!(
+                        _astatx_mult_float(&s, r, ov, inv),
+                        astatx_mult_float_ref(&s, r, ov, inv),
+                        "bits={:#x}/{:#x} ov={ov:?} inv={inv:?}",
+                        r.b,
+                        r.m
+                    );
+                    count += 1;
+                }
+            }
+        };
+        for bits in specials_f32() {
+            check(V::c(bits as Int));
+            check(V::partial(0xFFFF_FF00, bits as Int));
+        }
+        check(V::UNK);
+        let mut rng = Rng(0x0BAD_5EED_1234_5678);
+        for _ in 0..2_000_000u64 {
+            let (a, _) = pair(&mut rng);
+            check(V::c(a as Int));
+        }
+        // Every exponent field, both signs, mantissa zero/nonzero.
+        for e in 0..256u32 {
+            for sign in [0u32, 0x8000_0000] {
+                for m in [0u32, 1, 0x7F_FFFF] {
+                    check(V::c((sign | e << 23 | m) as Int));
+                }
+            }
+        }
+        assert!(count >= 10_000_000);
+        eprintln!("astatx_mult_float differential: {count} comparisons, 0 mismatches");
     }
 }

@@ -555,6 +555,15 @@ PARTIAL_REGS = frozenset({118, 119, 120, 121})
 # is never known): block code requires these at entry, so they fold.
 PARTIAL_MASKS = {118: 0x00FFFFFF, 119: 0xFFFFFFFF, 120: 0xFFFFFFFF, 121: 0xFFFFFFFF}
 
+# floats._float_binary called with one of these operations is replaced by a
+# hand-written fast path in native/sharc/src/rt/bnd.rs (Transpiler.
+# fast_float_call).
+FAST_FLOAT_BINARY = {
+    "sharc_core.floats._f_add": "_float_binary_add",
+    "sharc_core.floats._f_sub": "_float_binary_sub",
+    "sharc_core.floats._f_mul": "_float_binary_mul",
+}
+
 # Function values the runtime knows by number (rt.rs FN_OP_*).
 RT_FN_IDS = {
     "sharc_core.values._op_and": "FN_OP_AND",
@@ -3136,6 +3145,9 @@ class FnT:
                 cur = isinstance(sv, Tag) and sv.code == "SpecView::CUR"
                 code = "SpecView::PEY_CUR" if cur else "SpecView::PEY_EMPTY"
                 return E(code, SPECVIEW, const=Tag(code))
+            fast = self.fast_float_call(e, fullname, sig, args, static)
+            if fast is not None:
+                return fast
             if b is None and (static or self.facts or self.blk):
                 facts = dict(self.facts)
                 path = self.tr.variant(fullname, static, facts)
@@ -3199,6 +3211,59 @@ class FnT:
                 for attr in changed:
                     self.facts.pop(attr, None)
         return E(code, sig.ret, True, _NOCONST)
+
+    def fast_float_call(
+        self,
+        e: Any,
+        fullname: str,
+        sig: FnSig,
+        args: list[E | None],
+        static: dict,
+    ) -> E | None:
+        """Calls of the float helpers that have a hand-written fast path in
+        native/sharc/src/rt/bnd.rs (bit-identical results and flags; a NaN
+        result falls back to the original sequence there)."""
+        bound = {
+            p[0]: (p[1], a)
+            for p, a in zip(sig.params, args, strict=True)
+            if p[0] not in sig.state_params and a is not None
+        }
+        if fullname == "sharc_core.floats._float_binary":
+            op = static.get("operation")
+            name = (
+                self.core.live_funcs.get(id(op))
+                if isinstance(op, pytypes.FunctionType)
+                else None
+            )
+            helper = FAST_FLOAT_BINARY.get(name or "")
+            if helper is None:
+                return None
+            codes = [
+                self.coerce(bound[n][1], bound[n][0], e) for n in ("left", "right")
+            ]
+            return E(
+                self.call_code("bnd::" + helper, codes, False), sig.ret, True, _NOCONST
+            )
+        if fullname == "sharc_core.compute_mult._astatx_mult_float":
+            codes = [
+                self.coerce(bound[n][1], bound[n][0], e)
+                for n in ("result", "overflowed", "invalid")
+            ]
+            return E(
+                self.call_code("bnd::_astatx_mult_float", codes, False),
+                sig.ret,
+                True,
+                _NOCONST,
+            )
+        if fullname == "sharc_core.compute_multi._multifn_fm_value":
+            v = self.fresh("o")
+            op_t, op_e = bound["op"]
+            call = self.call_code(
+                "bnd::_multifn_fm_value", ["%s.fxm" % v, "%s.fym" % v], False
+            )
+            code = "{ let %s = %s; %s }" % (v, self.coerce(op_e, op_t, e), call)
+            return E(code, sig.ret, True, _NOCONST)
+        return None
 
     def blk_boundary(
         self, e: Any, fullname: str, sig: FnSig, args: list[E | None]
