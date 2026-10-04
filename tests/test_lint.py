@@ -30,6 +30,7 @@ CLEAN = [
     "tools/autoevents.py",
     "tools/wireevents.py",
     "tools/sharc_render_replay.py",
+    "tools/sharc_regionbench.py",
     "emu/dspi2.py",
     "emu/dspiframe.py",
     "emu/livesharc.py",

@@ -10,7 +10,18 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(sharc_gen)");
     println!("cargo:rustc-check-cfg=cfg(sharc_image)");
     println!("cargo:rustc-check-cfg=cfg(sharc_gen_version)");
+    println!("cargo:rustc-check-cfg=cfg(region_bench_sol)");
     println!("cargo:rerun-if-env-changed=SHARC_GEN_DIR");
+    // The region bench's hand-written versions (firmware-derived, never in
+    // the repository): compiled in only when this names an existing file.
+    println!("cargo:rerun-if-env-changed=SHARC_REGIONBENCH_SOL");
+    if let Ok(path) = env::var("SHARC_REGIONBENCH_SOL")
+        && Path::new(&path).is_file()
+    {
+        println!("cargo:rustc-cfg=region_bench_sol");
+        println!("cargo:rustc-env=SHARC_REGIONBENCH_SOL_PATH={path}");
+        println!("cargo:rerun-if-changed={path}");
+    }
     let Ok(dir) = env::var("SHARC_GEN_DIR") else {
         return;
     };
