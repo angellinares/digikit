@@ -542,6 +542,31 @@ impl Emulator {
         &self.pc_watch
     }
 
+    /// Reads `len` bytes of guest memory for a host tool, as a debugger's peek:
+    /// straight from the board, so no instruction runs and no bus trace,
+    /// timer or peripheral observer sees it. Meant for RAM and the image; a
+    /// peripheral register's read side effects are the board's.
+    pub fn peek(&mut self, addr: u32, len: usize) -> Result<Vec<u8>, String> {
+        (0..len)
+            .map(|i| {
+                let at = addr.wrapping_add(i as u32);
+                self.bus.board.read8(at).map_err(|e| format!("peek {at:#010x}: {e:?}"))
+            })
+            .collect()
+    }
+
+    /// Writes guest memory for a host tool, as a debugger's poke: straight to
+    /// the board, then drops any decoded instructions over the written bytes,
+    /// so a poke over code runs as written.
+    pub fn poke(&mut self, addr: u32, bytes: &[u8]) -> Result<(), String> {
+        for (i, &value) in bytes.iter().enumerate() {
+            let at = addr.wrapping_add(i as u32);
+            self.bus.board.write8(at, value).map_err(|e| format!("poke {at:#010x}: {e:?}"))?;
+        }
+        self.cpu.invalidate_external_write(addr, bytes.len());
+        Ok(())
+    }
+
     /// Declares extra executable ranges for the runaway check (replacing any
     /// declared before), for any image: code a developer placed by other means
     /// than an image declaration. `parse_exec_ranges` reads the text form.
