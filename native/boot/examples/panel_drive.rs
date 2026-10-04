@@ -3,7 +3,8 @@
 //! screen captures and memory reads and writes, and report what happened.
 //!
 //! usage: panel_drive SYX [--state IN] [--save-state OUT] [--after N]
-//!                    [--max N] [--watch PC,...] [--out DIR] [--hold N]
+//!                    [--max N] [--watch PC,...] [--count PC,...] [--out DIR]
+//!                    [--hold N]
 //!                    --steps STEP,STEP,...
 //!   --state       resume a state written by --save-state (skips the boot)
 //!   --save-state  after the boot (or the resume), before the steps, write the
@@ -12,8 +13,10 @@
 //!                 (default 100,000,000)
 //!   --max         give up the boot after this many (default 2,000,000,000)
 //!   --watch       PCs to count; any execution stops the run as a fault
+//!   --count       PCs to count only (reported with the watched ones)
 //!   --out         where `frame:` writes (default .)
-//!   --hold        how long `tap:` holds a key (default 40,000,000: the web UI's)
+//!   --hold        how long `tap:` holds a key (default 10,000,000; the web UI's
+//!                 40,000,000 runs into key repeat, so a DOWN tap moves twice)
 //!
 //! Steps (numbers are hex with 0x, or decimal; a trailing M is millions):
 //!   wait:N               run N instructions
@@ -79,6 +82,8 @@ struct Run {
     emulator: Emulator,
     frame: Option<Vec<u8>>,
     icount: u64,
+    /// The watched PCs (a fault when one runs); the counted ones are not.
+    faults: Vec<u32>,
 }
 
 impl Run {
@@ -99,7 +104,10 @@ impl Run {
             if let Some(error) = &status.error {
                 return Err(error.clone());
             }
-            if let Some(&(pc, _, _)) = self.emulator.pc_hits().iter().find(|&&(_, hits, _)| hits > 0) {
+            let faults = &self.faults;
+            if let Some(&(pc, _, _)) =
+                self.emulator.pc_hits().iter().find(|&&(pc, hits, _)| hits > 0 && faults.contains(&pc))
+            {
                 return Err(format!("watched pc {pc:#010x} ran"));
             }
         }
@@ -121,11 +129,15 @@ fn main() -> ExitCode {
     let flag = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     let after = flag("--after").and_then(|n| number(&n)).unwrap_or(100_000_000);
     let max = flag("--max").and_then(|n| number(&n)).unwrap_or(2_000_000_000);
-    let hold = flag("--hold").and_then(|n| number(&n)).unwrap_or(40_000_000);
+    let hold = flag("--hold").and_then(|n| number(&n)).unwrap_or(10_000_000);
     let out = PathBuf::from(flag("--out").unwrap_or_else(|| ".".into()));
-    let watch: Vec<u32> = flag("--watch")
-        .map(|list| list.split(',').filter_map(|pc| number(pc).map(|v| v as u32)).collect())
-        .unwrap_or_default();
+    let pcs = |name: &str| -> Vec<u32> {
+        flag(name)
+            .map(|list| list.split(',').filter_map(|pc| number(pc).map(|v| v as u32)).collect())
+            .unwrap_or_default()
+    };
+    let watch = pcs("--watch");
+    let counted = pcs("--count");
     let steps: Vec<String> = flag("--steps")
         .map(|s| s.split(',').map(|step| step.trim().to_string()).filter(|s| !s.is_empty()).collect())
         .unwrap_or_default();
@@ -142,7 +154,7 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let mut run = Run { emulator, frame: None, icount: 0 };
+    let mut run = Run { emulator, frame: None, icount: 0, faults: watch.clone() };
 
     // The start: a saved state, or a boot from reset to the main UI and past it.
     let mut boot = json!(null);
@@ -159,7 +171,7 @@ fn main() -> ExitCode {
         run.icount = snapshot.status.icount;
         run.frame = snapshot.frame;
     }
-    run.emulator.watch_pcs(&watch);
+    run.emulator.watch_pcs(&[watch.as_slice(), counted.as_slice()].concat());
     if flag("--state").is_none() {
         let mut ui_at = None;
         while ui_at.is_none() {
