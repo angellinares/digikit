@@ -137,6 +137,24 @@ pub enum Inst {
         k: u32,
         exit: u32,
     },
+    /// Control flow (conditional stores, CFG kernels). A label starts a basic
+    /// block: control reaches it by falling through from the instruction
+    /// before it (unless that was a `Jump` or `Leave`) or by a jump. Values
+    /// defined in a block are usable only where that block dominates; the
+    /// lowering carries anything else across blocks in variables.
+    Label(u32),
+    Jump(u32),
+    /// Jump to the label when `c` != 0, else fall through.
+    BrIf {
+        c: Val,
+        target: u32,
+    },
+    /// Leave the kernel now, as a failed `Guard` does (fix-ups of `exit`,
+    /// record `k`, run `post`).
+    Leave {
+        k: u32,
+        exit: u32,
+    },
 }
 
 /// Context buffer layout (byte offsets, 8-byte aligned buffer, fixed size).
@@ -161,7 +179,68 @@ pub const CTX_FSRC: u32 = CTX_REGS_OUT + 4 * NREGS;
 /// the smallest normal, zero.
 pub const CTX_CONSTS: u32 = CTX_FSRC + 4 * MAX_FSRC;
 pub const CONST_POOL: [u32; 3] = [0x7f80_0000, 0x0080_0000, 0];
-pub const CTX_SIZE: u32 = (CTX_CONSTS + 4 * CONST_POOL.len() as u32 + 7) & !7;
+/// Pseudo registers (the kernel's ASTATX bits and known mask, in/out), the
+/// instruction budget and the counters of CFG kernels. All of this lies after
+/// the original layout, so a kernel that does not use it is unchanged.
+pub const NPSEUDO: u32 = 10;
+pub const CTX_PSEUDO_IN: u32 = (CTX_CONSTS + 4 * CONST_POOL.len() as u32 + 7) & !7;
+pub const CTX_PSEUDO_OUT: u32 = CTX_PSEUDO_IN + 4 * NPSEUDO;
+/// Instructions the kernel may run (CFG kernels): `limit - icount`, clamped.
+pub const CTX_BUDGET: u32 = CTX_PSEUDO_OUT + 4 * NPSEUDO;
+/// Instructions completed at the last block boundary (CFG kernels, out).
+pub const CTX_ICNT: u32 = CTX_BUDGET + 4;
+/// Per-loop counters of CFG kernels: `MAX_CFG_LOOPS` remaining counts out,
+/// the same number of initial counts in (entry loops), then LCNTR and the
+/// flag telling that a DO ran.
+pub const MAX_CFG_LOOPS: u32 = 12;
+pub const CTX_LOOP_REM_OUT: u32 = CTX_ICNT + 4;
+pub const CTX_LOOP_REM_IN: u32 = CTX_LOOP_REM_OUT + 4 * MAX_CFG_LOOPS;
+/// LCNTR as the last DO of the region set it, and 1 when a DO ran.
+pub const CTX_LCNTR: u32 = CTX_LOOP_REM_IN + 4 * MAX_CFG_LOOPS;
+/// Last loop-stack event for STKYX bit 26 (0 none, 1 a DO, 2 the stack
+/// emptied) and 1 when a PC-stack event happened.
+pub const CTX_STK26: u32 = CTX_LCNTR + 8;
+pub const CTX_DIDPC: u32 = CTX_STK26 + 4;
+/// Whether each delayed branch of the region was taken (u32 per branch).
+pub const MAX_CFG_JUMPS: u32 = 16;
+pub const CTX_TAKEN: u32 = CTX_DIDPC + 4;
+/// Stack model: the loop that last started at each loop-stack depth plus
+/// one (0: none), for the stale slot a finished loop leaves behind.
+pub const MAX_SLOTS: u32 = 6;
+pub const CTX_SLOT_LAST: u32 = CTX_TAKEN + 4 * MAX_CFG_JUMPS;
+/// Window check (tests): when `CTX_WIN_CHECK` is non-zero the reference
+/// interpreter asserts every window access lies inside the window it
+/// belongs to; `CTX_WIN_EXT + 8*w` holds window w's `[lo, hi)` (u32 each).
+pub const CTX_WIN_CHECK: u32 = (CTX_SLOT_LAST + 4 * MAX_SLOTS + 7) & !7;
+pub const CTX_WIN_EXT: u32 = CTX_WIN_CHECK + 8;
+pub const CTX_SIZE: u32 = (CTX_WIN_EXT + 8 * MAX_WIN + 7) & !7;
+
+/// Context offsets of register-like kernel inputs/outputs: UREG codes below
+/// `NREGS` (R, I, M), then the pseudo registers (code `NREGS + i`).
+pub const fn ctx_reg_in(c: u32) -> u32 {
+    if c < NREGS {
+        CTX_REGS_IN + 4 * c
+    } else {
+        CTX_PSEUDO_IN + 4 * (c - NREGS)
+    }
+}
+
+pub const fn ctx_reg_out(c: u32) -> u32 {
+    if c < NREGS {
+        CTX_REGS_OUT + 4 * c
+    } else {
+        CTX_PSEUDO_OUT + 4 * (c - NREGS)
+    }
+}
+
+/// Pseudo registers: the ASTATX bits at entry (read only), then for each of
+/// the three flag groups (0 ALU, 1 multiplier, 2 shifter) the kind of the last
+/// writer and its two sources (`pseudo_flag(group, 0..3)`).
+pub const PSEUDO_FB0: u32 = NREGS;
+pub const NGROUPS: u32 = 3;
+pub const fn pseudo_flag(group: u32, part: u32) -> u32 {
+    NREGS + 1 + 3 * group + part
+}
 
 pub const fn win_ptr(w: u32) -> u32 {
     CTX_WIN + WIN_STRIDE * w
@@ -178,6 +257,12 @@ pub struct Kernel {
     /// the variables hold the registers as of before the instruction. A
     /// value of a different type than its variable is reinterpreted.
     pub exits: Vec<Vec<(Var, Val)>>,
+    /// Number of labels (`Label`/`Jump`/`BrIf` targets are below this).
+    pub nlabels: u32,
+    /// A CFG kernel: `body` runs once (not once per iteration) and ends in a
+    /// `Jump` back into itself or a `Leave`; the exits are all guards and
+    /// `Leave`s (return code 1).
+    pub cfg: bool,
 }
 
 impl Kernel {
@@ -196,12 +281,60 @@ impl Kernel {
         None
     }
 
+    /// Labels: each defined once, in `body`; a CFG kernel's body ends in a
+    /// terminator and no instruction follows a terminator except a label.
+    fn validate_flow(&self) -> Result<(), String> {
+        let mut seen = vec![false; self.nlabels as usize];
+        for (section, insts) in [("pre", &self.pre), ("post", &self.post)] {
+            if insts.iter().any(|i| {
+                matches!(
+                    i,
+                    Inst::Label(_) | Inst::Jump(_) | Inst::BrIf { .. } | Inst::Leave { .. }
+                )
+            }) {
+                return Err(format!("{section}: control flow outside body"));
+            }
+        }
+        let mut after_term = false;
+        for (i, inst) in self.body.iter().enumerate() {
+            match *inst {
+                Inst::Label(l) => {
+                    let Some(slot) = seen.get_mut(l as usize) else {
+                        return Err(format!("body[{i}]: undeclared label"));
+                    };
+                    if *slot {
+                        return Err(format!("body[{i}]: label {l} defined twice"));
+                    }
+                    *slot = true;
+                    after_term = false;
+                }
+                _ if after_term => {
+                    return Err(format!("body[{i}]: unreachable instruction"));
+                }
+                Inst::Jump(_) | Inst::Leave { .. } => after_term = true,
+                _ => {}
+            }
+        }
+        for (i, inst) in self.body.iter().enumerate() {
+            if let Inst::Jump(l) | Inst::BrIf { target: l, .. } = *inst
+                && !seen.get(l as usize).copied().unwrap_or(false)
+            {
+                return Err(format!("body[{i}]: label {l} is never defined"));
+            }
+        }
+        if self.cfg && !after_term {
+            return Err("cfg body does not end in a terminator".into());
+        }
+        Ok(())
+    }
+
     pub fn inst_count(&self) -> usize {
         self.pre.len() + self.body.len() + self.post.len()
     }
 
     /// Check types and definition order; the builder's output must pass.
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_flow()?;
         let mut defined = vec![false; self.val_ty.len()];
         let mut after_pre = Vec::new();
         for (section, insts) in [
@@ -338,6 +471,29 @@ impl Kernel {
                             return err(&e);
                         }
                     }
+                    Inst::Label(l) => {
+                        if l >= self.nlabels {
+                            return err("undeclared label");
+                        }
+                    }
+                    Inst::Jump(l) => {
+                        if l >= self.nlabels {
+                            return err("undeclared label");
+                        }
+                    }
+                    Inst::BrIf { c, target } => {
+                        if target >= self.nlabels {
+                            return err("undeclared label");
+                        }
+                        if !use_ok(c) || ty(c) != Some(Ty::I32) {
+                            return err("branch operand");
+                        }
+                    }
+                    Inst::Leave { exit, .. } => {
+                        if let Some(e) = self.check_exit(exit, &defined) {
+                            return err(&e);
+                        }
+                    }
                 }
             }
         }
@@ -446,7 +602,13 @@ fn ty_of(c: u32) -> Result<Ty, String> {
 impl Kernel {
     /// The kernel as a flat word stream, for a backend in another binary.
     pub fn encode(&self) -> Vec<u32> {
-        let mut w: Vec<u32> = vec![0x4b45_5231]; // "KER1"
+        // "KER1" has no control flow; "KER2" adds the flow header words and
+        // the Label/Jump/BrIf/Leave instructions.
+        let v2 = self.cfg || self.nlabels > 0;
+        let mut w: Vec<u32> = vec![if v2 { 0x4b45_5232 } else { 0x4b45_5231 }];
+        if v2 {
+            w.extend([self.cfg as u32, self.nlabels]);
+        }
         w.push(self.vars.len() as u32);
         w.extend(self.vars.iter().map(|&t| ty_code(t)));
         w.push(self.val_ty.len() as u32);
@@ -483,6 +645,10 @@ impl Kernel {
                     Inst::StCtx32 { off, v } => w.extend([3, off, v]),
                     Inst::Guard { ok, k, exit } => w.extend([4, ok, k, exit]),
                     Inst::GuardAny { a, b, k, exit } => w.extend([5, a, b, k, exit]),
+                    Inst::Label(l) => w.extend([6, l]),
+                    Inst::Jump(l) => w.extend([7, l]),
+                    Inst::BrIf { c, target } => w.extend([8, c, target]),
+                    Inst::Leave { k, exit } => w.extend([9, k, exit]),
                 }
             }
         }
@@ -496,10 +662,15 @@ impl Kernel {
             at += 1;
             Ok(v)
         };
-        if next()? != 0x4b45_5231 {
+        let magic = next()?;
+        if magic != 0x4b45_5231 && magic != 0x4b45_5232 {
             return Err("not a kernel".into());
         }
         let mut k = Kernel::default();
+        if magic == 0x4b45_5232 {
+            k.cfg = next()? != 0;
+            k.nlabels = next()?;
+        }
         for _ in 0..next()? {
             k.vars.push(ty_of(next()?)?);
         }
@@ -563,6 +734,16 @@ impl Kernel {
                     5 => Inst::GuardAny {
                         a: next()?,
                         b: next()?,
+                        k: next()?,
+                        exit: next()?,
+                    },
+                    6 => Inst::Label(next()?),
+                    7 => Inst::Jump(next()?),
+                    8 => Inst::BrIf {
+                        c: next()?,
+                        target: next()?,
+                    },
+                    9 => Inst::Leave {
                         k: next()?,
                         exit: next()?,
                     },

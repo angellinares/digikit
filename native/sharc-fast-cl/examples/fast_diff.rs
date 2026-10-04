@@ -111,6 +111,8 @@ struct Snap {
     status_stack: Vec<(V, V, V)>,
     special: Vec<Spec>,
     steps: Int,
+    at_loaded_entry: bool,
+    timer_written: bool,
     pc_sw: Int,
     pending: Option<Pending>,
     icount: u64,
@@ -150,6 +152,8 @@ impl Snap {
             status_stack: s.status_stack.items().to_vec(),
             special: s.special.to_vec(),
             steps: s.steps,
+            at_loaded_entry: s.at_loaded_entry,
+            timer_written: s.timer_written,
             pc_sw: s.pc_sw,
             pending: s.pending,
             icount: s.icount,
@@ -188,6 +192,8 @@ impl Snap {
         s.status_stack.a[..self.status_stack.len()].copy_from_slice(&self.status_stack);
         s.special.copy_from_slice(&self.special);
         s.steps = self.steps;
+        s.at_loaded_entry = self.at_loaded_entry;
+        s.timer_written = self.timer_written;
         s.pc_sw = self.pc_sw;
         s.pending = self.pending;
         s.icount = self.icount;
@@ -244,6 +250,8 @@ fn diff_with(a: &Snap, b: &Snap, steps: bool) -> Vec<String> {
     if steps {
         cmp!(steps);
     }
+    cmp!(at_loaded_entry);
+    cmp!(timer_written);
     cmp!(pc_sw);
     cmp!(pending);
     cmp!(icount);
@@ -646,9 +654,16 @@ fn rand_int(r: &mut Rng) -> u32 {
     }
 }
 
+static KNOWN_FLAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Mostly ordinary float values (long kernel runs), a few special ones.
+static CALM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
+    let calm = CALM.load(std::sync::atomic::Ordering::Relaxed);
     for c in 0..16 {
-        let v = if r.chance(2) {
+        let v = if calm && !r.chance(24) {
+            calm_value(r)
+        } else if r.chance(2) {
             rand_f32(r)
         } else {
             rand_int(r)
@@ -667,11 +682,20 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
         s.r[c] = V::c(ms[c - 32] as Int);
     }
     // ASTATX: random value with a random known mask.
-    let m = if r.chance(3) { u32::MAX } else { r.u32() };
+    let known = KNOWN_FLAGS.load(std::sync::atomic::Ordering::Relaxed);
+    let m = if known {
+        if r.chance(12) { r.u32() } else { u32::MAX }
+    } else if r.chance(3) {
+        u32::MAX
+    } else {
+        r.u32()
+    };
     s.r[118] = V { b: r.u32() & m, m };
     // Data window contents: floats and ints.
     for k in 0..DATA_LEN / 4 {
-        let w = if r.chance(2) {
+        let w = if calm && !r.chance(24) {
+            calm_value(r)
+        } else if r.chance(2) {
             rand_f32(r)
         } else {
             rand_int(r)
@@ -707,6 +731,74 @@ fn expect_special(c: Check, s: &St) -> bool {
     }
 }
 
+// -- conditions ---------------------------------------------------------------------
+
+/// Forms whose bits 37:33 are an execution condition.
+fn has_cond(form: &str) -> bool {
+    matches!(
+        form,
+        "2a" | "3a" | "3b" | "5a_move" | "5b_move" | "6a_mem" | "6b_shiftimm" | "7a"
+    )
+}
+
+/// The condition codes the fast tier lowers, plus a few it must refuse.
+const COND_CODES: &[u32] = &[
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x0d, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+    0x16, 0x17, 0x18, 0x1d, 0x00, 0x01, 0x02, 0x10, 0x11, 0x12, 0x09, 0x0e,
+];
+
+/// The predicate of the Python core (`sequencer._predicate`) for SISD:
+/// None when the flags it needs are unknown.
+fn pred(cond: u32, a: V, mode1: u32) -> Option<bool> {
+    if cond == 0x1f {
+        return Some(true);
+    }
+    let bit = |n: u32| -> Option<bool> { (a.m >> n & 1 == 1).then_some(a.b >> n & 1 == 1) };
+    match cond {
+        0x00 => bit(0),
+        0x10 => bit(0).map(|x| !x),
+        0x01 | 0x02 | 0x11 | 0x12 => {
+            let (af, an, az) = (bit(10)?, bit(2)?, bit(0)?);
+            let (x, y);
+            if af {
+                x = an || az;
+                y = an && !az;
+            } else {
+                let av = bit(1)?;
+                let term = if av {
+                    let alusat = mode1 & (1 << 13) != 0;
+                    an != !alusat
+                } else {
+                    an
+                };
+                x = term || az;
+                y = term;
+            }
+            Some(match cond {
+                0x02 => x,
+                0x12 => !x,
+                0x01 => y,
+                _ => !y,
+            })
+        }
+        0x03 => bit(3),
+        0x13 => bit(3).map(|x| !x),
+        0x04 => bit(1),
+        0x14 => bit(1).map(|x| !x),
+        0x05 => bit(7),
+        0x15 => bit(7).map(|x| !x),
+        0x06 => bit(6),
+        0x16 => bit(6).map(|x| !x),
+        0x07 => bit(11),
+        0x17 => bit(11).map(|x| !x),
+        0x08 => bit(12),
+        0x18 => bit(12).map(|x| !x),
+        0x0d => bit(18),
+        0x1d => bit(18).map(|x| !x),
+        _ => None,
+    }
+}
+
 // -- the forms test -------------------------------------------------------------------
 
 #[derive(Default)]
@@ -728,6 +820,10 @@ fn forms(args: &[String]) {
     let seed: u64 = flag(args, "--seed").map_or(0x5eed, |x| x.parse().unwrap());
     let filter = flag(args, "--filter").unwrap_or("");
     let instances: u64 = flag(args, "--instances").map_or(20, |x| x.parse().unwrap());
+    // --cond: conditional instructions (random condition codes, mostly
+    // known flags) instead of unconditional ones.
+    let cond_mode = args.iter().any(|a| a == "--cond");
+    KNOWN_FLAGS.store(cond_mode, std::sync::atomic::Ordering::Relaxed);
     let mut be = backend(flag(args, "--backend").unwrap_or("cl"));
     let mut e = open(&image, &state, CLOCK_BASE);
     e.enable_runtime_decode(Mem::read_sw);
@@ -767,7 +863,12 @@ fn forms(args: &[String]) {
         let mut attempts = 0;
         while inst_done < instances && attempts < instances * 200 {
             attempts += 1;
-            let (raw, check) = (unit.make)(&mut rng);
+            let (mut raw, check) = (unit.make)(&mut rng);
+            let mut cond = 0x1f;
+            if cond_mode && (raw >> 33) & 0x1f == 0x1f && has_cond(unit.form) {
+                cond = COND_CODES[rng.below(COND_CODES.len() as u32) as usize];
+                raw = (raw & !(0x1fu64 << 33)) | ((cond as u64) << 33);
+            }
             let mut ms = [0u32; 16];
             for m in ms.iter_mut() {
                 *m = (rng.below(9) as i32 - 4) as u32;
@@ -823,7 +924,8 @@ fn forms(args: &[String]) {
                 s.pending = None;
                 s.limit = s.icount + 1000;
                 let s0 = Snap::take(s);
-                let special = expect_special(check, s);
+                let executes = pred(cond, s.r[118], s.r[114].b);
+                let special = expect_special(check, s) && executes != Some(false);
                 let insn = sharc_native::rt::bnd::decode_at(s, (), None, CODE_PC as Int)
                     .expect("decode of the assembled instruction");
                 let res = exec_insn(s, insn);
@@ -842,6 +944,7 @@ fn forms(args: &[String]) {
                 let expect_fail = region.reqs.iter().any(|q| {
                     use sharc_native::fast::{Base, Req};
                     match *q {
+                        Req::FlagsKnown(mask) => s.r[118].m & mask != mask,
                         Req::Known(c) => Some(c) == unknown,
                         Req::Eq(c, _) => Some(c) == unknown || Some(c) == flip,
                         Req::NwPlain {
@@ -941,7 +1044,10 @@ fn forms(args: &[String]) {
         );
         if tally.built == 0 {
             println!("  NO instance lowered for {}", unit.name);
-            total_mismatch += 1;
+            // Conditional index updates (post-modify) have no address range.
+            if !cond_mode {
+                total_mismatch += 1;
+            }
         }
     }
     println!(
@@ -964,8 +1070,10 @@ fn main() {
     match args.first().map(String::as_str) {
         Some("forms") => forms(&args[1..]),
         Some("region") => region(&args[1..]),
+        Some("cfg") => cfgprog(&args[1..]),
+        Some("capture") => capture(&args[1..]),
         _ => {
-            eprintln!("usage: fast_diff forms|region ...");
+            eprintln!("usage: fast_diff forms|region|cfg ...");
             std::process::exit(2);
         }
     }
@@ -1021,7 +1129,18 @@ fn rand_word(r: &mut Rng) -> u32 {
 fn inject(e: &mut Engine, seed: u64, what: &mut String) {
     let mut r = Rng(seed | 1);
     for _ in 0..1 + r.below(3) {
-        match r.below(3) {
+        match r.below(4) {
+            3 => {
+                // Flip flag bits, so conditions and branches go the other
+                // way (the known mask stays as it is).
+                let a = e.s.r[118];
+                let flip = r.u32() & 0x0000_47ff & a.m;
+                e.s.r[118] = V {
+                    b: a.b ^ flip,
+                    m: a.m,
+                };
+                what.push_str(&format!(" astatx^={flip:x}"));
+            }
             0 => {
                 let c = r.below(16) as usize;
                 let v = rand_word(&mut r);
@@ -1055,7 +1174,11 @@ fn region(args: &[String]) {
     let image = std::fs::read(&args[0]).expect("image");
     let dir = &args[1];
     let pc = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("pc");
-    let backend_name = flag(args, "--backend").unwrap_or("cl").to_string();
+    let check_windows = args.iter().any(|a| a == "--check-windows");
+    sharc_native::fast::glue::set_window_check(check_windows);
+    let backend_name = flag(args, "--backend")
+        .unwrap_or(if check_windows { "interp" } else { "cl" })
+        .to_string();
     let injections: u64 = flag(args, "--inject").map_or(100, |x| x.parse().unwrap());
     let state = std::fs::read(format!("{dir}/r_{pc:X}.state")).expect("state");
     let clock = meta_clock(&format!("{dir}/r_{pc:X}.meta"));
@@ -1080,9 +1203,9 @@ fn region(args: &[String]) {
     };
     // Shape of the entry.
     let (probe, _) = make(Mode::Interp);
-    let top = *probe.s.loops.items().last().expect("loop at entry");
+    let top = probe.s.loops.items().last().copied();
     assert_eq!(probe.s.pc_sw, pc as Int, "state is at the entry");
-    let rem = top.remaining as u32;
+    let rem = top.map_or(1, |t| t.remaining as u32);
     drop(probe);
     let mut total = 0;
     let mut bad_total = 0;
@@ -1093,8 +1216,21 @@ fn region(args: &[String]) {
         e.step(1_000_000);
         let fe = fe.unwrap();
         let fe = fe.borrow();
-        let r = fe.region(pc).expect("region built");
+        let Some(r) = fe.region(pc) else {
+            println!("region {pc:X}: not built: {:?}", fe.refusals());
+            return;
+        };
         kk = r.len() as u32;
+        if let Some(c) = &r.cfg {
+            println!(
+                "region {pc:X}: cfg shape, {} loops ({} active at entry), {} sites, {} stop(s): {:?}",
+                c.loops.len(),
+                c.n_entry,
+                c.sites.len(),
+                c.stops.len(),
+                c.stops.iter().take(6).collect::<Vec<_>>()
+            );
+        }
         println!(
             "region {pc:X}: {} instructions ({:?}), kernel {} ops, {} windows, compile {} us [{}]",
             r.len(),
@@ -1121,6 +1257,8 @@ fn region(args: &[String]) {
         kk * rem - 1,
         kk * rem + 1,
         777,
+        5000,
+        40000,
     ] {
         cases.push((format!("budget {n}"), n, None));
     }
@@ -1207,4 +1345,720 @@ fn region(args: &[String]) {
 #[allow(dead_code)]
 fn _unused(_: usize) -> usize {
     NUREG
+}
+
+// -- random CFG programs ---------------------------------------------------------------
+//
+//     fast_diff cfg IMAGE STATE [--cases N] [--runs R] [--seed S] [--backend ..]
+//                               [--stack-model 0|1] [--shape cfg|auto] [--case K]
+//
+// Random structured programs (conditional instructions, forward and backward
+// branches, delayed branches, DO loops with literal and register counts,
+// nested) are written to memory; the fast tier is given random instruction
+// starts as entry points, so it takes over in the middle of a program, inside
+// loops and with the loops the interpreter has pushed. Each program runs
+// from several random states for several budgets against the interpreter
+// alone, comparing the whole state.
+
+const R_COUNT: u32 = 15; // DO counts
+const R_TRIPS: u32 = 13; // back-loop counter
+const R_MINUS1: u32 = 14; // constant -1
+
+fn words_of(raw: u64, n: usize) -> Vec<u16> {
+    [(raw >> 32) as u16, (raw >> 16) as u16, raw as u16][..n].to_vec()
+}
+
+fn compute_field(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> u32 {
+    (cu << 20) | (opcode << 12) | (rn << 8) | (rx << 4) | ry
+}
+
+fn frame(form: &str, r: &mut Rng) -> Raw {
+    let (mask, base) = form_base(form);
+    Raw((r.next() & 0xffff_ffff_ffff & !mask) | base)
+}
+
+fn i_17a(ureg: u32, value: u32) -> Vec<u16> {
+    let mut raw = Raw(form_base("17a").1);
+    raw.set(38, 32, ureg as u64);
+    raw.set(31, 0, value as u64);
+    words_of(raw.0, 3)
+}
+
+fn i_2a(cond: u32, compute: u32) -> Vec<u16> {
+    let mut raw = Raw(form_base("2a").1);
+    raw.set(37, 33, cond as u64);
+    raw.set(22, 0, compute as u64);
+    words_of(raw.0, 3)
+}
+
+/// JUMP (cond) with a relative offset in short words from the jump.
+fn i_jump(cond: u32, delayed: bool, rel: i32) -> Vec<u16> {
+    let mut raw = Raw(0x07 << 40);
+    raw.set(37, 33, cond as u64);
+    raw.set(26, 26, delayed as u64);
+    raw.set(23, 0, (rel as u32 & 0xff_ffff) as u64);
+    words_of(raw.0, 3)
+}
+
+fn i_do(reg: Option<u32>, count: u32, rel: i32) -> Vec<u16> {
+    let raw = match reg {
+        None => {
+            let mut raw = Raw(0x0c << 40);
+            raw.set(39, 32, (count >> 8) as u64);
+            raw.set(31, 24, (count & 0xff) as u64);
+            raw.set(22, 0, (rel as u32 & 0x7f_ffff) as u64);
+            raw
+        }
+        Some(code) => {
+            let mut raw = Raw(0x0d << 40);
+            raw.set(38, 32, code as u64);
+            raw.set(22, 0, (rel as u32 & 0x7f_ffff) as u64);
+            raw
+        }
+    };
+    words_of(raw.0, 3)
+}
+
+/// A real condition (never "always"), for branches.
+fn real_cond(r: &mut Rng) -> u32 {
+    // The last two codes the fast tier refuses: rarely.
+    let n = COND_CODES.len() as u32;
+    if r.chance(60) {
+        COND_CODES[(n - 1 - r.below(2)) as usize]
+    } else {
+        COND_CODES[r.below(n - 2) as usize]
+    }
+}
+
+fn pick_cond(r: &mut Rng, allow: bool) -> u32 {
+    if allow && r.chance(2) {
+        COND_CODES[r.below(COND_CODES.len() as u32) as usize]
+    } else {
+        0x1f
+    }
+}
+
+fn calm_value(r: &mut Rng) -> u32 {
+    match r.below(6) {
+        0 => rand_int(r),
+        1 => r.below(16),
+        2 => (-(r.below(8) as i32)) as u32,
+        _ => f32::to_bits((r.below(2000) as f32 - 1000.0) * 0.125),
+    }
+}
+
+/// One random instruction (R0-R12 as destinations).
+fn gen_insn(r: &mut Rng, allow_cond: bool) -> Vec<u16> {
+    let cond = pick_cond(r, allow_cond);
+    let rn = r.below(13);
+    match r.below(13) {
+        12 => {
+            // Ia = MODIFY(Ib, Mc): a register step (plain, (sw) or (nw)).
+            let mut raw = frame("7a", r);
+            raw.set(39, 39, (r.below(3) == 2) as u64);
+            raw.set(23, 23, (r.below(3) == 1) as u64);
+            raw.set(38, 38, 0);
+            raw.set(37, 33, 0x1f);
+            raw.set(22, 0, 0);
+            // Keep both indices in I0-I5.
+            let src = r.below(6);
+            raw.set(32, 32, (src >> 2) as u64);
+            raw.set(31, 30, (src & 3) as u64);
+            raw.set(29, 27, r.below(8) as u64);
+            let dst = r.below(6);
+            raw.set(26, 24, (src ^ dst) as u64);
+            words_of(raw.0, 3)
+        }
+        0..=3 => {
+            let (_, cu, opc) = FULL_OPS[r.below(FULL_OPS.len() as u32) as usize];
+            i_2a(cond, compute_field(cu, opc, rn, r.below(16), r.below(16)))
+        }
+        4 => {
+            let (_, opc) = SHORT_OPS[r.below(SHORT_OPS.len() as u32) as usize];
+            let mut raw = frame("2c", r);
+            raw.set(43, 32, ((opc << 8) | (rn << 4) | r.below(16)) as u64);
+            words_of(raw.0, 1)
+        }
+        5 => {
+            let (_, cu, opc) = FULL_OPS[r.below(FULL_OPS.len() as u32) as usize];
+            let mut raw = frame("2a_short", r);
+            raw.set(
+                38,
+                16,
+                compute_field(cu, opc, rn, r.below(16), r.below(16)) as u64,
+            );
+            words_of(raw.0, 2)
+        }
+        6 | 7 => {
+            let (_, opc) = SHIFT_OPS[r.below(SHIFT_OPS.len() as u32) as usize];
+            let mut raw = frame("6b_shiftimm", r);
+            let data8 = r.below(256);
+            raw.set(
+                22,
+                0,
+                ((opc << 16) | (data8 << 8) | (rn << 4) | r.below(16)) as u64,
+            );
+            raw.set(37, 33, cond as u64);
+            raw.set(30, 27, r.below(16) as u64);
+            words_of(raw.0, 3)
+        }
+        8 => i_17a(rn, calm_value(r)),
+        9 | 10 => {
+            // R = DM(I, M) / DM(I, M) = R with M = 0 (the address is the
+            // index register's value); post-modify, pre-modify, either way.
+            let mut raw = frame("3a", r);
+            raw.set(44, 44, r.below(2) as u64);
+            raw.set(43, 41, r.below(6) as u64);
+            raw.set(40, 38, r.below(8) as u64);
+            raw.set(37, 33, cond as u64);
+            raw.set(32, 32, 0);
+            raw.set(31, 31, r.below(2) as u64);
+            raw.set(30, 30, 0);
+            raw.set(29, 23, rn as u64);
+            let compute = if r.chance(3) {
+                let (_, cu, opc) = FULL_OPS[r.below(FULL_OPS.len() as u32) as usize];
+                compute_field(cu, opc, r.below(13), r.below(16), r.below(16))
+            } else {
+                0
+            };
+            raw.set(22, 0, compute as u64);
+            words_of(raw.0, 3)
+        }
+        _ => {
+            let mut raw = frame("5a_move", r);
+            let src = r.below(16);
+            raw.set(42, 38, (src >> 2) as u64);
+            raw.set(37, 33, cond as u64);
+            raw.set(32, 32, ((src >> 1) & 1) as u64);
+            raw.set(31, 31, (src & 1) as u64);
+            raw.set(29, 23, rn as u64);
+            raw.set(22, 0, 0);
+            words_of(raw.0, 3)
+        }
+    }
+}
+
+#[derive(Clone)]
+enum Item {
+    Insn(Vec<u16>),
+    /// JUMP IF NOT cond over the body.
+    IfSkip {
+        cond: u32,
+        body: Vec<Item>,
+    },
+    /// The same with a delayed jump and two slots.
+    DelayIf {
+        cond: u32,
+        slots: [Vec<u16>; 2],
+        body: Vec<Item>,
+    },
+    Do {
+        by_reg: bool,
+        count: u32,
+        body: Vec<Item>,
+    },
+    /// A counted loop closed by a backward JUMP IF NE.
+    Back {
+        trips: u32,
+        delayed: bool,
+        body: Vec<Item>,
+    },
+    Exit {
+        cond: u32,
+    },
+}
+
+fn gen_items(r: &mut Rng, depth: u32, in_back: bool, n: u32) -> Vec<Item> {
+    let mut v = Vec::new();
+    for _ in 0..n {
+        let roll = if depth >= 3 { r.below(8) } else { r.below(18) };
+        v.push(match roll {
+            0..=7 => Item::Insn(gen_insn(r, true)),
+            8 | 9 => {
+                let cond = real_cond(r);
+                let n = 1 + r.below(4);
+                Item::IfSkip {
+                    cond,
+                    body: gen_items(r, depth + 1, in_back, n),
+                }
+            }
+            10 | 11 => {
+                let cond = real_cond(r);
+                let slots = [gen_insn(r, true), gen_insn(r, true)];
+                let n = 1 + r.below(3);
+                Item::DelayIf {
+                    cond,
+                    slots,
+                    body: gen_items(r, depth + 1, in_back, n),
+                }
+            }
+            12..=14 => {
+                let n = 1 + r.below(4);
+                let mut body = gen_items(r, depth + 1, in_back, n);
+                body.push(Item::Insn(gen_insn(r, true)));
+                Item::Do {
+                    by_reg: r.chance(3),
+                    count: 1 + r.below(4),
+                    body,
+                }
+            }
+            15 if !in_back => {
+                let trips = 1 + r.below(4);
+                let delayed = r.chance(3);
+                let n = 1 + r.below(4);
+                Item::Back {
+                    trips,
+                    delayed,
+                    body: gen_items(r, depth + 1, true, n),
+                }
+            }
+            16 => Item::Exit { cond: real_cond(r) },
+            _ => Item::Insn(gen_insn(r, true)),
+        });
+    }
+    v
+}
+
+struct Asm {
+    words: Vec<u16>,
+    starts: Vec<u32>,
+}
+
+impl Asm {
+    fn insn(&mut self, w: Vec<u16>) {
+        self.starts.push(self.words.len() as u32);
+        self.words.extend(w);
+    }
+
+    fn patch(&mut self, at: usize, w: Vec<u16>) {
+        self.words[at..at + w.len()].copy_from_slice(&w);
+    }
+
+    fn items(&mut self, items: &[Item]) {
+        for it in items {
+            match it {
+                Item::Insn(w) => self.insn(w.clone()),
+                Item::IfSkip { cond, body } => {
+                    let j = self.words.len();
+                    self.insn(i_jump(cond ^ 0x10, false, 0));
+                    self.items(body);
+                    let rel = (self.words.len() - j) as i32;
+                    self.patch(j, i_jump(cond ^ 0x10, false, rel));
+                }
+                Item::DelayIf { cond, slots, body } => {
+                    let j = self.words.len();
+                    self.insn(i_jump(cond ^ 0x10, true, 0));
+                    self.insn(slots[0].clone());
+                    self.insn(slots[1].clone());
+                    self.items(body);
+                    let rel = (self.words.len() - j) as i32;
+                    self.patch(j, i_jump(cond ^ 0x10, true, rel));
+                }
+                Item::Do {
+                    by_reg,
+                    count,
+                    body,
+                } => {
+                    if *by_reg {
+                        self.insn(i_17a(R_COUNT, *count));
+                    }
+                    let d = self.words.len();
+                    self.insn(i_do(by_reg.then_some(R_COUNT), *count, 0));
+                    self.items(body);
+                    let end = *self.starts.last().unwrap() as usize;
+                    let rel = (end - d) as i32;
+                    self.patch(d, i_do(by_reg.then_some(R_COUNT), *count, rel));
+                }
+                Item::Back {
+                    trips,
+                    delayed,
+                    body,
+                } => {
+                    self.insn(i_17a(R_TRIPS, *trips));
+                    let head = self.words.len();
+                    self.items(body);
+                    self.insn(i_2a(
+                        0x1f,
+                        compute_field(0, 0x01, R_TRIPS, R_TRIPS, R_MINUS1),
+                    ));
+                    let j = self.words.len();
+                    let rel = head as i32 - j as i32;
+                    self.insn(i_jump(0x10, *delayed, rel));
+                    if *delayed {
+                        // Slots that leave the counter and the flags alone.
+                        self.insn(i_17a(0, 1));
+                        self.insn(i_17a(1, 2));
+                    }
+                }
+                Item::Exit { cond } => {
+                    self.insn(i_jump(*cond, false, 0x2000));
+                }
+            }
+        }
+    }
+}
+
+fn write_words(s: &mut St, words: &[u16]) {
+    for (k, w) in words.iter().enumerate() {
+        let a = 0x2800_0000 + (CODE_PC + k as u32) * 2;
+        s.mem.write_byte(a, *w as u8);
+        s.mem.write_byte(a + 1, (*w >> 8) as u8);
+    }
+}
+
+fn prep_engine(e: &mut Engine, stack_model: Option<bool>) {
+    e.enable_runtime_decode(Mem::read_sw);
+    if let Some(v) = stack_model {
+        assert_eq!(e.set_option(20, v as i64), 0);
+    }
+    let s = &mut e.s;
+    s.loops.n = 0;
+    s.loop_depth = 0;
+    s.call_stack.n = 0;
+    s.pc_stack.n = 0;
+    s.pending = None;
+    s.cfg.core_timer = false;
+    s.bank_pending_mask = -1;
+    s.bank_requested_mask = -1;
+    s.pc_stack_pending = -1;
+    s.pc_stack_requested = -1;
+    s.r[114] = V::c(0x3900_1cf8);
+    s.pc_sw = CODE_PC as Int;
+    for k in 0..mem_len() {
+        let a = s.mem.canonical_of(mem_lo() + k);
+        s.mem.write_byte(a, 0xa5);
+    }
+}
+
+fn cfgprog(args: &[String]) {
+    let image = std::fs::read(&args[0]).expect("image");
+    let state = std::fs::read(&args[1]).expect("state");
+    let cases: u64 = flag(args, "--cases").map_or(100, |x| x.parse().unwrap());
+    let runs: u64 = flag(args, "--runs").map_or(6, |x| x.parse().unwrap());
+    let seed: u64 = flag(args, "--seed").map_or(0xc0ffee, |x| x.parse().unwrap());
+    let only: Option<u64> = flag(args, "--case").map(|x| x.parse().unwrap());
+    // The state's own setting (the DN2 audio state has the stack model on)
+    // unless --stack-model 0|1 says otherwise.
+    let stack_model: Option<bool> = flag(args, "--stack-model").map(|x| x != "0");
+    let force_cfg = flag(args, "--shape") == Some("cfg");
+    let dump = args.iter().any(|a| a == "--dump");
+    // --stride: nonzero modifier registers, so address registers step.
+    let stride = args.iter().any(|a| a == "--stride");
+    // --simple: a few instructions, then a DO loop with a straight body
+    // (the loop shape), entered at every instruction.
+    let simple = args.iter().any(|a| a == "--simple");
+    KNOWN_FLAGS.store(true, std::sync::atomic::Ordering::Relaxed);
+    CALM.store(true, std::sync::atomic::Ordering::Relaxed);
+    // --check-windows: the reference interpreter asserts that every window
+    // access lies inside its window (and is the backend unless one is named).
+    let check_windows = args.iter().any(|a| a == "--check-windows");
+    sharc_native::fast::glue::set_window_check(check_windows);
+    let backend_name = flag(args, "--backend")
+        .unwrap_or(if check_windows { "interp" } else { "cl" })
+        .to_string();
+    let mut bad_total = 0u64;
+    let mut tier_runs = 0u64;
+    let mut tier_insns = 0u64;
+    let mut runs_total = 0u64;
+    let mut built = 0u64;
+    let mut declined = [0u64; 5];
+    let mut refusals: BTreeMap<String, u64> = BTreeMap::new();
+    let t0 = std::time::Instant::now();
+    for case in 0..cases {
+        if only.is_some_and(|k| k != case) {
+            continue;
+        }
+        let mut rng = Rng(seed ^ (case + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15));
+        for _ in 0..4 {
+            rng.next();
+        }
+        let n_items = 3 + rng.below(8);
+        let items = if simple {
+            let mut v: Vec<Item> = (0..rng.below(3))
+                .map(|_| Item::Insn(gen_insn(&mut rng, true)))
+                .collect();
+            let n = 3 + rng.below(8);
+            let body: Vec<Item> = (0..n)
+                .map(|_| Item::Insn(gen_insn(&mut rng, true)))
+                .collect();
+            v.push(Item::Do {
+                by_reg: rng.chance(3),
+                count: 2 + rng.below(4),
+                body,
+            });
+            v
+        } else {
+            gen_items(&mut rng, 0, false, n_items)
+        };
+        let mut asm = Asm {
+            words: Vec::new(),
+            starts: Vec::new(),
+        };
+        asm.insn(i_17a(R_MINUS1, 0xffff_ffff));
+        asm.items(&items);
+        asm.insn(i_jump(0x1f, false, 0));
+        let mut entries: Vec<u32> = if simple {
+            asm.starts.iter().skip(1).map(|st| CODE_PC + st).collect()
+        } else {
+            (0..1 + rng.below(3))
+                .map(|_| CODE_PC + asm.starts[rng.below(asm.starts.len() as u32) as usize])
+                .collect()
+        };
+        if rng.chance(2) {
+            entries.push(CODE_PC);
+        }
+        entries.sort_unstable();
+        entries.dedup();
+        if dump {
+            println!(
+                "case {case}: {} words, entries {:x?}",
+                asm.words.len(),
+                entries
+            );
+            for st in &asm.starts {
+                print!("{:06x}:", CODE_PC + st);
+                let n = asm
+                    .starts
+                    .iter()
+                    .find(|&&x| x > *st)
+                    .copied()
+                    .unwrap_or(asm.words.len() as u32)
+                    - st;
+                for k in 0..n {
+                    print!(" {:04x}", asm.words[(st + k) as usize]);
+                }
+                println!();
+            }
+        }
+        let mut ei = open(&image, &state, CLOCK_BASE);
+        let mut ef = open(&image, &state, CLOCK_BASE);
+        if case == 0 {
+            let c = &ei.s.cfg;
+            println!(
+                "engine config from the state: stack_model {} bank_model {} core_timer {} peripheral {}; testing stack_model {stack_model:?}",
+                c.stack_model, c.bank_model, c.core_timer, c.peripheral_model
+            );
+        }
+        prep_engine(&mut ei, stack_model);
+        prep_engine(&mut ef, stack_model);
+        write_words(&mut ei.s, &asm.words);
+        write_words(&mut ef.s, &asm.words);
+        ei.use_blocks = false;
+        ef.dispatch = Dispatch::default();
+        let fe = Rc::new(RefCell::new(FastEngine::new(
+            backend(&backend_name),
+            &entries,
+        )));
+        fe.borrow_mut().force_cfg(force_cfg);
+        ef.set_fast(Some(Box::new(Shared(fe.clone()))));
+        let s0i = Snap::take(&ei.s);
+        let s0f = Snap::take(&ef.s);
+        let mut case_bad = 0;
+        let mut ms_case = [0u32; 16];
+        if stride {
+            for m in ms_case.iter_mut() {
+                *m = (rng.below(6) as i32 - 2) as u32;
+            }
+        }
+        // Both engines from the random state STATE_SEED for N instructions.
+        let pair = |ei: &mut Engine, ef: &mut Engine, st_seed: u64, mode1: u32, n: u32| {
+            for (e, s0) in [(&mut *ei, &s0i), (&mut *ef, &s0f)] {
+                s0.restore(&mut e.s);
+                randomise(&mut e.s, &mut Rng(st_seed), &ms_case);
+                e.s.r[114] = V::c(mode1 as Int);
+                e.s.pc_sw = CODE_PC as Int;
+                e.halt = None;
+            }
+            let ran_i = ei.step(n);
+            let ran_f = ef.step(n);
+            let sa = Snap::take_with(&ei.s, true);
+            let sb = Snap::take_with(&ef.s, true);
+            let mut msgs = diff(&sa, &sb);
+            if ran_i != ran_f || ei.halt != ef.halt {
+                msgs.push(format!(
+                    "ran interp {ran_i} fast {ran_f}; halt {:?} {:?}",
+                    ei.halt, ef.halt
+                ));
+            }
+            (msgs, sa.pc_sw)
+        };
+        for run in 0..runs {
+            let st_seed = rng.next();
+            let n = if rng.chance(3) {
+                3000 + rng.below(3000)
+            } else {
+                let cap = if rng.chance(2) { 40 } else { 400 };
+                1 + rng.below(cap)
+            };
+            let mode1 =
+                [0x3900_1cf8u32, 0x3901_1cf8, 0x3900_3cf8, 0x3901_3cf8][rng.below(4) as usize];
+            let before = fe.borrow().stats.clone();
+            let (msgs, _) = pair(&mut ei, &mut ef, st_seed, mode1, n as u32);
+            let after = fe.borrow().stats.clone();
+            runs_total += 1;
+            tier_runs += after.runs - before.runs;
+            tier_insns += after.insns - before.insns;
+            if !msgs.is_empty() {
+                case_bad += 1;
+                bad_total += 1;
+                println!(
+                    "FAIL case {case} run {run} (state seed {st_seed:#x}, n {n}, mode1 {mode1:#x}, entries {entries:x?}, tier runs {})",
+                    after.runs - before.runs
+                );
+                for m in msgs.iter().take(6) {
+                    println!("      {m}");
+                }
+                // The smallest budget at which they differ: the instruction
+                // retired last is where they part.
+                let (mut lo, mut hi) = (0u32, n as u32);
+                while hi - lo > 1 {
+                    let mid = (lo + hi) / 2;
+                    if pair(&mut ei, &mut ef, st_seed, mode1, mid).0.is_empty() {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                let (m_hi, _) = pair(&mut ei, &mut ef, st_seed, mode1, hi);
+                let (_, pc_lo) = pair(&mut ei, &mut ef, st_seed, mode1, lo);
+                println!(
+                    "      at budget {lo}: pc interp {:#x} fast {:#x}, icount {} {}",
+                    ei.s.pc_sw, ef.s.pc_sw, ei.s.icount, ef.s.icount
+                );
+                let _ = pair(&mut ei, &mut ef, st_seed, mode1, hi);
+                println!(
+                    "      at budget {hi}: pc interp {:#x} fast {:#x}, icount {} {}, fast pending {:?} loops {:?}",
+                    ei.s.pc_sw,
+                    ef.s.pc_sw,
+                    ei.s.icount,
+                    ef.s.icount,
+                    ef.s.pending,
+                    ef.s.loops.items()
+                );
+                println!(
+                    "      first difference at budget {hi}: instruction at {pc_lo:#x} (state before it matched)"
+                );
+                for m in m_hi.iter().take(8) {
+                    println!("        {m}");
+                }
+            }
+        }
+        let fb = fe.borrow();
+        built += fb.stats.built;
+        for (i, d) in fb.stats.declined.iter().enumerate() {
+            declined[i] += d;
+        }
+        for (_, why) in fb.refusals() {
+            if why.contains("neither") || why.contains("Verifier") || why.contains("invalid") {
+                println!("case {case}: refused: {why}");
+            }
+            let key: String = why
+                .chars()
+                .take(if why.contains("Verifier") { 900 } else { 70 })
+                .collect();
+            *refusals.entry(key).or_default() += 1;
+        }
+        if case_bad > 0 {
+            println!(
+                "  case {case}: {case_bad} of {runs} runs differ (rerun with --case {case} --dump)"
+            );
+        }
+    }
+    println!(
+        "--- {} runs in {:.1}s: tier ran {} times, {} instructions, {} regions built ---",
+        runs_total,
+        t0.elapsed().as_secs_f64(),
+        tier_runs,
+        tier_insns,
+        built
+    );
+    println!("declined shape/req/window/budget/exit0 = {declined:?}");
+    for (why, n) in &refusals {
+        println!("{n:>5} x refused: {why}");
+    }
+    if bad_total > 0 {
+        println!("FAIL: {bad_total} runs differ");
+        std::process::exit(1);
+    }
+    println!("PASS");
+}
+
+// -- capturing region entry states ---------------------------------------------------
+//
+//     fast_diff capture IMAGE STATE FRAMES OUTDIR PC[,PC...] [--min-frame 4620]
+//
+// Replays the DN2 note frames with the interpreter alone and writes the engine
+// state at the first arrival at each PC after MIN-FRAME (OUTDIR/r_<PC>.state
+// and .meta, as `region_bench capture` does, but for any PC, not only the
+// entries of generated blocks).
+
+fn read_frames(path: &str) -> Vec<Vec<u8>> {
+    let data = std::fs::read(path).expect("frames file");
+    let u32_at = |o: usize| u32::from_le_bytes(data[o..o + 4].try_into().unwrap()) as usize;
+    let n = u32_at(0);
+    let mut out = Vec::with_capacity(n);
+    let mut o = 4;
+    for _ in 0..n {
+        let len = u32_at(o);
+        out.push(data[o + 4..o + 4 + len].to_vec());
+        o += 4 + len;
+    }
+    out
+}
+
+fn capture(args: &[String]) {
+    const GAP: u32 = 667_000;
+    let image = std::fs::read(&args[0]).expect("image");
+    let state = std::fs::read(&args[1]).expect("state");
+    let frames = read_frames(&args[2]);
+    let outdir = &args[3];
+    let pcs: Vec<u32> = args[4]
+        .split(',')
+        .filter(|x| !x.is_empty())
+        .map(|x| u32::from_str_radix(x.trim_start_matches("0x"), 16).expect("hex pc"))
+        .collect();
+    let min_frame: usize = flag(args, "--min-frame").map_or(4620, |x| x.parse().unwrap());
+    let start: usize = flag(args, "--start").map_or(4600, |x| x.parse().unwrap());
+    let end: usize = flag(args, "--end").map_or(min_frame + 80, |x| x.parse().unwrap());
+    std::fs::create_dir_all(outdir).expect("outdir");
+    for pc in pcs {
+        let mut e = open(&image, &state, CLOCK_BASE);
+        e.use_blocks = false;
+        let mut found = false;
+        'frames: for (i, frame) in frames.iter().enumerate().take(end + 1).skip(start) {
+            e.spi2_exchange(frame).expect("spi2 exchange");
+            let mut done = 0u32;
+            while done < GAP {
+                let ran = e.step_until_in(GAP - done, pc, pc + 1);
+                done += ran;
+                if i >= min_frame && e.s.pc_sw == pc as Int {
+                    e.export_ranges = true;
+                    let blob = e.export();
+                    e.export_ranges = false;
+                    let clock = CLOCK_BASE + e.s.icount;
+                    std::fs::write(format!("{outdir}/r_{pc:X}.state"), blob).expect("write");
+                    std::fs::write(
+                        format!("{outdir}/r_{pc:X}.meta"),
+                        format!("pc={pc:X}\nframe={i}\nclock={clock}\n"),
+                    )
+                    .expect("write");
+                    println!("r_{pc:X}: captured in frame {i}");
+                    found = true;
+                    break 'frames;
+                }
+                if e.halt.is_some() {
+                    println!("halt at frame {i}: {:?}", e.halt);
+                    break 'frames;
+                }
+                if ran == 0 || e.s.pc_sw == pc as Int {
+                    // At the PC before the capture window: move on.
+                    done += e.step(1);
+                }
+            }
+            let _ = e.sport_block(None).expect("sport block");
+        }
+        if !found {
+            println!("r_{pc:X}: not reached in frames {min_frame}..{end}");
+        }
+    }
 }

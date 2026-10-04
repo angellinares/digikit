@@ -15,13 +15,16 @@
 //! every access known, which is what lets the memory windows be checked
 //! once per call instead of once per access.
 
+pub mod cond;
 pub mod fixed_alu;
 pub mod float_alu;
+pub mod flow;
 pub mod mem_addr;
 pub mod move_misc;
 pub mod mult;
 pub mod shift;
 
+use super::cfg::Site;
 use super::decode_view::Dec;
 use super::ir::*;
 use super::{Base, FlagKind, FlagWriter, Req, WinSpec};
@@ -34,13 +37,17 @@ pub fn refuse<T>(why: impl Into<String>) -> LR<T> {
     Err(Refuse(why.into()))
 }
 
-/// Value range: `base_entry + [lo, hi] + ts * t` over iterations t.
+/// Value range: `base_entry + [lo, hi] + ts * t + nf * N` over the iterations
+/// t in [0, N-1] of the one loop whose trip count N is symbolic (the DO loop
+/// the region iterates; `ts` is the per-iteration stride inside it, `nf` the
+/// total after it ended).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Abs {
     pub base: Base,
     pub lo: i64,
     pub hi: i64,
     pub ts: i64,
+    pub nf: i64,
 }
 
 const LIM: i64 = 1 << 40;
@@ -52,11 +59,12 @@ impl Abs {
             lo: c,
             hi: c,
             ts: 0,
+            nf: 0,
         }
     }
     fn ok(self) -> Option<Abs> {
         let big = |v: i64| v.abs() > LIM;
-        if big(self.lo) || big(self.hi) || big(self.ts) {
+        if big(self.lo) || big(self.hi) || big(self.ts) || big(self.nf) {
             None
         } else {
             Some(self)
@@ -72,6 +80,7 @@ impl Abs {
             lo: self.lo + o.lo,
             hi: self.hi + o.hi,
             ts: self.ts + o.ts,
+            nf: self.nf + o.nf,
         }
         .ok()
     }
@@ -84,6 +93,7 @@ impl Abs {
             lo: self.lo - o.hi,
             hi: self.hi - o.lo,
             ts: self.ts - o.ts,
+            nf: self.nf - o.nf,
         }
         .ok()
     }
@@ -96,6 +106,7 @@ impl Abs {
             lo: self.lo * k,
             hi: self.hi * k,
             ts: self.ts * k,
+            nf: self.nf * k,
         }
         .ok()
     }
@@ -103,7 +114,41 @@ impl Abs {
     /// of the body.
     pub fn span(&self, n: i64) -> (i64, i64) {
         let d = self.ts * (n - 1);
-        (self.lo + d.min(0), self.hi + d.max(0))
+        let f = self.nf * n;
+        (self.lo + d.min(0) + f, self.hi + d.max(0) + f)
+    }
+
+    /// Both operands' values at the same point, one or the other: the union
+    /// (same base and symbolic terms), else unknown.
+    pub fn union(self, o: Abs) -> Option<Abs> {
+        if self.base != o.base || self.ts != o.ts || self.nf != o.nf {
+            return None;
+        }
+        Some(Abs {
+            lo: self.lo.min(o.lo),
+            hi: self.hi.max(o.hi),
+            ..self
+        })
+    }
+
+    /// `self - before` when it is the same constant for every value in the
+    /// range (an induction variable's step), else None.
+    pub fn step_from(self, before: Abs) -> Option<i64> {
+        if self.base != before.base || self.ts != before.ts || self.nf != before.nf {
+            return None;
+        }
+        let (a, b) = (self.lo - before.lo, self.hi - before.hi);
+        (a == b).then_some(a)
+    }
+
+    /// Shifted by a constant.
+    pub fn shifted(self, d: i64) -> Option<Abs> {
+        Abs {
+            lo: self.lo + d,
+            hi: self.hi + d,
+            ..self
+        }
+        .ok()
     }
 }
 
@@ -130,6 +175,16 @@ pub struct Plan {
     pub stride: [Option<i64>; NREGS as usize],
     /// Pass index this plan was made for (0, 1, 2).
     pub pass: u8,
+    /// CFG kernels: the registers (bit per code) each instruction writes,
+    /// by address (delay slots included), and the per-iteration step of each
+    /// register in each loop as the previous pass measured it.
+    pub node_written: std::collections::BTreeMap<u32, u64>,
+    pub loop_stride: Vec<[Option<i64>; NREGS as usize]>,
+    /// Which loops had their loop-back lowered (the others never iterate in
+    /// the kernel).
+    pub loop_back_seen: Vec<bool>,
+    /// The flag-writer kinds of each group in the region (bit per id).
+    pub flag_kinds: [u32; 3],
 }
 
 impl Default for Plan {
@@ -139,6 +194,10 @@ impl Default for Plan {
             written: [false; NREGS as usize],
             stride: [None; NREGS as usize],
             pass: 0,
+            node_written: Default::default(),
+            loop_stride: Vec::new(),
+            loop_back_seen: Vec::new(),
+            flag_kinds: [0; 3],
         }
     }
 }
@@ -149,7 +208,18 @@ pub struct Env {
     /// Fully known register values (UREG codes 0..47) at build time.
     pub regs: [Option<u32>; NREGS as usize],
     pub assume_nw32: bool,
+    /// MODE1 at build time (the region is made for these rounding and
+    /// saturation bits, see `Req::Mode1`).
+    pub mode1: u32,
+    /// The kernel tracks flags lazily (conditions or branches in the region,
+    /// see `cond`); otherwise flag writers are replayed at exit from
+    /// remembered sources.
+    pub flag_v: bool,
 }
+
+/// Registers the lowering tracks: R, I, M and the pseudo registers (the
+/// kernel's ASTATX bits and known mask).
+pub const NALL: usize = (NREGS + NPSEUDO) as usize;
 
 /// One instruction's pending effects (applied by `commit`).
 #[derive(Default)]
@@ -163,6 +233,10 @@ pub struct Lower {
     pub env: Env,
     pub plan: Plan,
     pub pass: u8,
+    /// The last writer of each flag group, as far as this block knows.
+    pub lw: [Option<cond::LastW>; 3],
+    /// The writer kinds seen so far (bit per id), for the next pass.
+    pub flag_kinds_out: [u32; 3],
     pub val_ty: Vec<Ty>,
     pub abs: Vec<Option<Abs>>,
     pub vars: Vec<Ty>,
@@ -187,22 +261,84 @@ pub struct Lower {
     exit_id: Option<u32>,
     pub idx: u32,
     pending: Pending,
+    /// The current instruction's execution condition (0/1) and its negation.
+    pub cond: Option<Val>,
+    ncond: Option<Val>,
+    pub nlabels: u32,
+    /// ASTATX bits a condition reads that no earlier writer in the region
+    /// defines (they must be known at entry), the bits known so far, and the
+    /// bits some writer forgets or a condition reads (checked at the end).
+    pub need_flags_known: u32,
+    pub fm_static: u32,
+    forget_mask: u32,
+    read_mask: u32,
+    /// MODE1 bits the lowering relies on.
+    pub mode1_mask: u32,
+    /// Registers (R, I, M codes) written by the instruction just lowered.
+    pub written_mask: u64,
+    /// The kernel is a CFG kernel (loop strides are tracked by `flow`).
+    pub cfg_shape: bool,
+    /// CFG kernels: the address of the node whose lowering failed.
+    pub fail_pc: Option<u32>,
+    /// CFG kernels: what this pass learns for the next (see `Plan`), and the
+    /// ranges of the registers at each loop's entry and head.
+    pub node_written: std::collections::BTreeMap<u32, u64>,
+    pub loop_stride_out: Vec<[Option<i64>; NREGS as usize]>,
+    pub loop_back_seen_out: Vec<bool>,
+    pub loop_in: Vec<Vec<Option<Abs>>>,
+    pub loop_head: Vec<Vec<Option<Abs>>>,
+    /// The abstract value of each register's variable at the current point
+    /// (entry value plus the region's strides; carried across blocks).
+    pub var_abs: Vec<Option<Abs>>,
+    /// Extra kernel variables with their context in/out slots (CFG kernels).
+    pub extras: Vec<Extra>,
+    /// Exit-site bookkeeping of a CFG kernel.
+    pub cfgx: Option<CfgX>,
+}
+
+/// A kernel variable that is not a register: loaded from the context in
+/// `pre` (or set to a constant) and stored back in `post`.
+#[derive(Clone, Copy)]
+pub struct Extra {
+    pub var: Var,
+    pub init: ExtraInit,
+    pub out: Option<u32>,
+}
+
+#[derive(Clone, Copy)]
+pub enum ExtraInit {
+    Const(u32),
+    Ctx(u32),
+}
+
+/// What exit sites of a CFG kernel record (see `fast::cfg`).
+pub struct CfgX {
+    /// Address of the instruction being lowered, instructions retired in the
+    /// current block before it, the loops active (indices into the region's
+    /// loop table, outermost first) and a pending delayed branch.
+    pub pc: u32,
+    pub nblock: u32,
+    pub active: Vec<u16>,
+    pub pending: Option<(u16, u8)>,
+    pub sites: Vec<Site>,
 }
 
 impl Lower {
     pub fn new(env: Env, plan: Plan, pass: u8) -> Lower {
-        Lower {
+        let mut l = Lower {
             env,
             plan,
             pass,
+            lw: [None; 3],
+            flag_kinds_out: [0; 3],
             val_ty: Vec::new(),
             abs: Vec::new(),
             vars: Vec::new(),
             pre: Vec::new(),
             body: Vec::new(),
-            regs: vec![RegInfo::default(); NREGS as usize],
-            cur: vec![None; NREGS as usize],
-            written_iter: vec![false; NREGS as usize],
+            regs: vec![RegInfo::default(); NALL],
+            cur: vec![None; NALL],
+            written_iter: vec![false; NALL],
             reqs: Vec::new(),
             wins: Vec::new(),
             win_vals: Vec::new(),
@@ -214,7 +350,28 @@ impl Lower {
             exit_id: None,
             idx: 0,
             pending: Pending::default(),
-        }
+            cond: None,
+            ncond: None,
+            nlabels: 0,
+            need_flags_known: 0,
+            fm_static: 0,
+            forget_mask: 0,
+            read_mask: 0,
+            mode1_mask: 0,
+            written_mask: 0,
+            cfg_shape: false,
+            fail_pc: None,
+            node_written: Default::default(),
+            loop_stride_out: Vec::new(),
+            loop_back_seen_out: Vec::new(),
+            loop_in: Vec::new(),
+            loop_head: Vec::new(),
+            var_abs: Vec::new(),
+            extras: Vec::new(),
+            cfgx: None,
+        };
+        l.var_abs = (0..NREGS as usize).map(|c| l.init_abs(c)).collect();
+        l
     }
 
     pub fn strict(&self) -> bool {
@@ -263,7 +420,7 @@ impl Lower {
 
     pub fn konst_of(&self, v: Val) -> Option<i64> {
         match self.abs[v as usize] {
-            Some(a) if a.base == Base::None && a.lo == a.hi && a.ts == 0 => Some(a.lo),
+            Some(a) if a.base == Base::None && a.lo == a.hi && a.ts == 0 && a.nf == 0 => Some(a.lo),
             _ => None,
         }
     }
@@ -295,18 +452,24 @@ impl Lower {
                     lo: 0,
                     hi: m,
                     ts: 0,
+                    nf: 0,
                 }),
                 _ => None,
             },
             Bin::ShrU => match (ax, ky) {
                 (Some(p), Some(k))
-                    if p.base == Base::None && p.ts == 0 && p.lo >= 0 && (0..32).contains(&k) =>
+                    if p.base == Base::None
+                        && p.ts == 0
+                        && p.nf == 0
+                        && p.lo >= 0
+                        && (0..32).contains(&k) =>
                 {
                     Some(Abs {
                         base: Base::None,
                         lo: p.lo >> k,
                         hi: p.hi >> k,
                         ts: 0,
+                        nf: 0,
                     })
                 }
                 _ => None,
@@ -374,6 +537,69 @@ impl Lower {
         r
     }
 
+    /// The record `k` of a guard in the current instruction: the instruction
+    /// index in a loop kernel, an exit site of the CFG in a CFG kernel.
+    pub fn site_k(&mut self) -> u32 {
+        let Some(x) = self.cfgx.as_mut() else {
+            return self.idx;
+        };
+        let site = Site {
+            pc: x.pc,
+            off: x.nblock,
+            active: x.active.clone(),
+            pending: x.pending,
+        };
+        if let Some(i) = x.sites.iter().position(|s| *s == site) {
+            return i as u32;
+        }
+        x.sites.push(site);
+        (x.sites.len() - 1) as u32
+    }
+
+    /// A site with an explicit address (a branch to a pc, a stop).
+    pub fn site_at(&mut self, pc: u32, off: u32, active: Vec<u16>) -> u32 {
+        let x = self.cfgx.as_mut().expect("cfg lowering");
+        let site = Site {
+            pc,
+            off,
+            active,
+            pending: None,
+        };
+        if let Some(i) = x.sites.iter().position(|s| *s == site) {
+            return i as u32;
+        }
+        x.sites.push(site);
+        (x.sites.len() - 1) as u32
+    }
+
+    /// A kernel variable outside the register file.
+    pub fn new_var(&mut self, ty: Ty, init: ExtraInit, out: Option<u32>) -> Var {
+        self.vars.push(ty);
+        let var = Var((self.vars.len() - 1) as u32);
+        self.extras.push(Extra { var, init, out });
+        var
+    }
+
+    /// End a basic block: the registers it wrote go back to their variables
+    /// and nothing computed in it is carried into the next block.
+    pub fn end_block(&mut self) {
+        for c in 0..NALL {
+            if self.written_iter[c]
+                && let (Some(var), Some(v)) = (self.regs[c].var, self.cur[c])
+            {
+                self.body.push(Inst::Set(var, v));
+                if c < NREGS as usize {
+                    self.var_abs[c] = self.abs[v as usize];
+                }
+            }
+            self.cur[c] = None;
+            self.written_iter[c] = false;
+        }
+        self.conv.clear();
+        self.exit_id = None;
+        self.lw = [None; 3];
+    }
+
     /// The exit fix-ups for the current instruction: the registers written
     /// so far in this iteration, as variables.
     fn exit_for_insn(&mut self) -> u32 {
@@ -381,7 +607,7 @@ impl Lower {
             return e;
         }
         let mut list = Vec::new();
-        for c in 0..NREGS as usize {
+        for c in 0..NALL {
             if self.written_iter[c]
                 && let (Some(var), Some(v)) = (self.regs[c].var, self.cur[c])
             {
@@ -395,22 +621,17 @@ impl Lower {
     }
 
     pub fn guard(&mut self, ok: Val) {
+        let ok = self.weaken(ok);
         let exit = self.exit_for_insn();
-        self.body.push(Inst::Guard {
-            ok,
-            k: self.idx,
-            exit,
-        });
+        let k = self.site_k();
+        self.body.push(Inst::Guard { ok, k, exit });
     }
 
     pub fn guard_any(&mut self, a: Val, b: Val) {
+        let a = self.weaken(a);
         let exit = self.exit_for_insn();
-        self.body.push(Inst::GuardAny {
-            a,
-            b,
-            k: self.idx,
-            exit,
-        });
+        let k = self.site_k();
+        self.body.push(Inst::GuardAny { a, b, k, exit });
     }
 
     // -- registers ---------------------------------------------------------
@@ -427,12 +648,20 @@ impl Lower {
         if let Some(v) = self.regs[c].var {
             return v;
         }
-        let ty = if self.plan.fty[c] { Ty::F32 } else { Ty::I32 };
+        let ty = if c < NREGS as usize && self.plan.fty[c] {
+            Ty::F32
+        } else {
+            Ty::I32
+        };
         self.vars.push(ty);
         let v = Var((self.vars.len() - 1) as u32);
         self.regs[c].var = Some(v);
         self.regs[c].vty = Some(ty);
         v
+    }
+
+    pub fn init_abs_pub(&self, c: usize) -> Option<Abs> {
+        self.init_abs(c)
     }
 
     /// Entry-iteration range of register C's value.
@@ -443,6 +672,17 @@ impl Lower {
                 lo: 0,
                 hi: 0,
                 ts: 0,
+                nf: 0,
+            });
+        }
+        if self.env.flag_v && self.cfg_shape {
+            // CFG kernels: the loops' strides come from `flow`.
+            return Some(Abs {
+                base: Base::Reg(c as u8),
+                lo: 0,
+                hi: 0,
+                ts: 0,
+                nf: 0,
             });
         }
         match self.pass {
@@ -451,12 +691,14 @@ impl Lower {
                 lo: 0,
                 hi: 0,
                 ts: 0,
+                nf: 0,
             }),
             _ => self.plan.stride[c].map(|s| Abs {
                 base: Base::Reg(c as u8),
                 lo: 0,
                 hi: 0,
                 ts: s,
+                nf: 0,
             }),
         }
     }
@@ -491,11 +733,7 @@ impl Lower {
         }
         let var = self.reg_var(c);
         let ty = self.vars[var.0 as usize];
-        let abs = if ty == Ty::I32 {
-            self.init_abs(c)
-        } else {
-            None
-        };
+        let abs = if ty == Ty::I32 { self.var_abs[c] } else { None };
         let v = self.emit_abs(ty, Op::GetVar(var), abs);
         self.cur[c] = Some(v);
         Ok(v)
@@ -560,8 +798,8 @@ impl Lower {
             None if !self.strict() => Abs::konst(0),
             None => return refuse("address range unknown"),
         };
-        let key = (abs.base, abs.ts);
-        let w = match self.wins.iter().position(|w| (w.base, w.ts) == key) {
+        let key = (abs.base, abs.ts, abs.nf);
+        let w = match self.wins.iter().position(|w| (w.base, w.ts, w.nf) == key) {
             Some(w) => w,
             None => {
                 if self.wins.len() as u32 >= MAX_WIN {
@@ -572,6 +810,7 @@ impl Lower {
                     lo: abs.lo,
                     hi: abs.hi + bytes,
                     ts: abs.ts,
+                    nf: abs.nf,
                     read: false,
                     write: false,
                 });
@@ -606,6 +845,7 @@ impl Lower {
                     lo: a.lo,
                     hi: a.hi + bytes - 1,
                     ts: a.ts,
+                    nf: a.nf,
                 };
                 if !self.reqs.contains(&r) {
                     self.reqs.push(r);
@@ -623,18 +863,63 @@ impl Lower {
         self.idx = idx;
         self.exit_id = None;
         self.pending = Pending::default();
+        self.cond = None;
+        self.ncond = None;
     }
 
-    /// Emit the instruction's stores, register updates and flag source.
+    /// Emit the instruction's stores, register updates and flag effect. Under
+    /// an execution condition every effect is conditional: a store sits in a
+    /// skipped block, a register gets `select(cond, new, old)`, the flag
+    /// state is selected the same way.
     pub fn commit(&mut self) -> LR<()> {
+        let cond = self.cond;
+        let flag = self.pending.flag.take();
+        let mut flag_srcs = None;
+        if let Some((kind, srcs)) = flag {
+            if self.flag_v() {
+                // The kernel notes the writer in pseudo registers, written
+                // (and made conditional) with the others.
+                self.flag_note(kind, &srcs)?;
+            } else {
+                flag_srcs = Some((kind, srcs));
+            }
+        }
         let stores = std::mem::take(&mut self.pending.stores);
-        for (b, o, v) in stores {
-            self.body.push(Inst::Store32 { base: b, off: o, v });
+        if !stores.is_empty() {
+            let skip = match cond {
+                Some(_) => {
+                    let nc = self.not_cond();
+                    let l = self.new_label();
+                    self.body.push(Inst::BrIf { c: nc, target: l });
+                    Some(l)
+                }
+                None => None,
+            };
+            for (b, o, v) in stores {
+                self.body.push(Inst::Store32 { base: b, off: o, v });
+            }
+            if let Some(l) = skip {
+                self.body.push(Inst::Label(l));
+            }
         }
         let writes = std::mem::take(&mut self.pending.writes);
         for (c, v) in writes {
             let c = c as usize;
             self.reg_var(c);
+            let v = match cond {
+                Some(cv) => {
+                    // The register's value before this instruction (also
+                    // for a register the region has not read yet).
+                    let old = self.rd_any(c);
+                    let old = if self.ty(v) == Ty::F32 {
+                        self.to_f(old)
+                    } else {
+                        self.to_i(old)
+                    };
+                    self.select(cv, v, old)
+                }
+                None => v,
+            };
             if !self.regs[c].used {
                 self.regs[c].used = true;
                 self.regs[c].first_read = false;
@@ -643,9 +928,12 @@ impl Lower {
             self.regs[c].first_write.get_or_insert(self.idx);
             self.regs[c].last_float = self.ty(v) == Ty::F32;
             self.written_iter[c] = true;
+            if c < 64 {
+                self.written_mask |= 1 << c;
+            }
             self.cur[c] = Some(v);
         }
-        if let Some((kind, srcs)) = self.pending.flag.take() {
+        if let Some((kind, srcs)) = flag_srcs {
             let mut slots = [255u8; 2];
             for (i, v) in srcs.iter().enumerate() {
                 let n = self.nfsrc;
@@ -678,6 +966,21 @@ impl Lower {
 
     fn lower_insn_inner(&mut self, idx: u32, d: &Dec) -> LR<()> {
         self.begin_insn(idx);
+        // An execution condition is handled here, for every form: the form
+        // code sees the unconditional instruction.
+        let plain;
+        let d = match d.field("cond") {
+            Some(c) if c != 0x1f => {
+                if !cond::COND_FORMS.contains(&d.form) {
+                    return refuse(format!("conditional {}", d.form));
+                }
+                let cv = self.cond_value(c as u32)?;
+                self.cond = Some(cv);
+                plain = d.with_unconditional();
+                &plain
+            }
+            _ => d,
+        };
         match d.form {
             "2a" | "2a_short" => self.form_2a(d)?,
             "2c" => self.form_2c(d)?,
@@ -699,22 +1002,42 @@ impl Lower {
     pub fn finish(mut self) -> LR<Lowered> {
         // End of the iteration: the registers it wrote go back to their
         // variables (the loop-carried state).
-        for c in 0..NREGS as usize {
-            if self.written_iter[c]
-                && let (Some(var), Some(v)) = (self.regs[c].var, self.cur[c])
-            {
-                self.body.push(Inst::Set(var, v));
+        let cfg = self.cfgx.is_some();
+        if !cfg {
+            for c in 0..NALL {
+                if self.written_iter[c]
+                    && let (Some(var), Some(v)) = (self.regs[c].var, self.cur[c])
+                {
+                    self.body.push(Inst::Set(var, v));
+                }
             }
         }
         let mut pre = std::mem::take(&mut self.pre);
         let mut post = Vec::new();
-        for c in 0..NREGS as usize {
+        for e in std::mem::take(&mut self.extras) {
+            let ty = self.vars[e.var.0 as usize];
+            let v = self.new_val(ty, None);
+            pre.push(Inst::Def(
+                v,
+                match e.init {
+                    ExtraInit::Const(c) => Op::CI32(c),
+                    ExtraInit::Ctx(o) => Op::Ctx32(o),
+                },
+            ));
+            pre.push(Inst::Set(e.var, v));
+            if let Some(off) = e.out {
+                let g = self.new_val(ty, None);
+                post.push(Inst::Def(g, Op::GetVar(e.var)));
+                post.push(Inst::StCtx32 { off, v: g });
+            }
+        }
+        for c in 0..NALL {
             if self.regs[c].used
                 && let Some(var) = self.regs[c].var
             {
                 let vty = self.vars[var.0 as usize];
                 let li = self.new_val(Ty::I32, None);
-                pre.push(Inst::Def(li, Op::Ctx32(CTX_REGS_IN + 4 * c as u32)));
+                pre.push(Inst::Def(li, Op::Ctx32(ctx_reg_in(c as u32))));
                 let lv = if vty == Ty::F32 {
                     let f = self.new_val(Ty::F32, None);
                     pre.push(Inst::Def(f, Op::Un(Un::BitsToF, li)));
@@ -734,7 +1057,7 @@ impl Lower {
                         g
                     };
                     post.push(Inst::StCtx32 {
-                        off: CTX_REGS_OUT + 4 * c as u32,
+                        off: ctx_reg_out(c as u32),
                         v: gi,
                     });
                 }
@@ -747,10 +1070,33 @@ impl Lower {
             body: std::mem::take(&mut self.body),
             post,
             exits: std::mem::take(&mut self.exits),
+            nlabels: self.nlabels,
+            cfg,
         };
+        if self.forget_mask & self.read_mask != 0 {
+            return refuse("a condition reads a flag that a writer in the region forgets");
+        }
+        let mut reqs = std::mem::take(&mut self.reqs);
+        if self.need_flags_known != 0 {
+            reqs.push(Req::FlagsKnown(self.need_flags_known));
+        }
+        // Float rounding: TRUNCATE (bit 15) must stay clear; ALUSAT (bit 13)
+        // is part of the requirement when a condition reads it.
+        let mode1_mask = self.mode1_mask | (1 << 15);
+        if self.env.mode1 & (1 << 15) != 0 {
+            return refuse("MODE1.TRUNCATE set");
+        }
+        reqs.push(Req::Mode1 {
+            mask: mode1_mask,
+            value: self.env.mode1 & mode1_mask,
+        });
         // What the next pass learns.
         let mut next = Plan {
             pass: self.pass + 1,
+            node_written: std::mem::take(&mut self.node_written),
+            loop_stride: std::mem::take(&mut self.loop_stride_out),
+            loop_back_seen: std::mem::take(&mut self.loop_back_seen_out),
+            flag_kinds: self.flag_kinds_out,
             ..Plan::default()
         };
         for c in 0..NREGS as usize {
@@ -771,10 +1117,18 @@ impl Lower {
                 next.stride[c] = Some(a.lo);
             }
         }
+        let flag_v = self.flag_v();
+        let flag_groups = [
+            self.flag_kinds_out[0] != 0,
+            self.flag_kinds_out[1] != 0,
+            self.flag_kinds_out[2] != 0,
+        ];
         Ok(Lowered {
             kernel,
             regs: self.regs,
-            reqs: self.reqs,
+            reqs,
+            flag_v,
+            flag_groups,
             wins: self.wins,
             flags: self.flags,
             next,
@@ -783,6 +1137,10 @@ impl Lower {
 }
 
 pub struct Lowered {
+    /// The kernel tracks flags in pseudo registers, and the groups with
+    /// writers (their last writer's kind and sources are written out).
+    pub flag_v: bool,
+    pub flag_groups: [bool; 3],
     pub kernel: Kernel,
     pub regs: Vec<RegInfo>,
     pub reqs: Vec<Req>,

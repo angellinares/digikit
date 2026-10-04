@@ -12,6 +12,15 @@ pub struct Dec {
 }
 
 impl Dec {
+    /// A placeholder for an address that does not decode (CFG stop nodes).
+    pub fn nop() -> Dec {
+        Dec {
+            form: "nop",
+            len_sw: 1,
+            fields: Vec::new(),
+        }
+    }
+
     pub fn from_decoded(d: &Decoded) -> Option<Dec> {
         if d.kind != DecodeKind::Confident {
             return None;
@@ -21,6 +30,19 @@ impl Dec {
             len_sw: d.length_bytes? as u32 / 2,
             fields: d.fields().iter().map(|f| (f.key, f.value)).collect(),
         })
+    }
+
+    /// The same instruction with its execution condition (`cond`, `cond[..]`)
+    /// replaced by "always" (0x1f). The lowering handles a condition once, for
+    /// every form, and gives the form code the unconditional view.
+    pub fn with_unconditional(&self) -> Dec {
+        let mut d = self.clone();
+        for f in d.fields.iter_mut() {
+            if f.0 == "cond" || f.0.starts_with("cond[") {
+                f.1 = 0x1f;
+            }
+        }
+        d
     }
 
     pub fn get(&self, key: &str) -> Option<i64> {

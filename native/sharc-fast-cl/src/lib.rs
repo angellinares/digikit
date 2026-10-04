@@ -81,6 +81,10 @@ struct Emit<'a, 'b> {
     ctx: ir::Value,
     post: ir::Block,
     fails: HashMap<(u32, u32), ir::Block>,
+    /// The Cranelift block of each IR label, and whether the current block
+    /// has been ended by a jump (so a label need not add a fall-through).
+    labels: Vec<ir::Block>,
+    terminated: bool,
 }
 
 impl Emit<'_, '_> {
@@ -177,6 +181,31 @@ impl Emit<'_, '_> {
                     let fail = self.fail_block(k, exit);
                     self.b.ins().brif(ok, cont, &[], fail, &[]);
                     self.b.switch_to_block(cont);
+                }
+                Inst::Label(l) => {
+                    let blk = self.labels[l as usize];
+                    if !self.terminated {
+                        self.b.ins().jump(blk, &[]);
+                    }
+                    self.b.switch_to_block(blk);
+                    self.terminated = false;
+                }
+                Inst::Jump(l) => {
+                    let blk = self.labels[l as usize];
+                    self.b.ins().jump(blk, &[]);
+                    self.terminated = true;
+                }
+                Inst::BrIf { c, target } => {
+                    let c = self.truth(c);
+                    let cont = self.b.create_block();
+                    let blk = self.labels[target as usize];
+                    self.b.ins().brif(c, blk, &[], cont, &[]);
+                    self.b.switch_to_block(cont);
+                }
+                Inst::Leave { k, exit } => {
+                    let fail = self.fail_block(k, exit);
+                    self.b.ins().jump(fail, &[]);
+                    self.terminated = true;
                 }
                 Inst::GuardAny { a, b, k, exit } => {
                     let (a, b) = (self.truth(a), self.truth(b));
@@ -332,9 +361,24 @@ fn build(
         ctx,
         post,
         fails: HashMap::new(),
+        labels: Vec::new(),
+        terminated: false,
     };
     let _ = e.k;
+    e.labels = (0..k.nlabels).map(|_| e.b.create_block()).collect();
     e.insts(&k.pre);
+    if k.cfg {
+        // One pass through the body; it leaves only through `post`.
+        e.insts(&k.body);
+        e.b.switch_to_block(post);
+        let z = e.b.ins().iconst(types::I32, 0);
+        e.b.ins().store(mem_flags(), z, ctx, CTX_DONE as i32);
+        e.insts(&k.post);
+        e.b.ins().return_(&[code]);
+        e.b.seal_all_blocks();
+        b.finalize(tc);
+        return;
+    }
     let iters =
         e.b.ins()
             .load(types::I32, mem_flags(), ctx, CTX_ITERS as i32);

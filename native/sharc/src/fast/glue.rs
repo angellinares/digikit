@@ -8,6 +8,7 @@
 //! loops back after a budget-limited run of iterations) behaves exactly as
 //! the interpreter's.
 
+use super::cfg::{CfgMeta, LoopDef, Site};
 use super::ir::*;
 use super::region::{RegMeta, Region};
 use super::{Base, FlagKind, Req};
@@ -83,19 +84,19 @@ pub enum Decline {
 }
 
 /// The ASTATX bits the flag writers define or forget.
-const AZ: u32 = 1 << 0;
-const AV: u32 = 1 << 1;
-const AN: u32 = 1 << 2;
-const AC: u32 = 1 << 3;
-const AS: u32 = 1 << 4;
-const AI: u32 = 1 << 5;
-const AF: u32 = 1 << 10;
-const ALU_MASK: u32 = AZ | AV | AN | AC | AS | AI | AF;
-const MULT_MASK: u32 = 0x3c0;
-const MN: u32 = 1 << 6;
-const SV: u32 = 1 << 11;
-const SZ: u32 = 1 << 12;
-const SS: u32 = 1 << 13;
+pub const AZ: u32 = 1 << 0;
+pub const AV: u32 = 1 << 1;
+pub const AN: u32 = 1 << 2;
+pub const AC: u32 = 1 << 3;
+pub const AS: u32 = 1 << 4;
+pub const AI: u32 = 1 << 5;
+pub const AF: u32 = 1 << 10;
+pub const ALU_MASK: u32 = AZ | AV | AN | AC | AS | AI | AF;
+pub const MULT_MASK: u32 = 0x3c0;
+pub const MN: u32 = 1 << 6;
+pub const SV: u32 = 1 << 11;
+pub const SZ: u32 = 1 << 12;
+pub const SS: u32 = 1 << 13;
 
 fn define(v: V, mask: u32, bits: u32) -> V {
     V {
@@ -208,13 +209,25 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
     match *req {
         Req::Known(c) => s.r[c as usize].is_c(),
         Req::Eq(c, k) => s.r[c as usize].is_c() && s.r[c as usize].b == k,
-        Req::NwPlain { base, lo, hi, ts } => {
+        Req::Mode1 { mask, value } => {
+            let m = s.r[MODE1];
+            m.is_c() && m.b & mask == value
+        }
+        Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
+        Req::NwPlain {
+            base,
+            lo,
+            hi,
+            ts,
+            nf,
+        } => {
             let b = match base {
                 Base::None => 0,
                 Base::Reg(c) => s.r[c as usize].b as i64,
             };
             let d = ts * (n - 1);
-            let (l, h) = (b + lo + d.min(0), b + hi + d.max(0));
+            let f = nf * n;
+            let (l, h) = (b + lo + d.min(0) + f, b + hi + d.max(0) + f);
             l >= NW_LO && h < NW_HI
         }
     }
@@ -318,14 +331,21 @@ pub fn run(
             return Err(Decline::Req);
         }
     }
+    for req in &r.misc {
+        if !eval_req(s, req, iters) {
+            return Err(Decline::Req);
+        }
+    }
     // Windows.
+    let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
     for (w, spec) in r.wins.iter().enumerate() {
         let b = match spec.base {
             Base::None => 0,
             Base::Reg(c) => s.r[c as usize].b as i64,
         };
         let d = spec.ts * (iters - 1);
-        let (lo, hi) = (b + spec.lo + d.min(0), b + spec.hi + d.max(0));
+        let f = spec.nf * iters;
+        let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
         if lo < 0 || hi > (1i64 << 32) {
             return Err(Decline::Window);
         }
@@ -336,13 +356,25 @@ pub fn run(
             return Err(Decline::Window);
         };
         ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
+        if check {
+            note_window(ctx, w, lo as u32, hi.min(u32::MAX as i64) as u32);
+        }
+    }
+    if check {
+        for w in r.wins.len()..MAX_WIN as usize {
+            ctx.set64(win_ptr(w as u32), 0);
+            note_window(ctx, w, 0, 0);
+        }
+        ctx.set32(CTX_WIN_CHECK, 1);
+    } else {
+        ctx.set32(CTX_WIN_CHECK, 0);
     }
     ctx.set32(CTX_ITERS, iters as u32);
     for (i, c) in CONST_POOL.iter().enumerate() {
         ctx.set32(CTX_CONSTS + 4 * i as u32, *c);
     }
     for &c in &r.inputs {
-        ctx.set32(CTX_REGS_IN + 4 * c as u32, s.r[c as usize].b);
+        ctx.set32(ctx_reg_in(c as u32), input_of(s, c));
     }
     // SAFETY: the windows were resolved for this call and cover every
     // access of `iters` iterations (the lowering's range analysis).
@@ -367,12 +399,17 @@ pub fn run(
         let written = full || done > 0 || (first as u64) < kk;
         if written {
             s.r[code as usize] = V {
-                b: ctx.get32(CTX_REGS_OUT + 4 * code as u32),
+                b: ctx.get32(ctx_reg_out(code as u32)),
                 m: u32::MAX,
             };
         }
     }
     apply_flags(s, r, ctx, full, done, kk);
+    apply_groups(s, r, ctx);
+    s.at_loaded_entry = false;
+    if s.cfg.core_timer {
+        s.timer_written = false;
+    }
     let ran = if full { iters as u64 } else { done };
     // Loop-backs that happened before the end of the executed part. A full
     // run's last iteration ends inside `advance_last` below.
@@ -416,6 +453,39 @@ fn collapse_loop_backs(s: &mut St, rem: i64, n: i64) {
     }
 }
 
+/// A kernel input: a register's value; the flag state starts as the entry
+/// ASTATX bits and "no writer yet" for each flag group.
+fn input_of(s: &St, c: u8) -> u32 {
+    match c as u32 {
+        PSEUDO_FB0 => s.r[118].b,
+        c if c >= NREGS => 0,
+        c => s.r[c as usize].b,
+    }
+}
+
+/// The flag groups' last writers (kernels that track flags, `lower::cond`)
+/// applied to ASTATX with the replay's own effect.
+fn apply_groups(s: &mut St, r: &Region, ctx: &Ctx) {
+    if !r.flag_groups.iter().any(|g| *g) {
+        return;
+    }
+    let mut v = s.r[118];
+    for g in 0..NGROUPS {
+        if !r.flag_groups[g as usize] {
+            continue;
+        }
+        let id = ctx.get32(ctx_reg_out(pseudo_flag(g, 0)));
+        if let Some(kind) = FlagKind::from_group_id(g, id) {
+            let src = [
+                ctx.get32(ctx_reg_out(pseudo_flag(g, 1))),
+                ctx.get32(ctx_reg_out(pseudo_flag(g, 2))),
+            ];
+            v = apply_flag(v, kind, src);
+        }
+    }
+    s.r[118] = v;
+}
+
 fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64) {
     if r.flags.is_empty() {
         return;
@@ -457,3 +527,420 @@ fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64
 
 #[allow(dead_code)]
 fn _unused(_: &RegMeta) {}
+
+// -- CFG regions ---------------------------------------------------------------
+
+/// The loop PC-stack entry the interpreter pushes for a DO (its start).
+fn pc_stack_items(s: &St) -> &[Int] {
+    if s.cfg.stack_model {
+        s.pc_stack.items()
+    } else {
+        s.call_stack.items()
+    }
+}
+
+#[cfg(sharc_gen)]
+mod sites {
+    use super::*;
+    use crate::generated::core_g::{sequencer, state};
+
+    const STKYX: usize = 120;
+    const LCNTR: usize = 104;
+    const CURLCNTR: usize = 103;
+    const BIT26: u32 = 1 << 26;
+
+    fn set_bit26(s: &mut St, v: Option<bool>, entry: V) {
+        let cur = s.r[STKYX];
+        let new = match v {
+            Some(true) => V {
+                b: cur.b | BIT26,
+                m: cur.m | BIT26,
+            },
+            Some(false) => V {
+                b: cur.b & !BIT26,
+                m: cur.m | BIT26,
+            },
+            // No loop event happened: bit 26 is what it was at entry.
+            None => V {
+                b: (cur.b & !BIT26) | (entry.b & BIT26),
+                m: (cur.m & !BIT26) | (entry.m & BIT26),
+            },
+        };
+        s.r[STKYX] = new;
+    }
+
+    /// A loop ends: the interpreter's `_advance` loop-exit path.
+    fn pop_loop(s: &mut St, start: u32) -> R<()> {
+        s.loops.n -= 1;
+        if s.cfg.stack_model {
+            state::_pop_loop_resource(s)?;
+        }
+        let depth = state::_pc_stack_depth(s)?;
+        if depth == 0 || (state::_pc_stack_top(s)? & 0xff_ffff) != start as Int {
+            return Err(TRAP_INDEX);
+        }
+        sequencer::_pop_pc_stack(s)?;
+        if !s.cfg.stack_model {
+            let top = s.loops.items().last().map(|l| l.remaining);
+            let v = match top {
+                Some(r) => V::c(r as Int),
+                None => V::c(0xFFFF_FFFF),
+            };
+            s.r[CURLCNTR] = v;
+            if s.loops.n == 0 {
+                let c = s.r[STKYX];
+                s.r[STKYX] = V {
+                    b: c.b | BIT26,
+                    m: c.m | BIT26,
+                };
+            }
+        }
+        Ok(())
+    }
+
+    /// The state a DO leaves, with the loop's remaining count REM.
+    fn push_loop(s: &mut St, l: &LoopDef, rem: u32) -> R<()> {
+        s.r[CURLCNTR] = V::c(rem as Int);
+        let c = s.r[STKYX];
+        s.r[STKYX] = V {
+            b: c.b & !BIT26,
+            m: c.m | BIT26,
+        };
+        if s.cfg.stack_model {
+            state::_push_loop_resource(s)?;
+            let slot = (
+                state::_packed_counter_laddr(s, l.end as Int)?,
+                V::c(rem as Int),
+            );
+            let at = (s.loop_depth - 1) as usize;
+            s.loop_slots.a[at] = slot;
+            state::_sync_empty_loop_registers(s)?;
+        }
+        s.loops.push_raw(Loop {
+            start_sw: l.start as i64,
+            end_sw: l.end as i64,
+            remaining: rem as i64,
+            mode: l.mode,
+        })?;
+        state::_push_pc_stack(s, l.start as Int)
+    }
+
+    /// Rebuild the loop stack, PC stack and the registers that mirror them as
+    /// the interpreter has them at EXIT.
+    pub fn apply(s: &mut St, meta: &CfgMeta, site: &Site, ctx: &Ctx) -> R<()> {
+        let n = meta.n_entry;
+        let entry_stkyx = s.r[STKYX];
+        let active_entry = site.active.iter().filter(|&&i| (i as usize) < n).count();
+        let rem = |i: usize| ctx.get32(CTX_LOOP_REM_OUT + 4 * i as u32);
+        let any_inregion = site.active.iter().any(|&i| (i as usize) >= n);
+        let did = ctx.get32(CTX_DIDPC) != 0;
+        let loops_before = s.loops.n;
+        // Entry loops that ended. The slot of a loop that finished keeps its
+        // last counter, 1.
+        for i in (active_entry..n).rev() {
+            if s.cfg.stack_model {
+                let at = s.loop_depth as usize - 1;
+                s.loop_slots.a[at].1 = V::c(1);
+            }
+            pop_loop(s, meta.loops[i].start)?;
+        }
+        // Entry loops still running: their counts.
+        let base = s.loops.n - active_entry;
+        let slot_base = if s.cfg.stack_model {
+            s.loop_depth as usize - s.loops.n
+        } else {
+            0
+        };
+        for i in 0..active_entry {
+            s.loops.a[base + i].remaining = rem(i) as i64;
+            if s.cfg.stack_model {
+                s.loop_slots.a[slot_base + base + i].1 = V::c(rem(i) as Int);
+            }
+        }
+        if !s.cfg.stack_model {
+            if active_entry > 0 && !did {
+                s.r[CURLCNTR] = V::c(rem(active_entry - 1) as Int);
+            } else if did {
+                // The last loop event set the mirror.
+                let top = s.loops.items().last().map(|l| l.remaining);
+                s.r[CURLCNTR] = match top {
+                    Some(r) => V::c(r as Int),
+                    None => V::c(0xFFFF_FFFF),
+                };
+            }
+        }
+        // Loops started inside the region.
+        for &i in site.active.iter().filter(|&&i| (i as usize) >= n) {
+            push_loop(s, &meta.loops[i as usize], rem(i as usize))?;
+        }
+        if s.cfg.stack_model {
+            // Loops started and finished in the region leave their slots
+            // behind (address word, counter 1) unless a later loop reused
+            // the depth.
+            let depth = s.loop_depth as usize;
+            let reserved = depth - s.loops.n;
+            for d in 0..MAX_SLOTS as usize {
+                let li = ctx.get32(CTX_SLOT_LAST + 4 * d as u32) as usize;
+                let at = reserved + d;
+                if li != 0 && at >= depth && at < s.loop_slots.items().len() {
+                    let l = &meta.loops[li - 1];
+                    let laddr = state::_packed_counter_laddr(s, l.end as Int)?;
+                    s.loop_slots.a[at] = (laddr, V::c(1));
+                }
+            }
+            // `_execute` starts every instruction with this: LADDR and
+            // CURLCNTR follow the top loop slot.
+            state::_sync_empty_loop_registers(s)?;
+        }
+        if did || any_inregion {
+            state::_sync_pc_stack(s)?;
+        }
+        if ctx.get32(CTX_LCNTR + 4) != 0 {
+            s.r[LCNTR] = V::c(ctx.get32(CTX_LCNTR) as Int);
+        }
+        let ev = match ctx.get32(CTX_STK26) {
+            1 => Some(false),
+            2 => Some(true),
+            _ => None,
+        };
+        set_bit26(s, ev, entry_stkyx);
+        if s.loops.n != loops_before || did {
+            s.check_loops();
+        }
+        Ok(())
+    }
+}
+
+static WIN_CHECK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Tests: have the reference interpreter check every window access
+/// (`CTX_WIN_CHECK`).
+pub fn set_window_check(on: bool) {
+    WIN_CHECK.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Record window W's extent for the check (and clear the unused ones).
+fn note_window(ctx: &mut Ctx, w: usize, lo: u32, hi: u32) {
+    ctx.set32(CTX_WIN_EXT + 8 * w as u32, lo);
+    ctx.set32(CTX_WIN_EXT + 8 * w as u32 + 4, hi);
+}
+
+static SHAPE_LOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `SHARC_FAST_LOG`: say why a call was declined as the wrong shape.
+pub fn set_shape_log(on: bool) {
+    SHAPE_LOG.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cold]
+fn shape(why: &str) -> Decline {
+    if SHAPE_LOG.load(std::sync::atomic::Ordering::Relaxed) {
+        eprintln!("fast: declined, shape: {why}");
+    }
+    Decline::Shape
+}
+
+/// Run a CFG region's kernel (see `cfg`). As `run`: `Ok(code)` after at least
+/// one instruction completed, `Err` with the state untouched.
+#[cfg(sharc_gen)]
+pub fn run_cfg(
+    s: &mut St,
+    r: &Region,
+    kernel: &dyn CompiledKernel,
+    ctx: &mut Ctx,
+) -> Result<u32, Decline> {
+    let meta = r.cfg.as_ref().expect("a cfg region");
+    if s.pending.is_some() || s.pc_sw != r.entry_pc as Int {
+        return Err(shape("pending transfer or pc"));
+    }
+    let cfg = &s.cfg;
+    if !(cfg.fast_mem && cfg.assume_nw32 && cfg.has_concrete && !cfg.data_memory_tainted) {
+        return Err(shape("memory configuration"));
+    }
+    if cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0) {
+        return Err(shape("bank change in flight"));
+    }
+    if cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0) {
+        return Err(shape("PC stack change in flight"));
+    }
+    let mode1 = s.r[MODE1];
+    if !mode1.is_c() || mode1.b & (1 << 21) != 0 {
+        return Err(shape("MODE1 unknown or SIMD"));
+    }
+    // The loops active at entry that the region models.
+    let n = meta.n_entry;
+    let nloops = s.loops.n;
+    if nloops < n {
+        return Err(shape("fewer loops than the region models"));
+    }
+    // Stack model: slot k of the loop stack belongs to loops[k - slot_base]
+    // (slots reserved by PUSH LOOP lie below the DO loops).
+    let slot_base = if cfg.stack_model {
+        let depth = s.loop_depth as usize;
+        if depth < nloops
+            || depth > s.loop_slots.items().len()
+            || s.loops.items().iter().any(|l| l.start_sw == 0xFFFF_FFFF)
+        {
+            return Err(shape("loop slots do not match the loop stack"));
+        }
+        depth - nloops
+    } else {
+        0
+    };
+    let mut rem_top = 1i64;
+    for i in 0..n {
+        let l = s.loops.a[nloops - n + i];
+        let d = &meta.loops[i];
+        if l.start_sw != d.start as i64 || l.end_sw != d.end as i64 || l.mode != d.mode {
+            return Err(shape("entry loop differs from the region's"));
+        }
+        if l.remaining < 1 || l.remaining > u32::MAX as i64 {
+            return Err(shape("entry loop count"));
+        }
+        ctx.set32(CTX_LOOP_REM_IN + 4 * i as u32, l.remaining as u32);
+        rem_top = l.remaining;
+        if cfg.stack_model {
+            let slot = s.loop_slots.items().get(slot_base + nloops - n + i);
+            if slot.is_none_or(|x| x.1 != V::c(l.remaining as Int)) {
+                return Err(shape("entry loop slot counter"));
+            }
+        }
+        // The loop's PC-stack entry.
+        let st = pc_stack_items(s);
+        if st.len() < n || (st[st.len() - n + i] & 0xff_ffff) != l.start_sw as Int {
+            return Err(shape("entry loop PC-stack entry"));
+        }
+    }
+    if n > 0 {
+        let c = s.r[103];
+        if !c.is_c() || c.b as i64 != rem_top {
+            return Err(shape("CURLCNTR"));
+        }
+    }
+    // Room for the loops the region starts.
+    let deep = meta.deepest_in_region as usize;
+    if nloops + deep > MAX_LOOPS - 1
+        || pc_stack_items(s).len() + deep >= 29
+        || (cfg.stack_model && s.loop_depth as usize + deep > 5)
+    {
+        return Err(shape("loop or PC stack too deep"));
+    }
+    for &c in &r.known {
+        if s.r[c as usize].m != u32::MAX {
+            return Err(Decline::Req);
+        }
+    }
+    for &(c, k) in &r.eqs {
+        let v = s.r[c as usize];
+        if v.m != u32::MAX || v.b != k {
+            return Err(Decline::Req);
+        }
+    }
+    let iters = rem_top.max(1);
+    for req in r.nw.iter().chain(&r.misc) {
+        if !eval_req(s, req, iters) {
+            return Err(Decline::Req);
+        }
+    }
+    let avail = s.limit.saturating_sub(s.icount);
+    if avail == 0 {
+        return Err(Decline::Budget);
+    }
+    let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
+    for (w, spec) in r.wins.iter().enumerate() {
+        let b = match spec.base {
+            Base::None => 0,
+            Base::Reg(c) => s.r[c as usize].b as i64,
+        };
+        let d = spec.ts * (iters - 1);
+        let f = spec.nf * iters;
+        let (lo, hi) = (b + spec.lo + d.min(0) + f, b + spec.hi + d.max(0) + f);
+        if lo < 0 || hi > (1i64 << 32) {
+            return Err(Decline::Window);
+        }
+        let Some(ptr) = s
+            .mem
+            .window(lo as u32, (hi - lo) as u32, spec.read, spec.write)
+        else {
+            return Err(Decline::Window);
+        };
+        ctx.set64(win_ptr(w as u32), (ptr as u64).wrapping_sub(lo as u64));
+        if check {
+            note_window(ctx, w, lo as u32, hi.min(u32::MAX as i64) as u32);
+        }
+    }
+    if check {
+        for w in r.wins.len()..MAX_WIN as usize {
+            ctx.set64(win_ptr(w as u32), 0);
+            note_window(ctx, w, 0, 0);
+        }
+        ctx.set32(CTX_WIN_CHECK, 1);
+    } else {
+        ctx.set32(CTX_WIN_CHECK, 0);
+    }
+    ctx.set32(CTX_BUDGET, avail.min(1 << 31) as u32);
+    for (i, c) in CONST_POOL.iter().enumerate() {
+        ctx.set32(CTX_CONSTS + 4 * i as u32, *c);
+    }
+    for &c in &r.inputs {
+        ctx.set32(ctx_reg_in(c as u32), input_of(s, c));
+    }
+    // SAFETY: the windows were resolved for this call and cover every access
+    // (the lowering's range analysis).
+    let code = unsafe { kernel.run(ctx.ptr()) };
+    debug_assert_eq!(code, 1, "a cfg kernel leaves through an exit");
+    let site = &meta.sites[ctx.get32(CTX_EXIT_K) as usize];
+    let completed = ctx.get32(CTX_ICNT) as u64 + site.off as u64;
+    if completed == 0 {
+        return Err(Decline::Exit0);
+    }
+    // Registers: every register the region writes, from the kernel's
+    // variables (unchanged where the path did not write it).
+    for &(c, _) in &r.outputs {
+        s.r[c as usize] = V {
+            b: ctx.get32(ctx_reg_out(c as u32)),
+            m: u32::MAX,
+        };
+    }
+    apply_groups(s, r, ctx);
+    s.pc_sw = site.pc as Int;
+    s.icount += completed;
+    s.steps += completed as Int;
+    // What `exec_insn` does at the start of every instruction.
+    s.at_loaded_entry = false;
+    if s.cfg.core_timer {
+        s.timer_written = false;
+    }
+    if let Some((j, slots)) = site.pending
+        && ctx.get32(CTX_TAKEN + 4 * j as u32) != 0
+    {
+        s.pending = Some(Pending {
+            target: Some(meta.jumps[j as usize].0 as Int),
+            call: false,
+            slots: slots as Int,
+            return_from_call: false,
+            return_sw: None,
+        });
+    }
+    s.begin();
+    let res = sites::apply(s, meta, site, ctx);
+    match res {
+        Ok(()) => s.commit_host(),
+        Err(t) => {
+            s.rollback();
+            s.trap = Some(t);
+            return Ok(crate::EXIT_TRAP);
+        }
+    }
+    Ok(crate::EXIT_NEXT)
+}
+
+#[cfg(not(sharc_gen))]
+pub fn run_cfg(
+    _s: &mut St,
+    _r: &Region,
+    _kernel: &dyn CompiledKernel,
+    _ctx: &mut Ctx,
+) -> Result<u32, Decline> {
+    Err(Decline::Shape)
+}
