@@ -60,6 +60,26 @@ pub enum FlagKind {
     Fext {
         sv: bool,
     },
+    /// Float abs: AF set, AZ from the result bits, AN cleared, AS from the
+    /// input sign (sources: result, input).
+    Fabs,
+    /// comp, compu, fcomp (sources: value = eq | lt << 2 | gt << 31, and the
+    /// carry-history word after this compare): AZ AN from the value, AF set
+    /// for the float form, AC AV AS AI cleared, and the CACC shift register
+    /// (`glue::apply_flags` finishes it from the history word).
+    Compare {
+        float: bool,
+    },
+    /// btst (source: bit 0 = SZ, bit 1 = SV), SS cleared.
+    Btst,
+    /// leftz (source: the operand): SZ = its MSB, SV = it is zero.
+    Leftz,
+    /// Register-amount shift (sources: shifted value, amount > 0): SZ from
+    /// the shifted value, SV from the amount, SS cleared.
+    ShiftDyn,
+    /// recips: AC AS AI AV AZ cleared, AN from the input sign (source: the
+    /// input); AF unchanged.
+    Recips,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -86,6 +106,8 @@ pub enum Req {
         hi: i64,
         ts: i64,
     },
+    /// A MODE1 bit has this value (the register is known at entry).
+    Mode1Bit { bit: u8, set: bool },
 }
 
 /// A memory window the region touches: the bytes

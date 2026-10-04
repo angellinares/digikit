@@ -88,6 +88,10 @@ fn env_of(s: &St) -> Env {
     Env {
         regs,
         assume_nw32: s.cfg.assume_nw32,
+        approx_recips: s.cfg.approx_recips,
+        mode1: s.r[crate::rt::MODE1]
+            .is_c()
+            .then_some(s.r[crate::rt::MODE1].b),
     }
 }
 
@@ -217,7 +221,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
             .collect(),
         nw: reqs
             .iter()
-            .filter(|q| matches!(q, Req::NwPlain { .. }))
+            .filter(|q| matches!(q, Req::NwPlain { .. } | Req::Mode1Bit { .. }))
             .copied()
             .collect(),
         inputs: regs.iter().map(|m| m.code).collect(),

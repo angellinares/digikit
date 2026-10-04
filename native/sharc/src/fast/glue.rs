@@ -96,6 +96,7 @@ const MN: u32 = 1 << 6;
 const SV: u32 = 1 << 11;
 const SZ: u32 = 1 << 12;
 const SS: u32 = 1 << 13;
+const CACC: u32 = 0xff00_0000;
 
 fn define(v: V, mask: u32, bits: u32) -> V {
     V {
@@ -172,6 +173,61 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
             }
             define(v, SV | SZ | SS, bits)
         }
+        FlagKind::Fabs => {
+            let mut bits = AF;
+            if src[0] & 0x7fff_ffff == 0 {
+                bits |= AZ;
+            }
+            if src[1] >> 31 != 0 {
+                bits |= AS;
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::Compare { float } => {
+            // AZ and AN only; the CACC shift register is `apply_flags`'.
+            let mut bits = if float { AF } else { 0 };
+            if src[0] & 1 != 0 {
+                bits |= AZ;
+            }
+            if src[0] & 4 != 0 {
+                bits |= AN;
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::Btst => {
+            let mut bits = 0;
+            if src[0] & 1 != 0 {
+                bits |= SZ;
+            }
+            if src[0] & 2 != 0 {
+                bits |= SV;
+            }
+            define(v, SV | SZ | SS, bits)
+        }
+        FlagKind::Leftz => {
+            let mut bits = 0;
+            if src[0] >> 31 != 0 {
+                bits |= SZ;
+            }
+            if src[0] == 0 {
+                bits |= SV;
+            }
+            define(v, SV | SZ | SS, bits)
+        }
+        FlagKind::ShiftDyn => {
+            let mut bits = 0;
+            if src[1] != 0 {
+                bits |= SV;
+            }
+            if src[0] == 0 {
+                bits |= SZ;
+            }
+            define(v, SV | SZ | SS, bits)
+        }
+        FlagKind::Recips => {
+            let bits = if src[0] >> 31 != 0 { AN } else { 0 };
+            define(v, AC | AS | AI | AN | AV | AZ, bits)
+        }
     }
 }
 
@@ -216,6 +272,10 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
             let d = ts * (n - 1);
             let (l, h) = (b + lo + d.min(0), b + hi + d.max(0));
             l >= NW_LO && h < NW_HI
+        }
+        Req::Mode1Bit { bit, set } => {
+            let m = s.r[MODE1];
+            m.is_c() && ((m.b >> bit) & 1 != 0) == set
         }
     }
 }
@@ -372,7 +432,7 @@ pub fn run(
             };
         }
     }
-    apply_flags(s, r, ctx, full, done, kk);
+    apply_flags(s, r, ctx, full, done, kk, iters as u64);
     let ran = if full { iters as u64 } else { done };
     // Loop-backs that happened before the end of the executed part. A full
     // run's last iteration ends inside `advance_last` below.
@@ -416,7 +476,7 @@ fn collapse_loop_backs(s: &mut St, rem: i64, n: i64) {
     }
 }
 
-fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64) {
+fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64, iters: u64) {
     if r.flags.is_empty() {
         return;
     }
@@ -451,7 +511,68 @@ fn apply_flags(s: &mut St, r: &Region, ctx: &Ctx, full: bool, done: u64, kk: u64
         }
     }
     if any {
+        v = compare_history(s.r[118], v, r, ctx, full, done, kk, iters);
         s.r[118] = v;
+    }
+}
+
+/// The CACC shift register after the compare writers that ran: each compare
+/// shifts its result bit into bit 31 (`values._apply_flag_update`, when the
+/// ASTATX before it is fully known; otherwise the register becomes unknown).
+/// The kernel carries the shifted-in bits in a history word whose slot each
+/// compare writer refreshes (`Lower::compare_flag`). V is ASTATX after the
+/// writers' other effects, V0 the value before the region.
+#[allow(clippy::too_many_arguments)]
+fn compare_history(
+    v0: V,
+    v: V,
+    r: &Region,
+    ctx: &Ctx,
+    full: bool,
+    done: u64,
+    kk: u64,
+    iters: u64,
+) -> V {
+    let is_cmp = |w: &&super::FlagWriter| matches!(w.kind, FlagKind::Compare { .. });
+    let n = r.flags.iter().filter(is_cmp).count() as u64;
+    if n == 0 {
+        return v;
+    }
+    let (shifts, last) = if full {
+        (iters * n, r.flags.iter().rfind(is_cmp))
+    } else {
+        let cur = r
+            .flags
+            .iter()
+            .filter(is_cmp)
+            .filter(|w| (w.insn as u64) < kk);
+        let in_cur = cur.clone().count() as u64;
+        let last_cur = cur.last();
+        let last = if last_cur.is_some() {
+            last_cur
+        } else if done > 0 {
+            r.flags.iter().rfind(is_cmp)
+        } else {
+            None
+        };
+        (done * n + in_cur, last)
+    };
+    let Some(last) = last else { return v };
+    if shifts == 0 {
+        return v;
+    }
+    if v0.m != u32::MAX {
+        return forget(v, CACC);
+    }
+    let hist = ctx.get32(CTX_FSRC + 4 * last.fsrc[1] as u32);
+    let new = if shifts >= 8 {
+        hist & CACC
+    } else {
+        ((v0.b & CACC) >> shifts) & CACC | (hist & CACC)
+    };
+    V {
+        b: (v.b & !CACC) | new,
+        m: v.m,
     }
 }
 

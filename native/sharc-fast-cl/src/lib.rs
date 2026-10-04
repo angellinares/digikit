@@ -264,6 +264,7 @@ impl Emit<'_, '_> {
                     Un::IToF => self.b.ins().fcvt_from_sint(types::F32, x),
                     Un::Zext => self.b.ins().uextend(types::I64, x),
                     Un::Not => self.b.ins().bnot(x),
+                    Un::Clz => self.b.ins().clz(x),
                 }
             }
             Op::Bin(bin, x, y) => {
@@ -292,6 +293,8 @@ impl Emit<'_, '_> {
                     Bin::FAdd => self.b.ins().fadd(x, y),
                     Bin::FSub => self.b.ins().fsub(x, y),
                     Bin::FMul => self.b.ins().fmul(x, y),
+                    Bin::FDiv => self.b.ins().fdiv(x, y),
+                    Bin::MulHs => self.b.ins().smulhi(x, y),
                 }
             }
             Op::Select(c, a, b) => {

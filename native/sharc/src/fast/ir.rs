@@ -51,6 +51,8 @@ pub enum Un {
     Zext,
     /// Bitwise not (i32).
     Not,
+    /// Count of leading zero bits (i32; 32 for 0).
+    Clz,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -83,6 +85,9 @@ pub enum Bin {
     /// u64 add / subtract.
     Add64,
     Sub64,
+    /// f32 divide; high 32 bits of the signed 64-bit product.
+    FDiv,
+    MulHs,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -245,7 +250,7 @@ impl Kernel {
                                     Un::FToBits | Un::FToI => (Ty::F32, Ty::I32),
                                     Un::IToF => (Ty::I32, Ty::F32),
                                     Un::Zext => (Ty::I32, Ty::I64),
-                                    Un::Not => (Ty::I32, Ty::I32),
+                                    Un::Not | Un::Clz => (Ty::I32, Ty::I32),
                                 };
                                 if ty(a) != Some(need) {
                                     return err("unary operand type");
@@ -257,7 +262,9 @@ impl Kernel {
                                     return err("operand not defined");
                                 }
                                 let (need, out) = match b {
-                                    Bin::FAdd | Bin::FSub | Bin::FMul => (Ty::F32, Ty::F32),
+                                    Bin::FAdd | Bin::FSub | Bin::FMul | Bin::FDiv => {
+                                        (Ty::F32, Ty::F32)
+                                    }
                                     Bin::FLt | Bin::FGe | Bin::FEq => (Ty::F32, Ty::I32),
                                     Bin::Add64 | Bin::Sub64 => (Ty::I64, Ty::I64),
                                     _ => (Ty::I32, Ty::I32),
@@ -379,7 +386,7 @@ pub trait KernelBackend {
 
 // -- serialisation (the plug-in boundary) ----------------------------------------
 
-const UNS: [Un; 8] = [
+const UNS: [Un; 9] = [
     Un::FNeg,
     Un::FAbs,
     Un::BitsToF,
@@ -388,9 +395,10 @@ const UNS: [Un; 8] = [
     Un::IToF,
     Un::Zext,
     Un::Not,
+    Un::Clz,
 ];
 
-const BINS: [Bin; 25] = [
+const BINS: [Bin; 27] = [
     Bin::Add,
     Bin::Sub,
     Bin::Mul,
@@ -416,6 +424,8 @@ const BINS: [Bin; 25] = [
     Bin::FMul,
     Bin::Add64,
     Bin::Sub64,
+    Bin::FDiv,
+    Bin::MulHs,
 ];
 
 fn un_code(u: Un) -> u32 {

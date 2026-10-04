@@ -149,6 +149,10 @@ pub struct Env {
     /// Fully known register values (UREG codes 0..47) at build time.
     pub regs: [Option<u32>; NREGS as usize],
     pub assume_nw32: bool,
+    /// `cfg.approx_recips`: the recips seed is a numeric value (else unknown).
+    pub approx_recips: bool,
+    /// MODE1 at build time, when fully known.
+    pub mode1: Option<u32>,
 }
 
 /// One instruction's pending effects (applied by `commit`).
@@ -187,6 +191,8 @@ pub struct Lower {
     exit_id: Option<u32>,
     pub idx: u32,
     pending: Pending,
+    /// The carry-history word of the compare ops (see `compare_flag`).
+    pub cacc: Option<Var>,
 }
 
 impl Lower {
@@ -214,6 +220,7 @@ impl Lower {
             exit_id: None,
             idx: 0,
             pending: Pending::default(),
+            cacc: None,
         }
     }
 
@@ -314,7 +321,7 @@ impl Lower {
             _ => None,
         };
         let ty = match b {
-            Bin::FAdd | Bin::FSub | Bin::FMul => Ty::F32,
+            Bin::FAdd | Bin::FSub | Bin::FMul | Bin::FDiv => Ty::F32,
             Bin::Add64 => Ty::I64,
             _ => Ty::I32,
         };
@@ -324,7 +331,7 @@ impl Lower {
     pub fn un(&mut self, u: Un, x: Val) -> Val {
         let ty = match u {
             Un::FNeg | Un::FAbs | Un::BitsToF | Un::IToF => Ty::F32,
-            Un::FToBits | Un::FToI | Un::Not => Ty::I32,
+            Un::FToBits | Un::FToI | Un::Not | Un::Clz => Ty::I32,
             Un::Zext => Ty::I64,
         };
         self.emit(ty, Op::Un(u, x))
@@ -659,6 +666,9 @@ impl Lower {
                     v: *v,
                 });
             }
+            if let (FlagKind::Compare { .. }, Some(var)) = (kind, self.cacc) {
+                self.body.push(Inst::Set(var, srcs[1]));
+            }
             self.flags.push(FlagWriter {
                 insn: self.idx,
                 kind,
@@ -708,6 +718,16 @@ impl Lower {
         }
         let mut pre = std::mem::take(&mut self.pre);
         let mut post = Vec::new();
+        if let Some(var) = self.cacc {
+            // The compare shift register only works while ASTATX stays
+            // fully known across the region.
+            if self.flags.iter().any(|w| w.kind == FlagKind::FmulForget) {
+                return refuse("compare next to a flag-forgetting multiply");
+            }
+            let z = self.new_val(Ty::I32, None);
+            pre.push(Inst::Def(z, Op::CI32(0)));
+            pre.push(Inst::Set(var, z));
+        }
         for c in 0..NREGS as usize {
             if self.regs[c].used
                 && let Some(var) = self.regs[c].var
