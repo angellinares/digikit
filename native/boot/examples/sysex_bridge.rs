@@ -6,6 +6,7 @@
 //!                     --call-at PC --call-fn PC [--call-args N,...]
 //!                     --capture PC:BUF:LEN [--settle N] [--limit N]
 //!                     [--card-image FILE] [--card-extent SECTOR:FILE ...] [--count PC,...]
+//!                     [--regs-at PC,...]
 //!
 //! Each request is handed to `--call-fn(buf, len, ARGS...)` (a SysEx router) from
 //! `--call-at`, a PC the firmware's own task reaches. What reaches `--capture`
@@ -233,6 +234,10 @@ fn main() -> ExitCode {
         .map(|l| l.split(',').filter_map(number).map(|v| v as u32).collect())
         .unwrap_or_default();
     emulator.watch_pcs(&counted);
+    let regs_at: Vec<u32> = flag("--regs-at")
+        .map(|l| l.split(',').filter_map(number).map(|v| v as u32).collect())
+        .unwrap_or_default();
+    emulator.record_regs_at(&regs_at);
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -305,14 +310,28 @@ fn main() -> ExitCode {
         say(&mut out, json!({"request": request, "replies": replies, "partial": partial,
                              "icount": icount, "error": error}));
         if fatal {
+            report(&mut emulator, &mut out);
             return ExitCode::from(1);
         }
     }
+    report(&mut emulator, &mut out);
+    ExitCode::from(0)
+}
+
+/// The last line: execution counts and the register log.
+fn report(emulator: &mut Emulator, out: &mut io::StdoutLock) {
     let counts: serde_json::Map<String, serde_json::Value> = emulator
         .pc_hits()
         .iter()
         .map(|&(pc, n, _)| (format!("{pc:#010x}"), json!(n)))
         .collect();
-    say(&mut out, json!({"counts": counts}));
-    ExitCode::from(0)
+    let hex8 = |v: &[u32]| v.iter().map(|x| format!("{x:#010x}")).collect::<Vec<_>>();
+    let regs: Vec<_> = emulator
+        .reg_log()
+        .0
+        .iter()
+        .map(|h| json!({"pc": format!("{:#010x}", h.pc), "icount": h.icount, "d": hex8(&h.d), "a": hex8(&h.a), "stack": hex8(&h.stack)}))
+        .collect();
+    let _ = writeln!(out, "{}", json!({"counts": counts, "regs": regs}));
+    let _ = out.flush();
 }
