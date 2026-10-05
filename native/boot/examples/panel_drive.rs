@@ -14,7 +14,8 @@
 //!   --max         give up the boot after this many (default 2,000,000,000)
 //!   --watch       PCs to count; any execution stops the run as a fault
 //!   --count       PCs to count only (reported with the watched ones)
-//!   --regs-at     PCs at which to record D0-D7 and A0-A7, each time they run
+//!   --regs-at     PCs at which to record D0-D7, A0-A7 and the four longwords at A7,
+//!                 each time they run
 //!                 (the first 4,096 executions, then a count)
 //!   --out         where `frame:` writes (default .)
 //!   --hold        how long `tap:` holds a key (default 10,000,000; the web UI's
@@ -332,10 +333,10 @@ fn main() -> ExitCode {
         .map(|&(pc, n, first)| json!({"pc": format!("{pc:#010x}"), "hits": n, "first_icount": first}))
         .collect();
     let (log, regs_dropped) = run.emulator.reg_log();
-    let hex8 = |v: &[u32; 8]| v.iter().map(|x| format!("{x:#010x}")).collect::<Vec<_>>();
+    let hex8 = |v: &[u32]| v.iter().map(|x| format!("{x:#010x}")).collect::<Vec<_>>();
     let regs: Vec<_> = log
         .iter()
-        .map(|h| json!({"pc": format!("{:#010x}", h.pc), "icount": h.icount, "d": hex8(&h.d), "a": hex8(&h.a)}))
+        .map(|h| json!({"pc": format!("{:#010x}", h.pc), "icount": h.icount, "d": hex8(&h.d), "a": hex8(&h.a), "stack": hex8(&h.stack)}))
         .collect();
     println!(
         "{}",

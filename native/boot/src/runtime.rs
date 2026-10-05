@@ -70,6 +70,9 @@ pub struct RegHit {
     pub icount: u64,
     pub d: [u32; 8],
     pub a: [u32; 8],
+    /// The four longwords at A7: on a function's first instruction, the
+    /// first is the return address, so it names the caller.
+    pub stack: [u32; 4],
 }
 
 /// How many executions `record_regs_at` keeps; later ones are counted only.
@@ -1200,11 +1203,21 @@ impl Emulator {
             }
             if self.reg_watch.contains(&pc) {
                 if self.reg_log.len() < REG_LOG_MAX {
+                    let sp = self.cpu.a[7];
+                    let mut stack = [0u32; 4];
+                    for (i, word) in stack.iter_mut().enumerate() {
+                        for j in 0..4 {
+                            let at = sp.wrapping_add((4 * i + j) as u32);
+                            let byte = self.bus.board.read8(at).unwrap_or(0);
+                            *word = (*word << 8) | u32::from(byte);
+                        }
+                    }
                     self.reg_log.push(RegHit {
                         pc,
                         icount: self.cpu.icount,
                         d: self.cpu.d,
                         a: self.cpu.a,
+                        stack,
                     });
                 } else {
                     self.reg_log_dropped += 1;
