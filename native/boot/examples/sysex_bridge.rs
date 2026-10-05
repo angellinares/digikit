@@ -5,7 +5,7 @@
 //! usage: sysex_bridge SYX (--state IN | [--max N] [--after N])
 //!                     --call-at PC --call-fn PC [--call-args N,...]
 //!                     --capture PC:BUF:LEN [--settle N] [--limit N]
-//!                     [--card-extent SECTOR:FILE ...]
+//!                     [--card-image FILE] [--card-extent SECTOR:FILE ...] [--count PC,...]
 //!
 //! Each request is handed to `--call-fn(buf, len, ARGS...)` (a SysEx router) from
 //! `--call-at`, a PC the firmware's own task reaches. What reaches `--capture`
@@ -18,7 +18,12 @@
 //! (repeatable) places FILE's bytes at that sector of an otherwise zero card of the
 //! default capacity, so a test can put a few known sectors on the card without a
 //! card-sized image. The firmware's writes go to the card's overlay, in memory.
-//! A booted state (`--state`) carries no card: pass the extents with it.
+//! `--card-image FILE` is read on demand as the card's base media instead of zeros
+//! (a card-sized image, e.g. a formatted +Drive), and the extents lie over it.
+//! A booted state (`--state`) carries no card: pass the image and extents with it.
+//!
+//! `--count PC,...` counts executions of each PC over the whole session; the counts
+//! are printed as a last line, {"counts": {...}}, when stdin ends.
 //!
 //! Input lines: a message as hex (spaces allowed), or blank, or `#` and a comment.
 //! Output: one JSON line per request, in order:
@@ -47,6 +52,7 @@ const CHUNK: u64 = 1_000_000;
 
 /// Base media made of a few placed byte runs; every other byte reads as zero.
 struct Extents {
+    base: Option<std::sync::Mutex<fs::File>>,
     parts: Vec<(u64, Vec<u8>)>,
     len: u64,
 }
@@ -57,6 +63,20 @@ impl RandomAccessRead for Extents {
     }
     fn read_at(&self, offset: u64, destination: &mut [u8]) -> usize {
         destination.fill(0);
+        if let Some(file) = &self.base
+            && let Ok(mut file) = file.lock()
+        {
+            use std::io::{Read, Seek, SeekFrom};
+            if file.seek(SeekFrom::Start(offset)).is_ok() {
+                let mut got = 0;
+                while got < destination.len() {
+                    match file.read(&mut destination[got..]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => got += n,
+                    }
+                }
+            }
+        }
         let end = offset + destination.len() as u64;
         for (at, bytes) in &self.parts {
             let (lo, hi) = (*at.max(&offset), (at + bytes.len() as u64).min(end));
@@ -164,11 +184,18 @@ fn main() -> ExitCode {
             Err(error) => return usage(&format!("cannot read {file}: {error}")),
         }
     }
-    let card = if parts.is_empty() {
+    let base = match flag("--card-image") {
+        None => None,
+        Some(path) => match fs::File::open(&path) {
+            Ok(file) => Some(std::sync::Mutex::new(file)),
+            Err(error) => return usage(&format!("cannot open {path}: {error}")),
+        },
+    };
+    let card = if parts.is_empty() && base.is_none() {
         None
     } else {
         let len = u64::from(DEFAULT_CAPACITY_BLOCKS) * 512;
-        match Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(Extents { parts, len }))) {
+        match Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(Extents { base, parts, len }))) {
             Ok(card) => Some(card),
             Err(error) => return usage(&format!("card: {error:?}")),
         }
@@ -202,6 +229,10 @@ fn main() -> ExitCode {
         }
     }
     emulator.capture_at(&[capture]);
+    let counted: Vec<u32> = flag("--count")
+        .map(|l| l.split(',').filter_map(number).map(|v| v as u32).collect())
+        .unwrap_or_default();
+    emulator.watch_pcs(&counted);
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -237,7 +268,16 @@ fn main() -> ExitCode {
         let mut error = None;
         while emulator.calls_pending().0 != 0 {
             if icount - start >= limit {
-                error = Some(format!("the call did not return in {limit} instructions"));
+                // where it is stuck: a few samples of the PC, 100,000 instructions apart
+                let mut pcs = Vec::new();
+                for _ in 0..8 {
+                    let snapshot = emulator.step_chunk(100_000);
+                    pcs.push(format!("{:#010x}", snapshot.status.pc));
+                }
+                error = Some(format!(
+                    "the call did not return in {limit} instructions; PCs then: {}",
+                    pcs.join(" ")
+                ));
                 break;
             }
             if let Err(e) = advance(&mut emulator, &mut icount, CHUNK) {
@@ -268,5 +308,11 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     }
+    let counts: serde_json::Map<String, serde_json::Value> = emulator
+        .pc_hits()
+        .iter()
+        .map(|&(pc, n, _)| (format!("{pc:#010x}"), json!(n)))
+        .collect();
+    say(&mut out, json!({"counts": counts}));
     ExitCode::from(0)
 }
