@@ -16,5 +16,5 @@ mod telemetry;
 pub use capture::Dspi2Capture;
 pub use telemetry::DiagnosticReport;
 
-pub use runtime::{Emulator, REG_LOG_MAX, RegHit, Snapshot, Status};
+pub use runtime::{CAPTURE_MAX, Capture, Emulator, GuestCall, REG_LOG_MAX, RegHit, Snapshot, Status};
 pub use softfloat::ExecutionPolicy;

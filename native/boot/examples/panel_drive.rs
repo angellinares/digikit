@@ -20,6 +20,16 @@
 //!   --out         where `frame:` writes (default .)
 //!   --hold        how long `tap:` holds a key (default 10,000,000; the web UI's
 //!                 40,000,000 runs into key repeat, so a DOWN tap moves twice)
+//!   --call-at, --call-fn, --call-buf, --call-args
+//!                 what `send:` does: when the guest next reaches --call-at, write
+//!                 the bytes at --call-buf and call --call-fn(buf, len, ARGS...),
+//!                 then carry on from --call-at as if nothing ran (a guest
+//!                 routine the firmware's own task runs, e.g. a SysEx router);
+//!                 --call-buf stack, the default, puts the bytes on the guest's
+//!                 own stack below the arguments
+//!   --capture     PC:BUF:LEN,... -- each time PC runs, keep LEN bytes from the
+//!                 pointer in stack argument BUF (arguments count from 0): what
+//!                 a routine such as a sender was handed
 //!
 //! Steps (numbers are hex with 0x, or decimal; a trailing M is millions):
 //!   wait:N               run N instructions
@@ -30,13 +40,15 @@
 //!   frame:NAME           write the screen to OUT/NAME.pbm (128x64)
 //!   peek:ADDR:LEN        read guest memory: reported as hex
 //!   poke:ADDR:HEX        write guest memory
+//!   send:HEX             queue a --call-fn call with these bytes, and run until it
+//!                        returns (at most --max instructions)
 //!
 //! Prints one JSON line: the outcome, every peek, the watched PCs and the
 //! wall time. Exit status 0 done, 1 fault, 2 no UI, 3 usage.
 
 use std::{env, fs, path::PathBuf, process::ExitCode, time::Instant};
 
-use elektron_native_boot::Emulator;
+use elektron_native_boot::{Emulator, GuestCall};
 use serde_json::{Value, json};
 
 const CHUNK: u32 = 1_000_000;
@@ -165,6 +177,24 @@ fn main() -> ExitCode {
     let watch = pcs("--watch");
     let counted = pcs("--count");
     let regs_at = pcs("--regs-at");
+    let call_at = flag("--call-at").and_then(|n| number(&n)).map(|n| n as u32);
+    let call_fn = flag("--call-fn").and_then(|n| number(&n)).map(|n| n as u32);
+    // --call-buf stack (the default): the bytes go on the guest's stack
+    let call_buf = match flag("--call-buf").as_deref() {
+        None | Some("stack") => Some(GuestCall::STACK),
+        Some(n) => number(n).map(|n| n as u32),
+    };
+    let call_args = pcs("--call-args");
+    let captures: Vec<(u32, usize, usize)> = flag("--capture")
+        .map(|list| {
+            list.split(',')
+                .filter_map(|c| {
+                    let f: Vec<_> = c.split(':').filter_map(number).collect();
+                    (f.len() == 3).then(|| (f[0] as u32, f[1] as usize, f[2] as usize))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let steps: Vec<String> = flag("--steps")
         .map(|s| {
             s.split(',')
@@ -217,6 +247,7 @@ fn main() -> ExitCode {
     run.emulator
         .watch_pcs(&[watch.as_slice(), counted.as_slice()].concat());
     run.emulator.record_regs_at(&regs_at);
+    run.emulator.capture_at(&captures);
     if flag("--state").is_none() {
         let mut ui_at = None;
         while ui_at.is_none() {
@@ -317,6 +348,24 @@ fn main() -> ExitCode {
                     let bytes = parts.get(2).and_then(|p| hex_bytes(p)).ok_or_else(bad)?;
                     run.emulator.poke(addr, &bytes)
                 }
+                "send" => {
+                    let bytes = parts.get(1).and_then(|p| hex_bytes(p)).ok_or_else(bad)?;
+                    let (Some(at), Some(func), Some(buf)) = (call_at, call_fn, call_buf) else {
+                        return Err("send: needs --call-at, --call-fn and --call-buf".into());
+                    };
+                    let len = bytes.len() as u32;
+                    let args = [vec![buf, len], call_args.clone()].concat();
+                    run.emulator.queue_call(GuestCall { at, func, args, data: vec![(buf, bytes)] });
+                    let start = run.icount;
+                    while run.emulator.calls_pending().0 != 0 {
+                        if run.icount - start >= max {
+                            return Err(format!("send: the call did not return in {max} instructions"));
+                        }
+                        run.advance(u64::from(CHUNK))?;
+                    }
+                    results.push(json!({"sent": len, "returned_by": run.icount}));
+                    Ok(())
+                }
                 _ => Err(bad()),
             }
         })();
@@ -338,12 +387,21 @@ fn main() -> ExitCode {
         .iter()
         .map(|h| json!({"pc": format!("{:#010x}", h.pc), "icount": h.icount, "d": hex8(&h.d), "a": hex8(&h.a), "stack": hex8(&h.stack)}))
         .collect();
+    let captured: Vec<_> = run
+        .emulator
+        .take_captures()
+        .iter()
+        .map(|c| {
+            let hex: String = c.bytes.iter().map(|b| format!("{b:02x}")).collect();
+            json!({"pc": format!("{:#010x}", c.pc), "icount": c.icount, "args": hex8(&c.args), "hex": hex})
+        })
+        .collect();
     println!(
         "{}",
         json!({
             "outcome": if fault.is_some() { "fault" } else { "done" },
             "fault": fault, "boot": boot, "results": results, "watched": hits,
-            "regs": regs, "regs_dropped": regs_dropped,
+            "regs": regs, "regs_dropped": regs_dropped, "captures": captured,
             "icount": run.icount, "wall_seconds": started.elapsed().as_secs_f64(),
         })
     );

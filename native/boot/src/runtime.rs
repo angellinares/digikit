@@ -78,6 +78,48 @@ pub struct RegHit {
 /// How many executions `record_regs_at` keeps; later ones are counted only.
 pub const REG_LOG_MAX: usize = 4096;
 
+/// A routine the host asks the guest to run: when the guest itself next reaches
+/// `at`, the registers are saved, each `data` block is written, `args` are pushed
+/// (C order, the first nearest the return address) with `at` as the return
+/// address, and the CPU jumps to `func`. When it returns to `at` with the stack
+/// back where the call left it, every register is restored and the guest carries
+/// on as if nothing ran. Choose `at` in the task whose context the routine needs.
+///
+/// A data block at `GuestCall::STACK` goes on the guest's own stack, below the
+/// arguments, which is mapped wherever the guest runs; any argument equal to
+/// `STACK` is then replaced by the block's address.
+#[derive(Clone, Debug)]
+pub struct GuestCall {
+    pub at: u32,
+    pub func: u32,
+    pub args: Vec<u32>,
+    pub data: Vec<(u32, Vec<u8>)>,
+}
+
+impl GuestCall {
+    pub const STACK: u32 = 0xFFFF_FFF0;
+}
+
+/// The bytes a guest routine was handed, captured on its first instruction: the
+/// first four stack arguments, and `len` bytes from the pointer in argument `buf`.
+#[derive(Clone, Debug, Serialize)]
+pub struct Capture {
+    pub pc: u32,
+    pub icount: u64,
+    pub args: [u32; 4],
+    pub bytes: Vec<u8>,
+}
+
+/// The most bytes one capture copies; a longer length is cut and flagged.
+pub const CAPTURE_MAX: usize = 1 << 16;
+
+struct ActiveCall {
+    at: u32,
+    sp_after: u32,
+    d: [u32; 8],
+    a: [u32; 8],
+}
+
 /// Persistent, bounded Oracle diagnostic state. It has no host I/O and does
 /// not claim a hardware or interrupt-device model.
 pub struct Emulator {
@@ -123,6 +165,13 @@ pub struct Emulator {
     reg_watch: Vec<u32>,
     reg_log: Vec<RegHit>,
     reg_log_dropped: u64,
+    /// Host calls not yet started, oldest first, the one running, and how many returned.
+    calls: std::collections::VecDeque<GuestCall>,
+    call_active: Option<ActiveCall>,
+    calls_done: u64,
+    /// (pc, argument holding the buffer, argument holding the length).
+    capture_at: Vec<(u32, usize, usize)>,
+    captures: Vec<Capture>,
     idle_passes: u64,
     task_create_hits: u64,
     mainloop_hits: u64,
@@ -438,6 +487,11 @@ impl Emulator {
             reg_watch: Vec::new(),
             reg_log: Vec::new(),
             reg_log_dropped: 0,
+            calls: std::collections::VecDeque::new(),
+            call_active: None,
+            calls_done: 0,
+            capture_at: Vec::new(),
+            captures: Vec::new(),
             idle_passes: 0,
             task_create_hits: 0,
             mainloop_hits: 0,
@@ -610,6 +664,127 @@ impl Emulator {
     /// `REG_LOG_MAX` were only counted.
     pub fn reg_log(&self) -> (&[RegHit], u64) {
         (&self.reg_log, self.reg_log_dropped)
+    }
+
+    /// Queues a routine for the guest to run from a PC it reaches itself. See
+    /// `GuestCall`.
+    pub fn queue_call(&mut self, call: GuestCall) {
+        self.calls.push_back(call);
+        self.rebuild_watch();
+    }
+
+    /// Calls queued and not yet returned (running included), and calls returned.
+    pub fn calls_pending(&self) -> (usize, u64) {
+        (
+            self.calls.len() + usize::from(self.call_active.is_some()),
+            self.calls_done,
+        )
+    }
+
+    /// Captures `len` bytes at the pointer in stack argument `buf` each time PC
+    /// runs; `buf` and `len` count arguments from 0. Replaces any asked for before.
+    pub fn capture_at(&mut self, at: &[(u32, usize, usize)]) {
+        self.capture_at = at.to_vec();
+        self.captures.clear();
+        self.rebuild_watch();
+    }
+
+    /// The captures so far, oldest first; taking them empties the list.
+    pub fn take_captures(&mut self) -> Vec<Capture> {
+        std::mem::take(&mut self.captures)
+    }
+
+    fn stack_long(&mut self, at: u32) -> u32 {
+        (0..4).fold(0u32, |word, j| {
+            let byte = self.bus.board.read8(at.wrapping_add(j)).unwrap_or(0);
+            (word << 8) | u32::from(byte)
+        })
+    }
+
+    /// The host-call and capture observers, on a watched PC before it executes:
+    /// -> true when the PC was redirected, so this step executes nothing.
+    fn guest_call_step(&mut self, pc: u32) -> bool {
+        for k in 0..self.capture_at.len() {
+            let (at, buf, len) = self.capture_at[k];
+            if at != pc {
+                continue;
+            }
+            let sp = self.cpu.a[7];
+            let mut args = [0u32; 4];
+            for (i, arg) in args.iter_mut().enumerate() {
+                *arg = self.stack_long(sp.wrapping_add(4 + 4 * i as u32));
+            }
+            let (ptr, n) = (
+                args.get(buf).copied().unwrap_or(0),
+                args.get(len).copied().unwrap_or(0) as usize,
+            );
+            let bytes = (0..n.min(CAPTURE_MAX))
+                .map(|i| self.bus.board.read8(ptr.wrapping_add(i as u32)).unwrap_or(0))
+                .collect();
+            self.captures.push(Capture { pc, icount: self.cpu.icount, args, bytes });
+        }
+        if let Some(active) = &self.call_active {
+            if pc == active.at && self.cpu.a[7] == active.sp_after {
+                self.cpu.d = active.d;
+                self.cpu.a = active.a;
+                self.cpu.pc = active.at;
+                self.call_active = None;
+                self.calls_done += 1;
+                self.rebuild_watch();
+                return true;
+            }
+            return false;
+        }
+        if self.calls.front().is_none_or(|c| c.at != pc) {
+            return false;
+        }
+        let mut call = self.calls.pop_front().expect("checked");
+        let mut sp0 = self.cpu.a[7];
+        let saved_a = self.cpu.a;
+        for block in &mut call.data {
+            if block.0 == GuestCall::STACK {
+                let at = (sp0.wrapping_sub(block.1.len() as u32 + 64)) & !3;
+                block.0 = at;
+                for arg in &mut call.args {
+                    if *arg == GuestCall::STACK {
+                        *arg = at;
+                    }
+                }
+                sp0 = at;
+            }
+        }
+        for (at, bytes) in &call.data {
+            for (i, &b) in bytes.iter().enumerate() {
+                if let Err(e) = self.bus.board.write8(at.wrapping_add(i as u32), b) {
+                    self.set_error(format!("guest call data {at:#010x}: {e:?}"));
+                    return true;
+                }
+            }
+            self.cpu.invalidate_external_write(*at, bytes.len());
+        }
+        let n = call.args.len() as u32;
+        let sp = sp0.wrapping_sub(4 * (n + 1));
+        let words = std::iter::once(pc).chain(call.args.iter().copied());
+        for (i, word) in words.enumerate() {
+            for j in 0..4u32 {
+                let byte = (word >> (24 - 8 * j)) as u8;
+                let at = sp.wrapping_add(4 * i as u32 + j);
+                if let Err(e) = self.bus.board.write8(at, byte) {
+                    self.set_error(format!("guest call stack {at:#010x}: {e:?}"));
+                    return true;
+                }
+            }
+        }
+        self.call_active = Some(ActiveCall {
+            at: pc,
+            sp_after: sp0.wrapping_sub(4 * n),
+            d: self.cpu.d,
+            a: saved_a,
+        });
+        self.cpu.a[7] = sp;
+        self.cpu.pc = call.func;
+        self.rebuild_watch();
+        true
     }
 
     /// Declares extra executable ranges for the runaway check (replacing any
@@ -973,6 +1148,9 @@ impl Emulator {
         pcs.extend(self.fused_loops.iter().map(|(head, _, _)| *head));
         pcs.extend(self.pc_watch.iter().map(|&(pc, _, _)| pc));
         pcs.extend(self.reg_watch.iter().copied());
+        pcs.extend(self.calls.iter().map(|c| c.at));
+        pcs.extend(self.call_active.iter().map(|c| c.at));
+        pcs.extend(self.capture_at.iter().map(|&(pc, _, _)| pc));
         for pc in pcs {
             if let Some(off) = pc.checked_sub(MAIN_LOAD) {
                 let i = (off >> 1) as usize;
@@ -1223,6 +1401,9 @@ impl Emulator {
                     self.reg_log_dropped += 1;
                 }
             }
+        }
+        if watched && self.guest_call_step(pc) {
+            return;
         }
         self.frames.complete_at_return(
             &mut self.bus.board,
