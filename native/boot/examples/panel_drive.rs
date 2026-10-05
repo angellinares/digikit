@@ -30,6 +30,9 @@
 //!   --capture     PC:BUF:LEN,... -- each time PC runs, keep LEN bytes from the
 //!                 pointer in stack argument BUF (arguments count from 0): what
 //!                 a routine such as a sender was handed
+//!   --card-image  FILE, read on demand as the eMMC card's media instead of zeros
+//!   --card-extent SECTOR:FILE (repeatable) -- FILE's bytes placed at SECTOR, over
+//!                 the image or the zeros, as sysex_bridge places them
 //!
 //! Steps (numbers are hex with 0x, or decimal; a trailing M is millions):
 //!   wait:N               run N instructions
@@ -49,7 +52,48 @@
 use std::{env, fs, path::PathBuf, process::ExitCode, time::Instant};
 
 use elektron_native_boot::{Emulator, GuestCall};
+use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead};
 use serde_json::{Value, json};
+
+/// Card media made of an optional image and a few placed byte runs; every other
+/// byte reads as zero.
+struct Extents {
+    base: Option<std::sync::Mutex<fs::File>>,
+    parts: Vec<(u64, Vec<u8>)>,
+    len: u64,
+}
+
+impl RandomAccessRead for Extents {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, offset: u64, destination: &mut [u8]) -> usize {
+        destination.fill(0);
+        if let Some(file) = &self.base
+            && let Ok(mut file) = file.lock()
+        {
+            use std::io::{Read, Seek, SeekFrom};
+            if file.seek(SeekFrom::Start(offset)).is_ok() {
+                let mut got = 0;
+                while got < destination.len() {
+                    match file.read(&mut destination[got..]) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => got += n,
+                    }
+                }
+            }
+        }
+        let end = offset + destination.len() as u64;
+        for (at, bytes) in &self.parts {
+            let (lo, hi) = (*at.max(&offset), (at + bytes.len() as u64).min(end));
+            if lo < hi {
+                let src = &bytes[(lo - at) as usize..(hi - at) as usize];
+                destination[(lo - offset) as usize..(hi - offset) as usize].copy_from_slice(src);
+            }
+        }
+        destination.len().min(self.len.saturating_sub(offset) as usize)
+    }
+}
 
 const CHUNK: u32 = 1_000_000;
 
@@ -208,8 +252,40 @@ fn main() -> ExitCode {
         Ok(bytes) => bytes,
         Err(error) => return usage(&format!("cannot read {syx_path}: {error}")),
     };
+    let mut parts = Vec::new();
+    for (i, a) in args.iter().enumerate() {
+        if a != "--card-extent" {
+            continue;
+        }
+        let Some((sector, file)) = args.get(i + 1).and_then(|v| v.split_once(':')) else {
+            return usage("--card-extent SECTOR:FILE");
+        };
+        let Some(sector) = number(sector) else {
+            return usage("--card-extent: bad sector");
+        };
+        match fs::read(file) {
+            Ok(bytes) => parts.push((sector * 512, bytes)),
+            Err(error) => return usage(&format!("cannot read {file}: {error}")),
+        }
+    }
+    let base = match flag("--card-image") {
+        None => None,
+        Some(path) => match fs::File::open(&path) {
+            Ok(file) => Some(std::sync::Mutex::new(file)),
+            Err(error) => return usage(&format!("cannot open {path}: {error}")),
+        },
+    };
+    let card = if parts.is_empty() && base.is_none() {
+        None
+    } else {
+        let len = u64::from(DEFAULT_CAPACITY_BLOCKS) * 512;
+        match Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(Extents { base, parts, len }))) {
+            Ok(card) => Some(card),
+            Err(error) => return usage(&format!("card: {error:?}")),
+        }
+    };
     let started = Instant::now();
-    let emulator = match Emulator::new(&syx, None) {
+    let emulator = match Emulator::new(&syx, card) {
         Ok(emulator) => emulator,
         Err(error) => {
             println!(
