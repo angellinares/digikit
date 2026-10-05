@@ -5,6 +5,7 @@
 //! usage: sysex_bridge SYX (--state IN | [--max N] [--after N])
 //!                     --call-at PC --call-fn PC [--call-args N,...]
 //!                     --capture PC:BUF:LEN [--settle N] [--limit N]
+//!                     [--card-extent SECTOR:FILE ...]
 //!
 //! Each request is handed to `--call-fn(buf, len, ARGS...)` (a SysEx router) from
 //! `--call-at`, a PC the firmware's own task reaches. What reaches `--capture`
@@ -12,6 +13,12 @@
 //! reply. The bridge runs until the call returns, then `--settle` more
 //! instructions (default 20,000,000), and joins the captured pieces into whole
 //! messages at each F7. `--limit` bounds one request (default 2,000,000,000).
+//!
+//! The card: without `--card-extent`, a blank card. Each `--card-extent SECTOR:FILE`
+//! (repeatable) places FILE's bytes at that sector of an otherwise zero card of the
+//! default capacity, so a test can put a few known sectors on the card without a
+//! card-sized image. The firmware's writes go to the card's overlay, in memory.
+//! A booted state (`--state`) carries no card: pass the extents with it.
 //!
 //! Input lines: a message as hex (spaces allowed), or blank, or `#` and a comment.
 //! Output: one JSON line per request, in order:
@@ -33,9 +40,34 @@ use std::{
 };
 
 use elektron_native_boot::{Emulator, GuestCall};
+use emmc_card::{Card, DEFAULT_CAPACITY_BLOCKS, RandomAccessRead};
 use serde_json::json;
 
 const CHUNK: u64 = 1_000_000;
+
+/// Base media made of a few placed byte runs; every other byte reads as zero.
+struct Extents {
+    parts: Vec<(u64, Vec<u8>)>,
+    len: u64,
+}
+
+impl RandomAccessRead for Extents {
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn read_at(&self, offset: u64, destination: &mut [u8]) -> usize {
+        destination.fill(0);
+        let end = offset + destination.len() as u64;
+        for (at, bytes) in &self.parts {
+            let (lo, hi) = (*at.max(&offset), (at + bytes.len() as u64).min(end));
+            if lo < hi {
+                let src = &bytes[(lo - at) as usize..(hi - at) as usize];
+                destination[(lo - offset) as usize..(hi - offset) as usize].copy_from_slice(src);
+            }
+        }
+        destination.len().min(self.len.saturating_sub(offset) as usize)
+    }
+}
 
 fn number(text: &str) -> Option<u64> {
     let text = text.trim().replace('_', "");
@@ -116,7 +148,32 @@ fn main() -> ExitCode {
         Ok(bytes) => bytes,
         Err(error) => return usage(&format!("cannot read {syx_path}: {error}")),
     };
-    let mut emulator = match Emulator::new(&syx, None) {
+    let mut parts = Vec::new();
+    for (i, a) in args.iter().enumerate() {
+        if a != "--card-extent" {
+            continue;
+        }
+        let Some((sector, file)) = args.get(i + 1).and_then(|v| v.split_once(':')) else {
+            return usage("--card-extent SECTOR:FILE");
+        };
+        let Some(sector) = number(sector) else {
+            return usage("--card-extent: bad sector");
+        };
+        match fs::read(file) {
+            Ok(bytes) => parts.push((sector * 512, bytes)),
+            Err(error) => return usage(&format!("cannot read {file}: {error}")),
+        }
+    }
+    let card = if parts.is_empty() {
+        None
+    } else {
+        let len = u64::from(DEFAULT_CAPACITY_BLOCKS) * 512;
+        match Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(Extents { parts, len }))) {
+            Ok(card) => Some(card),
+            Err(error) => return usage(&format!("card: {error:?}")),
+        }
+    };
+    let mut emulator = match Emulator::new(&syx, card) {
         Ok(emulator) => emulator,
         Err(error) => return usage(&format!("load: {error}")),
     };
