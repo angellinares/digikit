@@ -5,7 +5,7 @@
 //! usage: panel_drive SYX [--state IN] [--save-state OUT] [--after N]
 //!                    [--max N] [--watch PC,...] [--count PC,...] [--out DIR]
 //!                    [--hold N]
-//!                    --steps STEP,STEP,...
+//!                    --steps STEP,STEP,... | --steps @FILE
 //!   --state       resume a state written by --save-state (skips the boot)
 //!   --save-state  after the boot (or the resume), before the steps, write the
 //!                 state: the next run starts there in a moment
@@ -239,7 +239,15 @@ fn main() -> ExitCode {
                 .collect()
         })
         .unwrap_or_default();
+    // `--steps @FILE` reads them from FILE (commas or newlines between them), for
+    // scripts longer than a command line can carry
     let steps: Vec<String> = flag("--steps")
+        .map(|s| match s.strip_prefix('@') {
+            Some(path) => fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("--steps @{path}: {e}"))
+                .replace(['\r', '\n'], ","),
+            None => s,
+        })
         .map(|s| {
             s.split(',')
                 .map(|step| step.trim().to_string())
