@@ -86,7 +86,9 @@ impl RandomAccessRead for Extents {
                 destination[(lo - offset) as usize..(hi - offset) as usize].copy_from_slice(src);
             }
         }
-        destination.len().min(self.len.saturating_sub(offset) as usize)
+        destination
+            .len()
+            .min(self.len.saturating_sub(offset) as usize)
     }
 }
 
@@ -196,7 +198,10 @@ fn main() -> ExitCode {
         None
     } else {
         let len = u64::from(DEFAULT_CAPACITY_BLOCKS) * 512;
-        match Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(Extents { base, parts, len }))) {
+        match Card::with_backing(
+            DEFAULT_CAPACITY_BLOCKS,
+            Some(Box::new(Extents { base, parts, len })),
+        ) {
             Ok(card) => Some(card),
             Err(error) => return usage(&format!("card: {error:?}")),
         }
@@ -256,8 +261,11 @@ fn main() -> ExitCode {
         }
         request += 1;
         let Some(bytes) = hex_bytes(text) else {
-            say(&mut out, json!({"request": request, "replies": [], "partial": null,
-                                 "icount": icount, "error": "not hex"}));
+            say(
+                &mut out,
+                json!({"request": request, "replies": [], "partial": null,
+                                 "icount": icount, "error": "not hex"}),
+            );
             continue;
         };
         emulator.take_captures();
@@ -300,15 +308,27 @@ fn main() -> ExitCode {
         for piece in emulator.take_captures() {
             current.extend_from_slice(&piece.bytes);
             if current.last() == Some(&0xF7) {
-                replies.push(current.iter().map(|b| format!("{b:02X}")).collect::<String>());
+                replies.push(
+                    current
+                        .iter()
+                        .map(|b| format!("{b:02X}"))
+                        .collect::<String>(),
+                );
                 current.clear();
             }
         }
-        let partial = (!current.is_empty())
-            .then(|| current.iter().map(|b| format!("{b:02X}")).collect::<String>());
+        let partial = (!current.is_empty()).then(|| {
+            current
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<String>()
+        });
         let fatal = error.is_some();
-        say(&mut out, json!({"request": request, "replies": replies, "partial": partial,
-                             "icount": icount, "error": error}));
+        say(
+            &mut out,
+            json!({"request": request, "replies": replies, "partial": partial,
+                             "icount": icount, "error": error}),
+        );
         if fatal {
             report(&mut emulator, &mut out);
             return ExitCode::from(1);

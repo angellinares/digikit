@@ -91,7 +91,9 @@ impl RandomAccessRead for Extents {
                 destination[(lo - offset) as usize..(hi - offset) as usize].copy_from_slice(src);
             }
         }
-        destination.len().min(self.len.saturating_sub(offset) as usize)
+        destination
+            .len()
+            .min(self.len.saturating_sub(offset) as usize)
     }
 }
 
@@ -287,7 +289,10 @@ fn main() -> ExitCode {
         None
     } else {
         let len = u64::from(DEFAULT_CAPACITY_BLOCKS) * 512;
-        match Card::with_backing(DEFAULT_CAPACITY_BLOCKS, Some(Box::new(Extents { base, parts, len }))) {
+        match Card::with_backing(
+            DEFAULT_CAPACITY_BLOCKS,
+            Some(Box::new(Extents { base, parts, len })),
+        ) {
             Ok(card) => Some(card),
             Err(error) => return usage(&format!("card: {error:?}")),
         }
@@ -439,11 +444,18 @@ fn main() -> ExitCode {
                     };
                     let len = bytes.len() as u32;
                     let args = [vec![buf, len], call_args.clone()].concat();
-                    run.emulator.queue_call(GuestCall { at, func, args, data: vec![(buf, bytes)] });
+                    run.emulator.queue_call(GuestCall {
+                        at,
+                        func,
+                        args,
+                        data: vec![(buf, bytes)],
+                    });
                     let start = run.icount;
                     while run.emulator.calls_pending().0 != 0 {
                         if run.icount - start >= max {
-                            return Err(format!("send: the call did not return in {max} instructions"));
+                            return Err(format!(
+                                "send: the call did not return in {max} instructions"
+                            ));
                         }
                         run.advance(u64::from(CHUNK))?;
                     }
