@@ -545,6 +545,21 @@ def alu_max_fixed(rn, rx, ry, left, right, values, special, approx_recips) -> tu
     return _alu_minmax_fixed_impl(rn, rx, ry, left, right, False)
 
 
+# PRM Table 18-5 (opcode 0110 0011) and "RN = clip RX by RY" p.19-16: Rx
+# if |Rx| < |Ry|, otherwise |Ry| with Rx's sign (the PRM's text gives
+# "|Ry| if Rx is negative", which its float twin at 0xE3 and the classic
+# manuals give as -|Ry|). Flags as min/max: AZ/AN from the result, the
+# rest cleared.
+def alu_clip_fixed(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+    value: Operand
+    if isinstance(left, Const) and isinstance(right, Const):
+        a, b = _signed32(left.value), abs(_signed32(right.value))
+        value = Const((a if abs(a) < b else (b if a >= 0 else -b)) & 0xFFFFFFFF)
+    else:
+        value = Unknown("clip(R%d, R%d)" % (rx, ry))
+    return rn, value, "clip", _astatx_alu_logical(value)
+
+
 # PRM p.19-19, opcode 1110 0000 / PGR Table 12-4 p.574, same opcode: Fn =
 # Fx copysign Fy.
 def alu_float_copysign(
@@ -1104,6 +1119,7 @@ ALU_OPS: dict[int, Handler] = {
     0xBD: alu_float_scalb,
     0x61: alu_min_fixed,
     0x62: alu_max_fixed,
+    0x63: alu_clip_fixed,
     0xE0: alu_float_copysign,
     0xE1: alu_min_float,
     0xE2: alu_max_float,

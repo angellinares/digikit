@@ -5508,6 +5508,31 @@ class FloatComputeTest(unittest.TestCase):
         self.assertIsNone(T._astatx_known_bit(astatx, T.AZ_BIT))
         self.assertIsNone(T._astatx_known_bit(astatx, T.AN_BIT))
 
+    # -- Rn = clip Rx by Ry (PRM Table 18-5, opcode 0110 0011 = 0x63) -------
+
+    def test_fixed_clip(self):
+        for rx, ry, expected, label in (
+            (100, 32767, 100, "within range passes through"),
+            (40000, 32767, 32767, "positive out-of-range clips to +|Ry|"),
+            (-40000, 32767, -32767, "negative out-of-range clips to -|Ry|"),
+            (-40000, -32767, -32767, "Ry's sign does not matter"),
+            (32767, 32767, 32767, "|Rx| == |Ry| gives Rx"),
+        ):
+            with self.subTest(label):
+                values = {1: T.Const(rx & 0xFFFFFFFF), 2: T.Const(ry & 0xFFFFFFFF)}
+                _, value, op, astatx = self.astatx_after(
+                    full_compute(0, 0x63, 0, 1, 2), values, T.Unknown("start")
+                )
+                self.assertEqual((op, value), ("clip", T.Const(expected & 0xFFFFFFFF)))
+                self.assertEqual(T._astatx_known_bit(astatx, T.AN_BIT), expected < 0)
+                self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), False)
+        _, value, _, _ = self.astatx_after(
+            full_compute(0, 0x63, 0, 1, 2),
+            {1: T.Unknown("uninitialized R1"), 2: T.Const(5)},
+            T.Unknown("start"),
+        )
+        self.assertIsInstance(value, T.Unknown)
+
     # -- Fn = clip Fx by Fy (PGR p.11-48) ------------------------------------
 
     def test_float_clip(self):

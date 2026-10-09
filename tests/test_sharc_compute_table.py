@@ -179,8 +179,8 @@ def test_dispatch_tables_have_no_duplicate_or_shadowed_keys():
     # literal cannot contain a duplicate key, but confirms the count
     # actually intended, not just "it didn't raise").
     # 43 (32/40-bit) + 15 (SC58x/2158x PRM Table 18-6, 64-bit float ALU,
-    # opcodes 0x11-0x1f, lane F1) = 58.
-    assert len(ALU_OPS) == 58  # +1: 0x89 Fn = (Fx + Fy) / 2 (PRM p.19-4)
+    # opcodes 0x11-0x1f, lane F1) = 58, + 0x63 Rn = clip Rx by Ry = 59.
+    assert len(ALU_OPS) == 59  # +1: 0x89 Fn = (Fx + Fy) / 2 (PRM p.19-4)
     # MULT_OPS is generated from PRM Table 17-7's MOD1/MOD2/MOD3 bit layout
     # (compute_mult.py's _build_mult_ops), not hand-typed per opcode: 16 sat
     # + 2 clear + 8 rnd + 36 plain-multiply + 96 accumulate/subtract, minus
