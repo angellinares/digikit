@@ -720,11 +720,14 @@ def _companion_transfer(
     access_width: str,
     source: Mapping[int, Value],
     addressing_mode: str,
+    space: str = "DM",
 ) -> None:
     """The implicit (PEy) half of a SIMD DM transfer: Cdreg <-> the
     companion address _simd_ureg_mem_companion() returned (PRM p.212 Table
     6-10; p.7-5 for byte and short word). SOURCE holds the register
-    values from before the instruction, for a store."""
+    values from before the instruction, for a store. SPACE labels the bus
+    (Type 1a's PM transfer passes "PM"); both buses reach one unified
+    physical address space (PRM p.7-2, as _load_normal_ureg)."""
     code, address = companion
     width = _COMPANION_WIDTH_BYTES[access_width]
     if store:
@@ -740,7 +743,7 @@ def _companion_transfer(
             state,
             insn,
             "store-pey",
-            space="DM",
+            space=space,
             ureg=UREG_NAMES[code],
             value=value,
             address=address,
@@ -751,7 +754,7 @@ def _companion_transfer(
         return
     loaded: Const | dict[str, int] | None
     if access_width == "normal-word":
-        loaded = _load_normal_ureg(state, "DM", address, code)
+        loaded = _load_normal_ureg(state, space, address, code)
     else:
         scalar = _dm_read(
             state,
@@ -768,7 +771,7 @@ def _companion_transfer(
         state,
         insn,
         "load-pey",
-        space="DM",
+        space=space,
         ureg=UREG_NAMES[code],
         address=address,
         expression=_render(address),
@@ -1852,25 +1855,13 @@ def _type_1a_access(
             access_width="normal-word",
         )
         if companion is not None:
-            code, companion_address = companion
-            if space == "DM":
-                _companion_transfer(
-                    state, insn, companion, True, "normal-word", old, "post-modify"
-                )
-            else:
-                _event(
-                    state,
-                    insn,
-                    "store-pey",
-                    space="PM",
-                    ureg=UREG_NAMES[code],
-                    value=_ureg(old, code),
-                    address=companion_address,
-                    expression=_render(companion_address),
-                    addressing_mode="post-modify",
-                    access_width="normal-word",
-                    concrete_write=False,
-                )
+            # PRM "DAG Transfers in SIMD Mode" (Table 6-10): the implicit
+            # transfer is the next word on either bus, and the PM bus reaches
+            # the same unified memory as DM (p.7-2), as the explicit PM
+            # transfer above already does.
+            _companion_transfer(
+                state, insn, companion, True, "normal-word", old, "post-modify", space
+            )
     else:
         loaded = _load_normal_ureg(state, space, address, dreg)
         _event(
@@ -1886,27 +1877,9 @@ def _type_1a_access(
             access_width="normal-word",
         )
         if companion is not None:
-            code, companion_address = companion
-            if space == "DM":
-                _companion_transfer(
-                    state, insn, companion, False, "normal-word", old, "post-modify"
-                )
-            else:
-                _write_ureg(
-                    state, code, Unknown("program-memory " + _render(companion_address))
-                )
-                _event(
-                    state,
-                    insn,
-                    "load-pey",
-                    space="PM",
-                    ureg=UREG_NAMES[code],
-                    address=companion_address,
-                    expression=_render(companion_address),
-                    concrete_value=None,
-                    addressing_mode="post-modify",
-                    access_width="normal-word",
-                )
+            _companion_transfer(
+                state, insn, companion, False, "normal-word", old, "post-modify", space
+            )
     state.uregs[16 + index] = _add(
         iv, scaled_mv, "I%d + M%d * %d" % (index, modifier, scale)
     )
@@ -1923,8 +1896,8 @@ def _type_1a(
     # updated by the specified M registers. Pre-modify offset
     # addressing is not supported" (p.13-4) -- unlike Type3a/3b/4a/4b,
     # there is no pre/post "u" bit; both accesses are always
-    # post-modify. This tracer does not model the SIMD Y-element
-    # (PEy/Sn) companion access the same page describes.
+    # post-modify. In SIMD each transfer also moves its PEy (Sn)
+    # companion, the next word (_type_1a_access, on both buses).
     old = _snapshot_uregs(state.uregs)
     try:
         compute, compute_y = _compute_simd(

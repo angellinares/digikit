@@ -487,10 +487,46 @@ def _type_19a(
     return _advance(state, insn)
 
 
+def _type_19a_bitrev(
+    state: State, insn: Instruction, f: Mapping[str, int], name: str
+) -> list[State]:
+    """19a_bitrev: BITREV(Ia, data32) and Ib = BITREV(Ia, data32).
+
+    SHARC+ Core Programming Reference, "Bit-Reverse Instruction" and
+    "Enhanced Bit-Reverse Instruction" (pp.6-9): the immediate is added
+    to the source I register, the 32-bit sum is bit-reversed and written
+    to the destination (Id XOR Is, as for 19a), and no address is output.
+    The PRM's own worked example for bit-reverse mode reverses all 32 bits
+    (0x83000 <-> 0xC1000). Like 19a here, a B/L-configured circular
+    wraparound is not modelled."""
+    bank = 8 if _field(f, "g") else 0
+    src_low = _field(f, "is")
+    dst_low = src_low ^ _field(f, "idis")
+    src, dst = src_low + bank, dst_low + bank
+    v = _ureg(state.uregs, 16 + src)
+    delta = _wide(f, "data") & 0xFFFFFFFF
+    if isinstance(v, Const):
+        total = (v.value + delta) & 0xFFFFFFFF
+        result = Const(int("{:032b}".format(total)[::-1], 2))
+    else:
+        result = Unknown("bitrev(I%d + %d)" % (src, delta))
+    state.uregs[16 + dst] = result
+    _event(
+        state,
+        insn,
+        "i-bitrev",
+        source="I%d" % src,
+        destination="I%d" % dst,
+        offset=delta,
+    )
+    return _advance(state, insn)
+
+
 FORMS = {
     "7a": _type_7a,
     "7b": _type_7b,
     "7d": _type_7d,
     "19a": _type_19a,
+    "19a_bitrev": _type_19a_bitrev,
     "19a_scaled": _type_19a,
 }

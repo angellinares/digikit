@@ -3112,6 +3112,22 @@ class TraceTest(unittest.TestCase):
             self.run_one(T.State(1), insn("19a", f, 6)).uregs[27], T.Unknown
         )
 
+    def test_19a_bitrev_reverses_the_32_bit_sum(self):
+        # PRM "Bit-Reverse Instruction": BITREV(I1, 4) adds 4 to I1 and
+        # bit-reverses the result; the bit-reverse-mode example reverses
+        # 0x83000 to 0xC1000 (all 32 bits).
+        f = {"g": 0, "idis[2:0]": 0, "is[2:0]": 1, "data[31:16]": 0, "data[15:0]": 4}
+        out = self.run_one(T.State(1, {17: T.Const(0x82FFC)}), insn("19a_bitrev", f, 6))
+        self.assertEqual(out.uregs[17], T.Const(0xC1000))
+        # I14 = BITREV(I9, 0): Id XOR Is in DAG2, the source left alone
+        f2 = {"g": 1, "idis[2:0]": 7, "is[2:0]": 1, "data[31:16]": 0, "data[15:0]": 0}
+        out = self.run_one(T.State(1, {25: T.Const(0x80A00000)}), insn("19a_bitrev", f2, 6))
+        self.assertEqual(out.uregs[30], T.Const(0x00000501))
+        self.assertEqual(out.uregs[25], T.Const(0x80A00000))
+        self.assertIsInstance(
+            self.run_one(T.State(1), insn("19a_bitrev", f, 6)).uregs[17], T.Unknown
+        )
+
     def test_delay_slots_variable_width_and_target(self):
         branch = insn(
             "8a_abs",

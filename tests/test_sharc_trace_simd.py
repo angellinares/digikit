@@ -889,6 +889,64 @@ class SimdMemoryCompanionTest(TraceHelpers):
         self.assertEqual(T._dm_read(stored, base, 4), T.Const(3))
         self.assertEqual(T._dm_read(stored, base + 4, 4), T.Const(4))
 
+    def test_type1a_pm_simd_companion_is_the_next_word(self):
+        # PRM "DAG Transfers in SIMD Mode" (Table 6-10): the implicit PEy
+        # transfer is the next word on the PM bus too, and PM reaches the
+        # unified memory the explicit PM transfer already reads (p.7-2).
+        fields = {
+            "compute[15:0]": 0,
+            "compute[22:16]": 0,
+            "dmd": 0,
+            "dmdreg[3:0]": 0,
+            "dmi[2:0]": 0,
+            "dmm[2:0]": 0,
+            "pmd": 0,
+            "pmdreg[3:0]": 5,
+            "pmi[1:0]": 1,
+            "pmi[2:2]": 0,
+            "pmm[2:0]": 0,
+        }
+        base, other = 0x30004000, 0x30005000
+        state = T.State(
+            1,
+            {
+                16: T.Const(other),
+                32: T.Const(1),
+                25: T.Const(base),
+                40: T.Const(1),
+                85: T.Const(0),
+                T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+            },
+            concrete=loader_memory(),
+            assume_nw32=True,
+        )
+        self.assertTrue(T._dm_write(state, base, 4, T.Const(0x11111111)))
+        self.assertTrue(T._dm_write(state, base + 4, 4, T.Const(0x22222222)))
+        out = self.run_one(state, insn("1a", fields, 6))
+        self.assertEqual(out.uregs[5], T.Const(0x11111111))
+        self.assertEqual(out.uregs[85], T.Const(0x22222222))
+        self.assertEqual(out.uregs[25], T.Const(base + 4))
+
+        stored = self.run_one(
+            T.State(
+                1,
+                {
+                    16: T.Const(other),
+                    32: T.Const(1),
+                    25: T.Const(base),
+                    40: T.Const(1),
+                    5: T.Const(7),
+                    85: T.Const(8),
+                    T.UREG_CODES["MODE1"]: T.Const(1 << 21),
+                },
+                concrete=loader_memory(),
+                assume_nw32=True,
+            ),
+            insn("1a", {**fields, "pmd": 1}, 6),
+        )
+        self.assertEqual(T._dm_read(stored, base, 4), T.Const(7))
+        self.assertEqual(T._dm_read(stored, base + 4, 4), T.Const(8))
+
     def test_type15_broadcast_loads_use_encoded_i1(self):
         base = 0x30003000
         cases = (
