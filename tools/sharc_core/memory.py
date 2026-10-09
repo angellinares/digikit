@@ -230,8 +230,19 @@ def _dm_read(
             # loader alias already covers but never wrote) a real boot never
             # wrote reads as 0, matching SHARC+ SRAM after reset -- opt-in,
             # since the default run must still fork/stop on it (see
-            # State.explicit_memory_model's docstring).
-            return Const(0)
+            # State.explicit_memory_model's docstring). Only the bytes
+            # nothing wrote read as 0: a byte this path wrote keeps its value
+            # when the access also covers unwritten ones (a 16-bit store to
+            # fresh memory, then a 32-bit read of that word).
+            here = _canonical_dm_address(state, concrete, width, for_write=True)
+            raw = bytearray()
+            for at in range(here, here + width):
+                if at in state.overlay:
+                    raw.append(state.overlay[at])
+                else:
+                    byte = state.concrete.read(at, 1)
+                    raw.append(byte[0] if byte is not None else 0)
+            return Const(int.from_bytes(raw, "little", signed=signed))
         return None
     concrete = canonical
     if state.data_memory_tainted:

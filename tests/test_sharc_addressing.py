@@ -66,6 +66,23 @@ def test_access_context_and_alias_coherence():
     assert m._modify_scale("normal-word", True, Const(0x10000000)) == 1
 
 
+def test_explicit_model_partial_word_keeps_written_bytes():
+    # Under explicit_memory_model a byte nothing wrote reads as 0, but a byte this
+    # path wrote keeps its value even when the read also covers unwritten ones: a
+    # 16-bit store to fresh DDR then a 32-bit read of that word gave Const(0).
+    state = sr.make_state(sharcldr.LoadedMemory.from_stream(b""), 0, explicit_memory_model=True)
+    assert m._dm_write(state, 0x80001000, 2, Const(0x008E))
+    assert m._dm_read(state, 0x80001000, 2) == Const(0x008E)
+    assert m._dm_read(state, 0x80001000, 4) == Const(0x0000008E)
+    assert m._dm_read(state, 0x80000FFE, 4) == Const(0x008E0000)
+    assert m._dm_read(state, 0x80001000, 4, signed=True) == Const(0x0000008E)
+    assert m._dm_read(state, 0x80001004, 4) == Const(0)
+    # without the explicit model, a word only partly written stays unknown
+    plain = sr.make_state(sharcldr.LoadedMemory.from_stream(b""), 0)
+    assert m._dm_write(plain, 0x80001000, 2, Const(0x008E))
+    assert m._dm_read(plain, 0x80001000, 4) is None
+
+
 def test_translation_does_not_supply_missing_memory_or_wrap_addresses():
     state = sr.make_state(sharcldr.LoadedMemory.from_stream(b""), 0)
     assert m._dm_read(state, 0x10000000, 4, normal_word=True) is None
