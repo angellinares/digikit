@@ -11,6 +11,9 @@
 //!                 state: the next run starts there in a moment
 //!   --after       instructions to run past the main UI before the steps
 //!                 (default 100,000,000)
+//!   --ssi-hz      pace SSI0's DMA requests (96000 = audio): the audio-frame
+//!                 interrupt then runs, 1500 a second, and with it the engine's
+//!                 tick and the sequencer. Off by default. Not with --state.
 //!   --max         give up the boot after this many (default 2,000,000,000)
 //!   --watch       PCs to count; any execution stops the run as a fault
 //!   --count       PCs to count only (reported with the watched ones)
@@ -310,6 +313,12 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    let mut emulator = emulator;
+    if let Some(hz) = flag("--ssi-hz").and_then(|n| number(&n)) {
+        if let Err(error) = emulator.enable_ssi_diagnostic(hz) {
+            return usage(&format!("--ssi-hz: {error}"));
+        }
+    }
     let mut run = Run {
         emulator,
         frame: None,
