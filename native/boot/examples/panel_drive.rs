@@ -42,6 +42,8 @@
 //!   turn:ENC:DETENTS     turn an encoder (1-based), negative for down
 //!   frame:NAME           write the screen to OUT/NAME.pbm (128x64)
 //!   peek:ADDR:LEN        read guest memory: reported as hex
+//!   touched              every 1 MiB RAM page the guest touched that nothing had
+//!                        mapped beforehand, with its first touch (PC, kind, address)
 //!   poke:ADDR:HEX        write guest memory
 //!   send:HEX             queue a --call-fn call with these bytes, and run until it
 //!                        returns (at most --max instructions)
@@ -420,6 +422,19 @@ fn main() -> ExitCode {
                     fs::write(&path, pbm(frame)).map_err(|e| format!("{}: {e}", path.display()))?;
                     results
                         .push(json!({"frame": path.display().to_string(), "icount": run.icount}));
+                    Ok(())
+                }
+                "touched" => {
+                    let pages: Vec<_> = run
+                        .emulator
+                        .touched_pages()
+                        .into_iter()
+                        .map(|(page, pc, kind, addr)| {
+                            json!({"page": format!("{page:#010x}"), "pc": format!("{pc:#010x}"),
+                                   "kind": kind, "addr": format!("{addr:#010x}")})
+                        })
+                        .collect();
+                    results.push(json!({"touched": pages, "icount": run.icount}));
                     Ok(())
                 }
                 "peek" => {

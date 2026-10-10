@@ -619,6 +619,17 @@ impl Emulator {
         &self.pc_watch
     }
 
+    /// Every RAM page the guest touched that nothing had mapped beforehand, with
+    /// its first touch: (page base, PC, "read" or "write", address). A page is
+    /// 1 MiB. What the image load and the flash reads mapped is not listed.
+    pub fn touched_pages(&self) -> Vec<(u32, u32, &'static str, u32)> {
+        self.bus
+            .unknown_touches
+            .iter()
+            .map(|(page, touch)| (*page, touch.pc, touch.kind, touch.addr))
+            .collect()
+    }
+
     /// Reads `len` bytes of guest memory for a host tool, as a debugger's peek:
     /// straight from the board, so no instruction runs and no bus trace,
     /// timer or peripheral observer sees it. Meant for RAM and the image; a
