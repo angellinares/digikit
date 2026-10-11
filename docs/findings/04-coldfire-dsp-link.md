@@ -2993,3 +2993,43 @@ halfword. Both are host calibration and are recorded in the capture header.
 `0x47db4560[]`) is the same in `running.snap` and `loaded.snap`.
 `tools/sharc_replay.py IMAGE CAP --fields` lists the frames with a trig or
 release bit and the per-track fields (no SHARC run).
+
+## The internal step clock: two software-forced interrupts **[V]**
+
+Digitone II 1.11. This closes Lane H1's open item about the internal step
+clock. The clock is not a function something calls. It is a chain of
+interrupts the firmware forces itself through INTC0's INTFRCH
+(`0xFC048010`), so no call-graph search reaches it.
+
+| Stage | Where | What it does |
+| ----- | ----- | ------------ |
+| Audio ISR | `0x40025e36` (vector 170/191 lane) | Each frame, in its internal-clock path (`0x40027aba`), adds `2 * [0x402a0dec]` to `0x80005398` and subtracts it from the countdown `0x800053a0`. At or below zero it stores `0x7fffffff` there and sets INTFRCH bit 12 (`0x40027afc`). |
+| Source 44 | vector 108, ICR level 5, handler `0x400d7864` | Clears bit 12, re-arms, and ends with `orl #1<<25, 0xFC048010` (`0x400d7c02`). |
+| Source 57 | vector 121, ICR level 2, handler `0x400d987a` | Clears bit 25, adds 900000 to `0x42c4e900`, and runs the engine. The step count `0x4463ed14` is incremented at `0x400da54c`. |
+
+The handler is installed by the routine that ends at `0x400d95d0`: it stores
+`0x400d987a` at `0x400001e4` and writes ICR level 2 to `0xFC048079`
+(and `0x400d7864` at `0x400001b0`, level 5 at `0xFC04806C`).
+
+`0x400d97ce` is a different, small function that ends at `0x400d9878`. The
+engine proper starts at `0x400d987a` and is reached only through the vector,
+which is why every direct-caller search for it found nothing.
+
+The clock-mode word is `0x402a0df0` (`0x4013706c` returns the index of its
+highest set bit; `0x4013707c` sets the mode and period). Mode 0 is the path
+above. Mode 1 and the external-clock mode (`0x40138034` returning 3) take other
+branches at `0x40027b04` and `0x40027a80`.
+
+**What the emulator was missing.** The INTC model kept INTFRC as plain RAM and
+only PIT, DTIM and the SSI vectors were delivered, so bit 12 stayed set and
+neither handler ever ran. With `service_forced` (`native/boot/src/runtime.rs`)
+a forced, unmasked INTC0 source whose ICR level is above the IPL is taken, the
+highest level and then the highest source first. It runs on the SSI-paced lane
+only (`panel_drive --ssi-hz`).
+
+**Control.** DN2 1.11 from reset, `--ssi-hz 96000`, dismiss the start popup,
+press PLAY. Before: INTFRCH stays `0x1000` and step `0x446483d0` and count
+`0x4463ed14` stay 0. After: vectors 108 and 121 each deliver 4,436 times, the
+step walks 0 to 15 and the count rises 18 per 300 M instructions, which is 7.9
+steps a second at 132 MHz. The unit, on panel PLAY with its internal clock,
+measured about 8 steps a second on the same two words.

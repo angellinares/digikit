@@ -274,7 +274,10 @@ impl Emulator {
         if self.bus.board.dma.ssi.is_none() {
             return Ok(false);
         }
-        let delivered = service_ssi(&mut self.bus, &mut self.cpu, done)?;
+        let delivered = match service_ssi(&mut self.bus, &mut self.cpu, done)? {
+            Some(delivery) => Some(delivery),
+            None => service_forced(&mut self.bus, &mut self.cpu)?,
+        };
         if let Some(delivery) = delivered {
             record_deliveries(
                 &[delivery],
@@ -1907,6 +1910,77 @@ fn service_ssi<const TRACE: bool>(
     Ok(None)
 }
 
+/// INTC0 sources the firmware raises itself through INTFRCH/INTFRCL. The
+/// audio ISR counts samples and forces source 44 when a step is due; that
+/// ISR forces source 57, the sequencer's tick. Without delivery the force bits
+/// stay set and the step counter never moves.
+///
+/// Level and mask follow RM 17.2: a forced, unmasked source whose ICR level is
+/// above the CPU's IPL is taken, the highest level first and the highest
+/// source within a level. The handler clears its own force bit.
+fn service_forced<const TRACE: bool>(
+    bus: &mut LoggingBus<TRACE>,
+    cpu: &mut Cpu,
+) -> Result<Option<(u16, u8)>, String> {
+    const INTC0: u32 = 0xfc04_8000;
+    const VECTOR_BASE: u32 = 64;
+    let mut imr = |off: u32| {
+        bus.board
+            .read32(INTC0 + off)
+            .map_err(|_| "INTC0 unavailable")
+    };
+    let force = ((imr(0x10)? as u64) << 32) | u64::from(imr(0x14)?);
+    if force == 0 {
+        return Ok(None);
+    }
+    let mask = ((imr(0x08)? as u64) << 32) | u64::from(imr(0x0c)?);
+    let ipl = ((cpu.sr >> 8) & 7) as u8;
+    let mut selected: Option<(u8, u32)> = None;
+    for source in 0..64u32 {
+        if (force >> source) & 1 == 0 || (mask >> source) & 1 != 0 {
+            continue;
+        }
+        let level = bus
+            .board
+            .read8(INTC0 + 0x40 + source)
+            .map_err(|_| "INTC0 ICR unavailable")?
+            & 7;
+        if level == 0 || (level <= ipl && level != 7) {
+            continue;
+        }
+        if selected.is_none_or(|best| (level, source) > best) {
+            selected = Some((level, source));
+        }
+    }
+    let Some((level, source)) = selected else {
+        return Ok(None);
+    };
+    let vector = (VECTOR_BASE + source) as u8;
+    let handler = bus
+        .board
+        .read32(cpu.ctrl.vbr.wrapping_add(4 * u32::from(vector)))
+        .map_err(|_| "forced vector unavailable")?;
+    if handler == 0 || handler >= 0x4800_0000 {
+        return Ok(None);
+    }
+    let stack = if cpu.sr & 0x2000 == 0 && cpu.ctrl.cacr & 0x20 != 0 {
+        cpu.other_a7
+    } else {
+        cpu.a[7]
+    };
+    if !bus
+        .board
+        .can_write_ram_range((stack & !3).wrapping_sub(8), 8)
+    {
+        return Ok(None);
+    }
+    match cpu.take_interrupt(&mut bus.board, vector, Some(level), InterruptPolicy::Oracle) {
+        Ok(true) => Ok(Some((u16::from(vector), level))),
+        Ok(false) => Ok(None),
+        Err(stop) => Err(format!("forced interrupt delivery poisoned({stop:?})")),
+    }
+}
+
 fn verified_task_create(main: &[u8]) -> Result<u32, String> {
     let task_create = 0x4000_12c8;
     main.get((task_create - MAIN_LOAD) as usize..)
@@ -2629,6 +2703,51 @@ mod tests {
         .unwrap();
         assert_eq!(count, 1);
         assert_eq!(runtime.delivery_counts[timer_vector as usize], 1);
+    }
+
+    #[test]
+    fn forced_intc0_sources_are_delivered_by_level_unless_masked() {
+        let Ok(syx) = std::fs::read("../../Digitone_II_OS1.11.syx") else {
+            return;
+        };
+        let mut runtime = Emulator::new(&syx, None).unwrap();
+        runtime.cpu = Cpu::new();
+        runtime.cpu.pc = MAIN_LOAD + 0x10000;
+        runtime.cpu.sr = 0x2000;
+        runtime.cpu.ctrl.vbr = MAIN_LOAD;
+        runtime.cpu.a[7] = STACK + 0x100;
+        let board = &mut runtime.bus.board;
+        board
+            .write32(MAIN_LOAD + 108 * 4, MAIN_LOAD + 0x11000)
+            .unwrap();
+        board
+            .write32(MAIN_LOAD + 121 * 4, MAIN_LOAD + 0x12000)
+            .unwrap();
+        board.write8(0xfc04_8000 + 0x40 + 44, 5).unwrap();
+        board.write8(0xfc04_8000 + 0x40 + 57, 2).unwrap();
+        // Sources 44 and 57 forced together: the higher level goes first.
+        board.write32(0xfc04_8010, (1 << 12) | (1 << 25)).unwrap();
+        let first = service_forced(&mut runtime.bus, &mut runtime.cpu).unwrap();
+        assert_eq!(first, Some((108, 5)));
+        assert_eq!(runtime.cpu.pc, MAIN_LOAD + 0x11000);
+        // Handler running at level 5: the level-2 source waits.
+        assert_eq!(
+            service_forced(&mut runtime.bus, &mut runtime.cpu).unwrap(),
+            None
+        );
+        // The handler clears its force bit and returns to level 0.
+        runtime.bus.board.write32(0xfc04_8010, 1 << 25).unwrap();
+        runtime.cpu.sr = 0x2000;
+        // Masked in IMRH: not delivered.
+        runtime.bus.board.write32(0xfc04_8008, 1 << 25).unwrap();
+        assert_eq!(
+            service_forced(&mut runtime.bus, &mut runtime.cpu).unwrap(),
+            None
+        );
+        runtime.bus.board.write32(0xfc04_8008, 0).unwrap();
+        let second = service_forced(&mut runtime.bus, &mut runtime.cpu).unwrap();
+        assert_eq!(second, Some((121, 2)));
+        assert_eq!(runtime.cpu.pc, MAIN_LOAD + 0x12000);
     }
 
     #[cfg(not(any(feature = "reference-ram-clear", feature = "diagnostic-trace")))]
