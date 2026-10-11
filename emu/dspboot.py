@@ -39,7 +39,7 @@ write 1 into the 4 bytes at 0x44e4d69c before letting it execute.
 """
 import struct, sys, os, collections
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from unicorn import UcError, UC_HOOK_CODE
+from unicorn import UcError, UC_HOOK_BLOCK, UC_HOOK_CODE
 from unicorn.m68k_const import (UC_M68K_REG_A7, UC_M68K_REG_PC, UC_M68K_REG_SR,
                                  UC_M68K_REG_D0, UC_M68K_REG_D2, UC_M68K_REG_D3)
 from emu.harness import Machine, VBR
@@ -150,7 +150,7 @@ def build_flash(syx_path, size=0x1000000):
 def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
         patch_sem=True, patch_depack=True, verbose=False, stall_window=3_000_000,
         extra_hook=None, fast=True, resume_from=None, machine_out=None,
-        pre_start=None, sdgate=True, esdhc=True):
+        pre_start=None, sdgate=True, esdhc=True, coverage='insn'):
     """resume_from: path to a snapshot (see emu/snapshot.py). Loads registers
     and memory instead of starting at ENTRY, but installs the *same* hooks, so
     a resumed run behaves identically to the equivalent straight run. Without
@@ -179,6 +179,13 @@ def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
     small as possible. See harness.install_isa_patches_scoped's docstring.
     fast=False keeps the original single-global-hook implementation, useful
     to cross-check the two give identical results.
+
+    coverage='insn' (default) keeps the exact per-instruction count and the
+    full set of executed addresses. coverage='block' installs the counting and
+    coverage hook per *basic block* instead, which measures 10-30x faster at
+    realistic block lengths; `seen` then holds block entry addresses and `n`
+    becomes an upper bound. Use it when the question is which routines ran,
+    not how many instructions it took.
     """
     # Resolve every address this run needs from the image itself, instead of
     # the module-level constants above (which stay put as the Digitakt
@@ -270,19 +277,63 @@ def run(syx_path, main_img, limit=120_000_000, tick_vec=32, tick_every=20000,
     call_sites = set(profile.call_sites or ())
 
     if fast:
-        # lightweight, GLOBAL: only counting + coverage (must see every insn)
-        def cover(uc, addr, size, data):
-            st['n'] += 1
-            if addr not in st['seen']:
-                st['seen'].add(addr)
-                st['last_new_n'] = st['n']
-            elif st['n'] - st['last_new_n'] > stall_window:
-                st['stall_pcs'][addr] += 1
-            if st['n'] % 10_000_000 == 0:
-                st['curve'].append((st['n'] // 1_000_000, len(st['seen'])))
-            if extra_hook:
-                extra_hook(uc, addr, size, st)
-        m.uc.hook_add(UC_HOOK_CODE, cover)
+        if coverage == 'off':
+            # No global hook at all: no instruction count, no coverage set.
+            # This is the ceiling the other two are measured against -- it says
+            # how much of a run's cost is the global hook and how much is the
+            # device models, the memory hooks and the HLE underneath it.
+            pass
+        elif coverage == 'block':
+            # One callback per basic block instead of one per instruction.
+            #
+            # A *global* UC_HOOK_CODE makes Unicorn end the translation block at
+            # every instruction, so every instruction crosses into Python. The
+            # cost is not proportional to anything about the code -- it pins the
+            # machine near 1.2 M insn/s whatever it runs. Measured on this
+            # Unicorn, m68k big-endian, 3 M instructions per run:
+            #
+            #   block length   free-running   UC_HOOK_BLOCK   UC_HOOK_CODE
+            #    8 instrs        232 M/s        11.0 M/s        1.14 M/s
+            #   16 instrs        244 M/s        17.3 M/s        1.18 M/s
+            #   32 instrs        247 M/s        39.9 M/s        1.20 M/s
+            #
+            # So per-block is 10-30x faster at realistic block lengths, and the
+            # gap grows with block length because a block hook is paid once per
+            # block while a code hook is paid once per instruction.
+            #
+            # What it costs: `seen` collects **block entry addresses**, not every
+            # address executed, and `n` becomes an upper bound rather than an
+            # exact count (a block of `size` bytes holds at most `size // 2`
+            # m68k instructions). That is the right trade for "did this routine
+            # ever run" -- a routine's entry is a block entry -- and the wrong
+            # one for "how many instructions did this run take", which is what
+            # emu_start's own count limit is for and which stays exact.
+            #
+            # The stall detector is dropped here rather than approximated: it
+            # compares an instruction count against `stall_window`, and feeding
+            # it an estimate would make it fire on block-length variation.
+            def cover_block(uc, addr, size, data):
+                st['n'] += size // 2
+                if addr not in st['seen']:
+                    st['seen'].add(addr)
+                    st['last_new_n'] = st['n']
+                if extra_hook:
+                    extra_hook(uc, addr, size, st)
+            m.uc.hook_add(UC_HOOK_BLOCK, cover_block)
+        else:
+            # lightweight, GLOBAL: only counting + coverage (must see every insn)
+            def cover(uc, addr, size, data):
+                st['n'] += 1
+                if addr not in st['seen']:
+                    st['seen'].add(addr)
+                    st['last_new_n'] = st['n']
+                elif st['n'] - st['last_new_n'] > stall_window:
+                    st['stall_pcs'][addr] += 1
+                if st['n'] % 10_000_000 == 0:
+                    st['curve'].append((st['n'] // 1_000_000, len(st['seen'])))
+                if extra_hook:
+                    extra_hook(uc, addr, size, st)
+            m.uc.hook_add(UC_HOOK_CODE, cover)
         m.install_isa_patches_scoped(main_img, MAIN_LOAD)
 
         def scoped(addr, fn):
