@@ -137,6 +137,7 @@ the caveat that HighFunction p-code does not model delay-slot execution.
 | `tools/steptrace.py` | Explain the instruction accounting of repeated emulator `spin` calls. |
 | `tools/panelsweep.py` | Map front-panel code through recorded queue events. |
 | `tools/inputlag.py` | Measure latency from a panel event to firmware response. |
+| `tools/seqplay.py` | Digitone II 1.11: boot with `panel_drive --ssi-hz`, enter trigs on track 1 (RECORD, trig keys), PLAY, and list the note-on and note-off voice masks of each frame sent to the DSP with their times; checks the step spacing (120 BPM is 16.5 M instructions a step). Needs `service_forced` and the literal `--capture` length. |
 | `tools/guirun.py` | Reproduce the GUI worker configuration without opening the GUI; `--no-unblock` preserves real waits, `--intro-timers pit3` drives only the intro's PIT3 event, `--panel-raw-at` saves an existing latched frame, and `--block-profile` is explicitly perturbing. |
 | `tools/experiment.py` | Run a fresh, exact repeated baseline versus one button gesture and save endpoint/diff reports. |
 | `tools/uidrive.py` | Watch for and optionally drive the experimental machine-list UI path. |
