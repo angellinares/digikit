@@ -32,7 +32,8 @@
 //!                 own stack below the arguments
 //!   --capture     PC:BUF:LEN,... -- each time PC runs, keep LEN bytes from the
 //!                 pointer in stack argument BUF (arguments count from 0): what
-//!                 a routine such as a sender was handed
+//!                 a routine such as a sender was handed. LEN 0 to 3 names the
+//!                 argument that holds the length; a larger LEN is the byte count
 //!   --card-image  FILE, read on demand as the eMMC card's media instead of zeros
 //!   --card-extent SECTOR:FILE (repeatable) -- FILE's bytes placed at SECTOR, over
 //!                 the image or the zeros, as sysex_bridge places them

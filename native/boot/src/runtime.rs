@@ -728,9 +728,11 @@ impl Emulator {
             for (i, arg) in args.iter_mut().enumerate() {
                 *arg = self.stack_long(sp.wrapping_add(4 + 4 * i as u32));
             }
+            // LEN names the argument that holds the length (0 to 3); a larger
+            // number is itself the byte count.
             let (ptr, n) = (
                 args.get(buf).copied().unwrap_or(0),
-                args.get(len).copied().unwrap_or(0) as usize,
+                args.get(len).map_or(len, |&n| n as usize),
             );
             let bytes = (0..n.min(CAPTURE_MAX))
                 .map(|i| self.bus.board.read8(ptr.wrapping_add(i as u32)).unwrap_or(0))
