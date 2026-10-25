@@ -52,6 +52,9 @@ class Profile:
         self.same: dict[int, int] = {}
         self.lines: dict[int, int] = defaultdict(int)  # pc -> line changes (both slots)
         self.far: Counter = Counter()
+        self.mmr: Counter = (
+            Counter()
+        )  # (pc, address) -> MMR accesses, from the engine's A lines
         self.unknown: Counter = Counter()
         self.idle = (0, 0, 0)
         self.cache: dict[tuple[str, int], tuple[int, int]] = {}
@@ -71,6 +74,8 @@ class Profile:
                 self.lines[int(f[1], 16)] += int(f[3])
             elif tag == "R":
                 self.far[int(f[1], 16)] += int(f[2])
+            elif tag == "A":
+                self.mmr[(int(f[1], 16), int(f[2], 16))] += int(f[3])
             elif tag == "U":
                 self.unknown[int(f[2], 16)] += int(f[3])
             elif tag == "C":
@@ -163,24 +168,27 @@ def load_instructions(image: str, pcs: set[int]) -> dict[int, T.Ins]:
     return out
 
 
-def mmr_targets(image: str, pcs: set[int]) -> dict[int, list[tuple[bool, int]]]:
-    """Per PC, the (write, address) of each MMR-range access whose address sharcdb resolved: an absolute
-    operand (mem_access) or a pointer it followed (ptr)."""
+def mmr_accesses(
+    image: str, pcs: set[int]
+) -> tuple[dict[int, bool], dict[int, tuple[bool, int]]]:
+    """From sharcdb, for the instructions PCS: whether each one's data access is a store, and the absolute
+    MMR accesses (Type 14a operands, which have no DAG register and so are not in the engine's M lines):
+    PC -> (store, address)."""
     db = sqlite3.connect(f"file:{SHARCDB / (image + '.sqlite')}?mode=ro", uri=True)
     db.execute("create temp table want(sw integer primary key)")
     db.executemany("insert into want values (?)", [(p,) for p in pcs])
-    out: dict[int, list[tuple[bool, int]]] = defaultdict(list)
-    for sql in (
-        "select m.sw, m.direction, m.abs_address from mem_access m join want w on w.sw = m.sw "
-        "where m.image = ? and m.abs_address is not null",
-        "select p.sw, p.direction, p.address from ptr p join want w on w.sw = p.sw "
-        "where p.image = ? and p.address is not null",
+    store: dict[int, bool] = {}
+    absolute: dict[int, tuple[bool, int]] = {}
+    for sw, direction, address in db.execute(
+        "select m.sw, m.direction, m.abs_address from mem_access m join want w on w.sw = m.sw where m.image = ?",
+        (image,),
     ):
-        for sw, direction, address in db.execute(sql, (image,)):
-            if 0x30000 <= address < 0x40000000:
-                out[sw].append((str(direction or "").startswith("w"), address))
+        is_store = direction == "store"
+        store[sw] = store.get(sw, False) or is_store
+        if address is not None and T.is_mmr_address(address):
+            absolute[sw] = (is_store, address)
     db.close()
-    return out
+    return store, absolute
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -219,6 +227,46 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
         acc("float_to_move", T.scale(T.float_to_move(ia, ib), n))
         acc("cjump_frame_use", T.scale(T.cjump_frame_use(ia, ib), n))
         acc("anomaly_20000072", T.scale(T.anomaly_20000072(ia, ib), n))
+    # the same DAG and CJUMP/RFRAME stalls at a distance of 2 to MAX_STALL_DISTANCE. The profile holds
+    # adjacent pairs only, so the paths are walked back through them: at an instruction with several
+    # predecessors (a join, a function entry) the flow splits by the pair counts (a Markov estimate,
+    # exact on straight-line code)
+    preds: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    for (a, b), n in prof.pairs.items():
+        if not (prof.is_idle(a) or prof.is_idle(b)):
+            preds[b].append((a, n))
+    into = {b: sum(n for _, n in v) for b, v in preds.items()}
+
+    def walk(
+        user: T.Ins, here: int, flow: float, d: int, between: tuple[T.Ins, ...]
+    ) -> None:
+        if d > T.MAX_STALL_DISTANCE or flow < 1e-3:
+            return
+        total = into.get(here, 0)
+        for back, n in preds.get(here, ()):
+            iw = insns.get(back)
+            if iw is None or not total:
+                continue
+            f = flow * n / total
+            acc("dag_load_to_use_far", T.scale(T.dag_use_at(iw, user, d, between), f))
+            acc(
+                "cjump_frame_use_far",
+                T.scale(T.cjump_frame_use_at(iw, user, d, between), f),
+            )
+            walk(user, back, f, d + 1, between + (iw,))
+
+    for (w1, u), n in prof.pairs.items():
+        iu, iw1 = insns.get(u), insns.get(w1)
+        if iu is None or iw1 is None or prof.is_idle(u) or prof.is_idle(w1):
+            continue
+        if not (
+            iu.mem
+            or iu.branch == "indirect"
+            or {"I6", "I7"} & iu.uses
+            or any(k == "dag_modify" for _, k in iu.defs)
+        ):
+            continue  # only an address or I6/I7 use can stall
+        walk(iu, w1, float(n), 2, (iw1,))
     # branches against the simulated BTB (engine side: 128 sets x 2 ways, 2-bit counters)
     branch_pcs = [p for p in prof.btb if p in insns]
     res["btb"] = {
@@ -328,39 +376,42 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
             2 * T.EXT_FILL[2] * d_miss * share_ext,
         ),
     )
-    # MMR accesses by peripheral where sharcdb resolved the address (EE-412 Table 6, Table 4-43), else the
-    # assumed MMR_ACCESS
-    targets = mmr_targets(
-        image,
-        {
-            p
-            for p, slots in prof.mem.items()
-            if p in busy_pcs and (slots[0][7] or slots[1][7])
-        },
-    )
+    # MMR accesses by peripheral (EE-412 Table 6, Table 4-43). The engine's A lines give each pointer
+    # access's address; absolute accesses (Type 14a) are not in the M lines, so they come from sharcdb's
+    # operand and the instruction's executions. Accesses neither names keep MMR_ACCESS.
+    store, absolute = mmr_accesses(image, busy_pcs)
     by_peripheral: Counter = Counter()
-    priced = 0
-    for p, slots in prof.mem.items():
-        n = slots[0][7] + slots[1][7] if p in busy_pcs else 0
+    priced = absolute_n = low = 0
+    for (p, address), n in prof.mmr.items():
+        if p not in busy_pcs:
+            continue
+        name = name_address(address)
+        if name is None and address < 0x30000:
+            # no register there: a pointer the emulator left at 0 (on the DN2, the frame unpack's
+            # per-track table read through I0 at sw 0x1c253f); not an MMR access on the part
+            low += n
+            priced += n
+            continue
+        cost = T.mmr_cost(name, store.get(p, False))
+        if cost is None:
+            continue
+        acc("mmr_access", T.scale(cost, n))
+        priced += n
+        by_peripheral[(name or "?").split("_")[0]] += n
+    for p, (is_store, address) in absolute.items():
+        n = prof.counts.get(p, 0)
         if not n:
             continue
-        found = [(w, a) for w, a in targets.get(p, ())]
-        costs = [(w, a, T.mmr_cost(name_address(a), w)) for w, a in found]
-        costs = [c for c in costs if c[2] is not None]
-        if not costs:
-            continue
-        each = T.scale(
-            T.add(*(c[2] for c in costs)) if len(costs) > 1 else costs[0][2],
-            1 / len(costs),
-        )
-        acc("mmr_access", T.scale(each, n))
-        priced += n
-        for _w, a, _ in costs:
-            by_peripheral[(name_address(a) or "?").split("_")[0]] += n / len(costs)
-    acc("mmr_access", T.scale(T.MMR_ACCESS, far["mmr"] - priced))
+        name = name_address(address)
+        acc("mmr_access", T.scale(T.mmr_cost(name, is_store) or T.MMR_ACCESS, n))
+        absolute_n += n
+        by_peripheral[(name or "?").split("_")[0]] += n
+    acc("mmr_access", T.scale(T.MMR_ACCESS, max(0, far["mmr"] - priced)))
     res["mmr"] = {
-        "accesses": far["mmr"],
-        "priced_by_peripheral": priced,
+        "pointer_accesses": far["mmr"],
+        "pointer_priced_by_peripheral": priced - low,
+        "absolute_accesses": absolute_n,
+        "unnamed_low_addresses": low,
         "by_peripheral_per_block": {
             k: v / blocks for k, v in by_peripheral.most_common()
         },
@@ -409,7 +460,8 @@ def cost_profile(prof: Profile, image: str, blocks: int) -> dict:
 
 
 STALL_RULES = {
-    "dag_load_to_use", "float_forward", "float_to_move", "cjump_frame_use", "anomaly_20000072", "branch_cond",
+    "dag_load_to_use", "dag_load_to_use_far", "float_forward", "float_to_move", "cjump_frame_use",
+    "cjump_frame_use_far", "anomaly_20000072", "branch_cond",
     "branch_uncond", "loop_exit", "pm_conflict_cache", "same_block",
 }  # fmt: skip
 MEMORY_RULES = {"l2_code_fill", "l2_data_fill", "ext_data_fill", "mmr_access"}

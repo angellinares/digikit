@@ -21,7 +21,8 @@
 //! `C kind KB accesses misses` (kind i, d for DM or p for PM), `B pc n taken hit_t hit_n mis_pt mis_pn miss_t miss_n` (branch
 //! outcomes against the BTB), `U pc raw>>16 n` (accesses that no bucket claims), `L pc slot n` (L2/external accesses whose
 //! 64-byte line differs from the previous access of the same instruction slot), `R raw>>20 n`
-//! (L2/external accesses by 1 MiB region), `I lo hi head` (the idle-skip window).
+//! (L2/external accesses by 1 MiB region), `A pc address n` (accesses to a core or system MMR, by
+//! exact address, so a cost model can price each peripheral), `I lo hi head` (the idle-skip window).
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -106,6 +107,8 @@ pub struct CycMix {
     lines: HashMap<(u32, usize), (u32, u64)>,
     /// Accesses to L2 and external memory by `raw >> 20`.
     far: HashMap<u32, u64>,
+    /// Accesses to a core or system MMR (bucket 7), by PC and exact address.
+    mmr: HashMap<(u32, u32), u64>,
     pub idle: (u32, u32, u32),
 }
 
@@ -192,6 +195,7 @@ impl CycMix {
             unknown: HashMap::new(),
             lines: HashMap::new(),
             far: HashMap::new(),
+            mmr: HashMap::new(),
             idle: (0, 0, 0),
         }))
     }
@@ -312,6 +316,9 @@ impl CycMix {
                 if b == 0 {
                     *self.unknown.entry((pc, a >> 16)).or_default() += 1;
                 }
+                if b == 7 {
+                    *self.mmr.entry((pc, a)).or_default() += 1;
+                }
                 if b >= 5 && b <= 6 {
                     *self.far.entry(a >> 20).or_default() += 1;
                     // 64-byte lines: 32 short words, 16 normal words, or 64 bytes.
@@ -390,6 +397,11 @@ impl Drop for CycMix {
         v.sort();
         for (hi, n) in v {
             let _ = writeln!(w, "R\t{hi:#x}\t{n}");
+        }
+        let mut v: Vec<_> = self.mmr.iter().collect();
+        v.sort();
+        for ((pc, a), n) in v {
+            let _ = writeln!(w, "A\t{pc:#x}\t{a:#x}\t{n}");
         }
         for (kind, set) in [
             ("i", &self.icache),

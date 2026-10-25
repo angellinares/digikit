@@ -177,3 +177,50 @@ def test_mmr_cost_from_ee412():
     assert t.mmr_cost("CMMR_MODE1", write=True) == t.CMMR_ACCESS
     assert t.mmr_cost("NOSUCH0_X", write=True) is None
     assert t.mmr_cost(None, write=True) is None
+
+
+def test_dag_stall_at_a_distance():
+    # Table 4-38 row 1 is 4 cycles adjacent; two instructions later 3 are left, five later none.
+    load = ins(0x100, "I4 = DM(I1, M1)", defs=[("I4", "mem_load")])
+    other = ins(0x103, "R1 = R2 + R3", defs=[("R1", "compute")], uses=["R2", "R3"])
+    use = ins(
+        0x106,
+        "R0 = DM(I4, M6)",
+        defs=[("R0", "mem_load")],
+        uses=["I4", "M6"],
+        mem=[("DM", "I4")],
+    )
+    assert t.dag_use_at(load, use, 2, (other,)) == (0.0, 3.0, 3.0)
+    assert t.dag_use_at(load, use, 4, (other, other, other)) == (0.0, 1.0, 1.0)
+    assert t.dag_use_at(load, use, 5, (other,) * 4) == (0.0, 0.0, 0.0)
+    # A write of I4 in between hides the earlier load.
+    rewrite = ins(0x103, "I4 = 0x240000", defs=[("I4", "literal")])
+    assert t.dag_use_at(load, use, 2, (rewrite,)) == t.ZERO
+
+
+def test_cjump_stall_at_a_distance():
+    cjump = ins(
+        0x100, "CALL (linked, delayed)  target=0xb80020", extra={"form": "25a_direct"}
+    )
+    push = ins(
+        0x103,
+        "DM(I7, M7) = R2",
+        defs=[("I7", "dag_modify")],
+        uses=["I7", "M7", "R2"],
+        mem=[("DM", "I7")],
+    )
+    use = ins(0x10A, "DM(I6 - 6) = R2", uses=["I6", "R2"], mem=[("DM", "I6")])
+    # An I7 update in between (the call's pushes, the callee's frame) does not hide an I6 use: 6 - 3 = 3.
+    assert t.cjump_frame_use_at(cjump, use, 4, (push, push, push)) == (0.0, 3.0, 3.0)
+    rframe = ins(
+        0x103,
+        "(return-frame delay slot: 25c_rframe)",
+        nbytes=2,
+        extra={"form": "25c_rframe"},
+    )
+    assert t.cjump_frame_use_at(cjump, use, 3, (push, rframe)) == t.ZERO
+
+
+def test_mmr_address_ranges():
+    assert t.is_mmr_address(0x3E000) and t.is_mmr_address(0x3102D200)
+    assert not t.is_mmr_address(0x2DE6C0) and not t.is_mmr_address(0x94C00000)

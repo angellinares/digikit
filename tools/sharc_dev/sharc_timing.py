@@ -134,6 +134,11 @@ CMMR_ACCESS: Cost = (0.0, 2.0, 4.0)
 _INSTANCE = re.compile(r"^([A-Z]+[0-9]*)")
 
 
+def is_mmr_address(address: int) -> bool:
+    """A core or system MMR byte address (the engine's bucket 7: cycmix.rs `bucket`)."""
+    return address < 0x80000 or 0x30000000 <= address < 0x31100000
+
+
 def mmr_cost(name: str | None, write: bool) -> Cost | None:
     """The cost of one access to the MMR named NAME (tools.sharc_dev.sharcimm.name_address), or None when no
     table knows its peripheral. An instance EE-412 does not list (SPORT4, say) takes the slowest listed
@@ -284,6 +289,59 @@ def cjump_frame_use(prev: Ins, cur: Ins) -> Cost:
     as_address = any(base == "I6" for _, base in cur.mem)
     read = bool({"I6", "I7"} & cur.uses) and any(k == "move" for _, k in cur.defs)
     return (float(CJUMP_FRAME_TO_I6),) * 3 if as_address or read else ZERO
+
+
+# Stalls at a distance: the tables give the adjacent case (N-1 -> N). An instruction D steps after the
+# writer stalls for what is left of the adjacent stall, n - (D - 1) (each instruction in between covers one
+# cycle of it). Low keeps the adjacent count only (the manual states no more); nominal and high add these.
+MAX_STALL_DISTANCE = max(DAG_LOAD_TO_USE, DAG_COND_LOAD_TO_USE, CJUMP_FRAME_TO_I6)
+
+
+def _left(stall: int, distance: int) -> float:
+    return float(max(0, stall - (distance - 1)))
+
+
+def dag_use_at(writer: Ins, user: Ins, distance: int, between: tuple[Ins, ...]) -> Cost:
+    """Table 4-38 rows 1-2 at DISTANCE >= 2: a DAG register WRITER loaded (or moved), used as an address by
+    USER; a write by an instruction BETWEEN them hides the earlier one."""
+    if distance < 2:
+        return ZERO
+    hidden = {r for i in between for r in i.writes()}
+    loaded = {
+        r for r, k in writer.defs if DAG_REG.match(r) and k == "mem_load"
+    } - hidden
+    moved = {r for r, k in writer.defs if DAG_REG.match(r) and k == "move"} - hidden
+    addr_regs = {r for r in user.uses if DAG_REG.match(r)}
+    if not (loaded | moved) & addr_regs:
+        return ZERO
+    if (
+        not user.mem
+        and user.branch != "indirect"
+        and not any(k == "dag_modify" for _, k in user.defs)
+    ):
+        return ZERO
+    n = DAG_COND_LOAD_TO_USE if writer.conditional else DAG_LOAD_TO_USE
+    left = _left(n, distance)
+    return (0.0, left, left)
+
+
+def cjump_frame_use_at(
+    writer: Ins, user: Ins, distance: int, between: tuple[Ins, ...]
+) -> Cost:
+    """Table 4-40 rows 1-2 at DISTANCE >= 2. Another CJUMP/RFRAME in BETWEEN, or a write of a register
+    USER takes from the frame (I6, or the I6/I7 it reads), hides the earlier one."""
+    if distance < 2 or cjump_frame_use(writer, user) == ZERO:
+        return ZERO
+    needed = (
+        {"I6"}
+        if any(base == "I6" for _, base in user.mem)
+        else {"I6", "I7"} & user.uses
+    )
+    for i in between:
+        if i.extra.get("form") in FRAME_FORMS or needed & i.writes():
+            return ZERO
+    left = _left(CJUMP_FRAME_TO_I6, distance)
+    return (0.0, left, left)
 
 
 def anomaly_20000072(prev: Ins, cur: Ins) -> Cost:
