@@ -1,4 +1,4 @@
-//! Per-track stereo sample table (API 1.5, docs/design/sample-api-1.5.md). Device-neutral and
+//! Per-module stereo sample pool of 16 entries (API 1.5, docs/design/sample-api-1.5.md); the code still says track for an entry. Device-neutral and
 //! host-testable: all effects (file inspection, the backing, the DSP records) go through `Env`.
 //! The ColdFire runtime implements `Env` with the optional `dkpool_*` symbols and the DSP link.
 //!
@@ -230,7 +230,7 @@ struct Proj<const CL: usize> {
     sel: [[Sel; TRACKS]; CL],
 }
 
-/// The device-rooted form of a path given to `sample_select`: the root, then the root-relative path. A path that already starts with
+/// The device-rooted form of a path given to `sample_pool_add`: the root, then the root-relative path. A path that already starts with
 /// the root `/` (the 1.5 form on DT2) is kept as it is. `E_SEL_PATH` for an empty path and for a result that does not fit `PATH` bytes.
 pub fn rooted(root: &[u8], path: &[u8], out: &mut [u8; PATH]) -> Result<usize, i32> {
     let n = path.iter().position(|b| *b == 0).unwrap_or(path.len());
@@ -323,7 +323,47 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         Ok(&mut self.tracks[client][track])
     }
 
-    /// Queue a load. No file IO here: the path is copied and the preflight runs in `tick`.
+    /// Add a file to the module's pool (the module API's only way in): the index of the first UNUSED entry, or the index that already holds
+    /// the same stored path (a file added twice is one entry; one with a sticky error is selected again). `E_POOL` when all `TRACKS` entries are in use. Holes stay: an index never
+    /// moves, so a cleared entry is the next one an add takes. The load queues as `select` does.
+    pub fn pool_add(&mut self, client: usize, path: &[u8]) -> i32 {
+        let n = path.iter().position(|b| *b == 0).unwrap_or(path.len());
+        if n == 0 || n >= PATH {
+            return E_SEL_PATH;
+        }
+        if !self.is_open(client) {
+            return E_NOT_FOUND;
+        }
+        let path = &path[..n];
+        let mut free = TRACKS;
+        for k in 0..TRACKS {
+            let t = &self.tracks[client][k];
+            if t.status == UNUSED {
+                if free == TRACKS {
+                    free = k;
+                }
+            } else if &t.path[..t.plen] == path {
+                if t.status < 0 {
+                    // The same file again after a sticky error (E_CHANGED, a missing file): a new select, the same entry.
+                    let r = self.select(client, k, path);
+                    return if r == 0 { k as i32 } else { r };
+                }
+                return k as i32;
+            }
+        }
+        if free == TRACKS {
+            return E_POOL;
+        }
+        let r = self.select(client, free, path);
+        if r == 0 {
+            free as i32
+        } else {
+            r
+        }
+    }
+
+    /// Queue a load into the pool entry `track`. No file IO here: the path is copied and the preflight runs in `tick`. The module API has
+    /// no select by index (`pool_add` picks it); this is what `pool_add` and the project reload use.
     pub fn select(&mut self, client: usize, track: usize, path: &[u8]) -> i32 {
         let n = path.iter().position(|b| *b == 0).unwrap_or(path.len());
         if n == 0 || n >= PATH {

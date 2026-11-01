@@ -1,7 +1,7 @@
-/* Per-track stereo samples. API contract 1.5, sample_track_path 1.6 (docs/design/sample-api-1.5.md).
+/* Per-module stereo sample pool (16 entries). API contract 1.5, sample_pool_path 1.6 (docs/design/sample-api-1.5.md).
    Additive to <dk/sample.h> (1.3 bank, frozen, mono, 8192 frames, float): a module
    uses the bank family or the track family, never both (the second is refused with
-   DK_SAMPLE_E_CONTRACT). A track holds one PCM16 sample, mono or stereo, in
+   DK_SAMPLE_E_CONTRACT). A pool entry holds one PCM16 sample, mono or stereo, in
    planar form; the runtime owns the memory and the module never sees a device
    address, a slot or a pool. */
 #ifndef DK_SAMPLE_TRACK_H
@@ -18,9 +18,9 @@
 #define DK_SAMPLE_E_POOL (-16)    /* the pool is full */
 #define DK_SAMPLE_E_CHANGED (-17) /* the file differs from the selection snapshot */
 /* The design draft numbers E_CHANGED -14; -14 is E_TABLE_FULL, so it is -17. */
-#define DK_SAMPLE_E_SEL_PATH (-40) /* the path is empty, too long or bad; sample_track_path: buf too small */
+#define DK_SAMPLE_E_SEL_PATH (-40) /* the path is empty, too long or bad; sample_pool_path: buf too small */
 
-/* One record per track in the module's DSP data, eight normal words, the runtime
+/* One record per pool entry in the module's DSP data, eight normal words, the runtime
    writes and the module reads. `ready` is published last. `token` is nonzero,
    changes on every load and never wraps or repeats. */
 typedef struct dk_strack {
@@ -37,14 +37,14 @@ _Static_assert(sizeof(dk_strack) == 32, "dk_strack layout");
 #define DK_STRACK_WORDS 8u
 #define DK_STRACK_FMT_PCM16 1u /* packed PCM16 (finding 87); float is not offered */
 
-/* The per-track control set the runtime and the bank macros of sdk/dsp/sample_bank.inc
-   share: four words per track. Offsets in words. */
+/* The per-entry control set the runtime and the bank macros of sdk/dsp/sample_bank.inc
+   share: four words per entry. Offsets in words. */
 #define DK_STRACK_CTL_CLOSED 0u
 #define DK_STRACK_CTL_COUNT 1u
 #define DK_STRACK_CTL_FAULT 2u
 #define DK_STRACK_CTL_WORDS 4u
 
-/* Result of sample_track_info, 16 bytes, READY tracks only. */
+/* Result of sample_pool_info, 16 bytes, READY entries only. */
 typedef struct dk_sample_info {
     uint32_t frames, rate, channels, token;
 } dk_sample_info;
@@ -58,23 +58,27 @@ _Static_assert(sizeof(dk_sample_info) == 16, "dk_sample_info layout");
         .kind = DK_DESC_SAMPLE_TRACKS, .size = sizeof(dk_desc_sample_tracks),      \
         .local_id = (LOCAL_ID), .records = #RECORDS, .control = #CONTROL}
 
-/* Api entries (resolved in init like sample_bank; see <dk/gen/api.h>):
+/* Api entries (resolved in init like sample_bank; see <dk/gen/api.h>). The module owns one pool of DK_STRACKS (16) entries; the entry
+   index is the record index the DSP reads (a machine picks it with a parameter, for example SHOT's SMP):
      int32_t sample_tracks(uint32_t local_id);                 handle > 0, or error
-     int32_t sample_select(h, track, const uint8_t *path);     0 or error; track >= 16: E_CONTRACT
-     int32_t sample_unbind(h, track);
-     int32_t sample_track_status(h, track);                    sticky errors until select/unbind
-     int32_t sample_track_info(h, track, uint8_t *out);        out is a dk_sample_info
-     int32_t sample_track_path(h, track, uint8_t *buf, uint32_t cap);   (api 1.6) length, or error
-   select while QUEUED or LOADING supersedes (status QUEUED again). Calls are legal
-   from init and service/UI callbacks. A runtime image without a sample backing
-   returns DK_SAMPLE_E_CONTRACT from sample_select.
+     int32_t sample_pool_add(h, const uint8_t *path);          the pool index 0..15, or a negative error
+     int32_t sample_pool_clear(h, index);                      0 or error; index >= 16: E_CONTRACT
+     int32_t sample_pool_status(h, index);                     sticky errors until the entry is added again or cleared
+     int32_t sample_pool_info(h, index, uint8_t *out);         out is a dk_sample_info
+     int32_t sample_pool_path(h, index, uint8_t *buf, uint32_t cap);   (api 1.6) length, or error
+   add returns the first UNUSED index. A file that is already in the pool (the same path) returns its index and loads nothing; if that
+   entry has a sticky error, the add selects it again. Indexes are stable: clear leaves a hole and never moves another entry, so a value
+   saved in a sound or a p-lock keeps its meaning. A full pool returns DK_SAMPLE_E_POOL. An entry that is not READY (UNUSED, QUEUED,
+   LOADING, an error) is silent in the DSP: note_on is denied and the voice ends. The pool is kept per project; a project change
+   reloads the list. Calls are legal from init and service/UI callbacks. A runtime image without a sample backing returns
+   DK_SAMPLE_E_CONTRACT from sample_pool_add.
 
-   Paths (api 1.6). sample_select takes the root-relative path of a DK_FILES_SAMPLES listing
+   Paths (api 1.6). sample_pool_add takes the root-relative path of a DK_FILES_SAMPLES listing
    row, as <dk/files.h> gives it ("KICKS/K1", no leading slash); the runtime adds the device's
    root. A DT2 path that already starts with '/' (the 1.5 form) is accepted as it is.
-   sample_track_path returns the current selection of a track in the root-relative form, in
+   sample_pool_path returns the path of an entry in the root-relative form, in
    every state but UNUSED (E_NOT_FOUND): it is what a UI shows after a project change
-   re-selected the tracks. It copies the NUL-terminated path into buf and returns its length
+   reloaded the list. It copies the NUL-terminated path into buf and returns its length
    without the NUL; if length + 1 > cap it returns DK_SAMPLE_E_SEL_PATH and leaves buf alone.
-   A module that calls it checks that api->size covers sample_track_path (API 1.6) first. */
+   A module that calls it checks that api->size covers sample_pool_path (API 1.6) first. */
 #endif

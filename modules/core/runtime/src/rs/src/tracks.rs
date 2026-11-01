@@ -1,9 +1,9 @@
-//! Per-track stereo samples (API 1.5, docs/design/sample-api-1.5.md). The state machine is
+//! Per-module stereo sample pool of 16 entries (API 1.5, docs/design/sample-api-1.5.md). The state machine is
 //! `dkrt_sdk::sample_tracks` (device-neutral, host-tested); this file binds it to the runtime:
-//! the Api entries (1.6 adds `sample_track_path`), the optional `dkpool_*` backing symbols (plug-in point `dkrt_pool.h`, version 1)
+//! the Api entries `sample_pool_add`, `_clear`, `_status`, `_info` and (1.6) `_path`, the optional `dkpool_*` backing symbols (plug-in point `dkrt_pool.h`, version 1)
 //! and the events adapters call (`dkrt_pool_done`, `dkrt_pool_lost`, `dkrt_project_changed`).
 //! No firmware address and no `cf.*` anchor is used here. Without the backing adapter every
-//! `sample_select` returns E_CONTRACT.
+//! `sample_pool_add` returns E_CONTRACT.
 //!
 //! The track table of a module travels in its .dkm DSP section (version 5, record kind 2: the byte offsets of the 16 `dk_strack`
 //! records and the 16 control sets in the module's DSP data). `dsp::reserve` calls `reserve` with their L2 byte addresses and
@@ -490,11 +490,12 @@ pub unsafe fn tracks(local_id: u32) -> i32 {
     E_NOT_FOUND
 }
 
-pub unsafe fn select(handle: u32, track: u32, path: *const u8) -> i32 {
+/// `sample_pool_add`: the pool index of the file (a new entry, or the one that already holds the path), or a negative error.
+pub unsafe fn pool_add(handle: u32, path: *const u8) -> i32 {
     if path.is_null() {
         return E_SEL_PATH;
     }
-    if track as usize >= TRACKS || !pool_ok() {
+    if !pool_ok() {
         return E_CONTRACT;
     }
     let c = match client(handle) {
@@ -521,12 +522,13 @@ pub unsafe fn select(handle: u32, track: u32, path: *const u8) -> i32 {
         Err(e) => return e,
     };
     let sr = irq_mask();
-    let r = core_().select(c, track as usize, &full[..n]);
+    let r = core_().pool_add(c, &full[..n]);
     irq_restore(sr);
     r
 }
 
-pub unsafe fn unbind(handle: u32, track: u32) -> i32 {
+/// `sample_pool_clear`: the entry becomes UNUSED (a hole); the other indexes stay.
+pub unsafe fn pool_clear(handle: u32, track: u32) -> i32 {
     match client(handle) {
         Ok(c) => {
             let sr = irq_mask();
@@ -545,7 +547,7 @@ pub unsafe fn status(handle: u32, track: u32) -> i32 {
     }
 }
 
-/// `sample_track_path`: the track's current selection, root-relative, NUL-terminated, into `buf`; the length without the NUL.
+/// `sample_pool_path`: the entry's current selection, root-relative, NUL-terminated, into `buf`; the length without the NUL.
 pub unsafe fn path(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 {
     let c = match client(handle) {
         Ok(c) => c,

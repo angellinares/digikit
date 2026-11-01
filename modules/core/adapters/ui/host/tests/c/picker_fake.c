@@ -1,5 +1,5 @@
 /* Host test of the sample picker (sdk/src/sample_picker.c): its own source, compiled here against a fake dk_api (a listing provider and
-   a 16-track sample table) and the fake <dk/ui.h> (src/lib.rs). picker.rs presses the keys. The source is included, not linked, so
+   a 16-entry sample pool) and the fake <dk/ui.h> (src/lib.rs). picker.rs presses the keys. The source is included, not linked, so
    that pf_reset can clear its statics between tests. The pure functions (picker_logic.c) are linked. */
 #include <stdint.h>
 #include <string.h>
@@ -19,10 +19,9 @@ static struct {
     int status[TRACKS];
     dk_sample_info info[TRACKS];
     char path[TRACKS][PK_PATH];
-    int select_result, selects, unbinds, last_track, path_calls;
+    int add_result, adds, clears, last_index, path_calls, picks, last_pick;
     char last_path[PK_PATH];
 } sm;
-static dk_ui_menu *settings_menu_;
 
 static int32_t f_client(void)
 {
@@ -63,22 +62,34 @@ static int32_t f_cancel(uint32_t c, uint32_t t)
     fl.cancels++;
     return 0;
 }
-static int32_t s_select(uint32_t h, uint32_t t, const uint8_t *path)
+/* The fake runtime: the first UNUSED entry takes the path (add_result < 0 refuses), the same path again gives its entry. */
+static int32_t s_add(uint32_t h, const uint8_t *path)
 {
+    int t, free = -1;
     (void)h;
-    sm.selects++;
-    sm.last_track = (int)t;
+    sm.adds++;
     strcpy(sm.last_path, (const char *)path);
-    if (sm.select_result == 0) {
-        strcpy(sm.path[t], (const char *)path);
-        sm.status[t] = DK_SAMPLE_QUEUED;
+    if (sm.add_result < 0)
+        return sm.add_result;
+    for (t = 0; t < (int)TRACKS; t++) {
+        if (sm.status[t] != 0 && !strcmp(sm.path[t], (const char *)path)) {
+            sm.last_index = t;
+            return t;
+        }
+        if (sm.status[t] == 0 && free < 0)
+            free = t;
     }
-    return sm.select_result;
+    if (free < 0)
+        return DK_SAMPLE_E_POOL;
+    strcpy(sm.path[free], (const char *)path);
+    sm.status[free] = DK_SAMPLE_QUEUED;
+    sm.last_index = free;
+    return free;
 }
-static int32_t s_unbind(uint32_t h, uint32_t t)
+static int32_t s_clear(uint32_t h, uint32_t t)
 {
     (void)h;
-    sm.unbinds++;
+    sm.clears++;
     sm.status[t] = 0;
     sm.path[t][0] = 0;
     return 0;
@@ -107,14 +118,14 @@ static int32_t s_path(uint32_t h, uint32_t t, uint8_t *buf, uint32_t cap)
     return (int32_t)n;
 }
 
-static void fill_settings(dk_ui_menu *m, void *ctx)
+static void on_pick(void *ctx, int index)
 {
     (void)ctx;
-    dk_picker_open(m);
+    sm.picks++;
+    sm.last_pick = index;
 }
-static const dk_ui_menu_desc settings_desc = {.name = "Settings", .title = "SHOT", .fill = fill_settings};
 
-/* Clears every static of the picker and the fakes. with_path: the runtime has sample_track_path (api 1.6). */
+/* Clears every static of the picker and the fakes. with_path: the runtime has sample_pool_path (api 1.6). */
 void pf_reset(int with_path)
 {
     memset(&fl, 0, sizeof fl);
@@ -124,30 +135,28 @@ void pf_reset(int with_path)
     g_handle = g_client = 0;
     g_has_path = 0;
     g_tracks = g_browser = g_info = 0;
-    g_track = g_n = g_more = g_state = g_err = g_ticking = g_info_file = g_info_at = 0;
+    g_cur = g_n = g_more = g_state = g_err = g_ticking = g_info_file = g_info_at = 0;
     g_ticket = 0;
     g_dir[0] = 0;
-    memset(g_refused, 0, sizeof g_refused);
+    g_add_err = 0;
+    g_pick = 0;
+    g_pick_ctx = 0;
     api.version = 1;
-    api.size = with_path ? sizeof(dk_api) : offsetof(dk_api, sample_track_path);
+    api.size = with_path ? sizeof(dk_api) : offsetof(dk_api, sample_pool_path);
     api.files_client = f_client;
     api.files_list = f_list;
     api.files_poll = f_poll;
     api.files_cancel = f_cancel;
-    api.sample_select = s_select;
-    api.sample_unbind = s_unbind;
-    api.sample_track_status = s_status;
-    api.sample_track_info = s_info;
-    api.sample_track_path = s_path;
+    api.sample_pool_add = s_add;
+    api.sample_pool_clear = s_clear;
+    api.sample_pool_status = s_status;
+    api.sample_pool_info = s_info;
+    api.sample_pool_path = s_path;
 }
 
 void pf_short_api(void) { api.size = offsetof(dk_api, files_client); }
 int pf_init(uint32_t handle) { return dk_picker_init(&api, handle); }
-dk_ui_menu *pf_settings(void)
-{
-    settings_menu_ = dk_ui_menu_new(&settings_desc);
-    return settings_menu_;
-}
+void pf_open_pool(int current, int with_pick) { dk_picker_open_pool(current, with_pick ? on_pick : 0, 0); }
 void pf_fini(void) { dk_picker_fini(); }
 
 /* the fake provider */
@@ -188,9 +197,11 @@ void pf_track(int t, int status, const char *path, uint32_t frames, uint32_t rat
     sm.info[t].channels = channels;
 }
 void pf_status(int t, int status) { sm.status[t] = status; }
-void pf_select_result(int rc) { sm.select_result = rc; }
-int pf_selects(void) { return sm.selects; }
-int pf_unbinds(void) { return sm.unbinds; }
-int pf_last_track(void) { return sm.last_track; }
+void pf_add_result(int rc) { sm.add_result = rc; }
+int pf_adds(void) { return sm.adds; }
+int pf_clears(void) { return sm.clears; }
+int pf_last_index(void) { return sm.last_index; }
+int pf_picks(void) { return sm.picks; }
+int pf_last_pick(void) { return sm.last_pick; }
 const char *pf_last_path(void) { return sm.last_path; }
 int pf_ticking(void) { return g_ticking; }

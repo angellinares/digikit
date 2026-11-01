@@ -623,6 +623,94 @@ fn the_track_path_follows_a_project_change() {
 }
 
 #[test]
+fn pool_add_takes_the_first_free_index_and_a_cleared_hole_is_taken_next() {
+    let (mut c, mut e) = (core(), Fake::new());
+    for (i, n) in ["a", "b", "c"].iter().enumerate() {
+        e.add(n, id(100 + i as u32, i as u8 + 1), 500, 2);
+    }
+    assert_eq!(c.pool_add(0, b"a"), 0);
+    assert_eq!(c.pool_add(0, b"b"), 1);
+    assert_eq!(c.pool_add(0, b"c"), 2);
+    run(&mut c, &mut e, 6);
+    assert_eq!((c.status(0, 0), c.status(0, 1), c.status(0, 2)), (READY, READY, READY));
+    // a hole at 1 keeps indexes 0 and 2 where they are; the next add fills it
+    assert_eq!(c.unbind(0, 1), 0);
+    run(&mut c, &mut e, 4);
+    assert_eq!((c.status(0, 0), c.status(0, 1), c.status(0, 2)), (READY, UNUSED, READY));
+    e.add("d", id(104, 4), 500, 2);
+    assert_eq!(c.pool_add(0, b"d"), 1);
+    assert_eq!(c.path(0, 1), Ok(&b"d"[..]));
+    assert_eq!(c.path(0, 2), Ok(&b"c"[..]));
+}
+
+#[test]
+fn pool_add_of_a_file_already_in_the_pool_returns_its_index() {
+    let (mut c, mut e) = (core(), Fake::new());
+    e.add("a", id(100, 1), 500, 2);
+    e.add("b", id(101, 2), 500, 2);
+    assert_eq!(c.pool_add(0, b"a"), 0);
+    assert_eq!(c.pool_add(0, b"b"), 1);
+    run(&mut c, &mut e, 6);
+    assert_eq!(c.pool_add(0, b"a"), 0, "same path, same entry, no second load");
+    assert_eq!(c.pool_add(0, b"b\0junk"), 1);
+    run(&mut c, &mut e, 6);
+    assert_eq!(e.loads, 2);
+}
+
+#[test]
+fn pool_add_of_a_file_with_a_sticky_error_selects_it_again() {
+    let (mut c, mut e) = (core(), Fake::new());
+    assert_eq!(c.pool_add(0, b"late"), 0);
+    run(&mut c, &mut e, 3);
+    assert_eq!(c.status(0, 0), E_NOT_FOUND);
+    e.add("late", id(100, 1), 500, 2);
+    assert_eq!(c.pool_add(0, b"late"), 0, "the same entry");
+    run(&mut c, &mut e, 6);
+    assert_eq!(c.status(0, 0), READY);
+}
+
+#[test]
+fn pool_add_reports_a_full_pool_and_bad_arguments() {
+    let (mut c, mut e) = (core(), Fake::new());
+    for i in 0..TRACKS {
+        let name = std::format!("f{i}");
+        e.add(&name, id(100 + i as u32, i as u8 + 1), 100, 1);
+        assert_eq!(c.pool_add(0, name.as_bytes()), i as i32);
+    }
+    e.add("extra", id(999, 99), 100, 1);
+    assert_eq!(c.pool_add(0, b"extra"), E_POOL);
+    assert_eq!(c.pool_add(0, b"f3"), 3, "a file already in a full pool still resolves");
+    assert_eq!(c.pool_add(0, b""), E_SEL_PATH);
+    assert_eq!(c.pool_add(1, b"f1"), E_NOT_FOUND, "client 1 is not open");
+    assert_eq!(c.unbind(0, 7), 0);
+    assert_eq!(c.pool_add(0, b"extra"), 7);
+}
+
+#[test]
+fn the_pool_list_follows_a_project_change_with_its_holes() {
+    let (mut c, mut e) = (core(), Fake::new());
+    for (n, h) in [("a", 1u8), ("b", 2), ("c", 3), ("x", 4)] {
+        e.add(n, id(100 + h as u32, h), 500, 2);
+    }
+    c.project_changed(1);
+    assert_eq!(c.pool_add(0, b"a"), 0);
+    assert_eq!(c.pool_add(0, b"b"), 1);
+    assert_eq!(c.pool_add(0, b"c"), 2);
+    run(&mut c, &mut e, 8);
+    c.unbind(0, 1);
+    run(&mut c, &mut e, 4);
+    c.project_changed(2);
+    run(&mut c, &mut e, 8);
+    assert_eq!(c.status(0, 0), UNUSED, "project 2 starts with an empty pool");
+    assert_eq!(c.pool_add(0, b"x"), 0);
+    run(&mut c, &mut e, 6);
+    c.project_changed(1);
+    run(&mut c, &mut e, 12);
+    assert_eq!((c.status(0, 0), c.status(0, 1), c.status(0, 2)), (READY, UNUSED, READY), "the hole at 1 is still a hole");
+    assert_eq!(c.path(0, 2), Ok(&b"c"[..]));
+}
+
+#[test]
 fn paths_get_the_device_root() {
     let mut out = [0u8; PATH];
     let n = rooted(ROOT_DT2, b"KICKS/K1", &mut out).unwrap();

@@ -39,12 +39,12 @@ typedef struct dk_api {
     int32_t (*files_list)(uint32_t client, uint32_t root, const uint8_t *path, dk_file_event *notify, uint8_t *context); /* (api 1.4) Copy a canonical root-relative directory request; positive ticket or negative error. Supersedes prior results. Optional deferred UI-task notify/context remain module-owned until retirement quiesces. No I/O here. */
     int32_t (*files_poll)(uint32_t client, uint32_t ticket, uint8_t *out, uint32_t capacity); /* (api 1.4) No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. Validate output/capacity before consumption; output unchanged unless 1. Stored metadata is not content validation or a lease. */
     int32_t (*files_cancel)(uint32_t client, uint32_t ticket); /* (api 1.4) Invalidate matching request/results/queued notification without waiting for active work or callback. Does not free the module-owned client. */
-    int32_t (*sample_tracks)(uint32_t local_id); /* (api 1.5) In init, resolve the module's 16-track sample table (DK_SAMPLE_TRACKS) to a positive opaque handle, or a negative DK_SAMPLE_E_* error. A module that also declares a bank gets DK_SAMPLE_E_CONTRACT. */
-    int32_t (*sample_select)(uint32_t handle, uint32_t track, const uint8_t *path); /* (api 1.5) Queue a stereo-capable sample for one track (copies the path, no file IO here). Stops that track's old notes, supersedes a queued or loading request. Returns 0 or a negative DK_SAMPLE_E_* error (track >= 16: DK_SAMPLE_E_CONTRACT; no sample backing in the image: DK_SAMPLE_E_CONTRACT). */
-    int32_t (*sample_unbind)(uint32_t handle, uint32_t track); /* (api 1.5) Close the track's generation, drop its reference and set it UNUSED. Returns 0 or a negative DK_SAMPLE_E_* error. */
-    int32_t (*sample_track_status)(uint32_t handle, uint32_t track); /* (api 1.5) Return DK_SAMPLE_UNUSED, QUEUED, LOADING, READY or a negative DK_SAMPLE_E_* error; an error is sticky until the next select or unbind. */
-    int32_t (*sample_track_info)(uint32_t handle, uint32_t track, uint8_t *out); /* (api 1.5) Copy a 16-byte dk_sample_info (frames, rate, channels, token; <dk/sample_track.h>) of a READY track; otherwise a negative error and `out` is untouched. */
-    int32_t (*sample_track_path)(uint32_t handle, uint32_t track, uint8_t *buf, uint32_t cap); /* (api 1.6) Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the track's current selection into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched. */
+    int32_t (*sample_tracks)(uint32_t local_id); /* (api 1.5) In init, resolve the module's 16-entry sample pool table (DK_SAMPLE_TRACKS) to a positive opaque handle, or a negative DK_SAMPLE_E_* error. A module that also declares a bank gets DK_SAMPLE_E_CONTRACT. */
+    int32_t (*sample_pool_add)(uint32_t handle, const uint8_t *path); /* (api 1.5) Add a stereo-capable sample file to the module's 16-entry pool (copies the path, no file IO here; the load runs later). Returns the pool index 0..15: the first free entry, or the entry that already holds this path (a file added twice is one entry; one with a sticky error is selected again). Indexes are stable: clearing an entry leaves a hole and never moves another. DK_SAMPLE_E_POOL when all 16 are in use (-16); DK_SAMPLE_E_SEL_PATH for an empty or too long path; no sample backing in the image: DK_SAMPLE_E_CONTRACT. */
+    int32_t (*sample_pool_clear)(uint32_t handle, uint32_t index); /* (api 1.5) Close the entry's generation (its notes end), drop its reference and set it UNUSED, a hole in the pool. Returns 0 or a negative DK_SAMPLE_E_* error (index >= 16: DK_SAMPLE_E_CONTRACT). */
+    int32_t (*sample_pool_status)(uint32_t handle, uint32_t index); /* (api 1.5) Return DK_SAMPLE_UNUSED, QUEUED, LOADING, READY or a negative DK_SAMPLE_E_* error; an error is sticky until the entry is added again or cleared. */
+    int32_t (*sample_pool_info)(uint32_t handle, uint32_t index, uint8_t *out); /* (api 1.5) Copy a 16-byte dk_sample_info (frames, rate, channels, token; <dk/sample_track.h>) of a READY entry; otherwise a negative error and `out` is untouched. */
+    int32_t (*sample_pool_path)(uint32_t handle, uint32_t index, uint8_t *buf, uint32_t cap); /* (api 1.6) Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the entry into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched. */
 } dk_api;
 
 #if UINTPTR_MAX == 0xffffffffu
@@ -74,11 +74,11 @@ _Static_assert(offsetof(dk_api, files_list) == 84, "dk_api.files_list");
 _Static_assert(offsetof(dk_api, files_poll) == 88, "dk_api.files_poll");
 _Static_assert(offsetof(dk_api, files_cancel) == 92, "dk_api.files_cancel");
 _Static_assert(offsetof(dk_api, sample_tracks) == 96, "dk_api.sample_tracks");
-_Static_assert(offsetof(dk_api, sample_select) == 100, "dk_api.sample_select");
-_Static_assert(offsetof(dk_api, sample_unbind) == 104, "dk_api.sample_unbind");
-_Static_assert(offsetof(dk_api, sample_track_status) == 108, "dk_api.sample_track_status");
-_Static_assert(offsetof(dk_api, sample_track_info) == 112, "dk_api.sample_track_info");
-_Static_assert(offsetof(dk_api, sample_track_path) == 116, "dk_api.sample_track_path");
+_Static_assert(offsetof(dk_api, sample_pool_add) == 100, "dk_api.sample_pool_add");
+_Static_assert(offsetof(dk_api, sample_pool_clear) == 104, "dk_api.sample_pool_clear");
+_Static_assert(offsetof(dk_api, sample_pool_status) == 108, "dk_api.sample_pool_status");
+_Static_assert(offsetof(dk_api, sample_pool_info) == 112, "dk_api.sample_pool_info");
+_Static_assert(offsetof(dk_api, sample_pool_path) == 116, "dk_api.sample_pool_path");
 #endif
 
 /* Imports: names the loader resolves in the runtime's table (Api.import gives the address at run time). */

@@ -6,7 +6,7 @@ category = "test"
 type = "raw"
 author = "digikit"
 status = "experimental"
-summary = "Test fixture: selects a sample for a track of another module's table (Api 1.5) through SysEx commands 0x3e and 0x3f"
+summary = "Test fixture: adds a sample to the pool of another module's table (Api 1.5) through SysEx commands 0x3e and 0x3f"
 requires = []
 conflicts = []
 

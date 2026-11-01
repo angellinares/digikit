@@ -36,12 +36,13 @@ void pk_secs_text(char *out, uint32_t frames, uint32_t rate);
 /* Decimal of v; returns the length. */
 int pk_utoa(char *out, uint32_t v);
 
-/* The tail of a track row for an error code (a DK_SAMPLE_E_*), 14 characters at most; out holds 20 bytes. */
+/* The tail of a pool row for an error code (a DK_SAMPLE_E_*), 14 characters at most; out holds 20 bytes. */
 void pk_err_tail(char *out, int code);
 /* The INFO text for an error code; out holds 32 bytes. */
 void pk_err_info(char *out, int code);
 
-/* A track row of at most 23 characters: "01 KICK808 S 1.2s". status is sample_track_status (0 unused, 1 queued, 2 loading, 3 ready, below 0
-   an error); refused is the code of the last select the runtime refused at once (0 none), which wins over the status. name may be "". */
-void pk_track_row(char *out, int track, int status, int refused, const char *name, uint32_t frames, uint32_t rate, uint32_t channels);
+/* A pool row of at most 23 characters: "03 KICK808 S 1.2s". `index` is the pool index as the SMP knob shows it (0 to 15, two digits);
+   `current` puts '>' after the number (the entry the SMP value points at). status is sample_pool_status (0 unused, 1 queued, 2 loading,
+   3 ready, below 0 an error). name may be "". An unused entry is "03 -". */
+void pk_pool_row(char *out, int index, int current, int status, const char *name, uint32_t frames, uint32_t rate, uint32_t channels);
 #endif

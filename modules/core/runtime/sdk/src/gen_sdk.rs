@@ -279,18 +279,18 @@ pub mod api {
         pub files_poll: unsafe extern "C" fn(client: u32, ticket: u32, out: *mut u8, capacity: u32) -> i32,
         /// (api 1.4) Invalidate matching request/results/queued notification without waiting for active work or callback. Does not free the module-owned client.
         pub files_cancel: unsafe extern "C" fn(client: u32, ticket: u32) -> i32,
-        /// (api 1.5) In init, resolve the module's 16-track sample table (DK_SAMPLE_TRACKS) to a positive opaque handle, or a negative DK_SAMPLE_E_* error. A module that also declares a bank gets DK_SAMPLE_E_CONTRACT.
+        /// (api 1.5) In init, resolve the module's 16-entry sample pool table (DK_SAMPLE_TRACKS) to a positive opaque handle, or a negative DK_SAMPLE_E_* error. A module that also declares a bank gets DK_SAMPLE_E_CONTRACT.
         pub sample_tracks: unsafe extern "C" fn(local_id: u32) -> i32,
-        /// (api 1.5) Queue a stereo-capable sample for one track (copies the path, no file IO here). Stops that track's old notes, supersedes a queued or loading request. Returns 0 or a negative DK_SAMPLE_E_* error (track >= 16: DK_SAMPLE_E_CONTRACT; no sample backing in the image: DK_SAMPLE_E_CONTRACT).
-        pub sample_select: unsafe extern "C" fn(handle: u32, track: u32, path: *const u8) -> i32,
-        /// (api 1.5) Close the track's generation, drop its reference and set it UNUSED. Returns 0 or a negative DK_SAMPLE_E_* error.
-        pub sample_unbind: unsafe extern "C" fn(handle: u32, track: u32) -> i32,
-        /// (api 1.5) Return DK_SAMPLE_UNUSED, QUEUED, LOADING, READY or a negative DK_SAMPLE_E_* error; an error is sticky until the next select or unbind.
-        pub sample_track_status: unsafe extern "C" fn(handle: u32, track: u32) -> i32,
-        /// (api 1.5) Copy a 16-byte dk_sample_info (frames, rate, channels, token; <dk/sample_track.h>) of a READY track; otherwise a negative error and `out` is untouched.
-        pub sample_track_info: unsafe extern "C" fn(handle: u32, track: u32, out: *mut u8) -> i32,
-        /// (api 1.6) Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the track's current selection into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched.
-        pub sample_track_path: unsafe extern "C" fn(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32,
+        /// (api 1.5) Add a stereo-capable sample file to the module's 16-entry pool (copies the path, no file IO here; the load runs later). Returns the pool index 0..15: the first free entry, or the entry that already holds this path (a file added twice is one entry; one with a sticky error is selected again). Indexes are stable: clearing an entry leaves a hole and never moves another. DK_SAMPLE_E_POOL when all 16 are in use (-16); DK_SAMPLE_E_SEL_PATH for an empty or too long path; no sample backing in the image: DK_SAMPLE_E_CONTRACT.
+        pub sample_pool_add: unsafe extern "C" fn(handle: u32, path: *const u8) -> i32,
+        /// (api 1.5) Close the entry's generation (its notes end), drop its reference and set it UNUSED, a hole in the pool. Returns 0 or a negative DK_SAMPLE_E_* error (index >= 16: DK_SAMPLE_E_CONTRACT).
+        pub sample_pool_clear: unsafe extern "C" fn(handle: u32, index: u32) -> i32,
+        /// (api 1.5) Return DK_SAMPLE_UNUSED, QUEUED, LOADING, READY or a negative DK_SAMPLE_E_* error; an error is sticky until the entry is added again or cleared.
+        pub sample_pool_status: unsafe extern "C" fn(handle: u32, index: u32) -> i32,
+        /// (api 1.5) Copy a 16-byte dk_sample_info (frames, rate, channels, token; <dk/sample_track.h>) of a READY entry; otherwise a negative error and `out` is untouched.
+        pub sample_pool_info: unsafe extern "C" fn(handle: u32, index: u32, out: *mut u8) -> i32,
+        /// (api 1.6) Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the entry into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched.
+        pub sample_pool_path: unsafe extern "C" fn(handle: u32, index: u32, buf: *mut u8, cap: u32) -> i32,
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).

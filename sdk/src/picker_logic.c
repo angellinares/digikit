@@ -173,7 +173,7 @@ static const err_text errs[] = {
     {DK_SAMPLE_E_FORMAT, "!BAD FORMAT", "NEEDS PCM16 48K MONO OR STEREO"},
     {DK_SAMPLE_E_TOO_BIG, "!TOO BIG", "DOES NOT FIT THE POOL"},
     {DK_SAMPLE_E_LOST, "!LOST", "BACKING LOST, RELOAD FAILED"},
-    {DK_SAMPLE_E_POOL, "!POOL FULL", "POOL FULL: CLEAR A TRACK"},
+    {DK_SAMPLE_E_POOL, "!POOL FULL", "POOL FULL: CLEAR AN ENTRY"},
     {DK_SAMPLE_E_CHANGED, "!CHANGED", "FILE CHANGED SINCE SELECTION"},
     {DK_SAMPLE_E_SEL_PATH, "!BAD PATH", "PATH TOO LONG OR BAD"},
     {DK_SAMPLE_E_CONTRACT, "NO SAMPLE POOL", "NO SAMPLE POOL ON THIS DEVICE"},
@@ -213,10 +213,10 @@ void pk_err_info(char *out, int code)
     err_other(out, code);
 }
 
-void pk_track_row(char *out, int track, int status, int refused, const char *name, uint32_t frames, uint32_t rate, uint32_t channels)
+void pk_pool_row(char *out, int index, int current, int status, const char *name, uint32_t frames, uint32_t rate, uint32_t channels)
 {
     char tail[20], nm[PK_TEXT + 1], secs[8];
-    int n = 0, tn = 0, room, code = refused ? refused : (status < 0 ? status : 0);
+    int n = 0, tn = 0, room, code = status < 0 ? status : 0;
     tail[0] = 0;
     if (code)
         pk_err_tail(tail, code);
@@ -229,12 +229,12 @@ void pk_track_row(char *out, int track, int status, int refused, const char *nam
         put(tail, 20, &tn, channels == 2 ? "S " : "M ");
         put(tail, 20, &tn, secs);
     }
-    out[0] = (char)('0' + (track + 1) / 10);
-    out[1] = (char)('0' + (track + 1) % 10);
-    out[2] = ' ';
+    out[0] = (char)('0' + index / 10 % 10);
+    out[1] = (char)('0' + index % 10);
+    out[2] = current ? '>' : ' ';
     out[3] = 0;
     n = 3;
-    if (status == DK_SAMPLE_UNUSED && !code) {
+    if (status == DK_SAMPLE_UNUSED) {
         put(out, PK_TEXT + 1, &n, "-");
         return;
     }

@@ -729,8 +729,8 @@ mod tests {
         assert_eq!(api_minor(6, false, 5), 5);
         assert_eq!(api_minor(5, false, 6), 5, "never above the SDK this packer was built with");
         // the entries of the Api: the table of sdk.toml says when each came
-        assert_eq!(crate::sdkgen::api_since("sample_track_path").unwrap(), 6);
-        assert_eq!(crate::sdkgen::api_since("sample_select").unwrap(), 5);
+        assert_eq!(crate::sdkgen::api_since("sample_pool_path").unwrap(), 6);
+        assert_eq!(crate::sdkgen::api_since("sample_pool_add").unwrap(), 5);
         assert_eq!(crate::sdkgen::api_since("store_read").unwrap(), 0);
         assert!(crate::sdkgen::api_since("no_such_entry").is_err());
     }

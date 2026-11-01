@@ -1,4 +1,5 @@
-/* The on-device sample picker (docs/design/sample-picker.md): a track list, a folder browser and an INFO page on <dk/ui.h>.
+/* The on-device sample picker (docs/design/sample-picker.md): the pool list of a sampler machine (opened by a click on its SMP knob), a
+   folder browser and an INFO page on <dk/ui.h>.
    The logic that needs no API (sort, text, paths) is in picker_logic.c. Everything here runs in the UI task: the fill, action, panel,
    back and listing-notify callbacks and the timer, so the statics need no lock. Menus are built once and kept. */
 #include <dk/files.h>
@@ -14,9 +15,11 @@ enum { ST_IDLE, ST_READING, ST_DONE, ST_ERROR };
 static const dk_api *g_api;
 static uint32_t g_handle, g_client;
 static int g_has_path;
-static dk_ui_menu *g_tracks, *g_browser, *g_info;
+static dk_ui_menu *g_tracks, *g_browser, *g_info; /* g_tracks is the pool list */
 
-static int g_track;            /* the track the browser selects for; set by YES on a track row */
+static int g_cur;              /* the pool index the SMP value points at (marked in the list); -1 none */
+static dk_picker_pick_fn *g_pick;
+static void *g_pick_ctx;
 static char g_dir[PK_PATH];    /* the folder shown, root-relative, "" is the root */
 static char g_path[PK_PATH];   /* scratch: a path to select or show */
 static pk_row g_rows[PK_ROWS];
@@ -24,9 +27,9 @@ static uint8_t g_idx[PK_ROWS]; /* g_rows in sort order */
 static int g_n, g_more, g_state, g_err;
 static int32_t g_ticket;
 static dk_file_entry g_entry;
-static int g_refused[TRACKS];  /* the last select the runtime refused at once, per track; 0 none */
+static int g_add_err;          /* the last add the runtime or the picker refused (a DK_SAMPLE_E_*), shown on the + ADD row; 0 none */
 static int g_ticking;
-static int g_info_file, g_info_at; /* INFO shows a track (g_info_at) or a listed file (sorted index g_info_at) */
+static int g_info_file, g_info_at; /* INFO shows a pool entry (g_info_at) or a listed file (sorted index g_info_at) */
 
 static void fill_tracks(dk_ui_menu *m, void *ctx);
 static void fill_browser(dk_ui_menu *m, void *ctx);
@@ -36,7 +39,8 @@ static void panel_browser(dk_ui_menu *p, int row, void *ctx);
 static int back_browser(void *ctx);
 static void check_tracks(void *ctx, int row, int on);
 static void check_browser(void *ctx, int row, int on);
-static void open_browser(void *ctx, int track);
+static void open_browser(void);
+static void choose_entry(int t);
 static void on_notify(uint32_t client, uint32_t request, int32_t hint, uint8_t *ctx);
 static void up_cb(void *ctx, int arg);
 static void row_cb(void *ctx, int at);
@@ -93,12 +97,12 @@ static void wrap(dk_ui_menu *m, const char *s)
     }
 }
 
-/* ---- the runtime's view of a track ---- */
+/* ---- the runtime's view of the pool ---- */
 
-static const char *track_path(int t)
+static const char *entry_path(int t)
 {
     g_path[0] = 0;
-    if (g_has_path && g_api->sample_track_path(g_handle, (uint32_t)t, (uint8_t *)g_path, sizeof g_path) < 0)
+    if (g_has_path && g_api->sample_pool_path(g_handle, (uint32_t)t, (uint8_t *)g_path, sizeof g_path) < 0)
         g_path[0] = 0;
     return g_path;
 }
@@ -114,19 +118,26 @@ static void tick(void *ctx)
     }
 }
 
+/* The pool list: row 0 is "+ ADD" (with the refusal of the last add, if any), rows 1 to 16 are the entries 0 to 15 (holes show "-"). */
 static void fill_tracks(dk_ui_menu *m, void *ctx)
 {
-    char row[DK_UI_ROW];
+    char row[DK_UI_ROW], tail[20];
     int t, active = 0;
     (void)ctx;
+    if (g_add_err) {
+        pk_err_tail(tail, g_add_err);
+        cat(row, "+ ADD  ", tail);
+    } else
+        cat(row, "+ ADD", "");
+    dk_ui_text(m, row);
     for (t = 0; t < (int)TRACKS; t++) {
-        int st = g_api->sample_track_status(g_handle, (uint32_t)t);
+        int st = g_api->sample_pool_status(g_handle, (uint32_t)t);
         dk_sample_info info = {0, 0, 0, 0};
-        if (st == DK_SAMPLE_READY && g_api->sample_track_info(g_handle, (uint32_t)t, (uint8_t *)&info) < 0)
+        if (st == DK_SAMPLE_READY && g_api->sample_pool_info(g_handle, (uint32_t)t, (uint8_t *)&info) < 0)
             info.frames = info.rate = info.channels = 0;
         if (st == DK_SAMPLE_QUEUED || st == DK_SAMPLE_LOADING)
             active = 1;
-        pk_track_row(row, t, st, g_refused[t], st == DK_SAMPLE_UNUSED ? "" : pk_leaf(track_path(t)), info.frames, info.rate, info.channels);
+        pk_pool_row(row, t, t == g_cur, st, st == DK_SAMPLE_UNUSED ? "" : pk_leaf(entry_path(t)), info.frames, info.rate, info.channels);
         dk_ui_text(m, row);
     }
     if (active && !g_ticking && dk_ui_has(DK_UI_CAP_TICK) && dk_ui_tick(tick, 0, TICK_MS) == 0)
@@ -276,15 +287,21 @@ static void up_cb(void *ctx, int arg)
     back_browser(0);
 }
 
+/* YES on a file: add it to the pool. The index (the new one, or the entry that already holds the file) goes to the pick callback, so the
+   machine sets its SMP value to it. A refusal shows on the + ADD row of the list and nothing is picked. */
 static void select_file(int at)
 {
     int rc;
     if (pk_join(g_path, sizeof g_path, g_dir, g_rows[g_idx[at]].name) < 0)
         rc = DK_SAMPLE_E_SEL_PATH;
     else
-        rc = g_api->sample_select(g_handle, (uint32_t)g_track, (uint8_t *)g_path);
-    g_refused[g_track] = rc < 0 ? rc : 0;
+        rc = g_api->sample_pool_add(g_handle, (uint8_t *)g_path);
+    g_add_err = rc < 0 ? rc : 0;
+    if (rc >= 0)
+        g_cur = rc;
     leave_browser();
+    if (rc >= 0 && g_pick)
+        g_pick(g_pick_ctx, rc);
 }
 
 static void row_cb(void *ctx, int at)
@@ -340,12 +357,26 @@ static void check_browser(void *ctx, int row, int on)
         row_cb(0, row - 1);
 }
 
+/* YES on an entry: the machine's SMP value becomes this entry and the list closes, back to the machine page. A hole is not chosen. */
+static void choose_entry(int t)
+{
+    if (t < 0 || t >= (int)TRACKS || g_api->sample_pool_status(g_handle, (uint32_t)t) == DK_SAMPLE_UNUSED)
+        return;
+    g_cur = t;
+    dk_ui_close(g_tracks);
+    if (g_pick)
+        g_pick(g_pick_ctx, t);
+}
+
 static void check_tracks(void *ctx, int row, int on)
 {
     (void)ctx;
     (void)on;
     dk_ui_check(g_tracks, row, 0);
-    open_browser(0, row);
+    if (row == 0)
+        open_browser();
+    else
+        choose_entry(row - 1);
 }
 
 /* RIGHT on a listed file: row 0 is "..", the files are rows 1 to g_n. */
@@ -358,14 +389,11 @@ static void panel_browser(dk_ui_menu *p, int row, void *ctx)
     dk_ui_action(p, "INFO", file_info_cb, 0, row - 1);
 }
 
-/* ---- the track list: actions ---- */
+/* ---- the pool list: actions ---- */
 
-static void open_browser(void *ctx, int track)
+static void open_browser(void)
 {
-    (void)ctx;
-    if (track < 0 || track >= (int)TRACKS)
-        return;
-    g_track = track;
+    g_add_err = 0;
     relist();
     dk_ui_open(g_browser);
 }
@@ -373,8 +401,7 @@ static void open_browser(void *ctx, int track)
 static void clear_cb(void *ctx, int t)
 {
     (void)ctx;
-    g_api->sample_unbind(g_handle, (uint32_t)t);
-    g_refused[t] = 0;
+    g_api->sample_pool_clear(g_handle, (uint32_t)t);
     dk_ui_refresh(g_tracks);
 }
 
@@ -384,13 +411,14 @@ static void track_info_cb(void *ctx, int t)
     open_info(0, t);
 }
 
+/* RIGHT on an entry row (row 0 is + ADD and has no panel): CLEAR and INFO. */
 static void panel_tracks(dk_ui_menu *p, int row, void *ctx)
 {
     (void)ctx;
-    if (row < 0 || row >= (int)TRACKS)
+    if (row < 1 || row > (int)TRACKS)
         return;
-    dk_ui_action(p, "CLEAR", clear_cb, 0, row);
-    dk_ui_action(p, "INFO", track_info_cb, 0, row);
+    dk_ui_action(p, "CLEAR", clear_cb, 0, row - 1);
+    dk_ui_action(p, "INFO", track_info_cb, 0, row - 1);
 }
 
 /* ---- the INFO page ---- */
@@ -422,29 +450,29 @@ static void fill_info(dk_ui_menu *m, void *ctx)
         return;
     }
     {
-        int t = g_info_at, st = g_api->sample_track_status(g_handle, (uint32_t)t);
+        int t = g_info_at, st = g_api->sample_pool_status(g_handle, (uint32_t)t);
         dk_sample_info info = {0, 0, 0, 0};
-        pk_utoa(num, (uint32_t)(t + 1));
-        cat(row, "TRACK ", num);
+        pk_utoa(num, (uint32_t)t);
+        cat(row, "SAMPLE ", num);
         dk_ui_text(m, row);
-        if (st == DK_SAMPLE_UNUSED && !g_refused[t]) {
-            dk_ui_text(m, "NO SAMPLE");
+        if (st == DK_SAMPLE_UNUSED) {
+            dk_ui_text(m, "EMPTY");
             return;
         }
-        if (track_path(t)[0]) {
+        if (entry_path(t)[0]) {
             pk_trunc(nm, pk_leaf(g_path), WRAP);
             dk_ui_text(m, nm);
             wrap(m, g_path);
         }
-        if (st == DK_SAMPLE_READY && g_api->sample_track_info(g_handle, (uint32_t)t, (uint8_t *)&info) >= 0) {
+        if (st == DK_SAMPLE_READY && g_api->sample_pool_info(g_handle, (uint32_t)t, (uint8_t *)&info) >= 0) {
             number_line(m, info.channels == 2 ? "STEREO " : "MONO ", info.rate, " HZ");
             number_line(m, "", info.frames, " FRAMES");
             pk_secs_text(text, info.frames, info.rate);
             cat(row, "LENGTH ", text);
             dk_ui_text(m, row);
         }
-        if (g_refused[t] || st < 0) {
-            pk_err_info(text, g_refused[t] ? g_refused[t] : st);
+        if (st < 0) {
+            pk_err_info(text, st);
             dk_ui_text(m, "STATE");
             wrap(m, text);
         } else
@@ -465,9 +493,9 @@ int dk_picker_init(const dk_api *api, uint32_t handle)
     g_has_path = 0;
     g_handle = 0;
     g_api = api;
-    if (!api || !handle || !api_has(api, offsetof(dk_api, sample_track_info) + sizeof api->sample_track_info) || !api->files_client
-        || !api->files_list || !api->files_poll || !api->files_cancel || !api->sample_select || !api->sample_unbind
-        || !api->sample_track_status || !api->sample_track_info)
+    if (!api || !handle || !api_has(api, offsetof(dk_api, sample_pool_info) + sizeof api->sample_pool_info) || !api->files_client
+        || !api->files_list || !api->files_poll || !api->files_cancel || !api->sample_pool_add || !api->sample_pool_clear
+        || !api->sample_pool_status || !api->sample_pool_info)
         return -1;
     {
         int32_t c = api->files_client();
@@ -476,14 +504,18 @@ int dk_picker_init(const dk_api *api, uint32_t handle)
         g_client = (uint32_t)c;
     }
     g_handle = handle;
-    g_has_path = api_has(api, offsetof(dk_api, sample_track_path) + sizeof api->sample_track_path) && api->sample_track_path;
+    g_has_path = api_has(api, offsetof(dk_api, sample_pool_path) + sizeof api->sample_pool_path) && api->sample_pool_path;
     return 0;
 }
 
-static void enter(void *ctx, int arg)
+void dk_picker_open_pool(int current, dk_picker_pick_fn *pick, void *ctx)
 {
-    (void)ctx;
-    (void)arg;
+    if (!g_handle || !g_client || !dk_ui_has(DK_UI_CAP_LIST) || !dk_ui_has(DK_UI_CAP_TEXT_PAGE))
+        return;
+    g_cur = current;
+    g_pick = pick;
+    g_pick_ctx = ctx;
+    g_add_err = 0;
     if (!g_tracks)
         g_tracks = dk_ui_menu_new(&tracks_desc);
     if (!g_browser)
@@ -492,13 +524,6 @@ static void enter(void *ctx, int arg)
         g_info = dk_ui_menu_new(&info_desc);
     if (g_tracks && g_browser && g_info)
         dk_ui_open(g_tracks);
-}
-
-void dk_picker_open(dk_ui_menu *m)
-{
-    if (!g_handle || !g_client || !dk_ui_has(DK_UI_CAP_LIST) || !dk_ui_has(DK_UI_CAP_TEXT_PAGE))
-        return;
-    dk_ui_action(m, "SAMPLES...", enter, 0, 0);
 }
 
 void dk_picker_fini(void)
@@ -510,4 +535,5 @@ void dk_picker_fini(void)
         g_api->files_cancel(g_client, (uint32_t)g_ticket);
     g_state = ST_IDLE;
     g_handle = g_client = 0;
+    g_pick = 0;
 }

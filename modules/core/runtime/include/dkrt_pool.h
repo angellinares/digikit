@@ -1,7 +1,7 @@
 /* The sample backing plug-in point, version 1. NOT an SDK contract: content modules never see it.
    The runtime (device-neutral) calls the optional symbols dkpool_* that a device adapter
    exports (modules/core/adapters/sample-pool); the adapter calls dkrt_pool_done and
-   dkrt_pool_lost. Without the adapter the symbols resolve to 0 and sample_select returns
+   dkrt_pool_lost. Without the adapter the symbols resolve to 0 and sample_pool_add returns
    DK_SAMPLE_E_CONTRACT. docs/design/sample-api-1.5.md, section 2.2.
    All calls run in the runtime's task context. `id` and `path` belong to the runtime;
    the adapter does not keep them past the call. Additive growth only: new symbols are
