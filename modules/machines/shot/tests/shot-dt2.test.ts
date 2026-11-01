@@ -8,9 +8,10 @@ import { expect } from 'vitest';
 import type { PatchedSession } from '../../../../tests/regression/support.ts';
 import { installWithDebug, liveArtifacts, memory, panel, record, runtimeTests, settleUi } from '../../../../tests/regression/runtime/live.ts';
 import { planSymbol, prepareRuntimePlan } from '../../../../tests/regression/runtime/runtime-plan.ts';
+import { setSmp } from './shot-support.ts';
 
-// End to end, DT2 1.17: the device-neutral runtime (API 1.5 track table), core/sample-pool (the borrowed stock pool), machine contract 1.2
-// and digikit/shot playing a stereo sample that a fixture module selected by path (docs/design/sample-api-1.5.md).
+// End to end, DT2 1.17: the device-neutral runtime (API 1.5 sample pool), core/sample-pool (the borrowed stock pool), machine contract 1.2
+// and digikit/shot playing a stereo sample that a fixture module added to the pool by path (docs/design/sample-api-1.5.md).
 //
 // The sample files have a different sine on each channel, so the tones in the captured PCM say which source channel reached the output.
 // Everything is measured on the coupled PCM of the stock chain (pcm.tap). With the pair gate set by core/dsp-voice the stock pan stage keeps
@@ -18,8 +19,8 @@ import { planSymbol, prepareRuntimePlan } from '../../../../tests/regression/run
 
 const RATE = 48000;
 const FOLDER = 'shotproof';
-const TRACK = 0; // TRIG 1
-const HANDLE = 1; // the first module with a track table (digikit/shot)
+const TRACK = 0; // the pool entry of the played track: SMP is 0 by default
+const HANDLE = 1; // the first module with a pool table (digikit/shot)
 const SECONDS = 6;
 
 /** A stereo 48 kHz PCM16 WAV: a sine of `left` Hz on L and of `right` Hz on R. 48 kHz keeps the converter exact. */
@@ -170,14 +171,25 @@ async function selectDynamicMachine({ session }: Pick<PatchedSession, 'session'>
 }
 
 function trackApi({ dk }: PatchedSession) {
-  async function select(file: string, track = TRACK) {
-    const reply = await dk.request(0x3e, Buffer.concat([Buffer.from([HANDLE, track]), Buffer.from(file)]));
-    return reply.status;
+  /** `sample_pool_add` through test/track-select: the pool index, or a negative error code. */
+  async function add(file: string) {
+    const reply = await dk.request(0x3e, Buffer.concat([Buffer.from([HANDLE, 0x61]), Buffer.from(file)]));
+    return reply.status !== 0 ? reply.status : Buffer.from(reply.body).readInt32BE(0);
+  }
+  async function clear(index: number) {
+    return (await dk.request(0x3e, Buffer.from([HANDLE, 0x63, index]))).status;
+  }
+  /** Put `file` in pool entry `index` (the lowest free one): clear it, then add. 0 when it landed there, else an error code or 1000 + the entry. */
+  async function select(file: string, index = TRACK) {
+    const cleared = await clear(index);
+    if (cleared !== 0) return cleared;
+    const got = await add(file);
+    return got < 0 ? got : got === index ? 0 : 1000 + got;
   }
   /** 0 unused, 1 queued, 2 loading, 3 ready, below 0 an error; the info words when ready. */
   async function status(track = TRACK) {
     const reply = await dk.request(0x3f, Buffer.from([HANDLE, track]));
-    expect(reply.status, 'track status request').toBe(0);
+    expect(reply.status, 'pool status request').toBe(0);
     const b = Buffer.from(reply.body);
     return {
       state: b.readInt32BE(0),
@@ -188,19 +200,19 @@ function trackApi({ dk }: PatchedSession) {
     };
   }
   /** Poll until the track reaches a terminal state (ready or an error); every distinct observation is kept. */
-  async function settle(timeoutMs = 90_000) {
+  async function settle(timeoutMs = 90_000, index = TRACK) {
     const seen: { t: number; state: number; token: number }[] = [];
     const t0 = Date.now();
     for (;;) {
-      const s = await status();
+      const s = await status(index);
       if (!seen.length || seen.at(-1)!.state !== s.state || seen.at(-1)!.token !== s.token)
         seen.push({ t: Date.now() - t0, state: s.state, token: s.token });
       if (s.state === 3 || s.state < 0) return { ...s, seen, ms: Date.now() - t0 };
-      if (Date.now() - t0 > timeoutMs) throw new Error(`track ${TRACK} did not settle: ${JSON.stringify(seen)}`);
+      if (Date.now() - t0 > timeoutMs) throw new Error(`pool entry ${index} did not settle: ${JSON.stringify(seen)}`);
       await delay(50);
     }
   }
-  return { select, status, settle };
+  return { add, clear, select, status, settle };
 }
 
 /** A note on TRIG 1 held while `during` runs; returns the captured PCM. The clock counts stereo frames since the capture began
@@ -253,7 +265,7 @@ async function until(clock: () => Promise<number>, frames: number, timeoutMs = 1
 // ---- the test ------------------------------------------------------------------------------------------------------------------
 
 runtimeTests(
-  'SHOT plays a user-selected stereo sample through the runtime track table and the borrowed stock pool',
+  'SHOT plays user-selected stereo samples of its pool, picked by SMP, through the runtime and the borrowed stock pool',
   async (runtime) => {
     const { session, dk } = runtime;
     const artifacts = liveArtifacts(session, 'shot-dt2');
@@ -286,9 +298,9 @@ runtimeTests(
       }
       log.uploadMs = Date.now() - uploadStart;
 
-      // 2 and 3. Select A; the track goes from unused to ready with the file's native header.
-      expect((await api.status()).state, 'the track starts unused').toBe(0);
-      expect(await api.select(`/${FOLDER}/a`), 'select queues').toBe(0);
+      // 2 and 3. Add A; pool entry 0 goes from unused to ready with the file's native header.
+      expect((await api.status()).state, 'entry 0 starts unused').toBe(0);
+      expect(await api.select(`/${FOLDER}/a`), 'add takes entry 0').toBe(0);
       const readyA = await api.settle();
       log.selectA = readyA;
       expect(readyA.state, `A reaches ready: ${JSON.stringify(readyA.seen)}`).toBe(3);
@@ -432,15 +444,37 @@ runtimeTests(
         [440, 660],
       );
 
-      // 5. Pitch: PITCH is 0.375 semitone per unit (0x100 raw), so +32 units (0x6000 from 0x4000) are one octave. ENC F: PITCH is knob 5, the second
-      // row of the SRC page under START (knob 3 is the sample slot). The stock encoder accelerates by event rate, so the knob is turned in fast
-      // bursts. The read-back is word 3 (PITCH) of `_dv_params`, the parameter words that core/dsp-voice builds every block and passes to SHOT
+      // 4b. SMP picks the pool entry of a note. B is entry 0 (SMP 0, the default), A is added as entry 1. SMP is knob B of the SRC page; it is turned to 1 while
+      // B plays (`_dv_params` is rewritten only while a voice renders), then the next note is A. Back to 0 for the pitch step.
+      const smpIndex = await api.add(`/${FOLDER}/a`);
+      expect(smpIndex, 'A is entry 1 next to B').toBe(1);
+      const readyA2 = await api.settle(90_000, smpIndex);
+      expect(readyA2.state, `A is ready again as entry 1: ${JSON.stringify(readyA2.seen)}`).toBe(3);
+      const readSmp = async () => {
+        const peek = await tableMem.dsp(planSymbol(tablePlan, '_dv_params'), 4);
+        expect(peek.unknown, 'the SMP word is readable').toBe(0);
+        return Buffer.from(peek.hex, 'hex').readUInt32LE(0);
+      };
+      log.smpTurnToA = await setSmp(runtime, readSmp, smpIndex);
+      const noteSmp = await captureNote(runtime, path.join(artifacts, 'smp-a.wav'), async (clock) => {
+        await until(clock, (await clock()) + 1.5 * RATE);
+      });
+      const onsetSmp = onset(noteSmp);
+      expect(onsetSmp, 'SMP 1 is audible').toBeGreaterThanOrEqual(0);
+      log.smpA = expectSplitPair('SMP 1 plays A', noteSmp, onsetSmp + 4800, onsetSmp + RATE, 440, 660);
+      expect(tone(noteSmp.l, 330, onsetSmp + 4800, onsetSmp + RATE), 'B (entry 0) is not heard at SMP 1').toBeLessThan(AUDIBLE);
+      log.smpTurnToB = await setSmp(runtime, readSmp, 0);
+      await session.expectNoFault('SMP');
+
+      // 5. Pitch: PITCH is 0.375 semitone per unit (0x100 raw), so +32 units (0x6000 from 0x4000) are one octave. ENC G: PITCH is knob 6, the second
+      // row of the SRC page under END and REV (knob 3 is the sample slot, SMP is knob B). The stock encoder accelerates by event rate, so the knob is turned in fast
+      // bursts. The read-back is word 4 (PITCH) of `_dv_params`, the parameter words that core/dsp-voice builds every block and passes to SHOT
       // as R12 (the words SHOT actually reads). The buffer is rewritten only while a voice renders, so TRIG 1 is held during the turn.
       const PITCH_OCTAVE = 0x6000;
       const ui = panel(session);
       const mem = memory(session);
       const paramsPlan = tablePlan;
-      const pitchAddress = planSymbol(paramsPlan, '_dv_params') + 3 * 4; // a byte-alias address; one little-endian word per parameter
+      const pitchAddress = planSymbol(paramsPlan, '_dv_params') + 4 * 4; // a byte-alias address; one little-endian word per parameter
       const readPitch = async () => {
         const peek = await mem.dsp(pitchAddress, 4);
         expect(peek.unknown, 'the parameter word is readable').toBe(0);
@@ -452,7 +486,7 @@ runtimeTests(
       let turned: Awaited<ReturnType<typeof ui.turnTo>>;
       try {
         await expect.poll(readPitch, { timeout: 10_000, interval: 100 }).toBe(0x4000);
-        turned = await ui.turnTo('ENC F', readPitch, PITCH_OCTAVE);
+        turned = await ui.turnTo('ENC G', readPitch, PITCH_OCTAVE);
       } finally {
         await session.client.inputButton(button('TRIG 1'), false);
       }

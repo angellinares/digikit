@@ -15,6 +15,7 @@ import {
   onset,
   peak,
   selectDynamicMachine,
+  setSmp,
   tone,
   trackApi,
   trackRecord,
@@ -22,12 +23,14 @@ import {
   wav,
 } from './shot-support.ts';
 
-// End to end, DN2 OS 1.12: the sample pool (core/sample-pool: allocator, LP0 page transport into DDR), the runtime track table (API 1.5/1.6),
+// End to end, DN2 OS 1.12: the sample pool (core/sample-pool: allocator, LP0 page transport into DDR), the runtime sample pool (API 1.5/1.6),
 // the dsp-voice stereo hooks (docs/design/dn2-stereo.md) and digikit/shot. The `sample-tracks` patch set of devices/digitone-ii.toml.
 //
-// Samples are uploaded to the digikit store (`samples/shotdn2/...`) and selected by the root-relative path through test/track-select (handle 1).
+// Samples are uploaded to the digikit store (`samples/shotdn2/...`) and added to the pool by the root-relative path through test/track-select (handle 1).
 // Observed: the runtime's `dk_strack` records and the pool's DSP counters (the firmware's own records), DDR through dsp.peek, and the coupled
-// PCM (pcm.tap). Phases do not stop at the first failure; the failures are collected and asserted at the end, so one run reports every phase.
+// PCM (pcm.tap). The pool picks the entry of a file (the first free one) and SHOT plays the entry its SMP value names (0 by default), so a phase that
+// needs a sample on the played track puts it in entry 0 (`api.select(file, 0)` is clear + add); other entries hold loads that are only observed.
+// Phases do not stop at the first failure; the failures are collected and asserted at the end, so one run reports every phase.
 
 const FOLDER = 'shotdn2';
 const PAGE = 4096;
@@ -48,7 +51,7 @@ interface Fixture {
 }
 
 runtimeTests(
-  'DN2 sample pool, stereo and dsp-link coexistence with SHOT through the runtime track table',
+  'DN2 sample pool, stereo and dsp-link coexistence with SHOT through the runtime sample pool',
   async (runtime) => {
     const { session, dk } = runtime;
     const artifacts = liveArtifacts(session, 'shot-dn2');
@@ -91,6 +94,7 @@ runtimeTests(
       log.stage = 'plan';
       const plan = await prepareRuntimePlan(session, artifacts, [
         'RECORDS',
+        '_dv_params',
         '_sp_boot_status',
         '_sp_status',
         '_sp_pages',
@@ -289,28 +293,28 @@ runtimeTests(
       await phase('mono-load', async () => {
         const f = fixtures.m!;
         const before = await pool();
-        expect(await api.select(file('m'), 2), 'select queues').toBe(0);
-        const ready = await settle(2);
+        expect(await api.select(file('m'), 1), 'add takes entry 1').toBe(0);
+        const ready = await settle(1);
         expect(ready.state, `M reaches ready ${JSON.stringify(ready.seen)}`).toBe(3);
         const after = await pool();
         expect(after.pages - before.pages, 'pages sent: one plane').toBe(planePages(f.frames));
-        const r = await checkHandle(f, 2, planePages(f.frames));
+        const r = await checkHandle(f, 1, planePages(f.frames));
         await checkPlanes(f, r);
       });
 
-      // ---- 2. dedup: the same file on a second track -----------------------------------------------------------------------------
+      // ---- 2. dedup: the same file added again is the same entry ----------------------------------------------------------------
       await phase('dedup', async () => {
         const before = await pool();
-        expect(await api.select(file('a'), 1)).toBe(0);
-        const ready = await settle(1);
+        expect(await api.add(file('a')), 'A is already entry 0: add returns it').toBe(0);
+        const ready = await settle(0);
         expect(ready.state).toBe(3);
         const after = await pool();
-        const r1 = await rec(1);
-        log.dedup = { pagesBefore: before.pages, pagesAfter: after.pages, track0: aRecord, track1: r1 };
-        expect(after.pages, 'no page for the second track').toBe(before.pages);
-        expect(r1.ready).toBe(1);
-        expect(r1.baseL, 'same base_l').toBe(aRecord!.baseL);
-        expect(r1.baseR, 'same base_r').toBe(aRecord!.baseR);
+        const r0 = await rec(0);
+        log.dedup = { pagesBefore: before.pages, pagesAfter: after.pages, entry0: aRecord, again: r0 };
+        expect(after.pages, 'no page for the second add').toBe(before.pages);
+        expect(r0.token, 'no new load: the token is the one of the first load').toBe(aRecord!.token);
+        expect(r0.baseL, 'same base_l').toBe(aRecord!.baseL);
+        expect(r0.baseR, 'same base_r').toBe(aRecord!.baseR);
       });
 
       // ---- 3. stereo audio: SHOT playing L 440 Hz / R 660 Hz through the stock filter and pan -----------------------------------
@@ -401,22 +405,22 @@ runtimeTests(
 
       // ---- 5. release and reselect: no transfer ----------------------------------------------------------------------------------
       await phase('release-reselect', async () => {
-        // Track 1 holds A alone (track 0 moved on): select X, then A again.
-        expect(await api.select(file('x'), 1)).toBe(0);
-        expect((await settle(1)).state).toBe(3);
+        // Entry 0 holds R (the retrigger phase moved it on from A): replace it by X, then by A again; A's block is cached.
+        expect(await api.select(file('x'), 0)).toBe(0);
+        expect((await settle(0)).state).toBe(3);
         const afterX = await pool();
-        const before = await rec(1);
+        const before = await rec(0);
         expect(before.baseL, 'X is another block').not.toBe(aRecord!.baseL);
-        expect(await api.select(file('a'), 1)).toBe(0);
-        const ready = await settle(1);
+        expect(await api.select(file('a'), 0)).toBe(0);
+        const ready = await settle(0);
         expect(ready.state).toBe(3);
         const afterA = await pool();
-        const again = await rec(1);
+        const again = await rec(0);
         log.reselect = { pagesAfterX: afterX.pages, pagesAfterA: afterA.pages, again, first: aRecord };
         expect(afterA.pages, 'the cached block needs no page').toBe(afterX.pages);
         expect(again.baseL, 'the same place').toBe(aRecord!.baseL);
         expect(again.baseR).toBe(aRecord!.baseR);
-        expect(again.token, 'a new track token').not.toBe(aRecord!.token);
+        expect(again.token, 'a new entry token').not.toBe(aRecord!.token);
         const first = await ddr(physOf(again.baseL!), PAGE);
         expect(first.equals(plane(fixtures.a!, 0, LAYOUTS[layoutSeen]!).subarray(0, PAGE)), 'content unchanged').toBe(true);
       });
@@ -466,7 +470,7 @@ runtimeTests(
         expect(l1.nerr - l0.nerr, 'no dsp-link error during the transfer').toBe(0);
       });
 
-      // ---- 7. supersede: T plays on track 1, L loads on track 2 and Y replaces it after ~20 pages -------------------------------
+      // ---- 7. supersede: T plays (entry 0), L loads in entry 1 and Y replaces it after ~20 pages -------------------------------
       await phase('supersede', async () => {
         expect(tReady, 'T is loaded').toBe(true);
         const y = fixtures.y!;
@@ -518,18 +522,45 @@ runtimeTests(
         expect(stats.errcount, 'no rejected page').toBe(0);
         expect((info.link as { nerr: number }).nerr, 'no dsp-link error').toBe(0);
         const r1 = await rec(1);
-        expect(r1.frames, 'track 2 holds Y').toBe(y.frames);
+        expect(r1.frames, 'entry 1 holds Y').toBe(y.frames);
         await expectNoNewFault('supersede');
       });
 
       // ---- 8. a path that is not there ---------------------------------------------------------------------------------------------
       await phase('not-found', async () => {
-        const sel = await api.select('nothere/zzz', 3);
-        log.notFound = { select: sel };
-        if (sel !== 0) return; // refused at once is an acceptable form
-        const s = await settle(3, 30_000);
-        log.notFound = { select: sel, state: s.state };
+        const index = await api.add('nothere/zzz');
+        log.notFound = { index };
+        if (index < 0) return; // refused at once is an acceptable form
+        const s = await settle(index, 30_000);
+        log.notFound = { index, state: s.state };
         expect(s.state, 'NOT_FOUND').toBe(-1);
+        expect(await api.clear(index), 'the failed entry can be cleared').toBe(0);
+      });
+
+      // ---- 8b. SMP picks the pool entry of a note: T is entry 0 and L (4 s, 220/330 Hz) is added as entry 2, so entry 1 (Y) lies between them. The page is still
+      // SHOT's: knob B is SMP. Both SMP values are turned while a long sample plays, because `_dv_params` is rewritten only while a voice renders.
+      await phase('smp', async () => {
+        const index = await api.add(file('l'));
+        expect(index, 'L takes the first free entry after Y').toBe(2);
+        expect((await settle(index)).state, 'L is ready').toBe(3);
+        const readSmp = async () => {
+          const peek = await mem.dsp(sym('_dv_params'), 4);
+          expect(peek.unknown, '_dv_params readable').toBe(0);
+          return Buffer.from(peek.hex, 'hex').readUInt32LE(0);
+        };
+        const note = async (name: string, hzL: number, hzR: number) => {
+          const c = await captureNote(runtime, path.join(artifacts, `${name}.wav`), async (clock) => {
+            await until(clock, (await clock()) + 1.2 * RATE);
+          });
+          const o = onset(c);
+          expect(o, `${name} is audible`).toBeGreaterThanOrEqual(0);
+          return expectSplitPair(name, c, o + 4800, o + RATE, hzL, hzR);
+        };
+        log.smpTurnToL = await setSmp(runtime, readSmp, index);
+        log.smpL = await note('smp-l', 220, 330);
+        log.smpTurnToT = await setSmp(runtime, readSmp, 0);
+        log.smpT = await note('smp-t', 440, 660);
+        await expectNoNewFault('smp');
       });
 
       // ---- 9. every filter type plays stereo: scan the FLTR page 1 knobs while T plays and read the rate of `_gs_nbad` (stamps a guard of a twin clears). All

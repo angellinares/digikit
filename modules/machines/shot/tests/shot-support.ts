@@ -5,11 +5,11 @@ import { expect } from 'vitest';
 import type { PatchedSession } from '../../../../tests/regression/support.ts';
 import { memory, panel, record } from '../../../../tests/regression/runtime/live.ts';
 
-// Helpers of the SHOT device tests (shot-dn2, shot-picker): WAV fixtures, the track table requests of test/track-select, PCM capture with the
+// Helpers of the SHOT device tests (shot-dn2): WAV fixtures, the sample pool requests of test/track-select, PCM capture with the
 // key held and the tone measurements on it. shot-dt2.test.ts has its own copies of the same code (it passed before they were split out).
 
 export const RATE = 48000;
-export const HANDLE = 1; // the first module with a track table (digikit/shot)
+export const HANDLE = 1; // the first module with a pool table (digikit/shot)
 
 /** A PCM16 48 kHz WAV: one sine per channel (`hz` has one entry for mono, two for stereo), amplitude 14000 times `shape(frame)`.
  * `hz` can also be a function of the frame (a sample that changes its tones over time). */
@@ -150,16 +150,32 @@ export interface TrackStatus {
   token: number;
 }
 
-/** The requests of test/track-select: select (0x3e) and status (0x3f). `path` is the root-relative path of a listing row ("KICKS/K1"). */
+/** The requests of test/track-select: add or clear (0x3e) and status (0x3f). `file` is the root-relative path of a listing row ("KICKS/K1").
+ * The pool picks the entry (`sample_pool_add`: the first free index, or the entry that already holds the path). */
 export function trackApi({ dk }: Pick<PatchedSession, 'dk'>, handle = HANDLE) {
-  async function select(file: string, track: number): Promise<number> {
-    const reply = await dk.request(0x3e, Buffer.concat([Buffer.from([handle, track]), Buffer.from(file)]));
+  /** `sample_pool_add`: the pool index, or a negative error code. */
+  async function add(file: string): Promise<number> {
+    const reply = await dk.request(0x3e, Buffer.concat([Buffer.from([handle, 0x61]), Buffer.from(file)]));
+    if (reply.status !== 0) return reply.status;
+    return Buffer.from(reply.body).readInt32BE(0);
+  }
+  /** `sample_pool_clear`: 0 or a negative error code. The entry is a hole at once. */
+  async function clear(index: number): Promise<number> {
+    const reply = await dk.request(0x3e, Buffer.from([handle, 0x63, index]));
     return reply.status;
+  }
+  /** Put `file` in pool entry `index`: clear it, then add. Add takes the first free entry, so `index` must be the lowest free one (the tests fill the
+   * pool from 0 upwards). 0 when the file is in `index`, the add's error code, or 1000 + the index it landed on. */
+  async function select(file: string, index: number): Promise<number> {
+    const cleared = await clear(index);
+    if (cleared !== 0) return cleared;
+    const got = await add(file);
+    return got < 0 ? got : got === index ? 0 : 1000 + got;
   }
   /** 0 unused, 1 queued, 2 loading, 3 ready, below 0 an error; the info words when ready. */
   async function status(track: number): Promise<TrackStatus> {
     const reply = await dk.request(0x3f, Buffer.from([handle, track]));
-    expect(reply.status, 'track status request').toBe(0);
+    expect(reply.status, 'pool status request').toBe(0);
     const b = Buffer.from(reply.body);
     return {
       state: b.readInt32BE(0),
@@ -183,10 +199,39 @@ export function trackApi({ dk }: Pick<PatchedSession, 'dk'>, handle = HANDLE) {
       await delay(pollMs);
     }
   }
-  return { select, status, settle };
+  return { add, clear, select, status, settle };
 }
 
-/** The `dk_strack` record of `track` in the DSP data of the first module with a table (client 0): eight words. `recordsSymbol` is the plan address of
+/** Turn SMP (knob B of the SHOT page, word 0 of `_dv_params`, index << 8) to pool entry `index`, one detent at a time with TRIG 1 held: the
+ * parameter buffer is rewritten only while a voice renders, so a note must sound while the value is read back. The loop reads the word after every
+ * detent and turns toward the target (a detent may move one unit or several); it stops on `word >> 8 === index`. Returns the words seen. */
+export async function setSmp(
+  { session }: Pick<PatchedSession, 'session'>,
+  readWord: () => Promise<number>,
+  index: number,
+  maxTurns = 30,
+): Promise<number[]> {
+  const ui = panel(session);
+  const trace: number[] = [];
+  await session.client.inputButton(button('TRIG 1'), true);
+  try {
+    await ui.settle(200);
+    for (let i = 0; i <= maxTurns; i++) {
+      const word = await readWord();
+      trace.push(word);
+      const now = word >> 8;
+      if (now === index) return trace;
+      if (i === maxTurns) break;
+      await ui.burst('ENC B', 1, now < index ? 1 : -1);
+      await ui.settle(60);
+    }
+  } finally {
+    await session.client.inputButton(button('TRIG 1'), false);
+  }
+  throw new Error(`SMP did not reach ${index}: words ${trace.map((w) => w.toString(16))}`);
+}
+
+/** The `dk_strack` record of pool entry `track` in the DSP data of the first module with a table (client 0): eight words. `recordsSymbol` is the plan address of
  * the runtime's RECORDS static (the DSP address of client 0's table). */
 export async function trackRecord(session: PatchedSession['session'], recordsSymbol: number, track: number) {
   const mem = memory(session);
