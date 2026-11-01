@@ -67,7 +67,7 @@ Sort: at end of listing, sort rows folders first, then names, case-insensitive, 
 Paging: core/ui scrolls the list. "Paging" is only the 128-row window above; no network of continuation pages is needed.
 Keys: UP/DOWN move. YES on a folder = enter it (relist). YES on `..` = parent. YES on a file = add it to the pool (2.3). NO = parent folder; at the root NO closes the browser (`back` returns 1 when it went up, 0 at the root). RIGHT on a file = side panel: `ADD` (same as YES), `INFO` (screen 4 with the listing facts). LEFT/NO closes the panel.
 
-Preview of size/channels/length: the listing gives size and hash only. A module cannot read the header (`store_read` reads the runtime store, not +Drive, and a sample is not in it). So the row shows size (K/M). Channels and length appear after the load (READY, `sample_track_info`) in screen 1 and INFO. A header preflight in the picker needs a new read call and is not worth it: the runtime already checks the header in `select`'s preflight and reports FORMAT. **Recommendation: no preview in v1.**
+Preview of size/channels/length: the listing gives size and hash only. A module cannot read the header (`store_read` reads the runtime store, not +Drive, and a sample is not in it). So the row shows size (K/M). Channels and length appear after the load (READY, `sample_pool_info`) in screen 1 and INFO. A header preflight in the picker needs a new read call and is not worth it: the runtime already checks the header in the add's preflight and reports FORMAT. **Recommendation: no preview in v1.**
 
 ### 2.3 Add and load progress
 
