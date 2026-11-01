@@ -2840,3 +2840,43 @@ mode = "retarget"
 name = "dsp.voice.hook.render_entry"
 site = "dsp.voice.fn.render_entry"
 mode = "replace"
+
+[[anchor]]
+name = "cf.page.fn.source_key"
+cpu = "cf"
+kind = "code"
+addr = 0x40016480
+len = 8
+sha256 = "19472fb22be94475c494da82c360b4668b57cfa461af3f97ddde758b9b134dd8"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_turn"
+cpu = "cf"
+kind = "code"
+addr = 0x4001704e
+len = 8
+sha256 = "9542cd09f0fdb6de3cb3f42197fd0c8384753d3749d88e8c7075b4f7d2520458"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.view_track"
+cpu = "cf"
+kind = "code"
+addr = 0x40046bfe
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[hook]]
+name = "cf.page.hook.source_key"
+site = "cf.page.fn.source_key"
+mode = "before"
+
+[[hook]]
+name = "cf.page.hook.source_turn"
+site = "cf.page.fn.source_turn"
+mode = "before"

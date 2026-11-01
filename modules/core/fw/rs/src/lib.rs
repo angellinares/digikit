@@ -418,6 +418,16 @@ pub mod midi {
 pub mod page {
     // cf.page.fn.page_desc: no sig yet
 
+    // cf.page.fn.source_key: no sig yet
+
+    // cf.page.fn.source_turn: no sig yet
+
+    unsafe extern "C" {
+        /// The track of a parameter page: called with the page's reference at view+0x74, it returns the track number (the stock code clamps it to 0 to 15 and uses it as the track index into the project's sound array, FUN_40035cca on the Digitakt II). Same function body on both devices (DT2 0x4004abb8, DN2 0x40046bfe).
+        #[link_name = "cf.page.fn.view_track"]
+        pub fn view_track(track_ref: *const u8) -> u32;
+    }
+
     unsafe extern "C" {
         /// The pointer operand (4 bytes) of `move.l #list,D0` in the FX view builder: the rodata list {12} of the track FX key's one-page view. core/fxpages substitutes its own list.
         #[link_name = "cf.page.data.fx_key_list"]

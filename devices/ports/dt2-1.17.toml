@@ -967,6 +967,36 @@ mark = "D"
 rule = "fw/page:cf_func"
 
 [[anchor]]
+name = "cf.page.fn.source_key"
+cpu = "cf"
+kind = "code"
+addr = 0x400181fe
+len = 8
+sha256 = "827861b302ed505387505067bb5b4cf19942024b298a8a14dd9659b7285048b9"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_turn"
+cpu = "cf"
+kind = "code"
+addr = 0x400184ea
+len = 8
+sha256 = "210e23c2057834e444559ed4e37156fcac7eef2f115c828d4eb9ffff14d72e05"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.view_track"
+cpu = "cf"
+kind = "code"
+addr = 0x4004abb8
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
 name = "cf.page.site.filter_graph_test"
 cpu = "cf"
 kind = "code"
@@ -3129,6 +3159,16 @@ mode = "replace"
 name = "cf.page.hook.sound_load_exit"
 site = "cf.page.site.sound_load_exit"
 mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.source_key"
+site = "cf.page.fn.source_key"
+mode = "before"
+
+[[hook]]
+name = "cf.page.hook.source_turn"
+site = "cf.page.fn.source_turn"
+mode = "before"
 
 [[hook]]
 name = "cf.page.hook.tab_label_test"

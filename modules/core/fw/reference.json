@@ -6294,6 +6294,154 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x40016480",
+            "len": 8
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40016480",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400181fe",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_key",
+        "rust": "dkfw::page::source_key"
+      },
+      "cpu": "cf",
+      "doc": "Key handler (vfunc_2) of the machine's parameter page: `SourcePageView::vfunc_2` on the Digitakt II, `MultiSourcePageView::vfunc_2` on the Digitone II. Stack: 4(sp) = the view, 8(sp) = the key event (code at +0xc, flags at +0x10: 0x01 press, 0x02 chord, 0x08 repeat, 0x10 release; encoder clicks are codes 0x29 to 0x30). Entry: `link.w A6,-0x34; movem.l ...` (DT2) or `lea -0x24(SP),SP; movem.l ...` (DN2), 8 bytes (the hook displaces both instructions).",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_key",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x4001704e",
+            "len": 8
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4001704e",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400184ea",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_turn",
+        "rust": "dkfw::page::source_turn"
+      },
+      "cpu": "cf",
+      "doc": "Encoder turn handler (vfunc_17) of the machine's parameter page (`SourcePageView` on the Digitakt II, `MultiSourcePageView` on the Digitone II). Stack: 4(sp) = the view, 8(sp) = the event; the encoder is `event[3] - 1` (0 to 7). Entry: `link.w A6,-0x34; movem.l ...` (DT2) or `lea -0x30(SP),SP; movem.l ...` (DN2), 8 bytes (the hook displaces both instructions).",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_turn",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40046bfe",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40046bfe",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4004abb8",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_view_track",
+        "rust": "dkfw::page::view_track"
+      },
+      "cpu": "cf",
+      "doc": "The track of a parameter page: called with the page's reference at view+0x74, it returns the track number (the stock code clamps it to 0 to 15 and uses it as the track index into the project's sound array, FUN_40035cca on the Digitakt II). Same function body on both devices (DT2 0x4004abb8, DN2 0x40046bfe).",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.view_track",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (const u8 *track_ref)",
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4006f718"
           }
         ],
@@ -6655,6 +6803,98 @@
       "subsystem": "page",
       "users": [
         "core/fxpages"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40016480"
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40016480"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400181fe"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Entry of the machine page's key handler; the hook sees every key event of the page and never consumes one.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_key",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_key",
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x4001704e"
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4001704e"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400184ea"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Entry of the machine page's encoder turn handler; the hook sees every turn and never consumes one.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_turn",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_turn",
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
       ],
       "was": []
     },
@@ -16152,7 +16392,7 @@
       "name": "midi"
     },
     {
-      "count": 21,
+      "count": 26,
       "cpu": "cf",
       "file": "devices/fw/page.toml",
       "meaning": "parameter and FX pages",
