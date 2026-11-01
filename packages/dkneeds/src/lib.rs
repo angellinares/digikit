@@ -55,6 +55,9 @@ pub const LEN_PAGE: u32 = 0x60;
 /// An effect's page: it takes no row of its own (it belongs to the effect's slot, counted by the DSP section's effect record).
 pub const KIND_EFFECT: u32 = 4;
 pub const LEN_EFFECT: u32 = 0x1a4;
+/// A parameter's click callback: it takes no row (the parameter's row is counted by its PARAM record).
+pub const KIND_ACTION: u32 = 5;
+pub const LEN_ACTION: u32 = 0x10;
 
 /// The DSP section: magic "DKDS", versions 1 to 5, header 0x40 bytes, voices of 16, 48 or 64 bytes (version 4: voices of 64 bytes and effect records).
 pub const DSP_MAGIC: u32 = 0x444b_4453;
@@ -272,6 +275,8 @@ fn registry<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result
             LEN_PAGE
         } else if kind == KIND_EFFECT {
             LEN_EFFECT
+        } else if kind == KIND_ACTION {
+            LEN_ACTION
         } else {
             return Err(Error::Register);
         };

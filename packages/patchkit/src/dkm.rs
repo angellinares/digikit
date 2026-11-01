@@ -185,6 +185,33 @@ fn has_machine_record(reg: &[u8]) -> bool {
     false
 }
 
+/// The global symbols of a ColdFire object with their offsets in the loaded image (the offsets `pack` writes for `dkm_init` and the slots). The
+/// register records that name a function (the click callbacks) need them before the file is packed.
+pub fn image_symbols(obj: &Dko) -> Result<BTreeMap<String, u32>> {
+    let defined: BTreeSet<&str> = obj
+        .symbols
+        .iter()
+        .filter(|s| s.section.is_some())
+        .map(|s| s.name.as_str())
+        .collect();
+    let externs: BTreeMap<String, u64> = obj
+        .relocs
+        .iter()
+        .filter(|r| !defined.contains(r.symbol.as_str()))
+        .map(|r| (r.symbol.clone(), 0))
+        .collect();
+    let linked = link::link(obj, 0, &externs)?;
+    let len = linked.image.len() as u64;
+    Ok(linked
+        .globals
+        .iter()
+        .filter_map(|n| {
+            let v = *linked.symbols.get(n)?;
+            (v < len).then_some((n.clone(), v as u32))
+        })
+        .collect())
+}
+
 /// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
 pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> {
     pack_full(obj, reg, &[], o)
@@ -666,6 +693,21 @@ mod tests {
             stereo: false,
             api_minor: 0,
         }
+    }
+
+    #[test]
+    fn image_symbols_are_the_offsets_the_packer_writes_for_global_symbols() {
+        let mut o = unstamped();
+        let mut local = sym("local_fn", Some(".text"), 0);
+        local.global = false;
+        o.symbols.push(local);
+        o.stamp_isa();
+        let syms = image_symbols(&o).unwrap();
+        let d = Dkm::parse(&pack(&o, &opts()).unwrap()).unwrap();
+        assert_eq!(syms["dkm_init"], d.init.unwrap());
+        assert_eq!(syms["dkm_slot_0"], d.slots[0].1);
+        assert!(!syms.contains_key("local_fn"), "a static function has no symbol to call by");
+        assert!(!syms.contains_key("fw_thing"), "an import is not in the image");
     }
 
     #[test]

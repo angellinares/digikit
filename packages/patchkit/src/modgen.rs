@@ -160,6 +160,7 @@ mod tests {
                     min: 0,
                     max: 100,
                     default: 50,
+                    action: None,
                 })
                 .collect();
             m.manifest.page = vec![PageDef {

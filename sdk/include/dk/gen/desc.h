@@ -20,6 +20,8 @@
 #define DK_DESC_PAGE 4
 /* Record kind of dk_desc_fx_param. */
 #define DK_DESC_FX_PARAM 5
+/* Record kind of dk_desc_param_action. */
+#define DK_DESC_PARAM_ACTION 8
 /* Encoders on a page. */
 #define DK_PAGE_KNOBS 8
 /* The knob takes the lowest free position. */
@@ -105,6 +107,15 @@ typedef struct {
     char short_name[16];                     /* 1 to 15 characters, under the knob */
 } dk_desc_param;
 
+/* A click on the knob of one parameter word of a machine calls a function of the module (docs/design/machine-page-click.md). At most one per parameter. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_PARAM_ACTION */
+    uint32_t size;                           /* sizeof(dk_desc_param_action) */
+    char machine[16];                        /* the id of the machine */
+    uint32_t word;                           /* 0 .. 7, the parameter word of the machine whose knob is clicked; the machine declares it with DK_PARAM */
+    char fn[32];                             /* the ColdFire symbol of the callback, `void fn(u32 track)`: a global function of the module, called in the UI task */
+} dk_desc_param_action;
+
 /* One encoder of a page. An unused entry is all zero. */
 typedef struct {
     uint32_t used;                           /* 1 when the encoder is set, else 0 */
@@ -176,6 +187,12 @@ _Static_assert(offsetof(dk_desc_param, max) == 56, "dk_desc_param.max");
 _Static_assert(offsetof(dk_desc_param, def) == 60, "dk_desc_param.def");
 _Static_assert(offsetof(dk_desc_param, name) == 64, "dk_desc_param.name");
 _Static_assert(offsetof(dk_desc_param, short_name) == 96, "dk_desc_param.short_name");
+_Static_assert(sizeof(dk_desc_param_action) == 60, "dk_desc_param_action size");
+_Static_assert(offsetof(dk_desc_param_action, kind) == 0, "dk_desc_param_action.kind");
+_Static_assert(offsetof(dk_desc_param_action, size) == 4, "dk_desc_param_action.size");
+_Static_assert(offsetof(dk_desc_param_action, machine) == 8, "dk_desc_param_action.machine");
+_Static_assert(offsetof(dk_desc_param_action, word) == 24, "dk_desc_param_action.word");
+_Static_assert(offsetof(dk_desc_param_action, fn) == 28, "dk_desc_param_action.fn");
 _Static_assert(sizeof(dk_desc_page_knob) == 12, "dk_desc_page_knob size");
 _Static_assert(offsetof(dk_desc_page_knob, used) == 0, "dk_desc_page_knob.used");
 _Static_assert(offsetof(dk_desc_page_knob, word) == 4, "dk_desc_page_knob.word");
