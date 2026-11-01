@@ -27,9 +27,9 @@ Plan a machine for 16 voices at once: 16 x your `max_cycles_block` must fit with
 
 ## Parameters
 
-- The DSP receives up to 4 parameter words per voice today: the knobs in `param_slots` (`[1, 2, 4, 5]` on the Digitakt
-  II, `[0, 1, 2, 3]` on the Digitone II, devices/*.toml). More knobs can be shown and stored, but only these reach
-  `params`. See docs/MODULE-AUTHORING.md, sections 5.3 and 5.7.
+- The DSP receives one parameter word for each knob in `param_slots` (devices/*.toml): `[1, 2, 4, 5, 6]` (5 words) on the Digitakt
+  II, `[1, 2, 4, 5, 6, 0, 3, 7]` (8 words) on the Digitone II. Words 0 to 4 sit on the same knob letters B C E F G on both
+  devices; the Digitone II adds A, D and H. A knob outside the list can be shown and stored, but does not reach `params`. See docs/MODULE-AUTHORING.md, sections 5.3 and 5.7.
 - Words are 0 .. 0x7f00 (UI 0 .. 127), smoothed on the ColdFire before they are sent; the DSP sees them once per block.
 
 ## Memory

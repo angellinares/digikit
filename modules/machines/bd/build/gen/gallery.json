@@ -5,21 +5,23 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "bd_bend",
-              "slot": 25
-            },
-            {
-              "param": "bd_index",
               "slot": 26
             },
             {
-              "param": "bd_ratio",
+              "param": "bd_index",
               "slot": 27
+            },
+            null,
+            {
+              "param": "bd_ratio",
+              "slot": 29
             },
             {
               "param": "bd_noise",
-              "slot": 28
+              "slot": 30
             }
           ],
           "level": 10,
@@ -87,7 +89,7 @@
         "min": 0,
         "name": "Bend",
         "short": "BEND",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -97,7 +99,7 @@
         "min": 0,
         "name": "FM Index",
         "short": "INDEX",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -107,7 +109,7 @@
         "min": 0,
         "name": "Ratio",
         "short": "RATIO",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -117,7 +119,7 @@
         "min": 0,
         "name": "Noise",
         "short": "NOISE",
-        "slot": 28,
+        "slot": 30,
         "template": 213
       }
     ],

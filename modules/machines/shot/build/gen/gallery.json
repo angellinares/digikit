@@ -5,21 +5,23 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "shot_start",
-              "slot": 25
-            },
-            {
-              "param": "shot_end",
               "slot": 26
             },
             {
-              "param": "shot_reverse",
+              "param": "shot_end",
               "slot": 27
+            },
+            null,
+            {
+              "param": "shot_reverse",
+              "slot": 29
             },
             {
               "param": "shot_pitch",
-              "slot": 28
+              "slot": 30
             }
           ],
           "level": 10,
@@ -87,7 +89,7 @@
         "min": 0,
         "name": "Start",
         "short": "START",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -97,7 +99,7 @@
         "min": 0,
         "name": "End",
         "short": "END",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -107,7 +109,7 @@
         "min": 0,
         "name": "Reverse",
         "short": "REV",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -117,7 +119,7 @@
         "min": 0,
         "name": "Pitch",
         "short": "PITCH",
-        "slot": 28,
+        "slot": 30,
         "template": 213
       }
     ],

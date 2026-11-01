@@ -5,17 +5,19 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "start",
-              "slot": 25
-            },
-            {
-              "param": "end",
               "slot": 26
             },
             {
-              "param": "reverse",
+              "param": "end",
               "slot": 27
+            },
+            null,
+            {
+              "param": "reverse",
+              "slot": 29
             }
           ],
           "level": 10,
@@ -80,7 +82,7 @@
         "min": 0,
         "name": "Start",
         "short": "START",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -90,7 +92,7 @@
         "min": 0,
         "name": "End",
         "short": "END",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -100,7 +102,7 @@
         "min": 0,
         "name": "Reverse",
         "short": "REV",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       }
     ],

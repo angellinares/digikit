@@ -5,21 +5,23 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "pd_amount",
-              "slot": 25
-            },
-            {
-              "param": "pd_curve",
               "slot": 26
             },
             {
-              "param": "pd_detune",
+              "param": "pd_curve",
               "slot": 27
+            },
+            null,
+            {
+              "param": "pd_detune",
+              "slot": 29
             },
             {
               "param": "pd_fold",
-              "slot": 28
+              "slot": 30
             }
           ],
           "level": 10,
@@ -87,7 +89,7 @@
         "min": 0,
         "name": "Distortion",
         "short": "PD",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -97,7 +99,7 @@
         "min": 0,
         "name": "Curve",
         "short": "CURVE",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -107,7 +109,7 @@
         "min": 0,
         "name": "Detune",
         "short": "DET",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -117,7 +119,7 @@
         "min": 0,
         "name": "Fold",
         "short": "FOLD",
-        "slot": 28,
+        "slot": 30,
         "template": 213
       }
     ],

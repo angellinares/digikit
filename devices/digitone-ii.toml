@@ -392,7 +392,7 @@ type_hw         = 74
 note_on         = "trig-edge"             # rising edge of bit v of frame halfword trig_hw; DT2: "record"
 trig_hw         = 0x11
 pair            = "none"                  # one voice per slot; DT2: "copy-even"
-param_slots     = [0, 1, 2, 3]            # knob positions for module parameters, in order (pluck_dn2.s: DECAY, PICK, BRIGHT, COLOR)
+param_slots     = [1, 2, 4, 5, 6, 0, 3, 7] # knob positions for module parameters, in order: B C E F G as on the Digitakt II, then A D H (words 0 to 4 sit on the same letters on both devices)
 reserved_slots  = []
 
 # The sample pool adapter's device facts (docs/design/sample-api-1.5.md 2.3); generated into core/sample-pool build/gen/sample-pool-{dev}.inc.

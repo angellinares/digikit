@@ -220,12 +220,12 @@ knobs. `clone_of` is fixed by the profile (`[modules.knobs] clone_of = 0`, the S
 | --- | --- | --- |
 | Where knobs live | Fields of the machine row. Engine slots 0 to 7. | Columns of a page. Sound-array slots 25 to 32. |
 | Fixed knobs | TUNE on knob 0. Sample slot on knob 3. LEV on knob 7. | None. |
-| Knobs for your words | 1, 2, 4, 5 (`param_slots`). Word w goes to the w-th of them. | 0, 1, 2, 3. |
+| Knobs for your words | 1, 2, 4, 5, 6 (letters B C E F G; `param_slots`). Word w goes to the w-th of them. 5 words. | 1, 2, 4, 5, 6, 0, 3, 7 (B C E F G A D H). 8 words. |
 | Page | The machine has its SRC page. `DK_PAGE` is not used. | The `DK_PAGE` name and title. Without a `DK_PAGE`, a page named after the machine. |
 
 Rules that follow:
 
-- A machine has at most 4 parameters (words 0 to 3), at most one page, and the words are in order. Free placement of knobs (`DK_KNOB_AT`) and
+- A machine has at most as many parameters as the device has `param_slots` (Digitakt II 5, Digitone II 8), at most one page, and the words are in order. Free placement of knobs (`DK_KNOB_AT`) and
   several pages for a machine need adapter work. They are planned.
 - A parameter's position is its slot. Projects store values by slot. After a release, do not move a parameter to another word.
   Removing a parameter is allowed.
@@ -294,14 +294,14 @@ service template does not set `dynamic`.
 ### 5.6 Examples
 
 For a machine, see `modules/machines/pluck` (section 5.2). The profile turns its declaration into this layout. On the Digitakt II, DECAY is on
-knob 1, PICK on knob 2, BRIGHT on knob 4 and COLOR on knob 5. TUNE and LEV are on knobs 0 and 7. On the Digitone II the four parameters sit on
-page columns 0 to 3, on the page PLUCK.
+knob 1, PICK on knob 2, BRIGHT on knob 4 and COLOR on knob 5 (letters B C E F). TUNE and LEV are on knobs 0 and 7. On the Digitone II the same
+words sit on the same letters, page columns 1, 2, 4 and 5, on the page PLUCK. Words 0 to 4 use the letters B C E F G on both devices.
 
 For an effect, see `modules/fx/freqshift` (section 5.4). It has one bipolar knob, `.route = DK_ROUTE_SEND` and both routes.
 
 ### 5.7 Persistence and limits
 
-`patchkit pack` refuses a declaration that breaks a rule above: more than 4 machine parameters, words out of order, a second page for a
+`patchkit pack` refuses a declaration that breaks a rule above: more machine parameters than the device's `param_slots`, words out of order, a second page for a
 machine, `DK_KNOB_AT` on a machine, a machine without DSP symbols, and a manifest with the removed sections.
 
 Not refused today: a `DEF` outside `MIN` .. `MAX`.

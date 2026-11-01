@@ -45,8 +45,8 @@ Each task takes `-- --help`.
   Never name, copy or quote the vendor DSP toolchain's files.
 - **Reserved authors.** `core` and `test` are reserved. Use `digikit` or your own author. `module:new` refuses `core` and `framework`.
 - **Commit `build/gen/`** (only `gallery.json` is generated there); do not edit it by hand (guide 4, 6). Do not commit built objects: a content module has no `build/*.dko.json` (they are cache in `out/cache/dko`; only `core/*` commits objects).
-- **Knobs and parameters.** A machine has at most 4 `DK_PARAM` words (0 to 3, in order, knob units 0 to 127) and at most one `DK_PAGE` with `DK_KNOB` only.
-  The adapter places word w on a fixed knob (Digitakt II 1, 2, 4, 5; Digitone II 0 to 3). The word is the slot, so a released parameter keeps its word.
+- **Knobs and parameters.** A machine has at most as many `DK_PARAM` words as the device's `param_slots` (Digitakt II 5, Digitone II 8; in order, knob units 0 to 127) and at most one `DK_PAGE` with `DK_KNOB` only.
+  The adapter places word w on a fixed knob (words 0 to 4 on knobs B C E F G on both devices; the Digitone II adds A, D, H for words 5 to 7). The word is the slot, so a released parameter keeps its word.
   Effect knobs may sit at any position 0 to 7 (`DK_KNOB_AT`). No data-only machines; `clone_of` is fixed by the profile (guide 5.2, 5.3, 5.7).
 - **No fixed type number** for a run-time machine. The runtime assigns it at load. Never write a number into code or a test.
 - **Effects.** MIX, the route and the send amounts belong to the framework. Write the wet signal only and do not assume you are last (guide 5.4, 7.2).

@@ -59,7 +59,7 @@ test('bundle carries the device knob models and the gallery JSON of typed module
   const m = g.machines[0];
   assert.deepEqual(Object.keys(m.devices).sort(), ['dn2', 'dt2']);
   assert.equal(m.devices.dt2.knobs[1].param, 'sine_level');
-  assert.equal(m.devices.dn2.knobs[0].slot, 25);
+  assert.equal(m.devices.dn2.knobs[1].slot, 26);
   assert.deepEqual(
     g.params.dt2.map((p) => p.short),
     ['LEVEL'],

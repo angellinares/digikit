@@ -15,8 +15,8 @@
 //   4 SUB     sub level, 0 .. 1 over the whole range (a square one octave down)
 //   5 FOLD    wave-folder drive on the oscillators only, 1 .. 4 (0 = no fold); the sub is added after the folder
 //
-// The adapter maps module parameters by position in the device's param_slots [1, 2, 4, 5]: the four parameters here
-// take all four (3 is the sample slot, 0 and 7 are the stock tune and level).
+// The adapter maps module parameters by position in the device's param_slots [1, 2, 4, 5, 6]: the four parameters here
+// take the first four (3 is the sample slot, 0 and 7 are the stock tune and level).
 //
 // No drive and no noise: the FX overdrive works on the oscillators as it does on a sample, and sample-rate and
 // bit-rate reduction crunch them, so both knobs are better spent on the shape and the sub.

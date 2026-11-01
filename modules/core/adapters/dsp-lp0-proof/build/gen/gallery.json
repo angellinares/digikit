@@ -5,9 +5,10 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "lp_reverse",
-              "slot": 25
+              "slot": 26
             }
           ],
           "level": 10,
@@ -66,7 +67,7 @@
         "min": 0,
         "name": "Reverse",
         "short": "REV",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       }
     ],

@@ -5,21 +5,23 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "p0",
-              "slot": 25
-            },
-            {
-              "param": "p1",
               "slot": 26
             },
             {
-              "param": "p2",
+              "param": "p1",
               "slot": 27
+            },
+            null,
+            {
+              "param": "p2",
+              "slot": 29
             },
             {
               "param": "p4",
-              "slot": 28
+              "slot": 30
             }
           ],
           "level": 10,
@@ -87,7 +89,7 @@
         "min": 0,
         "name": "Param 0",
         "short": "P0",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -97,7 +99,7 @@
         "min": 1,
         "name": "Param 1",
         "short": "P1",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -107,7 +109,7 @@
         "min": 2,
         "name": "Param 2",
         "short": "P2",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -117,7 +119,7 @@
         "min": 4,
         "name": "Param 4",
         "short": "P4",
-        "slot": 28,
+        "slot": 30,
         "template": 213
       }
     ],
