@@ -1,16 +1,18 @@
 // digikit/shot: one-shot playback of the stereo sample bound to the track, a stereo machine of the SDK contract (<dk/machine.h>, contract 1.2),
 // one body for both devices. The adapter of core/dsp-voice calls `_shot_note_on` once per note and `_shot_render` once per block with
 // R4 = this voice's state, R8 = the `dk_voice_in` (pitch in semitones << 8 with the tune folded in, the track, the outputs `out` (L) and `out_r` (R)),
-// R12 = the four parameter words START, END, REVERSE, PITCH (0 .. 0x7f00 = UI 0 .. 127).
+// R12 = the five parameter words SMP, START, END, REVERSE, PITCH (unit << 8: 0 .. 0x7f00 = UI 0 .. 127; SMP is 0 .. 15, 0 .. 0x0f00).
 //
-// The sample is the track's `dk_strack` record (<dk/sample_track.h>), written by the runtime into `_shot_rec` (16 records of 8 words; the control
-// sets of 4 words are in `_shot_ctl`). `note_on` takes the track from the voice input and, in one masked scope, checks the admission (the record
+// The sample is a pool entry's `dk_strack` record (<dk/sample_track.h>), written by the runtime into `_shot_rec` (16 records of 8 words, one for
+// each pool index; the control sets of 4 words are in `_shot_ctl`). `note_on` takes the pool index from the SMP word (word >> 8, so a p-lock of
+// SMP picks the entry of that step) and, in one masked scope, checks the admission (the record
 // is ready, not closed, count in range), latches the epoch (the record's token) in the voice and acquires the track. It copies the plane
 // bases, the frame count, the channels and the source rate, releases the track and sets up the cursor. Every `render` checks the admission and
 // the cached epoch in one masked scope, acquires the track, reads, and releases it. A refused admission or a stale token (select, unbind, a
 // stock reset) makes the block silent and ends the voice with DK_DONE; the PCM is not touched. The status always carries DK_STEREO.
 //
-// Parameters (latched at note-on: START, END, REVERSE; read every block: PITCH):
+// Parameters (latched at note-on: SMP, START, END, REVERSE; read every block: PITCH):
+//   SMP          pool index 0 .. 15 (the word is index << 8). An empty or closed entry is silent: the voice ends. A word above 15 << 8 is silent too.
 //   START, END   frame = round(frames * word / 0x7f00), clamped to 0 .. frames: 0 .. 127 spread over the sample. END <= START plays nothing.
 //   REVERSE      word >= 0x4000 (UI 64 and above): play backwards from END - 1 down to START.
 //   PITCH        UI 64 (0x4000) is the played note unchanged, each UI unit is 3/8 semitone: -24 .. +23.625 semitones.
@@ -19,7 +21,7 @@
 // base_r = base_l: the same samples go to both outputs (centred). The sample plays once, then the voice ends.
 //
 // State per voice (18 words, all cleared at note-on): 0 .. 5 the cursor of the kernel (start, end, index, fraction, rate, done), 6 the epoch (token),
-// 7 base_l, 8 base_r, 11 the source rate in Hz, 12 the track, 13 reverse, 14 the adapter's return address (I13) across the kernel call,
+// 7 base_l, 8 base_r, 11 the source rate in Hz, 12 the pool index, 13 reverse, 14 the adapter's return address (I13) across the kernel call,
 // 16 out, 17 out_r (the output pointer pair for the stereo kernel).
 
 #include "dk_machine.inc"
@@ -63,7 +65,7 @@ _shot_render:
     F10 = F10 * F1;
     R1 = 0x42700000;                      // 60.0
     F10 = F10 - F1;
-    R0 = DM(3, I4);                       // PITCH
+    R0 = DM(4, I4);                       // PITCH
     R1 = 0x4000;
     R0 = R0 - R1;
     F0 = FLOAT R0;
@@ -92,7 +94,7 @@ _shot_render:
     R1 = PASS R1;
     IF NE R0 = -R0;
     DM(4, I3) = R0;
-    R0 = DM(12, I3);                      // the track
+    R0 = DM(12, I3);                      // the pool index
     SHOT_TRACK_PTRS;
     NOP; NOP; NOP;
     DK_SAMPLE_BANK_LOCK(R13);
@@ -160,10 +162,11 @@ _shot_note_on:
     NOP; NOP; NOP;
     R0 = 1;
     DM(5, I3) = R0;                       // done until the sample is bound and acquired
-    R0 = DM(DK_IN_W_TRACK, I2);
+    R0 = DM(0, I4);                       // SMP word: pool index << 8
+    R0 = LSHIFT R0 BY -8;
     R1 = 15;
     COMP(R0, R1);
-    IF GT JUMP _shot_note_return;        // not a track of the table: no epoch, render ends the voice
+    IF GT JUMP _shot_note_return;        // not an entry of the pool: no epoch, render ends the voice
     DM(12, I3) = R0;
     SHOT_TRACK_PTRS;
     NOP; NOP; NOP;
@@ -189,8 +192,8 @@ _shot_note_acquired:
     R1 = 1;                               // DK_STRACK_FMT_PCM16
     COMP(R3, R1);
     IF NE JUMP _shot_note_release;       // not PCM16: stay done
-    R9 = DM(0, I4);                       // START word
-    R10 = DM(1, I4);                      // END word
+    R9 = DM(1, I4);                       // START word
+    R10 = DM(2, I4);                      // END word
     F11 = FLOAT R0;                       // frames
     R1 = 0x38010204;                      // 1 / 32512
     F2 = FLOAT R9;
@@ -208,7 +211,7 @@ _shot_note_acquired:
     COMP(R2, R3);
     IF GE JUMP _shot_note_release;       // empty: stay done
     DM(2, I3) = R2;                       // forward: the first frame is START
-    R0 = DM(2, I4);                       // REVERSE word
+    R0 = DM(3, I4);                       // REVERSE word
     R1 = 0x4000;
     COMP(R0, R1);
     IF LT JUMP _shot_note_forward;
@@ -239,8 +242,8 @@ _shot_note_return:
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// The track table (<dk/sample_track.h>): the runtime fills the records and moves the control words; the module only reads them.
-.PKDATA _shot_rec, 512;                  // 16 dk_strack records of 8 words
+// The pool table (<dk/sample_track.h>): the runtime fills the records and moves the control words; the module only reads them.
+.PKDATA _shot_rec, 512;                  // 16 dk_strack records of 8 words, one for each pool index
 .PKDATA _shot_ctl, 256;                  // 16 control sets of 4 words: closed, count, fault, reserved
 // dk_machine_desc: magic, contract (machine contract 1.2: stereo), n_params, voices, state_bytes, state_clear_bytes, max_cycles_block,
 // max_cycles_note_on, max_call_depth, stack_bytes. Cycles are instruction ceilings: the stereo kernel's 4,396 with its call, the rate (exp2 and
@@ -248,7 +251,7 @@ _shot_note_return:
 .GLOBAL _shot_desc;
 .VAR _shot_desc = DK_MAGIC;
 .VAR _shot_desc1 = 257;                  // DK_MACHINE_V1 | DK_MACHINE_STEREO (an expression is not accepted here)
-.VAR _shot_desc2 = 4;
+.VAR _shot_desc2 = 5;
 .VAR _shot_desc3 = DK_MAX_VOICES;
 .VAR _shot_desc4 = 72;
 .VAR _shot_desc5 = 72;

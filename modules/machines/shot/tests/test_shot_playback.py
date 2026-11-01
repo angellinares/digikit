@@ -1,8 +1,10 @@
 """digikit/shot on the concrete SHARC+ core through core/dsp-voice (the real adapter), against a float32 model of the stereo PCM16 reader.
 
-The track table (`_shot_rec` records and `_shot_ctl` control sets) is written the way the runtime does: PCM planes in free L2, the
-record published with `ready` last. Checks: start, end, reverse and pitch; L and R differ for a stereo sample; a mono sample plays centred;
-the voice ends after the sample; a stale token or a closed track is silent with no PCM read; every block leaves the count at 0.
+The pool table (`_shot_rec` records and `_shot_ctl` control sets, one of each for every pool index) is written the way the runtime does: PCM
+planes in free L2, the record published with `ready` last. The SMP parameter (word 0, index << 8) picks the record of a note. Checks: SMP
+picks the record (two values, two records; an empty or out-of-range entry is silent); start, end, reverse and pitch; L and R differ for a
+stereo sample; a mono sample plays centred; the voice ends after the sample; a stale token or a closed entry is silent with no PCM read;
+every block leaves the count at 0.
 Skips when Selache is not built."""
 
 import numpy as np
@@ -41,18 +43,18 @@ def pack(plane: np.ndarray) -> list[int]:
 
 
 class Shot:
-    def __init__(self, device="dt2", track=0, channels=2, frames=FRAMES, rate=RATE_HZ):
-        self.rig = MachineRig(MODULE, device, track=track)
-        self.track = track
+    def __init__(self, device="dt2", index=0, channels=2, frames=FRAMES, rate=RATE_HZ):
+        self.rig = MachineRig(MODULE, device)
+        self.index = index
         self.channels = channels
         self.frames = frames
         self.src_rate = rate
         self.left = LEFT[:frames]
         self.right = self.left if channels == 1 else RIGHT[:frames]
         d = self.rig.built.data
-        self.rec = nw(d["_shot_rec"]) + 8 * track
-        self.ctl = nw(d["_shot_ctl"]) + 4 * track
-        self.state = nw(self.rig.built.state) + (self.rig.built.stride // 4) * track
+        self.rec = nw(d["_shot_rec"]) + 8 * index
+        self.ctl = nw(d["_shot_ctl"]) + 4 * index
+        self.state = nw(self.rig.built.state)
         poke = self.rig.sess.poke
         for k, w in enumerate(pack(self.left)):
             poke(PLANE_L + k, w)
@@ -60,14 +62,16 @@ class Shot:
             poke(PLANE_R + k, w)
         self.publish()
 
-    def publish(self, token=TOKEN):
+    def publish(self, token=TOKEN, rec=None, plane_l=PLANE_L, plane_r=PLANE_R):
+        """Publish a record: this entry's by default, or `rec` (a record address) with its own planes."""
         poke = self.rig.sess.poke
-        base_r = PLANE_L if self.channels == 1 else PLANE_R
+        rec = self.rec if rec is None else rec
+        base_r = plane_l if self.channels == 1 else plane_r
         for k, w in enumerate(
-            [0, token, self.frames, self.src_rate, self.channels, 1, PLANE_L, base_r]
+            [0, token, self.frames, self.src_rate, self.channels, 1, plane_l, base_r]
         ):
-            poke(self.rec + k, w)
-        poke(self.rec, 1)  # ready last
+            poke(rec + k, w)
+        poke(rec, 1)  # ready last
 
     def count(self):
         return self.rig.sess.peek(self.ctl + 1) or 0
@@ -79,6 +83,7 @@ class Shot:
         r = self.rig
         r.set_params(
             {
+                "shot_smp": self.index << 8,
                 "shot_start": 0,
                 "shot_end": 0x7F00,
                 "shot_reverse": 0,
@@ -221,10 +226,42 @@ def test_a_mono_sample_plays_centred():
     assert np.array_equal(gl, wl) and np.array_equal(gl, gr)
 
 
-def test_another_track_reads_its_own_record():
-    s = Shot("dt2", track=3)
+def test_another_pool_entry_reads_its_own_record():
+    s = Shot("dt2", index=3)
     gl, gr, wl, wr, _ = check(s)
     assert np.array_equal(gl, wl) and np.array_equal(gr, wr)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_two_smp_values_pick_two_records(device):
+    """Two entries hold different PCM; the SMP word of the note, not the track, chooses. Entry 5 is published after entry 2 and both stay ready."""
+    s = Shot(device, index=2)
+    other_l, other_r = nw(0x200F4000), nw(0x200FC000)
+    poke = s.rig.sess.poke
+    third = pcm(3)
+    for k, w in enumerate(pack(third)):
+        poke(other_l + k, w)
+    for k, w in enumerate(pack(pcm(4))):
+        poke(other_r + k, w)
+    d = s.rig.built.data
+    rec5 = nw(d["_shot_rec"]) + 8 * 5
+    s.publish(token=TOKEN + 1, rec=rec5, plane_l=other_l, plane_r=other_r)
+    first, _ = s.play(blocks=8)  # SMP 2
+    assert np.array_equal(first, model(s.left, 0, FRAMES, 65536, False, 8))
+    s.index = 5
+    second, _ = s.play(blocks=8)  # SMP 5
+    assert np.array_equal(second, model(third, 0, FRAMES, 65536, False, 8))
+    assert not np.array_equal(first, second)
+
+
+@pytest.mark.parametrize("smp", [7, 15, 16, 127], ids=["empty-7", "empty-15", "above-pool-16", "above-pool-127"])
+def test_an_empty_or_out_of_range_entry_is_silent(smp):
+    """The entry has no record (never published, or past the pool): note_on does not latch, render ends the voice with no PCM read."""
+    s = Shot("dt2", index=0)
+    s.index = smp
+    left, right = s.play(blocks=2)
+    assert not np.any(left) and not np.any(right)
+    assert s.count() == 0
 
 
 def test_the_voice_ends_after_the_sample():
@@ -256,7 +293,7 @@ def test_a_stale_token_is_silent_and_ends_the_voice(device):
 
 
 @pytest.mark.parametrize("what", ["not-ready", "closed", "bad-fmt", "empty"])
-def test_a_track_that_is_not_playable_is_silent_with_no_pcm_read(what):
+def test_an_entry_that_is_not_playable_is_silent_with_no_pcm_read(what):
     s = Shot("dt2")
     r = s.rig
     poke = r.sess.poke

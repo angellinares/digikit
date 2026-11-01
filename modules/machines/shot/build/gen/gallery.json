@@ -7,21 +7,25 @@
           "knobs": [
             null,
             {
-              "param": "shot_start",
+              "param": "shot_smp",
               "slot": 26
             },
             {
-              "param": "shot_end",
+              "param": "shot_start",
               "slot": 27
             },
             null,
             {
-              "param": "shot_reverse",
+              "param": "shot_end",
               "slot": 29
             },
             {
-              "param": "shot_pitch",
+              "param": "shot_reverse",
               "slot": 30
+            },
+            {
+              "param": "shot_pitch",
+              "slot": 31
             }
           ],
           "level": 10,
@@ -43,23 +47,26 @@
               "stock": 202
             },
             {
-              "param": "shot_start",
+              "param": "shot_smp",
               "slot": 1
             },
             {
-              "param": "shot_end",
+              "param": "shot_start",
               "slot": 2
             },
             null,
             {
-              "param": "shot_reverse",
+              "param": "shot_end",
               "slot": 4
             },
             {
-              "param": "shot_pitch",
+              "param": "shot_reverse",
               "slot": 5
             },
-            null,
+            {
+              "param": "shot_pitch",
+              "slot": 6
+            },
             {
               "slot": 7,
               "stock": 209
@@ -84,12 +91,22 @@
     "dn2": [
       {
         "default": 0,
+        "id": "shot_smp",
+        "max": 3840,
+        "min": 0,
+        "name": "Sample",
+        "short": "SMP",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 0,
         "id": "shot_start",
         "max": 32512,
         "min": 0,
         "name": "Start",
         "short": "START",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -99,7 +116,7 @@
         "min": 0,
         "name": "End",
         "short": "END",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -109,7 +126,7 @@
         "min": 0,
         "name": "Reverse",
         "short": "REV",
-        "slot": 29,
+        "slot": 30,
         "template": 213
       },
       {
@@ -119,19 +136,29 @@
         "min": 0,
         "name": "Pitch",
         "short": "PITCH",
-        "slot": 30,
+        "slot": 31,
         "template": 213
       }
     ],
     "dt2": [
       {
         "default": 0,
+        "id": "shot_smp",
+        "max": 3840,
+        "min": 0,
+        "name": "Sample",
+        "short": "SMP",
+        "slot": 1,
+        "template": 209
+      },
+      {
+        "default": 0,
         "id": "shot_start",
         "max": 32512,
         "min": 0,
         "name": "Start",
         "short": "START",
-        "slot": 1,
+        "slot": 2,
         "template": 209
       },
       {
@@ -141,7 +168,7 @@
         "min": 0,
         "name": "End",
         "short": "END",
-        "slot": 2,
+        "slot": 4,
         "template": 209
       },
       {
@@ -151,7 +178,7 @@
         "min": 0,
         "name": "Reverse",
         "short": "REV",
-        "slot": 4,
+        "slot": 5,
         "template": 209
       },
       {
@@ -161,7 +188,7 @@
         "min": 0,
         "name": "Pitch",
         "short": "PITCH",
-        "slot": 5,
+        "slot": 6,
         "template": 209
       }
     ]
