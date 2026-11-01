@@ -1,51 +1,51 @@
-# On-device sample picker (slice 2)
+# On-device sample picker: the SMP pool list
 
-Status: accepted by Em on 2026-11-01 with the recommendations in section 5; refusals show in the track row, not in a dialog.
-Sources: sdk/include/dk/{ui,files,sample_track}.h, docs/design/sample-api-1.5.md, docs/MODULE-AUTHORING.md, modules/core/runtime/src/rs/src/tracks.rs, modules/core/apps/digikit-menu/README.md, finding 71, plan "Picker design direction".
+Status: slice 2 accepted by Em on 2026-11-01; reshaped on 2026-11-02 for the sample pool (the machine owns 16 entries, the parameter SMP names the entry of a note, a click on SMP opens this list). Refusals show on the + ADD row, not in a dialog.
+Sources: sdk/include/dk/{ui,files,sample_track,sample_picker}.h, docs/design/sample-api-1.5.md, docs/MODULE-AUTHORING.md, modules/core/runtime/src/rs/src/tracks.rs, finding 71.
 
 ## 0. Facts that shape the design
 
-- OLED: 128 x 64 px, 1 bit (framebuffer 1024 bytes; PNGs are 4x). A DK_UI_LIST has an inverted title bar at the top (about 8 px) and 7 px rows, so about 7 rows and about 21 characters per row in the firmware font **[O: count rows and columns from the first dk:dev shot]**. Row text is cut at 23 characters (DK_UI_ROW 24). A toast is hidden while a menu is open, so no toast inside the picker.
-- Keys in a list: UP/DOWN move, YES runs the row, RIGHT opens the side panel, LEFT/NO closes it, NO on the list calls `desc.back` (return 1 = stay open).
-- `sample_select` copies the path and returns at once (0 or an error); the load runs in the runtime UI task. Errors that happen later are sticky in `sample_track_status` until the next select/unbind.
-- DT2 has a sample backing (`core/sample-pool`, DT2 only). DN2 has none yet: `sample_select` returns E_CONTRACT.
-- Handle problem (section 3): `sample_tracks(local_id)` only finds a table the calling module declared. A picker has no table.
-- Gap: a content module has no UI timer. It cannot refresh a screen while a load runs (section 3, G4).
+- OLED: 128 x 64 px, 1 bit. A DK_UI_LIST has an inverted title bar at the top (about 8 px) and 7 px rows, so about 7 rows and about 21 characters per row in the firmware font. Row text is cut at 23 characters (DK_UI_ROW 24). A toast is hidden while a menu is open.
+- Keys in a list: UP/DOWN move, YES runs the row, RIGHT opens the side panel, LEFT/NO closes it, NO on the list calls `desc.back` (return 1 = stay open) or closes the list.
+- `sample_pool_add` copies the path and returns the pool index at once (or an error); the load runs in the runtime UI task. Errors that happen later are sticky in `sample_pool_status` until the entry is added again or cleared.
+- DT2 has a sample backing (`core/sample-pool`); DN2 has it in the `sample-tracks` patch set only. Without a backing `sample_pool_add` returns E_CONTRACT.
+- The picker is shared source compiled into the machine (`sdk/src/sample_picker.c`), so it gets the machine's pool handle in `dk_picker_init`.
+- A content module has no UI timer of its own; `dk_ui_tick` (core/ui) refreshes the list while a load runs.
 
-## 1. Entry and track capture
+## 1. Entry: the click on SMP
 
-Entry: the module's settings menu. SHOT exports `DK_MENU(shot_menu)`; path on the device is SETTINGS > DIGIKIT > MODULES > (SHOT) RIGHT > SETTINGS... > `SAMPLES...`. A shortcut on the SHOT page is not possible: `dk/ui.h` has no hook into a machine page, and the UI layer cannot learn the sequencer's selected track. So the track is chosen explicitly, as the plan says.
+SMP is word 0 of SHOT (knob B on both devices). Turning it steps through the pool (0 to 15, p-lockable). Releasing the knob without a turn opens this list over the machine page. The page hook (core/adapters/ui, the `DK_PARAM_ACTION` record) calls the machine's action function in the UI task; for SHOT:
 
-Capture: the track list (screen 1) is the first screen. YES on track row n stores n in a static `g_pick_track` (0..15) and opens the browser. The browser never changes `g_pick_track`. Browsing changes nothing on the track. Only the select action calls `sample_select`. Closing with NO leaves the old sample playing.
+```c
+void shot_smp_action(uint32_t track, uint32_t value, void (*set)(uint32_t track, uint32_t index));
+```
 
-Recommendation for the code location (answers "UI module"): build the picker as a shared C source in the SDK (`sdk/src/sample_picker.c` plus `sdk/include/dk/sample_picker.h`), compiled into SHOT (and any later sampler) and entered from its `dkm_menu`. Reason: SHOT owns the table and the handle, so the picker needs no new runtime call. A stand-alone UI-layer module needs the API additions in G1 and G2. If Em wants the stand-alone module, build G1 first. The picker source does not change either way: it takes `(api, handle)`.
+`track` is the track of the page, `value` its current SMP value, `set` is the hook's own function that writes SMP of that track. The action opens the list with `dk_picker_open_pool(value, pick, ctx)`; the picker calls `pick(ctx, index)` after a file was added (the new entry) or after YES on an entry, and the machine passes the index to `set`. The picker cannot write a parameter itself. The module-settings entry of SHOT is gone.
 
 ## 2. Screens and keys
 
-Common: font and views are the firmware's (core/ui). One button: YES on a file selects it and returns to the track list. No confirm before select (select supersedes a running load, so a wrong pick is one more pick). The only dialogs are for immediate refusals (see 2.4).
+Common: font and views are the firmware's (core/ui). One button: YES on a file adds it and returns to the list. No confirm.
 
-### 2.1 Screen 1: track list (DK_UI_LIST, title `SAMPLES`)
+### 2.1 Screen 1: the pool list (DK_UI_LIST, title `SAMPLES`)
 
 ```
-+----------------------+   128 x 64 px, ~21 characters
++----------------------+
 |       SAMPLES        |   title bar (inverted)
-| 01 KICK808    S 1.2s |   row = track, name, mono/stereo, length
-| 02 SNARE_A    M 0.4s |
-| 03 LOADING...        |
-| 04 -                 |   unused track
-| 05 !POOL FULL        |   sticky error
-| 06 -                 |
-| 07 -                 |
-+----------------------+   (16 rows, list scrolls; FREE row is last: FREE 3.2M FR)
+| + ADD                |   row 0: the browser; shows the refusal of the last add
+| 00 KICK808    S 1.2s |   rows 1 to 16: entries 0 to 15, as the knob numbers them
+| 01>SNARE_A    M 0.4s |   '>' marks the entry the SMP value points at
+| 02 LOADING...        |
+| 03 -                 |   an empty entry (a hole)
+| 04 !POOL FULL        |   sticky error of that entry
++----------------------+   (17 rows, the list scrolls)
 ```
 
-Rows: 16 tracks, then one text row `FREE ...` (needs G3; without G3 the row is left out).
-Row text: `NN NAME` (name 10 characters, a longer name keeps its start and end around `~` like core/digikit-menu) and a right-aligned tail: `S 1.2s` / `M 0.4s` from `sample_track_info` (READY), `LOADING...` / `QUEUED` (state), `!` plus the error text (2.4), or `-` (UNUSED).
-Keys: YES = open the browser for this track (screen 2). RIGHT = side panel: `CLEAR` (calls `sample_unbind`, one press, no confirm; the old notes stop, row goes to `-`), `INFO` (screen 4). NO = back to SETTINGS.
-Refresh: `dk_ui_refresh` after any action and, while a track is QUEUED/LOADING, on the UI tick (G4).
-Names: after a project change the runtime reloads the selections (api doc section 3). The row needs the file name, which the picker cannot know. Needs G2. Without G2 the row shows `NN <frames>` only and the name is blank after a project change.
+Entry row: `NN NAME` (name cut with `~` like core/digikit-menu) and a tail: `S 1.2s` / `M 0.4s` (READY), `LOADING...` / `QUEUED`, `!` plus the error text (2.4), or `-` for an empty entry. Rows are always the 16 indexes, so a row number is the SMP value; indexes are stable and holes stay.
+Keys: YES on + ADD opens the browser. YES on an entry calls `pick(ctx, index)` and closes the list (back to the page); an empty entry is not chosen. RIGHT on an entry: panel `CLEAR` (`sample_pool_clear`, one press, no confirm; its notes stop, the row goes to `-`) and `INFO` (screen 4). RIGHT on + ADD: no panel. NO: back to the machine page.
+Refresh: `dk_ui_refresh` after any action and, while an entry is QUEUED/LOADING, on the UI tick.
+Names: after a project change the runtime reloads the list; the row asks `sample_pool_path` for the name. Without the API (a 1.5 runtime) the name is blank.
 
-### 2.2 Screen 2: folder browser (DK_UI_LIST, title `SAMPLES`)
+### 2.2 Screen 2: folder browser (DK_UI_LIST, title `SAMPLES`), opened by YES on + ADD
 
 ```
 +----------------------+
@@ -65,21 +65,20 @@ Reading: `notify` runs in the UI task and only polls. It drains `files_poll` unt
 Table: up to 128 rows, each: kind, 4-byte size (if SIZE_VALID), and the leaf name (47 bytes). The full path is the current directory string plus the leaf, built when needed (limit 254 DT2, 151 DN2 sample paths; a longer one is a disabled row). Row identity is the full path, never a row index or the truncated display name (plan rule). More than 128 rows: the first 128 by sort order and a last text row `+N MORE`; the workbench can arrange folders. **[O]** ask Em if 128 is enough.
 Sort: at end of listing, sort rows folders first, then names, case-insensitive, by an index array (insertion sort, 128 rows). The provider order is not promised, so the picker sorts. A change of the folder while the user is on row k keeps no selection.
 Paging: core/ui scrolls the list. "Paging" is only the 128-row window above; no network of continuation pages is needed.
-Keys: UP/DOWN move. YES on a folder = enter it (relist). YES on `..` = parent. YES on a file = select (2.3). NO = parent folder; at the root NO closes the browser (`back` returns 1 when it went up, 0 at the root). RIGHT on a file = side panel: `SELECT` (same as YES), `INFO` (screen 4 with the listing facts). LEFT/NO closes the panel.
+Keys: UP/DOWN move. YES on a folder = enter it (relist). YES on `..` = parent. YES on a file = add it to the pool (2.3). NO = parent folder; at the root NO closes the browser (`back` returns 1 when it went up, 0 at the root). RIGHT on a file = side panel: `ADD` (same as YES), `INFO` (screen 4 with the listing facts). LEFT/NO closes the panel.
 
 Preview of size/channels/length: the listing gives size and hash only. A module cannot read the header (`store_read` reads the runtime store, not +Drive, and a sample is not in it). So the row shows size (K/M). Channels and length appear after the load (READY, `sample_track_info`) in screen 1 and INFO. A header preflight in the picker needs a new read call and is not worth it: the runtime already checks the header in `select`'s preflight and reports FORMAT. **Recommendation: no preview in v1.**
 
-### 2.3 Select and load progress
+### 2.3 Add and load progress
 
-YES on file F with track t: the picker builds the path, calls `sample_select(handle, t, path)`.
-- Returns 0: close the browser (`dk_ui_close`), refresh screen 1. Row t reads `QUEUED`, then `LOADING...`, then `S 1.2s`. READY is the end: nothing more to press.
-- Returns an error: stay in the browser and show the refusal dialog (2.4). Old binding is unchanged (preflight fails before any backing change, api doc 2.1).
-The track is never reported READY by the picker itself; only `sample_track_status == 3` sets the row (plan rule: do not report READY early).
-Supersede: another YES on the same track while QUEUED/LOADING is allowed; the runtime handles it.
+YES on file F: the picker builds the path and calls `sample_pool_add(handle, path)`.
+- Returns an index: the browser closes, the list shows again, `pick(ctx, index)` runs (the machine sets SMP to the new entry). If the file was already in the pool the index is its entry and nothing loads. The row shows `QUEUED`, `LOADING...`, then `S 1.2s`. The entry is never reported READY by the picker itself; only `sample_pool_status == 3` sets the row.
+- Returns an error: the browser closes and the + ADD row shows the short error text (`!POOL FULL`, `!BAD PATH`, `NO SAMPLE POOL`); nothing is picked and no pool entry changed. The next browser open clears the text.
+A path over 255 bytes is refused by the picker itself (`!BAD PATH`), without a call.
 
 ### 2.4 Errors
 
-Async errors (row tail on screen 1, sticky until select/unbind) and INFO text (screen 4):
+Async errors (row tail on screen 1, sticky until the entry is added again or cleared) and INFO text (screen 4):
 
 | Code | Row tail (max 14) | INFO text |
 | --- | --- | --- |
@@ -88,99 +87,82 @@ Async errors (row tail on screen 1, sticky until select/unbind) and INFO text (s
 | E_FORMAT -5 | `!BAD FORMAT` | NEEDS PCM16 48K MONO OR STEREO |
 | E_TOO_BIG -13 | `!TOO BIG` | DOES NOT FIT THE POOL |
 | E_LOST -15 | `!LOST` | BACKING LOST, RELOAD FAILED |
-| E_POOL -16 | `!POOL FULL` | POOL FULL: CLEAR A TRACK |
+| E_POOL -16 | `!POOL FULL` | POOL FULL: CLEAR AN ENTRY |
 | E_CHANGED -17 | `!CHANGED` | FILE CHANGED SINCE SELECTION |
 | E_SEL_PATH -40 | `!BAD PATH` | PATH TOO LONG OR BAD |
-| E_CONTRACT -48 | `!NO POOL` | NO SAMPLE POOL ON THIS DEVICE |
+| E_CONTRACT -48 | `NO SAMPLE POOL` | NO SAMPLE POOL ON THIS DEVICE |
 | other | `!ERR -nn` | (code) |
 
-Immediate refusal from `sample_select`: no dialog (Em, 2026-11-01: one-button flows, no confirm that ignores its answer). The browser closes and the track row on screen 1 shows the short error text from the table above (e.g. `POOL FULL`, `MISSING`), with the old binding unchanged. On DN2 E_CONTRACT shows `NO SAMPLE POOL` in the row until the DN2 pool exists. With G3 the picker knows at open and screen 1 shows one text row `NO SAMPLE POOL ON THIS DEVICE` before the user picks.
-E_CHANGED fix: YES on the same file again (re-selects, new snapshot). E_LOST on DT2 after a stock reset: the runtime reloads; the row passes LOADING again. No auto-retry beyond that (api doc question 6).
+E_CHANGED fix: YES on the same file again (the add selects the entry again). E_LOST on DT2 after a stock reset: the runtime reloads; the row passes LOADING again.
 
-### 2.5 Screen 3: clear (side panel CLEAR)
+### 2.5 CLEAR
 
-One press, no confirm: `sample_unbind`. Row goes to `-`. The machine on that track plays silence at the next note (api doc). Nothing else is changed; Elektron project files are not touched (keep-stock rule): all bindings live in the digikit store.
+One press, no confirm: `sample_pool_clear`. The row goes to `-`. A note with SMP on that entry is silent from then on (the SMP value is not changed). Elektron project files are not touched (keep-stock rule): the pool list lives in the digikit runtime, per project.
 
-### 2.6 Screen 4: INFO (DK_UI_TEXT_PAGE, title = `TRACK 03`)
+### 2.6 Screen 4: INFO (DK_UI_TEXT_PAGE, title `INFO`)
 
 ```
 +----------------------+
-|       TRACK 03       |
+|        INFO          |
+| SAMPLE 2             |
 | KICK808              |
-| /DRUMS/KICKS/KICK808 |   path (scrolls)
+| DRUMS/KICKS/         |   path (wrapped)
+| KICK808              |
 | STEREO 48000 HZ      |
-| 57600 FRAMES  1.2 S  |
+| 57600 FRAMES         |
+| LENGTH 1.2s          |
 | STATE READY          |
-| POOL FREE 3.2M FR    |   with G3
 +----------------------+
 ```
 
-Error state: the line `STATE` shows the INFO text from 2.4. Needs G2 for the name/path lines (without G2: those two lines are `-`).
+An error entry shows its INFO text in `STATE`; an empty entry shows `EMPTY`. From the browser, INFO shows name, path and size of a listed file.
 
-## 3. API 1.5 calls, callbacks and gaps
+## 3. API calls, callbacks and gaps
 
 | Call | From | Purpose |
 | --- | --- | --- |
-| `files_client` | picker init (called from `dkm_init` of the host module) | listing client, positive handle |
-| `files_list`, `files_cancel` | action callbacks (folder enter, parent), `back` | start/replace a listing |
+| `files_client` | `dk_picker_init` (in `dkm_init`) | listing client, positive handle |
+| `files_list`, `files_cancel` | browser actions, `back` | start/replace a listing |
 | `files_poll` | files notify callback (UI task) | copy rows, then `dk_ui_refresh` |
-| `sample_select(h,t,path)` | file row action | bind, section 2.3 |
-| `sample_unbind(h,t)` | CLEAR action | section 2.5 |
-| `sample_track_status(h,t)`, `sample_track_info(h,t,out)` | fill of screen 1 and 4 | state, frames/rate/channels |
+| `sample_pool_add(h, path)` | file row action | add, section 2.3 |
+| `sample_pool_clear(h, index)` | CLEAR action | section 2.5 |
+| `sample_pool_status`, `sample_pool_info` | fill of screen 1 and 4 | state, frames/rate/channels |
+| `sample_pool_path` (API 1.6) | fill of screen 1 and 4 | the name of an entry |
+| `dk_ui_tick` (core/ui) | fill of screen 1 | refresh while a load runs |
 
-Check the Api `size` covers `sample_track_info` and `files_poll` before use (as SHOT does).
+The picker checks that the Api `size` covers `sample_pool_info` and the files calls before use, and `sample_pool_path` separately. The handle is the machine's own (`api->sample_tracks(local_id)`), passed to `dk_picker_init`; the runtime does not check ownership, so a picker never guesses `handle = 1`. A stand-alone picker module would need a find call (`sample_tracks_find`); not built.
 
-Handle source. The runtime does not check ownership: `client(handle)` accepts any open client slot 1..CLIENTS, so a picker that guesses `handle = 1` works by accident and breaks as soon as two modules have tables or the load order changes. Not acceptable. Clean sources:
-- (chosen for slice 2) the host machine passes its own handle: SHOT stores it in `dkm_init` already (`static uint32_t tracks`); its `dkm_menu` calls `dk_picker_open(m, api, tracks)`.
-- (stand-alone picker, flagged) **G1: the API lacks a way to find another module's table.** Add `sample_tracks_find(index)` (0-based over open tables, returns a handle or `E_NOT_FOUND`) plus `sample_tracks_owner(handle, out_id, cap)` for the title, and make `select/unbind` check that a handle is valid for the call, not only open. Runtime change in tracks.rs; minor API 1.6.
-
-Other gaps (all additive, none blocks the host-menu route except G4 for live progress):
-- **G2** (built, API 1.6, sample-api-1.5.md section 6) `sample_track_path(h, track, buf, cap)`: the stored path of a track, so screen 1 shows names after a project change. The runtime keeps the path already (remembered for reload).
-- **G3** `sample_pool_info(h, out)`: free frames and whether a backing exists (E_CONTRACT = none). `dkpool_free_frames` exists inside the runtime; design question 4 recommended exposing it read-only. This gives the "what fits" text and the DN2 notice up front.
-- **G4** (built, section 6.3) a UI tick for content modules: `dk_ui_tick(fn, ctx, period_ms)` in `dk/ui.h`, implemented by core/ui with the runtime's `dkrt_poll_set` (digikit HEALTH does this already; content modules cannot import `dkrt_*`). `dl_set_tick_cb` is a block interrupt and must not call UI. Without G4 the load state on screen 1 refreshes only on key presses: the user would see `QUEUED` until the next key. Workaround for a first test only: refresh from the files notify callback.
-- **G5** (built, section 6.2) path form: DT2 `sample_select` takes an absolute +Drive path, DN2 a `samples/...` path (MODULE-AUTHORING). The listing gives root-relative paths. The picker must not know the prefix. Recommend `sample_select` accepts the root-relative path of a `DK_FILES_SAMPLES` row and the runtime adds the prefix. **[O]** check what `select` does today with a root-relative path; if it refuses, the runtime adds the prefix in tracks.rs (small change).
+Paths: `sample_pool_add` takes the root-relative path of a listing row; the runtime adds the device root (sample-api-1.5.md 6.2).
 
 ## 4. Module layout, limits, tests
 
 Files:
-- `sdk/include/dk/sample_picker.h`: `dk_picker_open(dk_ui_menu *m, const dk_api *api, uint32_t handle)`.
+- `sdk/include/dk/sample_picker.h`: `dk_picker_init`, `dk_picker_open_pool(current, pick, ctx)`, `dk_picker_fini`.
 - `sdk/src/sample_picker.c`: screens, callbacks, statics.
-- `sdk/src/picker_logic.h` and `sdk/src/picker_logic.c`: pure functions, no API calls: sort order, leaf-name truncation, path join/parent, size/length text, error text for a code, row text for track state.
-- `modules/machines/shot/src/module.c`: `DK_MENU(shot_menu)` and the `[[object]]` sources list gets `sdk/src/sample_picker.c`. `requires = ["core/ui"]` is added to the manifest (imports `dk_ui_*`); the module still loads without core/ui (calls return failure values; then the entry row is simply absent).
-- No new manifest for a picker module in this route.
+- `sdk/src/picker_logic.h` and `sdk/src/picker_logic.c`: pure functions, no API calls: sort order, leaf-name truncation, path join/parent, size/length text, error text for a code, `pk_pool_row`.
+- `modules/machines/shot/src/module.c`: lists both sources, calls `dk_picker_init` in `dkm_init`, exports `shot_smp_action`.
 
-Limits: code about 4 to 6 KB; statics about 8 KB (128 rows x 56 bytes, 16 track contexts, path buffers 256 bytes x 2). Menus are never freed: build each menu once (track list, browser, INFO page, panels), kept in statics, rebuilt by `dk_ui_refresh`. All ctx and descriptors in module memory. Rows 23 characters. One browser instance (not re-entrant): a second open reuses it.
+Limits: statics about 8 KB (128 rows x 56 bytes, path buffers 256 bytes x 2). Menus are never freed: each is built once (pool list, browser, INFO page) and kept. All ctx and descriptors in module memory. Rows 23 characters. One browser instance (not re-entrant): a second open reuses it.
 
 Tests:
-1. Host unit tests of `picker_logic` and the screen logic against a fake `dk_api` and the host fake of core/ui (same pattern as `modules/core/adapters/ui/host/tests/menu.rs`, which compiles a C source against a fake runtime): sort order (folders first, case-insensitive), 128-row cap and `+N MORE`, long-name truncation, path join and parent at the root and at the 254/151 limit, error-code to text mapping for every code of 2.4, track-row text per state. No test of third-party behaviour or argv.
-2. `dk:dev` screenshot sheet on DN2 (SHOT change reloads by boot, DN2 5 s; a pure `core/ui` change swaps in about 4 s). Per screen a `shot:`:
-   `mise run dk:dev -- digikit/shot --device dn2 --store 'digikit/shot*' --keys 'tap:NO,tap:SETTINGS,wait:400,<tap steps to DIGIKIT > MODULES > RIGHT > SETTINGS...>,shot:tracks,tap:YES,wait:800,shot:browse,tap:DOWN*2,tap:RIGHT,shot:panel,tap:LEFT,tap:YES,wait:600,shot:refused,tap:YES,tap:NO,tap:DOWN,tap:RIGHT,tap:DOWN,tap:YES,shot:info'`
-   (step lists are tuned when the screens exist). Shots: `tracks`, `browse`, `panel`, `refused` (DN2: NO SAMPLE POOL), `info`, `empty`, `error` (needs a DT2 run with a bad file). Check DT2 at the end with the same script. Look at every PNG before handoff.
-3. One DT2 runtime test, `shot-picker.test.ts` in tests/regression/runtime (not written yet), built on the helpers of `sample-playback.test.ts`: put a stereo PCM16 file in +Drive, drive the keys to select it on track 1 through the picker, wait for the `dk_strack` record of track 1 to show `ready == 1` (observe the runtime record and `sample_track_status`, not the framebuffer), then play the note and check the MOD_DSP event of SHOT's own index as that test does. Also CLEAR: record `ready == 0`. One device, one pass; no all-cell sweep.
-4. Gate: `mise run module:check digikit/shot`, `mise run test:host`, then the owner's runtime test above. No gate run until the end of the slice.
+1. Host tests, `modules/core/adapters/ui/host/tests/picker.rs` (`cargo test -p dkui-host`): the picker source compiled against a fake `dk_api` (a listing provider and a 16-entry pool that adds into the first free entry) and the fake core/ui: list rows per state, the marker, YES on an entry, the pick callback after an add, the refusal on the + ADD row, CLEAR and the hole, INFO, sort order, the 128-row cap, long names, paths at the 255-byte limit, the timer.
+2. `dk:dev` screenshot sheet on DN2 once the SMP click hook exists (not built yet): `mise run dk:dev -- digikit/shot --device dn2 --store 'digikit/shot*' --keys '...,shot:pool,...'`. Look at every PNG before handoff.
+3. One device test of the click path (SMP click, add a file, the note plays it) comes with the hook; shot-dt2 and shot-dn2 cover the pool API and the SMP value on the device without the click.
+4. Gate: `mise run module:check digikit/shot`, `mise run test:host`.
 
-## 5. Open questions for Em (with recommendations)
+## 5. Decisions
 
-1. Picker inside each sampler's `dkm_menu` (shared source) or a stand-alone module? Recommend the shared source now; stand-alone later with G1.
-2. Add G2 (track path), G3 (pool info), G4 (UI tick) to the runtime/ui as API 1.6 and ui additions before the picker? Recommend yes for G4 and G2 (without them the screen is blind during loads and after a project change); G3 can follow, DN2 gets the E_CONTRACT dialog meanwhile.
-3. No header preview in v1 (size only). Recommend accept.
-4. 128 rows per folder, picker sorts. Recommend accept; add paging only if a real card needs it.
-5. Errors on an immediate refusal: decided (Em, 2026-11-01): no dialog; the track row shows the error text (section 2.4).
-6. DN2: picker shows `NO SAMPLE POOL` until the DN2 allocator exists. Recommend ship the picker on DT2 first and keep DN2 as the screenshot-iteration device.
-7. G5: should the runtime add the root prefix to `sample_select`? Recommend yes (keeps the picker device-agnostic).
+1. The picker is shared source compiled into each sampler; a stand-alone module later needs a find call. (Em, 2026-11-01.)
+2. The list shows all 16 indexes, so the row number is the SMP value. Names on the knob come later (a formatter field in core/params).
+3. YES on an entry picks it and closes the list; YES on a hole does nothing. (Added with the pool model; not in Em's 2026-11-02 list, easy to drop.)
+4. No header preview in v1 (size only). 128 rows per folder, the picker sorts.
+5. Refusals: no dialog (Em, 2026-11-01, one-button flows); the + ADD row shows the error text.
+6. DN2 shows `NO SAMPLE POOL` while the image has no DN2 pool adapter.
 
-## 5b. As built (slice 2, DN2 screens)
+## 5b. As built
 
-- Two calls plus the fini: `dk_picker_init(api, handle)` in `dkm_init` (the listing client is init-only), `dk_picker_open(m)` in the settings menu fill, `dk_picker_fini()`.
+- Two calls plus the fini: `dk_picker_init(api, handle)` in `dkm_init` (the listing client is init-only), `dk_picker_open_pool(current, pick, ctx)` from the SMP click, `dk_picker_fini()`.
 - The 128-row table keeps the first 128 rows in sort order while the listing arrives (insertion by index), so the cap does not depend on the provider order. A name over 47 bytes is not shown and counts in `+N MORE`.
-- A path over 255 bytes is refused by the picker itself (`!BAD PATH` in the track row); there are no disabled rows, because the picker does not know the device limit.
-- The lists use a `check` callback and take the mark off at once. A list without it is closed by the stock handler after the row action, and a list that opens another view is not on the stack when that view closes (seen on the DN2 screen). The picker closes the browser itself and opens the track list again.
-- INFO text pages show about 16 characters per row; list rows about 21 to 23. Row text in lists is cut at 23 (worst-case wide names fit).
-- Title of INFO is `INFO`; the first row is `TRACK n`.
-
-## 6. Estimate and risk (agent time)
-
-- Picker logic and screens, host tests: 4 to 6 hours.
-- G2 + G4 (+ G3): 3 to 5 hours (runtime tracks.rs, core/ui, sdk.toml, `patchkit gen`); G1 and G5 add 2 hours.
-- dk:dev screens on DN2, DT2 check, regression test: 3 to 4 hours.
-Total: 1.5 to 2 days of agent time. Outcome risk: medium. The main risks are (a) the list view with many or zero rows in core/ui (an empty list faulted before; finding 71), (b) row count and width differ from the mockups (measure first), (c) DT2 +Drive listing latency and the 254-byte path edge, (d) no UI tick until G4 lands. Payoff is high (the first release needs on-device selection); confidence is good for the host-menu route, lower for the stand-alone module.
+- A path over 255 bytes is refused by the picker itself (`!BAD PATH`); there are no disabled rows, because the picker does not know the device limit.
+- The lists use a `check` callback and take the mark off at once. A list without it is closed by the stock handler after the row action, and a list that opens another view is not on the stack when that view closes (seen on the DN2 screen). The picker closes the browser itself and opens the pool list again.
+- INFO text pages show about 16 characters per row; list rows about 21 to 23. Row text in lists is cut at 23.

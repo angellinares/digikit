@@ -511,22 +511,26 @@ The [sample-proof fixture](../tests/fixtures/modules/sample-proof/README.md) dem
 calls and tested DSP bridge. Transferred-file playback acceptance passes in the emulator on DT2 OS 1.17 and
 DN2 OS 1.12. Hardware behavior and product capacity/replacement/selection remain unproved; this is not a product sampler.
 
-A stereo or mono sample per track (API 1.5, [design](design/sample-api-1.5.md)) uses `<dk/sample_track.h>` and
-`DK_SAMPLE_TRACKS(LOCAL_ID, RECORDS, CONTROL)` instead of a bank (a module has one family): 16 `dk_strack` records (512 bytes) and 16
-control sets (256 bytes) in the DSP data (`.PKDATA`, zero, no relocations in them). `pack` writes them as the kind 2 record of the
-DSP section and declares API 1.5; a module without a table declares 1.4. `sample_tracks(local_id)` gives the handle in init;
-`sample_select(handle, track, path)` queues a PCM16 native file (mono or stereo, 48 kHz) from a service or UI callback. The path is the
+A stereo or mono sample pool (API 1.5, [design](design/sample-api-1.5.md)) uses `<dk/sample_track.h>` and
+`DK_SAMPLE_TRACKS(LOCAL_ID, RECORDS, CONTROL)` instead of a bank (a module has one family): 16 `dk_strack` records (512 bytes), one for each
+pool entry, and 16 control sets (256 bytes) in the DSP data (`.PKDATA`, zero, no relocations in them). `pack` writes them as the kind 2 record of
+the DSP section and declares API 1.5; a module without a table declares 1.4. `sample_tracks(local_id)` gives the handle in init;
+`sample_pool_add(handle, path)` queues a PCM16 native file (mono or stereo, 48 kHz) from a service or UI callback and returns its pool index
+0 to 15: the first free entry, or the entry that already holds the path (`DK_SAMPLE_E_POOL` when all 16 are in use). The path is the
 root-relative path of a `DK_FILES_SAMPLES` listing row (`KICKS/K1`); the runtime adds the device root (DT2 `/`, DN2 `samples/`), and a DT2 path
-that already starts with `/` stays as it is. `sample_track_path(handle, track, buf, cap)` (API 1.6) gives the current selection back in the same
-form, in every state but UNUSED. The runtime closes the track's old generation before it publishes the new record. A module that
-only calls these entries (a picker) has no table and must check the table `size` before it calls them. `pack` declares the lowest Api minor
-that has what a module needs; a module that calls a newer entry without checking `size` lists it in `[module] uses_api = ["sample_track_path"]`
-and is then refused by a runtime that lacks it.
+that already starts with `/` stays as it is. `sample_pool_clear(handle, index)` leaves a hole: indexes are stable, nothing moves. A machine picks
+the entry of a note in its DSP, usually from a parameter (SHOT: SMP, word 0, `word >> 8`); an entry that is not READY is silent.
+`sample_pool_path(handle, index, buf, cap)` (API 1.6) gives the path back in the same form, in every state but UNUSED. The pool list is kept per
+project. The runtime closes an entry's old generation before it publishes a new record. A module that only calls these entries has no table and
+must check the table `size` before it calls them. `pack` declares the lowest Api minor that has what a module needs; a module that calls a newer
+entry without checking `size` lists it in `[module] uses_api = ["sample_pool_path"]` and is then refused by a runtime that lacks it.
 
-A module with a track table can add the on-device sample picker with `<dk/sample_picker.h>`: list `../../../sdk/src/sample_picker.c` and
-`../../../sdk/src/picker_logic.c` in the `[[object]]` sources, call `dk_picker_init(api, handle)` in `dkm_init`, `dk_picker_open(m)` in the fill of
-its `DK_MENU` settings menu (it adds a `SAMPLES...` row) and `dk_picker_fini()` in `dkm_fini`. `modules/machines/shot` is the example. The picker
-needs no manifest field: it checks the Api `size` before it calls `sample_track_path`, and without `core/ui` the row is absent.
+A sampler machine can add the on-device sample picker with `<dk/sample_picker.h>`: list `../../../sdk/src/sample_picker.c` and
+`../../../sdk/src/picker_logic.c` in the `[[object]]` sources, call `dk_picker_init(api, handle)` in `dkm_init` and `dk_picker_fini()` in
+`dkm_fini`, and call `dk_picker_open_pool(current, pick, ctx)` from the click action of the SMP parameter. The picker shows `+ ADD` and the 16
+entries; `pick(ctx, index)` runs after a file was added or an entry chosen, and the machine sets its SMP value to `index`.
+`modules/machines/shot` is the example (design: [sample picker](design/sample-picker.md)). The picker needs no manifest field: it checks the Api
+`size` before it calls `sample_pool_path`, and without `core/ui` it does nothing.
 
 For reusable browsing, include `<dk/files.h>` and acquire a positive `files_client()` handle during init.
 `files_list` copies a canonical root-relative NUL-terminated path and returns a positive request ticket;
@@ -643,7 +647,7 @@ Trace marks (`DK_TRACE_LOG`, `DK_STEP`) are switched on with `--trace` on `modul
 
   | Contract | Version | Covers |
   | --- | --- | --- |
-  | `api` | `[1, 5]` | The `dk_api` table. Every module has it, `raw` included. `pack` declares 1.5 only for a module with a track table, else 1.4. |
+  | `api` | `[1, 5]` | The `dk_api` table. Every module has it, `raw` included. `pack` declares 1.5 only for a module with a pool table, else 1.4. |
   | `machine` | `[1, 2]` | `<dk/machine.h>`; minor 1: `track`; minor 2: stereo machines |
   | `fx` | `[1, 0]` | `<dk/fx.h>` |
   | `service` | `[1, 0]` | Service modules |
