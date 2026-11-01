@@ -9,7 +9,6 @@ Skips when Selache is not built."""
 
 import numpy as np
 import pytest
-import support.dsp_voice_rig as dv
 from support.machine_rig import MachineRig, nw
 
 from tools.patchkit import pk_toolchains
@@ -254,7 +253,11 @@ def test_two_smp_values_pick_two_records(device):
     assert not np.array_equal(first, second)
 
 
-@pytest.mark.parametrize("smp", [7, 15, 16, 127], ids=["empty-7", "empty-15", "above-pool-16", "above-pool-127"])
+@pytest.mark.parametrize(
+    "smp",
+    [7, 15, 16, 127],
+    ids=["empty-7", "empty-15", "above-pool-16", "above-pool-127"],
+)
 def test_an_empty_or_out_of_range_entry_is_silent(smp):
     """The entry has no record (never published, or past the pool): note_on does not latch, render ends the voice with no PCM read."""
     s = Shot("dt2", index=0)
