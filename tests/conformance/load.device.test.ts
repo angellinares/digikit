@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 import { expectRuntimeBoot, startPatchedSession } from '@digi/regression/support.ts';
 import { timePhase, timingContext } from '@digi/regression/timing.ts';
-import { DEVICES, FIRMWARE, liveOptions, moduleArtifact } from '@digi/regression/runtime/live.ts';
+import { DEVICES, FIRMWARE, liveOptions } from '@digi/regression/runtime/devices.ts';
+import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { expectModuleLoad, runtimeModules, type RuntimeModule } from './load.ts';
 
 /** `DIGI_CONFORMANCE_MODULES`: comma-separated module ids; unset or empty runs every run-time module. */

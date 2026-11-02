@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
-import { runtimeTests } from '@digi/regression/runtime/live.ts';
+import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { CMD_RESET, CMD_STATUS, installProbe, PROBE, readRing, status } from '@digi/regression/runtime/probe-kit.ts';
 
 /** A run is 1674 frames and takes about 33 s of emulated time; the test checks this many frames from the start of the capture, not a whole run. */

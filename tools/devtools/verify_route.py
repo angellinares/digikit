@@ -341,7 +341,6 @@ HARNESS_DIRS: dict[str, tuple[str, ...]] = {
     "module-load": ("tests/regression/runtime/",),
 }
 RUNTIME_SHARED = (
-    "tests/regression/runtime/live.ts",  # lifecycle shared by the runtime, module and conformance suites
     "sdk/",
     "packages/dk-session/src/",
     "packages/patchkit/",

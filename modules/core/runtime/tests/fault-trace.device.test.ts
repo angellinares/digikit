@@ -4,14 +4,9 @@ import { CAP, CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { button, MS } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
-import {
-  DEBUG_MODULE,
-  expectRuntimeReady,
-  installWithDebug,
-  liveArtifacts,
-  moduleArtifact,
-  runtimeTests,
-} from '@digi/regression/runtime/live.ts';
+import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
+import { DEBUG_MODULE, installWithDebug, moduleArtifact } from '@digi/regression/runtime/install.ts';
+import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import {
   openDigikitMenu,
   readAboutRows,

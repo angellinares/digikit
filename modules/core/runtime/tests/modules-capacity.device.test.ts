@@ -5,14 +5,9 @@ import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { word } from '@digi/regression/runtime/fx-live.ts';
-import {
-  DEBUG_MODULE,
-  expectRuntimeReady,
-  installModules,
-  liveArtifacts,
-  moduleArtifact,
-  runtimeTests,
-} from '@digi/regression/runtime/live.ts';
+import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
+import { DEBUG_MODULE, installModules, moduleArtifact } from '@digi/regression/runtime/install.ts';
+import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 

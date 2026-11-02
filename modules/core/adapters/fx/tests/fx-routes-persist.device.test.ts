@@ -11,7 +11,9 @@ import { SEND, SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { withRouteFxSession } from '@digi/regression/runtime/fx-route-live.ts';
 import { inspectFxBoot, withPausedFxProtocol, tap } from '@digi/regression/runtime/fx-session.ts';
 import { MASTER, routeUi, SEND_ROUTE } from '@digi/regression/runtime/fx-routes-ui.ts';
-import { DEVICES, expectRuntimeUi, FIRMWARE, record } from '@digi/regression/runtime/live.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
+import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 const exec = promisify(execFile);

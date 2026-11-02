@@ -5,17 +5,12 @@ import { startPatchedSession } from '@digi/regression/support.ts';
 import { timePhase, timingContext } from '@digi/regression/timing.ts';
 import { prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { openDigikitMenu, openRuntimeAbout, meaningfulAboutRows } from '@digi/regression/runtime/runtime-menu.ts';
-import {
-  DEVICES,
-  FIRMWARE,
-  liveArtifacts,
-  liveOptions,
-  liveProtocol,
-  moduleArtifact,
-  record,
-  expectRuntimeUi,
-  tap as holdTap,
-} from '@digi/regression/runtime/live.ts';
+import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
+import { DEVICES, FIRMWARE, liveOptions } from '@digi/regression/runtime/devices.ts';
+import { moduleArtifact } from '@digi/regression/runtime/install.ts';
+import { liveProtocol } from '@digi/regression/runtime/protocol.ts';
+import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
+import { tap as holdTap } from '@digi/regression/runtime/waits.ts';
 
 /** Two fresh daemons with identical probe installation and exactly one protocol restart. */
 async function expectInputAdapter(device: Device): Promise<void> {

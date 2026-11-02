@@ -58,8 +58,18 @@ if (traceFile) {
 
   const firstPath = (args) => logRead(args[0]);
   const simple = [
-    'readFile', 'readFileSync', 'createReadStream', 'readdir', 'readdirSync',
-    'stat', 'statSync', 'lstat', 'lstatSync', 'existsSync', 'access', 'accessSync',
+    'readFile',
+    'readFileSync',
+    'createReadStream',
+    'readdir',
+    'readdirSync',
+    'stat',
+    'statSync',
+    'lstat',
+    'lstatSync',
+    'existsSync',
+    'access',
+    'accessSync',
   ];
   for (const name of simple) wrap(fs, name, firstPath);
   for (const name of ['open', 'openSync']) {

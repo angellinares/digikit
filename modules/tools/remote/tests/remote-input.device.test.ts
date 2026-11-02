@@ -2,7 +2,9 @@ import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { timePhase } from '@digi/regression/timing.ts';
-import { liveArtifacts, runtimeTests, expectRuntimeReady, waitEmulated } from '@digi/regression/runtime/live.ts';
+import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
+import { runtimeTests, expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
+import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 import {
   captureRemoteOled,
   expectRemoteEnabled,

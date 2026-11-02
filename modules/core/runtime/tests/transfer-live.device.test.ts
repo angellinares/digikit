@@ -4,13 +4,9 @@ import { hexSha256 } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
-import {
-  DEBUG_MODULE,
-  expectRuntimeReady,
-  liveArtifacts,
-  record,
-  runtimeTests,
-} from '@digi/regression/runtime/live.ts';
+import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
+import { DEBUG_MODULE } from '@digi/regression/runtime/install.ts';
+import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { cliInstall, transferCommand } from '@digi/regression/runtime/transfer-cli.ts';
 
 interface FolderResult {

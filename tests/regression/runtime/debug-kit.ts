@@ -4,7 +4,7 @@ import { button, MS, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
 import { advance, rpc, word } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
-import { waitEmulatedFrames } from './live.ts';
+import { waitEmulatedFrames } from './waits.ts';
 import { openDigikitMenu, readAboutRows } from './runtime-menu.ts';
 import type { RuntimePlan } from './runtime-plan.ts';
 

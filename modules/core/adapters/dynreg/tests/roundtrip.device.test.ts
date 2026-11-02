@@ -5,7 +5,7 @@ import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { advance, pickSine, rpc } from '@digi/regression/runtime/fx-live.ts';
 import { tap } from '@digi/regression/runtime/fx-session.ts';
-import { FIRMWARE, FULL_TIER } from '@digi/regression/runtime/live.ts';
+import { FIRMWARE, FULL_TIER } from '@digi/regression/runtime/devices.ts';
 import {
   diffSlot,
   dynType,

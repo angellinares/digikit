@@ -15,7 +15,10 @@ import {
 } from '@digi/test-support';
 import { expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession } from '../support.ts';
-import { FIRMWARE, expectRuntimeUi, moduleArtifact, record } from './live.ts';
+import { record } from './artifacts.ts';
+import { FIRMWARE } from './devices.ts';
+import { moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
 import { deviceProfile } from './device-data.ts';
 import { fxExpectations, type FxExpectations } from './dkm.ts';
 import { planSymbol, prepareRuntimePlanOffline, validateRuntimePlan, type RuntimePlan } from './runtime-plan.ts';

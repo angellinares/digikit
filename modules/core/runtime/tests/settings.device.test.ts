@@ -7,7 +7,8 @@ import { bootInfo, buildCard, cardInfo, E_NOSTORE, overlayArgs, statusOf } from 
 import { cardRig, RT, type CardSpec } from '@digi/regression/runtime/card-rig.ts';
 import { cardStore, deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { advance } from '@digi/regression/runtime/fx-live.ts';
-import { DEVICES, FIRMWARE, moduleArtifact } from '@digi/regression/runtime/live.ts';
+import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
+import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
 import {
   decodeSettings,

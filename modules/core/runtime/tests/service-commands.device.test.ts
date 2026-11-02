@@ -2,12 +2,8 @@ import { hasCap } from '@digi/dk-session';
 import { RANGES } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
-import {
-  expectRuntimeReady,
-  installModule,
-  moduleArtifact,
-  runtimeTests,
-} from '@digi/regression/runtime/live.ts';
+import { installModule, moduleArtifact } from '@digi/regression/runtime/install.ts';
+import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 
 /** Port of live-svc: runtime command registration, dispatch and refusal semantics. */
 async function expectServiceCommands({ session, dk }: PatchedSession): Promise<void> {

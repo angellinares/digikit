@@ -3,7 +3,8 @@ import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import type { Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { beforeReadinessDeadline, record } from './live.ts';
+import { record } from './artifacts.ts';
+import { beforeReadinessDeadline } from './waits.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 
 type Tap = (name: string, settleMs?: number) => Promise<void>;

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { runtimeTests } from '../runtime/live.ts';
+import { runtimeTests } from '../runtime/ready.ts';
 import { CMD_RESET, CMD_STATUS, installProbe, PROBE, readRing, status } from '../runtime/probe-kit.ts';
 
 /** The probe stream (tools/device/dkprobe_seq.py): frames of a header word (0xB0, payload size, frame number), 4 records of 3 words and a checksum. A run is a header record (run counter, item count, table checksum), a record of the start state and one record per item (result, ASTAT, STKY). */

@@ -15,7 +15,10 @@ import {
   type Session,
 } from '@digi/test-support';
 import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
-import { FIRMWARE, expectRuntimeUi, moduleArtifact, record } from './live.ts';
+import { record } from './artifacts.ts';
+import { FIRMWARE } from './devices.ts';
+import { moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
 import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
 import {
   planSymbol,

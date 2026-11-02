@@ -14,7 +14,8 @@ import {
   readFloatWav,
 } from '@digi/regression/runtime/fx-live.ts';
 import { selectSine, type FxProfile } from '@digi/regression/runtime/fx-session.ts';
-import { liveCheck as check, moduleArtifact } from '@digi/regression/runtime/live.ts';
+import { liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
+import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { deviceListing, uploadTests } from '@digi/regression/runtime/upload-kit.ts';
 import type { DkSession } from '@digi/dk-session';
 

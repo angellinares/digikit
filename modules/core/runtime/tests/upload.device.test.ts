@@ -19,7 +19,8 @@ import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { options, word } from '@digi/regression/runtime/fx-live.ts';
 import { tap } from '@digi/regression/runtime/fx-session.ts';
 import { portFile } from '@digi/regression/runtime/device-data.ts';
-import { FIRMWARE, liveCheck as check } from '@digi/regression/runtime/live.ts';
+import { liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
+import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import {
   beginBody,

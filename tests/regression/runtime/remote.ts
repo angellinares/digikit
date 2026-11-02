@@ -5,15 +5,10 @@ import type { DkSession } from '@digi/dk-session';
 import { button, repoRoot, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { aggregate, type PatchedSession } from '../support.ts';
-import {
-  beforeReadinessDeadline,
-  expectRuntimeUi,
-  installModule,
-  liveArtifacts,
-  moduleArtifact,
-  record,
-  tap,
-} from './live.ts';
+import { liveArtifacts, record } from './artifacts.ts';
+import { installModule, moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
+import { beforeReadinessDeadline, tap } from './waits.ts';
 import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 
 const exec = promisify(execFile);

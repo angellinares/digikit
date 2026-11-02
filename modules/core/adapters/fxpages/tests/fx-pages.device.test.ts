@@ -26,7 +26,9 @@ import {
   stockPages,
 } from '@digi/regression/runtime/fx-pages-ui.ts';
 import { trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
-import { DEVICES, expectRuntimeUi, FIRMWARE, record } from '@digi/regression/runtime/live.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
+import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 const RT = ['core/runtime', 'core/dynreg', 'core/dyndsp', 'core/dynfx'];

@@ -14,7 +14,8 @@ import {
   withPreparedFxSession,
 } from '@digi/regression/runtime/fx-session.ts';
 import { selectTrack, setAmount, trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
-import { DEVICES, FIRMWARE, record } from '@digi/regression/runtime/live.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 const FX = 'digikit/freqshift';

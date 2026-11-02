@@ -19,7 +19,10 @@ import {
 import { uploadStore } from './device-data.ts';
 import { advance, bounded, options, rpc } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
-import { DEVICES, expectRuntimeUi, FIRMWARE, FULL_TIER, moduleArtifact, record } from './live.ts';
+import { record } from './artifacts.ts';
+import { DEVICES, FIRMWARE, FULL_TIER } from './devices.ts';
+import { moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
 import { RING_SYMBOLS } from './runtime-menu.ts';
 import {
   planSymbol,

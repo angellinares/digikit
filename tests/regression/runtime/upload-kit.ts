@@ -11,7 +11,7 @@ import { CMD as GCMD } from '../../../packages/dk-session/src/gen_proto.ts';
 import { listing, plusdriveBinary, storeList, type Files, type Listing } from './card-kit.ts';
 import { cardRig, type CardRig } from './card-rig.ts';
 import { bounded, rpc } from './fx-live.ts';
-import { DEVICES, FIRMWARE, FULL_TIER } from './live.ts';
+import { DEVICES, FIRMWARE, FULL_TIER } from './devices.ts';
 import { overlayRecords } from './write-safety.ts';
 
 /**

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { DEVICES, FIRMWARE, record } from '@digi/regression/runtime/live.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { triggerFrame as triggerFor } from '@digi/regression/runtime/fixtures.ts';
 import {

@@ -20,9 +20,10 @@ every shipped module live in `tests/conformance/`; its load cell (`load.device.t
 module and checks persistence, contract, registration and faults. `DIGI_CONFORMANCE_MODULES` (comma-separated
 module ids) limits it; unset runs all.
 
-Shared helpers: `support.ts`, `timing.ts`, `runtime/live.ts`, `runtime/remote.ts`, `runtime/runtime-plan.ts`,
+Shared helpers: `support.ts`, `timing.ts`, `runtime/devices.ts`, `runtime/ready.ts`, `runtime/waits.ts`, `runtime/install.ts`,
+`runtime/artifacts.ts`, `runtime/protocol.ts`, `runtime/fixtures.ts`, `runtime/remote.ts`, `runtime/runtime-plan.ts`,
 `runtime/runtime-menu.ts`, `runtime/transfer-cli.ts`, `runtime/probe-kit.ts`. Module tests import them as
-`@digi/regression/<path>` (for example `@digi/regression/runtime/live.ts`).
+`@digi/regression/<path>` (for example `@digi/regression/runtime/ready.ts`).
 Goldens are in `goldens/dt2-1.17.json`.
 
 ## Commands
@@ -47,7 +48,7 @@ module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/r
   must match the stock SHA-256 and `intc_force:false` in the ready directory's `SOURCE.json`.
 - Module artifacts: `out/regression/modules/<device>/<leaf>.dkm` (override the root with
   `DIGI_RUNTIME_MODULES`). Runtime cases need `input-probe`, `remote`, `svc-echo` and `debug` (the log: every cell that reads it
-  selects `digikit/debug` first, `installWithDebug` in `runtime/live.ts`); the load cells need every run-time module. The gate packs them itself. By hand:
+  selects `digikit/debug` first, `installWithDebug` in `runtime/install.ts`); the load cells need every run-time module. The gate packs them itself. By hand:
   `uv run python -m tools.patchkit.patchkit pack digikit/pluck --device dt2 -o out/regression/modules/dt2/pluck.dkm`.
 - DT2 card samples at `out/runs/patchkit/samples` (`tools.emulator.card_check.make_samples`).
 - Sample cases also need `apps/web/public/dksample.wasm` (`mise run wasm:dksample`).
@@ -89,7 +90,7 @@ prepared artifacts, the plusdrive builder and the native patchkit CLI used by st
 runs the SHARC probe modules and compares RECIPS, RSQRTS and the dsp-facts values with the device measurements
 in `tests/fixtures/sharc/`.
 
-Helpers in `runtime/live.ts`:
+Helpers in `runtime/devices.ts`, `ready.ts`, `waits.ts`, `install.ts`, `artifacts.ts`, `protocol.ts`:
 
 - `runtimeTests(name, body, opts)`: one test per device, after `expectRuntimeBoot`.
 - `liveOptions(device, extra)`: daemon binary, firmware version and card for `withPatchedSession`.

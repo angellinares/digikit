@@ -18,7 +18,8 @@ import {
 } from '@digi/regression/runtime/fx-live.ts';
 import { slotBusAddress } from '@digi/regression/runtime/device-data.ts';
 import { triggerFrame } from '@digi/regression/runtime/fixtures.ts';
-import { FIRMWARE, record } from '@digi/regression/runtime/live.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 const analyzer = 'tools.patchkit.pk_digikit_fxsend';

@@ -31,7 +31,8 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   ...(await original<object>()),
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
-import { expectRuntimeUi, waitEmulated } from '../runtime/live.ts';
+import { expectRuntimeUi } from '../runtime/ready.ts';
+import { waitEmulated } from '../runtime/waits.ts';
 import { expectRemoteEnabled, installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
 import {
   planSymbol,

@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
-import { DEVICES, FIRMWARE, expectRuntimeUi, record } from '@digi/regression/runtime/live.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
+import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import {
   bounded,
   rpc,

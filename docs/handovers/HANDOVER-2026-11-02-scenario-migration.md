@@ -64,7 +64,7 @@ conformance suite over all 8 shipped modules; one Nx cache for all worktrees, gu
 1. Run the runtime step's files in parallel (one daemon per file, about 4 at once). Replace the remaining
    wall-clock test timeouts with no-progress limits first. Measure with one paired timing.
 2. The gate writes the Vitest log to the run directory as it runs (today it appears only at the end).
-3. Split `tests/regression/runtime/live.ts` so a helper change reruns only its importers.
+3. Done: `live.ts` is split into devices, ready, waits, install, artifacts and protocol helpers (tests/regression/runtime).
 4. Build caching: per-module `pack` targets, then the daemon binary, each passing `nx_input_audit`;
    device targets depend on them. Then cache device results, starting with conformance.
 5. Upload full tier once, then delete the matching Python upload scenarios. Fix open item 1, then delete

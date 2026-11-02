@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Session } from '@digi/test-support';
 import { afterAll, describe, expect, test } from 'vitest';
-import { FIRMWARE, liveOptions } from '../runtime/live.ts';
+import { FIRMWARE, liveOptions } from '../runtime/devices.ts';
 
 /** Stock firmware with the reply-record check on (SHARC_REPLY_INFLIGHT, docs/INSTRUMENTATION.md): the firmware builds the next record while the
  * previous one is sent, so the core must not change the record that the transfer is reading. The check runs in `fail` mode; the daemon prints a progress

@@ -5,14 +5,10 @@ import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
-import {
-  DEBUG_MODULE,
-  expectRuntimeReady,
-  installWithDebug,
-  liveArtifacts,
-  record,
-  waitEmulated,
-} from '@digi/regression/runtime/live.ts';
+import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
+import { DEBUG_MODULE, installWithDebug } from '@digi/regression/runtime/install.ts';
+import { expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
+import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
 export interface RuntimeModule {
   id: string;

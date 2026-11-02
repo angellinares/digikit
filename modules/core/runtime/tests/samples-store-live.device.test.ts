@@ -4,14 +4,10 @@ import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { repoRoot } from '@digi/test-support';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { timePhase } from '@digi/regression/timing.ts';
-import {
-  expectRuntimeReady,
-  liveArtifacts,
-  liveCheck as check,
-  liveProtocol,
-  runtimeTests,
-  sampleWav,
-} from '@digi/regression/runtime/live.ts';
+import { liveArtifacts, liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
+import { sampleWav } from '@digi/regression/runtime/fixtures.ts';
+import { liveProtocol } from '@digi/regression/runtime/protocol.ts';
+import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { hexSha256 } from '@digi/dk-session';
 import { openSamples } from '@digi/dk-session/samples';

@@ -17,7 +17,8 @@ import {
 import { GAIN, RT, SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { chainCheck, fxExpectations } from '@digi/regression/runtime/dkm.ts';
 import { inspectFxBoot, selectSine, withPreparedFxSession } from '@digi/regression/runtime/fx-session.ts';
-import { DEVICES, FIRMWARE, record } from '@digi/regression/runtime/live.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { readSmallRing } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
