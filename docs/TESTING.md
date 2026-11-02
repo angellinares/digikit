@@ -86,7 +86,7 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
 | `mise run test:fx:dt2` | Project `fx-dt2`: 135 quick assertions; `DIGI_FX_SWEEP=1` runs 146 across 60 scenarios. `DIGI_DT2_CARD` selects a prepared card image. |
 | `pnpm nx:pilot run <module-id>:test-device` | The module's `*.device.test.ts` files (Vitest project `runtime`) after its packs, aliases and the plusdrive CLI are built into `dist/`. |
-| `pnpm nx:pilot run-many -t test-conformance` | Project `conformance`: `tests/conformance/load.device.test.ts` on DT2 1.17 and DN2 1.12, once per eligible module (`DIGI_CONFORMANCE_MODULES` is set per module). |
+| `pnpm nx:pilot run-many -t test-conformance` | Project `conformance`: `tests/conformance/load-{dt2,dn2}.device.test.ts` on DT2 1.17 and DN2 1.12, once per eligible module (`DIGI_CONFORMANCE_MODULES` is set per module). |
 | `mise run module:check ID` | Machine/effect conformance and own Python tests, then any module-owned Nx `test-device` target. May build or emulate; size/fit follows both. Not an all-module load proof. |
 | `mise run module:audit NAME` | ColdFire memory audit of one run-time module. |
 | `mise run patch:test` | Smoke tour over `tests/patchkit/smoke/matrix.toml` (`-- --cell dt2-1.17:core/fx`, `-- --update`). |
@@ -187,7 +187,7 @@ under `modules/` and `tests/conformance/`.
 | `tests/devtools` | Benchlock, verify routing and budget, render-cache audit, test outcomes |
 | `tests/digikit` | Digikit boot scenarios (below); data in `scenarios/*.toml` |
 | `tests/regression` | Native Vitest: `dt2/` (stock), `emulator/` (emulator oracles), `runtime/` (helpers only), `scenarios/` (FX), `host/` (no device) |
-| `tests/conformance` | The shared module-load suite (`load.device.test.ts`, `load.ts`) |
+| `tests/conformance` | The shared module-load suite (`load-dt2.device.test.ts`, `load-dn2.device.test.ts`, `load.ts`) |
 | `tests/scenarios` | Stock scenario inputs and PCM pins |
 | `tests/support` | Shared helpers, not collected; `paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS` |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures |
@@ -209,6 +209,10 @@ Rust tests in their crates.
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - Lint and types come from `pyproject.toml`: new Python files are covered by `[tool.ruff] include`;
   add new typed files to `[tool.mypy] files`. Both run as commands in the gate step `python-tests`.
+
+Device sessions run in `dist/session-cache/<device>-<worker>` (per worktree, gitignored). Sessions of one
+worker reuse that run dir for the daemon's boot cache, which is pruned to 4 snapshot entries.
+`liveOptions(..., { fresh: true })` and mirror sessions use a fresh temp dir.
 
 ## Module-owned tests
 
@@ -289,7 +293,7 @@ dt2-tier-sweep.
   whose own Python `sources` reach it by import (`verify_route.acceptance_record_closure`), or nothing.
   A test that runs a Python tool lists it in its record's `sources`.
   It needs a two-core budget share and one fresh coupled daemon at a time.
-- `module-load` runs the shared conformance suite `tests/conformance/load.device.test.ts` (Vitest project
+- `module-load` runs the shared conformance suite `tests/conformance/load-{dt2,dn2}.device.test.ts` (Vitest project
   `conformance`) with `DIGI_CONFORMANCE_MODULES` set to the changed modules, on both devices, and packs
   exactly those modules (plus `digikit/debug`, the log). The uploads are all shipped modules that are
   `dynamic`, a service or `host` (`verify_route.RUNTIME_UPLOADS`, built from the manifests;

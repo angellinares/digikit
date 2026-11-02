@@ -299,10 +299,10 @@ def dependents(ids: set[str]) -> set[str]:
     return found
 
 
-def _production_uploads() -> dict[str, str]:
+def _production_uploads() -> dict[str, tuple[str, ...]]:
     """Module id -> the shared conformance suite, for the shipped modules (under `modules/`) that are run-time
     uploads: `dynamic`, a service or a `host` module. tests/conformance/load.ts scans the manifests by the same rule."""
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str, ...]] = {}
     for mid, moddir in sorted(modroots.manifests().items()):
         if not moddir.is_relative_to(ROOT / "modules"):
             continue
@@ -313,11 +313,14 @@ def _production_uploads() -> dict[str, str]:
             meta.get("dynamic") or meta.get("host") or meta.get("type") == "service"
         ):
             continue
-        out[mid] = CONFORMANCE_FILE
+        out[mid] = CONFORMANCE_FILES
     return out
 
 
-CONFORMANCE_FILE = "tests/conformance/load.device.test.ts"
+CONFORMANCE_FILES = (
+    "tests/conformance/load-dt2.device.test.ts",
+    "tests/conformance/load-dn2.device.test.ts",
+)
 # These production uploads have coupled lifecycle acceptance, in addition to their static owners.
 RUNTIME_UPLOADS = _production_uploads()
 # Step -> test directory, relative to tests/regression.
@@ -847,8 +850,9 @@ def acceptance_files(
                 elif step == "module-load":
                     selected.update(
                         os.path.relpath(f, "tests/regression")
-                        for m, f in RUNTIME_UPLOADS.items()
+                        for m, fs in RUNTIME_UPLOADS.items()
                         if m in hit
+                        for f in fs
                     )
                 else:
                     selected.update(

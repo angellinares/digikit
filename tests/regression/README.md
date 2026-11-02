@@ -16,7 +16,7 @@ time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4)
 
 Device tests for a module live in that module: `modules/**/tests/*.device.test.ts` (patched runtime on DT2 1.17
 and DN2 1.12). Each module's `project.json` lists them in `metadata.runtimeAcceptance`. Checks that run over
-every shipped module live in `tests/conformance/`; its load cell (`load.device.test.ts`) uploads each run-time
+every shipped module live in `tests/conformance/`; its load cells (`load-dt2.device.test.ts`, `load-dn2.device.test.ts`) upload each run-time
 module and checks persistence, contract, registration and faults. `DIGI_CONFORMANCE_MODULES` (comma-separated
 module ids) limits it; unset runs all.
 
@@ -128,10 +128,10 @@ vendor parameter changes. Exact remote pacing is checked by the host C unit
 
 ## Module load cells
 
-`tests/conformance/load.device.test.ts` uploads every shipped run-time module (dynamic, service and host
+`tests/conformance/load-{dt2,dn2}.device.test.ts` upload every shipped run-time module (dynamic, service and host
 machine or effect modules) on DT2 1.17 and DN2 1.12 through `DkSession` and `EmuUsbTransport`, selects it,
 reboots, and checks persistence, SDK contract, DSP-loader completion, registration, guard counters, runtime
-log and guest faults. Each cell has a fresh daemon. These cells observe load and registration, not rendered
+log and guest faults. Each cell has a fresh daemon and reuses the worker's cached run dir. These cells observe load and registration, not rendered
 audio. Module-specific behaviour is tested in the module's own `tests/` folder.
 
 ```sh

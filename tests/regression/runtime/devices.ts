@@ -5,7 +5,24 @@ import { repoRoot, type Device } from '@digi/test-support';
 export const DEVICES = ['dt2', 'dn2'] as const;
 export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
 
-export function liveOptions(device: Device, extra: { patchSet?: string; mirror?: boolean } = {}) {
+/** One run dir per device and vitest worker, so no two daemons share it at once. The daemon caches booted
+ * snapshots there: a cold boot once per worker, then about 1 s. Keeps the newest 4 snapshot entries. */
+export function cachedRunDir(device: Device): string {
+  const dir = path.join(repoRoot(), 'dist/session-cache', `${device}-${process.env.VITEST_POOL_ID ?? '0'}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const patched = path.join(dir, 'patched');
+  if (fs.existsSync(patched)) {
+    const entries = fs
+      .readdirSync(patched)
+      .map((name) => ({ full: path.join(patched, name), mtime: fs.statSync(path.join(patched, name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    for (const entry of entries.slice(4)) fs.rmSync(entry.full, { recursive: true, force: true });
+  }
+  return dir;
+}
+
+/** Mirror sessions and `fresh: true` keep a fresh run dir (the mirror folder must start empty). */
+export function liveOptions(device: Device, extra: { patchSet?: string; mirror?: boolean; fresh?: boolean } = {}) {
   const binary = process.env[device === 'dt2' ? 'DIGI_EMUD_DT2' : 'DIGI_EMUD_DN2'];
   if (!binary) throw new Error(`DIGI_EMUD_${device.toUpperCase()} must name a preflighted daemon`);
   const card = device === 'dt2' ? path.join(repoRoot(), 'out/runs/patchkit/samples') : undefined;
@@ -14,7 +31,9 @@ export function liveOptions(device: Device, extra: { patchSet?: string; mirror?:
       `DT2 sample card missing: generate ${card} (tools.emulator.card_check.make_samples, run by pk_harness)`,
     );
   }
-  return { device, firmware: FIRMWARE[device], binary, card, ...extra };
+  const { fresh, ...rest } = extra;
+  const runDir = extra.mirror || fresh ? undefined : cachedRunDir(device);
+  return { device, firmware: FIRMWARE[device], binary, card, ...rest, runDir };
 }
 
 /** Full-tier scenarios run only under `DIGIKIT_TIER=full` (`verify --full`), as the Python tiers do. */

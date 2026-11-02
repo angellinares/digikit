@@ -2448,7 +2448,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="+",
         metavar="FILE",
         help="Vitest files: registered module device tests (modules/.../tests/X.device.test.ts), "
-        "tests/regression/emulator/<name>.test.ts, tests/regression/dt2/<name>.test.ts or tests/conformance/load.device.test.ts; "
+        "tests/regression/emulator/<name>.test.ts, tests/regression/dt2/<name>.test.ts or tests/conformance/load-dt2.device.test.ts or load-dn2.device.test.ts; "
         "each runs in the acceptance step of its directory (implies those steps without --only)",
     )
     ap.add_argument(
@@ -2491,8 +2491,9 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         ap.error(str(exc))
     if conformance_ids:
-        named_acceptance.setdefault("module-load", []).append(
-            os.path.relpath(verify_route.CONFORMANCE_FILE, "tests/regression")
+        named_acceptance.setdefault("module-load", []).extend(
+            os.path.relpath(f, "tests/regression")
+            for f in verify_route.CONFORMANCE_FILES
         )
     implied = (["python-tests"] if named_py else []) + list(named_acceptance)
     files: list[str] = []

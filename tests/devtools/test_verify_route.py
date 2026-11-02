@@ -167,7 +167,10 @@ def test_runtime_uploads_are_all_shipped_dynamic_service_or_host_modules() -> No
     assert expected
     assert set(verify_route.RUNTIME_UPLOADS) == expected
     assert set(verify_route.RUNTIME_UPLOADS.values()) == {
-        "tests/conformance/load.device.test.ts"
+        (
+            "tests/conformance/load-dt2.device.test.ts",
+            "tests/conformance/load-dn2.device.test.ts",
+        )
     }
 
 
