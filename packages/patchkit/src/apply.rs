@@ -55,6 +55,17 @@ pub struct Plan {
     pub output: Option<PlanOutput>,
 }
 
+impl Plan {
+    /// The byte ranges of the code the plan placed on the SHARC.
+    pub fn sharc_code(&self) -> Vec<(u64, u64)> {
+        self.writes
+            .iter()
+            .filter(|w| w.cpu == SHARC)
+            .flat_map(|w| w.code.iter().copied())
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct PlanBase {
     pub device: String,

@@ -157,9 +157,14 @@ pub fn prepare(stock: &[u8], reg: &Registry, lib: &Library, set: &str) -> Result
     );
     let known = known_of(reg);
     let stock_sha = sfw.syx_sha256.clone();
-    let o = preflight::preflight(&applied.syx, reg, &known, &|k| {
-        (k.sha256 == stock_sha).then(|| stock.to_vec())
-    });
+    let code = applied.plan.sharc_code();
+    let o = preflight::preflight(
+        &applied.syx,
+        reg,
+        &known,
+        &|k| (k.sha256 == stock_sha).then(|| stock.to_vec()),
+        Some(&code),
+    );
     let bad: Vec<String> = o
         .lines
         .iter()
@@ -409,7 +414,7 @@ pub fn dsp_scan(image: &[u8]) -> Result<((), String)> {
     let dsp = fw
         .section(7)
         .ok_or_else(|| err!("the image has no DSP section (7)"))?;
-    Ok(((), crate::dspscan::check_section7(&dsp.data)?))
+    Ok(((), crate::dspscan::check_section7(&dsp.data, None)?))
 }
 
 /// The device's build floor (`[patch] build_floor`), on the image's container.
