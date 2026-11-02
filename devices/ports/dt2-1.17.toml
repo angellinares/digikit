@@ -2858,6 +2858,28 @@ mark = "D"
 rule = "fw/window:cf_ptr"
 
 [[anchor]]
+name = "dsp.frame.site.frame_rx.copy_block"
+cpu = "sharc"
+kind = "code"
+addr = 0x283860f4
+pm = 0x1c307a
+len = 6
+sha256 = "6d15dc4b9ab911972e51f457ab45587ce586bd83cc3279cd313f79d9ab7c5276"
+mark = "D"
+rule = "fw/dsp/frame:sharc_func"
+
+[[anchor]]
+name = "dsp.frame.site.frame_rx.copy_cond"
+cpu = "sharc"
+kind = "code"
+addr = 0x28385910
+pm = 0x1c2c88
+len = 6
+sha256 = "8ccc1d93012ef813461249ca35f2d7e295dd1a656895e1f8467c9d81aaad1b2e"
+mark = "D"
+rule = "fw/dsp/frame:sharc_func"
+
+[[anchor]]
 name = "dsp.fx.fn.entry"
 cpu = "sharc"
 kind = "code"
@@ -2979,6 +3001,17 @@ mark = "D"
 rule = "fw/dsp/master:sharc_literal"
 
 [[anchor]]
+name = "dsp.voice.fn.overdrive"
+cpu = "sharc"
+kind = "code"
+addr = 0x283967b0
+pm = 0x1cb3d8
+len = 6
+sha256 = "3b689aef9289a5bd701a790dfe26349a8c5a4f201033a3c4299b372ed4a0f151"
+mark = "D"
+rule = "fw/dsp/voice:sharc_func"
+
+[[anchor]]
 name = "dsp.voice.fn.render_entry"
 cpu = "sharc"
 kind = "code"
@@ -2986,6 +3019,28 @@ addr = 0x28389d9e
 pm = 0x1c4ecf
 len = 6
 sha256 = "ac4e4f137708405f60e984913940df7406874cbc718af72ff239e60f0861abf1"
+mark = "D"
+rule = "fw/dsp/voice:sharc_func"
+
+[[anchor]]
+name = "dsp.voice.site.chain.overdrive_call"
+cpu = "sharc"
+kind = "code"
+addr = 0x2838d8b2
+pm = 0x1c6c59
+len = 6
+sha256 = "ead911922ff1703b831da1855c07b2a0e3a5df797bab5da5b5b1c13a368955e8"
+mark = "D"
+rule = "fw/dsp/voice:sharc_func"
+
+[[anchor]]
+name = "dsp.voice.site.chain_ool.overdrive_call"
+cpu = "sharc"
+kind = "code"
+addr = 0x2838e70e
+pm = 0x1c7387
+len = 6
+sha256 = "ead911922ff1703b831da1855c07b2a0e3a5df797bab5da5b5b1c13a368955e8"
 mark = "D"
 rule = "fw/dsp/voice:sharc_func"
 
@@ -3237,6 +3292,16 @@ site = "cf.view.site.ui_loop"
 mode = "retarget"
 
 [[hook]]
+name = "dsp.frame.hook.frame_rx.copy_block"
+site = "dsp.frame.site.frame_rx.copy_block"
+mode = "before"
+
+[[hook]]
+name = "dsp.frame.hook.frame_rx.copy_cond"
+site = "dsp.frame.site.frame_rx.copy_cond"
+mode = "before"
+
+[[hook]]
 name = "dsp.fx.hook.entry"
 site = "dsp.fx.fn.entry"
 mode = "before"
@@ -3254,6 +3319,16 @@ mode = "before"
 [[hook]]
 name = "dsp.master.hook.q31_converter.call"
 site = "dsp.master.site.q31_converter.call"
+mode = "retarget"
+
+[[hook]]
+name = "dsp.voice.hook.chain.overdrive_call"
+site = "dsp.voice.site.chain.overdrive_call"
+mode = "retarget"
+
+[[hook]]
+name = "dsp.voice.hook.chain_ool.overdrive_call"
+site = "dsp.voice.site.chain_ool.overdrive_call"
 mode = "retarget"
 
 [[hook]]

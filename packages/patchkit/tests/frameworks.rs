@@ -305,3 +305,72 @@ fn core_params_and_pluck_assign_codes_and_relocate_the_table() {
         assert_eq!(v["count"], 1);
     }
 }
+
+/// `core/overdrive` edits the stock OVR Routing row (0x103) of core/params' copied table through `param_edits` (a section `edit`):
+/// range, names and formatter; the other words of the row stay the stock ones. Its two frame hooks run the displaced instruction and
+/// its two call sites are retargeted.
+#[test]
+fn core_overdrive_edits_the_stock_ovr_row_and_hooks_the_dsp() {
+    let Some(lib) = library(vec![]) else {
+        return;
+    };
+    let Some(r) = run(DT2_117, &lib, &["core/params", "core/overdrive"]) else {
+        return;
+    };
+    let a = r.unwrap();
+    let p = plan(&a);
+    let t = section(&p, "pf_table");
+    assert_eq!(t["appended_rows"], 0);
+    let main = Main::new(&a.syx, stock_len(DT2_117));
+    let s3 = Firmware::parse(&image(DT2_117).unwrap())
+        .unwrap()
+        .section(3)
+        .unwrap()
+        .clone();
+    let stock = Main {
+        data: s3.data,
+        base: s3.dest,
+        segs: vec![],
+    };
+    let row = |m: &Main, base: u64| m.u32s(base as u32 + 60 * 0x103, 15);
+    let (got, was) = (
+        row(&main, t["addr"].as_u64().unwrap()),
+        row(&stock, t["from_addr"].as_u64().unwrap()),
+    );
+    let sym = |n: &str| a.plan.symbols[&format!("core/overdrive@0.1.0:{n}")] as u32;
+    assert_eq!((got[2], got[3]), (0, 0xf00), "min, max");
+    assert_eq!(main.cstr(got[10]), "OVR Type");
+    assert_eq!(main.cstr(got[12]), "OD.TY");
+    assert_eq!(got[13], sym("od_type_fmt"));
+    for k in [0, 1, 4, 5, 6, 7, 8, 9, 11, 14] {
+        assert_eq!(got[k], was[k], "word {k} stays stock");
+    }
+    let hooks: Vec<_> = p["hooks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|h| h["module"] == "core/overdrive@0.1.0")
+        .map(|h| {
+            (
+                h["hook"].as_str().unwrap(),
+                h["displaced"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        hooks,
+        [
+            ("dsp.frame.hook.frame_rx.copy_cond", "run"),
+            ("dsp.frame.hook.frame_rx.copy_block", "run")
+        ]
+    );
+    let retargets = a
+        .plan
+        .writes
+        .iter()
+        .filter(|w| {
+            w.what.starts_with("retarget dsp.voice.site.") && w.what.contains("overdrive_call")
+        })
+        .count();
+    assert_eq!(retargets, 2);
+}
