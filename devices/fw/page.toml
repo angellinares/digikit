@@ -34,6 +34,34 @@ mark = "D"
 users = ["core/fxpages"]
 doc = "The page descriptor accessor `row = f(int page)`: entry `moveq N,D1; move.l 4(SP),D0` (6 bytes), then the bound check, the row address and rts. core/fxpages hooks it."
 
+# ---- the machine's SRC page (Digitakt II SourcePageView, Digitone II MultiSourcePageView): the encoder click ----
+[[fn]]
+name = "cf.page.fn.source_key"
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "ad9ba58a44b65973c8df406df251a462", offset = 0x0, len = 8 }
+rule.dn2 = { kind = "cf_func", hash = "31077f691362b318983bb20482d9b46f", offset = 0x0, len = 8 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Key handler (vfunc_2) of the machine's parameter page: `SourcePageView::vfunc_2` on the Digitakt II, `MultiSourcePageView::vfunc_2` on the Digitone II. Stack: 4(sp) = the view, 8(sp) = the key event (code at +0xc, flags at +0x10: 0x01 press, 0x02 chord, 0x08 repeat, 0x10 release; encoder clicks are codes 0x29 to 0x30). Entry: `link.w A6,-0x34; movem.l ...` (DT2) or `lea -0x24(SP),SP; movem.l ...` (DN2), 8 bytes (the hook displaces both instructions)."
+
+[[fn]]
+name = "cf.page.fn.source_turn"
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "640ca8f509ff9bcae3b20384529fec6f", offset = 0x0, len = 8 }
+rule.dn2 = { kind = "cf_func", hash = "bdaf946934665f13a8e4e649ae285624", offset = 0x0, len = 8 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Encoder turn handler (vfunc_17) of the machine's parameter page (`SourcePageView` on the Digitakt II, `MultiSourcePageView` on the Digitone II). Stack: 4(sp) = the view, 8(sp) = the event; the encoder is `event[3] - 1` (0 to 7). Entry: `link.w A6,-0x34; movem.l ...` (DT2) or `lea -0x30(SP),SP; movem.l ...` (DN2), 8 bytes (the hook displaces both instructions)."
+
+[[fn]]
+name = "cf.page.fn.view_track"
+cpu = "cf"
+sig = "u32 (const u8 *track_ref)"
+rule = { kind = "cf_func", hash = "cedb2a1ea2dbc72965b79e3f95f41157", ordinal = 1, offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "The track of a parameter page: called with the page's reference at view+0x74, it returns the track number (the stock code clamps it to 0 to 15 and uses it as the track index into the project's sound array, FUN_40035cca on the Digitakt II). Same function body on both devices (DT2 0x4004abb8, DN2 0x40046bfe)."
+
 [[site]]
 name = "cf.page.site.filter_graph_test"
 was = ["cf.fxpages.graph", "cf.page.site.graph"]
@@ -246,3 +274,25 @@ devices = ["dt2", "dn2"]
 mark = "D"
 users = ["core/fxpages"]
 doc = "Common exit of the sound loader `movem.l (SP),{D2-D4 A2-A6}; lea (0x20,SP),SP` (8 bytes; a2 = the Sound, d0 = the result); the hook counts the load."
+
+[[hook]]
+name = "cf.page.hook.source_key"
+site = "cf.page.fn.source_key"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # view at 4(sp), event at 8(sp); the stock handler always runs after the hook
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/runtime"]
+doc = "Entry of the machine page's key handler; the hook sees every key event of the page and never consumes one."
+
+[[hook]]
+name = "cf.page.hook.source_turn"
+site = "cf.page.fn.source_turn"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # view at 4(sp), event at 8(sp); the stock handler always runs after the hook
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/runtime"]
+doc = "Entry of the machine page's encoder turn handler; the hook sees every turn and never consumes one."

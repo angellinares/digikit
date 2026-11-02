@@ -7,6 +7,10 @@
 #include <stddef.h>
 
 /* cf.page.fn.page_desc: no sig yet */
+/* cf.page.fn.source_key: no sig yet */
+/* cf.page.fn.source_turn: no sig yet */
+/* The track of a parameter page: called with the page's reference at view+0x74, it returns the track number (the stock code clamps it to 0 to 15 and uses it as the track index into the project's sound array, FUN_40035cca on the Digitakt II). Same function body on both devices (DT2 0x4004abb8, DN2 0x40046bfe). */
+uint32_t dk_fw_page_view_track(const uint8_t *track_ref) __asm__("cf.page.fn.view_track");
 /* The pointer operand (4 bytes) of `move.l #list,D0` in the FX view builder: the rodata list {12} of the track FX key's one-page view. core/fxpages substitutes its own list. */
 extern const uint8_t dk_fw_page_fx_key_list __asm__("cf.page.data.fx_key_list");
 /* The stock list itself (rodata, three page numbers) and the stock count (the byte of `moveq 3,D1` at +1): the runtime copies them in front of its pages. The stock list (rodata 0x401e0448, pages 17, 18, 19) and the stock count. */

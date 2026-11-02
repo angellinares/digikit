@@ -51,6 +51,12 @@ enum Rec {
         what: String,
         def: ParamDef,
     },
+    ParamAction {
+        what: String,
+        machine: String,
+        word: u32,
+        func: String,
+    },
     Page {
         what: String,
         owner: String,
@@ -227,7 +233,17 @@ fn param_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
             min: sword(b, rec, "min")?,
             max: sword(b, rec, "max")?,
             default: sword(b, rec, "def")?,
+            action: None,
         },
+    })
+}
+
+fn param_action(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    Ok(Rec::ParamAction {
+        what: what.to_string(),
+        machine: req(what, b, rec, "machine")?,
+        word: word(b, rec, "word")?,
+        func: req(what, b, rec, "fn")?,
     })
 }
 
@@ -361,6 +377,7 @@ fn records(obj: &Dko, spec: &DescSpec) -> Result<Vec<Rec>> {
                 "dk_desc_fx_param" => fx_param(&what, spec, rb, rec)?,
                 "dk_desc_machine" => machine_def(&what, rb, rec)?,
                 "dk_desc_param" => param_def(&what, rb, rec)?,
+                "dk_desc_param_action" => param_action(&what, rb, rec)?,
                 "dk_desc_page" => page_def(&what, spec, rb, rec)?,
                 _ => return Err(err!("{what}: no reader for {}", rec.name)),
             });
@@ -421,6 +438,7 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
     let mut fx_params: Vec<(String, String, u32, FxKnob)> = vec![];
     let mut machines: Vec<(MachineDef, VoiceDef)> = vec![];
     let mut params: Vec<(String, ParamDef)> = vec![];
+    let mut actions: Vec<(String, String, u32, String)> = vec![];
     let mut pages: Vec<(String, String, String, String, Vec<PageKnob>)> = vec![];
     for r in recs {
         match r {
@@ -451,6 +469,12 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
             } => fx_params.push((what, fx, word, knob)),
             Rec::Machine { def, voice } => machines.push((def, voice)),
             Rec::Param { what, def } => params.push((what, def)),
+            Rec::ParamAction {
+                what,
+                machine,
+                word,
+                func,
+            } => actions.push((what, machine, word, func)),
             Rec::Page {
                 what,
                 owner,
@@ -486,6 +510,23 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
             return Err(err!("{what}: param {} is declared twice", p.id));
         }
         ids.push(&p.id);
+    }
+    for (what, machine, word, func) in actions {
+        let Some((_, p)) = params
+            .iter_mut()
+            .find(|(_, p)| p.machine == machine && p.word == word)
+        else {
+            return Err(err!(
+                "{what}: machine {machine} has no param at word {word} for a click action"
+            ));
+        };
+        if p.action.is_some() {
+            return Err(err!(
+                "{what}: param {} (word {word}) has two click actions",
+                p.id
+            ));
+        }
+        p.action = Some(func);
     }
     for (m, _) in &machines {
         let mut words: Vec<u32> = params
@@ -779,6 +820,12 @@ mod tests {
         r
     }
 
+    fn action(machine: &str, word: u32, func: &str) -> Rb {
+        let mut r = Rb::new("dk_desc_param_action");
+        r.text("machine", machine).num("word", word).text("fn", func);
+        r
+    }
+
     fn page(owner: &str) -> Rb {
         let mut r = Rb::new("dk_desc_page");
         r.text("owner", owner).text("name", "PLUCK").text("title", "Pluck");
@@ -918,6 +965,30 @@ mod tests {
         assert_eq!(pg.knobs[0].word, 1);
         assert_eq!(pg.knobs[0].position, None);
         assert_eq!(pg.knobs[1].position, Some(3));
+    }
+
+    #[test]
+    fn a_click_action_joins_the_param_at_its_word() {
+        let m = machine("pluck");
+        let recs = [
+            &m,
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &action("pluck", 1, "_pk_click"),
+        ];
+        let d = read(&obj(&all(&recs))).unwrap();
+        assert_eq!(d.params[0].action, None);
+        assert_eq!(d.params[1].action.as_deref(), Some("_pk_click"));
+        // no param at that word, and two actions on one
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("pluck", 1, "f")]);
+        assert!(e.contains("no param at word 1"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("nope", 0, "f")]);
+        assert!(e.contains("no param at word 0"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("pluck", 0, "f"), &action("pluck", 0, "g")]);
+        assert!(e.contains("two click actions"), "{e}");
+        let mut empty = action("pluck", 0, "");
+        empty.text("fn", "");
+        assert!(err_of(&[&m, &param("pluck", "a", 0), &empty]).contains("fn is empty"));
     }
 
     #[test]

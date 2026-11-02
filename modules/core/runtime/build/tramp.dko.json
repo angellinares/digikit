@@ -57,18 +57,46 @@
    "section": ".text",
    "symbol": "dkrt_exc",
    "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 302,
+   "section": ".text",
+   "symbol": "dkrt_page_key",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 310,
+   "section": ".text",
+   "symbol": "dkrt_pagekey_next",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 324,
+   "section": ".text",
+   "symbol": "dkrt_page_turn",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 332,
+   "section": ".text",
+   "symbol": "dkrt_pageturn_next",
+   "type": "cf.32"
   }
  ],
  "sections": [
   {
    "align": 4,
-   "hex": "4feffff048d703034eb9000000004cd703034fef00104ef900000000206f0004222f0008200802800000000fd28020080280fffffff0204006810000000fe889670af4e841e80010538166f64e754feffff048d703034eb9000000004cd703034fef00104ef900000000428040c046fc27004e75202f000446c04e7546fc2700223c00030d401039ec070004080000036604538166f042b9480000004e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e71708013c0ec09000060fe4feffff048d703032f2f00182f2f00182f2f00184eb9000000004fef000c4a804cd703034fef001066064ef9000000004ef9000000004fefffd448d77cfc2f0f2f2f00344eb90000000060fe",
+   "hex": "4feffff048d703034eb9000000004cd703034fef00104ef900000000206f0004222f0008200802800000000fd28020080280fffffff0204006810000000fe889670af4e841e80010538166f64e754feffff048d703034eb9000000004cd703034fef00104ef900000000428040c046fc27004e75202f000446c04e7546fc2700223c00030d401039ec070004080000036604538166f042b9480000004e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e714e71708013c0ec09000060fe4feffff048d703032f2f00182f2f00182f2f00184eb9000000004fef000c4a804cd703034fef001066064ef9000000004ef9000000004fefffd448d77cfc2f0f2f2f00344eb90000000060fe2f2f00082f2f00084eb900000000508f4ef9000000002f2f00082f2f00084eb900000000508f4ef900000000",
    "kind": "text",
    "name": ".text",
-   "size": 292
+   "size": 336
   }
  ],
- "source_sha256": "6c98deca281996bf4ed3e7161ba40620195dfb04a0f3d8d572538c5be1587f9c",
+ "source_sha256": "b6d149b251c9610c9fe8ed8a5fee85ee4d61b932b91d2be966646aa7153c358c",
  "symbols": [
   {
    "global": true,
@@ -150,6 +178,42 @@
   },
   {
    "global": true,
+   "name": "dkrt_page_key",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_page_turn",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_pagekey_hook",
+   "section": ".text",
+   "value": 292
+  },
+  {
+   "global": true,
+   "name": "dkrt_pagekey_next",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_pageturn_hook",
+   "section": ".text",
+   "value": 314
+  },
+  {
+   "global": true,
+   "name": "dkrt_pageturn_next",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "dkrt_soft_reset",
    "section": ".text",
    "value": 124
@@ -171,8 +235,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "90",
-  "isa_check": "438050fa11cc43a3bb6faffafbfeae626c5974a1df89138bc3f04e655390387d",
+  "instructions_redecoded": "100",
+  "isa_check": "0a024383c1356533f81f368dbc580ee86be6359c6efa21c2d60d5864dbba2e3b",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

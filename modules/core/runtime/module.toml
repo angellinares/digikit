@@ -55,6 +55,8 @@ fw_queue_pop = "cf.rtos.fn.queue_pop"
 dkrt_boot_next = "hook.cf.rtos.site.main_os_task.tail"
 dkrt_midi_next = "hook.cf.midi.site.rx.tail"
 dkrt_midi_ret = "hook.cf.midi.site.rx.return"
+dkrt_pagekey_next = "hook.cf.page.fn.source_key.tail"
+dkrt_pageturn_next = "hook.cf.page.fn.source_turn.tail"
 
 [[object]]
 path = "build/device-dt2.dko.json"
@@ -102,3 +104,22 @@ to = "dkrt_midi_hook"
 
 [[claim]]
 resource = "cf.midi.site.rx"
+
+# The encoder click on a machine's page (docs/design/machine-page-click.md): hooks at the entry of the page's key handler and turn handler,
+# on both devices. They call dkrt_page_key and dkrt_page_turn (src/rs/src/pageclick.rs) and then run the stock handler; they never consume an
+# event, and cost one test of a flag while no loaded module declares a click action.
+[[op]]
+op = "hook"
+hook = "cf.page.hook.source_key"
+to = "dkrt_pagekey_hook"
+
+[[claim]]
+resource = "cf.page.fn.source_key"
+
+[[op]]
+op = "hook"
+hook = "cf.page.hook.source_turn"
+to = "dkrt_pageturn_hook"
+
+[[claim]]
+resource = "cf.page.fn.source_turn"

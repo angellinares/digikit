@@ -229,6 +229,8 @@ pub struct ParamDef {
     pub min: i64,
     pub max: i64,
     pub default: i64,
+    /// The symbol of the click callback (a `DK_PARAM_ACTION` record), `void fn(u32 track)`.
+    pub action: Option<String>,
 }
 
 /// One encoder of a machine page (a `DK_KNOB` or `DK_KNOB_AT` entry of a `DK_PAGE` record).
@@ -354,6 +356,8 @@ pub struct RParam {
     pub slot: i64,
     pub frame_off: i64,
     pub mirror: i64,
+    /// The symbol of the click callback of the knob.
+    pub action: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -582,6 +586,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                     slot: kn.slot_base + at as i64,
                     frame_off: model.frame_offset(at),
                     mirror: model.frame.mirror_base + model.frame_offset(at),
+                    action: p.action.clone(),
                 });
             }
             for (k, (name, title, list)) in placed.pages.iter().enumerate() {
@@ -783,6 +788,13 @@ pub fn lower(m: &mut Manifest, models: &Models) -> Result<()> {
         m.lowered = true;
         return Ok(());
     }
+    if let Some(p) = m.param.iter().find(|p| p.action.is_some()) {
+        return Err(err!(
+            "{}: param {} has a click action (DK_PARAM_ACTION); only a run-time module (dynamic = true) can declare one",
+            m.module.id,
+            p.id
+        ));
+    }
     if models.by_device.is_empty() {
         return Err(err!(
             "{}: has machine records, but no device file with [modules] is available",
@@ -887,6 +899,7 @@ summary = "t."
                 min: 0,
                 max: 100,
                 default: 50,
+                action: None,
             })
             .collect();
         m.page = pages
@@ -1081,6 +1094,29 @@ summary = "t."
         let mut novoice = m.clone();
         novoice.voice.clear();
         assert!(!own(&novoice, "dn2"));
+    }
+
+    #[test]
+    fn a_click_action_reaches_the_register_record_of_a_run_time_module_only() {
+        let mut m = manifest(3, &[]);
+        m.param[1].action = Some("_t_click".into());
+        // a patched-in module has no registry rows for it
+        let e = lower(&mut m.clone(), &models()).unwrap_err().0;
+        assert!(e.contains("click action") && e.contains("t_1"), "{e}");
+        // a run-time one: the resolved parameter carries the symbol and the register record the image offset
+        let res = resolve(&m, &models()).unwrap();
+        for r in &res {
+            assert_eq!(
+                r.params.iter().map(|p| p.action.as_deref()).collect::<Vec<_>>(),
+                [None, Some("_t_click"), None]
+            );
+            let mut reg = crate::register::Register::lower(r, "machines/t").unwrap();
+            let syms = std::collections::BTreeMap::from([("_t_click".to_string(), 0x40u32)]);
+            reg.set_actions(r, &syms).unwrap();
+            assert_eq!(reg.actions, [(1, 0x40)]);
+            let e = reg.set_actions(r, &Default::default()).unwrap_err().0;
+            assert!(e.contains("_t_click") && e.contains("static"), "{e}");
+        }
     }
 
     #[test]

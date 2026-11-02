@@ -181,6 +181,7 @@ consts = [
     { name = "DK_DESC_PARAM", value = 3, doc = "Record kind of dk_desc_param." },
     { name = "DK_DESC_PAGE", value = 4, doc = "Record kind of dk_desc_page." },
     { name = "DK_DESC_FX_PARAM", value = 5, doc = "Record kind of dk_desc_fx_param." },
+    { name = "DK_DESC_PARAM_ACTION", value = 8, doc = "Record kind of dk_desc_param_action." },
     { name = "DK_PAGE_KNOBS", value = 8, doc = "Encoders on a page." },
     { name = "DK_POS_AUTO", value = 255, doc = "The knob takes the lowest free position." },
     { name = "DK_PERCENT", value = 1, doc = "A knob shown as 0 .. 127 (the default)." },
@@ -277,6 +278,18 @@ fields = [
     "i32 def // the default, raw",
     "char name[32] // 1 to 31 characters, shown while the knob turns",
     "char short_name[16] // 1 to 15 characters, under the knob",
+]
+
+[[desc.record]]
+name = "dk_desc_param_action"
+kind = "DK_DESC_PARAM_ACTION"
+doc = "A click on the knob of one parameter word of a machine calls a function of the module (docs/design/machine-page-click.md). At most one per parameter."
+fields = [
+    "u32 kind // DK_DESC_PARAM_ACTION",
+    "u32 size // sizeof(dk_desc_param_action)",
+    "char machine[16] // the id of the machine",
+    "u32 word // 0 .. 7, the parameter word of the machine whose knob is clicked; the machine declares it with DK_PARAM",
+    "char fn[32] // the ColdFire symbol of the callback, `void fn(u32 track)`: a global function of the module, called in the UI task",
 ]
 
 [[desc.record]]

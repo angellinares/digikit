@@ -196,6 +196,10 @@ Names are printable ASCII. Text longer than its field is a compile error. The ki
 Every parameter shows as a plain 0 to 127 value. For an enum, set `MAX` to n-1 (the word is (n-1) x 256). No module uses an enum yet.
 A signed or named display is not available for a machine.
 
+`DK_PARAM_ACTION(MACHINE, WORD, FN)` makes a click on the knob of that parameter (press and release of the encoder, no turn between) call
+`void FN(uint32_t track)`, a global function of the module, in the UI task. It may open a `<dk/ui.h>` menu over the page. A parameter has at most
+one action; a knob without one keeps the stock click. Only a `dynamic` module can declare it. Details: `docs/design/machine-page-click.md`.
+
 Scaling the word: the stock DSP converts a word to a float with the scale 1/32512 (0x7f00 = 1.0). Your routine may use any scale. Document
 it in the source header, as `modules/machines/pluck/src/dsp/pluck.s` does.
 

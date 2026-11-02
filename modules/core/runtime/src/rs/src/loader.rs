@@ -255,7 +255,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         return E_FORMAT;
     }
     let reg = f.add(reg_off as usize);
-    let r = crate::registry::check(reg, reg_size);
+    let r = crate::registry::check(reg, reg_size, image_size);
     if r != OK {
         return r;
     }
@@ -425,7 +425,7 @@ unsafe fn complete(
     let owner = rec as u8 + 1;
     crate::files::init_begin(rec);
     // registry rows before `init` (which may reuse the staging buffer through `store_read`)
-    let r = crate::registry::apply(owner, reg, reg_size);
+    let r = crate::registry::apply(owner, reg, reg_size, s.modules[rec].base);
     if r != OK {
         crate::registry::remove(owner);
         crate::files::retire(rec);

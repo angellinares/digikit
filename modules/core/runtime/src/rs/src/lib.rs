@@ -26,6 +26,7 @@ mod gen_abi_check;
 pub mod fxpage;
 mod fxsend;
 mod loader;
+pub mod pageclick;
 pub mod registry;
 pub mod scan;
 pub mod settings;
@@ -1103,6 +1104,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     tracks::tick();
     files::tick();
     fxpage::tick();
+    pageclick::tick();
     settings::tick();
     watch::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);

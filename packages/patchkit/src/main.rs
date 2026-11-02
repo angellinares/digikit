@@ -717,6 +717,18 @@ plan.json {}",
                     None if !dsp.is_empty() => None,
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
                 };
+                // the click callbacks of the parameters (`DK_PARAM_ACTION`): their offsets in the image of the object that is packed
+                if let (Some(r), Some(reg)) = (resolved, regs.as_mut())
+                    && r.params.iter().any(|p| p.action.is_some())
+                {
+                    let obj = cf
+                        .first()
+                        .and_then(|c| patchkit::desc::strip(c.0))
+                        .ok_or_else(|| {
+                            Error(format!("{id}: a click action needs a ColdFire object"))
+                        })?;
+                    reg.set_actions(r, &patchkit::dkm::image_symbols(&obj)?)?;
+                }
                 if !pages.is_empty() {
                     let r = regs.get_or_insert_with(|| patchkit::register::Register {
                         device: patchkit::register::device_id(&dev).unwrap_or(0),
