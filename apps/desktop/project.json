@@ -3,6 +3,15 @@
   "name": "@digi/desktop",
   "implicitDependencies": ["@digi/web", "@digi/dk-session"],
   "targets": {
+    "cargo-test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "options": {
+        "command": "uv run python -m tools.emulator.digi_env exec -- cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir out/native/target/check-desktop",
+        "cwd": "."
+      }
+    },
     "test-host": {
       "executor": "nx:run-commands",
       "cache": true,

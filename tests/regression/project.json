@@ -14,6 +14,17 @@
       "parallelism": false,
       "options": { "env": { "DIGI_FX_NO_AOT_SUBSET": "0" } }
     },
+    "test:fx-no-aot": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build"],
+      "options": {
+        "command": "uv run python -m tools.devtools.fx_tier exec-no-aot -- pnpm --filter @digi/regression test:fx",
+        "env": { "DIGI_FX_NO_AOT_SUBSET": "1" },
+        "cwd": "."
+      }
+    },
     "test:fx:dt2": {
       "dependsOn": ["digi-coupled:build-dt2"],
       "parallelism": false,

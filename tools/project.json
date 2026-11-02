@@ -1,0 +1,116 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "tools",
+  "implicitDependencies": [
+    "devices",
+    "sdk",
+    "tests",
+    "digi-control",
+    "digi-coupled",
+    "patchkit",
+    "plusdrive-format",
+    "emmc-card",
+    "core/digikit-menu",
+    "core/dsp-link",
+    "core/dsp-voice",
+    "core/dyndsp",
+    "core/dynfx",
+    "core/dynreg",
+    "core/expansion",
+    "core/fx",
+    "core/fxpages",
+    "core/health",
+    "core/input",
+    "core/machines",
+    "core/params",
+    "core/runtime",
+    "core/ui"
+  ],
+  "targets": {
+    "python-checks": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "uv run python -m tools.devtools.py_select checks", "cwd": "." }
+    },
+    "python-tests": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "options": {
+        "command": "uv run python -m tools.devtools.py_select run --base ${DIGI_GATE_BASE:-origin/main}",
+        "cwd": "."
+      }
+    },
+    "pins": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build"],
+      "options": {
+        "command": "uv run python -m tools.emulator.coupled scenario --all --no-build --jobs ${DIGI_JOBS:-4}",
+        "cwd": "."
+      }
+    },
+    "tier-quick": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build"],
+      "options": { "command": "uv run python -m tools.devtools.fx_tier tier-quick", "cwd": "." }
+    },
+    "tier-sweep": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build"],
+      "options": { "command": "uv run python -m tools.devtools.fx_tier tier-sweep", "cwd": "." }
+    },
+    "dt2-tier-quick": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build-dt2"],
+      "options": { "command": "uv run python -m tools.devtools.fx_tier dt2-tier-quick", "cwd": "." }
+    },
+    "dt2-tier-sweep": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build-dt2"],
+      "options": { "command": "uv run python -m tools.devtools.fx_tier dt2-tier-sweep", "cwd": "." }
+    },
+    "card": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "options": {
+        "commands": [
+          "uv run python -m tools.emulator.card_check",
+          "uv run python -m tools.firmware.plusdrive_check",
+          "uv run python -m tools.firmware.plusdrive_check --dn2"
+        ],
+        "parallel": false,
+        "cwd": "."
+      }
+    },
+    "smoke": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "options": {
+        "command": "uv run python -m tools.patchkit.pk_harness run --jobs ${DIGI_JOBS:-4}",
+        "cwd": "."
+      }
+    },
+    "dt2-tone": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build-dt2"],
+      "options": { "command": "uv run python -m tools.emulator.dt2_sample_check", "cwd": "." }
+    }
+  }
+}

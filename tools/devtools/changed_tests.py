@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 from tools import python_env  # noqa: E402
 from tools.devtools import (  # noqa: E402
+    py_select,
     verify,
     verify_budget,
     verify_route,
@@ -151,7 +152,7 @@ def _add_module_tests(g: grimp.ImportGraph, mods: set[str]) -> None:
 def module_of(path: str) -> str | None:
     """The dotted module of a .py file under tools/ or tests/, or in a module's own tests/ directory."""
     if not path.endswith(".py") or not (
-        path.startswith(("tools/", "tests/")) or verify.is_module_test_dir(path)
+        path.startswith(("tools/", "tests/")) or py_select.is_module_test_dir(path)
     ):
         return None
     parts = path.removesuffix(".py").split("/")
@@ -167,7 +168,7 @@ def path_of(module: str) -> str:
 
 def is_test_file(path: str) -> bool:
     return (
-        (path.startswith("tests/") or verify.is_module_test_dir(path))
+        (path.startswith("tests/") or py_select.is_module_test_dir(path))
         and path.rsplit("/", 1)[-1].startswith("test_")
         and (path.endswith(".py"))
     )
@@ -312,7 +313,7 @@ def select(files: list[str], deep: bool = False) -> Selection:
     for f in files:
         if f.endswith(".md"):
             continue
-        if verify.is_changed_test(f) and (ROOT / f).is_file():
+        if py_select.is_changed_test(f) and (ROOT / f).is_file():
             add(f, "changed")
         fine = verify_route.fine(f)
         if fine is not None:
@@ -350,7 +351,7 @@ def select(files: list[str], deep: bool = False) -> Selection:
     ]
     if steps:
         sel.gate_adds.append(f"steps: {', '.join(steps)}")
-    plan_ = verify.python_test_plan(files, False)
+    plan_ = py_select.python_test_plan(files, False)
     label = {p: s for p, s in plan_}
     more = [
         (rel, label[entry])
@@ -367,7 +368,7 @@ def select(files: list[str], deep: bool = False) -> Selection:
 # mocked commands, bounded subprocesses). Do not infer safety from a directory or a test's name.
 FAST_PYTHON_TESTS = frozenset(
     test
-    for name, _, tests in verify.PY_SUITES
+    for name, _, tests in py_select.PY_SUITES
     if name == "devtools"
     for test in tests
     if test.startswith("tests/devtools/")
@@ -447,7 +448,7 @@ def plan(
         f
         for f in files
         if f.endswith(".py")
-        and (f.startswith(("tests/", "tools/")) or verify.is_module_test_dir(f))
+        and (f.startswith(("tests/", "tools/")) or py_select.is_module_test_dir(f))
         and (ROOT / f).is_file()
     ]
     typed = [
@@ -480,8 +481,8 @@ def plan(
         ),
         (
             "python-tests",
-            verify.python_tests_command(
-                out_dir, tests, verify.python_jobs(verify_budget.resolve_budget())
+            py_select.python_tests_command(
+                out_dir, tests, py_select.python_jobs(verify_budget.resolve_budget())
             )
             if tests
             else None,
@@ -494,7 +495,7 @@ def plan(
 def print_deferred(files: list[str], sel: Selection) -> None:
     print("Deferred to `mise run verify` (fast checks do not complete validation):")
     python_gate = "python-tests" in verify.steps_for(files)
-    gate_python = verify.python_test_plan(files, False) if python_gate else []
+    gate_python = py_select.python_test_plan(files, False) if python_gate else []
     selected = (
         set(sel.tests)
         | set(sel.deep_only)
@@ -544,9 +545,9 @@ def main(argv: list[str] | None = None) -> int:
         args.files
         if args.files is not None
         else (
-            verify.changed_files(args.base, args.head)
+            py_select.changed_files(args.base, args.head)
             if args.head
-            else verify.changed_files(args.base)
+            else py_select.changed_files(args.base)
         )
     )
     if any("\n" in path or "\r" in path for path in files):

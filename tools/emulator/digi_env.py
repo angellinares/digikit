@@ -583,6 +583,9 @@ def diag_stderr(names: str | list[tuple[str, str]]) -> bool:
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["exec"] and len(sys.argv) > 3 and sys.argv[2] == "--":
+        cmd = sys.argv[3:]
+        os.execvpe(cmd[0], cmd, {**rust_env(), "SHARC_GEN_DIR": str(generated_dir())})
     print(f"toolchain   {TOOLCHAIN} ({toolchain_rustc() or 'not installed'})")
     print(f"generated   {generated_dir()}")
     for label, path in ready_inputs().items():

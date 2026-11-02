@@ -1,6 +1,5 @@
 """Module-owned device acceptance survives retiring Python scenario dispatch."""
 
-import json
 import os
 import sys
 from contextlib import contextmanager
@@ -12,18 +11,25 @@ from tools.devtools import benchlock
 from tools.patchkit import patchkit, pk_harness, pk_modcheck
 
 
-def test_only_the_modules_own_project_declares_device_acceptance(tmp_path, monkeypatch):
+def test_only_the_nx_graph_test_device_target_declares_device_acceptance(
+    tmp_path, monkeypatch
+):
+    from tools.devtools import verify_route
+
     folder = tmp_path / "module"
     folder.mkdir()
     monkeypatch.setattr(pk_modcheck.modroots, "module_dir", lambda _mid: folder)
-    declaration = {"name": "owned-effect", "targets": {"test-device": {}}}
-    (tmp_path / "project.json").write_text(json.dumps(declaration))
-    assert pk_modcheck.own_device_target("owned/effect") is None
-    project = folder / "project.json"
-    project.write_text(json.dumps({"name": "owned-effect", "targets": {}}))
-    assert pk_modcheck.own_device_target("owned/effect") is None
-    project.write_text(json.dumps(declaration))
-    assert pk_modcheck.own_device_target("owned/effect") == "owned-effect:test-device"
+
+    graph = {
+        "nodes": {
+            "owned/effect": {"data": {"targets": {"test-device": {}}}},
+            "other/effect": {"data": {"targets": {"test-host": {}}}},
+        }
+    }
+    monkeypatch.setattr(verify_route, "nx_graph", lambda: graph)
+    assert pk_modcheck.own_device_target("owned/effect") == "owned/effect:test-device"
+    assert pk_modcheck.own_device_target("other/effect") is None
+    assert pk_modcheck.own_device_target("missing/effect") is None
     monkeypatch.setattr(pk_modcheck.pk_conform, "is_machine_module", lambda _mid: False)
     monkeypatch.setattr(pk_modcheck.pk_conform, "is_fx_module", lambda _mid: False)
     assert pk_modcheck.plan("owned/effect", "dt2") == ([], {})

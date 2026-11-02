@@ -135,6 +135,8 @@ files = [
     "tools/emulator/snapread.py",
     "tools/devtools/layercheck.py",
     "tools/devtools/changed_tests.py",
+    "tools/devtools/fx_tier.py",
+    "tools/devtools/py_select.py",
     "tools/devtools/agent_guard.py",
     "tools/devtools/emud_key.py",
     "tools/sharc_dev/recip_tables.py",

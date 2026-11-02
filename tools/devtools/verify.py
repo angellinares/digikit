@@ -73,158 +73,36 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 from tools import python_env  # noqa: E402
 from tools.devtools import (  # noqa: E402
     benchlock,  # noqa: E402
-    fastcov,  # noqa: E402
+    fx_tier,  # noqa: E402
     rust_ws,  # noqa: E402
     test_outcomes,  # noqa: E402
     verify_budget,  # noqa: E402
     verify_route,  # noqa: E402
     verify_times,  # noqa: E402
 )
+from tools.devtools.fx_tier import (  # noqa: E402
+    DT2_FX_FILES,
+    no_aot_env,
+    stream_process,
+)
+from tools.devtools.py_select import (  # noqa: E402
+    PY_CHECKS,
+    PY_GATE,
+    PY_SUITES,
+    changed_files,
+    git_lines,
+    is_changed_test,
+    merge_base,
+    python_test_plan,
+    python_tests_passed,
+    python_timeout,
+)
 from tools.emulator import (  # noqa: E402
-    coupled,  # noqa: E402
     digi_env,  # noqa: E402
 )
 from tools.patchkit import modroots  # noqa: E402
 
 PY = ["uv", "run", "python"]
-FX_FILES = (
-    "tests/regression/scenarios/dn2-trackfx.ts",
-    "tests/regression/scenarios/dn2-sendfx.ts",
-)
-DT2_FX_FILES = (
-    "tests/regression/scenarios/dt2-trackfx.ts",
-    "tests/regression/scenarios/dt2-sendfx.ts",
-)
-# python-tests always runs PY_GATE (the staleness checks: built module objects and port files match their
-# sources) and PY_CHECKS (lint, format, types, paths). A suite of PY_SUITES, (name, trigger prefixes, test paths), runs when a
-# changed file starts with one of its prefixes (all suites with --full); a suite with a test directory
-# triggers only on files that are not Python modules of tools/ or tests/, which select the tests that
-# reach them in the import graph instead (changed_tests.gate_tests). Test paths may be globs or
-# directories; one that matches nothing is an error.
-PY_GATE = ("tests/patchkit/test_pk_current.py",)
-# Plain commands python-tests runs as sub-checks (label "python-tests:NAME"): lint, format, types, generated sources.
-# ruff and mypy read their file lists from pyproject.toml.
-PY_CHECKS: tuple[tuple[str, list[str]], ...] = (
-    ("ruff", [sys.executable, "-m", "ruff", "check", "--no-cache"]),
-    ("ruff-format", [sys.executable, "-m", "ruff", "format", "--check", "--no-cache"]),
-    ("mypy", [sys.executable, "-m", "mypy"]),
-    # the module layering (docs/ARCHITECTURE.md): reads manifests, sources and built objects, under a second
-    ("layercheck", [sys.executable, "-m", "tools.devtools.layercheck"]),
-    # the generated sources match sdk/sdk.toml, devices/*.toml and abi.toml (mise run gen:modules)
-    ("gen-check", [sys.executable, "-m", "tools.patchkit.patchkit", "gen", "--check"]),
-)
-PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
-    (
-        "patchkit",
-        (
-            "packages/patchkit/",
-            "packages/dkneeds/",
-            "devices/ports/",
-            "tools/patchkit/pk_",
-            "tools/patchkit/modroots.py",
-            "tools/patchkit/port_resolve.py",
-            "tools/patchkit/patchkit.py",
-            "tests/patchkit/",
-        ),
-        ("tests/patchkit",),
-    ),
-    (
-        "machine-conformance",
-        (
-            "tools/patchkit/pk_conform.py",
-            "tools/patchkit/pk_modcheck.py",
-            "tools/patchkit/pk_sharc.py",
-            "tests/support/machine_rig.py",
-            "tests/support/conform_worker.py",
-            "tests/support/dsp_voice_rig.py",
-            "tests/support/fx_rig.py",
-            "tests/support/fx_conform_worker.py",
-            "tests/support/fx_effects.s",
-            "tests/modules/",
-        ),
-        ("tests/modules",),
-    ),
-    (
-        # the tests inside the modules (modules/<group>/<name>/tests/test_*.py): found by globbing, so a new module test needs no entry;
-        # a change in a module selects its own tests through verify_route.module_fine
-        "module-tests",
-        (),
-        ("modules/*/*/tests/test_*.py",),
-    ),
-    (
-        "digikit-boot",
-        (
-            "packages/patchkit/src/dkm.rs",
-            "packages/patchkit/src/register.rs",
-            "packages/emulator/plusdrive/",
-            "tools/patchkit/pk_dkrt",
-            "tools/patchkit/pk_digikit_",
-            "tests/digikit/",
-        ),
-        ("tests/digikit",),
-    ),
-    (
-        # the SHARC core and its generator (CORE_FINGERPRINT); in PY_GATE until 2026-10-21, so --full keeps them
-        "sharc-core",
-        (
-            "tools/sharc_dev/sharc_core/",
-            "tools/sharc_dev/sharc_transpile/",
-            "tools/sharc_dev/sharc_transpile_infer.py",
-            "tools/sharc_dev/sharc_rsgen.py",
-        ),
-        (
-            "tests/sharc/integration/test_sharc_golden.py",
-            "tests/sharc/semantics/test_sharc_denormal.py",
-            "tests/sharc/generation/test_sharc_rsgen_density.py",
-        ),
-    ),
-    (
-        "control-client",
-        ("tools/control/digi_client.py", "packages/emulator/control/"),
-        ("tests/control",),
-    ),
-    (
-        "devtools",
-        (
-            "tools/devtools/verify.py",
-            "tools/devtools/verify_route.py",
-            "tools/devtools/changed_tests.py",
-            "tools/devtools/agent_guard.py",
-            ".claude/settings.json",
-            "tools/devtools/verify_budget.py",
-            "tools/devtools/verify_build.py",
-            "tools/devtools/rust_ws.py",
-            "tools/patchkit/pk_proofs.py",
-            "tools/devtools/benchlock.py",
-            "tools/devtools/test_outcomes.py",
-            "tools/devtools/layercheck.py",
-        ),
-        (
-            "tests/devtools/test_layercheck.py",
-            "tests/devtools/test_verify_budget.py",
-            "tests/devtools/test_agent_guard.py",
-            "tests/devtools/test_test_outcomes.py",
-            "tests/devtools/test_benchlock.py",
-        ),
-    ),
-    (
-        "launcher",
-        (
-            "tools/emulator/native_emu.py",
-            "tools/emulator/native_pgo.py",
-            "tools/emulator/native_target.py",
-            "tools/emulator/coupled.py",
-            "tools/emulator/digi_env.py",
-        ),
-        (
-            "tests/emulator/test_native_emu_launcher.py",
-            "tests/emulator/test_native_pgo.py",
-            "tests/emulator/test_native_target.py",
-            "tests/emulator/test_coupled_tool.py",
-            "tests/emulator/test_gen_fingerprint.py",
-        ),
-    ),
-)
 STEPS = (
     "build",
     "desktop",
@@ -247,57 +125,6 @@ STEPS = (
     "dt2-tier-quick",
     "dt2-tier-sweep",
 )
-# Every seventh FX scenario of each file: about 20 of 134, at least one per FX family. Only with --all-no-aot.
-TIER_QUICK_EVERY = 7
-# AOT versus interpreter (no-AOT) PCM equality runs on this fixed subset of the FX scenario files, not on
-# all 134 (Em approved the reduction on 2026-10-19; `--all-no-aot` restores the full sets: every scenario
-# of tier-sweep, every seventh of tier-quick, all oracle tests of check-no-aot). The pick covers distinct
-# DSP paths, one or two scenarios each, always at the strongest setting (a clipped, saturated or
-# fully-wet signal exercises the most code and shows a rounding difference first):
-#   voice, no FX            tf-dry-hold       (the synth/sample voice alone: the base of every other scenario)
-#   bit reduction           tf-br-127         track FX, quantiser
-#   overdrive               tf-over-71        track FX, waveshaper; tf-over-127-flt-rt1: the filter and the
-#   sample-rate reduction   tf-srr-127        routing-1 (256) paths that three track-FX scenarios share
-#   delay                   tf-del-71 (track send); sf-del-ref, sf-del-fb-u127 (feedback above unity),
-#                           sf-del-ppwidth-u127 (pingpong + stereo width)
-#   reverb                  tf-rev-71; sf-rev-ref, sf-rev-decay-u127 (longest tail), sf-rev-shfreq-u127 (shimmer)
-#   chorus                  tf-chr-71; sf-chr-ref, sf-chr-speed-u127
-#   mixer / master          sf-mst-ratio      (the master compressor page: the mixer's last stage)
-# The DT2 files have fewer scenarios (their numbers differ) and run in the interpreter alone (about 80 s per
-# audio second), so the DT2 pick is the shortest one per path.
-NO_AOT_SUBSET: dict[str, tuple[str, ...]] = {
-    "tests/regression/scenarios/dn2-trackfx.ts": (
-        "tf-dry-hold",
-        "tf-br-127",
-        "tf-over-71",
-        "tf-over-127-flt-rt1",
-        "tf-srr-127",
-        "tf-del-71",
-        "tf-rev-71",
-        "tf-chr-71",
-    ),
-    "tests/regression/scenarios/dn2-sendfx.ts": (
-        "sf-del-ref",
-        "sf-del-fb-u127",
-        "sf-del-ppwidth-u127",
-        "sf-rev-ref",
-        "sf-rev-decay-u127",
-        "sf-rev-shfreq-u127",
-        "sf-chr-ref",
-        "sf-chr-speed-u127",
-        "sf-mst-ratio",
-    ),
-    "tests/regression/scenarios/dt2-trackfx.ts": (
-        "tf-dry-hold",
-        "tf-br-127",
-        "tf-over-127",
-        "tf-srr-127",
-        "tf-del-127",
-        "tf-rev-127",
-        "tf-chr-127",
-    ),
-    "tests/regression/scenarios/dt2-sendfx.ts": ("sf-mst-ratio",),
-}
 # Normal broad verification excludes full-tier or explicitly requested steps.
 EVERYTHING = tuple(s for s in STEPS if s not in ("tier-sweep", "dt2-tier-sweep"))
 FALLBACK = ("build", "desktop", "pins", "check", "python-tests")
@@ -523,46 +350,6 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
 )
 
 
-def git_lines(*args: str) -> list[str]:
-    out = subprocess.run(
-        ["git", *args], cwd=ROOT, capture_output=True, text=True, check=True
-    )
-    return [line for line in out.stdout.splitlines() if line]
-
-
-def merge_base(base: str, head: str | None) -> str:
-    if head is None:
-        return git_lines("merge-base", base, "HEAD")[0] if base != "HEAD" else "HEAD"
-    return git_lines("merge-base", base, head)[0]
-
-
-def changed_files(base: str, head: str | None = None) -> list[str]:
-    """Files changed since the merge base with BASE, committed or not, plus untracked files.
-    With HEAD (a revision): the commits BASE..HEAD only, which explains a historical range
-    (the working tree still decides what the files mean)."""
-    since = merge_base(base, head)
-    if head is not None:
-        return sorted(git_lines("diff", "--name-only", since, head))
-    files = set(git_lines("diff", "--name-only", since))
-    files |= set(
-        untracked_changes(git_lines("ls-files", "--others", "--exclude-standard"))
-    )
-    return sorted(files)
-
-
-def untracked_changes(paths: list[str]) -> list[str]:
-    """The untracked PATHS inside a directory. A file at the root (a log, a note) is no change: it would
-    take the fallback route and the full smoke."""
-    kept = [p for p in paths if "/" in p]
-    for p in paths:
-        if "/" not in p:
-            print(
-                f"verify: ignored untracked file at the root: {p} (add it to git to test it)",
-                file=sys.stderr,
-            )
-    return kept
-
-
 def git_show(rev: str | None, path: str) -> str | None:
     """PATH at REV (None: the working tree); None when it does not exist there."""
     if rev is None:
@@ -689,91 +476,6 @@ def acceptance_plan(step: str, files: list[str]) -> list[str]:
     return verify_route.acceptance_files(
         step, [path for path in files if path not in COMMENT_ONLY]
     )
-
-
-def is_python_source(path: str) -> bool:
-    """A .py file of tools/ or tests/ (python-tests routes it by the import graph)."""
-    return path.endswith(".py") and path.startswith(("tools/", "tests/"))
-
-
-def is_module_test_dir(path: str) -> bool:
-    """Whether PATH is inside a module's own tests/ directory (modules/<group>/<name>/tests/)."""
-    parts = path.split("/")
-    return len(parts) > 4 and parts[0] == "modules" and parts[3] == "tests"
-
-
-def is_changed_test(path: str) -> bool:
-    """A changed test file that python-tests runs itself."""
-    name = path.rsplit("/", 1)[-1]
-    return (
-        (path.startswith("tests/") or is_module_test_dir(path))
-        and name.startswith("test_")
-        and name.endswith(".py")
-        and (ROOT / path).is_file()
-    )
-
-
-def resolve_tests(paths: tuple[str, ...]) -> list[str]:
-    """Repo-relative test paths for PATHS (globs and directories); a name that matches
-    nothing is a registry error, so a rename cannot drop a suite silently."""
-    found: list[str] = []
-    for pattern in paths:
-        if any(c in pattern for c in "*?["):
-            hits = sorted(ROOT.glob(pattern))
-        else:
-            hits = [ROOT / pattern] if (ROOT / pattern).exists() else []
-        if not hits and pattern.startswith("modules/"):
-            continue  # module-owned tests: there are none until a module has one
-        if not hits:
-            raise SystemExit(f"verify: PY_SUITES entry matches nothing: {pattern}")
-        found += [hit.relative_to(ROOT).as_posix() for hit in hits]
-    return found
-
-
-def support_users(path: str) -> list[str]:
-    """The test files that import the changed helper module tests/support/NAME.py."""
-    if not (path.startswith("tests/support/") and path.endswith(".py")):
-        return []
-    module = "support." + path.removeprefix("tests/support/").removesuffix(".py")
-    tests = sorted((ROOT / "tests").rglob("test_*.py"))
-    users = [t for t in tests if module in t.read_text(encoding="utf-8")]
-    return [t.relative_to(ROOT).as_posix() for t in users]
-
-
-def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
-    """(pytest path, source) in run order, without duplicates: the gate files, the
-    suites a changed file triggers (all of them when FULL), changed test files, then
-    the tests that import a changed tests/support/ module."""
-    from tools.devtools import changed_tests  # it imports this module
-
-    plan_: list[tuple[str, str]] = [(path, "gate") for path in PY_GATE]
-    finer = {f: verify_route.fine(f) for f in files if not f.endswith(".md")}
-    coarse = [
-        f
-        for f in files
-        if finer.get(f) is None and not verify_route.emulator_test_path(f)
-    ]
-    # A changed Python module selects the tests that reach it in the import graph; the suites that
-    # name a test directory trigger only on the other files (and on a module the root conftest reaches).
-    graph_tests, conftest_broad = changed_tests.gate_tests(
-        [f for f in coarse if is_python_source(f)]
-    )
-    by_dir = [f for f in coarse if not is_python_source(f) or f in conftest_broad]
-    for name, triggers, tests in PY_SUITES:
-        hit = by_dir if any((ROOT / t).is_dir() for t in tests) else coarse
-        if full or any(f.startswith(triggers) for f in hit):
-            plan_ += [(path, name) for path in resolve_tests(tests)]
-    plan_ += [(t, "imports") for t in graph_tests]
-    plan_ += [(t, f.label) for f in finer.values() if f for t in f.tests]
-    plan_ += [(f, "changed") for f in files if is_changed_test(f)]
-    plan_ += [(t, "support") for f in files for t in support_users(f)]
-    seen: set[str] = set()
-    return [(p, s) for p, s in plan_ if not (p in seen or seen.add(p))]
-
-
-def python_tests(files: list[str], full: bool) -> list[str]:
-    """The ordered, de-duplicated pytest paths for the python-tests step."""
-    return [path for path, _ in python_test_plan(files, full)]
 
 
 def ui_only_path(path: str) -> bool:
@@ -916,49 +618,11 @@ def cache_env(
     return env
 
 
-def no_aot_env() -> dict[str, str]:
-    """The fast-tier-only configuration (fastcov `static-insns+follow`)."""
-    _, env = fastcov.parse_config("static-insns+follow")
-    return {**os.environ, **env}
-
-
 def pytest_ran(text: str) -> str | None:
     """A pytest run that only skipped is not a pass."""
     lines = text.strip().splitlines()
     last = lines[-1] if lines else ""
     return None if " passed" in last else f"nothing passed ({last})"
-
-
-def python_tests_passed(out_dir: Path) -> str | None:
-    """A python-tests run whose files passed no test at all is not a pass."""
-    summary = out_dir / "summary.tsv"
-    if not summary.exists():
-        return f"no {summary.name}"
-    rows = summary.read_text().splitlines()[1:]
-    passed = 0
-    for row in rows:
-        cols = row.split("\t")
-        if len(cols) > 4 and cols[4].isdigit():
-            passed += int(cols[4])
-    return None if passed > 0 else "nothing passed (0 tests passed)"
-
-
-def python_tests_command(
-    out: Path, files: list[str], jobs: int | None = None
-) -> list[str]:
-    """The per-file runner for the python-tests step (one pytest process per file; JOBS files at
-    once, default python_jobs())."""
-    cmd = [
-        *PY,
-        "-m",
-        "tools.devtools.test_outcomes",
-        "run",
-        "--check",
-        "--out",
-        str(out),
-    ]
-    cmd = [*cmd, "--timeout", str(python_timeout())]
-    return [*cmd, "--jobs", str(jobs if jobs is not None else python_jobs()), *files]
 
 
 class Gate:
@@ -1057,224 +721,14 @@ class Gate:
         self.report(name, problem, time.monotonic() - start, text)
 
 
-def stream_process(
-    cmd: list[str], log: Path, cwd: Path, env: dict[str, str]
-) -> tuple[int, str]:
-    """Run CMD with stdout and stderr merged; each line goes to LOG as it arrives (so `tail` follows a
-    long step). The exit code and the whole output."""
-    lines: list[str] = []
-    with log.open("w") as out:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            lines.append(line)
-            out.write(line)
-            out.flush()
-        returncode = proc.wait()
-    return returncode, "".join(lines)
-
-
-def tier_jobs_budget(share: int | None = None) -> int:
-    """Coupled-run processes for all tier groups together: the node's share of the verify budget
-    in emulator processes (verify_budget.workers_for), which step_env hands to the step as
-    DIGI_TIER_JOBS. Outside verify (SHARE None, no variable): cpus - 4."""
-    env = os.environ.get("DIGI_TIER_JOBS")
-    if env:
-        jobs = int(env)
-        if jobs < 1:
-            raise SystemExit("verify: DIGI_TIER_JOBS must be at least 1")
-        return jobs
-    if share is not None:
-        return verify_budget.workers_for("tier-sweep", share).emulators
-    return max(1, (os.cpu_count() or 1) - 4)
-
-
-def python_jobs(share: int | None = None) -> int:
-    """Test files run at once in python-tests: DIGI_PY_JOBS, else the node's share of the verify
-    budget (verify_budget.workers_for), outside verify max(2, cpus // 4)."""
-    env = os.environ.get("DIGI_PY_JOBS")
-    if env:
-        return max(1, int(env))
-    if share is not None:
-        return verify_budget.workers_for("python-tests", share).py_files
-    return max(2, (os.cpu_count() or 1) // 4)
-
-
-def python_timeout() -> int:
-    """Per-file timeout for python-tests: catches hangs, not slow files (test_pluck.py
-    takes ~450 s alone and more than 900 s under verify:full load)."""
-    env = os.environ.get("DIGI_PY_TIMEOUT")
-    if env:
-        seconds = int(env)
-        if seconds < 1:
-            raise SystemExit("verify: DIGI_PY_TIMEOUT must be at least 1")
-        return seconds
-    return 3600
-
-
-# no-AOT renders cost about 2x per simulated second (measured 1.9-2.0 on DN2 FX, 2026-10-14); weights chunk costs
-TIER_NO_AOT_COST = 2.0
-
-
-@dataclass(frozen=True)
-class Chunk:
-    """Consecutive scenarios of one (label, file) group, run by one coupled process."""
-
-    label: str
-    path: str
-    names: tuple[str, ...]
-    cost: float
-    index: int
-
-
-def plan_chunks(
-    groups: list[tuple[str, str, list[str], dict[str, float], float]], budget: int
-) -> list[Chunk]:
-    """Cut each group (label, path, names, seconds by name, cost factor) into consecutive
-    chunks of about total cost / (budget * 4), at least one scenario each; longest first."""
-    costs = [
-        [factor * seconds[n] for n in names] for _, _, names, seconds, factor in groups
-    ]
-    target = sum(sum(c) for c in costs) / (budget * 4)
-    chunks: list[Chunk] = []
-    for (label, path, names, _, _), group_costs in zip(groups, costs, strict=True):
-        index = 0
-        taken: list[str] = []
-        cost = 0.0
-        for name, c in zip(names, group_costs, strict=True):
-            taken.append(name)
-            cost += c
-            if cost >= target:
-                chunks.append(Chunk(label, path, tuple(taken), cost, index))
-                index += 1
-                taken, cost = [], 0.0
-        if taken:
-            chunks.append(Chunk(label, path, tuple(taken), cost, index))
-    chunks.sort(key=lambda c: -c.cost)
-    return chunks
-
-
-def tier_names(
-    path: str, seconds: dict[str, float], every: int, all_no_aot: bool
-) -> list[str]:
-    """The scenarios of one FX file a tier step compares: NO_AOT_SUBSET, or with ALL_NO_AOT every
-    EVERYth of the file (the whole file for 1)."""
-    if all_no_aot:
-        return sorted(seconds)[::every]
-    names = list(NO_AOT_SUBSET[path])
-    missing = [n for n in names if n not in seconds]
-    if missing:
-        raise SystemExit(
-            f"verify: NO_AOT_SUBSET names unknown scenarios in {path}: {missing}"
-        )
-    return names
-
-
-def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
-    """FX scenarios must give the same PCM in the default and no-AOT configurations.
-
-    The scenarios are NO_AOT_SUBSET (documented there); with --all-no-aot every EVERYth scenario
-    of the FX files (tier-quick 7, tier-sweep 1).
-
-    DT2 runs its scenarios on the one-sample card; its no-AOT configuration is the
-    interpreter alone (`SHARC_AOT=0`, about 80 s per audio second), as DT2 has no
-    fast regions."""
+def tier(gate: Gate, name: str) -> None:
+    """FX scenarios must give the same PCM in the default and no-AOT configurations (fx_tier.run)."""
     start = time.monotonic()
-    shas: dict[str, dict[str, str]] = {}
-    dt2 = device == "dt2"
-    no_aot = {**os.environ, "SHARC_AOT": "0"} if dt2 else no_aot_env()
-    envs: dict[str, dict[str, str] | None] = {"default": None, "no-aot": no_aot}
-    groups: list[tuple[str, str, list[str], dict[str, float], float]] = []
-    for label in envs:
-        for path in DT2_FX_FILES if dt2 else FX_FILES:
-            seconds = coupled.scenario_seconds(path)
-            names = tier_names(path, seconds, every, gate.all_no_aot)
-            factor = TIER_NO_AOT_COST if label == "no-aot" else 1.0
-            groups.append((label, path, names, seconds, factor))
-    budget = tier_jobs_budget(gate.share())
-    # built here, in the node's thread: the pool threads below do not carry its share
-    step_envs = {label: gate.step_env(env) for label, env in envs.items()}
-    chunks = plan_chunks(groups, budget)
-
-    def report_of(chunk: Chunk) -> Path:
-        stem = Path(chunk.path).stem
-        return (
-            gate.out
-            / f"{name}-{chunk.label}-{stem}"
-            / f"chunk-{chunk.index:03d}"
-            / "report.json"
-        )
-
-    def run_chunk(chunk: Chunk) -> tuple[tuple[int, str], float]:
-        report = report_of(chunk)
-        report.parent.mkdir(parents=True, exist_ok=True)
-        cmd = [
-            *PY,
-            "-m",
-            "tools.emulator.coupled",
-            "scenario",
-            "--scenarios",
-            chunk.path,
-        ]
-        cmd += [*chunk.names, "--no-build", "--jobs", "1", "--out", str(report)]
-        if dt2:
-            cmd += ["--device", "dt2", "--dt2-card"]
-        with benchlock.hold("shared", f"verify {name}"):
-            proc = stream_process(
-                cmd,
-                report.parent / "run.log",
-                cwd=ROOT,
-                env=python_env(step_envs[chunk.label]),
-            )
-        return proc, time.monotonic() - start
-
-    with ThreadPoolExecutor(max_workers=budget) as pool:
-        done = list(pool.map(run_chunk, chunks))
-    ended: dict[tuple[str, str], float] = {}
-    for chunk, (_, end) in zip(chunks, done, strict=True):
-        key = (chunk.label, chunk.path)
-        ended[key] = max(ended.get(key, 0.0), end)
-    for label, path, names, _, _ in groups:
-        count = sum(1 for c in chunks if (c.label, c.path) == (label, path))
-        gate.say(
-            f"     {label} {Path(path).stem}: {len(names)} scenarios in "
-            f"{count} chunks, {ended.get((label, path), 0.0):.0f} s"
-        )
-    gate.say(f"     budget {budget} jobs, {len(chunks)} chunks")
-    for chunk, ((returncode, text), _) in zip(chunks, done, strict=True):
-        report = report_of(chunk)
-        # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
-        if returncode not in (0, 2) or not report.exists():
-            problem = (
-                f"{chunk.label} {chunk.path} chunk {chunk.index}: exit {returncode}"
-            )
-            gate.report(name, problem, time.monotonic() - start, text)
-            return
-        for result in coupled.scenario_results(json.loads(report.read_text())):
-            shas.setdefault(result["name"], {})[chunk.label] = result["sha256"]
-    for label, path, names, _, _ in groups:
-        for n in names:
-            if label not in shas.get(n, {}):
-                problem = f"{label} {path}: no result for {n}"
-                gate.report(name, problem, time.monotonic() - start)
-                return
-    differ = [n for n, s in shas.items() if s.get("default") != s.get("no-aot")]
-    problem = (
-        f"{len(differ)} of {len(shas)} differ: {', '.join(differ[:5])}"
-        if differ
-        else None
+    jobs = fx_tier.tier_jobs_budget(gate.share())
+    problem, text = fx_tier.run(
+        name, gate.out, gate.all_no_aot, jobs, gate.step_env(), gate.say
     )
-    gate.report(name, problem, time.monotonic() - start)
-    if not differ:
-        gate.say(f"     {len(shas)} of {len(shas)} scenarios equal")
+    gate.report(name, problem, time.monotonic() - start, text)
 
 
 def desktop_check(gate: Gate) -> None:
@@ -1936,9 +1390,9 @@ def run_step(gate: Gate, step: str) -> None:
             },
         )
     elif step == "tier-quick":
-        tier(gate, "tier-quick", TIER_QUICK_EVERY)
+        tier(gate, "tier-quick")
     elif step == "tier-sweep":
-        tier(gate, "tier-sweep", 1)
+        tier(gate, "tier-sweep")
     elif step == "rust-tests":
         gate.run("rust-tests", rust_tests_command(gate.rust_packages))
     elif step == "card":
@@ -1973,9 +1427,9 @@ def run_step(gate: Gate, step: str) -> None:
             },
         )
     elif step == "dt2-tier-quick":
-        tier(gate, "dt2-tier-quick", TIER_QUICK_EVERY, "dt2")
+        tier(gate, "dt2-tier-quick")
     elif step == "dt2-tier-sweep":
-        tier(gate, "dt2-tier-sweep", 1, "dt2")
+        tier(gate, "dt2-tier-sweep")
 
 
 def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
