@@ -26,7 +26,7 @@
 
 #include "dk_machine.inc"
 #include "dsp/call.inc"
-#include "dsp/gain.inc"
+#include "dsp/gain_ramp.inc"
 #include "dsp/sample.inc"
 #include "dsp/sample_pcm16.inc"
 #include "dsp/sample_pcm16_stereo.inc"
@@ -127,7 +127,7 @@ _shot_render_release_fault:
     DK_STRACK_POISON_COUNT(I1, R0);
 _shot_render_released:
     DK_SAMPLE_BANK_UNLOCK(R13);
-    // Level and end ramp (dsp/gain.inc). Every block gets the gain of the stock one-shot, DK_SAMPLE_STOCK_GAIN (0.4045, the DC gain of the
+    // Level and end ramp (dsp/gain_ramp.inc). Every block gets the gain of the stock one-shot, DK_SAMPLE_STOCK_GAIN (0.4045, the DC gain of the
     // stock interpolator). In the block where the voice becomes done, the gain also falls by G / 31 per sample, as the stock end ramp does
     // (finding 06, stock sample reader), so the sample does not end with a click: one block long, later blocks are silent.
     // The pair [start, step] is state words 9, 10. A voice that was already done before the block is silent: nothing to shape.

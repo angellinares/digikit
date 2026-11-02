@@ -12,7 +12,7 @@
 
 // DK_SAMPLE_STOCK_GAIN: float32 bits of 0.4045, the level of the stock one-shot sample voice. The stock 6-tap
 // interpolator has a DC gain of 0.40439..0.40465 per row (mean 0.4045; -7.86 dB) and applies nothing else after the voice.
-// The kernels below do not apply it; scale the outputs with dsp/gain.inc (start = DK_SAMPLE_STOCK_GAIN, step 0).
+// The kernels below do not apply it; scale the outputs with dsp/gain_ramp.inc (start = DK_SAMPLE_STOCK_GAIN, step 0).
 #define DK_SAMPLE_STOCK_GAIN 0x3ecf1aa0
 
 // _dk_sample_linear / dk_sample_linear. : dsp/call.inc convention, 32 outputs.
