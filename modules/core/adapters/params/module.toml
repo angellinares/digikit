@@ -101,7 +101,8 @@ name = "default"
 kind = "u32"
 
 # the parameter table, 60-byte rows: owner, mirror index, min, max, default, flag, (cc << 16 | kind), 0x80 + slot,
-# 2 words of the template, name, template word, short, template formatter, template word
+# 2 words of the template, name, template word, short, template formatter, template word. A `param_edits` entry rewrites
+# the min, max, name, short and formatter words of a stock row in the copy.
 [[section]]
 name = "pf_table"
 region = "cf.expansion"
@@ -124,6 +125,59 @@ append = { registry = "params", row = [
   "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x34)",
   "image.u32(cf.param.data.descriptor_table + 60 * $template + 0x38)",
 ] }
+edit = { registry = "param_edits", at = "60 * $code", fields = [
+  { offset = 0x08, value = "$min" },
+  { offset = 0x0c, value = "$max" },
+  { offset = 0x28, value = "$name" },
+  { offset = 0x30, value = "$short" },
+  { offset = 0x34, value = "$formatter" },
+] }
+
+# Edits of stock rows (Digitakt II): an adapter changes a stock parameter's range, formatter and names with
+#
+#     [[entry]]
+#     registry = "param_edits"
+#     id = "ovr_type"
+#     code = 0x103            # the stock parameter code (its row in the copied table)
+#     max = 0xf00
+#     formatter = "my_fmt"
+#     name = "OVR Type"
+#     short = "OD.TY"
+#     class = 0xd1            # optional: draw its knob cell as this code's (here the formatter's text); 0 = its own
+#     min = 0x100             # optional, default 0
+# The registry is declared on the Digitone II too (no edit there) so both devices' accessor hook links the same source.
+[[registry]]
+name = "param_edits"
+devices = ["dt2", "dn2"]
+first = "0"
+max = 16
+region = "cf.expansion"
+
+[[registry.field]]
+name = "code"
+kind = "u32"
+[[registry.field]]
+name = "max"
+kind = "u32"
+[[registry.field]]
+name = "formatter"
+kind = "u32"
+[[registry.field]]
+name = "name"
+kind = "cstr"
+max_len = 31
+[[registry.field]]
+name = "short"
+kind = "cstr"
+max_len = 15
+[[registry.field]]
+name = "class"              # a code whose value-class object the UI uses for this one (its knob cell); 0 = its own
+kind = "u32"
+default = 0
+[[registry.field]]
+name = "min"
+kind = "u32"
+default = 0
 
 # Digitone II: the same 60-byte rows; the slot is the sound-array slot itself (25 .. 64) and the template supplies the
 # MIDI CC word and the key (the lookup maps are built from the stock rows only)
@@ -161,6 +215,9 @@ _pf_first = "params.first"
 _pf_count = "params.count"
 _pf_rows = "params.rows"
 _pf_rowsize = "params.row_size"
+_pe_count = "param_edits.count"
+_pe_rows = "param_edits.rows"
+_pe_rowsize = "param_edits.row_size"
 _pf_t_t2 = "hook.cf.param.fn.value_class.4.tail"
 
 [[object]]
@@ -174,6 +231,9 @@ _pf_first = "params.first"
 _pf_count = "params.count"
 _pf_rows = "params.rows"
 _pf_rowsize = "params.row_size"
+_pe_count = "param_edits.count"
+_pe_rows = "param_edits.rows"
+_pe_rowsize = "param_edits.row_size"
 _pf_t_t2 = "hook.cf.param.fn.value_class.4.tail"
 
 # the second per-code table's accessor: `move.l 4(sp),D0; cmpi.l #count,D0`; hook the compare

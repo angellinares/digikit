@@ -7,11 +7,13 @@
 | answers with its template's object.
 |
 | Hook (displaced = "run") on `cmpi.l #stock count,D0` after the accessor's `move.l 4(sp),D0`: an added code (>=
-| params.first, < params.first + params.count) in d0 becomes its entry's template code, then the stock clamp runs
-| (the template is a stock code, below the count). Every other register is preserved.
+| params.first, < params.first + params.count) in d0 becomes its entry's template code, and a stock code with a
+| `param_edits` entry whose class is not 0 becomes that class; then the stock clamp runs (both are stock codes, below the
+| count). Every other register is preserved.
 
     .text
     .equ P_TEMPLATE, 8          | row layout (module.toml [[registry.field]] order): name, short, template, slot, ...
+    .equ E_CLASS, 20            | param_edits rows: code, max, formatter, name, short, class
 
     .globl pf_t2
 pf_t2:
@@ -29,6 +31,18 @@ pf_t2:
     bra.s   2f
 1:  move.l  %d1,%d0
     addi.l  #_pf_first,%d0
+    move.l  #_pe_count,%d1
+    beq.s   2f
+    lea     _pe_rows,%a0
+3:  cmp.l   (%a0),%d0
+    bne.s   4f
+    tst.l   E_CLASS(%a0)
+    beq.s   2f
+    move.l  E_CLASS(%a0),%d0
+    bra.s   2f
+4:  adda.l  #_pe_rowsize,%a0
+    subq.l  #1,%d1
+    bne.s   3b
 2:  movem.l (%sp),%d1/%a0
     lea     8(%sp),%sp
     jmp     _pf_t_t2
