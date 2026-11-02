@@ -1,0 +1,16 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "gate-rust-modules",
+  "description": "Rust tests of patchkit and elektron-native-boot, which build module artifacts; runs when module sources change.",
+  "targets": {
+    "rust-tests": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": ["{workspaceRoot}/modules/**/*"],
+      "options": {
+        "command": "uv run python -m tools.devtools.rust_ws test --packages patchkit,elektron-native-boot",
+        "cwd": "."
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "@digi/desktop",
-  "implicitDependencies": ["@digi/web", "@digi/dk-session"],
+  "implicitDependencies": ["@digi/web", "@digi/dk-session", "digiemu-desktop", "dkui-host"],
   "targets": {
     "cargo-test": {
       "executor": "nx:run-commands",

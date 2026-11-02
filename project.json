@@ -5,11 +5,13 @@
     "lint": {
       "executor": "nx:run-commands",
       "cache": false,
+      "inputs": ["{workspaceRoot}/**/*"],
       "options": { "command": "pnpm lint", "cwd": "." }
     },
     "fmt-check": {
       "executor": "nx:run-commands",
       "cache": false,
+      "inputs": ["{workspaceRoot}/**/*"],
       "options": { "command": "pnpm fmt:check", "cwd": "." }
     }
   }

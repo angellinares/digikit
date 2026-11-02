@@ -1,7 +1,15 @@
 {
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "@digi/web",
-  "implicitDependencies": ["control-client", "@digi/dk-session"],
+  "implicitDependencies": [
+    "control-client",
+    "@digi/dk-session",
+    "patchkit",
+    "dkupload",
+    "dksample",
+    "devices",
+    "dkui-host"
+  ],
   "targets": {
     "patchkit-wasm": {
       "executor": "nx:run-commands",

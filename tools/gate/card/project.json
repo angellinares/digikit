@@ -1,0 +1,38 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "gate-card",
+  "targets": {
+    "card": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "inputs": [
+        "{workspaceRoot}/tools/emulator/card_check.py",
+        "{workspaceRoot}/tools/firmware/plusdrive_check.py",
+        "{workspaceRoot}/packages/emulator/plusdrive/**/*",
+        "{workspaceRoot}/packages/emulator/card/**/*",
+        "{workspaceRoot}/packages/emulator/control/**/*",
+        "{workspaceRoot}/packages/emulator/boot/**/*",
+        "{workspaceRoot}/Cargo.lock",
+        "{workspaceRoot}/tools/devtools/emud_key.py",
+        "{workspaceRoot}/tools/devtools/verify_build.py",
+        "{workspaceRoot}/tools/devtools/stablebin.py",
+        "{workspaceRoot}/tools/emulator/digi_env.py",
+        "{workspaceRoot}/tools/emulator/native_pgo.py",
+        "{workspaceRoot}/tools/emulator/native_target.py",
+        "{workspaceRoot}/tools/emulator/native_emu.py",
+        "{workspaceRoot}/tools/patchkit/pk_emud_pgo.py"
+      ],
+      "options": {
+        "commands": [
+          "uv run python -m tools.emulator.card_check",
+          "uv run python -m tools.firmware.plusdrive_check",
+          "uv run python -m tools.firmware.plusdrive_check --dn2"
+        ],
+        "parallel": false,
+        "cwd": "."
+      }
+    }
+  }
+}

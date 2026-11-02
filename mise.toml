@@ -106,6 +106,14 @@ description = "Fast preflight: changed-Python lint/types, audited tooling units,
 run = "uv run python -m tools.devtools.verify"
 description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes use owner checks"
 
+[tasks.gate]
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot affected --base "$DIGI_GATE_BASE" --parallel 3 -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone'
+description = "Merge gate: nx affected over the gate targets against DIGI_GATE_BASE (default main); emulator targets run one at a time (parallelism false); runs at nice 10"
+
+[tasks."gate:full"]
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot run-many --parallel 3 -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone,tier-sweep,dt2-tier-sweep'
+description = "Full gate: every gate target on every project, plus the tier sweeps"
+
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"
 description = "Full gate: every runtime acceptance file, 191 DN2 FX assertions and tier-sweep in place of tier-quick; no-AOT retains the fixed subset (`-- --all-no-aot`: all 134 scenarios and 191 assertions); DT2 full tier sweep requires -- --dt2; only after generated-core changes"

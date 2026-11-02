@@ -42,6 +42,16 @@ const GATE = {
       executor: 'nx:run-commands',
       cache: false,
       outputs: ['{workspaceRoot}/dist/daemons.json'],
+      inputs: [
+        '{workspaceRoot}/tools/devtools/emud_key.py',
+        '{workspaceRoot}/tools/devtools/verify_build.py',
+        '{workspaceRoot}/tools/devtools/stablebin.py',
+        '{workspaceRoot}/tools/emulator/digi_env.py',
+        '{workspaceRoot}/tools/emulator/native_pgo.py',
+        '{workspaceRoot}/tools/emulator/native_target.py',
+        '{workspaceRoot}/tools/emulator/native_emu.py',
+        '{workspaceRoot}/tools/patchkit/pk_emud_pgo.py',
+      ],
       options: {
         commands: ['mkdir -p dist', 'uv run python -m tools.devtools.verify_build daemons --env-out dist/daemons.json'],
         parallel: false,

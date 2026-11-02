@@ -102,6 +102,14 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run verify:full` | `verify --full`: runtime acceptance, 191 DN2 FX assertions, `tier-sweep` instead of `tier-quick`. `-- --dt2` adds the DT2 full sweep. Only after generated-core changes. |
 | `mise run clean:runs` | Lists old `digi-*` run directories under the temp dir (older than 24 h, not used by a running `digi-emud` or node process) and orphan `digi-emud` processes; `-- --yes` deletes the directories, `-- --hours N` sets the age. It never kills a process. A Session refuses to start with less than 50 GB free. |
 
+### Nx gate (trial)
+
+- `mise run gate` runs `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`).
+- `mise run gate:full` runs every gate target on every project, plus the tier sweeps.
+- Gate projects `gate-smoke`, `gate-stock`, `gate-fx` and `gate-card` carry their triggers as `{workspaceRoot}` inputs. `gate-stock` has the target `stock`; `gate-fx` has `pins`, `tier-quick`, `tier-sweep`, `dt2-tier-quick`, `dt2-tier-sweep`, `dt2-tone`, `fx`, `fx-no-aot` and `fx-dt2`. The Vitest suites behind `stock`, `fx` and `fx-dt2` are still the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. Module projects depend on the harness (`regression`, `conformance`), the daemon (`digi-control`) and the packs (`patchkit`). `python-checks` and `python-tests` run on any change and filter by diff.
+- Emulator targets run one at a time. The gate runs at nice 10 under the shared benchlock.
+- `verify` remains the merge gate until the comparison is done.
+
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
 

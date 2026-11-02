@@ -16,6 +16,8 @@ const packDevices = (m) => {
   if (!m.ports?.length) return ['dt2', 'dn2'];
   return ['dt2', 'dn2'].filter((d) => m.ports.some((p) => p.startsWith(`${d}-`)));
 };
+// Shipped module that is loaded at run time: it gets test-conformance.
+const isUploadable = (root, m) => root.startsWith('modules/') && !!(m.dynamic || m.host || m.type === 'service');
 const leaf = (id) => id.split('/').at(-1);
 const dkm = (dev, id) => `dist/modules/${dev}/${leaf(id)}.dkm`;
 const records = (root) => {
@@ -57,7 +59,7 @@ export const createNodesV2 = [
       const deviceTests = tests.filter((t) => t.endsWith('.device.test.ts')).sort();
       const shipped = root.startsWith('modules/');
       const targets = {};
-      const uploadable = shipped && (m.dynamic || m.host || m.type === 'service');
+      const uploadable = isUploadable(root, m);
       const recs = records(join(ctx.workspaceRoot, root));
       const devices = packDevices(m);
       if (devices.length && packable.has(m.id))
@@ -168,11 +170,12 @@ export const createDependencies = (_opts, ctx) => {
           ...(type === 'machine' ? ['core/dynreg', 'core/dsp-voice'] : []),
           ...(type === 'fx' ? ['core/dynfx', 'core/fxpages'] : []),
         ];
+  const all = Object.values(ctx.projects);
   return mods.flatMap((p) => {
     const t = read(ctx.workspaceRoot, join(p.root, 'module.toml'));
     const deps = [...(t.module.requires ?? []), ...implicit(p, t.module.type)];
     for (const o of t.object ?? []) for (const s of o.sources ?? []) deps.push(owner(normalize(join(p.root, s))) ?? '');
-    return [...new Set(deps)]
+    const statics = [...new Set(deps)]
       .filter((d) => d && d !== p.name)
       .map((target) => ({
         source: p.name,
@@ -180,5 +183,14 @@ export const createDependencies = (_opts, ctx) => {
         sourceFile: join(p.root, 'module.toml'),
         type: DependencyType.static,
       }));
+    // Implicit edges: a module with device or conformance tests depends on the harness, the daemon and the packs.
+    const hasDeviceTests = !!(p.targets?.['test-device'] || p.targets?.['test-conformance']);
+    const implicitDeps = hasDeviceTests ? ['regression', 'conformance', 'digi-control', 'patchkit'] : [];
+    // Projects that live inside the module directory (for example core/ui and dkui-host).
+    for (const q of all) if (q.name !== p.name && q.root.startsWith(p.root + '/')) implicitDeps.push(q.name);
+    const implicits = [...new Set(implicitDeps)]
+      .filter((d) => d !== p.name && ctx.projects[d])
+      .map((target) => ({ source: p.name, target, type: DependencyType.implicit }));
+    return [...statics, ...implicits];
   });
 };

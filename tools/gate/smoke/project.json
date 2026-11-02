@@ -1,0 +1,41 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "gate-smoke",
+  "targets": {
+    "smoke": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "inputs": [
+        "{workspaceRoot}/tools/patchkit/**/*",
+        "{workspaceRoot}/tools/emulator/**/*",
+        "{workspaceRoot}/tools/firmware/**/*",
+        "{workspaceRoot}/tools/control/**/*",
+        "{workspaceRoot}/tools/devtools/render_cache.py",
+        "{workspaceRoot}/tools/devtools/stablebin.py",
+        "{workspaceRoot}/tests/patchkit/smoke/**/*",
+        "{workspaceRoot}/devices/**/*",
+        "{workspaceRoot}/sdk/**/*",
+        "{workspaceRoot}/modules/core/**/*",
+        "{workspaceRoot}/packages/patchkit/**/*",
+        "{workspaceRoot}/packages/emulator/**/*",
+        "{workspaceRoot}/packages/dkneeds/**/*",
+        "{workspaceRoot}/packages/dksample/**/*",
+        "{workspaceRoot}/packages/dkupload/**/*",
+        "{workspaceRoot}/Cargo.lock",
+        "{workspaceRoot}/tools/devtools/emud_key.py",
+        "{workspaceRoot}/tools/devtools/verify_build.py",
+        "{workspaceRoot}/tools/emulator/digi_env.py",
+        "{workspaceRoot}/tools/emulator/native_pgo.py",
+        "{workspaceRoot}/tools/emulator/native_target.py",
+        "{workspaceRoot}/tools/emulator/native_emu.py",
+        "{workspaceRoot}/tools/patchkit/pk_emud_pgo.py"
+      ],
+      "options": {
+        "command": "uv run python -m tools.patchkit.pk_harness run --jobs ${DIGI_JOBS:-4}",
+        "cwd": "."
+      }
+    }
+  }
+}

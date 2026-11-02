@@ -1,35 +1,15 @@
 {
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "regression",
-  "implicitDependencies": ["control-client", "@digi/test-support", "@digi/dk-session"],
+  "implicitDependencies": [
+    "control-client",
+    "@digi/test-support",
+    "@digi/dk-session",
+    "digi-control",
+    "digi-coupled",
+    "dkui-host"
+  ],
   "targets": {
-    "test:stock": {
-      "executor": "nx:run-script",
-      "options": { "script": "test:stock" },
-      "dependsOn": ["digi-control:daemons"],
-      "parallelism": false
-    },
-    "test:fx": {
-      "dependsOn": ["digi-coupled:build"],
-      "parallelism": false,
-      "options": { "env": { "DIGI_FX_NO_AOT_SUBSET": "0" } }
-    },
-    "test:fx-no-aot": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "parallelism": false,
-      "dependsOn": ["digi-coupled:build"],
-      "options": {
-        "command": "uv run python -m tools.devtools.fx_tier exec-no-aot -- pnpm --filter @digi/regression test:fx",
-        "env": { "DIGI_FX_NO_AOT_SUBSET": "1" },
-        "cwd": "."
-      }
-    },
-    "test:fx:dt2": {
-      "dependsOn": ["digi-coupled:build-dt2"],
-      "parallelism": false,
-      "options": { "env": { "DIGI_FX_NO_AOT_SUBSET": "0" } }
-    },
     "test-device": {
       "executor": "nx:run-commands",
       "cache": false,

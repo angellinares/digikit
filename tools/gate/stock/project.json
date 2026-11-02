@@ -1,0 +1,31 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "gate-stock",
+  "targets": {
+    "stock": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "inputs": [
+        "{workspaceRoot}/tests/regression/dt2/**/*",
+        "{workspaceRoot}/tests/regression/support.ts",
+        "{workspaceRoot}/tests/regression/vitest.config.ts",
+        "{workspaceRoot}/tests/regression/package.json",
+        "{workspaceRoot}/packages/test-support/**/*",
+        "{workspaceRoot}/packages/control-client/**/*",
+        "{workspaceRoot}/packages/emulator/**/*",
+        "{workspaceRoot}/devices/**/*",
+        "{workspaceRoot}/tools/devtools/emud_key.py",
+        "{workspaceRoot}/tools/devtools/verify_build.py",
+        "{workspaceRoot}/tools/devtools/stablebin.py",
+        "{workspaceRoot}/tools/emulator/digi_env.py",
+        "{workspaceRoot}/tools/emulator/native_pgo.py",
+        "{workspaceRoot}/tools/emulator/native_target.py",
+        "{workspaceRoot}/tools/emulator/native_emu.py",
+        "{workspaceRoot}/tools/patchkit/pk_emud_pgo.py"
+      ],
+      "options": { "command": "pnpm --filter @digi/regression test:stock", "cwd": "." }
+    }
+  }
+}
