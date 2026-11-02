@@ -1,18 +1,6 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "digikit/freqshift",
-  "targets": {
-    "test-device": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "outputs": [],
-      "options": {
-        "forwardAllArgs": false,
-        "cwd": ".",
-        "command": "uv run python -m tools.devtools.verify --tests modules/fx/freqshift/tests/freqshift.device.test.ts"
-      }
-    }
-  },
   "metadata": {
     "runtimeAcceptance": [
       {

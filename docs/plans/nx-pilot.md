@@ -336,7 +336,7 @@ gaps; synthetic TypeScript decoder tests do not prove guest capture or cross-boo
 (lines 774–953) retain unique init-reset/safe-once, counter/result/selection and three-boot early/late
 stability assertions on both devices. The [crash runner](../../tools/patchkit/pk_digikit_debug.py)
 (lines 1277–1443) adds DT2 vectors 4/5, 16 registers, 32 stack words, cold-RAM behavior, record replay
-and selection across boots absent from the [TypeScript crash case](../../tests/regression/runtime/fault-trace.test.ts)
+and selection across boots absent from the [TypeScript crash case](../../modules/core/runtime/tests/fault-trace.device.test.ts)
 (lines 213–237). Inputs are [safe-fault](../../tests/digikit/scenarios/safe-fault.toml),
 [safe-late-fault](../../tests/digikit/scenarios/safe-late-fault.toml) and
 [crash-capture](../../tests/digikit/scenarios/crash-capture.toml).
@@ -626,8 +626,9 @@ subcommands that need the settings encoder, PNG output or project-slot code; aud
 to the audio-QA crate ([plan](audio-qa.md)).
 
 
-Device families as Nx targets (2026-11-02): `regression:test-device-upload`, `-settings` and `-debug`
-run `verify --tests` for their files; `nx.json` sets `parallel: 3`, and
+Device tests as Nx targets (2026-11-02): a module's device tests run with
+`pnpm nx:pilot run <module-id>:test-device` (the former family targets `test-device-upload`,
+`-settings` and `-debug` are gone); `nx.json` sets `parallel: 3`, and
 `nx run-many -p regression -t <the three> --parallel=3` ran the quick tier in 10 minutes. Supporting
 tooling on the same branch: zero-copy card images (hard link plus `overlay.bin`, `plusdrive --overlay`),
 `cloneFile`, session run-directory cleanup, a 50 GB free-disk guard at session start, `mise run

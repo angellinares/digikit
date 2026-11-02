@@ -1,7 +1,7 @@
 # Ledger: the `upload` device scenarios (tools/patchkit/pk_digikit_upload.py)
 
 One line per Python check: `scenario | U:line | what | -> TS file:test name | or COVERED / DROPPED / NOT PORTED`.
-Files are under `tests/regression/runtime/`. Names: `U` = `upload.test.ts`, `F` = `upload-faults.test.ts`, `K` = `upload-kit.ts` (protocol bodies, `uploadTests`, `roundtrip`; the rig is `card-rig.ts`).
+Files are under `modules/core/runtime/tests/`. Names: `U` = `upload.device.test.ts`, `F` = `upload-faults.device.test.ts`, `K` = `upload-kit.ts` (protocol bodies, `uploadTests`, `roundtrip`; the rig is `card-rig.ts`).
 Tests: Q = `upload-quick: one upload, a replace and a delete` (DT2, always), O = `upload-ops: the commands, errors and CLEAR` (full),
 FO = `upload-folders: folders, ranges, a streamed upload, first fit and paging` (full), ST = `upload-stock: ...` (full), TX = `upload-txfull: ...` (full),
 SC = `upload-screenshot: ...` (always), CUT = `upload-cut: ...` (full), CC = `upload-clear-cut: ...` (full), PB = `upload-playback: ...` (DT2, full).
@@ -81,7 +81,7 @@ Python `c.parallel` cases run one after the other in one daemon.
 | ops | 414 | RT3 the next card build holds the uploaded files | K:roundtrip (in O) |
 | ops | 422 | the upload wrote no selection sector | U:O |
 | ops | 160-171 | INFO and empty LIST at the start | U:O |
-| ops | put+verify of small modules, LIST after reboot, CLI delete/persistence | | COVERED by live.ts installModules, tests/regression/modules/acceptance.ts, transfer-live.test.ts (the ops file puts are the protocol-level cases, kept) |
+| ops | put+verify of small modules, LIST after reboot, CLI delete/persistence | | COVERED by live.ts installModules, tests/conformance/load.ts, transfer-live.device.test.ts (the ops file puts are the protocol-level cases, kept) |
 
 ## folders (U:458-697), full tier, DT2 and DN2
 
@@ -133,7 +133,7 @@ Folders compares the card by `plusdrive store ls` size and sha256 (as Python `ca
 
 Five cases (cuts after write 1, 3, 4, 5, 6), each on two cold boots (the cut card, then the card as the cut leaves it).
 
-Status: ported but skipped on both devices (`tests/regression/runtime/upload-faults.test.ts` ~:101, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-cut`.
+Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-faults.device.test.ts` ~:101, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-cut`.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
@@ -167,7 +167,7 @@ Differences: the two runs are two cold boots in one daemon (not two parallel dae
 
 ## clear-cut (U:1194-1307), full tier, DT2 and DN2
 
-Status: ported but skipped on both devices (`tests/regression/runtime/upload-faults.test.ts` ~:162, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-clear-cut`.
+Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-faults.device.test.ts` ~:162, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-clear-cut`.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |

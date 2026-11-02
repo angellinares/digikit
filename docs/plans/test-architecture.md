@@ -196,7 +196,7 @@ slice; resolve them before relying on the affected assertion, rather than blocki
 
 ### First implementation checkpoint (2026-11-01)
 
-**[D]** Historical first fixture proof, before the safety increment: both device proofs and fast preflight passed. the [gain-FX pilot](../../tests/regression/runtime/fx-reuse.test.ts)
+**[D]** Historical first fixture proof, before the safety increment: both device proofs and fast preflight passed. the [gain-FX pilot](../../modules/core/adapters/dynfx/tests/fx-reuse.device.test.ts)
 uses [Session baseline reload](../../packages/test-support/src/session.ts) and the existing Vitest
 [regression fixture](../../tests/regression/support.ts). No legacy family is deleted or declared equivalent.
 One serial scenario per device covers dry → gain → protocol deselection/restart → pristine dry,
@@ -545,8 +545,8 @@ FXPAGE relative PCM oracles retain audibility responsibility without relaxing fi
 
 | Legacy assertion group | Committed replacement ledger |
 | --- | --- |
-| BASIC capacity, selected type, free/live rows, overflow refusal and unchanged serial-gain PCM | [fx-chain.test.ts](../../tests/regression/runtime/fx-chain.test.ts), with separate plain reference and sequential dry/full baselines |
-| FXPAGE stock hashes, free-index poke invariance, page/index metadata, GAIN/MIX and A–E controls, SELECT/restart removal | [fx-pages.test.ts](../../tests/regression/runtime/fx-pages.test.ts), with independent reference and sequential stock/effect/deselect context |
+| BASIC capacity, selected type, free/live rows, overflow refusal and unchanged serial-gain PCM | [fx-chain.device.test.ts](../../modules/core/adapters/dynfx/tests/fx-chain.device.test.ts), with separate plain reference and sequential dry/full baselines |
+| FXPAGE stock hashes, free-index poke invariance, page/index metadata, GAIN/MIX and A–E controls, SELECT/restart removal | [fx-pages.device.test.ts](../../modules/core/adapters/fxpages/tests/fx-pages.device.test.ts), with independent reference and sequential stock/effect/deselect context |
 
 Both ports and the reviewed parity fixes passed their four family/device proofs. DN2 BASIC took
 58.75 s and DN2 FXPAGE 293.71 s. The combined DT2 invocation took 201.23 s, with BASIC 76.193 s

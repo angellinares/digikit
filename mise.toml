@@ -161,9 +161,9 @@ depends = ["build:plusdrive"]
 run = "pnpm --filter @digi/regression test:runtime"
 description = "Coupled runtime acceptance (also relevant-change gate owner), serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries; plusdrive is built automatically and the DT2 card samples come from out/runs/patchkit/samples; no implicit emulator build; accepts Vitest filters (for example -- service-commands)"
 
-[tasks."test:modules"]
-run = "pnpm --filter @digi/regression test:modules"
-description = "Serial coupled module-load acceptance (also relevant-change gate owner): three production uploads on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
+[tasks."test:conformance"]
+run = "pnpm --filter @digi/regression test:conformance"
+description = "Serial coupled module-load conformance (also relevant-change gate owner): the shared suite tests/conformance/load.device.test.ts loads the modules named in DIGI_CONFORMANCE_MODULES (empty: all eligible) on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
 
 [tasks."test:quick"]
 run = [
@@ -180,7 +180,7 @@ run = [
   "pnpm --filter @digi/web test",
   "uv run python -m tools.emulator.coupled scenario --all",
 ]
-description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock, test:runtime, test:modules)"
+description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock, test:runtime, test:conformance)"
 
 [tasks."test:slow"]
 run = [

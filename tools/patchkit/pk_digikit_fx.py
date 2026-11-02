@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline BASIC FX peak oracle.
 
-Device acceptance lives in tests/regression/runtime/fx-chain.test.ts.
+Device acceptance lives in modules/core/adapters/dynfx/tests/fx-chain.device.test.ts.
 """
 
 from __future__ import annotations

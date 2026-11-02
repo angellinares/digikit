@@ -1,0 +1,87 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/modules-capacity.device.test.ts"],
+        "modules": ["digikit/debug", "digikit/probe", "digikit/remote", "test/dyn-params"]
+      },
+      {
+        "files": ["tests/fault-trace.device.test.ts"],
+        "modules": [
+          "digikit/debug",
+          "test/dyn-crash",
+          "test/dyn-dsp-hang",
+          "test/dyn-fx-gain-send",
+          "test/dyn-fx-hang",
+          "test/dyn-fx-nan"
+        ]
+      },
+      {
+        "files": ["tests/transfer-live.device.test.ts"],
+        "modules": ["digikit/debug", "test/sine"],
+        "sources": ["tools/device/dktransfer.py"]
+      },
+      {
+        "files": ["tests/samples-live.device.test.ts"],
+        "modules": [],
+        "sources": [
+          "packages/dk-session/src/dksample.ts",
+          "packages/dk-session/src/rpcfiles.ts",
+          "packages/dk-session/src/samples.ts"
+        ],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/samples-store-live.device.test.ts"],
+        "modules": [],
+        "sources": [
+          "packages/dk-session/src/dksample.ts",
+          "packages/dk-session/src/rpcfiles.ts",
+          "packages/dk-session/src/samples.ts"
+        ]
+      },
+      {
+        "files": ["tests/service-commands.device.test.ts"],
+        "modules": ["test/svc-echo"]
+      },
+      {
+        "files": ["tests/upload.device.test.ts"],
+        "modules": [],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/upload-faults.device.test.ts"],
+        "modules": ["test/sine"],
+        "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/settings.device.test.ts"],
+        "modules": ["test/c-demo"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/card-safety.device.test.ts"],
+        "modules": ["test/c-demo"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/safe-mode.device.test.ts"],
+        "modules": ["test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/crash-capture.device.test.ts"],
+        "modules": ["digikit/debug", "test/dyn-crash"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/debug-guard.device.test.ts"],
+        "modules": ["digikit/debug", "test/dyn-guard-nan", "test/sine"],
+        "plusdrive": true
+      }
+    ]
+  }
+}

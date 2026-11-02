@@ -335,8 +335,10 @@ TEST_ONLY: tuple[str, ...] = (
     "tests/digikit/test_*.py",
     "tests/digikit/scenarios/*.toml",
     "tests/regression/*.test.ts",
+    "tests/regression/emulator/*.ts",
     "tests/regression/runtime/*.ts",
-    "tests/regression/modules/*.ts",
+    "tests/conformance/*.ts",
+    "modules/**/tests/*.device.test.ts",
     "tests/regression/project.json",
     "tools/devtools/*",
 )
@@ -641,6 +643,10 @@ def base_route(path: str) -> tuple[str, tuple[str, ...]]:
     """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
     if path.endswith(".md"):
         return "docs", ()  # documentation selects no steps
+    if path in COMMENT_ONLY:
+        return "comments only", ()
+    if path in PACKAGE_SCRIPTS_ONLY:
+        return "package scripts", ("host",)
     found = verify_route.fine(path)
     if found is not None:
         return found.label, found.steps
@@ -656,6 +662,8 @@ def base_route(path: str) -> tuple[str, tuple[str, ...]]:
 def route(path: str) -> tuple[str, tuple[str, ...]]:
     """Keep the existing owner route and add relevant native acceptance."""
     label, original = base_route(path)
+    if path in COMMENT_ONLY:
+        return label, ()
     wanted = set(original)
     for step in verify_route.ACCEPTANCE_DIRS:
         if verify_route.acceptance_files(step, [path], resolve_helpers=False):
@@ -667,7 +675,9 @@ def acceptance_plan(step: str, files: list[str]) -> list[str]:
     """A broad owner must not be narrowed by a second leaf change; empty means all files."""
     if any(step in base_route(path)[1] for path in files):
         return []
-    return verify_route.acceptance_files(step, files)
+    return verify_route.acceptance_files(
+        step, [path for path in files if path not in COMMENT_ONLY]
+    )
 
 
 def is_python_source(path: str) -> bool:
@@ -781,6 +791,13 @@ def host_test_path(path: str) -> bool:
 # python-tests, which runs ruff and mypy, is its only step.
 LINT_CONFIG_ONLY: set[str] = set()
 
+# Changed .py files whose code is the same at base and head (set by changed_plan): no steps.
+COMMENT_ONLY: set[str] = set()
+
+# The root package.json when the current change touches only scripts that no gate step invokes (set by
+# changed_plan); host is its only step.
+PACKAGE_SCRIPTS_ONLY: set[str] = set()
+
 
 def smoke_cells(files: list[str]) -> list[str] | None:
     """Filter only the three audited production leaves plus existing exemptions; None means full."""
@@ -792,6 +809,9 @@ def smoke_cells(files: list[str]) -> list[str] | None:
             or host_test_path(path)
             or test_only_path(path)
             or path in LINT_CONFIG_ONLY
+            or path in COMMENT_ONLY
+            or path in PACKAGE_SCRIPTS_ONLY
+            or path in verify_route.PROJECT_REGISTRATIONS
             or verify_route.outside_smoke_harness(path)
         ):
             continue
@@ -819,6 +839,12 @@ def smoke_reason(files: list[str]) -> str | None:
             maintenance.append(group)
         elif path in LINT_CONFIG_ONLY:
             maintenance.append("lint configuration")
+        elif path in COMMENT_ONLY:
+            maintenance.append("comments only")
+        elif path in PACKAGE_SCRIPTS_ONLY:
+            maintenance.append("package scripts")
+        elif path in verify_route.PROJECT_REGISTRATIONS:
+            maintenance.append("test registration")
         elif verify_route.outside_smoke_harness(path):
             maintenance.append("outside the smoke harness closure")
         elif host_test_path(path):
@@ -845,6 +871,8 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
     """The steps the changed files need, in gate order."""
     wanted: set[str] = set()
     for path in files:
+        if path in COMMENT_ONLY:
+            continue
         wanted.update(route(path)[1])
         if is_changed_test(path) or (
             not path.endswith(".md")
@@ -944,6 +972,8 @@ class Gate:
         self.all_no_aot = all_no_aot
         self.budget = budget
         self.acceptance = acceptance or {}
+        # module ids the conformance suite loads (empty: all eligible modules)
+        self.conformance: list[str] = []
         self.smoke_selection = smoke_selection
         # variables set by an earlier node for the later ones (the pinned PGO daemons of build-daemons)
         self.shared_env: dict[str, str] = {}
@@ -1579,6 +1609,9 @@ def explain(
             and not host_test_path(path)
             and not test_only_path(path)
             and path not in LINT_CONFIG_ONLY
+            and path not in COMMENT_ONLY
+            and path not in PACKAGE_SCRIPTS_ONLY
+            and path not in verify_route.PROJECT_REGISTRATIONS
             and not verify_route.outside_smoke_harness(path)
         ]
         if conservative:
@@ -1833,11 +1866,8 @@ def run_step(gate: Gate, step: str) -> None:
                 env["DIGI_EMUD"] = binary
             env["REGRESSION_JOBS"] = str(gate.share())
         elif step == "module-load":
-            modules = [
-                m
-                for m, f in verify_route.RUNTIME_UPLOADS.items()
-                if not selected or f.removeprefix("tests/regression/") in selected
-            ]
+            modules = list(gate.conformance or verify_route.RUNTIME_UPLOADS)
+            env["DIGI_CONFORMANCE_MODULES"] = ",".join(modules)
             if "digikit/debug" not in modules:
                 modules.append(
                     "digikit/debug"
@@ -1865,7 +1895,7 @@ def run_step(gate: Gate, step: str) -> None:
         script = {
             "stock": "test:stock",
             "runtime-fixture": "test:runtime",
-            "module-load": "test:modules",
+            "module-load": "test:conformance",
         }[step]
         env["REGRESSION_JUNIT_FILE"] = str(gate.out / f"{step}.junit.xml")
         gate.run(
@@ -2173,6 +2203,33 @@ def changed_plan(
             git_show(since, "pyproject.toml"), git_show(head, "pyproject.toml")
         ):
             LINT_CONFIG_ONLY.add("pyproject.toml")
+    PACKAGE_SCRIPTS_ONLY.clear()
+    since = merge_base(base, head)
+    if "package.json" in files and verify_route.package_scripts_only(
+        git_show(since, "package.json"), git_show(head, "package.json")
+    ):
+        PACKAGE_SCRIPTS_ONLY.add("package.json")
+    verify_route.PROJECT_REGISTRATIONS.clear()
+    for path in files:
+        if not (
+            path.startswith("modules/")
+            and path.endswith("/project.json")
+            and (mid := modroots.module_id(path))
+            and (ROOT / path).parent == modroots.module_dir(mid)
+        ):
+            continue
+        new = git_show(head, path)
+        if new is None:
+            continue  # deleted: the module route stays
+        found = verify_route.project_record_files(path, new)
+        found |= verify_route.project_record_files(path, git_show(since, path))
+        verify_route.PROJECT_REGISTRATIONS[path] = tuple(sorted(found))
+    COMMENT_ONLY.clear()
+    for path in files:
+        if path.endswith(".py") and verify_route.python_code_unchanged(
+            git_show(since, path), git_show(head, path)
+        ):
+            COMMENT_ONLY.add(path)
     steps = steps_for(files)
     rust_packages: list[str] | None = None
     if "rust-tests" in steps:
@@ -2243,7 +2300,8 @@ def named_units(
     py_tests: list[str], tests: list[str]
 ) -> tuple[list[str], dict[str, list[str]]]:
     """The checked --py-tests files and the --tests files by acceptance step (by their directory in
-    tests/regression); ValueError names the first bad file."""
+    tests/regression, tests/conformance or a registered module test); ValueError names the first bad
+    file. Files are repo-relative or relative to tests/regression."""
     for path in py_tests:
         if not (ROOT / path).is_file():
             raise ValueError(f"--py-tests: no such file: {path}")
@@ -2257,10 +2315,20 @@ def named_units(
         if path in registered:
             by_step.setdefault("runtime-fixture", []).append(registered[path])
             continue
-        if Path(path).is_absolute() or ".." in Path(path).parts:
-            raise ValueError(f"--tests: not a registered acceptance path: {path}")
+        if path.startswith("tests/conformance/"):
+            path = os.path.relpath(path, "tests/regression")
+        else:
+            path = path.removeprefix("tests/regression/")
+        if Path(path).is_absolute() or (
+            ".." in Path(path).parts and not path.startswith("../conformance/")
+        ):
+            raise ValueError(
+                f"--tests: not a registered module test, emulator, conformance or stock path: {path}"
+            )
         if not (ROOT / "tests/regression" / path).is_file():
-            raise ValueError(f"--tests: no such file in tests/regression: {path}")
+            raise ValueError(
+                f"--tests: no such file (tests/regression, tests/conformance or a registered module test): {path}"
+            )
         step = next(
             (
                 s
@@ -2373,8 +2441,14 @@ def main(argv: list[str] | None = None) -> int:
         "--tests",
         nargs="+",
         metavar="FILE",
-        help="Vitest files relative to tests/regression, e.g. runtime/fault-trace.test.ts; each runs in "
-        "the acceptance step of its directory (implies those steps without --only)",
+        help="Vitest files: registered module device tests (modules/.../tests/X.device.test.ts), "
+        "tests/regression/emulator/<name>.test.ts, tests/regression/dt2/<name>.test.ts or tests/conformance/load.device.test.ts; "
+        "each runs in the acceptance step of its directory (implies those steps without --only)",
+    )
+    ap.add_argument(
+        "--conformance",
+        metavar="ID[,ID...]",
+        help="run only the module-load step (the shared conformance suite) for these module ids",
     )
     ap.add_argument(
         "--no-cache",
@@ -2384,7 +2458,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.rerun_failed and (args.only or args.full):
         ap.error("--rerun-failed cannot be combined with --only or --full")
-    named = bool(args.py_tests or args.tests)
+    conformance_ids = [m for m in (args.conformance or "").split(",") if m]
+    if args.conformance is not None:
+        bad = [m for m in conformance_ids if m not in verify_route.RUNTIME_UPLOADS]
+        if bad or not conformance_ids:
+            ap.error(
+                f"--conformance: not an eligible module (shipped dynamic, service or host): {', '.join(bad) or '(none given)'}"
+            )
+    named = bool(args.py_tests or args.tests or conformance_ids)
     if args.only and args.full:
         ap.error("--only cannot be combined with --full")
     if args.all_files and (not args.only or named or args.full or args.rerun_failed):
@@ -2403,6 +2484,10 @@ def main(argv: list[str] | None = None) -> int:
         named_py, named_acceptance = named_units(args.py_tests or [], args.tests or [])
     except ValueError as exc:
         ap.error(str(exc))
+    if conformance_ids:
+        named_acceptance.setdefault("module-load", []).append(
+            os.path.relpath(verify_route.CONFORMANCE_FILE, "tests/regression")
+        )
     implied = (["python-tests"] if named_py else []) + list(named_acceptance)
     files: list[str] = []
     origin: dict[str, str] = {}
@@ -2533,6 +2618,10 @@ def main(argv: list[str] | None = None) -> int:
         smoke_selection=smoke_selection,
         py_checks=rerun.py_checks if rerun else None,
     )
+    if conformance_ids:
+        gate.conformance = conformance_ids
+    elif rerun is None and routed and "module-load" in steps:
+        gate.conformance = verify_route.conformance_modules(files)
     nodes, deps = plan(steps, gate.py_tests)
     print(
         f"verify: {budget_label}; nice {niced if niced is not None else 'unchanged (--foreground or not allowed)'}; "

@@ -226,7 +226,8 @@ def acceptance_records() -> dict[str, RuntimeAcceptance]:
             ):
                 raise _invalid(root, "types")
             is_module = "module" in data.get("tags", [])
-            if is_module and name not in modules:
+            # An uploadable owner is packed with its tests; a core/* owner is patched into the image.
+            if is_module and name in RUNTIME_UPLOADS and name not in modules:
                 modules = [*modules, name]
             if (
                 len(set(modules)) != len(modules)
@@ -275,7 +276,7 @@ def acceptance_records() -> dict[str, RuntimeAcceptance]:
     }
     discovered = {
         p.relative_to(ROOT).as_posix()
-        for p in ROOT.glob("modules/*/*/tests/**/*.device.test.ts")
+        for p in ROOT.glob("modules/**/tests/**/*.device.test.ts")
     }
     if registered != discovered:
         raise ValueError(
@@ -299,10 +300,8 @@ def dependents(ids: set[str]) -> set[str]:
 
 
 def _production_uploads() -> dict[str, str]:
-    """Module id -> its coupled lifecycle acceptance file, for the shipped modules (under `modules/`) that are run-time
-    uploads: `dynamic`, a service or a `host` module. The file is `tests/regression/modules/<leaf>.test.ts`, `<leaf>` being
-    the last part of the id; a module without that file has no lifecycle cell. tests/regression/modules/acceptance.ts
-    scans the manifests by the same rule."""
+    """Module id -> the shared conformance suite, for the shipped modules (under `modules/`) that are run-time
+    uploads: `dynamic`, a service or a `host` module. tests/conformance/load.ts scans the manifests by the same rule."""
     out: dict[str, str] = {}
     for mid, moddir in sorted(modroots.manifests().items()):
         if not moddir.is_relative_to(ROOT / "modules"):
@@ -314,18 +313,18 @@ def _production_uploads() -> dict[str, str]:
             meta.get("dynamic") or meta.get("host") or meta.get("type") == "service"
         ):
             continue
-        rel = f"tests/regression/modules/{mid.split('/')[-1]}.test.ts"
-        if (ROOT / rel).is_file():
-            out[mid] = rel
+        out[mid] = CONFORMANCE_FILE
     return out
 
 
+CONFORMANCE_FILE = "tests/conformance/load.device.test.ts"
 # These production uploads have coupled lifecycle acceptance, in addition to their static owners.
 RUNTIME_UPLOADS = _production_uploads()
+# Step -> test directory, relative to tests/regression.
 ACCEPTANCE_DIRS = {
     "stock": "dt2",
-    "runtime-fixture": "runtime",
-    "module-load": "modules",
+    "runtime-fixture": "emulator",
+    "module-load": "../conformance",
 }
 ACCEPTANCE_SHARED = (
     "packages/test-support/src/",
@@ -334,8 +333,15 @@ ACCEPTANCE_SHARED = (
     "devices/",
     "tests/regression/support.ts",
 )
+# Helper directories whose files a step's tests import from outside the step's own directory: a changed
+# helper there goes to Vitest's import discovery for that step (the runtime and conformance suites import
+# tests/regression/runtime/*.ts).
+HARNESS_DIRS: dict[str, tuple[str, ...]] = {
+    "runtime-fixture": ("tests/regression/runtime/",),
+    "module-load": ("tests/regression/runtime/",),
+}
 RUNTIME_SHARED = (
-    "tests/regression/runtime/live.ts",  # lifecycle shared by runtime and module suites
+    "tests/regression/runtime/live.ts",  # lifecycle shared by the runtime, module and conformance suites
     "sdk/",
     "packages/dk-session/src/",
     "packages/patchkit/",
@@ -410,6 +416,104 @@ def outside_smoke_harness(path: str) -> bool:
     return path not in smoke_harness_closure()
 
 
+def invoked_script_names(
+    scripts: dict[str, str], texts: list[str] | None = None
+) -> set[str]:
+    """The names of SCRIPTS (a package.json `scripts` table) that a gate step may invoke: named after
+    `pnpm [run]`, `npm run` or `"run",` in the gate sources and mise.toml, or as a quoted argv word after
+    "pnpm"/"npm"; then the scripts those scripts call. Conservative: when unsure, a script counts as invoked."""
+    if texts is None:
+        sources = [
+            *sorted((ROOT / "tools/devtools").glob("verify*.py")),
+            ROOT / "mise.toml",
+        ]
+        texts = [p.read_text(encoding="utf-8") for p in sources if p.is_file()]
+    text = "\n".join(texts)
+    invoked: set[str] = set()
+    for name in scripts:
+        n = re.escape(name)
+        end = r"(?![\w:.-])"
+        patterns = (
+            rf"\b(?:pnpm|npm)\s+(?:run\s+)?{n}{end}",
+            rf"\b(?:pnpm|npm)\s+[^\n\"']*\s(?:run\s+)?{n}{end}",
+            rf"[\"']run[\"']\s*,\s*[\"']{n}[\"']",
+            rf"[\"'](?:pnpm|npm)[\"'][^\]\n]*[\"']{n}[\"']",
+        )
+        if any(re.search(p, text) for p in patterns):
+            invoked.add(name)
+    todo = list(invoked)
+    while todo:
+        body = scripts.get(todo.pop(), "")
+        for name in scripts:
+            if name not in invoked and re.search(
+                rf"(?<![\w:.-]){re.escape(name)}(?![\w:.-])", body
+            ):
+                invoked.add(name)
+                todo.append(name)
+    return invoked
+
+
+def package_scripts_only(
+    old: str | None, new: str | None, texts: list[str] | None = None
+) -> bool:
+    """Whether two package.json texts differ only in `scripts` that no gate step invokes."""
+    if old is None or new is None:
+        return False
+    try:
+        a, b = json.loads(old), json.loads(new)
+    except ValueError:
+        return False
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    tables = []
+    for data in (a, b):
+        table = data.get("scripts", {})
+        if not isinstance(table, dict) or any(
+            not isinstance(v, str) for v in table.values()
+        ):
+            return False
+        tables.append(table)
+    invoked = invoked_script_names({**tables[0], **tables[1]}, texts)
+    for data, table in zip((a, b), tables, strict=True):
+        data["scripts"] = {k: v for k, v in table.items() if k in invoked}
+    return a == b
+
+
+# Module project.json path -> the acceptance files (relative to tests/regression) its records declare
+# at head and, when it existed at base, at base (set by verify.changed_plan).
+PROJECT_REGISTRATIONS: dict[str, tuple[str, ...]] = {}
+
+
+def project_record_files(path: str, text: str | None) -> set[str]:
+    """The existing acceptance files (relative to tests/regression) that the `runtimeAcceptance` records
+    in the project.json TEXT at PATH declare; empty when TEXT is missing or invalid."""
+    if text is None:
+        return set()
+    try:
+        records = json.loads(text).get("metadata", {}).get("runtimeAcceptance", [])
+        names = [f for r in records for f in r.get("files", [])]
+    except (ValueError, AttributeError, TypeError):
+        return set()
+    root = Path(path).parent
+    return {
+        os.path.relpath(ROOT / root / f, ROOT / "tests/regression")
+        for f in names
+        if isinstance(f, str) and (ROOT / root / f).is_file()
+    }
+
+
+def registered_module_test(path: str) -> str | None:
+    """The acceptance key of PATH when it is a registered modules/**/tests/**/*.device.test.ts."""
+    if not (
+        path.startswith("modules/")
+        and "/tests/" in path
+        and path.endswith(".device.test.ts")
+    ):
+        return None
+    key = os.path.relpath(ROOT / path, ROOT / "tests/regression")
+    return key if key in acceptance_records() else None
+
+
 def lint_config_only(old: str | None, new: str | None) -> bool:
     """Whether two pyproject.toml texts differ only inside `tool.mypy` or `tool.ruff`."""
     if old is None or new is None:
@@ -426,6 +530,35 @@ def lint_config_only(old: str | None, new: str | None) -> bool:
             if not tool:
                 del data["tool"]
     return a == b
+
+
+def _without_docstrings(tree: ast.AST) -> ast.AST:
+    for node in ast.walk(tree):
+        if isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                node.body = body[1:] or [ast.Pass()]
+    return tree
+
+
+def python_code_unchanged(old: str | None, new: str | None) -> bool:
+    """Whether two Python texts differ only in comments, docstrings or layout."""
+    if old is None or new is None:
+        return False
+    try:
+        a, b = ast.parse(old), ast.parse(new)
+    except (SyntaxError, ValueError):
+        return False
+    return ast.dump(_without_docstrings(a), include_attributes=False) == ast.dump(
+        _without_docstrings(b), include_attributes=False
+    )
 
 
 def _import_closure(roots: set[str], *, local_imports: bool = False) -> set[str]:
@@ -529,6 +662,23 @@ def runtime_aliases() -> dict[str, tuple[str, tuple[str, ...]]]:
     }
 
 
+def conformance_modules(paths: list[str]) -> list[str]:
+    """Module ids the conformance suite needs for PATHS; empty means all eligible modules."""
+    ids: set[str] = set()
+    roots = tuple(r + "/" for r in modroots.REPO_ROOTS)
+    for path in paths:
+        if not acceptance_files("module-load", [path], resolve_helpers=False):
+            continue
+        mid = modroots.module_id(path) if path.startswith(roots) else None
+        if mid is None:
+            return []
+        hit = dependents({mid})
+        if hit & runtime_framework():
+            return []
+        ids |= hit & set(RUNTIME_UPLOADS)
+    return sorted(ids)
+
+
 def runtime_plusdrive_files() -> set[str]:
     return {file for file, r in acceptance_records().items() if r.plusdrive}
 
@@ -544,7 +694,7 @@ def related_acceptance(step: str, paths: tuple[str, ...]) -> tuple[str, ...] | N
     project = {
         "stock": "stock",
         "runtime-fixture": "runtime",
-        "module-load": "modules",
+        "module-load": "conformance",
     }[step]
     owned = {f for f in acceptance_records() if f.startswith("../../")}
     try:
@@ -583,6 +733,7 @@ def related_acceptance(step: str, paths: tuple[str, ...]) -> tuple[str, ...] | N
                     or (
                         ".." in Path(path).parts
                         and not (step == "runtime-fixture" and path in owned)
+                        and step != "module-load"
                     )
                     or not (ROOT / "tests/regression" / path).is_file()
                 ):
@@ -603,9 +754,10 @@ def acceptance_files(
     """
     directory = ACCEPTANCE_DIRS[step]
     config = "tests/regression/vitest.config.ts"
+    base = Path(os.path.normpath(ROOT / "tests/regression" / directory))
     all_files = sorted(
-        p.relative_to(ROOT / "tests/regression").as_posix()
-        for p in (ROOT / "tests/regression" / directory).rglob("*.test.ts")
+        Path(os.path.relpath(p, ROOT / "tests/regression")).as_posix()
+        for p in base.rglob("*.test.ts")
     )
     registered = acceptance_records() if step == "runtime-fixture" else {}
     all_files = sorted(set(all_files) | set(registered))
@@ -622,14 +774,19 @@ def acceptance_files(
             }
         ):
             continue
+        own_test = registered_module_test(path)
+        if own_test or path in PROJECT_REGISTRATIONS:
+            if step == "runtime-fixture":
+                selected.update([own_test] if own_test else PROJECT_REGISTRATIONS[path])
+            continue
         declared = {f for f, r in acceptance_records().items() if path in r.sources}
         if declared:
             if step == "runtime-fixture":
                 selected.update(declared)
             continue
-        own = f"tests/regression/{directory}/"
-        if path.startswith(own):
-            rel = path.removeprefix("tests/regression/")
+        own = os.path.normpath(f"tests/regression/{directory}") + "/"
+        if path.startswith((own, *HARNESS_DIRS.get(step, ()))):
+            rel = os.path.relpath(path, "tests/regression")
             if path.endswith(".test.ts") and rel in all_files:
                 selected.add(rel)
             elif (
@@ -688,7 +845,7 @@ def acceptance_files(
                     selected.update(all_files)
                 elif step == "module-load":
                     selected.update(
-                        f.removeprefix("tests/regression/")
+                        os.path.relpath(f, "tests/regression")
                         for m, f in RUNTIME_UPLOADS.items()
                         if m in hit
                     )
@@ -1181,6 +1338,8 @@ def runner_fine(path: str) -> Fine | None:
 
 def fine(path: str) -> Fine | None:
     """The finer route of PATH, or None to use the prefix rules of verify.py."""
+    if registered_module_test(path) or path in PROJECT_REGISTRATIONS:
+        return Fine("test registration", ("runtime-fixture",), ())
     return (
         module_fine(path)
         or device_fine(path)
@@ -1290,6 +1449,13 @@ def object_metadata_only(old: str, new: str) -> bool:
     return drop(a) == drop(b)
 
 
+def _without_text(task: object) -> object:
+    """A mise task without the keys that only describe it."""
+    if not isinstance(task, dict):
+        return task
+    return {k: v for k, v in task.items() if k not in ("description", "alias")}
+
+
 def mise_paths(
     old: str | None, new: str | None
 ) -> tuple[list[str], dict[str, str]] | None:
@@ -1310,6 +1476,12 @@ def mise_paths(
     for name in sorted(set(tasks_old) | set(tasks_new)):
         if tasks_old.get(name) == tasks_new.get(name):
             continue
+        if (
+            name in tasks_old
+            and name in tasks_new
+            and _without_text(tasks_old[name]) == _without_text(tasks_new[name])
+        ):
+            continue  # only the description or alias changed: nothing runs differently
         if name.split(":", 1)[0] in BROAD_TASK_GROUPS:
             return None
         task = tasks_new.get(name)

@@ -56,15 +56,21 @@ broke every run once (`unknown module core/sample-pool`).
 
 ## Next steps
 
-1. Delete the Python wrappers, TOMLs and runner code of the families whose TypeScript passes both tiers,
-   ledger by ledger (keep upload-cut, upload-clear-cut, upload-rust and the unported debug parts).
-   Done for settings, roundtrip and equiv-dn2-set (branch test/delete-py-settings); card stays until its unported assertions are ported.
-2. Fix open item 1, then delete those two Python scenarios.
-3. Port the remaining debug parts (item 3) with card-rig; then measure the Python tool graph again
-   (finding 104).
-4. Nx: one shared cache directory for all worktrees with `maxCacheSize`; cached module `pack` targets as
-   `dependsOn` of the device targets; later the daemon binary as a cached output (input audit first).
-5. Stage 2: device tests move into the module projects they test; the family targets go away.
+Done (PRs #254, #255, #257 and the tests-into-modules PR): Python settings, roundtrip, equiv-dn2-set and card
+scenarios deleted; Python changes route by each test's `sources`; emulated-time waits and shared helpers;
+device tests in their module projects with inferred Nx `test-device` and `test-conformance` targets; one
+conformance suite over all 8 shipped modules; one Nx cache for all worktrees, guarded by `nx_input_audit`.
+
+1. Run the runtime step's files in parallel (one daemon per file, about 4 at once). Replace the remaining
+   wall-clock test timeouts with no-progress limits first. Measure with one paired timing.
+2. The gate writes the Vitest log to the run directory as it runs (today it appears only at the end).
+3. Split `tests/regression/runtime/live.ts` so a helper change reruns only its importers.
+4. Build caching: per-module `pack` targets, then the daemon binary, each passing `nx_input_audit`;
+   device targets depend on them. Then cache device results, starting with conformance.
+5. Upload full tier once, then delete the matching Python upload scenarios. Fix open item 1, then delete
+   upload-cut and upload-clear-cut. Port the remaining debug parts (item 3), then measure the Python tool
+   graph again (finding 104).
+6. Stage D: `nx affected` selects device tests; delete verify_route's hand tables.
 
 ## Process notes
 

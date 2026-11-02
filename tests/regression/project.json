@@ -6,35 +6,20 @@
     "test-host": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["hostTests", "^hostTests", "{workspaceRoot}/tools/emulator/fast_regions.json"],
+      "inputs": [
+        "hostTests",
+        "^hostTests",
+        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/sdk/vectors/**/*",
+        {
+          "runtime": "shasum -a 256 out/native/target/nogen/release/plusdrive 2>/dev/null || echo no-plusdrive"
+        }
+      ],
       "outputs": [],
       "options": {
         "forwardAllArgs": false,
         "command": "pnpm exec vitest run --config vitest.host.config.ts --project regression-host",
-        "cwd": "."
-      }
-    },
-    "test-device-upload": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "options": {
-        "command": "uv run python -m tools.devtools.verify --tests runtime/upload.test.ts runtime/upload-faults.test.ts",
-        "cwd": "."
-      }
-    },
-    "test-device-settings": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "options": {
-        "command": "uv run python -m tools.devtools.verify --tests runtime/settings.test.ts runtime/roundtrip.test.ts runtime/equiv.test.ts",
-        "cwd": "."
-      }
-    },
-    "test-device-debug": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "options": {
-        "command": "uv run python -m tools.devtools.verify --tests runtime/card-safety.test.ts runtime/debug-module.test.ts runtime/safe-mode.test.ts runtime/crash-capture.test.ts runtime/debug-guard.test.ts",
         "cwd": "."
       }
     }
@@ -42,184 +27,12 @@
   "metadata": {
     "runtimeAcceptance": [
       {
-        "files": ["runtime/debug-module.test.ts"],
-        "modules": ["digikit/debug", "digikit/probe", "digikit/remote", "test/dyn-params"]
+        "files": ["emulator/reply-inflight.test.ts"],
+        "modules": []
       },
       {
-        "files": ["runtime/fault-trace.test.ts"],
-        "modules": [
-          "digikit/debug",
-          "test/dyn-crash",
-          "test/dyn-dsp-hang",
-          "test/dyn-fx-gain-send",
-          "test/dyn-fx-hang",
-          "test/dyn-fx-nan"
-        ]
-      },
-      {
-        "files": ["runtime/fx-chain.test.ts"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
-        "aliases": {
-          "test/dyn-fx-gain-2": "test/dyn-fx-gain",
-          "test/dyn-fx-gain-3": "test/dyn-fx-gain",
-          "test/dyn-fx-gain-4": "test/dyn-fx-gain"
-        },
-        "sources": [
-          "tools/patchkit/hook_ab.py",
-          "tools/patchkit/pk_digikit_fx.py",
-          "tools/patchkit/pk_digikit_fxroute.py",
-          "tools/patchkit/pk_digikit_fxroutes.py"
-        ],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/fx-kit-persist.test.ts"],
-        "modules": ["test/dyn-fx-gain", "test/dyn-fx-gain-b", "test/sine"],
-        "sources": [
-          "tools/patchkit/hook_ab.py",
-          "tools/patchkit/pk_digikit_fxpage.py",
-          "tools/patchkit/pk_digikit_fxroute.py",
-          "tools/patchkit/pk_digikit_fxroutes.py"
-        ],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/fx-pages.test.ts"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
-        "sources": [
-          "tools/patchkit/hook_ab.py",
-          "tools/patchkit/pk_digikit_fxpage.py",
-          "tools/patchkit/pk_digikit_fxroute.py",
-          "tools/patchkit/pk_digikit_fxroutes.py"
-        ],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/fx-reuse.test.ts"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
-        "sources": ["tools/patchkit/hook_ab.py"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/fx-routes-panel.test.ts", "runtime/fx-routes-persist.test.ts"],
-        "modules": ["test/dyn-fx-gain", "test/dyn-fx-gain-send", "test/dyn-fx-gain-sendonly", "test/sine"],
-        "aliases": {
-          "test/dyn-fx-gain-send-3": "test/dyn-fx-gain-send"
-        },
-        "sources": [
-          "tools/patchkit/hook_ab.py",
-          "tools/patchkit/pk_digikit_fxroute.py",
-          "tools/patchkit/pk_digikit_fxroutes.py"
-        ],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/fx-send-dn2.test.ts", "runtime/fx-send.test.ts"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
-        "sources": ["tools/patchkit/hook_ab.py", "tools/patchkit/pk_digikit_fxsend.py"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/fx-track-route.test.ts"],
-        "modules": ["test/dyn-fx-gain-both", "test/sine"],
-        "aliases": {
-          "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
-          "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
-        },
-        "sources": [
-          "tools/patchkit/hook_ab.py",
-          "tools/patchkit/pk_digikit_fxroute.py",
-          "tools/patchkit/pk_digikit_fxroutes.py",
-          "tools/patchkit/pk_digikit_fxsend.py"
-        ],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/input-adapter.test.ts"],
-        "modules": ["test/input-probe"]
-      },
-      {
-        "files": ["runtime/remote-input.test.ts"],
-        "modules": ["digikit/remote"],
-        "sources": ["tools/control/digi_client.py"]
-      },
-      {
-        "files": ["runtime/transfer-live.test.ts"],
-        "modules": ["digikit/debug", "test/sine"],
-        "sources": ["tools/device/dktransfer.py"]
-      },
-      {
-        "files": ["runtime/samples-live.test.ts"],
-        "modules": [],
-        "sources": [
-          "packages/dk-session/src/dksample.ts",
-          "packages/dk-session/src/rpcfiles.ts",
-          "packages/dk-session/src/samples.ts"
-        ],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/samples-store-live.test.ts"],
-        "modules": [],
-        "sources": [
-          "packages/dk-session/src/dksample.ts",
-          "packages/dk-session/src/rpcfiles.ts",
-          "packages/dk-session/src/samples.ts"
-        ]
-      },
-      {
-        "files": ["runtime/service-commands.test.ts"],
-        "modules": ["test/svc-echo"]
-      },
-      {
-        "files": ["runtime/sharc-probe.test.ts"],
+        "files": ["emulator/sharc-semantics.test.ts"],
         "modules": ["digikit/probe", "digikit/remote", "test/dsp-facts", "test/sharc-probe", "test/step-beacon"]
-      },
-      {
-        "files": ["runtime/upload.test.ts"],
-        "modules": [],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/upload-faults.test.ts"],
-        "modules": ["test/sine"],
-        "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/settings.test.ts"],
-        "modules": ["test/c-demo"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/roundtrip.test.ts"],
-        "modules": ["test/dyn-dn2", "test/dyn-params", "test/sine"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/equiv.test.ts"],
-        "modules": ["test/dyn-dn2", "test/sine"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/card-safety.test.ts"],
-        "modules": ["test/c-demo"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/safe-mode.test.ts"],
-        "modules": ["test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/crash-capture.test.ts"],
-        "modules": ["digikit/debug", "test/dyn-crash"],
-        "plusdrive": true
-      },
-      {
-        "files": ["runtime/debug-guard.test.ts"],
-        "modules": ["digikit/debug", "test/dyn-guard-nan", "test/sine"],
-        "plusdrive": true
       }
     ]
   }

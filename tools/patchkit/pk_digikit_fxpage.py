@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline PCM comparisons for FUNC + FX pages and kit persistence acceptance.
 
-Device acceptance lives in tests/regression/runtime/fx-pages.test.ts and fx-kit-persist.test.ts.
+Device acceptance lives in modules/core/adapters/fxpages/tests/fx-pages.device.test.ts and fx-kit-persist.device.test.ts.
 """
 
 from __future__ import annotations

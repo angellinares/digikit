@@ -1,28 +1,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { encoder } from '../../../../packages/test-support/src/index.ts';
+import { encoder } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
-import { createFxKitUi } from '../../../../tests/regression/runtime/fx-kit-ui.ts';
-import {
-  advance,
-  analysisJson,
-  bounded,
-  frames,
-  rows,
-  word,
-} from '../../../../tests/regression/runtime/fx-live.ts';
-import { SINE, triggerFrame } from '../../../../tests/regression/runtime/fixtures.ts';
-import { bits, cstring, mainPage, openPages, pageKit } from '../../../../tests/regression/runtime/fx-pages-ui.ts';
+import { createFxKitUi } from '@digi/regression/runtime/fx-kit-ui.ts';
+import { advance, analysisJson, bounded, frames, rows, word } from '@digi/regression/runtime/fx-live.ts';
+import { SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
+import { bits, cstring, mainPage, openPages, pageKit } from '@digi/regression/runtime/fx-pages-ui.ts';
 import {
   inspectFxBoot,
   selectSine,
   shot,
   tap,
   withPreparedFxSession,
-} from '../../../../tests/regression/runtime/fx-session.ts';
-import { selectTrack, setAmount, trackNote } from '../../../../tests/regression/runtime/fx-track-ui.ts';
-import { DEVICES, FIRMWARE, record } from '../../../../tests/regression/runtime/live.ts';
-import { planSymbol } from '../../../../tests/regression/runtime/runtime-plan.ts';
+} from '@digi/regression/runtime/fx-session.ts';
+import { selectTrack, setAmount, trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
+import { DEVICES, FIRMWARE, record } from '@digi/regression/runtime/live.ts';
+import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 const FX = 'digikit/freqshift';
 const effectCard = { selection: ['modules/m0.dkm', 'modules/m1.dkm'] };

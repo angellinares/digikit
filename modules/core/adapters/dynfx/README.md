@@ -7,4 +7,4 @@ Digitakt II 1.17 and Digitone II 1.12, emulator only. On the Digitone II it brin
 
 How it works and its limits: `docs/design/digikit-dkm.md` ("DSP section", effect records), `docs/findings/55-fx-adapter.md` ("Run-time rows"). The runtime claims a free row when it
 reserves the module's DSP range and publishes it, one word per transfer through window 2 of `core/dsp-link`, the pc word last. Test module: `test/dyn-fx-gain`; proof:
-`tests/regression/runtime/fx-chain.test.ts`.
+`modules/core/adapters/dynfx/tests/fx-chain.device.test.ts`.

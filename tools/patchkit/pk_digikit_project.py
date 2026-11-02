@@ -1,7 +1,7 @@
 """Project and card-slot helpers: build, save, load and export a project; read and diff the project slot of a card.
 
 Used by the memaudit, fxroute, upload, debug and safe-late runners. The project round trip across module sets is
-tests/regression/runtime/roundtrip.test.ts (finding 39). The project slot of a card is the sectors
+modules/core/adapters/dynreg/tests/roundtrip.device.test.ts (finding 39). The project slot of a card is the sectors
 `[0x58000 + 0x8000 * slot, + 0x8000)`.
 """
 

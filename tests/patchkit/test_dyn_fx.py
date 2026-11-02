@@ -1,6 +1,6 @@
 """Run-time effects, the static side (F4 step 1; docs/design/digikit-dkm.md "DSP section", effect records): the fixture `test/dyn-fx-gain` packs into a `.dkm` whose
 header says fx 1.0 and no machine, its DSP section (version 4) holds one effect record that the reference loader and the packer's own numbers agree on, and the needs
-the file infers are one effect slot and no row of any other kind. The emulator proof is tests/regression/runtime/fx-chain.test.ts (both devices)."""
+the file infers are one effect slot and no row of any other kind. The emulator proof is modules/core/adapters/dynfx/tests/fx-chain.device.test.ts (both devices)."""
 
 import struct
 import tomllib

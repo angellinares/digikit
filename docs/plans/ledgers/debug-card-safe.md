@@ -1,7 +1,7 @@
 # Ledger: debug, card, crash, safe and cut scenarios
 
 One line per Python check: `scenario | file:line | what | -> TS file:test`, or `COVERED by <test>`, or `DROPPED/NOT PORTED: reason`.
-D = `tools/patchkit/pk_digikit_debug.py`, S = `tools/patchkit/pk_digikit_scen.py`. TS files are in `tests/regression/runtime/`.
+D = `tools/patchkit/pk_digikit_debug.py`, S = `tools/patchkit/pk_digikit_scen.py`. TS files are in `modules/core/runtime/tests/` (`*.device.test.ts`: debug-guard, crash-capture, card-safety, safe-mode) and `modules/tools/debug/tests/debug-module.device.test.ts`; below they are named without the `.device` part.
 Local helpers: `card-rig.ts` (`cardRigs`, `waitReset`), `debug-kit.ts` (`crashRecord`, `OPS`, `openAbout`).
 
 card-safety and card-small: Python deleted; the store-range write check is ported to card-rig.ts (afterClose, uploads). `debug_on` is obsolete (the debug switch is gone); the saved-selection flag bit belongs to debug-log.

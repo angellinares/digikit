@@ -11,7 +11,6 @@ Own tests may build or launch an emulator. A service/raw module with no Python t
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -76,17 +75,14 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
 
 
 def own_device_target(mid: str) -> str | None:
-    """A module's own Nx test-device target is its sole TypeScript acceptance declaration."""
-    project_file = modroots.module_dir(mid) / "project.json"
-    if not project_file.is_file():
+    """A module's own Nx test-device target (inferred by tools/nx/modules.mjs from its *.device.test.ts files)
+    is its sole TypeScript acceptance declaration."""
+    from tools.devtools import verify_route
+
+    node = verify_route.nx_graph()["nodes"].get(mid)
+    if node is None or "test-device" not in node["data"].get("targets", {}):
         return None
-    project = json.loads(project_file.read_text())
-    if "test-device" not in project.get("targets", {}):
-        return None
-    name = project.get("name")
-    if not isinstance(name, str) or not name:
-        raise ValueError(f"{project_file}: test-device requires a project name")
-    return f"{name}:test-device"
+    return f"{mid}:test-device"
 
 
 def run_device_target(mid: str, target: str) -> int:

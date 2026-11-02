@@ -42,7 +42,7 @@ card-small, debug-log (in `debug-module.test.ts`), debug-guard, crash-capture, s
 safe-late-fault and cut-selection. Shared helpers: `card-kit.ts` (cards, guest reads, mailbox),
 `card-rig.ts` (one reusable card fixture with the common close checks), `write-safety.ts` (zero-copy
 cards: a hard link to a shared base plus `overlay.bin`), `device-data.ts`, `fx-live.ts` (PCM).
-Each file has a `runtimeAcceptance` record, and the three families are Nx targets
-(`test-device-upload`, `-settings`, `-debug`). Proof state and open items:
+Each file has a `runtimeAcceptance` record, and a module's device tests run with
+`pnpm nx:pilot run <module-id>:test-device`. Proof state and open items:
 [handover](../handovers/HANDOVER-2026-11-02-scenario-migration.md). No Python scenario is deleted yet;
 upload-cut and upload-clear-cut are skipped in TypeScript until the overlay issue is fixed.

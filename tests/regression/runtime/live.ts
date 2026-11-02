@@ -233,7 +233,7 @@ export function installWithDebug({ session, dk }: PatchedSession, ...ids: string
   const device = session.options.device;
   return installModules(
     dk,
-    [DEBUG_MODULE, ...ids].map((id) => ({ id, artifact: moduleArtifact(device, id) })),
+    [...new Set([DEBUG_MODULE, ...ids])].map((id) => ({ id, artifact: moduleArtifact(device, id) })),
   );
 }
 

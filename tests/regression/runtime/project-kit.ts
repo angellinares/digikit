@@ -10,7 +10,7 @@ import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 import { overlayRecords } from './write-safety.ts';
 
 /**
- * Helpers of the settings, roundtrip and equiv device tests (ports of tools/patchkit/pk_digikit_settings.py, pk_digikit_project.py and pk_digikit_scen.py):
+ * Helpers of the settings, roundtrip and equiv device tests (ports of 6a5bb1ed:tools/patchkit/pk_digikit_settings.py, pk_digikit_project.py and pk_digikit_scen.py):
  * the settings record codec and mailbox, the project slot and the machine tables. The card fixture is card-rig.ts.
  * Candidates for card-kit.ts: `settingsRecord`, `settingsMailbox`.
  */

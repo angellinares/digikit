@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline project-byte and card-write oracles for the TypeScript track SEND suite.
 
-Device execution lives in tests/regression/runtime/fx-track-route.test.ts.
+Device execution lives in modules/core/adapters/fxpages/tests/fx-track-route.device.test.ts.
 """
 
 from __future__ import annotations

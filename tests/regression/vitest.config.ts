@@ -6,8 +6,20 @@ import { defineConfig } from 'vitest/config';
 // Vitest 3.2 reads only singleFork per project; worker caps are root-level.
 const serial = { poolOptions: { forks: { singleFork: true } } };
 
+const at = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
+// Files under modules/ and tests/conformance/ have no node_modules: resolve the workspace packages here.
+const alias = [
+  { find: /^@digi\/regression\/(.*)$/, replacement: `${at('.').replace(/\/$/, '')}/$1` },
+  { find: /^@digi\/test-support$/, replacement: at('../../packages/test-support/src/index.ts') },
+  { find: /^@digi\/control-client$/, replacement: at('../../packages/control-client/src/index.ts') },
+  { find: /^@digi\/dk-session$/, replacement: at('../../packages/dk-session/src/index.ts') },
+  { find: /^@digi\/dk-session\/(.*)$/, replacement: `${at('../../packages/dk-session/src')}/$1.ts` },
+];
+
 export default defineConfig({
-  root: fileURLToPath(new URL('.', import.meta.url)),
+  root: at('.'),
+  resolve: { alias },
   test: {
     // Caps the shared pool; only stock runs files in parallel.
     maxWorkers: Number(process.env.REGRESSION_JOBS ?? 4),
@@ -26,6 +38,7 @@ export default defineConfig({
         : ['default'],
     projects: [
       {
+        extends: true,
         test: {
           name: 'stock',
           include: ['dt2/**/*.test.ts'],
@@ -35,9 +48,10 @@ export default defineConfig({
         },
       },
       {
+        extends: true,
         test: {
           name: 'runtime',
-          include: ['runtime/**/*.test.ts', '../../modules/*/*/tests/**/*.device.test.ts'],
+          include: ['emulator/**/*.test.ts', '../../modules/**/tests/**/*.device.test.ts'],
           pool: 'forks',
           ...serial,
           testTimeout: 300_000,
@@ -45,9 +59,10 @@ export default defineConfig({
         },
       },
       {
+        extends: true,
         test: {
-          name: 'modules',
-          include: ['modules/**/*.test.ts'],
+          name: 'conformance',
+          include: ['../conformance/**/*.device.test.ts'],
           pool: 'forks',
           ...serial,
           testTimeout: 300_000,
@@ -55,6 +70,7 @@ export default defineConfig({
         },
       },
       {
+        extends: true,
         test: {
           name: 'fx-dn2',
           include: ['scenarios/dn2-*.test.ts'],
@@ -65,6 +81,7 @@ export default defineConfig({
         },
       },
       {
+        extends: true,
         test: {
           name: 'fx-dt2',
           include: ['scenarios/dt2-fx.test.ts'],
