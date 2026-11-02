@@ -121,8 +121,13 @@ impl Env {
     }
 
     pub fn codegen_backend(&self) -> PathBuf {
-        self.cg_dir()
-            .join("rustc_codegen_gcc/target/debug/librustc_codegen_gcc.dylib")
+        // the back end is a shared library: .dylib on macOS, .so on Linux (pk_toolchains.codegen_gcc_backend)
+        let lib = if cfg!(target_os = "macos") {
+            "librustc_codegen_gcc.dylib"
+        } else {
+            "librustc_codegen_gcc.so"
+        };
+        self.cg_dir().join("rustc_codegen_gcc/target/debug").join(lib)
     }
 
     pub fn codegen_gcc_ready(&self) -> bool {

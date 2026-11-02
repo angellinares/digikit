@@ -57,7 +57,7 @@ Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, afte
 ColdFire-only daemon beside a coupled boot check of each card, or all on coupled daemons). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
 (scenario, image) pairs in N processes, `DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` the emulated ms after a boot (default 300).
 
-Cards are cached by content in `out/cache/digikit/cards/` (they are read-only for the guest, its writes live in an overlay), and the
+Cards are cached by content in `out/cache/digikit/cards/`, or under `DIGIKIT_CACHE` (they are read-only for the guest, its writes live in an overlay), and the
 daemon's own boot cache is keyed by the card path, so a repeated scenario restores its boots instead of running them cold.
 """
 
@@ -89,7 +89,13 @@ from tools.patchkit import pk_harness as H  # noqa: E402
 
 # a module's own scenarios: modules/<group>/<name>/tests/scenarios/*.toml
 MODULE_SCENARIOS = "modules/*/*/tests/scenarios"
-CACHE = ROOT / "out" / "cache" / "digikit"
+# DIGIKIT_CACHE moves the cache: the cards are sparse files of the card's full size (16.7 GiB for a
+# DN2), and a file system without sparse files (WSL's mount of a Windows drive) writes each one out in full
+CACHE = (
+    Path(os.environ["DIGIKIT_CACHE"])
+    if os.environ.get("DIGIKIT_CACHE")
+    else ROOT / "out" / "cache" / "digikit"
+)
 # every device with a module store and its newest image that has a port (`port = true` in the device file)
 QUICK_IMAGES = {d: pk_device.port_images(d)[-1] for d in pk_device.digikit_devices()}
 RT = B.RT
