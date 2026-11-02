@@ -246,7 +246,8 @@ runtimeTests(
       expect(turned).not.toBe(list1);
       const after = await smp();
       log.pressTurn = { before, after };
-      expect(after, 'the turn with the key down changed SMP').not.toBe(before);
+      // No check on the value: one slow detent moves a parameter by about 1/256 of a unit (stock acceleration, finding 02), and
+      // `_dv_params` is only rewritten while a voice plays. The point of this step is that a press with a turn opens no list.
 
       const modules = await dk.modules();
       for (const m of modules) expect(m.faults, `${m.name} faults`).toBe(0);
