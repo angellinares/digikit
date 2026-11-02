@@ -68,7 +68,7 @@ i32 dkpool_load(u32 req, const dk_file_id *id, const u8 *path, dkpool_handle *ou
     rc = dkrt_store_stat(path, &r->file);
     if (rc != 0)
         return rc == DKRT_E_NOT_FOUND ? DKPOOL_E_NOT_FOUND : DKPOOL_E_READ;
-    if (r->file.size < SPW_HEADER_BYTES + 16u || dkrt_store_read(&r->file, 0, 1, hbuf) != 0)
+    if (r->file.size < SPW_HEADER_BYTES ||dkrt_store_read(&r->file, 0, 1, hbuf) != 0)
         return DKPOOL_E_READ;
     rc = spw_header(hbuf, r->file.size, &frames, &channels);
     if (rc != 0)

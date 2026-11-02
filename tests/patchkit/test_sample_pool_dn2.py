@@ -335,6 +335,8 @@ int main(void)
     memset(hdr, 0, 64); hdr[1] = 1; hdr[7] = 0x20; hdr[5] = 0x01; hdr[10] = 0xbb; hdr[11] = 0x80; hdr[0x14] = 0x7f;   /* pcm = 0x10020 */
     printf("hdr %d", spw_header(hdr, 64 + 0x10020 + 16, &frames, &ch)); printf(" %u %u", frames, ch);
     printf(" size %d", spw_header(hdr, 64 + 0x10020 + 17, &frames, &ch));
+    printf(" notrailer %d", spw_header(hdr, 64 + 0x10020, &frames, &ch));
+    printf(" short %d", spw_header(hdr, 64 + 0x10020 - 2, &frames, &ch));
     hdr[1] = 2; printf(" stereo flag 2 %d", spw_header(hdr, 64 + 0x10020 + 16, &frames, &ch)); hdr[1] = 1;
     hdr[11] = 0x81; printf(" rate %d", spw_header(hdr, 64 + 0x10020 + 16, &frames, &ch)); hdr[11] = 0x80;
     hdr[40] = 1; printf(" reserved %d", spw_header(hdr, 64 + 0x10020 + 16, &frames, &ch)); hdr[40] = 0;
@@ -429,8 +431,9 @@ def test_wire_protocol(tmp_path):
             "count same 0 other page 0 unarmed 0",
             "deadline 3 3 3 -1 dead -2",
             "wrap 0 -1",
-            # pcm 0x10020 bytes stereo = 16392 frames; size, flag, rate, reserved byte and partial frame are format errors; mono 0x10022 = 32785
-            "hdr 0 16392 2 size -5 stereo flag 2 -5 rate -5 reserved -5 frame -5 mono 0 32785 1",
+            # pcm 0x10020 bytes stereo = 16392 frames; extra bytes after the PCM, no trailer and reserved bytes pass; a PCM length past the file,
+            # flag, rate and partial frame are format errors; mono 0x10022 = 32785
+            "hdr 0 16392 2 size 0 notrailer 0 short -5 stereo flag 2 -5 rate -5 reserved 0 frame -5 mono 0 32785 1",
             # chunk (channels, frames, c): stereo 0 reads 17 sectors, stereo 2 starts at sector 32 with the 904 frames left, mono 1 at sector 8
             "chunk 0 17 64 2048 32 8 64 904 8 9 64 2048 0 9 64 2048",
             # 30 sizes: 110 reads (at most 15 mono or 7 stereo chunks each) and 1,293 pages; every chunk once, in order, inside its read

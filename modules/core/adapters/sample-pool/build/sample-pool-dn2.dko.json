@@ -284,196 +284,182 @@
   },
   {
    "addend": 0,
-   "offset": 236,
+   "offset": 232,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.hbuf",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 250,
+   "offset": 246,
    "section": ".text.dkpool_load",
    "symbol": "dkrt_store_read",
    "type": "cf.32"
   },
   {
    "addend": 1,
-   "offset": 274,
-   "section": ".text.dkpool_load",
-   "symbol": ".sec..bss.hbuf",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 280,
+   "offset": 270,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.hbuf",
    "type": "cf.32"
   },
   {
    "addend": 8,
-   "offset": 308,
+   "offset": 298,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.hbuf",
    "type": "cf.32"
   },
   {
    "addend": 4,
-   "offset": 316,
-   "section": ".text.dkpool_load",
-   "symbol": ".sec..bss.hbuf",
-   "type": "cf.32"
-  },
-  {
-   "addend": 2,
-   "offset": 366,
+   "offset": 306,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.hbuf",
    "type": "cf.32"
   },
   {
    "addend": 4,
-   "offset": 430,
+   "offset": 372,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 488,
+   "offset": 418,
    "section": ".text.dkpool_load",
    "symbol": ".sec..text.spa_hit.constprop.0",
    "type": "cf.32"
   },
   {
    "addend": 16,
-   "offset": 506,
+   "offset": 436,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 8,
-   "offset": 524,
+   "offset": 454,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 24,
-   "offset": 532,
+   "offset": 462,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 542,
+   "offset": 472,
    "section": ".text.dkpool_load",
    "symbol": ".sec..text.spa_evict_oldest.constprop.0",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 572,
+   "offset": 502,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 20,
-   "offset": 612,
+   "offset": 542,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 8,
-   "offset": 628,
+   "offset": 558,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 548,
-   "offset": 640,
+   "offset": 570,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 548,
-   "offset": 668,
+   "offset": 598,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 694,
+   "offset": 624,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 16,
-   "offset": 706,
+   "offset": 636,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 16,
-   "offset": 736,
+   "offset": 666,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 592,
-   "offset": 764,
+   "offset": 694,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 800,
+   "offset": 730,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.sp_reqs",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 810,
+   "offset": 740,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.arrivals",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 818,
+   "offset": 748,
    "section": ".text.dkpool_load",
    "symbol": ".sec..bss.arrivals",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 866,
+   "offset": 796,
    "section": ".text.dkpool_load",
    "symbol": ".sec..text.spa_fill.constprop.0",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 914,
+   "offset": 844,
    "section": ".text.dkpool_load",
    "symbol": ".sec..text.spa_evict_oldest.constprop.0",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 932,
+   "offset": 862,
    "section": ".text.dkpool_load",
    "symbol": ".sec..text.spa_free_pages.part.0.constprop.0",
    "type": "cf.32"
@@ -1518,10 +1504,10 @@
   },
   {
    "align": 2,
-   "hex": "4e56ffc848d73cfc282e0010266e000c4a8467064aae0014660872d02d41fff860524a8b67f44eb9000000004a8067ea7001c0ab000c4a806748202b00104a806740486efffc45eb00142f0a2f002f2b00044eb9000000004fef00104a8067242f2e00142f2efffc4eb900000000508f42aefff84cee3cfcffc8202efff84e5e4e7595ca41f900000000428228484a9066104ab900000000671876fd2d43fff860d2528241e800407a10ba8266e06000ff6a77c2ed8b0683000000002f032f044eb900000000508f2d40fff84a80670c52804a80679e72fd6000ff422002784fed8849f4081cb89464b04879000000004878000142a72f034eb9000000004fef00102d40fff84a8066902214b881641210390000000041f9000000007780e28b670a7cfb2d46fff86000ff4a227c0000bb80b3f90000000066e82639000000004a8367de0681ffffffb0b28366d45280798048802e0371c0d0804c4070014c4070074a8166bc7a01ba81660c7bb900000000720293c9601c22417c075989bc896504528160e07bb018007c14bc8166e4327c007fb3c5668a52817a40ba8166c64a8a67282a2b0010b083621a20390000000026077c0b0683000007ffecab4c440000b083640a72f06000fe52428560d8266b00042d4bfff44a8a671a486efffc2f0a2f052f0b4eb9000000004fef00104a80660001227cffbcb9000000006700fe1a20044c0308002640207900000000428043f900000000b1c0660c4eb9000000004a8066e4609e2c115089bc8b6404528060e422009c8be78949f90000000043f418142200e7892d51fff02a6efff0dbcb29861818228d4a86661c73c0e7892241d3fc000000005280b1c0620000fe538823c8000000004aaefff06d9e41f900000000428022104a81660000f63c0091c8ccfc004c26462246d7fc0000000042061786880052887c4cbc8866f24c0068002046d1fc000000002143022c7c01263900000000528321460224216efff0022821440230214702342146023823c3000000002143023c4a8a672421460244216efff402482145024cd3fc0000000041f218007620139018005281b68166f02d40fffc4280ed8a222efffc780143f9000000002a2e0014263900000000528323c30000000041f1280023842800216e00080004214100082143000c42a8001021450014b880665642b128002f052f014eb900000000508f6000fd0a286900082a69000c5089234cfff8234dfffc6000fee8528041e8004c7240b2806600fef84eb9000000004a806600fee42f0b2f2efff04eb900000000508f6000fe1a7c016000fd72",
+   "hex": "4e56ffc848d73cfc282e0010266e000c4a8467064aae0014660872d02d41fff860524a8b67f44eb9000000004a8067ea7001c0ab000c4a806748202b00104a806740486efffc45eb00142f0a2f002f2b00044eb9000000004fef00104a8067242f2e00142f2efffc4eb900000000508f42aefff84cee3cfcffc8202efff84e5e4e7595ca41f900000000428228484a9066104ab900000000671876fd2d43fff860d2528241e800407c10bc8266e06000ff6a77c2ed8b0683000000002f032f044eb900000000508f2d40fff84a80670852804a80679e60c220027c3fed8849f4081cbc9464b44879000000004878000142a72f034eb9000000004fef00102d40fff84a8066942054bc88640c1039000000007380e289670a7cfb2d46fff86000ff54287c0000bb80b9f90000000066e82239000000004a8167de41e8ffc0b1c165d65280798048802e0171c0d0804c4070034c4070074a8366be4a8a67282a2b0010b081621a700b26070683000007ffe0ab2039000000004c440000b083640a72f06000fe98428560d8266b00042d4bfff44a8a671a486efffc2f0a2f052f0b4eb9000000004fef00104a80660001227cffbcb9000000006700fe6020044c0308002640207900000000428043f900000000b1c0660c4eb9000000004a8066e4609e2c115089bc8b6404528060e422009c8be78949f90000000043f418142200e7892d51fff02a6efff0dbcb29861818228d4a86661c73c0e7892241d3fc000000005280b1c0620000fe538823c8000000004aaefff06d9e41f900000000428022104a81660000f63c0091c8ccfc004c26462246d7fc0000000042061786880052887c4cbc8866f24c0068002046d1fc000000002143022c7c01263900000000528321460224216efff0022821440230214702342146023823c3000000002143023c4a8a672421460244216efff402482145024cd3fc0000000041f218007620139018005281b68166f02d40fffc4280ed8a222efffc7c0143f900000000286e0014263900000000528323c30000000041f1280023862800216e00080004214100082143000c42a80010214c0014bc80665642b128002f0c2f014eb900000000508f6000fd50286900082a69000c5089234cfff8234dfffc6000fee8528041e8004c7240b2806600fef84eb9000000004a806600fee42f0b2f2efff04eb900000000508f6000fe1a72016000fcb0",
    "kind": "text",
    "name": ".text.dkpool_load",
-   "size": 948
+   "size": 878
   },
   {
    "align": 2,
@@ -1713,7 +1699,7 @@
    "size": 122
   }
  ],
- "source_sha256": "95ddbfa45e95b2c0cd532370b86cd0673f8a5284c0351d44a9a3bf32d69d050f",
+ "source_sha256": "5235aff1f807d00205ff6f91c5c7fabdbc40146c9ca73b9303fe84316de46afa",
  "symbols": [
   {
    "global": false,
@@ -2122,8 +2108,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "1674",
-  "isa_check": "72f1611c7cb6c93e037f05d3c3d03caabc5702dab36257290eca8637307c2f8f",
+  "instructions_redecoded": "1647",
+  "isa_check": "cb8a18124aa5138e0182330dbe33eaff71f18c3c5c61dfb38b75e6b8b6bbcfc8",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

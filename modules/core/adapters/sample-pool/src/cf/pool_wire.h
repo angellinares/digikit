@@ -211,20 +211,18 @@ static inline int32_t spw_poll(spw_x *x, uint32_t now, const spw_ack *ack)
 /* ---- File geometry and the page data ---------------------------------------------------------------------------------------------------- */
 
 /* The 64-byte header of a native file (dkrt_sdk::sample::native_header): byte 1 is 0 mono or 1 stereo, rate 48 kHz at 8, PCM length at 4,
- * 0x14 = 0x7f, every other byte zero; size = 64 + PCM + 16 and the PCM length is a whole number of frames. 0 or DKPOOL_E_FORMAT. */
+ * rate 48 kHz at 8, PCM length at 4; the PCM length is a whole number of frames and the file holds 64 + PCM bytes. The trailer is optional
+ * and the other header bytes are ignored (as in native_header). 0 or DKPOOL_E_FORMAT. */
 static inline int32_t spw_header(const uint8_t *h, uint32_t size, uint32_t *frames, uint32_t *channels)
 {
-    uint32_t i, ch, pcm, rate;
-    if (size < SPW_HEADER_BYTES + 16u || h[1] > 1)
+    uint32_t ch, pcm, rate;
+    if (size < SPW_HEADER_BYTES || h[1] > 1)
         return DKPOOL_E_FORMAT;
     ch = (uint32_t)h[1] + 1u;
     pcm = ((uint32_t)h[4] << 24) | ((uint32_t)h[5] << 16) | ((uint32_t)h[6] << 8) | h[7];
     rate = ((uint32_t)h[8] << 24) | ((uint32_t)h[9] << 16) | ((uint32_t)h[10] << 8) | h[11];
-    if (rate != SP_NATIVE_RATE || pcm == 0 || pcm != size - (SPW_HEADER_BYTES + 16u) || pcm % (2u * ch))
+    if (rate != SP_NATIVE_RATE || pcm == 0 || pcm > size - SPW_HEADER_BYTES || pcm % (2u * ch))
         return DKPOOL_E_FORMAT;
-    for (i = 0; i < SPW_HEADER_BYTES; i++)
-        if (i != 1 && !(i >= 4 && i < 12) && h[i] != (i == 0x14 ? 0x7fu : 0u))
-            return DKPOOL_E_FORMAT;
     *frames = pcm / (2u * ch);
     *channels = ch;
     return 0;

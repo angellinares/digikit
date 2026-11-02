@@ -49,6 +49,7 @@ typedef struct Req {
     volatile i32 result;
     volatile u32 cancelled;   /* dkpool_cancel: nobody waits for this load any more */
     u32 kind, slot, token, req;
+    u32 pcm;      /* PCM byte length from the file header (bytes 4..8), read before the stock loader runs */
     dkpool_handle *out;
     u32 job[4];   /* the std::function of the job: storage (2 words), manager, invoker */
     u32 done[8];  /* an empty std::function */
@@ -81,7 +82,7 @@ static void set_slot(u32 slot, u32 state)
 }
 
 /* Planes and frame count of the block the stock loader just made for `slot`. */
-static i32 describe(u32 slot, const u32 *key, dkpool_handle *out)
+static i32 describe(u32 slot, const u32 *key, u32 pcm, dkpool_handle *out)
 {
     const u32 *vec = vector();
     i32 idx = slot_map()[slot];
@@ -90,14 +91,15 @@ static i32 describe(u32 slot, const u32 *key, dkpool_handle *out)
     if (idx < 0 || (u32)idx >= count)
         return DKPOOL_E_FORMAT;
     rec = (const u32 *)(vec[0] + (u32)idx * SP_REC_BYTES);
-    return sp_geometry((u32)&sp_dsp_pool_base, rec[SP_REC_BLOCK / 4], rec[SP_REC_EXTENT / 4], stereo_flags()[slot] != 0, key[2], out);
+    return sp_geometry((u32)&sp_dsp_pool_base, rec[SP_REC_BLOCK / 4], rec[SP_REC_EXTENT / 4], stereo_flags()[slot] != 0, pcm, key[2], out);
 }
 
 /* The load job, in the worker task. */
 static void run_load(Req *r)
 {
     u32 handle[4], key[4], i;
-    i32 rc;
+    u8 head[12];
+    i32 rc, got;
     if (r->cancelled) {   /* still queued when the runtime gave up on it: do nothing, the slot stays free */
         r->result = DKPOOL_E_LOST;
         return;
@@ -108,9 +110,10 @@ static void run_load(Req *r)
         r->result = DKPOOL_E_NOT_FOUND;
         return;
     }
+    got = dk_fw_storage_path_read(head, 12, handle);   /* the loader takes the key, not this handle, so the read cannot disturb it */
     rc = dk_fw_storage_directory_metadata(handle[0], key);
     dk_fw_storage_path_close(handle);
-    if (rc != 0) {
+    if (got != 12 || rc != 0) {
         r->result = DKPOOL_E_READ;
         return;
     }
@@ -123,7 +126,8 @@ static void run_load(Req *r)
         r->result = DKPOOL_E_READ;
         return;
     }
-    r->result = describe(r->slot, key, r->out);
+    r->pcm = ((u32)head[4] << 24) | ((u32)head[5] << 16) | ((u32)head[6] << 8) | head[7];
+    r->result = describe(r->slot, key, r->pcm, r->out);
     if (r->result == 0) {
         r->out->id = r->slot;
         r->out->token = r->token;

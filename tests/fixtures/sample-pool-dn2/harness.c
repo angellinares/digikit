@@ -168,7 +168,7 @@ static void make_file(const char *path, uint32_t id, uint32_t frames, uint32_t c
     f->data[4] = pcm >> 24; f->data[5] = pcm >> 16; f->data[6] = pcm >> 8; f->data[7] = pcm;
     f->data[8] = 0; f->data[9] = 0; f->data[10] = 0xbb; f->data[11] = 0x80;   /* 48000 */
     f->data[0x14] = 0x7f;
-    if (corrupt) f->data[30] = 1;
+    if (corrupt) f->data[1] = 2;   /* stereo byte above 1: spw_header rejects it */
     for (i = 0; i < frames; i++)
         for (c = 0; c < channels; c++) {
             uint32_t v = val(id, i, c), at = 64u + (i * channels + c) * 2u;
