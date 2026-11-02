@@ -22,8 +22,8 @@ execution requirements, not levels. A successful boot proves only what the run a
 | Component | Module DSP conformance on the SHARC core | `mise run module:check ID` |
 | Device: stock UI | DT2 stock pages and transport goldens (zero DSP) | `mise run test:stock` |
 | Device: FX | Stock FX oracles | `mise run test:fx`, `mise run test:fx:dt2` |
-| Device: runtime | Emulator oracles (`tests/regression/emulator`) and module-owned device tests (`modules/**/tests/*.device.test.ts`) | `mise run test:runtime` |
-| Device: module loads | One shared conformance suite (`tests/conformance`) loads every shipped upload | `mise run test:conformance` |
+| Device: runtime | Emulator oracles (`tests/regression/emulator`) and module-owned device tests (`modules/**/tests/*.device.test.ts`) | `pnpm nx:pilot run <module-id>:test-device` |
+| Device: module loads | One shared conformance suite (`tests/conformance`) loads every shipped upload | `pnpm nx:pilot run-many -t test-conformance` |
 | Device: Python | Digikit boot scenarios, patchkit smoke matrix, patched-boot pytest files | owner pytest files; `mise run patch:test` |
 | App E2E | None yet | none |
 
@@ -46,7 +46,7 @@ Use the owner command while iterating. The coordinator runs the routed gate once
 | Leaf module | `module:check ID` |
 | Device tests of one module | `pnpm nx:pilot run <module-id>:test-device` |
 | Loading one module | `uv run python -m tools.devtools.verify --conformance ID[,ID...]` |
-| Framework module, runtime | `test:runtime`, `test:conformance` with filters |
+| Framework module, runtime | `pnpm nx:pilot run <module-id>:test-device`, `pnpm nx:pilot run-many -t test-conformance` |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval |
@@ -67,7 +67,7 @@ require Rust toolchains or Cargo metadata. Explicit Rust targets retain their ow
 See the [Nx migration boundary](plans/nx-pilot.md#host-preflight-migration).
 
 Control-client, test-support, dk-session, desktop-host and regression-host targets use local result
-caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run through `verify --tests`) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (`verify --conformance ID`). Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
+caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). Device targets set `parallelism: false`. Other Nx targets: `pack` (patchkit build, then pack for each device into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
 generated WASM and optional inputs outside the cache boundary. Cache use assumes a frozen installation. New test helpers, environment
 reads or external inputs require an input audit before relying on cached results. The
 [bounded cache observations](findings/nx-pilot.md) include dependency failure/restoration probes;
@@ -85,9 +85,8 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run test:stock` | Vitest project `stock` (`tests/regression/dt2`): DT2 1.17 zero-DSP goldens. Filters pass through. |
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
 | `mise run test:fx:dt2` | Project `fx-dt2`: 135 quick assertions; `DIGI_FX_SWEEP=1` runs 146 across 60 scenarios. `DIGI_DT2_CARD` selects a prepared card image. |
-| `mise run test:runtime [-- FILTER]` | Project `runtime`: `tests/regression/emulator/*.test.ts` and every `modules/**/tests/*.device.test.ts`. Runs `build:plusdrive` first. |
-| `mise run test:conformance [-- FILTER]` | Project `conformance`: `tests/conformance/load.device.test.ts` on DT2 1.17 and DN2 1.12. `DIGI_CONFORMANCE_MODULES` (comma-separated module ids; empty: all eligible modules) selects the modules. |
-| `mise run build:plusdrive` | Builds the plusdrive CLI into `out/native/target/nogen`. |
+| `pnpm nx:pilot run <module-id>:test-device` | The module's `*.device.test.ts` files (Vitest project `runtime`) after its packs, aliases and the plusdrive CLI are built into `dist/`. |
+| `pnpm nx:pilot run-many -t test-conformance` | Project `conformance`: `tests/conformance/load.device.test.ts` on DT2 1.17 and DN2 1.12, once per eligible module (`DIGI_CONFORMANCE_MODULES` is set per module). |
 | `mise run module:check ID` | Machine/effect conformance and own Python tests, then any module-owned Nx `test-device` target. May build or emulate; size/fit follows both. Not an all-module load proof. |
 | `mise run module:audit NAME` | ColdFire memory audit of one run-time module. |
 | `mise run patch:test` | Smoke tour over `tests/patchkit/smoke/matrix.toml` (`-- --cell dt2-1.17:core/fx`, `-- --update`). |
@@ -148,20 +147,20 @@ Tests that lack an input skip with a reason; `pytest -rs` lists them.
 | Captures `out/captures/*.dt2cap` | Not reproducible from the repository; those tests stay skipped. |
 | Opt-in switches | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `--slow` runs long firmware runs. |
 
-Device suites (`test:stock`, `test:fx*`, `test:runtime`, `test:conformance`) also need:
+Device suites (`test:stock`, `test:fx*`, the Nx `test-device` and `test-conformance` targets) also need:
 
 - Pinned daemons: `DIGI_EMUD_DT2` and `DIGI_EMUD_DN2` point to built `digi-emud` binaries
   (`mise run emu:serve -- --build-only`). `test:stock` takes `DIGI_EMUD`. The gate sets these from
   `build-daemons`.
 - Complete ready inputs for each device, including the validated DSP files.
-- Module artifacts for `test:runtime` and `test:conformance`: `out/regression/modules/<device>/<leaf>.dkm`.
-  `DIGI_RUNTIME_MODULES` overrides the directory. The gate packs the fixtures of the selected records and the modules named in `DIGI_CONFORMANCE_MODULES` itself.
-- `DIGI_PATCHKIT` (optional) names the patchkit binary for `test:runtime` and `test:conformance`. The gate sets it; without it the tests build patchkit once through `patchkit.py bin`.
+- Module artifacts for the device targets: `dist/modules/<device>/<leaf>.dkm`, built by the Nx `pack` and `pack-aliases` targets.
+  `DIGI_RUNTIME_MODULES` (optional) overrides the directory. The gate packs the fixtures of the selected records and the modules named in `DIGI_CONFORMANCE_MODULES` with one `nx run-many`.
+- `DIGI_PATCHKIT` (optional) names the patchkit binary. The Nx targets and the gate use `dist/patchkit/patchkit`; without it the tests build patchkit once through `patchkit.py bin`.
 - DT2 card samples at `out/runs/patchkit/samples`.
-- plusdrive: `test:runtime` builds it through `build:plusdrive`. The gate builds it before samples-live.
+- plusdrive: `test-device` builds it through `plusdrive-format:cli` (`dist/plusdrive/plusdrive`, also `DIGI_PLUSDRIVE`). The gate builds it before samples-live.
 
 FX route and track SEND acceptance runs in the device tests of the owning modules (`modules/**/tests/*.device.test.ts`)
-with `mise run test:runtime`. `tests/regression/runtime` keeps the shared helpers only. The legacy Python `fxroute` and `fxroutes` scenarios are retired;
+with `pnpm nx:pilot run <module-id>:test-device`. `tests/regression/runtime` keeps the shared helpers only. The legacy Python `fxroute` and `fxroutes` scenarios are retired;
 their offline data and comparison helpers remain.
 
 Details of the runtime and module fixtures: [tests/regression/README.md](../tests/regression/README.md).

@@ -19,7 +19,7 @@ const exec = promisify(execFile);
 /** Independent +Drive reader/builder oracle over the guest's card writes. No implicit builds. */
 async function expectSampleCard(session: Session, out: string, hash: number): Promise<void> {
   const plusdrive = plusdriveBinary();
-  if (!existsSync(plusdrive)) throw new Error('plusdrive CLI missing: run mise run build:plusdrive');
+  if (!existsSync(plusdrive)) throw new Error('plusdrive CLI missing: run pnpm nx:pilot run plusdrive-format:cli');
   const base = session.cardPath;
   if (!base) throw new Error('sample card oracle requires the loaded base card image');
   const overlay = join(out, 'samples.ov.bin');

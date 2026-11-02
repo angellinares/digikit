@@ -56,7 +56,7 @@ Use the owner's command while iterating. Full command details, preparation and r
 | JS/TS host and desktop UI | `pnpm test:host`; `pnpm verify:host` also runs lint, format and types. |
 | Web Node tests | `pnpm --filter @digi/web test` |
 | Python tools | Named pytest files under `tests/<owner>/` (never a directory) and `mise run lint:py`. Typed files are listed in pyproject `[tool.mypy] files`. |
-| Device tests | One file: `mise run verify -- --tests modules/core/runtime/tests/settings.device.test.ts` (packs the modules its record names). Suites: `mise run test:stock`, `test:runtime`, `test:conformance`, `test:fx`, `test:fx:dt2`. Prerequisites (daemons, ready inputs, module artifacts) are in [testing](docs/TESTING.md); no implicit daemon builds. No ad-hoc proof scripts. |
+| Device tests | One file: `mise run verify -- --tests modules/core/runtime/tests/settings.device.test.ts` (packs the modules its record names). Suites: `mise run test:stock`, `test:fx`, `test:fx:dt2`; device tests of modules run as `pnpm nx:pilot run <module-id>:test-device` and `pnpm nx:pilot run-many -t test-conformance` (packs and CLIs are Nx targets built on demand into `dist/`). Prerequisites (daemons, ready inputs) are in [testing](docs/TESTING.md); no implicit daemon builds. No ad-hoc proof scripts. |
 | One module | `mise run module:check ID`: conformance and own tests; may build or emulate. This does not prove all-module loads. |
 | Module, UI or runtime iteration | `mise run dk:dev -- ID --device dn2 --keys 'tap:...,shot:NAME'`: builds, reloads a kept daemon (UI modules swap in about 4 s; any other change boots: DN2 5 s, DT2 10 s) and writes `out/runs/devreload/<dev>/sheet.png`. Iterate on DN2, check DT2 at the end. Not a proof: finish with the owner's check. |
 

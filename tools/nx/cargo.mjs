@@ -8,6 +8,33 @@ import { parse } from 'smol-toml';
 const read = (root, toml) => parse(readFileSync(join(root, toml), 'utf8'));
 const KINDS = ['dependencies', 'dev-dependencies', 'build-dependencies'];
 
+// CLI builds into dist/ (gitignored). Copy then rename: a running process keeps the old file.
+const CLI = {
+  patchkit: {
+    build: 'cargo build -p patchkit --release --offline --target-dir dist/cargo',
+    bin: 'patchkit',
+    dir: 'patchkit',
+  },
+  'plusdrive-format': {
+    build: 'cargo build -p plusdrive-format --bin plusdrive --release --locked --offline --target-dir dist/cargo',
+    bin: 'plusdrive',
+    dir: 'plusdrive',
+  },
+};
+const cliTarget = ({ build, bin, dir }) => ({
+  executor: 'nx:run-commands',
+  cache: false,
+  outputs: [`{workspaceRoot}/dist/${dir}/${bin}`],
+  options: {
+    commands: [
+      build,
+      `mkdir -p dist/${dir} && cp dist/cargo/release/${bin} dist/${dir}/${bin}.tmp && mv -f dist/${dir}/${bin}.tmp dist/${dir}/${bin}`,
+    ],
+    parallel: false,
+    cwd: '.',
+  },
+});
+
 export const createNodesV2 = [
   'Cargo.toml',
   (files, _opts, ctx) =>
@@ -29,6 +56,7 @@ export const createNodesV2 = [
               inputs,
               options: { command: `uv run python -m tools.devtools.rust_ws test --packages ${name}`, cwd: '.' },
             },
+            ...(CLI[name] ? { cli: cliTarget(CLI[name]) } : {}),
           },
         };
       }

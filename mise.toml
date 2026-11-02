@@ -128,19 +128,6 @@ description = "DN2 stock FX oracles: 61 quick assertions; DIGI_FX_SWEEP=1 select
 run = "pnpm --filter @digi/regression test:fx:dt2"
 description = "DT2 stock FX: 135 quick / 146 full (DIGI_FX_SWEEP=1); native Vitest filters; existing binary/ready inputs, no emulator build; sample-card preparation may build its helper (DIGI_DT2_CARD selects a prepared image to avoid it)"
 
-[tasks."build:plusdrive"]
-run = "uv run python -m tools.firmware.plusdrive_check --build-only"
-description = "Build the plusdrive CLI into out/native/target/nogen (card image oracle for runtime tests)"
-
-[tasks."test:runtime"]
-depends = ["build:plusdrive"]
-run = "pnpm --filter @digi/regression test:runtime"
-description = "Coupled runtime acceptance (also relevant-change gate owner), serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries; plusdrive is built automatically and the DT2 card samples come from out/runs/patchkit/samples; no implicit emulator build; accepts Vitest filters (for example -- service-commands)"
-
-[tasks."test:conformance"]
-run = "pnpm --filter @digi/regression test:conformance"
-description = "Serial coupled module-load conformance (also relevant-change gate owner): the shared suite tests/conformance/load.device.test.ts loads the modules named in DIGI_CONFORMANCE_MODULES (empty: all eligible) on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
-
 [tasks."test:quick"]
 run = [
   "uv run python -m pytest -q tests/emulator/test_native_emu_launcher.py tests/emulator/test_native_pgo.py tests/emulator/test_native_target.py tests/emulator/test_coupled_tool.py",
@@ -156,7 +143,7 @@ run = [
   "pnpm --filter @digi/web test",
   "uv run python -m tools.emulator.coupled scenario --all",
 ]
-description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock, test:runtime, test:conformance)"
+description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock and the Nx test-device and test-conformance targets)"
 
 [tasks."test:slow"]
 run = [

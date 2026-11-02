@@ -84,7 +84,7 @@ from tools.emulator import (  # noqa: E402
     coupled,  # noqa: E402
     digi_env,  # noqa: E402
 )
-from tools.patchkit import modroots, patchkit  # noqa: E402
+from tools.patchkit import modroots  # noqa: E402
 
 PY = ["uv", "run", "python"]
 FX_FILES = (
@@ -341,6 +341,8 @@ TEST_ONLY: tuple[str, ...] = (
     "modules/**/tests/*.device.test.ts",
     "tests/regression/project.json",
     "tools/devtools/*",
+    # Nx project graph plugins: they define projects and targets, not the image or the smoke harness
+    "tools/nx/*",
 )
 # Host Vitest test files (vitest.host.projects.json). The host config runs them without a device, so
 # a change that only touches them cannot change the smoke matrix. Helpers, config and new files that
@@ -1665,8 +1667,8 @@ def explain(
                 step == "runtime-fixture" and runtime_pack_modules(selected)
             ):
                 print(
-                    f"{step}: prerequisite patchkit build (stale objects only), then fresh patchkit pack into its run directory; "
-                    "also prepares the native patchkit CLI used for store dump; "
+                    f"{step}: prerequisite Nx run-many (pack targets, dist/modules); "
+                    "also builds the native patchkit CLI used for store dump; "
                     "may build module toolchains, never emulator daemons"
                 )
             if step == "runtime-fixture" and (
@@ -1674,7 +1676,7 @@ def explain(
                 or verify_route.runtime_plusdrive_files().intersection(selected)
             ):
                 print(
-                    f"{step}: prerequisite plusdrive CLI build (tools.firmware.plusdrive_check --build-only)"
+                    f"{step}: prerequisite plusdrive CLI build (Nx target plusdrive-format:cli)"
                 )
     if "rust-tests" in steps:
         scope = ", ".join(rust_packages) if rust_packages else "whole workspace"
@@ -1763,69 +1765,37 @@ def finish_python(gate: Gate) -> None:
     gate.report("python-tests", problem, time.monotonic() - began, text)
 
 
-def pack_devices(mid: str) -> tuple[str, ...]:
-    """The devices to pack MID for: those its manifest's `[module] ports` names (both when it names none)."""
-    ports = (
-        tomllib.loads((modroots.manifests()[mid] / "module.toml").read_text())[
-            "module"
-        ].get("ports")
-        or []
-    )
-    if not ports:
-        return ("dt2", "dn2")
-    return tuple(d for d in ("dt2", "dn2") if any(p.startswith(f"{d}-") for p in ports))
+NX_PACK_JOBS = 3  # Nx packs at once in the module-load and runtime-fixture prepare node
 
 
-def prepare_acceptance_modules(
-    gate: Gate, step: str, modules: list[str], aliases: dict[str, str] | None = None
-) -> Path:
-    """Build the stale objects (they are cached in out/cache/dko) and pack fresh DKMs; each acceptance node owns its directory/logs."""
-    directory = gate.out / step / "modules"
-    builds = []
-    for mid in modules:
-        name = f"{step}-build-{mid.rsplit('/', 1)[-1]}"
-        builds.append(name)
+def nx_pack(
+    gate: Gate, step: str, targets: str, projects: list[str], plusdrive: bool = False
+) -> None:
+    """Build and pack the DKMs (dist/modules, dist/patchkit, dist/plusdrive) with one Nx run-many."""
+    if projects:
         gate.run(
-            name,
+            f"{step}:pack",
             [
-                *PY,
-                "-m",
-                "tools.patchkit.patchkit",
-                "build",
-                str(modroots.module_dir(mid)),
+                "pnpm",
+                "nx:pilot",
+                "run-many",
+                "-t",
+                targets,
+                "-p",
+                ",".join(projects),
+                "--parallel",
+                str(NX_PACK_JOBS),
             ],
+            cwd=ROOT,
         )
-    if any(name in gate.failed for name in builds):
-        raise RuntimeError(f"{step} requires module build objects; see build logs")
-    packs = []
-    for device in ("dt2", "dn2"):
-        (directory / device).mkdir(parents=True, exist_ok=True)
-        # Each source was built once above. The standard pack command builds the native
-        # patchkit CLI too, which route persistence consumes directly for store dump.
-        for mid, source in [*((mid, mid) for mid in modules), *(aliases or {}).items()]:
-            if device not in pack_devices(source):
-                continue
-            leaf = mid.rsplit("/", 1)[-1]
-            name = f"{step}-pack-{device}-{leaf}"
-            packs.append(name)
-            gate.run(
-                name,
-                [
-                    *PY,
-                    "-m",
-                    "tools.patchkit.patchkit",
-                    "pack",
-                    source,
-                    "--device",
-                    device,
-                    *(["--name", mid] if mid != source else []),
-                    "-o",
-                    str(directory / device / f"{leaf}.dkm"),
-                ],
-            )
-    if any(name in gate.failed for name in packs):
+    if plusdrive:
+        gate.run(
+            f"{step}:plusdrive",
+            ["pnpm", "nx:pilot", "run", "plusdrive-format:cli"],
+            cwd=ROOT,
+        )
+    if any(n.startswith(f"{step}:") for n in gate.failed):
         raise RuntimeError(f"{step} preparation failed; see pack logs")
-    return directory
 
 
 def runtime_pack_modules(selected: list[str]) -> list[str]:
@@ -1835,15 +1805,6 @@ def runtime_pack_modules(selected: list[str]) -> list[str]:
         for mid, files in verify_route.runtime_modules().items()
         if not selected or set(files) & set(selected)
     ]
-
-
-def runtime_pack_aliases(selected: list[str]) -> dict[str, str]:
-    """Extra card identities required by the complete inventory of each selected FX suite."""
-    return {
-        alias: source
-        for alias, (source, files) in verify_route.runtime_aliases().items()
-        if not selected or set(files) & set(selected)
-    }
 
 
 def run_step(gate: Gate, step: str) -> None:
@@ -1886,7 +1847,7 @@ def run_step(gate: Gate, step: str) -> None:
         selected = getattr(gate, "acceptance", {}).get(step, [])
         env = gate.step_env()
         if step in ("runtime-fixture", "module-load"):
-            env["DIGI_PATCHKIT"] = str(patchkit.binary())
+            env["DIGI_PATCHKIT"] = str(ROOT / "dist/patchkit/patchkit")
         if step == "stock":
             # Stock uses one stepped ColdFire thread per worker and the DT2 binary only.
             if binary := env.get("DIGI_EMUD_DT2"):
@@ -1904,26 +1865,31 @@ def run_step(gate: Gate, step: str) -> None:
                 modules.append(
                     "digikit/debug"
                 )  # every cell selects it next to its module (the log)
-            env["DIGI_RUNTIME_MODULES"] = str(
-                prepare_acceptance_modules(gate, step, modules)
-            )
-        elif step == "runtime-fixture" and (modules := runtime_pack_modules(selected)):
-            env["DIGI_RUNTIME_MODULES"] = str(
-                prepare_acceptance_modules(
-                    gate, step, modules, runtime_pack_aliases(selected)
-                )
-            )
-        if step == "runtime-fixture" and (
+            nx_pack(gate, step, "pack", modules)
+        plusdrive = step == "runtime-fixture" and (
             not selected
             or verify_route.runtime_plusdrive_files().intersection(selected)
-        ):
-            gate.run(
-                "runtime-fixture:plusdrive",
-                [*PY, "-m", "tools.firmware.plusdrive_check", "--build-only"],
-            )
-            from tools.firmware import plusdrive_check
-
-            env["DIGI_PLUSDRIVE"] = str(plusdrive_check.plusdrive_binary())
+        )
+        if step == "runtime-fixture":
+            modules = runtime_pack_modules(selected)
+            if modules:
+                # Alias owners are not in the route data: every project with a pack-aliases target.
+                owners = [
+                    name
+                    for name, node in verify_route.nx_graph()["nodes"].items()
+                    if "pack-aliases" in node["data"].get("targets", {})
+                ]
+                nx_pack(
+                    gate,
+                    step,
+                    "pack,pack-aliases",
+                    sorted({*modules, *owners}),
+                    bool(plusdrive),
+                )
+            elif plusdrive:
+                nx_pack(gate, step, "", [], True)
+        if plusdrive:
+            env["DIGI_PLUSDRIVE"] = str(ROOT / "dist/plusdrive/plusdrive")
         script = {
             "stock": "test:stock",
             "runtime-fixture": "test:runtime",

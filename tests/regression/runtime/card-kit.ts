@@ -33,7 +33,7 @@ const MB_ARG = 12;
 
 /** The plusdrive CLI: `DIGI_PLUSDRIVE` (a lane that built its own), else the shared build. */
 export function plusdriveBinary(): string {
-  return process.env.DIGI_PLUSDRIVE || path.join(repoRoot(), 'out/native/target/nogen/release/plusdrive');
+  return process.env.DIGI_PLUSDRIVE || path.join(repoRoot(), 'dist/plusdrive/plusdrive');
 }
 
 // ---- the selection record (one 512-byte copy) --------------------------------------------------------------------------------------
