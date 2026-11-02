@@ -14,7 +14,7 @@ from tools.patchkit import patchkit, pk_harness, pk_modcheck
 def test_only_the_nx_graph_test_device_target_declares_device_acceptance(
     tmp_path, monkeypatch
 ):
-    from tools.devtools import verify_route
+    from tools.devtools import nx_graph
 
     folder = tmp_path / "module"
     folder.mkdir()
@@ -26,7 +26,7 @@ def test_only_the_nx_graph_test_device_target_declares_device_acceptance(
             "other/effect": {"data": {"targets": {"test-host": {}}}},
         }
     }
-    monkeypatch.setattr(verify_route, "nx_graph", lambda: graph)
+    monkeypatch.setattr(nx_graph, "nx_graph", lambda: graph)
     assert pk_modcheck.own_device_target("owned/effect") == "owned/effect:test-device"
     assert pk_modcheck.own_device_target("other/effect") is None
     assert pk_modcheck.own_device_target("missing/effect") is None

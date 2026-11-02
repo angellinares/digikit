@@ -1,5 +1,5 @@
 // Nx plugin: one project per module.toml. Edges: [module].requires plus [[object]].sources paths
-// that resolve into another module directory. tools/devtools/verify_route.py reads them from the graph.
+// that resolve into another module directory. tools/devtools/nx_graph.py reads them from the graph.
 // Targets: pack (build + pack to dist/modules/<dev>/<leaf>.dkm), pack-aliases (renamed copies named by
 // metadata.runtimeAcceptance), test-host, test-device and test-conformance (vitest directly, after the packs).
 import { existsSync, globSync, readFileSync } from 'node:fs';
@@ -11,7 +11,7 @@ const read = (root, toml) => parse(readFileSync(join(root, toml), 'utf8'));
 // Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
 const PK = 'dist/patchkit/patchkit --root .';
 
-// Same as pack_devices in tools/devtools/verify.py: no ports means both devices.
+// The devices a module packs for: no ports means both devices.
 const packDevices = (m) => {
   if (!m.ports?.length) return ['dt2', 'dn2'];
   return ['dt2', 'dn2'].filter((d) => m.ports.some((p) => p.startsWith(`${d}-`)));
@@ -126,26 +126,25 @@ export const createNodesV2 = [
         targets['test-device'] = {
           executor: 'nx:run-commands',
           cache: false,
-          parallelism: false,
           dependsOn: [...new Set(dependsOn)],
           outputs: [],
           options: {
+            env: { REGRESSION_JOBS: '2' },
             command: `pnpm --filter @digi/regression test:runtime ${deviceTests.map((t) => `../../${root}/${t}`).join(' ')}`,
             cwd: '.',
           },
         };
       }
-      // Same rule as RUNTIME_UPLOADS in tools/devtools/verify_route.py: the shared conformance suite loads these.
+      // The rule is `isUploadable` in this file: the shared conformance suite loads these.
       if (uploadable)
         targets['test-conformance'] = {
           executor: 'nx:run-commands',
           cache: false,
-          parallelism: false,
           dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons'],
           outputs: [],
           options: {
             command: 'pnpm --filter @digi/regression test:conformance',
-            env: { DIGI_CONFORMANCE_MODULES: m.id },
+            env: { DIGI_CONFORMANCE_MODULES: m.id, REGRESSION_JOBS: '2' },
             cwd: '.',
           },
         };

@@ -5,10 +5,50 @@ import { repoRoot, type Device } from '@digi/test-support';
 export const DEVICES = ['dt2', 'dn2'] as const;
 export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
 
-/** One run dir per device and vitest worker, so no two daemons share it at once. The daemon caches booted
- * snapshots there: a cold boot once per worker, then about 1 s. Keeps the newest 4 snapshot entries. */
+const claimedRunDirs = new Map<Device, string>();
+
+function tryLock(lock: string): boolean {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = fs.openSync(lock, 'wx');
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    const pid = Number.parseInt(fs.readFileSync(lock, 'utf8'), 10);
+    if (Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return false;
+      }
+    }
+    fs.rmSync(lock, { force: true });
+  }
+  return false;
+}
+
+/** One run dir per device and vitest worker process at a time, so no two daemons share it. Dirs are reused
+ * across processes (a pid lock file marks a dir as claimed), so the booted-snapshot cache stays warm: a cold
+ * boot once per dir, then about 1 s. The dir count is bounded by the number of concurrent workers.
+ * Keeps the newest 4 snapshot entries. */
 export function cachedRunDir(device: Device): string {
-  const dir = path.join(repoRoot(), 'dist/session-cache', `${device}-${process.env.VITEST_POOL_ID ?? '0'}`);
+  const known = claimedRunDirs.get(device);
+  if (known) return known;
+  const base = path.join(repoRoot(), 'dist/session-cache');
+  fs.mkdirSync(base, { recursive: true });
+  let dir = '';
+  let lock = '';
+  for (let i = 0; ; i++) {
+    dir = path.join(base, `${device}-${i}`);
+    lock = `${dir}.lock`;
+    if (tryLock(lock)) break;
+  }
+  process.on('exit', () => fs.rmSync(lock, { force: true }));
+  claimedRunDirs.set(device, dir);
   fs.mkdirSync(dir, { recursive: true });
   const patched = path.join(dir, 'patched');
   if (fs.existsSync(patched)) {

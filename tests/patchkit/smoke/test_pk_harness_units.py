@@ -264,3 +264,43 @@ def test_text_rows_and_the_runtime_version():
     assert h.runtime_text() == f"{v >> 16}.{v >> 8 & 255}.{v & 255}"
     assert h.missing_rows(rows, ["DIGIKIT 0.1.0", "RUNTIME {runtime}"]) == []
     assert h.missing_rows(rows, ["FREE 1 KB"]) == ["FREE 1 KB"]
+
+
+def test_part_jobs_bounds_the_parallel_parts(monkeypatch):
+    import threading
+    import time
+
+    from tools.patchkit import pk_digikit_scen, pk_proofkit
+
+    assert h.part_jobs(4) == 4  # unset: all parts, as before
+    monkeypatch.setenv("DIGIKIT_PART_JOBS", "1")
+    assert h.part_jobs(4) == 1
+    monkeypatch.setenv("DIGIKIT_PART_JOBS", "9")
+    assert h.part_jobs(3) == 3
+
+    def peak(run, width):
+        if width is None:
+            monkeypatch.delenv("DIGIKIT_PART_JOBS", raising=False)
+        else:
+            monkeypatch.setenv("DIGIKIT_PART_JOBS", width)
+        live = top = 0
+        lock = threading.Lock()
+
+        def part():
+            nonlocal live, top
+            with lock:
+                live += 1
+                top = max(top, live)
+            time.sleep(0.05)
+            with lock:
+                live -= 1
+
+        run([part] * 4)
+        return top
+
+    ctx = pk_digikit_scen.Ctx.__new__(pk_digikit_scen.Ctx)  # parallel() uses no state
+    proof = pk_proofkit.Proof.__new__(pk_proofkit.Proof)
+    for run in (lambda fns: ctx.parallel(*fns), lambda fns: proof.parallel(*fns)):
+        assert peak(run, "1") == 1
+        assert peak(run, "2") == 2
+        assert peak(run, None) == 4

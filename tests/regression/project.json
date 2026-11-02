@@ -13,7 +13,6 @@
     "test-device": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
       "dependsOn": [
         "patchkit:cli",
         "digi-control:daemons",
@@ -25,6 +24,7 @@
       ],
       "outputs": [],
       "options": {
+        "env": { "REGRESSION_JOBS": "2" },
         "command": "pnpm --filter @digi/regression test:runtime emulator/",
         "cwd": "."
       }

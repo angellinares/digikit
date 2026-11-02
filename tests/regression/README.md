@@ -135,7 +135,7 @@ log and guest faults. Each cell has a fresh daemon and reuses the worker's cache
 audio. Module-specific behaviour is tested in the module's own `tests/` folder.
 
 ```sh
-uv run python -m tools.devtools.verify --conformance digikit/remote
+pnpm nx:pilot run digikit/remote:test-conformance
 ```
 
 ## Artifacts

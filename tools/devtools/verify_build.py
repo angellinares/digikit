@@ -1,12 +1,11 @@
-"""Build the windowless daemons (`digi-emud`) once for a verify run.
+"""Build the windowless daemons (`digi-emud`) once, as the Nx target `digi-control:daemons` does.
 
     uv run python -m tools.devtools.verify_build daemons [--device dt2,dn2] [--env-out FILE]
 
 Before this, every python-tests process that drove a daemon asked cargo for the binary itself
 (tools/patchkit/pk_harness.py `daemon_binary`): the first build of a new generated core ran inside a
-test file, in parallel with the other files and the other steps. verify now runs this once, before the
-steps that use a daemon (`build-daemons` in tools/devtools/verify.py), after the coupled-run builds, never in
-parallel with them.
+test file, in parallel with the other files and the other steps. The Nx target `digi-control:daemons` runs
+this once, before the targets that use a daemon.
 
 For each device that has its ready inputs it takes the daemon from a content-addressed store,
 `<git common dir>/emud-cache/<device>/<key>/` (digi-emud, key.txt, depfile.d), shared by every worktree of the

@@ -94,7 +94,7 @@ clock-sweep tool uses. Subprocess groups are bounded and killed on timeout, fail
   reverb-decay-u20 and chorus-speed-u20, default delay feedback, and the quick reverb RT60 and chorus speed
   series. `--all-no-aot` selects 61, or 191 with full verification.
 - Tier PCM comparisons (AOT against no-AOT) use the same sources and a fixed scenario subset.
-- `dt2-check` runs the DT2 quick selection unless `DIGIKIT_TIER=full`; `verify.py --full --dt2` also compares
+- `dt2-check` runs the DT2 quick selection unless `DIGIKIT_TIER=full`; `mise run gate:full` (or `pnpm nx:pilot run gate-fx:dt2-tier-sweep`) also compares
   DT2 FX PCM with and without AOT.
 
 ## Known failure

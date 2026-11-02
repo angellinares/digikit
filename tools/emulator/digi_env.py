@@ -447,7 +447,7 @@ _STAMP_RE = re.compile(r"\d{8}-\d{6}(-\d+)?")
 def _prune_runs(base: pathlib.Path, current: pathlib.Path) -> None:
     """Keep the newest KEEP_RUNS stamped run dirs of one kind.
 
-    verify_times reads the newest 12 verify runs. Symlinks (`latest`), the new
+    Symlinks (`latest`), the new
     dir and the latest target are never removed.
     """
     try:

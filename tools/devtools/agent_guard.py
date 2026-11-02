@@ -1,7 +1,6 @@
 """A Claude Code PreToolUse hook for the Bash tool: blocks the commands that cost agents the most time.
 
-Blocked (docs/TESTING.md, AGENTS.md "Verify"): pytest on a test directory, `--tier full`, `verify:full` (or
-`tools.devtools.verify --full`), `sleep` that adds up to over 60 s and `tail -f`. A command that starts with `DIGI_GUARD=off `
+Blocked (docs/TESTING.md, AGENTS.md "Verify"): pytest on a test directory, `--tier full`, `gate:full`, `sleep` that adds up to over 60 s and `tail -f`. A command that starts with `DIGI_GUARD=off `
 passes (the coordinator, deliberately). Registered in .claude/settings.json. Stdlib only.
 
 The hook reads one JSON object from stdin. Exit 2 with a reason on stderr blocks the command; exit 0 lets it
@@ -25,9 +24,7 @@ TAIL_FOLLOW_RE = re.compile(
     r"\btail\b[^|;&\n]*\s(?:-[a-zA-Z]*[fF][a-zA-Z]*|--follow\S*)(?=\s|$)"
 )
 TIER_FULL_RE = re.compile(r"--tier[ =]full\b")
-VERIFY_FULL_RE = re.compile(
-    r"\bverify:full\b|\btools\.devtools\.verify\b[^|;&\n]*\s--full\b"
-)
+GATE_FULL_RE = re.compile(r"\bgate:full\b")
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:[^\"\\\\]|\\\\.)*\"")
 SEGMENT_SPLIT_RE = re.compile(r"\s*(?:&&|\|\||[;|\n])\s*")
 GUARD_OFF_RE = re.compile(r"^\s*DIGI_GUARD=off\s")
@@ -107,10 +104,10 @@ def check(command: str, cwd: Path) -> str | None:
         return "tail -f never exits: poll with a bound (sleep 60 or less, then tail -n)"
     if TIER_FULL_RE.search(bare):
         return "--tier full runs only before a merge to main; iterate on the quick tier"
-    if VERIFY_FULL_RE.search(bare):
+    if GATE_FULL_RE.search(bare):
         return (
-            "verify:full runs only after generated-core changes, by the coordinator; "
-            "lanes run mise run test:changed, the coordinator mise run verify"
+            "gate:full runs only after generated-core changes, by the coordinator; "
+            "lanes run mise run test:changed, the coordinator mise run gate"
         )
     for segment in SEGMENT_SPLIT_RE.split(command):
         try:

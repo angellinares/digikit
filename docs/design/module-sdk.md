@@ -538,7 +538,7 @@ The SDK a module author sees: `<dk/machine.h>` (or `sdk/asm/dk_machine.inc`), th
 
 ## 10. Migration
 
-Every step keeps `main` green (`mise run verify`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
+Every step keeps `main` green (`mise run gate`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
 a step that would move a pin stops and asks.
 
 ### 10.1 Order

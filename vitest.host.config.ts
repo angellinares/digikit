@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
-// tools/devtools/verify.py reads this file to treat host tests as device-free.
+// The Nx test-host targets read this file; host tests are device-free.
 import projects from './vitest.host.projects.json';
 
 const root = fileURLToPath(new URL('.', import.meta.url));

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tools import python_env
-from tools.devtools import benchlock, fastcov, verify_budget
+from tools.devtools import benchlock, fastcov
 from tools.emulator import coupled
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -129,18 +129,14 @@ def stream_process(
     return returncode, "".join(lines)
 
 
-def tier_jobs_budget(share: int | None = None) -> int:
-    """Coupled-run processes for all tier groups together: the node's share of the verify budget
-    in emulator processes (verify_budget.workers_for), which step_env hands to the step as
-    DIGI_TIER_JOBS. Outside verify (SHARE None, no variable): cpus - 4."""
+def tier_jobs_budget() -> int:
+    """Coupled-run processes for all tier groups together: DIGI_TIER_JOBS, else cpus - 4."""
     env = os.environ.get("DIGI_TIER_JOBS")
     if env:
         jobs = int(env)
         if jobs < 1:
-            raise SystemExit("verify: DIGI_TIER_JOBS must be at least 1")
+            raise SystemExit("fx_tier: DIGI_TIER_JOBS must be at least 1")
         return jobs
-    if share is not None:
-        return verify_budget.workers_for("tier-sweep", share).emulators
     return max(1, (os.cpu_count() or 1) - 4)
 
 
@@ -319,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     out = args.out or ROOT / "out" / "runs" / "fx-tier" / args.step
     out.mkdir(parents=True, exist_ok=True)
-    jobs = args.jobs if args.jobs is not None else tier_jobs_budget(None)
+    jobs = args.jobs if args.jobs is not None else tier_jobs_budget()
     problem, text = run(args.step, out, args.all_no_aot, jobs, dict(os.environ))
     if text:
         print(text, end="" if text.endswith("\n") else "\n")

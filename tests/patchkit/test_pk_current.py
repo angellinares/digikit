@@ -1,4 +1,4 @@
-"""Staleness checks run when the gate selects python-tests (tools/devtools/verify.py PY_GATE): the built module objects
+"""Staleness checks run when the gate selects python-tests (tools/devtools/py_select.py PY_GATE): the built module objects
 match their sources, and the port files match what port_resolve finds in the stock images."""
 
 import subprocess

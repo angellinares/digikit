@@ -43,7 +43,7 @@ DENYLIST: frozenset[str] = frozenset(
         "DIGI_PY_TIMEOUT",
         "DIGI_CONFORM_JOBS",
         "DIGI_PK_JOBS",
-        "DIGI_VERIFY_BUDGET",  # the verify gate's CPU budget (tools/devtools/verify_budget.py)
+        "DIGI_VERIFY_BUDGET",  # CPU budget of a gate step (the Nx gate sets DIGI_PK_JOBS and DIGI_PY_JOBS)
         "DIGI_RENDER_CACHE",
         "DIGI_RENDER_CACHE_MAX_GB",
         "DIGI_RENDER_CACHE_CHECK",  # cache controls, not render inputs

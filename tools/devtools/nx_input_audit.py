@@ -291,9 +291,9 @@ def repo_files() -> frozenset[str]:
 
 
 def build_workspace(files: frozenset[str]) -> Workspace:
-    from tools.devtools import verify_route
+    from tools.devtools import nx_graph
 
-    graph = verify_route.nx_graph()
+    graph = nx_graph.nx_graph()
     nodes = graph["nodes"]
     roots = {n: d["data"].get("root", ".") for n, d in nodes.items()}
     project_named = {n: d["data"].get("namedInputs") or {} for n, d in nodes.items()}

@@ -38,7 +38,7 @@ function moduleTable(text: string): Map<string, string> {
 }
 
 /** Production upload candidates: the shipped modules (`modules/<kind>/<name>`) that are `dynamic`, a service or a
- * `host` module. Same rule as RUNTIME_UPLOADS in tools/devtools/verify_route.py. Framework/static modules are
+ * `host` module. Same rule as `isUploadable` in tools/nx/modules.mjs. Framework/static modules are
  * firmware prerequisites. */
 export function scanRuntimeModules(root = path.join(repoRoot(), 'modules')): RuntimeModule[] {
   const found: RuntimeModule[] = [];
