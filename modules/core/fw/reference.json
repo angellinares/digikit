@@ -12516,6 +12516,150 @@
     },
     {
       "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x28385934",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The per-track unpack of a voice's parameters from the frame copy; the hook point for changing a track's frame words before the stock unpack reads them.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.frame.hook.frame_rx.unpack_call_a",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r8",
+          "r12"
+        ],
+        "modes": {
+          "l4": 0
+        }
+      },
+      "site": "dsp.frame.site.frame_rx.unpack_call_a",
+      "subsystem": "frame",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x28385952",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The second per-track unpack call; hooked together with dsp.frame.hook.frame_rx.unpack_call_a.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.frame.hook.frame_rx.unpack_call_b",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r8",
+          "r12"
+        ],
+        "modes": {
+          "l4": 0
+        }
+      },
+      "site": "dsp.frame.site.frame_rx.unpack_call_b",
+      "subsystem": "frame",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x28385934",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The frame consumer's first CALL of the per-track unpack (dsp.voice.fn.track_unpack), R12 = the track, R8 = a voice of it.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.frame.site.frame_rx.unpack_call_a",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 374
+        }
+      },
+      "subsystem": "frame",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x28385952",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The frame consumer's second CALL of the per-track unpack, for the track's other voice.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.frame.site.frame_rx.unpack_call_b",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 389
+        }
+      },
+      "subsystem": "frame",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x2838489a",
@@ -14021,6 +14165,38 @@
       "name": "dsp.voice.fn.shaper",
       "rule": {
         "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x283849d2",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "FUN_1c24e9, the per-track unpack (R12 = the track, R8 = a voice): it turns the track's words of the frame copy into the voice's parameters; knob 7's word (byte 0xec + 0x60 t, low half) becomes the voice chain's level.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.track_unpack",
+      "rule": {
+        "dt2": {
           "kind": "sharc_func",
           "len": 6,
           "offset": 0
@@ -16606,6 +16782,13 @@
       "name": "cache"
     },
     {
+      "count": 4,
+      "cpu": "sharc",
+      "file": "devices/fw/dsp/frame.toml",
+      "meaning": "the frame orchestrator",
+      "name": "frame"
+    },
+    {
       "count": 10,
       "cpu": "sharc",
       "file": "devices/fw/dsp/fx.toml",
@@ -16634,7 +16817,7 @@
       "name": "master"
     },
     {
-      "count": 81,
+      "count": 82,
       "cpu": "sharc",
       "file": "devices/fw/dsp/voice.toml",
       "meaning": "voice rendering",

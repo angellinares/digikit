@@ -50,18 +50,73 @@
 // and the output check below (the guard) is the same for both kinds. An idle voice is not called: its block is silent.
 // The gate of track t is 1 from its note-on until the firmware's release byte of voice 2t (dsp.voice.value.release_latch, a pulse of
 // about one block after the note-off) has been seen, then 0 (`_dv_gate`).
+//
+// Knob 7 is the track's level (LEV); a machine whose parameters reach knob 7 (`param_slots`) declares that knob's range in its row
+// (word 9). `_dv_unpack` then gives its tracks the fixed level DV_FIXED_LEVEL in the frame copy before the stock unpack turns knob 7
+// into the voice chain's level; the frame copy after the unpack restores the knob, so the module still reads its parameter.
 
 #include "adapter-dt2.inc"
 #include "dk_machine.inc"
 
+#define DV_FIXED_LEVEL 0x6400                 // knob 7's word for level 100
+#define DV_SLOTS_ALWAYS 4                     // the parameter slots every machine reads (knobs 1, 2, 4, 5); the rest only when declared
+
 .SECTION/PM seg_pmco;
 .GLOBAL _dv_entry;
+.GLOBAL _dv_unpack;
 .EXTERN _fw_type_cache;
 .EXTERN _fw_render_next;
 .EXTERN _fw_frame;
 .EXTERN _fw_param_rec;
 .EXTERN _fw_release_latch;
+.EXTERN _fw_unpack;
 .EXTERN _dv_table;
+
+// The frame consumer's two calls of the per-track unpack (R12 = track, R8 = voice) come here. Without a registered row (`_dv_mask` 0) it
+// goes to the stock unpack at once. Otherwise, when the row of the track's type declares knob 7's range (word 9), knob 7's frame word
+// (byte 0xec + 0x60 t, low half) becomes DV_FIXED_LEVEL. R0-R2 and I4 are free here (the unpack sets them before it reads them; L4 is 0).
+_dv_unpack:
+    R0 = DM(_dv_mask);
+    R0 = PASS R0;
+    IF EQ JUMP _fw_unpack;
+    R0 = FEXT R12 BY 1:3;
+    R0 = LSHIFT R0 BY 2;
+    R1 = _fw_type_cache;
+    R0 = R0 + R1;
+    I4 = R0;
+    R1 = DM(0, I4);
+    R0 = FEXT R12 BY 0:1;
+    R0 = LSHIFT R0 BY 4;
+    R2 = 0x400;
+    R0 = R0 OR R2;
+    R1 = FEXT R1 BY R0;                   // cache[t]
+    I4 = _dv_table;
+_dv_uscan:
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fw_unpack;
+    COMP(R0, R1);
+    IF EQ JUMP _dv_ulev;
+    MODIFY(I4, 24) (NW);
+    JUMP _dv_uscan;
+_dv_ulev:
+    R2 = DM(9, I4);
+    R2 = PASS R2;
+    IF EQ JUMP _fw_unpack;
+    R0 = 0x60;
+    R0 = R12 * R0 (SSI);
+    R1 = _fw_frame;
+    R0 = R0 + R1;
+    R1 = 0xec;
+    R0 = R0 + R1;
+    I4 = R0;
+    R1 = DM(0, I4);
+    R0 = 0xffff0000;
+    R1 = R1 AND R0;
+    R2 = DV_FIXED_LEVEL;
+    R1 = R1 OR R2;
+    DM(0, I4) = R1;
+    JUMP _fw_unpack;
 
 _dv_entry:
     // The cheap path when no row is registered (`_dv_mask` is 0): voice 0 (R14 = 32) keeps the full path for the heartbeat and the mask below; every other voice
@@ -1323,7 +1378,8 @@ _dv_cmarked:
     IF NE R0 = PASS R1;
     DM(0, I1) = R0;
     DM(_dv_in + DK_IN_GATE) = R0;
-    // the parameter words: knob ADM_PARAM_SLOTi of the track, until a slot of 255 (the buffer's other words stay 0)
+    // the parameter words: knob ADM_PARAM_SLOTi of the track, until a slot of 255 or, past the first DV_SLOTS_ALWAYS, a knob whose range
+    // the row does not declare (row word 2 + knob; the buffer's other words stay 0)
     R0 = 0;
     DM(_dv_c + 8) = R0;
 _dv_cpl:
@@ -1336,6 +1392,19 @@ _dv_cpl:
     R2 = 255;
     COMP(R6, R2);
     IF EQ JUMP _dv_cpe;
+    R2 = DV_SLOTS_ALWAYS;
+    COMP(R0, R2);
+    IF LT JUMP _dv_cpw;
+    R3 = DM(_dv_g + 0);                   // the row's end, a byte address: word 2 + knob is 4 (knob - 22) bytes from it
+    R2 = LSHIFT R6 BY 2;
+    R3 = R3 + R2;
+    R2 = 88;
+    R3 = R3 - R2;
+    I1 = R3;
+    R2 = DM(0, I1);
+    R2 = PASS R2;
+    IF EQ JUMP _dv_cpe;
+_dv_cpw:
     CALL _dv_pw;
     R1 = DM(_dv_c + 8);
     R2 = LSHIFT R1 BY 2;

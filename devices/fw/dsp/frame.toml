@@ -1,0 +1,44 @@
+# frame: the frame orchestrator
+# Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
+
+# FUN_1c2b24, the per-block consumer of the ColdFire frame (finding 06): it copies the frame into the DSP's frame copy
+# (dsp.voice.value.frame_base) and turns it into each voice's parameters with two calls of the per-track unpack per track.
+[[site]]
+name = "dsp.frame.site.frame_rx.unpack_call_a"
+cpu = "sharc"
+devices = ["dt2"]
+rule = { kind = "sharc_func", reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780", offset = 0x176, len = 6 }
+mark = "D"
+users = ["core/dsp-voice"]
+doc = "The frame consumer's first CALL of the per-track unpack (dsp.voice.fn.track_unpack), R12 = the track, R8 = a voice of it."
+
+[[site]]
+name = "dsp.frame.site.frame_rx.unpack_call_b"
+cpu = "sharc"
+devices = ["dt2"]
+rule = { kind = "sharc_func", reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780", offset = 0x185, len = 6 }
+mark = "D"
+users = ["core/dsp-voice"]
+doc = "The frame consumer's second CALL of the per-track unpack, for the track's other voice."
+
+[[hook]]
+name = "dsp.frame.hook.frame_rx.unpack_call_a"
+site = "dsp.frame.site.frame_rx.unpack_call_a"
+cpu = "sharc"
+mode = "retarget"
+regs = { in = ["r8", "r12"], clobbers = ["r0-r2", "i4", "astat"], modes = { l4 = 0 } }   # the unpack sets r0-r2 and i4 before it reads them
+devices = ["dt2"]
+mark = "D"
+users = ["core/dsp-voice"]
+doc = "The per-track unpack of a voice's parameters from the frame copy; the hook point for changing a track's frame words before the stock unpack reads them."
+
+[[hook]]
+name = "dsp.frame.hook.frame_rx.unpack_call_b"
+site = "dsp.frame.site.frame_rx.unpack_call_b"
+cpu = "sharc"
+mode = "retarget"
+regs = { in = ["r8", "r12"], clobbers = ["r0-r2", "i4", "astat"], modes = { l4 = 0 } }
+devices = ["dt2"]
+mark = "D"
+users = ["core/dsp-voice"]
+doc = "The second per-track unpack call; hooked together with dsp.frame.hook.frame_rx.unpack_call_a."

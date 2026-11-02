@@ -14,6 +14,15 @@ mark = "D"
 users = ["core/dsp-voice"]
 doc = "The per-voice DSP render function, called once per voice buffer (on DN2 after the FM synthesis); its first instruction `I7 = MODIFY(I7, imm)` (48 bits) is the hook point of core/dsp-voice."
 
+[[fn]]
+name = "dsp.voice.fn.track_unpack"
+cpu = "sharc"
+devices = ["dt2"]
+rule = { kind = "sharc_func", reloc_hash = "d2c02a587786f9ee328897985095c271ff1c5b65f289224e435968ea4b5d3f00", offset = 0x0, len = 6 }
+mark = "D"
+users = ["core/dsp-voice"]
+doc = "FUN_1c24e9, the per-track unpack (R12 = the track, R8 = a voice): it turns the track's words of the frame copy into the voice's parameters; knob 7's word (byte 0xec + 0x60 t, low half) becomes the voice chain's level."
+
 [[site]]
 name = "dsp.voice.site.render_entry.next"
 was = ["dsp.voice.render_next", "dsp.voice.site.render_next"]

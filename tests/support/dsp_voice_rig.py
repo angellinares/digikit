@@ -15,6 +15,7 @@ SINE = ROOT / "tests" / "support" / "raw_sine.s"
 CORE_BASE, SINE_BASE = 0xB90000, 0xB92000
 STOCK_BP = 0xB9F000  # stands in for the stock renderer's second instruction
 RETURN_SW = 0xB9F100  # the caller's return point
+UNPACK_BP = 0xB9F010  # stands in for the stock per-track unpack (dsp.voice.fn.track_unpack), where _dv_unpack continues
 # byte addresses of the stand-ins (L2), one 4 KiB page each
 TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK, DIAG = (
     0x20091000,
@@ -71,6 +72,7 @@ def core_externs() -> dict[str, int]:
         "_fw_frame": FRAME,
         "_fw_param_rec": PARAM_REC,
         "_fw_release_latch": RELEASE,
+        "_fw_unpack": UNPACK_BP,
         "_dv_table": TABLE,
         "_dv_diag": DIAG,
         "_dv_sv_l4": SV_L4,
@@ -332,6 +334,23 @@ class Rig:
         )
         out["in"] = r
         return out
+
+
+def unpack(rig: "Rig", track: int, mask: int | None = None) -> dict:
+    """The frame consumer's call of the per-track unpack (R12 = track, R8 = its even voice), hooked by `_dv_unpack`; `out["lev"]` is knob 7's
+    frame word after it (byte 0xec + 0x60 t)."""
+    rig.dm[nw(MASK)] = rig.table_mask() if mask is None else mask
+    lev = nw(FRAME + 0xEC + 0x60 * track)
+    return pk_sharc.run_call(
+        rig.core_linked,
+        "_dv_unpack",
+        regs={**FRIENDLY, "R12": track, "R8": 2 * track, "I6": STACK, "I7": STACK},
+        dm_words=dict(rig.dm),
+        reads={"lev": (lev, 1)},
+        return_sw=RETURN_SW,
+        others=(rig.sine_linked,),
+        extra_breaks=(UNPACK_BP,),
+    )
 
 
 def stops_at(out: dict, sw: int) -> bool:

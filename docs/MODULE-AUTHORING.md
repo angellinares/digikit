@@ -237,12 +237,12 @@ knobs. `clone_of` is fixed by the profile (`[modules.knobs] clone_of = 0`, the S
 | --- | --- | --- |
 | Where knobs live | Fields of the machine row. Engine slots 0 to 7. | Columns of a page. Sound-array slots 25 to 32. |
 | Fixed knobs | TUNE on knob 0. Sample slot on knob 3. LEV on knob 7. | None. |
-| Knobs for your words | 1, 2, 4, 5, 6 (letters B C E F G; `param_slots`). Word w goes to the w-th of them. 5 words. | 1, 2, 4, 5, 6, 0, 3, 7 (B C E F G A D H). 8 words. |
+| Knobs for your words | 1, 2, 4, 5, 6, 7 (letters B C E F G H; `param_slots`). Word w goes to the w-th of them. 6 words. A word on knob 7 replaces LEV: the track's level is fixed at 100. | 1, 2, 4, 5, 6, 0, 3, 7 (B C E F G A D H). 8 words. |
 | Page | The machine has its SRC page. `DK_PAGE` is not used. | The `DK_PAGE` name and title. Without a `DK_PAGE`, a page named after the machine. |
 
 Rules that follow:
 
-- A machine has at most as many parameters as the device has `param_slots` (Digitakt II 5, Digitone II 8), at most one page, and the words are in order. Free placement of knobs (`DK_KNOB_AT`) and
+- A machine has at most as many parameters as the device has `param_slots` (Digitakt II 6, Digitone II 8), at most one page, and the words are in order. Free placement of knobs (`DK_KNOB_AT`) and
   several pages for a machine need adapter work. They are planned.
 - A parameter's position is its slot. Projects store values by slot. After a release, do not move a parameter to another word.
   Removing a parameter is allowed.

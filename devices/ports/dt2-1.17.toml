@@ -2858,6 +2858,28 @@ mark = "D"
 rule = "fw/window:cf_ptr"
 
 [[anchor]]
+name = "dsp.frame.site.frame_rx.unpack_call_a"
+cpu = "sharc"
+kind = "code"
+addr = 0x28385934
+pm = 0x1c2c9a
+len = 6
+sha256 = "8ddca64190d6f5d21f20af61f3c7ea0df3a031b8cd570ad9f49b2692d2b85580"
+mark = "D"
+rule = "fw/dsp/frame:sharc_func"
+
+[[anchor]]
+name = "dsp.frame.site.frame_rx.unpack_call_b"
+cpu = "sharc"
+kind = "code"
+addr = 0x28385952
+pm = 0x1c2ca9
+len = 6
+sha256 = "8ddca64190d6f5d21f20af61f3c7ea0df3a031b8cd570ad9f49b2692d2b85580"
+mark = "D"
+rule = "fw/dsp/frame:sharc_func"
+
+[[anchor]]
 name = "dsp.fx.fn.entry"
 cpu = "sharc"
 kind = "code"
@@ -2986,6 +3008,17 @@ addr = 0x28389d9e
 pm = 0x1c4ecf
 len = 6
 sha256 = "ac4e4f137708405f60e984913940df7406874cbc718af72ff239e60f0861abf1"
+mark = "D"
+rule = "fw/dsp/voice:sharc_func"
+
+[[anchor]]
+name = "dsp.voice.fn.track_unpack"
+cpu = "sharc"
+kind = "code"
+addr = 0x283849d2
+pm = 0x1c24e9
+len = 6
+sha256 = "0456aa583198a743a20404878b8f87ae307b390b8766b644bef6dad36d85757a"
 mark = "D"
 rule = "fw/dsp/voice:sharc_func"
 
@@ -3245,6 +3278,16 @@ mode = "before"
 [[hook]]
 name = "cf.view.hook.ui_loop"
 site = "cf.view.site.ui_loop"
+mode = "retarget"
+
+[[hook]]
+name = "dsp.frame.hook.frame_rx.unpack_call_a"
+site = "dsp.frame.site.frame_rx.unpack_call_a"
+mode = "retarget"
+
+[[hook]]
+name = "dsp.frame.hook.frame_rx.unpack_call_b"
+site = "dsp.frame.site.frame_rx.unpack_call_b"
 mode = "retarget"
 
 [[hook]]
