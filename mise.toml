@@ -85,6 +85,15 @@ description = "Headless Chrome throughput bench of the coupled browser core (nee
 run = "node tools/devtools/wasm_parity.mjs --scenario"
 description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run web:parity trig1-tap-release"
 
+[tasks."dkmidi:build"]
+run = "cargo build -p dkmidi --release --offline --target-dir \"$(SHARC_GEN_DIR= uv run python -m tools.emulator.native_target dir)\""
+description = "Build the dkmidi MIDI bridge (the workbench's MIDI port code on stdin and stdout) into the nogen target dir, where tools/devtools/wb.mjs looks"
+
+[tasks.wb]
+depends = ["dkmidi:build"]
+run = "node tools/devtools/wb.mjs"
+description = "Workbench actions from the command line through the workbench's own code: mise run wb -- samples put FILE... --folder F | samples ls | info | ports"
+
 # --- scenarios (tests/scenarios/README.md) ---
 
 [tasks."scenario:build"]
