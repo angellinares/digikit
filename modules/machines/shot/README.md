@@ -24,7 +24,9 @@ A, the sample slot on D and LEV on H; the Digitone II has A, D and H free.
   `void shot_smp_click(uint32_t track)` in the UI task (see `docs/design/machine-page-click.md`). The test route `test/track-select` fills the pool
   in tests.
 - Pitch: MIDI note 60 plays the sample at its own speed; the cursor rate is `srcrate / 48000 * 2^(semitones / 12)` in Q16.16, limited to 1/65536 to 64
-  frames per sample. SMP, START, END and REVERSE are read at note-on; PITCH and the note follow every block.
+  frames per sample. As in the stock one-shot, SMP is read at note-on; START, END, REVERSE, PITCH and the note follow every block. A REVERSE
+  change flips the direction at the current cursor. Forward play reads from the cursor to END (a later START has no effect); reverse play reads
+  down to START. An END moved behind the cursor (or START above it in reverse) ends the voice in that block with the end ramp.
 - Stereo: a stereo sample gives distinct L and R through machine contract 1.2 (`out_r`). A mono sample plays centred (`base_r = base_l`). On the
   Digitakt II R goes to the odd voice of the stock voice pair. On the Digitone II L and R are both heard: all pre-pan stages have R twins
   (`docs/design/dn2-stereo.md`, phase 2); the fallback to R = L is only a guard.

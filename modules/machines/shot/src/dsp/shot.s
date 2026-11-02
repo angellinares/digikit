@@ -11,18 +11,20 @@
 // the cached epoch in one masked scope, acquires the track, reads, and releases it. A refused admission or a stale token (select, unbind, a
 // stock reset) makes the block silent and ends the voice with DK_DONE; the PCM is not touched. The status always carries DK_STEREO.
 //
-// Parameters (latched at note-on: SMP, START, END, REVERSE; read every block: PITCH):
+// Parameters, as in the stock one-shot (latched at note-on: SMP and the first cursor; read every block: START, END, REVERSE, PITCH):
 //   SMP          pool index 0 .. 15 (the word is index << 8). An empty or closed entry is silent: the voice ends. A word above 15 << 8 is silent too.
 //   START, END   frame = round(frames * word / 0x7f00), clamped to 0 .. frames: 0 .. 127 spread over the sample. END <= START plays nothing.
-//   REVERSE      word >= 0x4000 (UI 64 and above): play backwards from END - 1 down to START.
+//                Forward play reads [0, END) from the cursor, so START only sets the first frame; reverse play reads [START, END).
+//                A cursor outside the range (END moved behind it, or START above it in reverse) ends the voice in that block with the end ramp.
+//   REVERSE      word >= 0x4000 (UI 64 and above): play backwards from END - 1 down to START. A change flips the direction at the current cursor.
 //   PITCH        UI 64 (0x4000) is the played note unchanged, each UI unit is 3/8 semitone: -24 .. +23.625 semitones.
 // The cursor rate (Q16.16 frames per output sample) is srcrate / 48000 * 2^((pitch / 256 - 60 + (PITCH - 0x4000) * 3 / 2048) / 12), clamped to
 // 1 / 65536 .. 64 frames per sample, negative for REVERSE. MIDI note 60 plays the sample at its own speed. A mono sample (channels 1) uses
 // base_r = base_l: the same samples go to both outputs (centred). The sample plays once, then the voice ends.
 //
 // State per voice (18 words, all cleared at note-on): 0 .. 5 the cursor of the kernel (start, end, index, fraction, rate, done), 6 the epoch (token),
-// 7 base_l, 8 base_r, 9 and 10 the gain pair [start, step] for the gain ramp (written every block), 11 the source rate in Hz, 12 the pool index, 13 reverse, 14 the adapter's return address (I13) across the kernel call,
-// 16 out, 17 out_r (the output pointer pair for the stereo kernel).
+// 7 base_l, 8 base_r, 9 and 10 the gain pair [start, step] for the gain ramp (written every block), 11 the source rate in Hz, 12 the pool index, 13 reverse (every block), 14 the adapter's return address (I13) across the kernel call,
+// 15 the frame count of the sample, 16 out, 17 out_r (the output pointer pair for the stereo kernel).
 
 #include "dk_machine.inc"
 #include "dsp/call.inc"
@@ -91,7 +93,13 @@ _shot_render:
     R1 = 0x3f800000;                      // 1.0 (1 / 65536 frames per sample)
     F0 = MAX(F0, F1);
     R0 = FIX F0;
-    R1 = DM(13, I3);                      // REVERSE
+    R1 = 0;                               // REVERSE, read every block: the direction flips at the current cursor
+    R2 = 1;
+    R3 = DM(3, I4);
+    R9 = 0x4000;
+    COMP(R3, R9);
+    IF GE R1 = PASS R2;
+    DM(13, I3) = R1;
     R1 = PASS R1;
     IF NE R0 = -R0;
     DM(4, I3) = R0;
@@ -105,6 +113,45 @@ _shot_render:
     DK_SAMPLE_BANK_UNLOCK(R13);
 .GLOBAL _shot_render_acquired;
 _shot_render_acquired:
+    // The kernel range from the live START, END and REVERSE, as the stock one-shot does every block: forward [0, END), reverse [START, END).
+    // The cursor stays. A cursor outside the range, or an empty range, renders this block over the whole sample and forces the end of the voice
+    // after it (R9 = 1, kept by the kernel), so the end ramp fades the block. A voice that is already done keeps its range.
+    R9 = 0;
+    R5 = DM(5, I3);
+    R5 = PASS R5;
+    IF NE JUMP _shot_render_ranged;
+    R0 = DM(15, I3);                      // frames
+    R9 = DM(1, I4);                       // START word
+    R10 = DM(2, I4);                      // END word
+    F11 = FLOAT R0;
+    R1 = 0x38010204;                      // 1 / 32512, the mapping of note-on
+    F2 = FLOAT R9;
+    F2 = F2 * F11;
+    F2 = F2 * F1;
+    R2 = FIX F2;
+    R2 = MIN(R2, R0);                     // start frame, 0 .. frames
+    F3 = FLOAT R10;
+    F3 = F3 * F11;
+    F3 = F3 * F1;
+    R3 = FIX F3;
+    R3 = MIN(R3, R0);                     // end frame
+    R9 = 0;                               // the force flag (R9 held the START word above)
+    R1 = DM(13, I3);
+    R1 = PASS R1;
+    IF EQ R2 = PASS R1;                   // forward: the range starts at frame 0 (R1 = 0)
+    R1 = DM(2, I3);                       // the cursor index
+    COMP(R1, R2);
+    IF LT JUMP _shot_render_whole;
+    COMP(R1, R3);
+    IF LT JUMP _shot_render_range_set;
+_shot_render_whole:
+    R2 = 0;
+    R3 = PASS R0;
+    R9 = 1;
+_shot_render_range_set:
+    DM(0, I3) = R2;
+    DM(1, I3) = R3;
+_shot_render_ranged:
     // One stereo read: R4 = the plane bases [base_l, base_r] (state words 7, 8), R8 = the output pointers [out, out_r] (state words 16, 17),
     // R12 = the cursor (state words 0 .. 5). The pointers are byte addresses of the state, which is how the adapters enter (finding 111).
     R0 = DM(DK_IN_W_OUT, I2);
@@ -131,6 +178,11 @@ _shot_render_released:
     // stock interpolator). In the block where the voice becomes done, the gain also falls by G / 31 per sample, as the stock end ramp does
     // (finding 06, stock sample reader), so the sample does not end with a click: one block long, later blocks are silent.
     // The pair [start, step] is state words 9, 10. A voice that was already done before the block is silent: nothing to shape.
+    R9 = PASS R9;
+    IF EQ JUMP _shot_render_unforced;
+    R0 = 1;
+    DM(5, I3) = R0;                       // the cursor left the live range: this block is the last
+_shot_render_unforced:
     R5 = PASS R5;
     IF NE JUMP _shot_render_faded;        // done before this block
     R1 = DM(5, I3);                       // done now
@@ -203,6 +255,7 @@ _shot_note_on:
 .GLOBAL _shot_note_acquired;
 _shot_note_acquired:
     R0 = DM(2, I5);                       // frames
+    DM(15, I3) = R0;                      // kept for the live START and END
     R1 = DM(3, I5);                       // source rate
     R2 = DM(4, I5);                       // channels
     R3 = DM(5, I5);                       // fmt
@@ -272,7 +325,8 @@ _shot_note_return:
 .PKDATA _shot_ctl, 256;                  // 16 control sets of 4 words: closed, count, fault, reserved
 // dk_machine_desc: magic, contract (machine contract 1.2: stereo), n_params, voices, state_bytes, state_clear_bytes, max_cycles_block,
 // max_cycles_note_on, max_call_depth, stack_bytes. Cycles are instruction ceilings: the stereo kernel's 4,396 with its call, the rate (exp2 and
-// about 60 more), the gain ramp (254 with its call and a dozen setup instructions) and the two masked scopes; note-on adds about 150 and one render.
+// about 60 more), the gain ramp (254 with its call and a dozen setup instructions), the two masked scopes and the live range and direction
+// (about 60 more, an estimate); note-on adds about 150 and one render.
 .GLOBAL _shot_desc;
 .VAR _shot_desc = DK_MAGIC;
 .VAR _shot_desc1 = 257;                  // DK_MACHINE_V1 | DK_MACHINE_STEREO (an expression is not accepted here)
@@ -280,7 +334,7 @@ _shot_note_return:
 .VAR _shot_desc3 = DK_MAX_VOICES;
 .VAR _shot_desc4 = 72;
 .VAR _shot_desc5 = 72;
-.VAR _shot_desc6 = 5100;
-.VAR _shot_desc7 = 5300;
+.VAR _shot_desc6 = 5160;
+.VAR _shot_desc7 = 5360;
 .VAR _shot_desc8 = 3;
 .VAR _shot_desc9 = 192;

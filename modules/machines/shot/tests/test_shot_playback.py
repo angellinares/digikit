@@ -82,7 +82,8 @@ class Shot:
     def cursor(self):
         return [self.rig.sess.peek(self.state + k) or 0 for k in range(6)]
 
-    def play(self, note=60, blocks=8, params=None, vel=100):
+    def start(self, note=60, params=None, vel=100):
+        """Set the parameters and trigger a note; `step` renders the blocks."""
         r = self.rig
         r.set_params(
             {
@@ -96,11 +97,17 @@ class Shot:
         )
         r.set_note(note, vel)
         r.trigger()
-        left, right = [], []
         if (
             r.device == "dn2"
         ):  # the trig edge block is silent; note_on runs in the next one
             r.block("friendly")
+
+    def step(self, blocks, params=None):
+        """Change parameters (if any), then render `blocks` blocks of the running note."""
+        r = self.rig
+        if params:
+            r.set_params(params)
+        left, right = [], []
         for _ in range(blocks):
             b = r.block("friendly")
             assert b.returned and b.faults == 0 and b.context_bad == []
@@ -110,31 +117,47 @@ class Shot:
                 right += r.odd_block()
         return np.array(left), np.array(right)
 
+    def play(self, note=60, blocks=8, params=None, vel=100):
+        self.start(note, params, vel)
+        return self.step(blocks)
 
-def model(plane, start, end, rate, reverse, blocks):
+
+def model(plane, start, end, rate, reverse, blocks, schedule=None):
     """The reader's output for one plane: split cursor, linear interpolation in float32, a zero tail after the end.
-    Every block is multiplied by the stock gain G; the block in which the cursor passes the end by the running float32 gain G - k * G / 31."""
+    Every block is multiplied by the stock gain G; the block in which the cursor passes the end by the running float32 gain G - k * G / 31.
+    `schedule` maps a block index to the (reverse, start, end) in frames that hold from that block on; the cursor continues. The range is
+    [0, end) forward and [start, end) in reverse. A cursor outside it renders the block over the whole sample and ends the voice."""
     out = np.zeros(32 * blocks, dtype=np.float32)
+    mag = abs(rate)
     pos = (end - 1 if reverse else start) * 65536
     done = start >= end
-    done_at = 0 if done else None
-    for n in range(len(out)):
-        index, frac = divmod(pos, 65536)
-        if done or not start <= index < end:
+    ending = 0 if done else None
+    for blk in range(blocks):
+        reverse, start, end = (schedule or {}).get(blk, (reverse, start, end))
+        if done:
+            continue
+        step = -mag if reverse else mag
+        lo, hi = (start, end) if reverse else (0, end)
+        forced = not lo <= pos // 65536 < hi
+        if forced:
+            lo, hi = 0, len(plane)
+        for n in range(blk * 32, blk * 32 + 32):
+            index, frac = divmod(pos, 65536)
+            if not lo <= index < hi:
+                done = True
+                break
+            a = np.float32(plane[index] / 32768)
+            b = np.float32(plane[min(index + 1, hi - 1)] / 32768)
+            out[n] = np.float32(
+                a + np.float32(np.float32(frac / 65536) * np.float32(b - a))
+            )
+            pos += step
+            if not lo * 65536 <= pos < hi * 65536:
+                done = True
+        if forced:
             done = True
-            if done_at is None:
-                done_at = n
-            break
-        a = np.float32(plane[index] / 32768)
-        b = np.float32(plane[min(index + 1, end - 1)] / 32768)
-        out[n] = np.float32(
-            a + np.float32(np.float32(frac / 65536) * np.float32(b - a))
-        )
-        pos += rate
-        if not start * 65536 <= pos < end * 65536:
-            done = True
-            done_at = n
-    ending = None if done_at is None else done_at // 32
+        if done:
+            ending = blk
     for b in range(blocks):
         gain, step = STOCK_GAIN, STOCK_STEP if b == ending else np.float32(0)
         for k in range(32):
@@ -354,6 +377,82 @@ def test_the_module_stores_only_inside_its_own_memory(device):
     for _ in range(3):
         b = s.rig.block("friendly")
         assert b.returned and b.foreign == [], b.foreign
+
+
+def word_of(frame):
+    """A parameter word that maps to `frame` of the 200-frame sample."""
+    w = int(np.ceil(frame * 32512 / FRAMES))
+    assert frames_of(w, FRAMES) == frame
+    return w
+
+
+def run_live(first, first_blocks, later, later_blocks, expect):
+    """Trigger with the `first` parameters, render `first_blocks`, change to `later`, render `later_blocks`. `expect` is the model schedule
+    (block index -> (reverse, start, end) in frames) and the first entry, 0, is the note-on state. Returns the output and the Shot."""
+    s = Shot("dt2")
+    s.start(params=first)
+    ll, lr = s.step(first_blocks)
+    cursor = s.cursor()
+    gl, gr = s.step(later_blocks, later)
+    left, right = np.concatenate([ll, gl]), np.concatenate([lr, gr])
+    blocks = first_blocks + later_blocks
+    reverse, start, end = expect[0]
+    for plane, got in ((s.left, left), (s.right, right)):
+        want = model(plane, start, end, 65536, reverse, blocks, expect)
+        assert np.array_equal(got, want)
+    return left, cursor, s
+
+
+def test_a_live_reverse_flip_turns_at_the_current_cursor():
+    expect = {0: (False, 0, FRAMES), 3: (True, 0, FRAMES)}
+    left, cursor, _ = run_live({}, 3, {"shot_reverse": 0x7F00}, 8, expect)
+    assert cursor[2] == 96  # forward: 3 blocks of 32 frames
+    s2 = Shot("dt2")
+    s2.start()
+    s2.step(3)
+    s2.step(1, {"shot_reverse": 0x7F00})
+    assert s2.cursor()[2] == 64 and s2.cursor()[3] == 0  # back from 96, no reset
+    assert np.any(left[96:128])
+
+
+def test_a_live_end_moved_behind_the_cursor_fades_the_block_and_ends_the_voice():
+    expect = {0: (False, 0, FRAMES), 3: (False, 0, 50)}
+    left, _, s = run_live({}, 3, {"shot_end": word_of(50)}, 4, expect)
+    assert np.any(left[96:128])  # the block still plays real audio, faded by the ramp
+    assert not np.any(left[128:])
+    done = s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF
+    assert done == 0, "DK_DONE ends the voice"
+
+
+def test_a_live_end_moved_above_the_cursor_continues_to_the_new_end():
+    first = {"shot_end": word_of(100)}
+    expect = {0: (False, 0, 100), 2: (False, 0, FRAMES)}
+    left, _, _ = run_live(first, 2, {"shot_end": 0x7F00}, 6, expect)
+    assert np.any(left[100:190])  # past the first END
+
+
+def test_a_live_start_above_the_cursor_does_not_change_forward_play():
+    expect = {0: (False, 0, FRAMES), 3: (False, word_of(150), FRAMES)}
+    left, _, s = run_live({}, 3, {"shot_start": word_of(150)}, 5, expect)
+    assert np.array_equal(left, model(s.left, 0, FRAMES, 65536, False, 8))
+
+
+def test_a_live_start_above_the_cursor_ends_reverse_play_with_the_ramp():
+    first = {"shot_reverse": 0x7F00}
+    expect = {0: (True, 0, FRAMES), 2: (True, word_of(150), FRAMES)}
+    left, cursor, s = run_live(first, 2, {"shot_start": word_of(150)}, 3, expect)
+    assert cursor[2] == 135 < 150
+    assert np.any(left[64:96]) and not np.any(left[96:])
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF == 0
+
+
+def test_a_live_end_at_or_below_start_in_reverse_ends_the_voice_with_the_ramp():
+    first = {"shot_reverse": 0x7F00, "shot_start": word_of(20)}
+    expect = {0: (True, 20, FRAMES), 2: (True, 120, 100)}
+    later = {"shot_start": word_of(120), "shot_end": word_of(100)}
+    left, _, s = run_live(first, 2, later, 3, expect)
+    assert np.any(left[64:96]) and not np.any(left[96:])
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF == 0
 
 
 def sine_plane(frames, period):
