@@ -140,7 +140,13 @@
       },
       {
         "files": ["runtime/remote-input.test.ts"],
-        "modules": ["digikit/remote"]
+        "modules": ["digikit/remote"],
+        "sources": ["tools/control/digi_client.py"]
+      },
+      {
+        "files": ["runtime/transfer-live.test.ts"],
+        "modules": ["digikit/debug", "test/sine"],
+        "sources": ["tools/device/dktransfer.py"]
       },
       {
         "files": ["runtime/samples-live.test.ts"],
@@ -177,6 +183,7 @@
       {
         "files": ["runtime/upload-faults.test.ts"],
         "modules": ["test/sine"],
+        "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
         "plusdrive": true
       },
       {

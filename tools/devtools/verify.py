@@ -336,6 +336,8 @@ TEST_ONLY: tuple[str, ...] = (
     "tests/digikit/scenarios/*.toml",
     "tests/regression/*.test.ts",
     "tests/regression/runtime/*.ts",
+    "tests/regression/modules/*.ts",
+    "tests/regression/project.json",
     "tools/devtools/*",
 )
 # Host Vitest test files (vitest.host.projects.json). The host config runs them without a device, so
@@ -775,6 +777,11 @@ def host_test_path(path: str) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in host_test_globs())
 
 
+# pyproject.toml when the current change touches only `tool.mypy` or `tool.ruff` (set by changed_plan);
+# python-tests, which runs ruff and mypy, is its only step.
+LINT_CONFIG_ONLY: set[str] = set()
+
+
 def smoke_cells(files: list[str]) -> list[str] | None:
     """Filter only the three audited production leaves plus existing exemptions; None means full."""
     leaves: set[str] = set()
@@ -784,6 +791,8 @@ def smoke_cells(files: list[str]) -> list[str] | None:
             or path in SMOKE_EXEMPT
             or host_test_path(path)
             or test_only_path(path)
+            or path in LINT_CONFIG_ONLY
+            or verify_route.outside_smoke_harness(path)
         ):
             continue
         mid = modroots.module_id(path)
@@ -808,6 +817,10 @@ def smoke_reason(files: list[str]) -> str | None:
             maintenance.append(reason)
         elif group := verify_route.patchkit_no_smoke(path):
             maintenance.append(group)
+        elif path in LINT_CONFIG_ONLY:
+            maintenance.append("lint configuration")
+        elif verify_route.outside_smoke_harness(path):
+            maintenance.append("outside the smoke harness closure")
         elif host_test_path(path):
             host = True
         elif test_only_path(path):
@@ -1565,6 +1578,8 @@ def explain(
             and not ui_only_path(path)
             and not host_test_path(path)
             and not test_only_path(path)
+            and path not in LINT_CONFIG_ONLY
+            and not verify_route.outside_smoke_harness(path)
         ]
         if conservative:
             print(f"smoke: selected, conservative path: {', '.join(conservative)}")
@@ -2151,6 +2166,13 @@ def changed_plan(
     files, lock_origin = expand_lock(files, base, head)
     origin |= lock_origin
     files = drop_metadata_objects(files, base, head)
+    LINT_CONFIG_ONLY.clear()
+    if "pyproject.toml" in files:
+        since = merge_base(base, head)
+        if verify_route.lint_config_only(
+            git_show(since, "pyproject.toml"), git_show(head, "pyproject.toml")
+        ):
+            LINT_CONFIG_ONLY.add("pyproject.toml")
     steps = steps_for(files)
     rust_packages: list[str] | None = None
     if "rust-tests" in steps:

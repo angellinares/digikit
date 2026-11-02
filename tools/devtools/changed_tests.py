@@ -52,10 +52,11 @@ def _named_module(text: str) -> str | None:
 
 
 @cache
-def graph() -> grimp.ImportGraph:
+def graph(*, local_imports: bool = False) -> grimp.ImportGraph:
     """The import graph of tools/ and tests/, corrected in three ways:
-    - an import inside a function of a tools module is dropped: it runs only when that function runs, and
-      such edges join unrelated tools (tools/emulator/digi_env.py reaches all of patchkit through one);
+    - an import inside a function of a tools module is dropped (kept with `local_imports=True`): it runs only
+      when that function runs, and such edges join unrelated tools (tools/emulator/digi_env.py reaches all of
+      patchkit through one);
     - a test's import of a helper by its pytest path (`support.x`, a sibling `scen_cases`) is an edge to the
       tests.* module (grimp does not resolve those names);
     - a module named by a whole string constant (`[sys.executable, "-m", "tools.x.y"]`, a script path) is an
@@ -68,7 +69,7 @@ def graph() -> grimp.ImportGraph:
             text = (ROOT / path_of(mod)).read_text(encoding="utf-8")
         except OSError:
             continue
-        if mod.startswith("tools."):
+        if mod.startswith("tools.") and not local_imports:
             lines = text.splitlines()
             for dst in sorted(g.find_modules_directly_imported_by(mod)):
                 details = g.get_import_details(importer=mod, imported=dst)

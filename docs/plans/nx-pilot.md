@@ -263,8 +263,9 @@ The audit found production/preparation consumers of emulator examples: coupled i
 helpers, ready preparation uses DSP/SHARC examples, and card checks use plusdrive. Examples therefore
 retain production routes. No generic deleted-file exemption is introduced: absent modules can be
 missing from the current import graph, leaving ownership unproven. Root manifests and Vitest
-configuration retain conservative shared coverage. The existing `acceptance_python` closure remains
-unchanged because its consumed preparation/client entry points have real production dependencies.
+configuration retain conservative shared coverage. A changed `tools/` Python path selects all
+runtime files if it is in `acceptance_shared` (the preparation/client entry points all files consume),
+else only the files of the records whose `acceptance_record_closure` (from their `sources`) contains it.
 
 `docs/TESTING.md` now reflects the actual 16 smoke cells, four maintenance exemptions, existing
 test-only/patchkit-group exemptions, and seven fast devtools files.
@@ -605,7 +606,7 @@ freqshift oracle into its module).
 Stage 1b (next): the TypeScript tests stop calling Python. Front-ends with a Rust, daemon or
 TypeScript equivalent are called directly; small test-only oracles move to TypeScript; firmware
 results come as data. Python modules used elsewhere stay and are cleaned up later. This deletes
-`sources`, `acceptance_python` and their routing tests.
+`sources`, `acceptance_shared`, `acceptance_record_closure` and their routing tests.
 
 Stage 1b plumbing (2026-11-02): the device tests no longer run Python for the DN2 slot-bus anchor,
 the write-watch environment, the runtime safety check, overlay store writes and overlay apply.

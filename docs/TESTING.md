@@ -284,6 +284,10 @@ dt2-tier-sweep.
   runs every runtime file. Helpers inside stock/runtime/module acceptance directories use Vitest's
   import discovery to select importing test files, without collecting or running tests. Discovery
   errors, missing tools, unconsumed helpers and deleted files retain the whole owner suite.
+  A changed Python tool selects every runtime file only when it is in the shared preparation closure
+  (patchkit, stablebin, sharc_disasm) or is deleted while still named; otherwise it selects the records
+  whose own Python `sources` reach it by import (`verify_route.acceptance_record_closure`), or nothing.
+  A test that runs a Python tool lists it in its record's `sources`.
   It needs a two-core budget share and one fresh coupled daemon at a time.
 - `module-load` filters the production uploads to the changed module on both
   devices. The uploads are the shipped modules that are `dynamic`, a service or `host`, and have a
@@ -304,10 +308,14 @@ Smoke is skipped when every changed path is:
 - one of the four `SMOKE_EXEMPT` paths: `tools/devtools/agent_guard.py`,
   `tools/devtools/pathcheck.py`, `tools/devtools/layercheck.py`, `.claude/settings.json`;
 - a test-only path (`TEST_ONLY`: devtools tooling/tests, patchkit and digikit Python test files,
-  device acceptance test files, runtime acceptance TypeScript helpers and digikit scenario TOMLs),
+  device acceptance test files, runtime and module-load acceptance TypeScript helpers, `tests/regression/project.json` and digikit
+  scenario TOMLs),
   or a crate-level Rust integration-test source under
   `packages/emulator/<crate>/tests/`;
-- a patchkit source in a `PATCHKIT_GROUPS` group that omits smoke (checks, flash, wasm, codegen).
+- a patchkit source in a `PATCHKIT_GROUPS` group that omits smoke (checks, flash, wasm, codegen);
+- a `tools/**/*.py` outside the import closure of `tools.patchkit.pk_harness` (function-local
+  imports and `-m tools.x` calls included), or a deleted one that no tracked file still names; or
+- a `pyproject.toml` change limited to `tool.mypy` and `tool.ruff`.
 
 These may be mixed. If every other changed path is in `digikit/pluck`, `digikit/freqshift` or
 `digikit/remote`, only the matrix cells that depend on those modules run (PLUCK keeps its DT2 and DN2

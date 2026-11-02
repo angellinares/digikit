@@ -348,57 +348,130 @@ def emulator_test_path(path: str) -> bool:
 
 
 @cache
-def acceptance_python(step: str) -> set[str]:
-    """Dependencies of consumed preparation/client entry points, using the existing import graph."""
+def tracked_text() -> str:
+    """The text of the tracked .py, .ts, .mjs, .json and .toml files, joined."""
+    listed = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    parts = []
+    for name in listed:
+        if name.endswith((".py", ".ts", ".mjs", ".json", ".toml")):
+            try:
+                parts.append((ROOT / name).read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return "\n".join(parts)
+
+
+def module_referenced(path: str, text: str) -> bool:
+    """Whether TEXT names the Python module at PATH: its dotted name (also `-m tools.x.y`), or its
+    stem in an `import` or `from ... import` line."""
+    dotted = path.removesuffix(".py").replace("/", ".")
+    stem = re.escape(dotted.rsplit(".", 1)[-1])
+    if dotted in text:
+        return True
+    return (
+        re.search(
+            rf"^[ \t]*(?:import\s+(?:[\w.]+\s*,\s*)*{stem}\b"
+            rf"|from\s+[\w.]+\s+import\s+(?:[^\n(]*\b{stem}\b|\([^)]*\b{stem}\b))",
+            text,
+            re.M,
+        )
+        is not None
+    )
+
+
+def deleted_path_referenced(path: str) -> bool:
+    """Whether a tracked file still refers to the deleted Python module PATH (fail closed)."""
+    return module_referenced(path, tracked_text())
+
+
+@cache
+def smoke_harness_closure() -> set[str]:
+    """Paths of the Python modules the smoke harness (pk_harness) can run, function-local imports included."""
+    return _import_closure(
+        {
+            "tools.patchkit.pk_harness",
+            "tools.patchkit.patchkit",
+            "tools.devtools.stablebin",
+            "tools.sharc_dev.sharc_disasm",
+        },
+        local_imports=True,
+    )
+
+
+def outside_smoke_harness(path: str) -> bool:
+    """A tools/ Python path (existing or deleted) the smoke harness cannot reach. A deleted path
+    counts only when no tracked file refers to it."""
+    if not (path.startswith("tools/") and path.endswith(".py")):
+        return False
+    if not (ROOT / path).is_file():
+        return not deleted_path_referenced(path)
+    return path not in smoke_harness_closure()
+
+
+def lint_config_only(old: str | None, new: str | None) -> bool:
+    """Whether two pyproject.toml texts differ only inside `tool.mypy` or `tool.ruff`."""
+    if old is None or new is None:
+        return False
+    try:
+        a, b = tomllib.loads(old), tomllib.loads(new)
+    except tomllib.TOMLDecodeError:
+        return False
+    for data in (a, b):
+        tool = data.get("tool")
+        if isinstance(tool, dict):
+            tool.pop("mypy", None)
+            tool.pop("ruff", None)
+            if not tool:
+                del data["tool"]
+    return a == b
+
+
+def _import_closure(roots: set[str], *, local_imports: bool = False) -> set[str]:
+    """Paths of ROOTS and of every module they import, using the existing import graph."""
     from tools.devtools import changed_tests
 
-    # The graph omits function-local imports. These consumed call paths need stablebin from
-    # patchkit.binary and sharc_disasm (imported inside the functions of the SHARC runner pk_sharc.run_call).
-    roots = {
-        "tools",
-        "tools.patchkit.patchkit",
-        "tools.devtools.stablebin",
-        "tools.sharc_dev.sharc_disasm",
-    }
-    if step == "runtime-fixture":
-        roots.update(
-            {
-                "tools.device.dktransfer",
-                "tools.control.digi_client",
-                "tools.patchkit.pk_digikit_fx",
-                "tools.patchkit.pk_digikit_fxsend",
-                "tools.patchkit.pk_digikit_fxpage",
-                "tools.patchkit.pk_digikit_fxroutes",
-                "tools.patchkit.pk_digikit_fxroute",
-                "tools.patchkit.hook_ab",
-            }
-        )
-    if step == "runtime-fixture":
-        roots.update(
-            source.removesuffix(".py").replace("/", ".")
-            for record in dict.fromkeys(acceptance_records().values())
-            for source in record.sources
-            if source.endswith(".py") and (ROOT / source).is_file()
-        )
-    graph = changed_tests.graph()
+    graph = changed_tests.graph(local_imports=local_imports)
     found, todo = set(roots), list(roots)
     while todo:
         for dependency in graph.find_modules_directly_imported_by(todo.pop()):
             if dependency not in found:
                 found.add(dependency)
                 todo.append(dependency)
-    paths = {changed_tests.path_of(module) for module in found}
-    if step == "runtime-fixture":
-        paths.update(
-            source
-            for record in dict.fromkeys(acceptance_records().values())
+    return {changed_tests.path_of(module) for module in found}
+
+
+@cache
+def acceptance_shared(step: str) -> set[str]:
+    """Dependencies of the preparation/client entry points that every acceptance file consumes."""
+    # The graph omits function-local imports. These consumed call paths need stablebin from
+    # patchkit.binary and sharc_disasm (imported inside the functions of the SHARC runner pk_sharc.run_call).
+    return _import_closure(
+        {
+            "tools",
+            "tools.patchkit.patchkit",
+            "tools.devtools.stablebin",
+            "tools.sharc_dev.sharc_disasm",
+        }
+    )
+
+
+@cache
+def acceptance_record_closure(record: RuntimeAcceptance) -> set[str]:
+    """Dependencies of the Python sources one runtime record runs, and the record's own sources."""
+    paths = _import_closure(
+        {
+            source.removesuffix(".py").replace("/", ".")
             for source in record.sources
-        )
-        # Module-owned Python models may be loaded dynamically rather than imported.
+            if source.endswith(".py") and (ROOT / source).is_file()
+        }
+    )
+    paths.update(record.sources)
+    # Module-owned Python models may be loaded dynamically rather than imported.
+    if record.owner in manifests():
         paths.update(
             p.relative_to(ROOT).as_posix()
-            for record in dict.fromkeys(acceptance_records().values())
-            if record.owner in manifests()
             for p in (modroots.module_dir(record.owner) / "tests").rglob("*.py")
         )
     return paths
@@ -583,10 +656,26 @@ def acceptance_files(
             or (
                 step != "stock"
                 and path.startswith("tools/")
-                and path in acceptance_python(step)
+                and path.endswith(".py")
+                and (
+                    (
+                        step == "runtime-fixture"
+                        and not (ROOT / path).is_file()
+                        and deleted_path_referenced(path)
+                    )
+                    or path in acceptance_shared(step)
+                )
             )
         ):
             selected.update(all_files)
+        elif (
+            step == "runtime-fixture"
+            and path.startswith("tools/")
+            and path.endswith(".py")
+        ):
+            selected.update(
+                f for f, r in registered.items() if path in acceptance_record_closure(r)
+            )
         elif step != "stock" and path.startswith(
             tuple(r + "/" for r in modroots.REPO_ROOTS)
         ):
