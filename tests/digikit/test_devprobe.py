@@ -1,4 +1,4 @@
-"""Pure functions of tools/device/devprobe.py: step syntax, key labels, ffmpeg device listing and hit analysis. No device, no ffmpeg."""
+"""Pure functions of tools/device/devprobe.py: step syntax, key labels, float WAV writing and hit analysis. No device, no sounddevice."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tools.device import devprobe as D
+from tools.emulator import audiocheck
 
 RATE = 48000
 
@@ -41,18 +42,17 @@ def test_key_labels_from_the_device_file():
     assert keys["play"] == 20
 
 
-def test_parse_audio_devices():
-    text = """[AVFoundation indev @ 0x1] AVFoundation video devices:
-[AVFoundation indev @ 0x1] [0] FaceTime HD Camera
-[AVFoundation indev @ 0x1] AVFoundation audio devices:
-[AVFoundation indev @ 0x1] [0] MacBook Pro Microphone
-[AVFoundation indev @ 0x1] [1] Digitakt II
-: Input/output error
-"""
-    assert D.parse_audio_devices(text) == [
-        (0, "MacBook Pro Microphone"),
-        (1, "Digitakt II"),
-    ]
+def test_write_wav_f32_round_trip(tmp_path):
+    t = np.arange(RATE // 10) / RATE
+    left = 0.5 * np.sin(2 * np.pi * 440 * t)
+    right = 0.25 * np.sin(2 * np.pi * 880 * t)
+    x = np.stack([left, right], axis=1).astype(np.float32)
+    path = tmp_path / "a.wav"
+    D.write_wav_f32(path, x, RATE)
+    rate, y = audiocheck.load(path)
+    assert rate == RATE
+    assert y.shape == x.shape
+    assert np.max(np.abs(y - x)) < 1e-6
 
 
 def hit(freq: float) -> np.ndarray:

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-r"""Closed-loop hardware debugging: press keys on a real Digitakt II / Digitone II through the digikit remote module, record its USB audio with ffmpeg (avfoundation) and analyse each hit (pitch, length, level).
+r"""Closed-loop hardware debugging: press keys on a real Digitakt II / Digitone II through the digikit remote module, record its USB audio with PortAudio (sounddevice) and analyse each hit (pitch, length, level).
 
-    uv run --with python-rtmidi python -m tools.device.devprobe --list-audio
-    uv run --with python-rtmidi python -m tools.device.devprobe --steps 'trig1*10@500'
-    uv run --with python-rtmidi python -m tools.device.devprobe --device dn2 --steps 'turn:B:-3,wait:250,trig1*4@400,shot:end'
-    uv run --with python-rtmidi python -m tools.device.devprobe --no-remote --tail 10      # capture only, play by hand
+    uv run --with python-rtmidi --with sounddevice python -m tools.device.devprobe --list-audio
+    uv run --with python-rtmidi --with sounddevice python -m tools.device.devprobe --steps 'trig1*10@500'
+    uv run --with python-rtmidi --with sounddevice python -m tools.device.devprobe --device dn2 --steps 'turn:B:-3,wait:250,trig1*4@400,shot:end'
+    uv run --with python-rtmidi --with sounddevice python -m tools.device.devprobe --no-remote --tail 10      # capture only, play by hand
     uv run python -m tools.device.devprobe --analyse capture.wav                           # any WAV, no device
 
 Steps (comma separated): `LABEL[*COUNT][@MS]` presses a key by label (trig1, play, stop, ...), `key:CODE[*COUNT][@MS]`
 a key by code, `turn:ENC:DELTA` (ENC A..H, LEVEL or 1..9), `wait:MS`, `shot[:NAME]` a screenshot.
 Results go to --out (default out/runs/devprobe/<time>): capture.wav, events.json, hits.json, screenshots.
-Event times are seconds since the capture file appeared; hit times are seconds in the WAV.
+Event times are seconds since the capture stream started; hit times are seconds in the WAV.
 """
 
 from __future__ import annotations
@@ -19,9 +19,7 @@ import argparse
 import json
 import math
 import re
-import shutil
-import signal
-import subprocess
+import struct
 import sys
 import time
 import tomllib
@@ -36,6 +34,7 @@ from tools.emulator import audiocheck
 REPO = Path(__file__).resolve().parents[2]
 LEDS = {"dt2": "digitakt-ii-leds.toml", "dn2": "digitone-ii-leds.toml"}
 PORTS = {"dt2": "Digitakt", "dn2": "Digitone"}
+RATE = 48000
 
 # A run is "consistent" when the hits agree: f0 within 3 %, length within 15 %,
 # peak level within 2 dB.
@@ -144,32 +143,49 @@ def parse_steps(text: str) -> list[Step]:
     return steps
 
 
-def parse_audio_devices(stderr: str) -> list[tuple[int, str]]:
-    """The (index, name) of the avfoundation audio devices in ffmpeg's listing."""
-    out: list[tuple[int, str]] = []
-    in_audio = False
-    for line in stderr.splitlines():
-        if "AVFoundation audio devices" in line:
-            in_audio = True
-            continue
-        if "AVFoundation video devices" in line:
-            in_audio = False
-            continue
-        m = re.search(r"\[(\d+)\]\s+(.+?)\s*$", line)
-        if in_audio and m:
-            out.append((int(m.group(1)), m.group(2)))
-    return out
+def input_devices() -> list[tuple[int, str, int, float]]:
+    """(index, name, input channels, default rate) of the PortAudio inputs."""
+    import sounddevice  # lazy: only capture needs it
+
+    return [
+        (
+            i,
+            str(d["name"]),
+            int(d["max_input_channels"]),
+            float(d["default_samplerate"]),
+        )
+        for i, d in enumerate(sounddevice.query_devices())
+        if d["max_input_channels"] > 0
+    ]
 
 
-def list_audio(ffmpeg: str) -> list[tuple[int, str]]:
-    r = subprocess.run(
-        [ffmpeg, "-hide_banner", "-f", "avfoundation", "-list_devices", "true"]
-        + ["-i", ""],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return parse_audio_devices(r.stderr)
+def format_input(dev: tuple[int, str, int, float]) -> str:
+    i, name, ch, rate = dev
+    return f"{i} {name} ({ch} ch, {rate:.0f} Hz)"
+
+
+def pick_input(
+    devices: list[tuple[int, str, int, float]], want: str
+) -> tuple[int, str, int, float]:
+    """The first input whose name contains `want` (case-insensitive)."""
+    match = next((d for d in devices if want.lower() in d[1].lower()), None)
+    if match is None:
+        have = "; ".join(format_input(d) for d in devices) or "none"
+        raise RuntimeError(f"no audio input matching {want!r}; found: {have}")
+    return match
+
+
+def write_wav_f32(path: Path, data: Any, rate: int) -> None:
+    """Write (frames, channels) float samples as a 32-bit float WAV."""
+    x = np.asarray(data, dtype="<f4")
+    x = x.reshape(len(x), -1)
+    ch = x.shape[1]
+    payload = x.tobytes()
+    header = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
+    fmt = struct.pack("<IHHIIHH", 16, 3, ch, rate, rate * ch * 4, ch * 4, 32)
+    header += b"fmt " + fmt
+    header += b"data" + struct.pack("<I", len(payload))
+    path.write_bytes(header + payload)
 
 
 def _db(v: float) -> float:
@@ -287,55 +303,12 @@ def analyse_file(wav: Path, out: Path, events_path: Path | None) -> int:
     return 0
 
 
-def start_capture(ffmpeg: str, index: int, wav: Path) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(
-        [ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "avfoundation"]
-        + ["-i", f":{index}", "-ac", "2", "-ar", "48000", "-c:a", "pcm_f32le"]
-        + ["-y", str(wav)],
-        stdin=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-
-def stop_capture(proc: subprocess.Popen[bytes]) -> None:
-    try:
-        if proc.stdin:
-            proc.stdin.write(b"q")
-            proc.stdin.flush()
-            proc.stdin.close()
-    except OSError:
-        pass
-    try:
-        proc.wait(5)
-        return
-    except subprocess.TimeoutExpired:
-        proc.send_signal(signal.SIGINT)
-    try:
-        proc.wait(3)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-
-
-def wait_for_file(wav: Path, proc: subprocess.Popen[bytes]) -> None:
-    end = time.monotonic() + 3.0
-    while time.monotonic() < end:
-        if proc.poll() is not None:
-            err = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
-            raise RuntimeError(f"ffmpeg stopped: {err.strip()}")
-        if wav.exists() and wav.stat().st_size > 44:
-            return
-        time.sleep(0.05)
-    raise RuntimeError("ffmpeg wrote no audio within 3 s")
-
-
 def run_device(args: argparse.Namespace, out: Path, steps: list[Step]) -> int:
+    import sounddevice
+
     from tools.device.dkscreen import png_of, rtmidi_screenshot
     from tools.device.dkupload import RtMidiTransport, Uploader, UploadError
 
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        raise RuntimeError("ffmpeg not found in PATH")
     keymap = load_key_map(args.device)
     # Resolve key labels before touching the device.
     for s in steps:
@@ -343,19 +316,24 @@ def run_device(args: argparse.Namespace, out: Path, steps: list[Step]) -> int:
             raise ValueError(
                 f"unknown key {s.label!r}; known: {', '.join(sorted(keymap))}"
             )
-    audio = list_audio(ffmpeg)
-    want = (args.audio or PORTS[args.device]).lower()
-    match = next((d for d in audio if want in d[1].lower()), None)
-    if match is None:
-        have = ", ".join(f"[{i}] {n}" for i, n in audio) or "none"
-        raise RuntimeError(f"no audio device matching {want!r}; found: {have}")
+    match = pick_input(input_devices(), args.audio or PORTS[args.device])
     out.mkdir(parents=True, exist_ok=True)
 
     t = RtMidiTransport(args.port or PORTS[args.device])
     up = Uploader(t)
     remote_used = False
-    proc: subprocess.Popen[bytes] | None = None
+    stream: Any = None
+    chunks: list[Any] = []
+    overflows = 0
+    t0 = t_stop = time.monotonic()
     events: list[dict[str, Any]] = []
+
+    def cb(indata: Any, frames: int, tinfo: Any, status: Any) -> None:
+        nonlocal overflows
+        chunks.append(indata.copy())
+        if status.input_overflow:
+            overflows += 1
+
     try:
         if not args.no_remote:
             try:
@@ -367,16 +345,19 @@ def run_device(args: argparse.Namespace, out: Path, steps: list[Step]) -> int:
                     ) from None
                 raise
             remote_used = True
-        wav = out / "capture.wav"
+        stream = sounddevice.InputStream(
+            device=match[0],
+            channels=2,
+            samplerate=RATE,
+            dtype="float32",
+            callback=cb,
+        )
+        stream.start()
         t0 = time.monotonic()
-        proc = start_capture(ffmpeg, match[0], wav)
-        wait_for_file(wav, proc)
-        t_file = time.monotonic()
-        capture_started = t_file - t0
         time.sleep(0.3)
 
         def now() -> float:
-            return time.monotonic() - t_file
+            return time.monotonic() - t0
 
         seq = 0
         if args.no_remote:
@@ -411,14 +392,26 @@ def run_device(args: argparse.Namespace, out: Path, steps: list[Step]) -> int:
                     print(out / f"{name}.png", flush=True)
             time.sleep(args.tail)
     finally:
-        if proc is not None:
-            stop_capture(proc)
+        if stream is not None:
+            t_stop = time.monotonic()
+            stream.stop()
+            stream.close()
         if remote_used:
             try:
                 up.remote_release()
             except Exception as e:  # keep closing the port
                 print(f"warning: remote release failed: {e}", file=sys.stderr)
         t.close()
+
+    data = np.concatenate(chunks) if chunks else np.zeros((0, 2), dtype="float32")
+    write_wav_f32(out / "capture.wav", data, RATE)
+    captured = len(data) / RATE
+    expected = t_stop - t0
+    print(
+        f"captured {captured:.2f} s, expected {expected:.2f} s, overflows {overflows}"
+    )
+    if overflows > 0 or abs(captured - expected) > 0.01 * expected:
+        print("warning: capture length differs from wall time or overflowed")
 
     (out / "events.json").write_text(
         json.dumps(
@@ -427,7 +420,9 @@ def run_device(args: argparse.Namespace, out: Path, steps: list[Step]) -> int:
                 "port": args.port or PORTS[args.device],
                 "audio": match[1],
                 "steps": args.steps,
-                "capture_started": capture_started,
+                "captured_s": captured,
+                "expected_s": expected,
+                "overflows": overflows,
                 "events": events,
             },
             indent=2,
@@ -455,11 +450,8 @@ def main(argv: list[str] | None = None) -> int:
         args.tail = 10.0 if args.no_remote else 2.0
     try:
         if args.list_audio:
-            ffmpeg = shutil.which("ffmpeg")
-            if ffmpeg is None:
-                raise RuntimeError("ffmpeg not found in PATH")
-            for i, n in list_audio(ffmpeg):
-                print(f"[{i}] {n}")
+            for d in input_devices():
+                print(format_input(d))
             return 0
         if args.analyse:
             events = args.analyse.with_name("events.json")

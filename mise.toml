@@ -417,7 +417,7 @@ run = "uv run --with python-rtmidi python -m tools.device.dkscreen"
 description = "Screenshot of the device or emulator display as PNG: mise run dk:screen -- --port Digitakt out/runs/shots/screen.png [--every S --count N] (or --emu; the target is --emu or --port NAME)"
 
 [tasks."device:probe"]
-run = "uv run --with python-rtmidi python -m tools.device.devprobe"
+run = "uv run --with python-rtmidi --with sounddevice python -m tools.device.devprobe"
 description = "Press keys through the digikit remote, record the device's USB audio and analyse each hit: mise run device:probe -- --list-audio | --steps 'trig1*10@500' [--device dt2|dn2] [--no-remote] [--analyse WAV]"
 
 [tasks.transfer]

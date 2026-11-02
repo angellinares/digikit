@@ -319,12 +319,12 @@ neither decoder-complete store coverage nor ownership/reservation proof.
 
 ## Device probe (USB audio + remote)
 
-`tools/device/devprobe.py` presses keys on a real device through the digikit remote module, records its USB audio with ffmpeg and measures each hit (pitch, length, level).
+`tools/device/devprobe.py` presses keys on a real device through the digikit remote module, records its USB audio with PortAudio (the `sounddevice` package) and measures each hit (pitch, length, level). The capture does not use ffmpeg: its avfoundation input dropped about 13% of the samples from the Digitakt II (a gap every ~70 ms), which made sweeps look too fast. The probe prints the captured seconds, the wall-clock seconds and the overflow count, and prints a warning when the captured length differs from wall time by more than 1% or an overflow happened.
 
 Setup:
 
 - On the device: SETTINGS > SYSTEM > USB CONFIG = USB AUDIO/MIDI; USB OUT = MAIN (or one track); tick `digikit/remote` in DIGIKIT > MODULES and restart.
-- On the Mac: ffmpeg in PATH.
+- On the Mac: nothing to install; `mise run device:probe` fetches `python-rtmidi` and `sounddevice` through `uv`. `--list-audio` shows the input devices; `--audio NAME` picks the first input whose name contains NAME (default Digitakt or Digitone).
 
 ```sh
 mise run device:probe -- --list-audio
