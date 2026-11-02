@@ -34,7 +34,8 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py
                  rule gives an ordinal; the same holds for the three kinds below); the anchor is the `len` bytes at
                  entry + offset. SHARC `pm` is the entry + offset pc.
   sharc_literal  as sharc_func, but the instruction at entry + offset loads a constant (a literal in the
-                 sharcdb): the anchor's value is that constant (a data address); `src` is the instruction.
+                 sharcdb): the anchor's value is that constant (a data address) plus `add` (default 0, for a
+                 field the code reaches at a fixed distance from the literal); `src` is the instruction.
 
   sharc_table    as sharc_literal, but the anchor is the table the literal points to: a data anchor of `len` bytes at the
                  software alias 0x28000000 + the literal (`src` = the instruction).
@@ -688,7 +689,7 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
         return {
             "kind": "value",
             # a literal is a 32-bit immediate: the DSP's DDR addresses (0x8422b9c8) read as negative in the database
-            "addr": int(rows[0][0]) & 0xFFFF_FFFF,
+            "addr": (int(rows[0][0]) + int(rule.get("add", 0))) & 0xFFFF_FFFF,
             "src": addr,
             "len": int(width),
             "sha256": sha(data),
