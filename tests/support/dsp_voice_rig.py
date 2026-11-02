@@ -36,7 +36,11 @@ MASK = (
     DIAG + 0x11C
 )  # `_dv_mask`: the registered types, rebuilt by voice 0 from the table
 GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
-# the contract adapter's data (`_dv_in` 24 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64, `_dv_st` 64): zero, and not used by a row of the old form
+RELEASE = (
+    DIAG + 0x800
+)  # the release bytes (dsp.voice.value.release_latch): byte v is 1 for about a block after voice v's note-off
+# the contract adapter's data (`_dv_in` 28 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64, `_dv_st` 64, `_dv_gate` 64): zero, and not used by a
+# row of the old form
 ADAPTER = {
     "_dv_in": DIAG + 0x300,
     "_dv_params": DIAG + 0x320,
@@ -45,6 +49,7 @@ ADAPTER = {
     "_dv_slots": DIAG + 0x3E0,
     "_dv_st": DIAG
     + 0x400,  # 16 words: the per-track stereo flag (machine contract 1.2)
+    "_dv_gate": DIAG + 0x440,
 }
 ROW = 24  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields, the contract fields (words 16 to 19)
 RING_A, RING_B = (
@@ -65,6 +70,7 @@ def core_externs() -> dict[str, int]:
         "_fw_render_next": STOCK_BP,
         "_fw_frame": FRAME,
         "_fw_param_rec": PARAM_REC,
+        "_fw_release_latch": RELEASE,
         "_dv_table": TABLE,
         "_dv_diag": DIAG,
         "_dv_sv_l4": SV_L4,

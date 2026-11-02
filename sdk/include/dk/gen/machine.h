@@ -16,6 +16,7 @@ typedef struct dk_voice_in {
     float *out;                         /* render writes DK_BLOCK floats here */
     uint32_t track;                     /* source track 0 .. 15, latched at note_on; machine contract 1.1 */
     float *out_r;                       /* machine contract 1.2: a stereo machine writes the right channel, DK_BLOCK floats, and returns DK_STEREO; a mono machine never touches it */
+    uint32_t gate;                      /* 1 from the note-on until the note is released, then 0 (Digitakt II; Digitone II: always 1) */
 } dk_voice_in;
 
 /* One per module in read-only data, found by the manifest's symbol. No function pointers: the manifest names the entry symbols. */

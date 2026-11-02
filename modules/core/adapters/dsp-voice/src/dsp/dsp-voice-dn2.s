@@ -477,6 +477,8 @@ _dv_cowner:
     R1 = _gs_rbuf;
     R0 = R0 + R1;
     DM(_dv_in + DK_IN_OUT_R) = R0;
+    R0 = 1;
+    DM(_dv_in + DK_IN_GATE) = R0;          // no note-off source is known on the Digitone II yet: the gate stays 1
     // the parameter words: knob ADM_PARAM_SLOTi of the slot, until a slot of 255 (the buffer's other words stay 0)
     R0 = 0;
     DM(_dv_c + 20) = R0;
@@ -783,7 +785,7 @@ _dv_frame_sw:
 .PKDATA _dv_row, 4;
 // The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), its scalars (see `_dv_contract`), the slots'
 // records (4 words each) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
-.PKDATA _dv_in, 24;
+.PKDATA _dv_in, DK_IN_BYTES;
 .PKDATA _dv_params, 32;
 .PKDATA _dv_c, 64;
 .PKDATA _dv_cst, 256;

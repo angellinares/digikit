@@ -29,6 +29,7 @@ _fw_type_cache = "dsp.voice.value.type_cache"
 _fw_render_next = "dsp.voice.site.render_entry.next"
 _fw_frame = "dsp.voice.value.frame_base"
 _fw_param_rec = "dsp.voice.value.param_record_base"
+_fw_release_latch = "dsp.voice.value.release_latch"
 
 # Digitone II: the render hook of the FM engine's host (docs/findings/06, "Per-voice hook on DN2"); another object, the
 # same registration table and claim.

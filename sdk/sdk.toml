@@ -82,7 +82,7 @@ consts = [
     { name = "DK_LEVEL_BOUND_BITS", value = 1090519040, doc = "|sample| above DK_LEVEL_BOUND is a fault (+18 dB over full scale)." },  # 8.0f
     { name = "DK_MAGIC", value = 1145785665, doc = "'DKMA', the first word of dk_machine_desc." },             # 'DKMA' = 0x444b4d41
 ]
-voice_in = ["pitch", "velocity", "block", "out", "track", "out_r"]           # struct dk_voice_in, DK_IN_*
+voice_in = ["pitch", "velocity", "block", "out", "track", "out_r", "gate"]           # struct dk_voice_in, DK_IN_*
 desc = [
     "magic", "contract", "n_params", "voices", "state_bytes",
     "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
@@ -104,6 +104,7 @@ voice_in = [
     "float *out // render writes DK_BLOCK floats here",
     "u32 track // source track 0 .. 15, latched at note_on; machine contract 1.1",
     "float *out_r // machine contract 1.2: a stereo machine writes the right channel, DK_BLOCK floats, and returns DK_STEREO; a mono machine never touches it",
+    "u32 gate // 1 from the note-on until the note is released, then 0 (Digitakt II; Digitone II: always 1)",
 ]
 desc = [
     "u32 magic // DK_MAGIC",

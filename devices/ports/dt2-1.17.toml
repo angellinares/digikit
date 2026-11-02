@@ -3023,6 +3023,17 @@ mark = "D"
 rule = "fw/dsp/voice:sharc_literal"
 
 [[anchor]]
+name = "dsp.voice.value.release_latch"
+cpu = "sharc"
+kind = "value"
+addr = 0x24f0ec
+src = 0x28386792
+len = 6
+sha256 = "be53cd57e9a3a7ea11cc5615c4a511192b6241728c2c49370804157624980e04"
+mark = "D"
+rule = "fw/dsp/voice:sharc_literal"
+
+[[anchor]]
 name = "dsp.voice.value.sample.pool_base"
 cpu = "sharc"
 kind = "value"

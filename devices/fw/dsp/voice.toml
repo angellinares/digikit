@@ -35,6 +35,15 @@ users = ["core/dsp-voice"]
 doc = "The DSP's copy of the ColdFire frame: the literal `I5 = 0x2558dc` of the per-block copy."
 
 [[value]]
+name = "dsp.voice.value.release_latch"
+cpu = "sharc"
+devices = ["dt2"]
+rule = { kind = "sharc_literal", reloc_hash = "75588fd22204b80ad6a84264f64407bf3d19d78c73b0595d832a2b3d34f74b68", offset = 0x140, add = 0x40 }
+mark = "D"
+users = ["core/dsp-voice"]
+doc = "The voices' release bytes: byte v is 1 for about one block after voice v's note-off (FUN_1c6056 stores it, the trigger path stores 0), 0x40 bytes past the trigger latch whose literal the rule reads."
+
+[[value]]
 name = "dsp.voice.value.type_cache"
 was = ["dsp.voice.type_cache"]
 cpu = "sharc"

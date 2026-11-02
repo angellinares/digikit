@@ -45,9 +45,11 @@
 // does what each machine's prologue used to do. It finds the note-on (record +0x1b8 ACTIVE != 0 and +0x1b9 mark == 0, and writes the
 // mark), zeroes the first `clear` bytes of the voice's state (row words 17 state base, 18 stride, 19 clear; the state of track t is
 // base + t stride) and calls note_on, then render, with R4 = state, R8 = a `dk_voice_in` of its own (pitch with the tune knob folded
-// in, velocity, blocks since the note-on, the output block), R12 = the parameter words (the knobs of `ADM_PARAM_SLOT*`, clamped to
+// in, velocity, blocks since the note-on, the output block, the gate), R12 = the parameter words (the knobs of `ADM_PARAM_SLOT*`, clamped to
 // the row's ranges, in its own buffer: the frame is not written). It ends the voice (ACTIVE and mark cleared) on DK_DONE or a fault,
 // and the output check below (the guard) is the same for both kinds. An idle voice is not called: its block is silent.
+// The gate of track t is 1 from its note-on until the firmware's release byte of voice 2t (dsp.voice.value.release_latch, a pulse of
+// about one block after the note-off) has been seen, then 0 (`_dv_gate`).
 
 #include "adapter-dt2.inc"
 #include "dk_machine.inc"
@@ -58,6 +60,7 @@
 .EXTERN _fw_render_next;
 .EXTERN _fw_frame;
 .EXTERN _fw_param_rec;
+.EXTERN _fw_release_latch;
 .EXTERN _dv_table;
 
 _dv_entry:
@@ -1291,6 +1294,35 @@ _dv_cmarked:
     R0 = 128;                             // machine contract 1.2: out_r is the odd voice's block of the pair (the buffers are 128 apart, as `_dv_odd` copies)
     R0 = R0 + R8;
     DM(_dv_in + DK_IN_OUT_R) = R0;
+    // the gate: set at the note-on, cleared once voice 2t's release byte is seen (the byte of a word at (2t & ~3), bits 8 (2t & 3))
+    R2 = DM(_dv_g + 12);
+    R3 = LSHIFT R2 BY 2;
+    R6 = _dv_gate;
+    R6 = R6 + R3;
+    I1 = R6;
+    R0 = DM(0, I1);
+    R1 = 1;
+    R11 = DM(_dv_c + 0);
+    R11 = PASS R11;
+    IF NE R0 = PASS R1;
+    R3 = LSHIFT R2 BY 1;
+    R1 = 0xfffffffc;
+    R6 = R3 AND R1;
+    R1 = _fw_release_latch;
+    R6 = R6 + R1;
+    I3 = R6;
+    R6 = DM(0, I3);
+    R1 = 3;
+    R3 = R3 AND R1;
+    R3 = LSHIFT R3 BY 3;
+    R3 = -R3;
+    R6 = LSHIFT R6 BY R3;
+    R1 = 0xff;
+    R6 = R6 AND R1;
+    R1 = 0;
+    IF NE R0 = PASS R1;
+    DM(0, I1) = R0;
+    DM(_dv_in + DK_IN_GATE) = R0;
     // the parameter words: knob ADM_PARAM_SLOTi of the track, until a slot of 255 (the buffer's other words stay 0)
     R0 = 0;
     DM(_dv_c + 8) = R0;
@@ -1669,11 +1701,12 @@ _dv_frame_sw:
 // The addresses of the two reply records (rings): [0] the one the last block built, [1] the one before it, and [2] the address of the module step word
 // `_dk_step` (cleared before a module call). Written by core/dsp-link.
 .PKDATA _dv_rec, 12;
-// The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), the blocks since the note-on per track (16), its scalars
-// (see `_dv_contract`) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
-.PKDATA _dv_in, 24;
+// The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), the blocks since the note-on per track (16), the gates
+// per track (16), its scalars (see `_dv_contract`) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
+.PKDATA _dv_in, DK_IN_BYTES;
 .PKDATA _dv_params, 32;
 .PKDATA _dv_blk, 64;
+.PKDATA _dv_gate, 64;
 .PKDATA _dv_c, 64;
 // Per track: nonzero while the even voice has written R into the odd voice's block this block (contract 1.2); the odd voice consumes it.
 .PKDATA _dv_st, 64;

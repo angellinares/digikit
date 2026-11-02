@@ -137,6 +137,7 @@ def _externs_fixed(device: str, spec: pk_conform.MachineSpec) -> dict[str, int]:
         "_fw_render_next": dv.STOCK_BP,
         "_fw_frame": dv.FRAME,
         "_fw_param_rec": dv.PARAM_REC,
+        "_fw_release_latch": dv.RELEASE,
         "_dv_table": dv.TABLE,
     }
     if device == "dn2":
@@ -283,6 +284,7 @@ class MachineRig:
                 poke(nw(dv.FRAME) + k, 0)
             for k in range(8):
                 poke(nw(dv.TYPE_CACHE) + k, 0)
+                poke(nw(dv.RELEASE) + k, 0)
             for k in range(32 * dv.REC // 4):
                 poke(nw(dv.RECORDS) + k, 0)
             for k in range(2 * ROW_WORDS):
@@ -320,13 +322,13 @@ class MachineRig:
         for p in self.spec.params:
             self.set_param(p.id, p.default)
         self.set_note(60, 100)
-        self._trig = False
+        self._trig = self._release = False
 
     def use(self, track: int) -> None:
         """Make `track` the voice of the following calls (state and memory stay: several voices run on one core)."""
         self.track = track
         self.voice = track if self.device == "dn2" else 2 * track
-        self._trig = False
+        self._trig = self._release = False
 
     def select(self, track: int) -> None:
         """`use` for a voice that has not run yet: it gets the machine type, its parameters at their defaults and a note, like a
@@ -390,6 +392,16 @@ class MachineRig:
         """A new note at the next block (DT2: the arm routine's store; DN2: the trig bit, one block)."""
         self._trig = True
 
+    def release(self) -> None:
+        """A note-off at the next block: the voice's release byte is 1 for that block (the firmware's pulse)."""
+        self._release = True
+
+    def _release_byte(self, value: int) -> None:
+        addr = nw(dv.RELEASE) + self.voice // 4
+        shift = 8 * (self.voice % 4)
+        cur = self.sess.peek(addr) or 0
+        self.sess.poke(addr, (cur & ~(0xFF << shift) & 0xFFFFFFFF) | value << shift)
+
     # -- a block -----------------------------------------------------------------------------------------------------------
     def _regs(self, ctx: dict[str, int]) -> tuple[dict, int]:
         saved = {f"R{n}": 0x7000 + n for n in (3, 5, 6, 7, 9, 10, 11, 13, 15)}
@@ -430,6 +442,8 @@ class MachineRig:
             else:
                 cur = self._hw_get(0x11)
                 self.hw(0x11, cur | (1 << v))
+        if self._release:
+            self._release_byte(1)
         regs, out_addr = self._regs(ctx)
         for k in range(32):
             self.sess.poke(nw(out_addr) + k, NAN)
@@ -449,7 +463,9 @@ class MachineRig:
         )
         if self._trig and self.device == "dn2":
             self.hw(0x11, self._hw_get(0x11) & ~(1 << v))
-        self._trig = False
+        if self._release:
+            self._release_byte(0)
+        self._trig = self._release = False
         stop = dv.RETURN_SW if self.device == "dt2" else dv.STOCK_BP
         halt = res["halt"]
         returned = halt["reason"] == "breakpoint" and res["final_pc_sw"] == stop

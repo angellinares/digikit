@@ -16334,6 +16334,36 @@
       "at": {
         "dt2-1.17": [
           {
+            "addr": "0x24f0ec",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The voices' release bytes: byte v is 1 for about one block after voice v's note-off (FUN_1c6056 stores it, the trigger path stores 0), 0x40 bytes past the trigger latch whose literal the rule reads.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "dsp.voice.value.release_latch",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_literal",
+          "offset": 320
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
             "addr": "0x8422b9c8",
             "len": 6
           }
@@ -16604,7 +16634,7 @@
       "name": "master"
     },
     {
-      "count": 80,
+      "count": 81,
       "cpu": "sharc",
       "file": "devices/fw/dsp/voice.toml",
       "meaning": "voice rendering",

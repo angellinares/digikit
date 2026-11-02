@@ -399,7 +399,7 @@ The adapter enters your routine with `I13` = return address and `JUMP (M13, I12)
 `track` requires machine contract 1.1; the first four offsets and the V1 descriptor are unchanged. On Digitone II it identifies the source
 track independently of the physical voice slot, and stays latched until retrigger. The first trigger-edge block remains silent; the owner is
 latched on the following note-on block. An invalid owner ends only that slot without calling the module.
-`render` also runs on the note-on block, after `note_on`.
+6 `gate` (1 from the note-on until the note is released, then 0; the Digitone II has no release yet and gives 1). `render` also runs on the note-on block, after `note_on`.
 
 Stereo machines (machine contract 1.2, additive). A machine that has two output channels declares `.stereo = 1` in `DK_MACHINE`, sets
 `DK_MACHINE_STEREO` in the contract word of its `dk_machine_desc` (`DK_MACHINE_V1 | DK_MACHINE_STEREO`, 257; `pack` refuses a mismatch), writes
