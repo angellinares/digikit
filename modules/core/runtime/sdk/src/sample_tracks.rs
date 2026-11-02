@@ -128,6 +128,17 @@ pub trait Env {
     fn publish(&mut self, client: usize, track: usize, rec: &Strack);
     /// The publish writes have all landed in the DSP: 1; still on their way: 0; given up: a negative code. The track is READY only then.
     fn published(&mut self, client: usize, track: usize) -> i32;
+    /// A pool event for the run-time log. Default: nothing.
+    fn note(&mut self, _n: Note) {}
+}
+
+/// Pool events for `Env::note`. `entry` is the pool index; `client` is 0xff when no client is involved.
+#[derive(Clone, Copy, Debug)]
+pub enum Note {
+    /// A load finished and its handle is usable.
+    Loaded { client: u32, entry: u32, frames: u32, base_l: u32, token: u32 },
+    /// A handle was dropped. `reason`: 1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed (check result in the high 16 bits). `count`: drops so far.
+    Invalid { client: u32, entry: u32, reason: u32, token: u32, count: u32 },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -283,6 +294,8 @@ pub struct Core<const CL: usize, const EN: usize, const PR: usize> {
     proj: [Proj<CL>; PR],
     cur: usize,
     clock: u32,
+    /// Handles dropped as invalid since the start (wrapping).
+    drops: u32,
 }
 
 impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
@@ -298,6 +311,16 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
             proj,
             cur: 0,
             clock: 1,
+            drops: 0,
+        }
+    }
+
+    /// Log a dropped handle: the first 64 drops, then every 64th.
+    fn note_invalid(&mut self, client: u32, e: usize, reason: u32, token: u32, env: &mut impl Env) {
+        self.drops = self.drops.wrapping_add(1);
+        let count = self.drops;
+        if count <= 64 || count & 63 == 0 {
+            env.note(Note::Invalid { client, entry: e as u32, reason, token, count });
         }
     }
 
@@ -625,7 +648,9 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         for e in 0..EN {
             if self.entries[e].state == EState::Ready && self.entries[e].refs != 0 {
                 let h = self.entries[e].handle;
-                if env.check(&h) != 0 {
+                let rc = env.check(&h);
+                if rc != 0 {
+                    self.note_invalid(0xff, e, (rc as u32) << 16 | 4, h.token, env);
                     self.invalidate(e, env);
                 }
             }
@@ -844,10 +869,25 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
                     _ => return self.fail(c, k, E_CHANGED, env),
                 }
             }
-            if h.token == 0 || env.check(&h) != 0 || h.frames == 0 {
+            let mut reason = 0;
+            if h.token == 0 {
+                reason = 1;
+            } else {
+                let rc = env.check(&h);
+                if rc != 0 {
+                    reason = (rc as u32) << 16 | 2;
+                } else if h.frames == 0 {
+                    reason = 3;
+                }
+            }
+            if reason != 0 {
                 // A handle that is not valid now counts as a lost backing.
+                self.note_invalid(c as u32, e, reason, h.token, env);
                 self.invalidate(e, env);
                 return;
+            }
+            if self.tracks[c][k].fresh {
+                env.note(Note::Loaded { client: c as u32, entry: e as u32, frames: h.frames, base_l: h.base_l, token: h.token });
             }
             let Some(next) = self.next_token.checked_add(1) else {
                 return self.fail(c, k, E_NOMEM, env);

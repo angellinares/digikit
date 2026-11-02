@@ -202,6 +202,10 @@ export const LOG_KIND = {
   FX_FAULT: 34,
   FX_DISABLED: 35,
   FAULT_FOUND: 36,
+  POOL_LOAD: 37,
+  POOL_PUBLISH: 38,
+  POOL_LOST: 39,
+  POOL_INVALID: 40,
 } as const;
 
 /** The kind of a LOG event by id: its name and the names of its five arguments ("-": not used). */
@@ -242,6 +246,10 @@ export const LOG_KINDS: Record<number, [string, [string, string, string, string,
   34: ['FX_FAULT', ['row', 'faults', '-', '-', '-']],
   35: ['FX_DISABLED', ['row', 'faults', '-', '-', '-']],
   36: ['FAULT_FOUND', ['kind_site_stage', 'id', 'step', 'at', 'module']],
+  37: ['POOL_LOAD', ['entry', 'result', 'frames', 'base_l', 'token']],
+  38: ['POOL_PUBLISH', ['entry', 'token', 'frames', 'base_l', 'base_r']],
+  39: ['POOL_LOST', ['count', '-', '-', '-', '-']],
+  40: ['POOL_INVALID', ['entry', 'reason', 'token', 'count', '-']],
 };
 
 /** `MACHINE_FAULT` argument 1, low byte: what the DSP guard found. */

@@ -46,6 +46,10 @@ KINDS: dict[int, tuple[str, tuple[str, str, str, str, str]]] = {
     34: ("FX_FAULT", ("row", "faults", "-", "-", "-")),
     35: ("FX_DISABLED", ("row", "faults", "-", "-", "-")),
     36: ("FAULT_FOUND", ("kind_site_stage", "id", "step", "at", "module")),
+    37: ("POOL_LOAD", ("entry", "result", "frames", "base_l", "token")),
+    38: ("POOL_PUBLISH", ("entry", "token", "frames", "base_l", "base_r")),
+    39: ("POOL_LOST", ("count", "-", "-", "-", "-")),
+    40: ("POOL_INVALID", ("entry", "reason", "token", "count", "-")),
 }
 GUARD_KINDS: dict[int, str] = {1: "nonfinite", 2: "overlevel"}
 F_ERROR = 1

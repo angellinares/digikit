@@ -47,6 +47,10 @@ pub mod logk {
     pub const FX_FAULT: u16 = 34;
     pub const FX_DISABLED: u16 = 35;
     pub const FAULT_FOUND: u16 = 36;
+    pub const POOL_LOAD: u16 = 37;
+    pub const POOL_PUBLISH: u16 = 38;
+    pub const POOL_LOST: u16 = 39;
+    pub const POOL_INVALID: u16 = 40;
     pub const MENU_SELECT: u32 = 1;
     pub const MENU_RESTART: u32 = 2;
     pub const MENU_DEBUG: u32 = 3;

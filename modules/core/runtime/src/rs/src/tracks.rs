@@ -23,14 +23,15 @@
 //!
 //! TODO (not wired yet): persistence of the selections to the digikit store (they live in memory per project now); a request mailbox
 //! so API calls from the MIDI task cannot interleave with a tick step of the same track (an idle track is safe today).
-use crate::{dsp, irq_mask, irq_restore, sample};
+use crate::{dlog, dsp, irq_mask, irq_restore, sample};
 use core::hint::black_box;
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::files::{HASH_ELEKTRON32, SAMPLES};
 use dkrt_sdk::sample_tracks::{
-    rooted, store_identity, store_inspect, unrooted, Core, Env, FileId, Handle, Inspect, Load, Strack, ID_HASH_VALID, ROOT_DN2, ROOT_DT2, TRACKS,
+    rooted, store_identity, store_inspect, unrooted, Core, Env, FileId, Handle, Inspect, Load, Note, Strack, ID_HASH_VALID, ROOT_DN2, ROOT_DT2,
+    TRACKS,
 };
-use dkrt_sdk::{E_CONTRACT, E_DSP_XFER, E_NOT_FOUND, E_READ, E_SEL_PATH};
+use dkrt_sdk::{logk, E_CONTRACT, E_DSP_XFER, E_NOT_FOUND, E_READ, E_SEL_PATH};
 
 pub const DKPOOL_VERSION: u32 = 1;
 const CLIENTS: usize = 2;
@@ -374,8 +375,21 @@ impl Env for Device {
             }
         }
     }
+    fn note(&mut self, n: Note) {
+        unsafe {
+            match n {
+                Note::Loaded { client, entry, frames, base_l, token } => {
+                    dlog::ev(logk::POOL_LOAD, dlog::INFO, [client << 8 | entry, 0, frames, base_l, token])
+                }
+                Note::Invalid { client, entry, reason, token, count } => {
+                    dlog::ev(logk::POOL_INVALID, dlog::INFO, [client << 8 | entry, reason, token, count, 0])
+                }
+            }
+        }
+    }
     fn publish(&mut self, client: usize, track: usize, rec: &Strack) {
         unsafe {
+            dlog::ev(logk::POOL_PUBLISH, dlog::INFO, [(client as u32) << 8 | track as u32, rec.token, rec.frames, rec.base_l, rec.base_r]);
             if FORCE == client {
                 return;
             }
@@ -646,6 +660,10 @@ pub unsafe extern "C" fn dkrt_pool_done(req: u32, result: i32) {
 /// Adapter to runtime: the backing was lost, all handles are invalid.
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_pool_lost() {
+    static mut LOST: u32 = 0;
+    let n = read_volatile(addr_of!(LOST)).wrapping_add(1);
+    *addr_of_mut!(LOST) = n;
+    dlog::ev(logk::POOL_LOST, logk::L_WARN << logk::LEVEL_SHIFT, [n, 0, 0, 0, 0]);
     core_().lost(&mut Device);
 }
 /// Project adapter to runtime: the current project slot changed.

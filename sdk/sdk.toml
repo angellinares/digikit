@@ -793,6 +793,30 @@ id = 36
 name = "FAULT_FOUND"
 args = ["kind_site_stage", "id", "step", "at", "module"]
 
+# a sample load finished and its handle was seen first; `entry` is client << 8 | pool index, `result` 0 for a usable handle
+[[log.kind]]
+id = 37
+name = "POOL_LOAD"
+args = ["entry", "result", "frames", "base_l", "token"]
+
+# a track record went to the DSP; `entry` is client << 8 | track
+[[log.kind]]
+id = 38
+name = "POOL_PUBLISH"
+args = ["entry", "token", "frames", "base_l", "base_r"]
+
+# the pool backing reported that every handle is lost; `count` counts these calls since the start
+[[log.kind]]
+id = 39
+name = "POOL_LOST"
+args = ["count", "-", "-", "-", "-"]
+
+# a handle was dropped as invalid (`entry` is client << 8 | pool index, client 0xff in the periodic check); `reason` 1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed (the check's result in the high 16 bits); the first 64 drops and then every 64th are logged
+[[log.kind]]
+id = 40
+name = "POOL_INVALID"
+args = ["entry", "reason", "token", "count", "-"]
+
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
 
