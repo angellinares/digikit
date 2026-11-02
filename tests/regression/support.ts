@@ -12,6 +12,7 @@ import {
 } from '@digi/test-support';
 import { portFile } from './runtime/device-data.ts';
 import { setTimingContext, timePhase, timingContext } from './timing.ts';
+import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
 
 /** An AggregateError whose message names its causes (Vitest prints only the message). */
 export function aggregate(errors: unknown[], what: string): AggregateError {
@@ -68,6 +69,7 @@ export async function startPatchedSession(
     context,
   );
   setTimingContext(session, context);
+  const watchdog = startNoProgressWatchdog(session);
   try {
     const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
     let closing: Promise<void> | undefined;
@@ -75,6 +77,7 @@ export async function startPatchedSession(
       session,
       dk,
       close() {
+        watchdog.stop();
         return (closing ??= timePhase(
           'session.shutdown',
           async () => {
@@ -86,6 +89,7 @@ export async function startPatchedSession(
       },
     };
   } catch (err) {
+    watchdog.stop();
     await timePhase('session.shutdown', () => session.close(), context);
     throw err;
   }
@@ -165,6 +169,7 @@ export function withReusablePatchedSession(
   scope = 'reused runtime',
 ): { readonly runtime: RuntimeCase; reload(baseline: RuntimeBaseline): Promise<RuntimeCase> } {
   let session: Session | undefined;
+  let watchdog: Watchdog | undefined;
   let baseline: RuntimeBaseline | undefined;
   let runtime: RuntimeCase | undefined;
   let invalidate: (() => void) | undefined;
@@ -242,9 +247,11 @@ export function withReusablePatchedSession(
       dsp: opts.dsp ?? 'sharc',
       runtime: { patchSet: opts.patchSet, reuse: true },
     });
+    watchdog = startNoProgressWatchdog(session);
     try {
       baseline = await withinRuntimeDeadline(deadline, () => lifecycle.prepareBaseline(session!));
     } catch (error) {
+      watchdog.stop();
       await session.close({ preserveDiagnostics: true });
       throw error;
     }
@@ -254,10 +261,14 @@ export function withReusablePatchedSession(
   });
   afterEach(async (context) => {
     await finishCurrentCase();
-    if (context.task.result?.state === 'fail') await session?.close({ preserveDiagnostics: true });
+    if (context.task.result?.state === 'fail') {
+      watchdog?.stop();
+      await session?.close({ preserveDiagnostics: true });
+    }
   });
   let checkedClose = false;
   afterAll(async () => {
+    watchdog?.stop();
     invalidate?.();
     if (!session || checkedClose) return;
     checkedClose = true;

@@ -370,9 +370,29 @@ def is_file_job(node: str) -> bool:
     return node.startswith(FILE_PREFIX)
 
 
-def want_cores(node: str, total: int) -> int:
-    """The cores NODE asks for in a budget of TOTAL (an emulator pool asks for at least one process)."""
-    if is_file_job(node) or node in ("runtime-fixture", "module-load"):
+COUPLED_ACCEPTANCE = ("runtime-fixture", "module-load")
+MAX_RUNTIME_JOBS = (
+    4  # Vitest workers (one coupled daemon each) of a runtime or conformance step
+)
+
+
+def runtime_jobs(files: int | None = None) -> int:
+    """The Vitest workers of a runtime or conformance step: DIGI_RUNTIME_JOBS, else min(MAX_RUNTIME_JOBS,
+    FILES) (FILES None: not known, so MAX_RUNTIME_JOBS)."""
+    env = os.environ.get("DIGI_RUNTIME_JOBS")
+    if env:
+        if not env.isdigit() or int(env) < 1:
+            raise SystemExit("verify: DIGI_RUNTIME_JOBS must be an integer >= 1")
+        return int(env)
+    return max(1, min(MAX_RUNTIME_JOBS, files or MAX_RUNTIME_JOBS))
+
+
+def want_cores(node: str, total: int, files: int | None = None) -> int:
+    """The cores NODE asks for in a budget of TOTAL (an emulator pool asks for at least one process).
+    FILES is the number of test files of a runtime or conformance step, when known."""
+    if node in COUPLED_ACCEPTANCE:
+        return min(EMULATOR_CORES * runtime_jobs(files), total)
+    if is_file_job(node):
         return min(EMULATOR_CORES, total)
     cores = max(1, round(WANT.get(node, DEFAULT_WANT) * total))
     if node in EMULATOR_POOLS:
@@ -387,6 +407,9 @@ class Budget:
     total: int
     max_steps: int = MAX_STEPS
     running: dict[str, int] = field(default_factory=dict)
+    files: dict[str, int] = field(
+        default_factory=dict
+    )  # test files of the steps that know them
 
     @property
     def free(self) -> int:
@@ -399,10 +422,13 @@ class Budget:
         on its whole ask and is not counted in MAX_STEPS."""
         if node in self.running:
             raise ValueError(f"{node} is running already")
-        want = want_cores(node, self.total)
+        want = want_cores(node, self.total, self.files.get(node))
         share = min(want, self.free)
-        if node in ("runtime-fixture", "module-load") and share < want:
-            return None  # one coupled daemon cannot run on half its reservation
+        coupled = node in COUPLED_ACCEPTANCE
+        if coupled:
+            if share < min(EMULATOR_CORES, want):
+                return None  # one coupled daemon cannot run on less than its cores
+            share -= share % EMULATOR_CORES if share >= EMULATOR_CORES else 0
         if is_file_job(node):
             if share < want:
                 return None
@@ -410,7 +436,7 @@ class Budget:
             steps = sum(1 for n in self.running if not is_file_job(n))
             if share < 1 or steps >= self.max_steps:
                 return None
-            if self.running and share < math.ceil(want / 2):
+            if self.running and not coupled and share < math.ceil(want / 2):
                 return None
         self.running[node] = share
         return share

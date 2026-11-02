@@ -1033,20 +1033,42 @@ class Gate:
         """Run one step, log its output and print its line."""
         start = time.monotonic()
         with benchlock.hold("shared", f"verify {name}"):
-            proc = subprocess.run(
+            returncode, text = stream_process(
                 cmd,
+                self.out / f"{name}.log",
                 cwd=cwd,
                 env=python_env(self.step_env(env)),
-                capture_output=True,
-                text=True,
             )
-        text = proc.stdout + proc.stderr
-        (self.out / f"{name}.log").write_text(text)
-        if proc.returncode:
-            problem: str | None = f"exit {proc.returncode}"
+        if returncode:
+            problem: str | None = f"exit {returncode}"
         else:
             problem = check(text) if check else None
         self.report(name, problem, time.monotonic() - start, text)
+
+
+def stream_process(
+    cmd: list[str], log: Path, cwd: Path, env: dict[str, str]
+) -> tuple[int, str]:
+    """Run CMD with stdout and stderr merged; each line goes to LOG as it arrives (so `tail` follows a
+    long step). The exit code and the whole output."""
+    lines: list[str] = []
+    with log.open("w") as out:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            lines.append(line)
+            out.write(line)
+            out.flush()
+        returncode = proc.wait()
+    return returncode, "".join(lines)
 
 
 def tier_jobs_budget(share: int | None = None) -> int:
@@ -1180,7 +1202,7 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
             / "report.json"
         )
 
-    def run_chunk(chunk: Chunk) -> tuple[subprocess.CompletedProcess[str], float]:
+    def run_chunk(chunk: Chunk) -> tuple[tuple[int, str], float]:
         report = report_of(chunk)
         report.parent.mkdir(parents=True, exist_ok=True)
         cmd = [
@@ -1195,12 +1217,11 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
         if dt2:
             cmd += ["--device", "dt2", "--dt2-card"]
         with benchlock.hold("shared", f"verify {name}"):
-            proc = subprocess.run(
+            proc = stream_process(
                 cmd,
+                report.parent / "run.log",
                 cwd=ROOT,
                 env=python_env(step_envs[chunk.label]),
-                capture_output=True,
-                text=True,
             )
         return proc, time.monotonic() - start
 
@@ -1217,15 +1238,12 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
             f"{count} chunks, {ended.get((label, path), 0.0):.0f} s"
         )
     gate.say(f"     budget {budget} jobs, {len(chunks)} chunks")
-    for chunk, (proc, _) in zip(chunks, done, strict=True):
+    for chunk, ((returncode, text), _) in zip(chunks, done, strict=True):
         report = report_of(chunk)
-        text = proc.stdout + proc.stderr
-        (report.parent / "run.log").write_text(text)
         # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
-        if proc.returncode not in (0, 2) or not report.exists():
+        if returncode not in (0, 2) or not report.exists():
             problem = (
-                f"{chunk.label} {chunk.path} chunk {chunk.index}: "
-                f"exit {proc.returncode}"
+                f"{chunk.label} {chunk.path} chunk {chunk.index}: exit {returncode}"
             )
             gate.report(name, problem, time.monotonic() - start, text)
             return
@@ -1865,7 +1883,12 @@ def run_step(gate: Gate, step: str) -> None:
             if binary := env.get("DIGI_EMUD_DT2"):
                 env["DIGI_EMUD"] = binary
             env["REGRESSION_JOBS"] = str(gate.share())
-        elif step == "module-load":
+        else:
+            # One coupled daemon (two cores) per Vitest worker.
+            env["REGRESSION_JOBS"] = str(
+                verify_budget.workers_for(step, gate.share()).emulators
+            )
+        if step == "module-load":
             modules = list(gate.conformance or verify_route.RUNTIME_UPLOADS)
             env["DIGI_CONFORMANCE_MODULES"] = ",".join(modules)
             if "digikit/debug" not in modules:
@@ -2001,7 +2024,14 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
             gate.out,
         ),
     )
-    budget = verify_budget.Budget(max(1, gate.budget))
+    budget = verify_budget.Budget(
+        max(1, gate.budget),
+        files={
+            step: len(selected)
+            for step, selected in getattr(gate, "acceptance", {}).items()
+            if selected and step in verify_budget.COUPLED_ACCEPTANCE
+        },
+    )
     done: set[str] = set()
     failed_nodes: set[str] = set()
     pending = list(nodes)
@@ -2054,7 +2084,8 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                 if not verify_budget.is_file_job(node):
                     print(
                         f"START {node}: {share} of {budget.total} cores "
-                        f"({verify_budget.describe(node, share)})",
+                        f"({verify_budget.describe(node, share)}), "
+                        f"log {gate.out / f'{node}.log'}",
                         flush=True,
                     )
                 running[pool.submit(work, node, share)] = (

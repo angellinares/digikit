@@ -433,6 +433,13 @@ every seventh scenario in routed `tier-quick`.
   `DIGI_JOBS`, `DIGI_TIER_JOBS`, `DIGI_PY_JOBS`, `DIGIKIT_JOBS`, `DIGI_CONFORM_JOBS`, `DIGI_PK_JOBS`,
   `DIGIKIT_PART_JOBS=1`, node `--test-concurrency`. A pool variable you set replaces the share.
   One coupled emulator process counts as 2 cores.
+- `runtime-fixture` and `module-load` run their files in parallel, one coupled daemon (2 cores) per
+  Vitest worker. The step asks for 2 cores x min(4, selected files) and starts on any whole number of
+  daemons; the gate sets `REGRESSION_JOBS` to the daemon count. `DIGI_RUNTIME_JOBS=N` forces the count
+  (1 is the serial run). A no-progress watchdog (`tests/regression/watchdog.ts`) closes a daemon whose
+  DSP frames, main loop hits and audio frames stay the same for `DIGI_NO_PROGRESS_MS` (default 120000)
+  of wall time, so the test fails at once; a paused daemon without a job is idle and not counted. Step
+  logs are live in the run dir (`out/runs/verify/<id>/<step>.log`); the START line names the path.
 - Every python-tests file is its own job of 2 cores, queued longest first by recent timings
   (`tools/devtools/verify_times.py`).
 - The seven audited devtools files in `changed_tests.FAST_PYTHON_TESTS` need no build barrier.

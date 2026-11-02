@@ -61,12 +61,14 @@ scenarios deleted; Python changes route by each test's `sources`; emulated-time 
 device tests in their module projects with inferred Nx `test-device` and `test-conformance` targets; one
 conformance suite over all 8 shipped modules; one Nx cache for all worktrees, guarded by `nx_input_audit`.
 
-1. Run the runtime step's files in parallel (one daemon per file, about 4 at once). Replace the remaining
-   wall-clock test timeouts with no-progress limits first. Measure with one paired timing.
-2. The gate writes the Vitest log to the run directory as it runs (today it appears only at the end).
+1. Done: runtime and conformance files run in parallel (`REGRESSION_JOBS`, `DIGI_RUNTIME_JOBS`).
+   Open: the no-progress watchdog (`DIGI_NO_PROGRESS_MS`) is off by default. Its `status` polls wake the daemon's
+   controller and move where a free-running coupled emulator stops (fx-reuse DN2: onset shift 192 > 128 with it,
+   pass without) [D]. Fix in the daemon: status requests must not change emulation, or a passive heartbeat file.
+2. Done: every gate step streams its log to `out/runs/verify/<id>/<step>.log`; the START line prints the path.
 3. Done: `live.ts` is split into devices, ready, waits, install, artifacts and protocol helpers (tests/regression/runtime).
-4. Build caching: per-module `pack` targets, then the daemon binary, each passing `nx_input_audit`;
-   device targets depend on them. Then cache device results, starting with conformance.
+4. Build caching: the daemon binary as a cached Nx target, its inputs proven against cargo's `digi-emud.d`
+   (module packs take under a second, so they stay uncached). Then cache device results, starting with conformance.
 5. Upload full tier once, then delete the matching Python upload scenarios. Fix open item 1, then delete
    upload-cut and upload-clear-cut. Port the remaining debug parts (item 3), then measure the Python tool
    graph again (finding 104).

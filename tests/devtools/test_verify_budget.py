@@ -519,18 +519,44 @@ def test_file_jobs_leave_the_cores_a_waiting_step_needs() -> None:
 
 
 @pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
-def test_coupled_acceptance_reserves_one_daemon(node: str) -> None:
-    assert verify_budget.want_cores(node, 16) == 2
+def test_coupled_acceptance_asks_for_a_daemon_per_file_up_to_four(node: str) -> None:
+    assert verify_budget.want_cores(node, 16) == 8
+    assert verify_budget.want_cores(node, 16, files=3) == 6
+    assert verify_budget.want_cores(node, 16, files=1) == 2
+    assert verify_budget.want_cores(node, 16, files=9) == 8
+    assert verify_budget.want_cores(node, 5) == 5
     assert verify_budget.want_cores(node, 1) == 1
 
 
 @pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
-def test_coupled_acceptance_waits_for_its_entire_reservation(node: str) -> None:
-    budget = verify_budget.Budget(total=4)
-    budget.running["web"] = 3
-    assert budget.admit(node) is None
+def test_runtime_jobs_variable_forces_the_daemon_count(
+    node: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DIGI_RUNTIME_JOBS", "1")
+    assert verify_budget.want_cores(node, 16) == 2
+    assert verify_budget.want_cores(node, 16, files=4) == 2
+    monkeypatch.setenv("DIGI_RUNTIME_JOBS", "3")
+    assert verify_budget.want_cores(node, 16, files=1) == 6
+
+
+@pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
+def test_coupled_acceptance_admits_whole_daemons(node: str) -> None:
+    budget = verify_budget.Budget(total=8)
+    budget.running["web"] = 7
+    assert budget.admit(node) is None  # one core is not a daemon
     budget.release("web")
-    assert budget.admit(node) == 2
+    budget.running["web"] = 5
+    assert budget.admit(node) == 2  # 3 free: one daemon
+    budget.release(node)
+    budget.release("web")
+    budget.running["web"] = 1
+    assert budget.admit(node) == 6  # 7 free: three daemons
+    budget.release(node)
+    budget.release("web")
+    assert budget.admit(node) == 8
+    budget.release(node)
+    budget.files[node] = 2
+    assert budget.admit(node) == 4
 
 
 @pytest.mark.parametrize("steps", [("web",), ("host", "web"), verify.STEPS])

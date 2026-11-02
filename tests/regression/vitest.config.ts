@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// Coupled daemons take two cores; admission belongs to the caller's shared budget.
-// Stock audio (stock, fx-*) is distinct from patched-daemon runtime and modules.
+// Each worker runs one coupled daemon (two cores); the gate sets REGRESSION_JOBS from its core share.
+// stock, runtime and conformance files run in parallel up to maxWorkers; fx-* stay serial.
 // Vitest 3.2 reads only singleFork per project; worker caps are root-level.
 const serial = { poolOptions: { forks: { singleFork: true } } };
 
@@ -21,7 +21,7 @@ export default defineConfig({
   root: at('.'),
   resolve: { alias },
   test: {
-    // Caps the shared pool; only stock runs files in parallel.
+    // Caps the shared pool: workers at once in stock, runtime and conformance.
     maxWorkers: Number(process.env.REGRESSION_JOBS ?? 4),
     // REGRESSION_JUNIT_FILE (verify's failed-unit record) names the report; REGRESSION_JUNIT=1 alone keeps the default.
     reporters:
@@ -53,7 +53,6 @@ export default defineConfig({
           name: 'runtime',
           include: ['emulator/**/*.test.ts', '../../modules/**/tests/**/*.device.test.ts'],
           pool: 'forks',
-          ...serial,
           testTimeout: 300_000,
           hookTimeout: 150_000,
         },
@@ -64,7 +63,6 @@ export default defineConfig({
           name: 'conformance',
           include: ['../conformance/**/*.device.test.ts'],
           pool: 'forks',
-          ...serial,
           testTimeout: 300_000,
           hookTimeout: 150_000,
         },
