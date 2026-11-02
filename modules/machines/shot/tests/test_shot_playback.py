@@ -27,6 +27,10 @@ TOKEN = 7
 DK_STEREO = 2
 
 
+STOCK_GAIN = np.uint32(0x3ECF1AA0).view(np.float32)  # DK_SAMPLE_STOCK_GAIN, 0.4045
+STOCK_STEP = np.uint32(0x3C55C8E7).view(np.float32)  # G / 31, the end ramp step
+
+
 def pcm(seed: int, n: int = FRAMES) -> np.ndarray:
     rng = np.random.default_rng(seed)
     return rng.integers(-32768, 32768, n).astype(np.int16)
@@ -108,14 +112,18 @@ class Shot:
 
 
 def model(plane, start, end, rate, reverse, blocks):
-    """The reader's output for one plane: split cursor, linear interpolation in float32, a zero tail after the end."""
+    """The reader's output for one plane: split cursor, linear interpolation in float32, a zero tail after the end.
+    Every block is multiplied by the stock gain G; the block in which the cursor passes the end by the running float32 gain G - k * G / 31."""
     out = np.zeros(32 * blocks, dtype=np.float32)
     pos = (end - 1 if reverse else start) * 65536
     done = start >= end
+    done_at = 0 if done else None
     for n in range(len(out)):
         index, frac = divmod(pos, 65536)
         if done or not start <= index < end:
             done = True
+            if done_at is None:
+                done_at = n
             break
         a = np.float32(plane[index] / 32768)
         b = np.float32(plane[min(index + 1, end - 1)] / 32768)
@@ -125,6 +133,13 @@ def model(plane, start, end, rate, reverse, blocks):
         pos += rate
         if not start * 65536 <= pos < end * 65536:
             done = True
+            done_at = n
+    ending = None if done_at is None else done_at // 32
+    for b in range(blocks):
+        gain, step = STOCK_GAIN, STOCK_STEP if b == ending else np.float32(0)
+        for k in range(32):
+            out[b * 32 + k] = np.float32(out[b * 32 + k] * gain)
+            gain = np.float32(gain - step)
     return out
 
 
@@ -174,7 +189,7 @@ def test_default_params_play_the_whole_sample_with_distinct_channels(device):
     gl, gr, wl, wr, (start, end, rate) = check(s)
     assert (start, end) == (0, FRAMES) and rate == 65536
     assert np.array_equal(gl, wl)
-    assert np.max(np.abs(wl)) > 0.1 and not np.array_equal(wl, wr)
+    assert np.max(np.abs(wl)) > 0.04 and not np.array_equal(wl, wr)
     if device == "dt2":
         assert np.array_equal(gr, wr)  # R reaches the odd voice's buffer
     # DN2: the adapter drops R for now (TODO: the shadow right-channel stages), only L is checked
@@ -351,7 +366,7 @@ def sine_plane(frames, period):
     "note", [60, 72, 48], ids=["unison", "octave-up", "octave-down"]
 )
 def test_a_pure_tone_keeps_its_level_at_any_pitch(note):
-    """The reader moves only the pitch: a sine of 16000/32768 keeps its amplitude one octave up or down (stock gain is not applied here)."""
+    """The pitch changes only the speed: a sine of 16000/32768 keeps its amplitude, scaled by the stock gain 0.4045, one octave up or down."""
     frames = 1600
     s = Shot("dt2", frames=frames)
     plane = sine_plane(
@@ -367,4 +382,4 @@ def test_a_pure_tone_keeps_its_level_at_any_pitch(note):
     basis = np.stack([np.sin(w * n), np.cos(w * n)], 1)
     c = np.linalg.lstsq(basis, got_l[64:576], rcond=None)[0]
     amp = np.hypot(*c)
-    assert abs(amp / (16000 / 32768) - 1) < 0.02, amp
+    assert abs(amp / (16000 / 32768 * float(STOCK_GAIN)) - 1) < 0.02, amp

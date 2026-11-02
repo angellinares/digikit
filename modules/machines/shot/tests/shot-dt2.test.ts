@@ -85,7 +85,7 @@ function onset(c: Capture, threshold = 0.01): number {
   return -1;
 }
 
-/** Amplitude of the sine of `hz` in x over frames [from, to) (Goertzel). A source sine of 14000/32768 reaches about 0.04 after the stock gain. */
+/** Amplitude of the sine of `hz` in x over frames [from, to) (Goertzel). A source sine of 14000/32768 reaches about 0.031 after the stock gain (0.4045 applied by SHOT). */
 function tone(x: Float32Array, hz: number, from: number, to: number): number {
   const w = (2 * Math.PI * hz) / RATE;
   let re = 0;
@@ -109,8 +109,8 @@ function peakTone(x: Float32Array, hz: number, from: number, to: number, spread 
   return best;
 }
 
-const AUDIBLE = 0.015;
-const ABSENT = 0.004;
+const AUDIBLE = 0.006; // 0.015 x 0.4045, the stock gain SHOT now applies
+const ABSENT = 0.0016; // 0.004 x 0.4045
 
 /** The louder channel holds each tone of `want` and none of `absent` over frames [from, to). Returns the measured levels. */
 function expectTones(name: string, c: Capture, from: number, to: number, want: number[], absent: number[]) {

@@ -84,7 +84,7 @@ export function onset(c: Capture, threshold = 0.01, from = c.pressedAt ?? 0): nu
   return -1;
 }
 
-/** Amplitude of the sine of `hz` in x over frames [from, to) (Goertzel). A source sine of 14000/32768 reaches about 0.076 after the stock gain. */
+/** Amplitude of the sine of `hz` in x over frames [from, to) (Goertzel). A source sine of 14000/32768 reaches about 0.031 after the stock gain (0.4045 applied by SHOT; 0.076 before it). */
 export function tone(x: Float32Array, hz: number, from: number, to: number): number {
   const w = (2 * Math.PI * hz) / RATE;
   let re = 0;
@@ -97,7 +97,7 @@ export function tone(x: Float32Array, hz: number, from: number, to: number): num
   return (2 * Math.hypot(re, im)) / Math.max(1, end - from);
 }
 
-export const AUDIBLE = 0.015;
+export const AUDIBLE = 0.006; // 0.015 x 0.4045, the stock gain SHOT now applies
 
 /** The pair is split: the left source (`left` Hz) is in L and the right source (`right` Hz) is in R, each with the other tone at least 20 dB
  * lower in the same channel. Returns the measured amplitudes. */

@@ -21,11 +21,12 @@
 // base_r = base_l: the same samples go to both outputs (centred). The sample plays once, then the voice ends.
 //
 // State per voice (18 words, all cleared at note-on): 0 .. 5 the cursor of the kernel (start, end, index, fraction, rate, done), 6 the epoch (token),
-// 7 base_l, 8 base_r, 11 the source rate in Hz, 12 the pool index, 13 reverse, 14 the adapter's return address (I13) across the kernel call,
+// 7 base_l, 8 base_r, 9 and 10 the gain pair [start, step] for the gain ramp (written every block), 11 the source rate in Hz, 12 the pool index, 13 reverse, 14 the adapter's return address (I13) across the kernel call,
 // 16 out, 17 out_r (the output pointer pair for the stereo kernel).
 
 #include "dk_machine.inc"
 #include "dsp/call.inc"
+#include "dsp/gain.inc"
 #include "dsp/sample.inc"
 #include "dsp/sample_pcm16.inc"
 #include "dsp/sample_pcm16_stereo.inc"
@@ -116,6 +117,7 @@ _shot_render_acquired:
     R4 = R12 + R0;
     R0 = 64;                              // word 16 is 64 bytes on
     R8 = R12 + R0;
+    R5 = DM(5, I3);                       // done before the block (R5 is kept by the kernel and the bank macros)
     DK_CALL(_dk_sample_pcm16_stereo_linear, _shot_after_stereo);
     MODIFY(I7, 1) (NW);
     DK_SAMPLE_BANK_LOCK(R13);
@@ -125,6 +127,29 @@ _shot_render_release_fault:
     DK_STRACK_POISON_COUNT(I1, R0);
 _shot_render_released:
     DK_SAMPLE_BANK_UNLOCK(R13);
+    // Level and end ramp (dsp/gain.inc). Every block gets the gain of the stock one-shot, DK_SAMPLE_STOCK_GAIN (0.4045, the DC gain of the
+    // stock interpolator). In the block where the voice becomes done, the gain also falls by G / 31 per sample, as the stock end ramp does
+    // (finding 06, stock sample reader), so the sample does not end with a click: one block long, later blocks are silent.
+    // The pair [start, step] is state words 9, 10. A voice that was already done before the block is silent: nothing to shape.
+    R5 = PASS R5;
+    IF NE JUMP _shot_render_faded;        // done before this block
+    R1 = DM(5, I3);                       // done now
+    R2 = 0x3c55c8e7;                      // G / 31 = 0.4045 / 31 = 0.013048387 (float32)
+    R0 = 0;                               // step 0: a constant gain
+    R1 = PASS R1;
+    IF NE R0 = PASS R2;                   // the ending block: the end ramp
+    R1 = DK_SAMPLE_STOCK_GAIN;
+    DM(9, I3) = R1;
+    DM(10, I3) = R0;
+    R4 = DM(DK_IN_W_OUT, I2);
+    R8 = DM(DK_IN_W_OUT_R, I2);
+    R12 = I3;
+    R0 = 36;                              // word 9 is 36 bytes on
+    R12 = R12 + R0;
+    MODIFY(I7, -1) (NW);                  // one word for DK_CALL's second store, as above
+    DK_CALL(_dk_gain_ramp_stereo, _shot_after_gain);
+    MODIFY(I7, 1) (NW);
+_shot_render_faded:
     R0 = DM(5, I3);                       // done: DK_DONE (1) or DK_OK (0)
     R1 = DK_STEREO;
     R0 = R0 OR R1;
@@ -247,7 +272,7 @@ _shot_note_return:
 .PKDATA _shot_ctl, 256;                  // 16 control sets of 4 words: closed, count, fault, reserved
 // dk_machine_desc: magic, contract (machine contract 1.2: stereo), n_params, voices, state_bytes, state_clear_bytes, max_cycles_block,
 // max_cycles_note_on, max_call_depth, stack_bytes. Cycles are instruction ceilings: the stereo kernel's 4,396 with its call, the rate (exp2 and
-// about 60 more) and the two masked scopes; note-on adds about 150 and one render.
+// about 60 more), the gain ramp (254 with its call and a dozen setup instructions) and the two masked scopes; note-on adds about 150 and one render.
 .GLOBAL _shot_desc;
 .VAR _shot_desc = DK_MAGIC;
 .VAR _shot_desc1 = 257;                  // DK_MACHINE_V1 | DK_MACHINE_STEREO (an expression is not accepted here)
@@ -255,7 +280,7 @@ _shot_note_return:
 .VAR _shot_desc3 = DK_MAX_VOICES;
 .VAR _shot_desc4 = 72;
 .VAR _shot_desc5 = 72;
-.VAR _shot_desc6 = 4800;
-.VAR _shot_desc7 = 5000;
+.VAR _shot_desc6 = 5100;
+.VAR _shot_desc7 = 5300;
 .VAR _shot_desc8 = 3;
 .VAR _shot_desc9 = 192;

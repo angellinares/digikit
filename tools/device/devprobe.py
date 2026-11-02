@@ -410,7 +410,7 @@ def run_device(args: argparse.Namespace, out: Path, steps: list[Step]) -> int:
     print(
         f"captured {captured:.2f} s, expected {expected:.2f} s, overflows {overflows}"
     )
-    if overflows > 0 or abs(captured - expected) > 0.01 * expected:
+    if overflows > 0 or abs(captured - expected) > max(0.1, 0.01 * expected):
         print("warning: capture length differs from wall time or overflowed")
 
     (out / "events.json").write_text(

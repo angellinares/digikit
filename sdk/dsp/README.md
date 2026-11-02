@@ -93,6 +93,7 @@ contains a tested bridge for both adapters; this fixture does not define a gener
 | `biquad.inc` | `_dk_biquad` | 5 | 203 | transposed direct form II; R12 = 7 words b0, b1, b2, a1, a2, s1, s2; in place allowed; reads only the input block |
 | `delay.inc` | `_dk_delay` | 4 | 175 | linearly interpolated delay, hardware circular ring; R12 = 4 words ring base, ring length L (>= 34), write offset w, delay d (float, 1 <= d <= L - 2); in place allowed; L1 and L2 are 0 on return |
 | `halfband.inc` | `_dk_halfband_down` | 20 per output (2 inputs) | 701 | 2x decimator, 23-tap half-band (Kaiser window), 64 inputs to 32 outputs; R12 = 2 words history ring base (32 words), offset (unchanged by a call); coefficient table 2 c_j in DM (`.SECTION/DM`); L1 is 0 on return |
+| `gain.inc` | `_dk_gain_ramp_stereo` | 7 | ceiling 254 including three argument loads | in-place gain ramp on two 32-float buffers; R12 = pair [start, step]; writes the reached gain back to pair[0] |
 | `sample.inc` | `_dk_sample_linear` | path-dependent | ceiling 1,380 including three argument loads | bounded mono float32 view; split cursor, clamped linear interpolation, zero tail and completion |
 | `sample_pcm16.inc` | `_dk_sample_pcm16_linear` | path-dependent | ceiling 2,148 including three argument loads | packed signed PCM16 view; same cursor, interpolation and completion |
 | `sample_pcm16_stereo.inc` | `_dk_sample_pcm16_stereo_linear` | path-dependent | ceiling 4,396 including three argument loads | two packed PCM16 planes, one shared cursor, separate 32-float outputs |
@@ -158,6 +159,16 @@ and mono reader's numerical bounds still apply. This is a correctness baseline,
 not a measured optimization or a stereo machine-output ABI. Assembled coverage is
 in `tests/patchkit/test_dsp_sample_stereo_kernels.py`; actual memory ownership and
 stereo routing through each device's stock processing remain adapter obligations.
+
+## Block gain ramp and stock level
+
+The sample kernels apply no gain and no fades. `gain.inc` provides `_dk_gain_ramp_stereo` (`dk_gain_ramp_stereo.` for C)
+for that: R4 and R8 address the left and right buffers (32 floats each), R12 addresses the pair `[start, step]`. Each
+sample of both buffers is multiplied by a running gain that starts at `start` and decreases by `step` after every sample.
+Step 0 is a constant gain; `start` to 0 is an end fade. The routine writes the gain it reached (`start - 32 * step`) back
+to `pair[0]`, so the next block can continue the ramp. It does not clamp; the caller chooses the step. It needs only
+`dsp/call.inc`. `sample.inc` defines `DK_SAMPLE_STOCK_GAIN` (float32 bits of 0.4045, the DC gain of the stock one-shot
+interpolator, -7.86 dB); use it as `start` to match the stock level.
 
 ## Raw packed PCM16 fetch
 
