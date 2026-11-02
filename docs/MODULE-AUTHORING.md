@@ -522,7 +522,7 @@ the DSP section and declares API 1.5; a module without a table declares 1.4. `sa
 `sample_pool_add(handle, path)` queues a PCM16 native file (mono or stereo, 48 kHz) from a service or UI callback and returns its pool index
 0 to 15: the first free entry, or the entry that already holds the path (`DK_SAMPLE_E_POOL` when all 16 are in use). The path is the
 root-relative path of a `DK_FILES_SAMPLES` listing row (`KICKS/K1`); the runtime adds the device root (DT2 `/`, DN2 `samples/`), and a DT2 path
-that already starts with `/` stays as it is. `sample_pool_clear(handle, index)` leaves a hole: indexes are stable, nothing moves. A machine picks
+that already starts with `/` stays as it is. `sample_pool_set(handle, index, path)` (API 1.6) loads a file into that entry and replaces what was there (the old file is released; a file another entry holds is shared). `sample_pool_clear(handle, index)` leaves a hole: indexes are stable, nothing moves. A machine picks
 the entry of a note in its DSP, usually from a parameter (SHOT: SMP, word 0, `word >> 8`); an entry that is not READY is silent.
 `sample_pool_path(handle, index, buf, cap)` (API 1.6) gives the path back in the same form, in every state but UNUSED. The pool list is kept per
 project. The runtime closes an entry's old generation before it publishes a new record. A module that only calls these entries has no table and
@@ -531,8 +531,8 @@ entry without checking `size` lists it in `[module] uses_api = ["sample_pool_pat
 
 A sampler machine can add the on-device sample picker with `<dk/sample_picker.h>`: list `../../../sdk/src/sample_picker.c` and
 `../../../sdk/src/picker_logic.c` in the `[[object]]` sources, call `dk_picker_init(api, handle)` in `dkm_init` and `dk_picker_fini()` in
-`dkm_fini`, and call `dk_picker_open_pool(current, pick, ctx)` from the click action of the SMP parameter. The picker shows `+ ADD` and the 16
-entries; `pick(ctx, index)` runs after a file was added or an entry chosen, and the machine sets its SMP value to `index`.
+`dkm_fini`, and call `dk_picker_open_pool(current, pick, ctx)` from the click action of the SMP parameter. The picker shows the 16
+slots; YES on a slot opens the file browser for that slot, and YES on a file loads it there (`sample_pool_set`). `pick(ctx, index)` runs after a file was loaded, and the machine sets its SMP value to `index`.
 `modules/machines/shot` is the example (design: [sample picker](design/sample-picker.md)). The picker needs no manifest field: it checks the Api
 `size` before it calls `sample_pool_path`, and without `core/ui` it does nothing.
 

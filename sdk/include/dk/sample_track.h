@@ -62,11 +62,13 @@ _Static_assert(sizeof(dk_sample_info) == 16, "dk_sample_info layout");
    index is the record index the DSP reads (a machine picks it with a parameter, for example SHOT's SMP):
      int32_t sample_tracks(uint32_t local_id);                 handle > 0, or error
      int32_t sample_pool_add(h, const uint8_t *path);          the pool index 0..15, or a negative error
+     int32_t sample_pool_set(h, index, const uint8_t *path);   (api 1.6) 0 or error: load into that index, replacing what was there
      int32_t sample_pool_clear(h, index);                      0 or error; index >= 16: E_CONTRACT
      int32_t sample_pool_status(h, index);                     sticky errors until the entry is added again or cleared
      int32_t sample_pool_info(h, index, uint8_t *out);         out is a dk_sample_info
      int32_t sample_pool_path(h, index, uint8_t *buf, uint32_t cap);   (api 1.6) length, or error
-   add returns the first UNUSED index. A file that is already in the pool (the same path) returns its index and loads nothing; if that
+   set loads the file into the given index (a filled entry is replaced in place, the old file is released; a file another entry holds is
+   shared); index >= 16: E_CONTRACT. add returns the first UNUSED index. A file that is already in the pool (the same path) returns its index and loads nothing; if that
    entry has a sticky error, the add selects it again. Indexes are stable: clear leaves a hole and never moves another entry, so a value
    saved in a sound or a p-lock keeps its meaning. A full pool returns DK_SAMPLE_E_POOL. An entry that is not READY (UNUSED, QUEUED,
    LOADING, an error) is silent in the DSP: note_on is denied and the voice ends. The pool is kept per project; a project change

@@ -1,6 +1,6 @@
 //! Per-module stereo sample pool of 16 entries (API 1.5, docs/design/sample-api-1.5.md). The state machine is
 //! `dkrt_sdk::sample_tracks` (device-neutral, host-tested); this file binds it to the runtime:
-//! the Api entries `sample_pool_add`, `_clear`, `_status`, `_info` and (1.6) `_path`, the optional `dkpool_*` backing symbols (plug-in point `dkrt_pool.h`, version 1)
+//! the Api entries `sample_pool_add`, `_set`, `_clear`, `_status`, `_info` and (1.6) `_path`, the optional `dkpool_*` backing symbols (plug-in point `dkrt_pool.h`, version 1)
 //! and the events adapters call (`dkrt_pool_done`, `dkrt_pool_lost`, `dkrt_project_changed`).
 //! No firmware address and no `cf.*` anchor is used here. Without the backing adapter every
 //! `sample_pool_add` returns E_CONTRACT.
@@ -490,6 +490,28 @@ pub unsafe fn tracks(local_id: u32) -> i32 {
     E_NOT_FOUND
 }
 
+/// The device-rooted copy of a module's root-relative path (a listing row) in `full`, and its length; or a negative error.
+unsafe fn rooted_path(path: *const u8, full: &mut [u8; dkrt_sdk::sample_tracks::PATH]) -> Result<usize, i32> {
+    if path.is_null() {
+        return Err(E_SEL_PATH);
+    }
+    let mut copy = [0u8; dkrt_sdk::sample_tracks::PATH];
+    let mut n = 0;
+    while n < copy.len() {
+        let v = *path.add(n);
+        if v == 0 {
+            break;
+        }
+        copy[n] = v;
+        n += 1;
+    }
+    if n == copy.len() {
+        return Err(E_SEL_PATH);
+    }
+    // The path is root-relative (a listing row); the runtime keeps and checks the device-rooted form. A DT2 path that starts with '/' stays.
+    rooted(root(), &copy[..n], full)
+}
+
 /// `sample_pool_add`: the pool index of the file (a new entry, or the one that already holds the path), or a negative error.
 pub unsafe fn pool_add(handle: u32, path: *const u8) -> i32 {
     if path.is_null() {
@@ -502,27 +524,36 @@ pub unsafe fn pool_add(handle: u32, path: *const u8) -> i32 {
         Ok(c) => c,
         Err(e) => return e,
     };
-    let mut copy = [0u8; dkrt_sdk::sample_tracks::PATH];
-    let mut n = 0;
-    while n < copy.len() {
-        let v = *path.add(n);
-        if v == 0 {
-            break;
-        }
-        copy[n] = v;
-        n += 1;
-    }
-    if n == copy.len() {
-        return E_SEL_PATH;
-    }
-    // The path is root-relative (a listing row); the runtime keeps and checks the device-rooted form. A DT2 path that starts with '/' stays.
     let mut full = [0u8; dkrt_sdk::sample_tracks::PATH];
-    let n = match rooted(root(), &copy[..n], &mut full) {
+    let n = match rooted_path(path, &mut full) {
         Ok(n) => n,
         Err(e) => return e,
     };
     let sr = irq_mask();
     let r = core_().pool_add(c, &full[..n]);
+    irq_restore(sr);
+    r
+}
+
+/// `sample_pool_set`: load the file into entry `index` (replacing what was there); 0 or a negative error.
+pub unsafe fn pool_set(handle: u32, index: u32, path: *const u8) -> i32 {
+    if path.is_null() {
+        return E_SEL_PATH;
+    }
+    if !pool_ok() {
+        return E_CONTRACT;
+    }
+    let c = match client(handle) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let mut full = [0u8; dkrt_sdk::sample_tracks::PATH];
+    let n = match rooted_path(path, &mut full) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    let sr = irq_mask();
+    let r = core_().pool_set(c, index as usize, &full[..n]);
     irq_restore(sr);
     r
 }

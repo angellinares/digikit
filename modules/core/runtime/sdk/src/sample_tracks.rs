@@ -362,6 +362,23 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         }
     }
 
+    /// Load a file into pool entry `index` (the module API's `sample_pool_set`): a filled entry is replaced in place (its old file loses
+    /// this entry's reference at the next `tick`, no other index moves), an empty one is filled. The same file in two entries is one load
+    /// (dedup in `step_bind`). `E_CONTRACT` for an index above `TRACKS - 1`. The load queues as `select` does.
+    pub fn pool_set(&mut self, client: usize, index: usize, path: &[u8]) -> i32 {
+        if index >= TRACKS {
+            return E_CONTRACT;
+        }
+        let n = path.iter().position(|b| *b == 0).unwrap_or(path.len());
+        if n == 0 || n >= PATH {
+            return E_SEL_PATH;
+        }
+        if !self.is_open(client) {
+            return E_NOT_FOUND;
+        }
+        self.select(client, index, &path[..n])
+    }
+
     /// Queue a load into the pool entry `track`. No file IO here: the path is copied and the preflight runs in `tick`. The module API has
     /// no select by index (`pool_add` picks it); this is what `pool_add` and the project reload use.
     pub fn select(&mut self, client: usize, track: usize, path: &[u8]) -> i32 {

@@ -687,6 +687,56 @@ fn pool_add_reports_a_full_pool_and_bad_arguments() {
 }
 
 #[test]
+fn pool_set_fills_an_empty_entry_at_the_given_index() {
+    let (mut c, mut e) = (core(), Fake::new());
+    e.add("a", id(100, 1), 500, 2);
+    assert_eq!(c.pool_set(0, 5, b"a"), 0);
+    assert_eq!(c.status(0, 4), UNUSED);
+    run(&mut c, &mut e, 6);
+    assert_eq!(c.status(0, 5), READY);
+    assert_eq!(c.path(0, 5), Ok(&b"a"[..]));
+    assert_eq!(c.entries_used(), 1);
+}
+
+#[test]
+fn pool_set_replaces_a_filled_entry_and_releases_the_old_one() {
+    let (mut c, mut e) = (core(), Fake::new());
+    e.add("a", id(100, 1), 500, 2);
+    e.add("b", id(101, 2), 500, 2);
+    assert_eq!(c.pool_set(0, 0, b"a"), 0);
+    run(&mut c, &mut e, 6);
+    assert_eq!((c.status(0, 0), c.entries_used()), (READY, 1));
+    assert_eq!(c.pool_set(0, 0, b"b"), 0);
+    run(&mut c, &mut e, 10);
+    assert_eq!(c.status(0, 0), READY);
+    assert_eq!(c.path(0, 0), Ok(&b"b"[..]));
+    assert_eq!(c.entries_used(), 1, "the old file is released");
+}
+
+#[test]
+fn pool_set_of_one_file_into_two_entries_loads_it_once() {
+    let (mut c, mut e) = (core(), Fake::new());
+    e.add("a", id(100, 1), 500, 2);
+    assert_eq!(c.pool_set(0, 0, b"a"), 0);
+    run(&mut c, &mut e, 6);
+    assert_eq!(c.pool_set(0, 3, b"a"), 0);
+    run(&mut c, &mut e, 6);
+    assert_eq!((c.status(0, 0), c.status(0, 3)), (READY, READY));
+    assert_eq!((e.loads, c.entries_used()), (1, 1));
+    assert_eq!(c.refs(0, 0), Some(2));
+}
+
+#[test]
+fn pool_set_reports_bad_arguments() {
+    let (mut c, mut e) = (core(), Fake::new());
+    e.add("a", id(100, 1), 500, 2);
+    assert_eq!(c.pool_set(0, TRACKS, b"a"), E_CONTRACT);
+    assert_eq!(c.pool_set(0, 0, b""), E_SEL_PATH);
+    assert_eq!(c.pool_set(1, 0, b"a"), E_NOT_FOUND, "client 1 is not open");
+    assert_eq!(c.status(0, 0), UNUSED);
+}
+
+#[test]
 fn the_pool_list_follows_a_project_change_with_its_holes() {
     let (mut c, mut e) = (core(), Fake::new());
     for (n, h) in [("a", 1u8), ("b", 2), ("c", 3), ("x", 4)] {

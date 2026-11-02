@@ -295,6 +295,8 @@ pub mod api {
         pub param_get: unsafe extern "C" fn(track: u32, word: u32) -> i32,
         /// (api 1.6) Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).
         pub param_set: unsafe extern "C" fn(track: u32, word: u32, raw: i32) -> i32,
+        /// (api 1.6) Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path.
+        pub sample_pool_set: unsafe extern "C" fn(handle: u32, index: u32, path: *const u8) -> i32,
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).

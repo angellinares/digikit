@@ -520,6 +520,7 @@ unsafe extern "C" fn api_sample_load(handle: u32, path: *const u8) -> i32 { samp
 unsafe extern "C" fn api_sample_status(handle: u32) -> i32 { sample::status(handle) }
 unsafe extern "C" fn api_sample_tracks(id: u32) -> i32 { tracks::tracks(id) }
 unsafe extern "C" fn api_sample_pool_add(handle: u32, path: *const u8) -> i32 { tracks::pool_add(handle, path) }
+unsafe extern "C" fn api_sample_pool_set(handle: u32, index: u32, path: *const u8) -> i32 { tracks::pool_set(handle, index, path) }
 unsafe extern "C" fn api_sample_pool_clear(handle: u32, track: u32) -> i32 { tracks::pool_clear(handle, track) }
 unsafe extern "C" fn api_sample_pool_status(handle: u32, track: u32) -> i32 { tracks::status(handle, track) }
 unsafe extern "C" fn api_sample_pool_info(handle: u32, track: u32, out: *mut u8) -> i32 { tracks::info(handle, track, out) }
@@ -567,6 +568,7 @@ pub static mut dkrt_api: Api = Api {
     sample_pool_path: api_sample_pool_path,
     param_get: api_param_get,
     param_set: api_param_set,
+    sample_pool_set: api_sample_pool_set,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {
