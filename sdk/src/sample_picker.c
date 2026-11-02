@@ -1,5 +1,5 @@
 /* The on-device sample picker (docs/design/sample-picker.md): the chooser (sdk/src/chooser.c) filled with the 16 entries of a sampler
-   machine's sample pool, plus the pool's side panel (CLEAR, INFO) and the INFO page of an entry. The pure functions are in picker_logic.c.
+   machine's sample pool as a slot list, plus the pool's side panel (CLEAR, INFO) and the INFO page of an entry. The pure functions are in picker_logic.c.
    Everything here runs in the UI task, so the statics need no lock. */
 #include <dk/chooser.h>
 #include <dk/files.h>
@@ -11,38 +11,37 @@
 
 static const dk_api *g_api;
 static uint32_t g_handle;
-static int g_has_path;
 static dk_ui_menu *g_info; /* the INFO page of a pool entry */
 static int g_info_at;
 static char g_path[PK_PATH]; /* scratch: a pool path */
 static dk_picker_pick_fn *g_pick;
 static void *g_pick_ctx;
 
-static int pool_row(void *ctx, int t, int is_current, char *text);
+static void pool_row(void *ctx, int t, int is_current, char *text);
 static int pool_busy(void *ctx);
-static int pool_add(void *ctx, const char *path);
+static int pool_fill(void *ctx, int slot, const char *path);
 static void pool_error(void *ctx, int code, char *text);
 static void pool_panel(void *ctx, dk_ui_menu *p, int t);
-static void pool_done(void *ctx, int index);
+static void pool_done(void *ctx, int slot);
 static void fill_info(dk_ui_menu *m, void *ctx);
 
 static const dk_ui_menu_desc info_desc = {.name = "SampleInfo", .title = "INFO", .flags = DK_UI_TEXT_PAGE, .fill = fill_info};
 
-/* "+ ADD", then the entries 0 to 15 as the SMP knob numbers them. */
-static const dk_chooser_desc pool_desc = {.title = "SAMPLES", .count = (int)TRACKS, .row = pool_row, .busy = pool_busy, .add = "+ ADD",
-                                          .root = DK_FILES_SAMPLES, .add_file = pool_add, .error_text = pool_error,
+/* The slots 0 to 15 as the SMP knob numbers them. */
+static const dk_chooser_desc pool_desc = {.title = "SAMPLES", .count = (int)TRACKS, .row = pool_row, .busy = pool_busy,
+                                          .root = DK_FILES_SAMPLES, .fill = pool_fill, .error_text = pool_error,
                                           .panel = pool_panel, .done = pool_done};
 
 static const char *entry_path(int t)
 {
     g_path[0] = 0;
-    if (g_has_path && g_api->sample_pool_path(g_handle, (uint32_t)t, (uint8_t *)g_path, sizeof g_path) < 0)
+    if (g_api->sample_pool_path(g_handle, (uint32_t)t, (uint8_t *)g_path, sizeof g_path) < 0)
         g_path[0] = 0;
     return g_path;
 }
 
-/* One entry: "NN NAME S 1.2s", the error text, or "-" for a hole (a hole is not chosen). */
-static int pool_row(void *ctx, int t, int is_current, char *text)
+/* One entry: "NN NAME S 1.2s", the error text, or "-" for an empty slot. */
+static void pool_row(void *ctx, int t, int is_current, char *text)
 {
     int st = g_api->sample_pool_status(g_handle, (uint32_t)t);
     dk_sample_info info = {0, 0, 0, 0};
@@ -50,7 +49,6 @@ static int pool_row(void *ctx, int t, int is_current, char *text)
     if (st == DK_SAMPLE_READY && g_api->sample_pool_info(g_handle, (uint32_t)t, (uint8_t *)&info) < 0)
         info.frames = info.rate = info.channels = 0;
     pk_pool_row(text, t, is_current, st, st == DK_SAMPLE_UNUSED ? "" : pk_leaf(entry_path(t)), info.frames, info.rate, info.channels);
-    return st == DK_SAMPLE_UNUSED ? DK_CHOOSER_HOLE : 0;
 }
 
 static int pool_busy(void *ctx)
@@ -65,11 +63,13 @@ static int pool_busy(void *ctx)
     return 0;
 }
 
-/* YES on a file: the pool takes it. The result is the pool index (the new one, or the entry that already holds the file). */
-static int pool_add(void *ctx, const char *path)
+/* YES on a file: the pool loads it into the slot (a filled slot is replaced). The result is the slot. */
+static int pool_fill(void *ctx, int slot, const char *path)
 {
+    int rc;
     (void)ctx;
-    return g_api->sample_pool_add(g_handle, (const uint8_t *)path);
+    rc = g_api->sample_pool_set(g_handle, (uint32_t)slot, (const uint8_t *)path);
+    return rc < 0 ? rc : slot;
 }
 
 static void pool_error(void *ctx, int code, char *text)
@@ -83,12 +83,12 @@ static void pool_error(void *ctx, int code, char *text)
     text[i] = 0;
 }
 
-/* The flow finished with a pool index: the machine sets its SMP value to it. */
-static void pool_done(void *ctx, int index)
+/* The flow finished with a loaded slot: the machine sets its SMP value to it. */
+static void pool_done(void *ctx, int slot)
 {
     (void)ctx;
     if (g_pick)
-        g_pick(g_pick_ctx, index);
+        g_pick(g_pick_ctx, slot);
 }
 
 static void clear_cb(void *ctx, int t)
@@ -105,7 +105,7 @@ static void info_cb(void *ctx, int t)
     dk_ui_open(g_info);
 }
 
-/* RIGHT on an entry: CLEAR (one press, no confirm) and INFO. */
+/* RIGHT on a slot: CLEAR (one press, no confirm) and INFO. */
 static void pool_panel(void *ctx, dk_ui_menu *p, int t)
 {
     (void)ctx;
@@ -162,15 +162,13 @@ static void fill_info(dk_ui_menu *m, void *ctx)
 int dk_picker_init(const dk_api *api, uint32_t handle)
 {
     g_handle = 0;
-    g_has_path = 0;
     g_api = api;
-    if (!api || !handle || api->size < offsetof(dk_api, sample_pool_info) + sizeof api->sample_pool_info || !api->sample_pool_add
-        || !api->sample_pool_clear || !api->sample_pool_status || !api->sample_pool_info)
+    if (!api || !handle || api->size < offsetof(dk_api, sample_pool_set) + sizeof api->sample_pool_set || !api->sample_pool_set
+        || !api->sample_pool_clear || !api->sample_pool_status || !api->sample_pool_info || !api->sample_pool_path)
         return -1;
     if (dk_chooser_init(api) < 0)
         return -1;
     g_handle = handle;
-    g_has_path = api->size >= offsetof(dk_api, sample_pool_path) + sizeof api->sample_pool_path && api->sample_pool_path;
     return 0;
 }
 

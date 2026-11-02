@@ -34,6 +34,7 @@ typedef struct dk_strack {        /* normal-word DM view */
 /* Api table additions (ColdFire side, resolved/used like sample_bank in init) */
 i32 sample_tracks(u32 local_id);                       /* init: handle > 0, or error */
 i32 sample_pool_add(u32 h, const u8 *path);            /* queue; copies path; the pool index 0..15 or <0 */
+i32 sample_pool_set(u32 h, u32 index, const u8 *path); /* (1.6) queue into that index, replacing it in place; 0 or <0 */
 i32 sample_pool_clear(u32 h, u32 index);               /* close generation, release refs, a hole; 0 or error */
 i32 sample_pool_status(u32 h, u32 index);              /* UNUSED/QUEUED/LOADING/READY or <0 (sticky until the entry is added again or cleared) */
 i32 sample_pool_info(u32 h, u32 index, dk_sample_info *out); /* frames, rate, channels, token; READY only */

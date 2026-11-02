@@ -1,14 +1,19 @@
-/* <dk/chooser.h>: a list to choose from, with an optional "+ ADD" row that opens a file browser (docs/design/ui-rules.md, "The chooser
-   component"). Shared source, not a runtime call: the module lists sdk/src/chooser.c and sdk/src/picker_logic.c in its [[object]] sources.
-   It sits on <dk/ui.h> (core/ui lists, the firmware font) and the read-only listing of <dk/files.h>.
+/* <dk/chooser.h>: the slot list, a chooser for a module with numbered slots that files are loaded into (docs/design/ui-rules.md, "The
+   chooser component"). Shared source, not a runtime call: the module lists sdk/src/chooser.c and sdk/src/picker_logic.c in its [[object]]
+   sources. It sits on <dk/ui.h> (core/ui lists, the firmware font) and the read-only listing of <dk/files.h>.
+
+   The flow (every slot is a row, an empty slot too):
+     list of slots   YES on a slot opens the file browser for that slot (a filled slot is replaced);
+                     NO closes the list; RIGHT opens the side panel (panel callback);
+     file browser    YES on a file calls fill(ctx, slot, path), then the whole flow closes and done(ctx, slot) runs;
+                     NO goes up one folder, out of the browser at the root, back to the list of slots.
 
    The rules it keeps (ui-rules.md):
-     - the list opens with the current entry marked and the cursor on it (the row callback draws the mark, dk_ui_select puts the cursor);
-     - YES on an entry or on a file finishes the flow: every level closes in one step, then done(ctx, result) runs, on the page the flow
-       started from;
-     - NO goes back one level and changes nothing (browser: up one folder, out of the browser at the root, then out of the list);
-     - RIGHT opens the side panel (panel callback); LEFT or NO closes it;
-     - an error never opens a dialog: add_file's error closes the flow and shows its text as a toast on the page; done is not called;
+     - the list opens with the current slot marked and the cursor on it (the row callback draws the mark, dk_ui_select puts the cursor);
+     - YES on a file finishes the flow: every level closes in one step, then done runs, on the page the flow started from;
+     - NO goes back one level and changes nothing;
+     - LEFT or NO closes the side panel;
+     - an error never opens a dialog: fill's error closes the flow and shows its text as a toast on the page; done is not called;
      - while busy() says rows change by themselves, the list refreshes on dk_ui_tick.
 
    One chooser exists at a time (statics); a second open reuses it. Its menus are built on the first open, so the title of the first open stays.
@@ -23,26 +28,25 @@
 #include <dk/api.h>
 #include <dk/ui.h>
 
-#define DK_CHOOSER_HOLE 1  /* row flag: shown, but YES does not choose it (an empty entry) */
-#define DK_CHOOSER_E_PATH (-40) /* the browser's path does not fit 255 bytes: add_file is not called, the flow fails with this code */
+#define DK_CHOOSER_E_PATH (-40) /* the browser's path does not fit 255 bytes: fill is not called, the flow fails with this code */
 
 typedef struct dk_chooser_desc {
     const char *title; /* list title */
-    int count;         /* entries 0 .. count-1 */
-    /* Writes the text of entry i (at most DK_UI_ROW - 1 characters) and returns DK_CHOOSER_* flags. is_current: the entry is the current one;
-       mark it in the text. */
-    int (*row)(void *ctx, int i, int is_current, char *text);
+    int count;         /* slots 0 .. count-1 */
+    /* Writes the text of slot i (at most DK_UI_ROW - 1 characters). is_current: the slot is the current one; mark it in the text. An
+       empty slot gets a row too (for example "-"). */
+    void (*row)(void *ctx, int i, int is_current, char *text);
     int (*busy)(void *ctx); /* optional: 1 while any row changes without a key (a load); the list then refreshes every 250 ms */
-    const char *add;        /* optional first row, for example "+ ADD": YES opens the browser */
     uint32_t root;          /* DK_FILES_* root of the browser */
-    /* YES on a file (root-relative path, at most 255 bytes). Returns the result for done (>= 0), or a negative error. Required with add. */
-    int (*add_file)(void *ctx, const char *path);
+    /* YES on a file (root-relative path, at most 255 bytes) for `slot`: the module loads it there. Returns the slot for done (>= 0), or a
+       negative error. Required. */
+    int (*fill)(void *ctx, int slot, const char *path);
     /* The text of an error (at most 31 characters) for the toast; optional (the default is "ERROR -n"). */
     void (*error_text)(void *ctx, int code, char *text);
-    /* RIGHT on entry i: add side-panel rows with dk_ui_action. Optional. */
-    void (*panel)(void *ctx, dk_ui_menu *panel, int entry);
-    /* The flow finished: the entry index, or what add_file returned. Every level is closed. Optional. */
-    void (*done)(void *ctx, int result);
+    /* RIGHT on slot i: add side-panel rows with dk_ui_action. Optional. */
+    void (*panel)(void *ctx, dk_ui_menu *panel, int slot);
+    /* The flow finished: the slot fill returned. Every level is closed. Optional. */
+    void (*done)(void *ctx, int slot);
     void *ctx;
 } dk_chooser_desc;
 

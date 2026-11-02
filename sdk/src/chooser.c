@@ -1,4 +1,4 @@
-/* The chooser component (sdk/include/dk/chooser.h, docs/design/ui-rules.md): a list, an optional folder browser and a file INFO page on
+/* The chooser component (sdk/include/dk/chooser.h, docs/design/ui-rules.md): a list of slots, a folder browser and a file INFO page on
    <dk/ui.h>. The logic that needs no API (sort, text, paths) is in picker_logic.c. Everything here runs in the UI task: the fill, action,
    panel, back and listing-notify callbacks and the timer, so the statics need no lock. Menus are built once and kept. */
 #include <dk/chooser.h>
@@ -17,9 +17,10 @@ static const dk_chooser_desc *g_d;
 static dk_ui_menu *g_list, *g_browser, *g_finfo;
 static dk_ui_menu_desc g_list_desc, g_browser_desc, g_finfo_desc;
 
-static int g_cur;              /* the entry marked in the list; -1 none */
+static int g_cur;              /* the slot marked in the list; -1 none */
+static int g_slot;             /* the slot the browser loads into */
 static char g_dir[PK_PATH];    /* the folder shown, root-relative, "" is the root */
-static char g_path[PK_PATH];   /* scratch: a path to add or show */
+static char g_path[PK_PATH];   /* scratch: a path to fill or show */
 static pk_row g_rows[PK_ROWS];
 static uint8_t g_idx[PK_ROWS]; /* g_rows in sort order */
 static int g_n, g_more, g_state, g_err;
@@ -95,7 +96,7 @@ static void close_all(void)
     stop_timer();
 }
 
-/* YES finished the flow with `result`. */
+/* The file was loaded: the flow ends with `result` (the slot). */
 static void finish(int result)
 {
     const dk_chooser_desc *d = g_d;
@@ -142,11 +143,6 @@ static void tick(void *ctx)
     }
 }
 
-static int add_rows(void)
-{
-    return g_d && g_d->add ? 1 : 0;
-}
-
 static void fill_list(dk_ui_menu *m, void *ctx)
 {
     char row[DK_UI_ROW];
@@ -154,10 +150,6 @@ static void fill_list(dk_ui_menu *m, void *ctx)
     (void)ctx;
     if (!g_d)
         return;
-    if (g_d->add) {
-        pk_cat(row, g_d->add, "");
-        dk_ui_text(m, row);
-    }
     for (i = 0; i < g_d->count; i++) {
         row[0] = 0;
         g_d->row(g_d->ctx, i, i == g_cur, row);
@@ -179,36 +171,26 @@ static void open_browser(void)
     dk_ui_open(g_browser);
 }
 
-/* YES on a row of a list that has a check callback comes here and is the only thing that happens: the stock handler of a list without
-   one closes the list after the row's action. The mark core/ui sets is taken off at once, so a row never shows a check. */
+/* YES on a slot opens the browser for it. The row has a check callback, so this is the only thing that happens: the stock handler of a list
+   without one closes the list after the row's action. The mark core/ui sets is taken off at once, so a row never shows a check. */
 static void check_list(void *ctx, int row, int on)
 {
-    char text[DK_UI_ROW];
-    int i = row - add_rows();
     (void)ctx;
     (void)on;
     dk_ui_check(g_list, row, 0);
-    if (!g_d)
+    if (!g_d || row < 0 || row >= g_d->count)
         return;
-    if (i < 0) {
-        open_browser();
-        return;
-    }
-    if (i >= g_d->count)
-        return;
-    text[0] = 0;
-    if (g_d->row(g_d->ctx, i, i == g_cur, text) & DK_CHOOSER_HOLE)
-        return;
-    finish(i);
+    g_slot = row;
+    open_browser();
 }
 
-/* RIGHT on an entry row (the add row has no panel). */
+/* RIGHT on a slot row. */
 static void panel_list(dk_ui_menu *p, int row, void *ctx)
 {
     (void)ctx;
-    if (!g_d || !g_d->panel || row < add_rows() || row - add_rows() >= g_d->count)
+    if (!g_d || !g_d->panel || row < 0 || row >= g_d->count)
         return;
-    g_d->panel(g_d->ctx, p, row - add_rows());
+    g_d->panel(g_d->ctx, p, row);
 }
 
 /* ---- the folder browser ---- */
@@ -331,7 +313,7 @@ static int back_browser(void *ctx)
     return 1;
 }
 
-/* YES on a file: the module adds it. A result finishes the flow (every level closes, done gets the result); an error closes the flow and
+/* YES on a file: the module loads it into the slot. A result finishes the flow (every level closes, done gets the slot); an error closes the flow and
    shows its text on the page. */
 static void select_file(int at)
 {
@@ -339,7 +321,7 @@ static void select_file(int at)
     if (pk_join(g_path, sizeof g_path, g_dir, g_rows[g_idx[at]].name) < 0)
         rc = DK_CHOOSER_E_PATH;
     else
-        rc = g_d->add_file(g_d->ctx, g_path);
+        rc = g_d->fill(g_d->ctx, g_slot, g_path);
     if (rc < 0)
         fail(rc);
     else
@@ -443,7 +425,7 @@ int dk_chooser_init(const dk_api *api)
 
 int dk_chooser_open(const dk_chooser_desc *d, int current)
 {
-    if (!g_api || !g_client || !d || !d->row || (d->add && !d->add_file) || !dk_ui_has(DK_UI_CAP_LIST) || !dk_ui_has(DK_UI_CAP_TEXT_PAGE))
+    if (!g_api || !g_client || !d || !d->row || !d->fill || !dk_ui_has(DK_UI_CAP_LIST) || !dk_ui_has(DK_UI_CAP_TEXT_PAGE))
         return -1;
     g_d = d;
     g_cur = current;
@@ -460,7 +442,7 @@ int dk_chooser_open(const dk_chooser_desc *d, int current)
     if (!g_list || !g_browser || !g_finfo)
         return -1;
     g_state = ST_IDLE;
-    dk_ui_select(g_list, current >= 0 && current < d->count ? current + add_rows() : 0);
+    dk_ui_select(g_list, current >= 0 && current < d->count ? current : 0);
     return dk_ui_open(g_list);
 }
 

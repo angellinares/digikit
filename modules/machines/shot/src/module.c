@@ -2,7 +2,7 @@
    parameters on one page. patchkit pack reads these records; the device never sees them. The DSP symbols are in src/dsp/shot.s;
    the parameter words are read there in this order: SMP, START, END, REVERSE, PITCH.
    The pool (16 entries) is the runtime's per-module table (<dk/sample_track.h>); SMP picks the entry of a note. The module only plays;
-   files are added to the pool by the picker (the SMP click list) through the runtime. */
+   files are loaded into pool slots by the picker (the SMP click list) through the runtime. */
 #include <dk/api.h>
 #include <dk/machine.h>
 #include <dk/params.h>
@@ -24,7 +24,7 @@ DK_PAGE(shot, "SPK", "SHOT", DK_KNOB(0), DK_KNOB(1), DK_KNOB(2), DK_KNOB(3), DK_
 DK_SAMPLE_TRACKS(0, _shot_rec, _shot_ctl);
 
 static const dk_api *g_api;
-static uint32_t pool; /* the runtime's handle of the 16-entry pool table; the picker adds and clears files with it */
+static uint32_t pool; /* the runtime's handle of the 16-entry pool table; the picker loads and clears files with it */
 static uint32_t click_track; /* the track of the page the SMP click came from: where the pick sets SMP */
 
 int32_t dkm_init(const dk_api *api)
@@ -65,8 +65,9 @@ static void smp_pick(void *ctx, int index)
 }
 
 /* Click on SMP (release without a turn on the SHOT page): the runtime's page hook calls this in the UI task with the track of the page.
-   It opens the pool list over the page (sdk/src/sample_picker.c) with the current SMP value marked and the cursor on it. YES on an entry
-   or on a file added with "+ ADD" sets SMP and returns to the page in one step (docs/design/ui-rules.md); NO goes back one level. */
+   It opens the slot list over the page (sdk/src/sample_picker.c) with the current SMP value marked and the cursor on it. YES on a slot opens
+   the file browser for it; YES on a file loads it into that slot, sets SMP to the slot and returns to the page in one step
+   (docs/design/ui-rules.md); NO goes back one level. */
 DK_PARAM_ACTION(shot, 0, shot_smp_click);
 void shot_smp_click(uint32_t track)
 {

@@ -20,7 +20,7 @@ static struct {
     int status[TRACKS];
     dk_sample_info info[TRACKS];
     char path[TRACKS][PK_PATH];
-    int add_result, adds, clears, last_index, path_calls, picks, last_pick;
+    int set_result, sets, clears, last_index, path_calls, picks, last_pick;
     char last_path[PK_PATH];
 } sm;
 
@@ -63,29 +63,20 @@ static int32_t f_cancel(uint32_t c, uint32_t t)
     fl.cancels++;
     return 0;
 }
-/* The fake runtime: the first UNUSED entry takes the path (add_result < 0 refuses), the same path again gives its entry. */
-static int32_t s_add(uint32_t h, const uint8_t *path)
+/* The fake runtime: the path goes into slot `index` (a filled slot is replaced; set_result < 0 refuses; index >= 16 is E_CONTRACT). */
+static int32_t s_set(uint32_t h, uint32_t index, const uint8_t *path)
 {
-    int t, free = -1;
     (void)h;
-    sm.adds++;
+    sm.sets++;
     strcpy(sm.last_path, (const char *)path);
-    if (sm.add_result < 0)
-        return sm.add_result;
-    for (t = 0; t < (int)TRACKS; t++) {
-        if (sm.status[t] != 0 && !strcmp(sm.path[t], (const char *)path)) {
-            sm.last_index = t;
-            return t;
-        }
-        if (sm.status[t] == 0 && free < 0)
-            free = t;
-    }
-    if (free < 0)
-        return DK_SAMPLE_E_POOL;
-    strcpy(sm.path[free], (const char *)path);
-    sm.status[free] = DK_SAMPLE_QUEUED;
-    sm.last_index = free;
-    return free;
+    sm.last_index = (int)index;
+    if (sm.set_result < 0)
+        return sm.set_result;
+    if (index >= TRACKS)
+        return DK_SAMPLE_E_CONTRACT;
+    strcpy(sm.path[index], (const char *)path);
+    sm.status[index] = DK_SAMPLE_QUEUED;
+    return 0;
 }
 static int32_t s_clear(uint32_t h, uint32_t t)
 {
@@ -126,30 +117,29 @@ static void on_pick(void *ctx, int index)
     sm.last_pick = index;
 }
 
-/* Clears every static of the picker and the fakes. with_path: the runtime has sample_pool_path (api 1.6). */
-void pf_reset(int with_path)
+/* Clears every static of the picker and the fakes. */
+void pf_reset(void)
 {
     memset(&fl, 0, sizeof fl);
     memset(&sm, 0, sizeof sm);
     memset(&api, 0, sizeof api);
     g_api = 0;
     g_handle = g_client = 0;
-    g_has_path = 0;
     g_list = g_browser = g_finfo = 0;
     g_info = 0;
     g_d = 0;
-    g_cur = g_n = g_more = g_state = g_err = g_ticking = g_info_at = 0;
+    g_cur = g_slot = g_n = g_more = g_state = g_err = g_ticking = g_info_at = 0;
     g_ticket = 0;
     g_dir[0] = 0;
     g_pick = 0;
     g_pick_ctx = 0;
     api.version = 1;
-    api.size = with_path ? sizeof(dk_api) : offsetof(dk_api, sample_pool_path);
+    api.size = sizeof(dk_api);
     api.files_client = f_client;
     api.files_list = f_list;
     api.files_poll = f_poll;
     api.files_cancel = f_cancel;
-    api.sample_pool_add = s_add;
+    api.sample_pool_set = s_set;
     api.sample_pool_clear = s_clear;
     api.sample_pool_status = s_status;
     api.sample_pool_info = s_info;
@@ -157,6 +147,7 @@ void pf_reset(int with_path)
 }
 
 void pf_short_api(void) { api.size = offsetof(dk_api, files_client); }
+void pf_api_without_set(void) { api.size = offsetof(dk_api, sample_pool_set); }
 int pf_init(uint32_t handle) { return dk_picker_init(&api, handle); }
 void pf_open_pool(int current, int with_pick) { dk_picker_open_pool(current, with_pick ? on_pick : 0, 0); }
 void pf_fini(void) { dk_picker_fini(); }
@@ -199,37 +190,37 @@ void pf_track(int t, int status, const char *path, uint32_t frames, uint32_t rat
     sm.info[t].channels = channels;
 }
 void pf_status(int t, int status) { sm.status[t] = status; }
-void pf_add_result(int rc) { sm.add_result = rc; }
-int pf_adds(void) { return sm.adds; }
+void pf_set_result(int rc) { sm.set_result = rc; }
+int pf_sets(void) { return sm.sets; }
 int pf_clears(void) { return sm.clears; }
 int pf_last_index(void) { return sm.last_index; }
 int pf_picks(void) { return sm.picks; }
 int pf_last_pick(void) { return sm.last_pick; }
 const char *pf_last_path(void) { return sm.last_path; }
 
-/* ---- a toy chooser: five entries (entry 2 is a hole), to test the component without the sample pool ---- */
+/* ---- a toy chooser: five slots, to test the component without the sample pool ---- */
 static struct {
-    int done_calls, last_done, add_calls, panel_entry, with_text;
-    int add_rc;
-    char last_add[PK_PATH];
+    int done_calls, last_done, fill_calls, last_slot, panel_entry, with_text;
+    int fill_rc; /* < 0: fill fails with it; otherwise it returns the slot */
+    char last_fill[PK_PATH];
     dk_chooser_desc d;
 } cf;
 
-static int toy_row(void *ctx, int i, int is_current, char *text)
+static void toy_row(void *ctx, int i, int is_current, char *text)
 {
     (void)ctx;
     text[0] = is_current ? '>' : ' ';
     text[1] = 'r';
     text[2] = (char)('0' + i);
     text[3] = 0;
-    return i == 2 ? DK_CHOOSER_HOLE : 0;
 }
-static int toy_add(void *ctx, const char *path)
+static int toy_fill(void *ctx, int slot, const char *path)
 {
     (void)ctx;
-    cf.add_calls++;
-    strcpy(cf.last_add, path);
-    return cf.add_rc;
+    cf.fill_calls++;
+    cf.last_slot = slot;
+    strcpy(cf.last_fill, path);
+    return cf.fill_rc < 0 ? cf.fill_rc : slot;
 }
 static void toy_error(void *ctx, int code, char *text)
 {
@@ -252,18 +243,24 @@ static void toy_done(void *ctx, int result)
 }
 
 int cf_init(void) { return dk_chooser_init(&api); }
-int cf_open(int current, int with_add, int with_text)
+int cf_open(int current, int with_text)
 {
     memset(&cf, 0, sizeof cf);
     cf.with_text = with_text;
-    cf.add_rc = 42;
-    cf.d = (dk_chooser_desc){.title = "TOY", .count = 5, .row = toy_row, .add = with_add ? "+ NEW" : 0, .root = DK_FILES_SAMPLES,
-                             .add_file = toy_add, .error_text = toy_error, .panel = toy_panel, .done = toy_done};
+    cf.d = (dk_chooser_desc){.title = "TOY", .count = 5, .row = toy_row, .root = DK_FILES_SAMPLES, .fill = toy_fill,
+                             .error_text = toy_error, .panel = toy_panel, .done = toy_done};
     return dk_chooser_open(&cf.d, current);
 }
-void cf_add_result(int rc) { cf.add_rc = rc; }
+int cf_open_without_fill(void)
+{
+    memset(&cf, 0, sizeof cf);
+    cf.d = (dk_chooser_desc){.title = "TOY", .count = 5, .row = toy_row, .root = DK_FILES_SAMPLES};
+    return dk_chooser_open(&cf.d, 0);
+}
+void cf_fill_result(int rc) { cf.fill_rc = rc; }
 int cf_done_calls(void) { return cf.done_calls; }
 int cf_last_done(void) { return cf.last_done; }
-int cf_add_calls(void) { return cf.add_calls; }
-const char *cf_last_add(void) { return cf.last_add; }
+int cf_fill_calls(void) { return cf.fill_calls; }
+int cf_last_slot(void) { return cf.last_slot; }
+const char *cf_last_fill(void) { return cf.last_fill; }
 int cf_panel_entry(void) { return cf.panel_entry; }

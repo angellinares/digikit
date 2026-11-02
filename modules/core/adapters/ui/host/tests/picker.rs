@@ -5,10 +5,11 @@ use dkui_host::*;
 use std::ffi::{c_char, c_int, CStr, CString};
 
 extern "C" {
-    fn pf_reset(with_path: c_int);
+    fn pf_reset();
     fn pf_init(handle: u32) -> c_int;
     fn pf_open_pool(current: c_int, with_pick: c_int);
     fn pf_fini();
+    fn pf_api_without_set();
     fn pf_add(path: *const c_char, dir: c_int, size: u32);
     fn pf_finish();
     fn pf_partial();
@@ -21,20 +22,22 @@ extern "C" {
     fn pf_client_calls() -> c_int;
     fn pf_track(t: c_int, status: c_int, path: *const c_char, frames: u32, rate: u32, ch: u32);
     fn pf_status(t: c_int, status: c_int);
-    fn pf_add_result(rc: c_int);
-    fn pf_adds() -> c_int;
+    fn pf_set_result(rc: c_int);
+    fn pf_sets() -> c_int;
     fn pf_clears() -> c_int;
     fn pf_last_index() -> c_int;
     fn pf_picks() -> c_int;
     fn pf_last_pick() -> c_int;
     fn pf_last_path() -> *const c_char;
     fn cf_init() -> c_int;
-    fn cf_open(current: c_int, with_add: c_int, with_text: c_int) -> c_int;
-    fn cf_add_result(rc: c_int);
+    fn cf_open(current: c_int, with_text: c_int) -> c_int;
+    fn cf_open_without_fill() -> c_int;
+    fn cf_fill_result(rc: c_int);
     fn cf_done_calls() -> c_int;
     fn cf_last_done() -> c_int;
-    fn cf_add_calls() -> c_int;
-    fn cf_last_add() -> *const c_char;
+    fn cf_fill_calls() -> c_int;
+    fn cf_last_slot() -> c_int;
+    fn cf_last_fill() -> *const c_char;
     fn cf_panel_entry() -> c_int;
 
     fn pk_trunc(out: *mut c_char, name: *const c_char, max: c_int);
@@ -92,16 +95,16 @@ fn list_dir() -> String {
 fn rows() -> Vec<String> {
     render().iter().map(|r| r[2..].to_string()).collect()
 }
-/// The row of pool entry `i` in the list (row 0 is + ADD).
+/// The row of pool slot `i` in the list.
 fn entry(i: usize) -> String {
-    rows()[1 + i].clone()
+    rows()[i].clone()
 }
 
 /// A session with the picker started and the pool list open (what a click on SMP does), the SMP value at `current`.
 fn start_at(current: i32) -> std::sync::MutexGuard<'static, ()> {
     let g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         assert_eq!(pf_init(1), 0);
         pf_open_pool(current, 1);
     }
@@ -112,9 +115,13 @@ fn start() -> std::sync::MutexGuard<'static, ()> {
     start_at(0)
 }
 
-/// YES on + ADD: the browser opens and lists `entries` (path, is_dir, size) to the end.
+/// YES on slot 0: the browser opens and lists `entries` (path, is_dir, size) to the end.
 fn browse(entries: &[(&str, bool, u32)]) {
-    press_yes(0);
+    browse_slot(0, entries);
+}
+/// YES on slot `slot`: the browser opens for it and lists `entries` to the end.
+fn browse_slot(slot: usize, entries: &[(&str, bool, u32)]) {
+    press_yes(slot);
     for (p, d, s) in entries {
         add(p, *d, *s);
     }
@@ -125,13 +132,13 @@ fn browse(entries: &[(&str, bool, u32)]) {
 fn nothing_opens_without_a_handle_a_client_or_lists() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         assert_eq!(pf_init(0), -1, "no pool handle");
         pf_open_pool(0, 1);
     }
     assert_eq!(depth(), 0);
     unsafe {
-        pf_reset(1);
+        pf_reset();
         assert_eq!(pf_init(1), 0);
         set_cap(CAP_LIST, false);
         pf_open_pool(0, 1);
@@ -143,7 +150,7 @@ fn nothing_opens_without_a_handle_a_client_or_lists() {
 fn a_runtime_without_the_listing_api_cannot_open_the_pool() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         // an Api table that ends before files_client (API 1.3)
         extern "C" {
             fn pf_short_api();
@@ -164,10 +171,10 @@ fn the_listing_client_is_acquired_once_in_init() {
 }
 
 #[test]
-fn the_pool_list_is_add_then_sixteen_entries_numbered_like_the_knob() {
+fn the_pool_list_is_sixteen_slots_numbered_like_the_knob() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         track(0, READY, "KICKS/KICK808", 57600, 48000, 2);
         track(1, READY, "SNARE_A", 19200, 48000, 1);
         track(2, LOADING, "LONG/PATH/LOOP", 0, 0, 0);
@@ -178,28 +185,28 @@ fn the_pool_list_is_add_then_sixteen_entries_numbered_like_the_knob() {
     }
     assert_eq!(title(), "SAMPLES");
     let r = rows();
-    assert_eq!(r.len(), 17);
-    assert_eq!(r[0], "+ ADD");
-    assert_eq!(r[1], "00 KICK808 S 1.2s");
-    assert_eq!(r[2], "01>SNARE_A M 0.4s", "the SMP value is marked");
-    assert_eq!(r[3], "02 LOOP LOADING...");
-    assert_eq!(r[4], "03 X QUEUED");
-    assert_eq!(r[5], "04 BIGONE !POOL FULL");
-    assert_eq!(r[6], "05 -");
-    assert_eq!(r[16], "15 -");
+    assert_eq!(r.len(), 16);
+    assert_eq!(r[0], "00 KICK808 S 1.2s");
+    assert_eq!(r[1], "01>SNARE_A M 0.4s", "the SMP value is marked");
+    assert_eq!(r[2], "02 LOOP LOADING...");
+    assert_eq!(r[3], "03 X QUEUED");
+    assert_eq!(r[4], "04 BIGONE !POOL FULL");
+    assert_eq!(r[5], "05 -");
+    assert_eq!(r[15], "15 -");
+    assert_eq!(cursor(), 1, "the cursor starts on the current slot");
     assert!(r.iter().all(|x| x.len() <= 23));
 }
 
 #[test]
-fn without_sample_pool_path_the_rows_show_no_names() {
+fn a_runtime_without_sample_pool_set_cannot_open_the_pool() {
     let _g = session();
     unsafe {
-        pf_reset(0);
-        track(0, READY, "KICKS/KICK808", 48000, 48000, 2);
-        pf_init(1);
+        pf_reset();
+        pf_api_without_set();
+        assert_eq!(pf_init(1), -1);
         pf_open_pool(0, 1);
     }
-    assert_eq!(entry(0), "00>S 1.0s");
+    assert_eq!(depth(), 0);
 }
 
 #[test]
@@ -411,46 +418,50 @@ fn a_new_folder_cancels_the_listing_that_still_runs() {
 }
 
 #[test]
-fn yes_on_a_file_adds_the_full_path_picks_its_index_and_closes_the_whole_flow() {
+fn yes_on_a_file_loads_it_into_the_slot_picks_the_slot_and_closes_the_whole_flow() {
     let _g = start_at(5);
-    browse(&[("DRUMS", true, 0)]);
+    browse_slot(5, &[("DRUMS", true, 0)]);
     press_yes(1);
     add("KICK_01", false, 90 * 1024);
     unsafe { pf_finish() };
     press_yes(1);
-    assert_eq!(unsafe { pf_adds() }, 1);
+    assert_eq!(unsafe { pf_sets() }, 1);
     assert_eq!(last_path(), "DRUMS/KICK_01");
-    assert_eq!(unsafe { pf_last_index() }, 0, "the first free entry");
+    assert_eq!(unsafe { pf_last_index() }, 5, "the slot the click was on, not the first free one");
     assert_eq!(
         (unsafe { pf_picks() }, unsafe { pf_last_pick() }),
-        (1, 0),
-        "the index goes to the machine"
+        (1, 5),
+        "the slot goes to the machine"
     );
     assert_eq!(depth(), 0, "browser and list closed in one step: back on the page");
     assert!(toasts().is_empty());
-    // the next open marks the new entry when the machine passes the new SMP value
-    unsafe { pf_open_pool(0, 1) };
-    assert_eq!(entry(0), "00>KICK_01 QUEUED");
+    // the next open marks the slot when the machine passes the new SMP value
+    unsafe { pf_open_pool(5, 1) };
+    assert_eq!(entry(5), "05>KICK_01 QUEUED");
+    assert_eq!(entry(0), "00 -");
     assert!(render().iter().all(|r| r.starts_with("  ")), "no row keeps the check mark");
 }
 
 #[test]
-fn a_second_file_takes_the_next_index_and_the_same_file_keeps_its_own() {
+fn each_slot_takes_its_own_file_and_a_filled_slot_is_replaced() {
     let _g = start();
-    browse(&[("A", false, 1024), ("B", false, 1024)]);
+    browse_slot(0, &[("A", false, 1024), ("B", false, 1024)]);
     press_yes(1);
     assert_eq!(unsafe { pf_last_pick() }, 0);
     unsafe { pf_open_pool(0, 1) };
-    browse(&[("A", false, 1024), ("B", false, 1024)]);
+    browse_slot(1, &[("A", false, 1024), ("B", false, 1024)]);
     press_yes(2);
     assert_eq!(unsafe { pf_last_pick() }, 1);
     unsafe { pf_open_pool(1, 1) };
     assert_eq!((entry(0).as_str(), entry(1).as_str()), ("00 A QUEUED", "01>B QUEUED"));
-    browse(&[("A", false, 1024), ("B", false, 1024)]);
-    press_yes(1);
-    assert_eq!(unsafe { pf_last_pick() }, 0, "A is already entry 0");
-    assert_eq!(unsafe { pf_picks() }, 3);
+    // YES on the filled slot 0 opens the browser again; the file replaces A
+    browse_slot(0, &[("A", false, 1024), ("B", false, 1024)]);
+    assert_eq!(depth(), 2);
+    press_yes(2);
+    assert_eq!((unsafe { pf_last_index() }, unsafe { pf_last_pick() }), (0, 0));
+    assert_eq!((unsafe { pf_sets() }, unsafe { pf_picks() }), (3, 3));
     unsafe { pf_open_pool(0, 1) };
+    assert_eq!((entry(0).as_str(), entry(1).as_str()), ("00>B QUEUED", "01 B QUEUED"));
     assert_eq!(entry(2), "02 -");
 }
 
@@ -459,7 +470,7 @@ fn browsing_alone_adds_nothing_and_picks_nothing() {
     let _g = start();
     browse(&[("A", false, 1024)]);
     press_no();
-    assert_eq!(unsafe { pf_adds() }, 0);
+    assert_eq!(unsafe { pf_sets() }, 0);
     assert_eq!(unsafe { pf_clears() }, 0);
     assert_eq!(unsafe { pf_picks() }, 0);
 }
@@ -474,7 +485,7 @@ fn a_folder_has_no_side_panel_and_a_file_has_add_and_info() {
     press_right(2);
     assert_eq!(render(), vec!["SELECT", "INFO"]);
     choose_panel_row(0);
-    assert_eq!((unsafe { pf_adds() }, last_path().as_str()), (1, "S1"));
+    assert_eq!((unsafe { pf_sets() }, last_path().as_str()), (1, "S1"));
     assert_eq!((depth(), unsafe { pf_picks() }), (0, 1));
 
     unsafe { pf_open_pool(0, 1) };
@@ -500,7 +511,7 @@ fn an_add_at_the_path_limit_is_refused_by_the_chooser_without_a_call() {
     add(&"f".repeat(20), false, 1024);
     unsafe { pf_finish() };
     press_yes(1);
-    assert_eq!(unsafe { pf_adds() }, 0);
+    assert_eq!(unsafe { pf_sets() }, 0);
     assert_eq!(unsafe { pf_picks() }, 0);
     assert_eq!(depth(), 0, "the flow is closed");
     assert_eq!(toasts(), vec!["PATH TOO LONG OR BAD"]);
@@ -510,7 +521,7 @@ fn an_add_at_the_path_limit_is_refused_by_the_chooser_without_a_call() {
     add(&"g".repeat(15), false, 1024);
     unsafe { pf_finish() };
     press_yes(1);
-    assert_eq!(unsafe { pf_adds() }, 1);
+    assert_eq!(unsafe { pf_sets() }, 1);
     assert_eq!(last_path().len(), 255);
     assert_eq!(depth(), 0);
 }
@@ -519,26 +530,25 @@ fn an_add_at_the_path_limit_is_refused_by_the_chooser_without_a_call() {
 fn a_refusal_closes_the_flow_shows_the_text_on_the_page_and_picks_nothing() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         track(0, READY, "OLD", 48000, 48000, 2);
         pf_init(1);
         pf_open_pool(0, 1);
-        pf_add_result(E_POOL);
+        pf_set_result(E_SEL_PATH);
     }
     browse(&[("NEW", false, 1024)]);
     press_yes(1);
-    assert_eq!(unsafe { pf_adds() }, 1);
+    assert_eq!(unsafe { pf_sets() }, 1);
     assert_eq!(depth(), 0, "back on the page");
     assert!(dialog().is_none(), "no dialog");
-    assert_eq!(toasts(), vec!["POOL FULL: CLEAR AN ENTRY"]);
+    assert_eq!(toasts(), vec!["PATH TOO LONG OR BAD"]);
     assert_eq!(unsafe { pf_picks() }, 0);
-    // the next list shows the old entry unchanged and a plain + ADD row
+    // the next list shows the old slot unchanged
     unsafe { pf_open_pool(0, 1) };
-    assert_eq!(rows()[0], "+ ADD");
     assert_eq!(entry(0), "00>OLD S 1.0s");
-    // the next add that works picks its index
-    unsafe { pf_add_result(0) };
-    browse(&[("NEW", false, 1024)]);
+    // the next load that works picks its slot
+    unsafe { pf_set_result(0) };
+    browse_slot(1, &[("NEW", false, 1024)]);
     press_yes(1);
     assert_eq!(unsafe { pf_last_pick() }, 1);
     assert_eq!(depth(), 0);
@@ -547,7 +557,7 @@ fn a_refusal_closes_the_flow_shows_the_text_on_the_page_and_picks_nothing() {
 #[test]
 fn a_device_without_a_pool_says_so_on_the_page() {
     let _g = start();
-    unsafe { pf_add_result(E_CONTRACT) };
+    unsafe { pf_set_result(E_CONTRACT) };
     browse(&[("A", false, 1024)]);
     press_yes(1);
     assert_eq!(toasts(), vec!["NO SAMPLE POOL ON THIS DEVICE"]);
@@ -555,19 +565,22 @@ fn a_device_without_a_pool_says_so_on_the_page() {
 }
 
 #[test]
-fn yes_on_an_entry_picks_it_and_closes_the_list_but_not_on_a_hole() {
+fn yes_on_a_slot_opens_the_browser_empty_or_filled_and_picks_nothing_yet() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         track(3, READY, "A", 100, 48000, 1);
         pf_init(1);
         pf_open_pool(0, 1);
     }
-    press_yes(1 + 7); // a hole
-    assert_eq!((unsafe { pf_picks() }, depth()), (0, 1));
-    press_yes(1 + 3);
-    assert_eq!((unsafe { pf_picks() }, unsafe { pf_last_pick() }), (1, 3));
-    assert_eq!(depth(), 0, "back to the machine page");
+    press_yes(7); // empty
+    assert_eq!((unsafe { pf_picks() }, depth(), title().as_str()), (0, 2, "SAMPLES"));
+    assert_eq!(rows()[0], "..  /");
+    press_no(); // back to the slot list
+    assert_eq!(depth(), 1);
+    press_yes(3); // filled: replace
+    assert_eq!((unsafe { pf_picks() }, depth()), (0, 2));
+    assert_eq!(unsafe { pf_sets() }, 0);
     assert!(toasts().is_empty());
 }
 
@@ -579,16 +592,16 @@ fn no_in_the_list_returns_to_the_page_without_a_pick() {
 }
 
 #[test]
-fn a_click_without_a_pick_callback_still_lists_and_adds() {
+fn a_click_without_a_pick_callback_still_lists_and_loads() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         pf_init(1);
         pf_open_pool(-1, 0);
     }
     browse(&[("A", false, 1024)]);
     press_yes(1);
-    assert_eq!(unsafe { pf_adds() }, 1);
+    assert_eq!(unsafe { pf_sets() }, 1);
     assert_eq!(unsafe { pf_picks() }, 0);
     assert_eq!(depth(), 0, "the flow still closes");
     unsafe { pf_open_pool(0, 0) };
@@ -596,23 +609,10 @@ fn a_click_without_a_pick_callback_still_lists_and_adds() {
 }
 
 #[test]
-fn yes_on_an_entry_without_a_pick_callback_only_closes_the_list() {
-    let _g = session();
-    unsafe {
-        pf_reset(1);
-        track(3, READY, "A", 100, 48000, 1);
-        pf_init(1);
-        pf_open_pool(-1, 0);
-    }
-    press_yes(1 + 3);
-    assert_eq!((unsafe { pf_picks() }, depth()), (0, 0));
-}
-
-#[test]
 fn the_timer_runs_while_a_load_runs_and_stops_when_it_ends() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         track(0, QUEUED, "A", 0, 0, 0);
         pf_init(1);
         pf_open_pool(0, 1);
@@ -654,6 +654,7 @@ fn finishing_the_flow_stops_the_timer() {
     unsafe { pf_status(0, LOADING) };
     unsafe { pf_open_pool(0, 1) };
     assert_eq!(tick_periods(), vec![250]);
+    browse(&[("A", false, 1024)]);
     press_yes(1);
     assert_eq!(depth(), 0);
     assert!(tick_periods().is_empty());
@@ -677,7 +678,7 @@ fn without_a_timer_capability_the_rows_still_show_the_state_on_the_next_key() {
     let _g = session();
     set_cap(CAP_TICK, false);
     unsafe {
-        pf_reset(1);
+        pf_reset();
         track(0, LOADING, "A", 0, 0, 0);
         pf_init(1);
         pf_open_pool(0, 1);
@@ -690,36 +691,32 @@ fn without_a_timer_capability_the_rows_still_show_the_state_on_the_next_key() {
 fn clear_removes_the_entry_with_one_press_and_leaves_a_hole() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         track(2, READY, "A", 100, 48000, 1);
         track(3, READY, "B", 100, 48000, 1);
         pf_init(1);
         pf_open_pool(0, 1);
     }
-    press_right(1 + 2);
+    press_right(2);
     assert_eq!(render(), vec!["CLEAR", "INFO"]);
     choose_panel_row(0);
     assert_eq!(unsafe { pf_clears() }, 1);
     assert_eq!(entry(2), "02 -");
     assert_eq!(entry(3), "03 B M 0.0s", "the next entry keeps its index");
-    // + ADD has no panel
-    let d = depth();
-    press_right(0);
-    assert_eq!(depth(), d);
 }
 
 #[test]
 fn entry_info_page_shows_index_name_path_format_and_state() {
     let _g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         track(2, READY, "DRUMS/KICKS/KICK808", 57600, 48000, 2);
         track(3, E_FORMAT, "X/BAD", 0, 0, 0);
         track(4, LOADING, "L", 0, 0, 0);
         pf_init(1);
         pf_open_pool(0, 1);
     }
-    press_right(1 + 2);
+    press_right(2);
     choose_panel_row(1);
     assert_eq!(title(), "INFO");
     assert_eq!(
@@ -736,7 +733,7 @@ fn entry_info_page_shows_index_name_path_format_and_state() {
         ]
     );
     press_no();
-    press_right(1 + 3);
+    press_right(3);
     choose_panel_row(1);
     assert_eq!(
         render(),
@@ -750,75 +747,61 @@ fn entry_info_page_shows_index_name_path_format_and_state() {
         ]
     );
     press_no();
-    press_right(1 + 4);
+    press_right(4);
     choose_panel_row(1);
     assert_eq!(render().last().unwrap(), "STATE LOADING");
     press_no();
-    press_right(1 + 9);
+    press_right(9);
     choose_panel_row(1);
     assert_eq!(render(), vec!["SAMPLE 9", "EMPTY"]);
 }
 
-// ---- the chooser component (a toy list, no sample pool) ----
+// ---- the chooser component (a toy slot list, no sample pool) ----
 
-fn toy(current: i32, with_add: bool, with_text: bool) -> std::sync::MutexGuard<'static, ()> {
+fn toy(current: i32, with_text: bool) -> std::sync::MutexGuard<'static, ()> {
     let g = session();
     unsafe {
-        pf_reset(1);
+        pf_reset();
         assert_eq!(cf_init(), 0);
-        assert_eq!(cf_open(current, with_add as c_int, with_text as c_int), 0);
+        assert_eq!(cf_open(current, with_text as c_int), 0);
     }
     g
 }
-fn toy_add_path() -> String {
-    unsafe { CStr::from_ptr(cf_last_add()) }
+fn toy_fill_path() -> String {
+    unsafe { CStr::from_ptr(cf_last_fill()) }
         .to_string_lossy()
         .into_owned()
 }
 
 #[test]
 fn the_chooser_marks_the_current_row_and_the_cursor_starts_on_it() {
-    let _g = toy(3, true, false);
+    let _g = toy(3, false);
     assert_eq!(title(), "TOY");
-    assert_eq!(rows(), vec!["+ NEW", " r0", " r1", " r2", ">r3", " r4"]);
-    assert_eq!(cursor(), 4, "the add row sits above entry 0");
-    unsafe { pf_fini() };
-    let _ = toy_open_again(0, false);
-    assert_eq!(cursor(), 0, "without an add row entry 0 is row 0");
-    let _ = toy_open_again(-1, true);
-    assert_eq!(cursor(), 0, "no current entry: the top");
-}
-
-fn toy_open_again(current: i32, with_add: bool) -> c_int {
+    assert_eq!(rows(), vec![" r0", " r1", " r2", ">r3", " r4"]);
+    assert_eq!(cursor(), 3);
     unsafe {
         pf_fini();
-        pf_reset(1);
+        pf_reset();
         cf_init();
-        cf_open(current, with_add as c_int, 0)
+        assert_eq!(cf_open(-1, 0), 0);
     }
+    assert_eq!(cursor(), 0, "no current slot: the top");
 }
 
 #[test]
-fn yes_on_an_entry_calls_done_once_and_closes_the_flow() {
-    let _g = toy(1, true, false);
-    press_yes(1 + 4);
-    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_last_done() }), (1, 4));
-    assert_eq!(depth(), 0);
+fn yes_on_a_slot_opens_the_browser_and_calls_nothing() {
+    let _g = toy(1, false);
+    press_yes(4);
+    assert_eq!(depth(), 2, "the browser is over the list");
+    assert_eq!(rows()[0], "..  /");
+    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_fill_calls() }), (0, 0));
     assert!(toasts().is_empty());
 }
 
 #[test]
-fn a_hole_is_not_chosen() {
-    let _g = toy(0, false, false);
+fn a_file_is_filled_into_the_slot_and_closes_both_levels_in_one_press() {
+    let _g = toy(0, false);
     press_yes(2);
-    assert_eq!((unsafe { cf_done_calls() }, depth()), (0, 1));
-}
-
-#[test]
-fn add_then_a_file_gives_done_the_added_result_and_closes_both_levels_in_one_press() {
-    let _g = toy(0, true, false);
-    press_yes(0);
-    assert_eq!(depth(), 2, "the browser is over the list");
     add("SNARES", true, 0);
     unsafe { pf_finish() };
     press_yes(1);
@@ -826,16 +809,16 @@ fn add_then_a_file_gives_done_the_added_result_and_closes_both_levels_in_one_pre
     unsafe { pf_finish() };
     assert_eq!(depth(), 2);
     press_yes(1);
-    assert_eq!(toy_add_path(), "SNARES/S1");
-    assert_eq!(unsafe { cf_add_calls() }, 1);
-    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_last_done() }), (1, 42));
+    assert_eq!(toy_fill_path(), "SNARES/S1");
+    assert_eq!((unsafe { cf_fill_calls() }, unsafe { cf_last_slot() }), (1, 2));
+    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_last_done() }), (1, 2));
     assert_eq!(depth(), 0, "all levels closed");
     assert!(toasts().is_empty());
 }
 
 #[test]
 fn no_goes_back_one_level_and_calls_nothing() {
-    let _g = toy(0, true, false);
+    let _g = toy(0, false);
     press_yes(0);
     add("D", true, 0);
     unsafe { pf_finish() };
@@ -843,18 +826,19 @@ fn no_goes_back_one_level_and_calls_nothing() {
     assert_eq!(list_dir(), "D");
     press_no(); // up a folder
     assert_eq!((depth(), list_dir().as_str()), (2, ""));
-    press_no(); // out of the browser, back on the list
+    press_no(); // out of the browser, back to the slot list
     assert_eq!((depth(), title().as_str()), (1, "TOY"));
+    assert_eq!(cursor(), 0);
     press_no(); // out of the list
     assert_eq!(depth(), 0);
-    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_add_calls() }), (0, 0));
+    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_fill_calls() }), (0, 0));
     assert!(toasts().is_empty());
 }
 
 #[test]
 fn an_error_closes_the_flow_and_shows_its_text_on_the_page() {
-    let _g = toy(0, true, true);
-    unsafe { cf_add_result(-16) };
+    let _g = toy(0, true);
+    unsafe { cf_fill_result(-16) };
     browse(&[("A", false, 1024)]);
     press_yes(1);
     assert_eq!(depth(), 0, "closed, no dialog");
@@ -865,20 +849,18 @@ fn an_error_closes_the_flow_and_shows_its_text_on_the_page() {
 
 #[test]
 fn an_error_without_a_text_callback_shows_the_code() {
-    let _g = toy(0, true, false);
-    unsafe { cf_add_result(-7) };
+    let _g = toy(0, false);
+    unsafe { cf_fill_result(-7) };
     browse(&[("A", false, 1024)]);
     press_yes(1);
     assert_eq!((depth(), toasts()), (0, vec!["ERROR -7".to_string()]));
 }
 
 #[test]
-fn the_side_panel_belongs_to_entries_not_to_the_add_row() {
-    let _g = toy(0, true, false);
+fn the_side_panel_opens_on_every_slot() {
+    let _g = toy(0, false);
     let d = depth();
-    press_right(0);
-    assert_eq!(depth(), d, "no panel on + NEW");
-    press_right(1 + 3);
+    press_right(3);
     assert_eq!((depth(), unsafe { cf_panel_entry() }), (d + 1, 3));
     assert_eq!(render(), vec!["ONE"]);
 }
@@ -887,14 +869,18 @@ fn the_side_panel_belongs_to_entries_not_to_the_add_row() {
 fn a_chooser_that_cannot_run_does_not_open() {
     let _g = session();
     unsafe {
-        pf_reset(1);
-        assert_eq!(cf_open(0, 0, 0), -1, "init was not called");
+        pf_reset();
+        assert_eq!(cf_open(0, 0), -1, "init was not called");
     }
     assert_eq!(depth(), 0);
     unsafe {
         assert_eq!(cf_init(), 0);
+        assert_eq!(cf_open_without_fill(), -1, "no fill callback");
+    }
+    assert_eq!(depth(), 0);
+    unsafe {
         set_cap(CAP_LIST, false);
-        assert_eq!(cf_open(0, 0, 0), -1, "no lists");
+        assert_eq!(cf_open(0, 0), -1, "no lists");
     }
     assert_eq!(depth(), 0);
 }

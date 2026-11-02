@@ -6,7 +6,7 @@ Status: accepted by Em (2026-11-02).
 
 These rules apply to every list, browser and menu that a module or the runtime opens.
 
-1. YES does the action and returns to where the flow started. The whole flow closes (all levels) and the user is back on the page they came from.
+1. YES on the final item (a file) does the action and returns to where the flow started. The whole flow closes (all levels) and the user is back on the page they came from. YES on a slot is not final: it opens the browser for that slot.
 2. NO goes back one level and changes nothing.
 3. RIGHT opens the side panel for extra actions (for example CLEAR, INFO). LEFT or NO closes the panel.
 4. When a list opens, the current choice is marked and the cursor starts on it.
@@ -19,12 +19,15 @@ Stock reference: the Digitakt II pool list (manual 9.7). YES selects the sample 
 
 A reusable list-and-browse component built on dk/ui.h. It is generalised from the sample picker (sdk/src/sample_picker.c, picker_logic.c).
 
-- `dk_chooser`: a list with a title, rows (text, state), a marked current row, an optional first action row (for example "+ ADD"), an optional side panel with actions, and an optional browser level (folder browser on the SDK file listing).
-- Result callback: `done(ctx, result)` is called once when YES finishes the flow. The result is the chosen row or the added item. It is not called on NO.
-- "YES closes the flow": after `done`, the chooser closes all its levels in one step.
+- Slot-list mode (`<dk/chooser.h>`): a list of numbered slots with a title, one row per slot (an empty slot has a row too, for example `-`), a marked current slot, an optional side panel per slot, and a browser level (folder browser on the SDK file listing).
+- YES on a slot, empty or filled, opens the browser for that slot. YES on a file calls `fill(ctx, slot, path)`: the module loads the file into that slot (a filled slot is replaced) and returns the slot, or a negative error.
+- Result callback: `done(ctx, slot)` is called once after `fill` succeeded. It is not called on NO or on an error.
+- "YES closes the flow": after `fill`, the chooser closes all its levels in one step, then runs `done`.
+- NO in the browser goes up one folder, and out of the browser at the root, back to the slot list with the cursor on the same slot. NO in the slot list closes the flow. RIGHT on a slot opens the side panel (`panel` callback).
+- An error from `fill` closes the flow and shows its text as a toast on the page; `done` is not called.
 - The list refreshes while items load (dk_ui_tick).
 
-Users: SHOT's SMP pool list now. Later, any module that picks from a list, and the DIGIKIT > MODULES list after a separate review against these rules.
+Users: SHOT's SMP slot list now. Later, any module with slots that files are loaded into, and the DIGIKIT > MODULES list after a separate review against these rules.
 
 ## SHOT: SMP pool flow
 
@@ -43,20 +46,20 @@ DT2 (SRC page)                          DN2 (SYN page)
 
 v1 shows the slot number on SMP; the pool list shows names. The name on the knob needs a value-text hook (later step).
 
-Pool list:
+Slot list:
 
 ```text
 +------------------------+
-| SHOT SAMPLES           |
-|   + ADD                |
-| > 00 KICK        0.4s  |   (> = active entry)
+| SAMPLES                |
+| > 00 KICK        0.4s  |   (> = the slot SMP points at, cursor starts here)
 |   01 SNARE       0.3s  |
+|   02 -                 |   (empty slot: YES loads a file into it)
 |   ...                  |
 |   15 -                 |
 +------------------------+
 ```
 
-Browser:
+Browser (opened for the slot the cursor was on):
 
 ```text
 +------------------------+
@@ -71,14 +74,14 @@ Browser:
 Flow:
 
 ```text
-click SMP (release without a turn) -> pool list, cursor on the active entry
-  YES on an entry   -> SMP = that entry; back on the page
-  YES on + ADD      -> browser
-    YES on a file   -> added to the pool, SMP = the new entry; back on the page (one press)
-    error           -> back on the page; the error shows on the page/row (e.g. POOL FULL)
-  NO                -> back one level; nothing changed
-  RIGHT on an entry -> CLEAR / INFO
-turn SMP           -> steps through the pool (p-lockable), as before
+click SMP (release without a turn) -> slot list 00..15, cursor on the current slot
+  YES on a slot     -> file browser, to load a sample into THAT slot (filled slot: replace)
+    YES on a file   -> loaded into that slot, SMP = that slot; back on the page (one press, the whole flow closes)
+    error           -> back on the page; the error shows as a toast (e.g. PATH TOO LONG OR BAD)
+    NO              -> back one folder; at the root back to the slot list
+  NO                -> back to the page; nothing changed
+  RIGHT on a slot   -> CLEAR / INFO
+turn SMP           -> chooses between the loaded slots (p-lockable), as before
 ```
 
 ## Runtime API for parameter-driven flows
