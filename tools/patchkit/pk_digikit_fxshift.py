@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Offline frequency-shifter PCM and float32-model oracles.
-
-Device acceptance lives in modules/fx/freqshift/tests/freqshift.device.test.ts.
-"""
+"""Offline frequency-shifter PCM and float32-model oracles."""
 
 from __future__ import annotations
 

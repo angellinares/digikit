@@ -52,10 +52,9 @@ Use the owner's command while iterating. Full command details, preparation and r
 
 | Work | Iteration check |
 | --- | --- |
-| Docs | `uv run python -m tools.devtools.pathcheck --paths PATH ...` for changed path references. |
 | Any change | `mise run test:changed` (`--explain` shows the selection): changed files only, no builds or devices. |
-| JS/TS host and desktop UI | `mise run test:host`; `mise run verify:host` also runs lint, format and types. |
-| Web Node tests | `mise run web:test` |
+| JS/TS host and desktop UI | `pnpm test:host`; `pnpm verify:host` also runs lint, format and types. |
+| Web Node tests | `pnpm --filter @digi/web test` |
 | Python tools | Named pytest files under `tests/<owner>/` (never a directory) and `mise run lint:py`. Typed files are listed in pyproject `[tool.mypy] files`. |
 | Device tests | One file: `mise run verify -- --tests modules/core/runtime/tests/settings.device.test.ts` (packs the modules its record names). Suites: `mise run test:stock`, `test:runtime`, `test:conformance`, `test:fx`, `test:fx:dt2`. Prerequisites (daemons, ready inputs, module artifacts) are in [testing](docs/TESTING.md); no implicit daemon builds. No ad-hoc proof scripts. |
 | One module | `mise run module:check ID`: conformance and own tests; may build or emulate. This does not prove all-module loads. |
@@ -69,7 +68,7 @@ The Nx cache is per worktree (Nx 22's database cache does not restore entries th
 
 Do not run test directories, full tier sweeps, or smoke `--update` across all cells while iterating. Use quick proof modes; the gate owns smoke coverage. Reserve `mise run verify:full` for generated-core changes before merging to `main`. Preserve SHARC golden hashes for refactors; explain intentional updates. PCM pins in `tests/scenarios/*.json` require Em's approval.
 
-The gate manages one CPU budget. Do not start another gate or Cargo build while it runs. Put long runs in the background; poll with an exit condition and at most 60 seconds per call. Never use `tail -f`. For changed references without gate pathcheck coverage, run `uv run python -m tools.devtools.pathcheck --paths PATH ...`; cite deleted paths as `REF:path`.
+The gate manages one CPU budget. Do not start another gate or Cargo build while it runs. Put long runs in the background; poll with an exit condition and at most 60 seconds per call. Never use `tail -f`.
 
 ## Development and analysis
 

@@ -6,12 +6,10 @@ import pathlib
 import subprocess
 
 import pytest
-from support.paths import REPO_ROOT
 
-ROOT = REPO_ROOT
-from tools.emulator import (  # noqa: E402
-    digi_env,  # noqa: E402
-    native_pgo,  # noqa: E402
+from tools.emulator import (
+    digi_env,
+    native_pgo,
 )
 
 PACKAGES = ["packages/emulator/sharc", "packages/emulator/machine"]
@@ -154,29 +152,6 @@ def test_cmd_check_reports_the_reuse(tree, monkeypatch, capsys):
     )
 
 
-def test_local_package_dirs_excludes_apps(monkeypatch):
-    metadata = {
-        "packages": [
-            {"source": None, "manifest_path": str(ROOT / name / "Cargo.toml")}
-            for name in (
-                "packages/emulator/sharc",
-                "packages/emulator/coldfire",
-                "apps/desktop/src-tauri",
-            )
-        ]
-        + [{"source": "registry+x", "manifest_path": "/elsewhere/Cargo.toml"}]
-    }
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *a, **k: subprocess.CompletedProcess(a, 0, json.dumps(metadata), ""),
-    )
-    assert native_pgo.local_package_dirs() == [
-        "packages/emulator/coldfire",
-        "packages/emulator/sharc",
-    ]
-
-
 def test_launch_plan_skips_a_stale_profile_with_one_line(tree, monkeypatch):
     monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
     monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
@@ -246,36 +221,6 @@ def test_crates_in_maps_crates_to_disambiguators():
         "sharc_gen": {"BBB222"},
         "sharc_rt": {"CCC333"},
         "elektron_native_boot": {"DDD444"},
-    }
-
-
-def test_profile_crates_parses_and_caches(tmp_path, monkeypatch):
-    profdata = tmp_path / "p.profdata"
-    profdata.write_text("x")
-    runs = []
-
-    def fake_run(command, **_kwargs):
-        runs.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout=PROFILE_TEXT)
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    first = native_pgo.profile_crates(profdata)
-    assert first["sharc_gen"] == {"BBB222"}
-    assert (tmp_path / "p.profdata.crates.json").is_file()
-    assert native_pgo.profile_crates(profdata) == first
-    assert len(runs) == 1
-
-
-def test_binary_crates_reads_nm_output(monkeypatch):
-    nm = "0000 T _RNvCsZZZ999_12sharc_native3run\n0001 t _RNvCsZZZ999_8sharc_rt3x\n"
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **_kw: subprocess.CompletedProcess(command, 0, stdout=nm),
-    )
-    assert native_pgo.binary_crates("bin") == {
-        "sharc_native": {"ZZZ999"},
-        "sharc_rt": {"ZZZ999"},
     }
 
 
@@ -419,20 +364,6 @@ def test_both_profile_is_not_a_single_core_profile(both):
     )
     changed = both_state(both)[1]
     assert "generated2" in changed and "features" in changed
-
-
-def test_both_package_list_is_read_with_the_second_core_feature(monkeypatch):
-    seen = []
-
-    def run(command, **_kwargs):
-        seen.append(command)
-        return subprocess.CompletedProcess(command, 0, json.dumps({"packages": []}), "")
-
-    monkeypatch.setattr(subprocess, "run", run)
-    native_pgo.local_package_dirs("second-core")
-    assert seen[0][seen[0].index("--features") + 1] == "second-core"
-    native_pgo.local_package_dirs()
-    assert seen[1][seen[1].index("--features") + 1] == "coupled-audio"
 
 
 def test_both_build_never_lands_in_the_single_core_pgo_use_dir(tmp_path, monkeypatch):

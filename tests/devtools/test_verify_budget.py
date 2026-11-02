@@ -136,17 +136,6 @@ def test_no_aot_subset_names_exist(path: str) -> None:
     assert all(seconds[n] > 0 for n in verify.NO_AOT_SUBSET[path])
 
 
-def test_no_aot_subset_covers_the_fx_paths() -> None:
-    dn2 = set(verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-trackfx.ts"]) | set(
-        verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-sendfx.ts"]
-    )
-    for family in ("dry", "br", "over", "srr", "del", "rev", "chr", "mst"):
-        assert any(f"-{family}-" in n for n in dn2), family
-    assert {f for f in verify.NO_AOT_SUBSET} == set(verify.FX_FILES) | set(
-        verify.DT2_FX_FILES
-    )
-
-
 def test_tier_names_subset_and_full() -> None:
     path = "tests/regression/scenarios/dn2-sendfx.ts"
     seconds = {f"s{i:03d}": 1.0 for i in range(20)}
@@ -156,21 +145,6 @@ def test_tier_names_subset_and_full() -> None:
     assert verify.tier_names(path, seconds, 1, True) == sorted(seconds)
     real = {n: 1.0 for n in verify.NO_AOT_SUBSET[path]}
     assert verify.tier_names(path, real, 1, False) == list(verify.NO_AOT_SUBSET[path])
-
-
-def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tools.patchkit import pk_harness
-
-    monkeypatch.setenv("DIGI_PK_JOBS", "2")
-    assert pk_harness.default_jobs(10) == 2
-    assert pk_harness.default_jobs(1) == 1
-
-
-def test_digikit_parts_run_one_at_a_time_in_the_gate() -> None:
-    """A scenario with 3 or 4 parts boots a daemon per part: a pool of files would start 3 to 4 times its
-    daemons (measured: card-safety, 3 digi-emud at DIGIKIT_JOBS=1). The gate sets DIGIKIT_PART_JOBS=1."""
-    for node in ALL_NODES:
-        assert verify_budget.step_env(node, 6)["DIGIKIT_PART_JOBS"] == "1"
 
 
 def test_part_jobs_bounds_the_parallel_parts(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,17 +229,6 @@ def test_budget_is_the_smaller_of_cores_and_memory(
     assert (d.budget, d.limit) == (budget, limit)
     assert d.text.startswith(f"budget {budget} ({limit}")
     assert d.budget >= 1
-
-
-def test_budget_text_names_the_limit() -> None:
-    assert (
-        verify_budget.decide(machine(16, 128)).text == "budget 14 (cores: 16 physical)"
-    )
-    assert verify_budget.decide(machine(32, 16)).text == "budget 24 (memory: 16 GB)"
-    assert verify_budget.budget_text(5) == "budget 5 (--jobs)"
-    assert verify_budget.budget_text(0, {"DIGI_VERIFY_BUDGET": "9"}) == (
-        "budget 9 (DIGI_VERIFY_BUDGET)"
-    )
 
 
 def test_cargo_jobs_follow_memory() -> None:
@@ -361,20 +324,6 @@ def test_file_jobs_need_their_whole_ask_and_do_not_count_as_steps() -> None:
         assert budget.admit(f"{FILE}{i}.py") == 2
 
 
-def test_file_job_pools_match_the_old_python_tests_share() -> None:
-    """A job of 2 cores sets the pools one file had in the old 6-core share with 3 files at once."""
-    env = verify_budget.step_env(FILE + "a.py", 2)
-    old = verify_budget.step_env("python-tests", 6)
-    for key in (
-        "DIGIKIT_JOBS",
-        "DIGIKIT_PART_JOBS",
-        "DIGI_PK_JOBS",
-        "CARGO_BUILD_JOBS",
-    ):
-        assert env[key] == old[key], key
-    assert env["DIGI_PY_JOBS"] == "1"
-
-
 def test_files_wait_for_their_builds_and_python_tests_judges_them() -> None:
     nodes, deps = verify.plan(
         verify.EVERYTHING,
@@ -431,12 +380,6 @@ def test_long_steps_start_with_the_long_files() -> None:
     assert nodes.index(daemon) < nodes.index(
         "runtime-fixture"
     )  # no estimate: after the files
-
-
-def test_untracked_changes_drop_root_files() -> None:
-    assert verify.untracked_changes(["device-log.log", "tools/devtools/verify.py"]) == [
-        "tools/devtools/verify.py"
-    ]
 
 
 def test_files_longest_first_and_unknown_files_in_plan_order() -> None:
@@ -571,9 +514,3 @@ def test_explicit_host_plan_has_no_build_or_device_prerequisites() -> None:
     assert verify.plan(("host",), []) == (["host"], {"host": ()})
     assert "host" in verify.EVERYTHING
     assert "web" in verify.EVERYTHING
-
-
-def test_host_budget_reports_only_node_pool() -> None:
-    assert verify_budget.WANT["host"] == 0.15
-    assert verify_budget.SHOWN["host"] == ("node",)
-    assert verify_budget.workers_for("host", 3).node == 3

@@ -531,7 +531,7 @@ A module owns its tests. They live in the module folder and nothing else lists t
 | File | Found by |
 | --- | --- |
 | `tests/test_*.py` (also in subfolders) | `module:check`, `verify`, `test:changed`, `python-tests --full`. The basename must be unique in the repository (no `__init__.py`): start it with the module name, for example `test_hello_range.py`. A helper next to the test is imported by its name. The repository root and `tests/` are on `sys.path` (`tools.*`, `support.*`). Use `Path(__file__).parents[1]` for the module folder. |
-| `tests/*.test.ts` | The Vitest project `module-tests` (`mise run test:host`). |
+| `tests/*.test.ts` | The Vitest project `module-tests` (`pnpm test:host`). |
 | `tests/scenarios/*.toml` | The digikit scenario runner (`pk_digikit_scen list\|run NAME`) and the tiers, next to `tests/digikit/scenarios/`. Scenario names are unique across both places. |
 
 A change in a module selects the module's own tests and those of the modules that depend on it. A change only in `tests/` runs the tests and no

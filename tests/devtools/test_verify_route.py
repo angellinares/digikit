@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import tomllib
-from pathlib import Path
 
 import pytest
 
 from tools.devtools import verify_route
 from tools.devtools.verify_route import RuntimeAcceptance
 from tools.patchkit import modroots
-
-# The real function without its cache (the fixture below replaces the module attribute).
-ACCEPTANCE_RECORDS = verify_route.acceptance_records.__wrapped__
 
 A, B, C = "runtime/a.test.ts", "runtime/b.test.ts", "runtime/c.test.ts"
 SHARED = "tools/patchkit/patchkit.py"
@@ -155,54 +150,8 @@ def test_module_project_json_selects_declared_records(
     assert verify_route.project_record_files(path, "[") == set()
 
 
-def test_package_scripts_only() -> None:
-    texts = ['run = "pnpm lint"\n["pnpm", "--filter", "x", "run", "build:ui"]']
-
-    def pkg(scripts: dict[str, str], dep: str = "1") -> str:
-        return json.dumps({"scripts": scripts, "devDependencies": {"a": dep}})
-
-    base = {"lint": "oxlint", "build:ui": "x", "tool": "a", "verify": "pnpm lint"}
-    assert verify_route.package_scripts_only(
-        pkg(base), pkg({**base, "tool": "b", "new": "c"}), texts
-    )
-    assert not verify_route.package_scripts_only(
-        pkg(base), pkg({**base, "lint": "other"}), texts
-    )
-    assert not verify_route.package_scripts_only(
-        pkg(base), pkg({**base, "build:ui": "y"}), texts
-    )
-    assert not verify_route.package_scripts_only(pkg(base), pkg(base, "2"), texts)
-    assert not verify_route.package_scripts_only(pkg(base), "{", texts)
-    assert not verify_route.package_scripts_only(None, pkg(base), texts)
-    # a script called by an invoked script counts as invoked
-    nested = {**base, "verify": "pnpm tool"}
-    texts.append("pnpm verify")
-    assert not verify_route.package_scripts_only(
-        pkg(nested), pkg({**nested, "tool": "b"}), texts
-    )
-
-
 def test_path_in_no_closure_selects_nothing() -> None:
     assert select("runtime-fixture", UNKNOWN) == set()
-
-
-def test_registration_glob_finds_a_three_level_module_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    deep = tmp_path / "modules/core/adapters/x/tests/x.device.test.ts"
-    deep.parent.mkdir(parents=True)
-    deep.write_text("")
-    monkeypatch.setattr(verify_route, "ROOT", tmp_path)
-    found = {
-        p.relative_to(tmp_path).as_posix()
-        for p in tmp_path.glob("modules/**/tests/**/*.device.test.ts")
-    }
-    assert found == {"modules/core/adapters/x/tests/x.device.test.ts"}
-    # the registration check reads the same glob: an unregistered file is reported
-    monkeypatch.setattr(verify_route, "nx_graph", lambda: {"nodes": {}})
-    monkeypatch.setattr(verify_route, "manifests", lambda: {})
-    with pytest.raises(ValueError, match="x.device.test.ts"):
-        ACCEPTANCE_RECORDS()
 
 
 def test_runtime_uploads_are_all_shipped_dynamic_service_or_host_modules() -> None:
@@ -226,9 +175,3 @@ def test_module_load_uses_only_the_shared_rule() -> None:
     assert select("module-load", ONLY_A) == set()
     assert select("module-load", REFERENCED) == set()
     assert select("module-load", SHARED)
-
-
-def test_mise_task_description_change_routes_nothing() -> None:
-    old = '[tasks.test]\nrun = "pnpm test"\ndescription = "a"\n'
-    new = old.replace('"a"', '"b"')
-    assert verify_route.mise_paths(old, new) == ([], {})

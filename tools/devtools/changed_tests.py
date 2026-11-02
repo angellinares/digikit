@@ -472,7 +472,6 @@ def plan(
             [*verify.PY, "-m", "mypy", *typed] if typed else None,
             "no changed TYPED files",
         ),
-        ("pathcheck", [*verify.PY, "-m", "tools.devtools.pathcheck"], ""),
         ("layercheck", [*verify.PY, "-m", "tools.devtools.layercheck"], ""),
         (
             "gen-check",

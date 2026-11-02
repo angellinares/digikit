@@ -36,7 +36,7 @@ Goldens are in `goldens/dt2-1.17.json`.
 | `mise run test:conformance [-- FILTER]` | `conformance` | |
 | `mise run test:fx` | `fx-dn2` | 61 quick; `DIGI_FX_SWEEP=1` for 191 |
 | `mise run test:fx:dt2` | `fx-dt2` | 135 quick; `DIGI_FX_SWEEP=1` for 146 |
-| `mise run test:host` | host projects | No device inputs |
+| `pnpm test:host` | host projects | No device inputs |
 
 Filters are native Vitest file or test-name filters. The device tasks never build daemons, generated cores or
 module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/regression/junit.xml`.

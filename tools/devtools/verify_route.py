@@ -408,6 +408,8 @@ def smoke_harness_closure() -> set[str]:
 def outside_smoke_harness(path: str) -> bool:
     """A tools/ Python path (existing or deleted) the smoke harness cannot reach. A deleted path
     counts only when no tracked file refers to it."""
+    if path.startswith("tests/support/") and path.endswith(".py"):
+        return not (ROOT / path).is_file() and not deleted_path_referenced(path)
     if not (path.startswith("tools/") and path.endswith(".py")):
         return False
     if not (ROOT / path).is_file():
@@ -1356,6 +1358,17 @@ def run_lines(task: dict) -> list[str]:
     return [run] if isinstance(run, str) else [str(x) for x in run]
 
 
+@cache
+def root_package_scripts() -> frozenset[str]:
+    """The names of the `scripts` of the root package.json."""
+    try:
+        data = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return frozenset()
+    table = data.get("scripts", {}) if isinstance(data, dict) else {}
+    return frozenset(table) if isinstance(table, dict) else frozenset()
+
+
 def paths_of_run(lines: list[str]) -> list[str] | None:
     """The repo paths a task's run lines name: `-m a.b.c` (a/b/c.py or a package), `node FILE`,
     test paths of `-m pytest`, pnpm and npx (the web workspace). None when a line names none."""
@@ -1374,7 +1387,13 @@ def paths_of_run(lines: list[str]) -> list[str] | None:
                         mine.append(cand)
                         break
             elif word in ("pnpm", "npx"):
-                mine.append("apps/web/package.json")
+                rest = words[i + 1 :]
+                if rest[:1] == ["run"]:
+                    rest = rest[1:]
+                if word == "pnpm" and rest and rest[0] in root_package_scripts():
+                    mine.append("package.json")  # a script of the root package.json
+                else:
+                    mine.append("apps/web/package.json")
             elif (ROOT / word).exists() and "/" in word:
                 mine.append(word)
         if not mine:
@@ -1481,11 +1500,11 @@ def mise_paths(
             and _without_text(tasks_old[name]) == _without_text(tasks_new[name])
         ):
             continue  # only the description or alias changed: nothing runs differently
+        task = tasks_new.get(name)
+        if task is None:  # a removed task: nothing runs it any more
+            continue
         if name.split(":", 1)[0] in BROAD_TASK_GROUPS:
             return None
-        task = tasks_new.get(name)
-        if task is None:  # a removed task: only the path check reads it
-            continue
         other = {
             k: v
             for k, v in task.items()
@@ -1496,7 +1515,10 @@ def mise_paths(
         }:
             return None
         lines = run_lines(task)
+        old_deps = (tasks_old.get(name) or {}).get("depends", [])
         for dep in task.get("depends", []):
+            if dep in old_deps:
+                continue  # an unchanged dependency is routed by its own diff, if it changed
             lines += run_lines(tasks_new.get(dep, {}))
         named = paths_of_run(lines)
         if named is None:

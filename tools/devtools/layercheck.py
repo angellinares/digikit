@@ -505,7 +505,6 @@ SC_ALLOWED_PREFIXES = (
     "docs/",
     ".agents/",
     "tests/fixtures/modules/",
-    "tools/devtools/pathcheck.json",  # lists repository paths by design
 )
 SC_SKIP_DIRS = {".git", "out", "node_modules", "target", "firmware", ".venv", "dist"}
 SC_HINT = (

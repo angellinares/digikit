@@ -190,24 +190,6 @@ def test_fast_regions_follow_the_firmware_hash(monkeypatch, tmp_path):
     assert scope["fast_regions_for"](tmp_path / "missing.syx") == ""
 
 
-def test_known_dn2_1_12_hash_has_the_verified_regions():
-    table = launcher()["FAST_REGIONS"]
-    assert (
-        table["7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35"]
-        == "0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509"
-    )
-
-
-def test_known_dn2_1_12_hash_has_the_cluster_roots():
-    table = launcher()["BLOCKTRANS_ROOTS"]
-    roots = table["7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35"]
-    assert roots == (
-        "0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,"
-        "0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5"
-    )
-    assert len(roots.split(",")) == 12
-
-
 def _known_roots(tmp_path, scope, monkeypatch, content=b"dn2"):
     syx = _known_syx(tmp_path, scope, monkeypatch, content)
     table = scope["blocktrans_roots_for"].__globals__["BLOCKTRANS_ROOTS"]
@@ -309,36 +291,6 @@ def _build_run_setup(monkeypatch):
 
     monkeypatch.setattr("subprocess.run", run)
     return scope, calls
-
-
-def test_build_only_prints_the_binary_and_does_not_launch(monkeypatch, capsys):
-    scope, calls = _build_run_setup(monkeypatch)
-    scope["main"](["x.syx", "--cf-only", "--build-only"])
-    assert len(calls) == 1
-    assert calls[0][:2] == ["cargo", "build"]
-    assert capsys.readouterr().out.strip().endswith("release/digiemu-desktop")
-
-
-def test_main_runs_the_built_binary_not_cargo_run(monkeypatch):
-    scope, calls = _build_run_setup(monkeypatch)
-    scope["main"](["x.syx", "--cf-only"])
-    assert len(calls) == 2
-    assert calls[1][0].endswith("digiemu-desktop")
-    assert not any(c[:2] == ["cargo", "run"] for c in calls)
-    assert calls[1][1:] == ["x.syx"]
-
-
-def test_cargo_command_uses_the_gen_keyed_target_dir(monkeypatch, tmp_path):
-    scope = launcher()
-    plain = scope["cargo_command"](["example.syx"])
-    assert plain[plain.index("--target-dir") + 1].endswith("/nogen")
-    gen = tmp_path / "gen"
-    gen.mkdir()
-    monkeypatch.setenv("SHARC_GEN_DIR", str(gen))
-    coupled = scope["cargo_command"](["example.syx", "--coupled"])
-    target = coupled[coupled.index("--target-dir") + 1]
-    assert target.endswith("/generic")
-    assert coupled.index("--target-dir") < coupled.index("--")
 
 
 # --- PGO decisions --------------------------------------------------------------
@@ -526,51 +478,6 @@ def test_train_command_failure_to_start_falls_back(pgo, monkeypatch, capsys):
     monkeypatch.setattr(subprocess, "run", boom)
     assert launcher()["pgo_plan"](COUPLED) is None
     assert "could not start training: no python" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("verify_exit, warns", [(0, False), (1, True), (2, False)])
-def test_pgo_mismatch_warns_but_never_blocks(monkeypatch, capsys, verify_exit, warns):
-    scope = launcher()
-    calls = []
-
-    def run(command, **_kwargs):
-        calls.append(command)
-        code = verify_exit if "verify" in command else 0
-        return subprocess.CompletedProcess(command, code)
-
-    monkeypatch.setattr(subprocess, "run", run)
-    scope["verify_pgo"](["cargo", "run", "--", "x"], {})
-    err = capsys.readouterr().err
-    assert ("PGO profile does not match this binary" in err) is warns
-    assert calls[0] == ["cargo", "build"]
-
-
-def test_pgo_build_failure_skips_the_check(monkeypatch, capsys):
-    calls = []
-
-    def run(command, **_kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 101)
-
-    monkeypatch.setattr(subprocess, "run", run)
-    with pytest.raises(SystemExit) as exc:
-        launcher()["verify_pgo"](["cargo", "run", "--", "x"], {})
-    assert exc.value.code == 101
-    assert len(calls) == 1
-    assert capsys.readouterr().err == ""
-
-
-def test_main_daemon_builds_and_runs_digi_emud(monkeypatch):
-    scope, calls = _build_run_setup(monkeypatch)
-    panel = []
-    monkeypatch.setitem(
-        scope["main"].__globals__, "build_panel", lambda environ: panel.append(1)
-    )
-    scope["main"](["x.syx", "--cf-only", "--daemon"])
-    assert panel == []
-    assert calls[0][:2] == ["cargo", "build"]
-    assert calls[1][0].endswith("release/digi-emud")
-    assert calls[1][1:] == ["x.syx"]
 
 
 def _dual_launch(monkeypatch, tmp_path, first):

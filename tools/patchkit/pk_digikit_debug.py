@@ -198,7 +198,9 @@ def run_card_torn(c: Any) -> None:
 def run_card(c: Any) -> None:
     """Only the torn part stays in Python (card-safety and card-small are tests/regression card-safety in TS)."""
     if c.table().get("part") != "torn":
-        raise ValueError(f"card scenario part {c.table().get('part')!r}: only 'torn' runs in Python")
+        raise ValueError(
+            f"card scenario part {c.table().get('part')!r}: only 'torn' runs in Python"
+        )
     run_card_torn(c)
 
 

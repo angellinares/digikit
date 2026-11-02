@@ -6,8 +6,6 @@ import time
 from tools.devtools import clean_runs
 from tools.devtools.clean_runs import Proc
 
-DAY = 24 * 3600
-
 
 def make(root, name, age_h):
     d = root / name
@@ -63,8 +61,3 @@ def test_orphans_only_digi_emud_with_parent_1():
         Proc(3, 99, 5, "digi-emud b"),
     ]
     assert [p.pid for p in clean_runs.orphans(procs)] == [1]
-
-
-def test_etime():
-    assert clean_runs._etime_seconds("01:02") == 62
-    assert clean_runs._etime_seconds("2-03:04:05") == 2 * DAY + 3 * 3600 + 4 * 60 + 5

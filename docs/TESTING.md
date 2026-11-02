@@ -12,11 +12,11 @@ execution requirements, not levels. A successful boot proves only what the run a
 
 | Level | What | Command |
 | --- | --- | --- |
-| Static (JS/TS) | oxlint, Prettier check, host Vitest, `pnpm -r run typecheck` | `mise run verify:host` |
-| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `uv run python -m tools.devtools.pathcheck`; `mise run check:layers` (module layering, docs/ARCHITECTURE.md) |
+| Static (JS/TS) | oxlint, Prettier check, host Vitest, `pnpm -r run typecheck` | `pnpm verify:host` |
+| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `mise run check:layers` (module layering, docs/ARCHITECTURE.md) |
 | Fast preflight | Changed files only; no builds, no devices | `mise run test:changed` |
-| Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `mise run test:host` |
-| Unit (web) | Web app Node suites in `apps/web/tests` | `mise run web:test` |
+| Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `pnpm test:host` |
+| Unit (web) | Web app Node suites in `apps/web/tests` | `pnpm --filter @digi/web test` |
 | Unit (Python) | RE, firmware and dev tools | pytest on named files under `tests/<owner>/`; `mise run test:pypy` for the PyPy subset |
 | Unit (Rust) | Crates | `cargo nextest` through the gate step `rust-tests` or `mise run test` |
 | Component | Module DSP conformance on the SHARC core | `mise run module:check ID` |
@@ -36,10 +36,9 @@ Use the owner command while iterating. The coordinator runs the routed gate once
 
 | Change | While iterating |
 | --- | --- |
-| Docs (`*.md`) | `uv run python -m tools.devtools.pathcheck --paths PATH ...` when paths change |
-| JS/TS host tests and helpers | `test:host`, `verify:host` |
-| Web Node tests | `web:test` |
-| Desktop UI or app | `verify:host`; `ui:preview` and `ui_shots.mjs` for pages (below) |
+| JS/TS host tests and helpers | `pnpm test:host`, `pnpm verify:host` |
+| Web Node tests | `pnpm --filter @digi/web test` |
+| Desktop UI or app | `pnpm verify:host`; `ui:preview` and `ui_shots.mjs` for pages (below) |
 | Stock DT2 UI goldens | `test:stock` |
 | DN2 or DT2 FX sources and oracles | `test:fx`, `test:fx:dt2` |
 | Python under `tools/` or `tests/` | `test:changed`; then the named pytest files |
@@ -76,12 +75,12 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 
 | Command | What runs |
 | --- | --- |
-| `mise run test:changed` | `tools/devtools/changed_tests.py`: ruff and mypy on changed Python, pathcheck, seven audited tooling unit files, Nx-affected host Vitest projects, changed JS/TS lint and format, host types. Options: `--base`, `--head`, `--files`, `--deep`, `--explain`. Does not run Rust, module builds or devices. |
-| `mise run test:host` | All seven Vitest projects from `vitest.host.projects.json`: control-client, test-support, dk-session, web-transfer, desktop-host, regression-host, module-tests. One worker by default; `-- --maxWorkers N` changes it. |
-| `mise run verify:host` | `pnpm verify:host`: oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
-| `mise run web:test` | `node --test` in `apps/web/tests`. Cases that need WASM or firmware skip when absent. |
+| `mise run test:changed` | `tools/devtools/changed_tests.py`: ruff and mypy on changed Python, seven audited tooling unit files, Nx-affected host Vitest projects, changed JS/TS lint and format, host types. Options: `--base`, `--head`, `--files`, `--deep`, `--explain`. Does not run Rust, module builds or devices. |
+| `pnpm test:host` | All seven Vitest projects from `vitest.host.projects.json`: control-client, test-support, dk-session, web-transfer, desktop-host, regression-host, module-tests. One worker by default; `-- --maxWorkers N` changes it. |
+| `pnpm verify:host` | oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
+| `pnpm --filter @digi/web test` | `node --test` in `apps/web/tests`. Cases that need WASM or firmware skip when absent. |
 | `mise run lint:py` | `ruff check` and `ruff format --check` over the pyproject include list. |
-| `mise run lint` | `lint:py`, `lint:web`, `fmt:check`, `lint:rust`. |
+| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. |
 | `mise run test:pypy` | The SHARC core tests under PyPy 3.11. Slow. |
 | `mise run test:stock` | Vitest project `stock` (`tests/regression/dt2`): DT2 1.17 zero-DSP goldens. Filters pass through. |
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
@@ -211,12 +210,6 @@ Rust tests in their crates.
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - Lint and types come from `pyproject.toml`: new Python files are covered by `[tool.ruff] include`;
   add new typed files to `[tool.mypy] files`. Both run as commands in the gate step `python-tests`.
-- Pathcheck (`uv run python -m tools.devtools.pathcheck`): every path-like token in tracked text files
-  must name a tracked file or directory, a generated or ignored path, or an allowed token. Cite a
-  deleted file as `REF:path` (`unicorn-reference-final:emu/edma.py`). Files under `history_docs`
-  (findings, plans, design, archive, refs, contracts) may name paths that were once tracked.
-  Add an exception to `allow` in `tools/devtools/pathcheck.json` with a reason. An allow that matches
-  nothing fails.
 
 ## Module-owned tests
 
@@ -224,7 +217,7 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 
 - `test_*.py`, also in subfolders: pytest files. The basename is unique across the repository (prefix it with the module name). A helper
   next to the test is imported by name. Use `Path(__file__).parents[1]` for the module folder.
-- `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`mise run test:host`), found recursively under `modules/`.
+- `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`pnpm test:host`), found recursively under `modules/`.
 - `*.device.test.ts`: device tests, registered in the module's `project.json` (`metadata.runtimeAcceptance`, files relative to the module
   root) and run by the `runtime` project. `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `verify --conformance ID`
   loads the module through the shared conformance suite.
@@ -265,7 +258,7 @@ tier-quick, tier-sweep, python-tests, rust-tests, card, smoke, dt2-tone, dt2-che
 dt2-tier-sweep.
 
 - `host` runs `pnpm verify:host`. `web` depends on `host`.
-- `python-tests` runs ruff, ruff format, mypy, pathcheck, layercheck and `patchkit gen --check` (generated sources) as commands, then
+- `python-tests` runs ruff, ruff format, mypy, layercheck and `patchkit gen --check` (generated sources) as commands, then
   `tests/patchkit/test_pk_current.py` (module and port staleness), then the selected test files, one
   process per file. Selected files are the tests that reach a changed module in the import graph
   (`changed_tests.gate_tests`), the files changed, and the `PY_SUITES` the change triggers.
@@ -316,8 +309,8 @@ Smoke is skipped when every changed path is:
 - UI-only (`UI_ONLY` in `verify.py`: `apps/desktop/ui/`, `apps/web/src/components/`,
   `apps/web/src/styles/`, `apps/web/tests/*.mjs`, `docs/`, `*.md`);
 - a host test file matched by `vitest.host.projects.json`; or
-- one of the four `SMOKE_EXEMPT` paths: `tools/devtools/agent_guard.py`,
-  `tools/devtools/pathcheck.py`, `tools/devtools/layercheck.py`, `.claude/settings.json`;
+- one of the three `SMOKE_EXEMPT` paths: `tools/devtools/agent_guard.py`,
+  `tools/devtools/layercheck.py`, `.claude/settings.json`;
 - a test-only path (`TEST_ONLY`: devtools tooling/tests, patchkit and digikit Python test files,
   module device tests `modules/**/tests/*.device.test.ts`, TypeScript helpers of `tests/regression/emulator`, `tests/regression/runtime` and `tests/conformance`, `tests/regression/project.json` and digikit
   scenario TOMLs),
@@ -518,7 +511,7 @@ Type checks do not show a misaligned row. `mise run ui:preview` serves the deskt
 The Firmware page (`?page=firmware&fwdev=dt2|dn2&fwstate=stock|runtime|noreply|none`) runs the real patchkit checks (`patchkit.wasm`) over a fake
 device that restarts after the last message. `node tools/devtools/firmware_shots.mjs --app desktop|web [--url URL] [--out DIR] [scene ...]` takes its
 pictures for the workbench (this preview) and for the site (`astro dev` or `astro preview`, with a fake Web MIDI port); it needs the stock files in
-`firmware/` and `mise run wasm:patchkit` and `web:build` (or the site's `gen-modules`) for `patchkit.wasm` and the module bundle.
+`firmware/` and `mise run wasm:patchkit` and `pnpm build` (or the site's `gen-modules`) for `patchkit.wasm` and the module bundle.
 The same flash against an emulated device at OS UPGRADE: `os_upgrade_rig.py ... --exec` runs `apps/web/tests/firmware-emulator.test.ts` (finding 75).
 
 To test pages against a running emulator, `uv run python -m tools.devtools.emu_live --device dn2 --run-dir DIR`

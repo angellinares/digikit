@@ -1,5 +1,5 @@
 // The module upload client (dkupload.wasm + the TS driver) against the wasm mock device, and over a mock Web MIDI
-// access that answers like the device. Skips when dkupload.wasm is not built (mise run web builds it).
+// access that answers like the device. Skips when dkupload.wasm is not built (pnpm dev builds it).
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

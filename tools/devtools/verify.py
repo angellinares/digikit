@@ -33,7 +33,7 @@ for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups in
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
 check-no-aot runs 17 native FX assertions even with --full (--all-no-aot: 61 normally, 191 with --full).
 Normal routing includes relevant stock, runtime and module acceptance; full tier sweeps stay explicit.
-python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, pathcheck, layercheck, gen-check), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
+python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, layercheck, gen-check), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
 every changed tests/**/test_*.py, and the
@@ -102,13 +102,12 @@ DT2_FX_FILES = (
 # reach them in the import graph instead (changed_tests.gate_tests). Test paths may be globs or
 # directories; one that matches nothing is an error.
 PY_GATE = ("tests/patchkit/test_pk_current.py",)
-# Plain commands python-tests runs as sub-checks (label "python-tests:NAME"): lint, format, types, paths, generated sources.
+# Plain commands python-tests runs as sub-checks (label "python-tests:NAME"): lint, format, types, generated sources.
 # ruff and mypy read their file lists from pyproject.toml.
 PY_CHECKS: tuple[tuple[str, list[str]], ...] = (
     ("ruff", [sys.executable, "-m", "ruff", "check", "--no-cache"]),
     ("ruff-format", [sys.executable, "-m", "ruff", "format", "--check", "--no-cache"]),
     ("mypy", [sys.executable, "-m", "mypy"]),
-    ("pathcheck", [sys.executable, "-m", "tools.devtools.pathcheck"]),
     # the module layering (docs/ARCHITECTURE.md): reads manifests, sources and built objects, under a second
     ("layercheck", [sys.executable, "-m", "tools.devtools.layercheck"]),
     # the generated sources match sdk/sdk.toml, devices/*.toml and abi.toml (mise run gen:modules)
@@ -322,7 +321,6 @@ UI_ONLY: tuple[str, ...] = (
 # table, not a prefix rule: neighbouring helpers and configuration stay conservative.
 SMOKE_EXEMPT: dict[str, str] = {
     "tools/devtools/agent_guard.py": "agent guard",
-    "tools/devtools/pathcheck.py": "path checker",
     "tools/devtools/layercheck.py": "layer checker",
     ".claude/settings.json": "agent settings",
 }
@@ -333,6 +331,8 @@ TEST_ONLY: tuple[str, ...] = (
     "tests/devtools/*",
     "tests/patchkit/test_*.py",
     "tests/digikit/test_*.py",
+    # test files of the emulator tools; the smoke harness closure is under tools/ and never imports them
+    "tests/emulator/test_*.py",
     "tests/digikit/scenarios/*.toml",
     "tests/regression/*.test.ts",
     "tests/regression/emulator/*.ts",
@@ -357,8 +357,8 @@ def host_test_globs() -> tuple[str, ...]:
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
-    # GitHub settings files (templates, CODEOWNERS): only the path check reads them.
-    ((".github/",), ("python-tests",)),
+    # GitHub settings files (templates, CODEOWNERS): no gate step reads them.
+    ((".github/",), ()),
     # the agent hook settings (tools/devtools/agent_guard.py); .claude/skills/ holds links and .agents/skills/ markdown (the skills test)
     ((".claude/", ".agents/"), ("python-tests",)),
     (
@@ -509,6 +509,8 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("build", "pins", "python-tests"),
     ),
+    # test files of the emulator tools; the smoke harness closure is under tools/ and never imports them
+    (("tests/emulator/test_",), ("python-tests",)),
     # the Nx graph: host affected selection and verify_route.nx_graph read it
     (("nx.json", "tools/nx/"), ("host", "python-tests")),
     (("tools/", "tests/", "pyproject.toml"), ("python-tests",)),
@@ -650,6 +652,13 @@ def base_route(path: str) -> tuple[str, tuple[str, ...]]:
     found = verify_route.fine(path)
     if found is not None:
         return found.label, found.steps
+    if (
+        path.startswith("tests/support/")
+        and path.endswith(".py")
+        and not (ROOT / path).is_file()
+        and not verify_route.deleted_path_referenced(path)
+    ):
+        return "deleted support module", ()  # nothing refers to it any more
     for prefixes, steps in RULES:
         for prefix in prefixes:
             if path.startswith(prefix):
