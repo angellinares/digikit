@@ -466,6 +466,10 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             want.extend(["core/dynfx", "core/fx", "core/fxpages"]);
             // the DIGIKIT menu is written on <dk/ui.h>: core/digikit-menu requires core/ui
             want.push("core/ui");
+            // the sample pool: both Digitakt II sets have it; the Digitone II flashes without it until the SPI wire-size decision
+            if dev.short == "dt2" || set == "emulator" {
+                want.push("core/sample-pool");
+            }
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }
@@ -556,7 +560,8 @@ fn an_unknown_backend_or_a_bad_panel_exception_is_refused() {
 fn a_content_modules_gallery_needs_its_objects() {
     let id = vec!["test/dyn-params".to_string()];
     let models = Models::from_dir(&root().join("devices")).unwrap();
-    let light = Library::scan_repo_for(&root(), true, Some(&[])).unwrap();
+    // the fixture root read without a build: its objects are files of the module folder, which has none (the object cache is not read)
+    let light = Library::scan_in(None, &root().join("tests/fixtures/modules"), true).unwrap();
     assert!(
         modgen::generate_many(&light, &models, &id).unwrap().is_empty(),
         "without objects the module has no typed sections"
