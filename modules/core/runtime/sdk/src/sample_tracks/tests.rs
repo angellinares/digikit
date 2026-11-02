@@ -810,7 +810,8 @@ fn a_store_file_is_inspected_with_the_native_header_and_its_table_sha() {
     assert!(i.id.same(&store_identity(size, &sha)));
     assert!(!i.id.same(&store_identity(size, &[8u8; 32])), "another sha is another file");
     assert!(!i.id.same(&store_identity(size + 4, &sha)));
-    assert_eq!(store_inspect(size + 4, &sha, &head).err(), Some(E_FORMAT), "size does not match the header");
+    assert!(store_inspect(size + 4, &sha, &head).is_ok(), "extra bytes after the trailer are allowed");
+    assert_eq!(store_inspect(64 + 400 - 1, &sha, &head).err(), Some(E_FORMAT), "size is shorter than the header says");
     head[8] ^= 1;
     assert_eq!(store_inspect(size, &sha, &head).err(), Some(E_FORMAT), "rate");
 }

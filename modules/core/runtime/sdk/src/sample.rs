@@ -44,24 +44,18 @@ pub fn native_frames(input: &[u8]) -> Result<u32, i32> {
 }
 
 /// Header-only check of a native file of `size` bytes whose first `HEADER_BYTES` bytes are `header`, for the per-track table (mono or
-/// stereo, any length that fits the pool): returns `(frames, channels)`. Byte 1 is 0 for mono and 1 for stereo (interleaved PCM16, finding
-/// 81 arithmetic: pcm bytes = frames * 2 * channels); rate 48 kHz; every other header byte is zero except the PCM length (bytes 4..8),
-/// the rate (8..12) and 0x14 = 0x7f. The trailer is not read: the size must still be header + pcm + trailer.
+/// stereo, any length that fits the pool): returns `(frames, channels)`. Checks only what the stock loader reads (finding 14): byte 1 is 0
+/// for mono and 1 for stereo (interleaved PCM16, finding 81 arithmetic: pcm bytes = frames * 2 * channels), the PCM length (bytes 4..8)
+/// and the rate (8..12, 48 kHz). Files written by Elektron Transfer carry other header bytes, so those are not checked. The trailer is
+/// not required: the size must only hold header + pcm.
 pub fn native_header(header: &[u8], size: u32) -> Result<(u32, u32), i32> {
-    if header.len() < HEADER_BYTES || (size as usize) < HEADER_BYTES + TRAILER_BYTES || header[1] > 1 || be32(header, 8) != RATE {
+    if header.len() < HEADER_BYTES || header[1] > 1 || be32(header, 8) != RATE {
         return Err(E_FORMAT);
     }
     let channels = header[1] as u32 + 1;
     let pcm = be32(header, 4);
-    if pcm == 0 || pcm != size - (HEADER_BYTES + TRAILER_BYTES) as u32 || pcm % (2 * channels) != 0 {
+    if pcm == 0 || pcm % (2 * channels) != 0 || (size as u64) < HEADER_BYTES as u64 + pcm as u64 {
         return Err(E_FORMAT);
-    }
-    let mut i = 0;
-    while i < HEADER_BYTES {
-        if i != 1 && !(4..12).contains(&i) && header[i] != if i == 0x14 { 0x7f } else { 0 } {
-            return Err(E_FORMAT);
-        }
-        i += 1;
     }
     Ok((pcm / (2 * channels), channels))
 }
@@ -126,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn header_check_reads_mono_and_stereo_and_rejects_the_rest() {
+    fn header_check_reads_only_the_stock_fields() {
         let file = |channels: u8, pcm: u32| {
             let mut bytes = vec![0u8; HEADER_BYTES + pcm as usize + TRAILER_BYTES];
             bytes[1] = channels;
@@ -143,15 +137,16 @@ mod tests {
         // larger than the 8192-frame bank limit is fine here
         let big = file(1, 4 * 100_000);
         assert_eq!(native_header(&big[..HEADER_BYTES], big.len() as u32), Ok((100_000, 2)));
-        let bad_size = s.len() as u32 + 1;
-        assert!(native_header(&s, bad_size).is_err());
+        assert_eq!(native_header(&s, s.len() as u32 + 1), Ok((5, 2)), "extra bytes after the trailer");
+        assert_eq!(native_header(&s, 64 + 20), Ok((5, 2)), "no trailer");
+        assert!(native_header(&s, 64 + 20 - 1).is_err(), "pcm cut short");
         assert!(native_header(&file(1, 18), 64 + 18 + 16).is_err(), "a partial stereo frame");
         assert!(native_header(&file(2, 20), 100).is_err(), "channels");
         assert!(native_header(&file(0, 0), 80).is_err(), "empty");
         for at in [0usize, 2, 3, 12, 0x13, 0x14, 63] {
             let mut h = s.clone();
             h[at] ^= 1;
-            assert!(native_header(&h, s.len() as u32).is_err(), "byte {at}");
+            assert_eq!(native_header(&h, s.len() as u32), Ok((5, 2)), "byte {at}");
         }
         let mut rate = s.clone();
         rate[8..12].copy_from_slice(&44_100u32.to_be_bytes());
