@@ -447,7 +447,7 @@ every seventh scenario in routed `tier-quick`.
   when the plan builds daemons. The audit is shared with fast preflight; new Python files are not
   presumed safe to overlap builds.
 - Builds run in a chain: `build`, `build-daemons`, `build-dt2` (`tools/devtools/verify_build.py`).
-  Test steps use immutable copies of the daemons (`tools/devtools/stablebin.py`) as `DIGI_EMUD_<DEV>`.
+  Test steps use the immutable daemons of the daemon store (`<git common dir>/emud-cache`) as `DIGI_EMUD_<DEV>`.
 - `verify` runs at nice 10 (`--foreground` keeps the priority). `--explain` prints the worker plan.
 
 ## Render cache
@@ -472,17 +472,34 @@ Use `verify --no-cache` for release and publication gates.
 
 ## Nx cache
 
-`pnpm nx:pilot` keeps the task cache in `$(git rev-parse --git-common-dir)/nx-cache`. Every worktree
-of the clone shares it, and it lives inside `.git`, so it is never committed. The workspace data
-directory stays per checkout. A hit replays the stored output of a target with `cache: true`; the
-hash covers only the declared `inputs`.
+`pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The cache is
+per worktree: Nx 22's database cache does not restore entries that another worktree recorded. A hit
+replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
 
 A target may be cached only when `uv run python -m tools.devtools.nx_input_audit PROJECT:TARGET`
 passes. The audit runs the command with `tools/devtools/fs_trace.mjs` preloaded and compares every
 file read with the expanded inputs. Run it after changing the inputs or the command of a cached
 target. `--all-cached` audits every cached target; `--json FILE` keeps the full result.
 
-To clear the cache: `pnpm nx:pilot reset`.
+### Daemon store
+
+`verify_build daemons` (the gate's `build-daemons` node) keeps the coupled `digi-emud` daemons in
+`<git common dir>/emud-cache/<dev>/<key>/` (`digi-emud`, `key.txt`, `depfile.d`). All worktrees of the
+clone share it and it is never committed. A worktree with the same key restores the daemon and builds
+nothing; a stored file is never rewritten. The last 4 used keys per device stay.
+
+The key is printed by `uv run python -m tools.devtools.emud_key key --device DEV`: a sha256 over the
+content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file of the generated core
+directory (resolved as `pk_emud_pgo` does), the PGO profile, `rustc -vV` of the pinned toolchain, and the
+build flags. A device without its stock firmware or ready directory is skipped.
+
+Each build audits itself: `verify_build` compares the dependency file cargo wrote (`digi-emud.d`) with
+the key. A dependency that the key does not cover (and that is not under the cargo target dir) fails the
+build, so nothing is stored with an incomplete key. Add the missing path to `SOURCE_GLOBS` in
+`tools/devtools/emud_key.py`. `uv run python -m tools.devtools.emud_key audit --device DEV --depfile FILE`
+repeats the check on a kept file.
+
+To clear the Nx cache: `pnpm nx:pilot reset`.
 
 ## PCM pins
 

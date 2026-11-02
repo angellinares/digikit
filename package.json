@@ -13,7 +13,7 @@
     "fmt": "prettier --write . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**'",
     "fmt:check": "prettier --check . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**'",
     "test:host": "vitest run --config vitest.host.config.ts",
-    "nx:pilot": "NX_CACHE_DIRECTORY=\"$(git rev-parse --path-format=absolute --git-common-dir)/nx-cache\" NX_WORKSPACE_DATA_DIRECTORY=\"$PWD/.nx/workspace-data\" NX_DAEMON=false NX_NO_CLOUD=true nx",
+    "nx:pilot": "NX_CACHE_DIRECTORY=\"$PWD/.nx/cache\" NX_WORKSPACE_DATA_DIRECTORY=\"$PWD/.nx/workspace-data\" NX_DAEMON=false NX_NO_CLOUD=true nx",
     "verify:host": "oxlint && pnpm fmt:check && pnpm test:host && pnpm -r run typecheck"
   },
   "devDependencies": {

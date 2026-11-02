@@ -67,8 +67,10 @@ conformance suite over all 8 shipped modules; one Nx cache for all worktrees, gu
    pass without) [D]. Fix in the daemon: status requests must not change emulation, or a passive heartbeat file.
 2. Done: every gate step streams its log to `out/runs/verify/<id>/<step>.log`; the START line prints the path.
 3. Done: `live.ts` is split into devices, ready, waits, install, artifacts and protocol helpers (tests/regression/runtime).
-4. Build caching: the daemon binary as a cached Nx target, its inputs proven against cargo's `digi-emud.d`
-   (module packs take under a second, so they stay uncached). Then cache device results, starting with conformance.
+4. Done: daemons come from `<git common dir>/emud-cache/<dev>/<key>` (tools/devtools/emud_key.py, audited
+   against cargo's `digi-emud.d`); a fresh lane restores both in under a second. The Nx cache is per worktree
+   (Nx 22's database cache does not restore entries of another worktree). Next: device-result caching with a
+   self-hosted Nx remote cache server (`NX_SELF_HOSTED_REMOTE_CACHE_SERVER`, OpenAPI spec), starting with conformance.
 5. Upload full tier once, then delete the matching Python upload scenarios. Fix open item 1, then delete
    upload-cut and upload-clear-cut. Port the remaining debug parts (item 3), then measure the Python tool
    graph again (finding 104).
