@@ -290,7 +290,7 @@ def analyse_file(wav: Path, out: Path, events_path: Path | None) -> int:
 def start_capture(ffmpeg: str, index: int, wav: Path) -> subprocess.Popen[bytes]:
     return subprocess.Popen(
         [ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "avfoundation"]
-        + ["-i", f":{index}", "-ac", "2", "-ar", "48000", "-c:a", "pcm_s24le"]
+        + ["-i", f":{index}", "-ac", "2", "-ar", "48000", "-c:a", "pcm_f32le"]
         + ["-y", str(wav)],
         stdin=subprocess.PIPE,
         stderr=subprocess.PIPE,
