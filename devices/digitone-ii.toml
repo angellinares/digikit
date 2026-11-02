@@ -166,10 +166,11 @@ dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 
 # Named module sets, as roots (the modules they require are added). `patchkit apply` without --modules applies `device`
 # (`--set NAME` picks another); `firmware.load {runtime: true}` patches the stock image with `emulator` (`patch_set` picks
-# another). Both are the flash-image roots of the rt021 images for now. The two sets are the same
-# today (core/input is in both); a module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
+# another). Both are the flash-image roots of the rt021 images for now. The `emulator` set has the sample pool (core/sample-pool) for
+# emulator testing; the `device` set (what is flashed) does not, until the SPI wire-size decision and a hardware read-back of the reserved DDR range.
+# A module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
 [patch_sets]
-emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
+emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
 device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
 # `emulator` plus the sample pool (core/sample-pool), core/dsp-link (the pool's DSP tail needs it) and the dsp-voice stereo hooks, for the per-track sample tests (API 1.5).
 sample-tracks = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/dsp-link", "core/dsp-voice"]

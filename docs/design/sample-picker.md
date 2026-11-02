@@ -14,13 +14,16 @@ Sources: sdk/include/dk/{ui,files,sample_track,sample_picker}.h, docs/design/sam
 
 ## 1. Entry: the click on SMP
 
-SMP is word 0 of SHOT (knob B on both devices). Turning it steps through the pool (0 to 15, p-lockable). Releasing the knob without a turn opens this list over the machine page. The page hook (core/adapters/ui, the `DK_PARAM_ACTION` record) calls the machine's action function in the UI task; for SHOT:
+SMP is word 0 of SHOT (knob B on both devices). Turning it steps through the pool (0 to 15, p-lockable). Releasing the knob without a turn opens this list over the machine page. The page hook (core/adapters/ui, the `DK_PARAM_ACTION` record) calls the machine's action function in the UI task. Contract (docs/design/machine-page-click.md); SHOT declares and implements:
 
 ```c
-void shot_smp_action(uint32_t track, uint32_t value, void (*set)(uint32_t track, uint32_t index));
+DK_PARAM_ACTION(shot, 0, shot_smp_click)
+void shot_smp_click(uint32_t track);
 ```
 
-`track` is the track of the page, `value` its current SMP value, `set` is the hook's own function that writes SMP of that track. The action opens the list with `dk_picker_open_pool(value, pick, ctx)`; the picker calls `pick(ctx, index)` after a file was added (the new entry) or after YES on an entry, and the machine passes the index to `set`. The picker cannot write a parameter itself. The module-settings entry of SHOT is gone.
+`track` is the track of the page. The action opens the list with `dk_picker_open_pool(-1, 0, 0)`: no row is marked and there is no pick callback. In the list, YES on `+ ADD` opens the folder browser and YES on a file adds it to the pool; it does not select it. The user then turns SMP to select the entry. YES on an entry only closes the list. The picker cannot write a parameter itself. The module-settings entry of SHOT is gone.
+
+Later step: marking the current entry and selecting a new file automatically need the hook to pass the SMP value and a setter.
 
 ## 2. Screens and keys
 
@@ -41,7 +44,7 @@ Common: font and views are the firmware's (core/ui). One button: YES on a file a
 ```
 
 Entry row: `NN NAME` (name cut with `~` like core/digikit-menu) and a tail: `S 1.2s` / `M 0.4s` (READY), `LOADING...` / `QUEUED`, `!` plus the error text (2.4), or `-` for an empty entry. Rows are always the 16 indexes, so a row number is the SMP value; indexes are stable and holes stay.
-Keys: YES on + ADD opens the browser. YES on an entry calls `pick(ctx, index)` and closes the list (back to the page); an empty entry is not chosen. RIGHT on an entry: panel `CLEAR` (`sample_pool_clear`, one press, no confirm; its notes stop, the row goes to `-`) and `INFO` (screen 4). RIGHT on + ADD: no panel. NO: back to the machine page.
+Keys: YES on + ADD opens the browser. YES on an entry closes the list (back to the page). RIGHT on an entry: panel `CLEAR` (`sample_pool_clear`, one press, no confirm; its notes stop, the row goes to `-`) and `INFO` (screen 4). RIGHT on + ADD: no panel. NO: back to the machine page.
 Refresh: `dk_ui_refresh` after any action and, while an entry is QUEUED/LOADING, on the UI tick.
 Names: after a project change the runtime reloads the list; the row asks `sample_pool_path` for the name. Without the API (a 1.5 runtime) the name is blank.
 
@@ -72,8 +75,8 @@ Preview of size/channels/length: the listing gives size and hash only. A module 
 ### 2.3 Add and load progress
 
 YES on file F: the picker builds the path and calls `sample_pool_add(handle, path)`.
-- Returns an index: the browser closes, the list shows again, `pick(ctx, index)` runs (the machine sets SMP to the new entry). If the file was already in the pool the index is its entry and nothing loads. The row shows `QUEUED`, `LOADING...`, then `S 1.2s`. The entry is never reported READY by the picker itself; only `sample_pool_status == 3` sets the row.
-- Returns an error: the browser closes and the + ADD row shows the short error text (`!POOL FULL`, `!BAD PATH`, `NO SAMPLE POOL`); nothing is picked and no pool entry changed. The next browser open clears the text.
+- Returns an index: the browser closes, the list shows again with the new entry; the user turns SMP to select it. If the file was already in the pool the index is its entry and nothing loads. The row shows `QUEUED`, `LOADING...`, then `S 1.2s`. The entry is never reported READY by the picker itself; only `sample_pool_status == 3` sets the row.
+- Returns an error: the browser closes and the + ADD row shows the short error text (`!POOL FULL`, `!BAD PATH`, `NO SAMPLE POOL`); no pool entry changed. The next browser open clears the text.
 A path over 255 bytes is refused by the picker itself (`!BAD PATH`), without a call.
 
 ### 2.4 Errors
@@ -140,7 +143,7 @@ Files:
 - `sdk/include/dk/sample_picker.h`: `dk_picker_init`, `dk_picker_open_pool(current, pick, ctx)`, `dk_picker_fini`.
 - `sdk/src/sample_picker.c`: screens, callbacks, statics.
 - `sdk/src/picker_logic.h` and `sdk/src/picker_logic.c`: pure functions, no API calls: sort order, leaf-name truncation, path join/parent, size/length text, error text for a code, `pk_pool_row`.
-- `modules/machines/shot/src/module.c`: lists both sources, calls `dk_picker_init` in `dkm_init`, exports `shot_smp_action`.
+- `modules/machines/shot/src/module.c`: lists both sources, calls `dk_picker_init` in `dkm_init`, exports `shot_smp_click` (`DK_PARAM_ACTION`).
 
 Limits: statics about 8 KB (128 rows x 56 bytes, path buffers 256 bytes x 2). Menus are never freed: each is built once (pool list, browser, INFO page) and kept. All ctx and descriptors in module memory. Rows 23 characters. One browser instance (not re-entrant): a second open reuses it.
 
@@ -154,7 +157,7 @@ Tests:
 
 1. The picker is shared source compiled into each sampler; a stand-alone module later needs a find call. (Em, 2026-11-01.)
 2. The list shows all 16 indexes, so the row number is the SMP value. Names on the knob come later (a formatter field in core/params).
-3. YES on an entry picks it and closes the list; YES on a hole does nothing. (Added with the pool model; not in Em's 2026-11-02 list, easy to drop.)
+3. YES on an entry closes the list. YES on + ADD opens the browser and YES on a file adds it without selecting it; the user turns SMP. (Em, 2026-11-02.)
 4. No header preview in v1 (size only). 128 rows per folder, the picker sorts.
 5. Refusals: no dialog (Em, 2026-11-01, one-button flows); the + ADD row shows the error text.
 6. DN2 shows `NO SAMPLE POOL` while the image has no DN2 pool adapter.

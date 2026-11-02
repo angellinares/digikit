@@ -44,26 +44,12 @@ void dkm_fini(const dk_api *api)
     pool = 0;
 }
 
-/* The click on SMP (release without a turn on the SHOT page). The page hook (core/adapters/ui, the SMP DK_PARAM_ACTION) calls
-     shot_smp_action(track, value, set)
-   in the UI task: track is the track of the page (0 to 15), value the SMP value of that track now (0 to 15), and set(track, index) is the
-   hook's own function that writes SMP of `track` (the value shown on the knob and the one a p-lock or the next note reads). This opens the
-   pool list over the page (sdk/src/sample_picker.c). The picker calls set when a file was added (index of its entry) or YES chose an
-   entry. NO in the list returns to the page without a call. The module cannot write a parameter itself: set is what the hook provides. */
-typedef void shot_smp_set_fn(uint32_t track, uint32_t index);
-static shot_smp_set_fn *smp_set;
-static uint32_t smp_track;
-
-static void shot_smp_pick(void *ctx, int index)
+/* Click on SMP (release without a turn on the SHOT page): the runtime's page hook calls this in the UI task with the track of the page.
+   It opens the pool list over the page (sdk/src/sample_picker.c): "+ ADD" adds a file to the pool; the user then turns SMP to select
+   it (Em, 2026-11-02). NO returns to the page. */
+DK_PARAM_ACTION(shot, 0, shot_smp_click);
+void shot_smp_click(uint32_t track)
 {
-    (void)ctx;
-    if (smp_set && index >= 0)
-        smp_set(smp_track, (uint32_t)index);
-}
-
-void shot_smp_action(uint32_t track, uint32_t value, shot_smp_set_fn *set)
-{
-    smp_track = track;
-    smp_set = set;
-    dk_picker_open_pool(value < DK_STRACKS ? (int)value : -1, shot_smp_pick, 0);
+    (void)track;
+    dk_picker_open_pool(-1, 0, 0);
 }

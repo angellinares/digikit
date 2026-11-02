@@ -29,7 +29,7 @@ typedef void dk_picker_pick_fn(void *ctx, int index);
 /* Acquires the listing client; call in dkm_init. The picker keeps api; it must stay valid. 0 when the picker can run, -1 when not (the
    click then does nothing). */
 int dk_picker_init(const dk_api *api, uint32_t handle);
-/* Opens the pool list. current is the SMP value now (0 to 15, or -1) and is marked; pick may be 0. Call from the UI task. */
+/* Opens the pool list. current is the SMP value now (0 to 15, or -1) and is marked (-1: no row is marked); pick may be 0: YES on an entry then only closes the list and adding a file only adds it. Call from the UI task. */
 void dk_picker_open_pool(int current, dk_picker_pick_fn *pick, void *ctx);
 /* Stops the picker's timer and listing; call in dkm_fini. */
 void dk_picker_fini(void);

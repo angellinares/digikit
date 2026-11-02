@@ -575,6 +575,19 @@ fn a_click_without_a_pick_callback_still_lists_and_adds() {
 }
 
 #[test]
+fn yes_on_an_entry_without_a_pick_callback_only_closes_the_list() {
+    let _g = session();
+    unsafe {
+        pf_reset(1);
+        track(3, READY, "A", 100, 48000, 1);
+        pf_init(1);
+        pf_open_pool(-1, 0);
+    }
+    press_yes(1 + 3);
+    assert_eq!((unsafe { pf_picks() }, depth()), (0, 0));
+}
+
+#[test]
 fn the_timer_runs_while_a_load_runs_and_stops_when_it_ends() {
     let _g = start();
     assert!(unsafe { pf_ticking() } == 0 && tick_periods().is_empty());
