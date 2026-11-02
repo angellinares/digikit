@@ -74,8 +74,9 @@ fn the_register_records_are_the_lowered_typed_sections() {
     assert_eq!((reg2.device, reg2.machines[0].own_dsp), (2, 1));
     assert_eq!(reg2.machines[0].knobs, [0; 8]);
     assert_eq!(reg2.pages.len(), 1);
-    assert_eq!(reg2.pages[0].knobs[0], KNOB_PARAM);
-    assert_eq!((reg2.params[0].template, reg2.params[0].slot), (0xd5, 25));
+    // word 0 sits on knob B (`param_slots[0] = 1`), so knob A stays free and the slot is the base 25 plus 1
+    assert_eq!(reg2.pages[0].knobs[..2], [0, KNOB_PARAM]);
+    assert_eq!((reg2.params[0].template, reg2.params[0].slot), (0xd5, 26));
     // the file: a stub image, the records, and the same bytes every time
     let opts = dkm::Options {
         name: "test/sine".into(),
