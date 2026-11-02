@@ -33,6 +33,8 @@ void pk_trunc(char *out, const char *name, int max);
 void pk_size_text(char *out, uint32_t bytes);
 /* "1.2s" below 100 s, then "123s". out holds 8 bytes. */
 void pk_secs_text(char *out, uint32_t frames, uint32_t rate);
+/* a then b into out, cut at PK_TEXT characters; out holds PK_TEXT + 1 bytes. out may be a. */
+void pk_cat(char *out, const char *a, const char *b);
 /* Decimal of v; returns the length. */
 int pk_utoa(char *out, uint32_t v);
 

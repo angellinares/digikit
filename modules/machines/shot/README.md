@@ -2,7 +2,7 @@
 
 digikit/shot: a stereo sample-playback machine for the Digitakt II and the Digitone II, loaded at run time. It plays one entry of its sample pool
 once per note (a one-shot) through the per-module pool of API 1.5 (`<dk/sample_track.h>`): 16 entries, kept per project. The parameter SMP
-picks the entry. SHOT never selects a file: the picker adds PCM16 files (mono or stereo) to the pool through the runtime, SHOT reads them.
+picks the entry. The picker adds PCM16 files (mono or stereo) to the pool through the runtime and sets SMP to the chosen entry; SHOT reads the pool.
 
 | Word | Parameter | Knob | Range and default | Meaning |
 | --- | --- | --- | --- | --- |
@@ -15,9 +15,12 @@ picks the entry. SHOT never selects a file: the picker adds PCM16 files (mono or
 The knob letters are the same on both devices (the shared knob map of `param_slots`: words 0 to 4 on B C E F G). The Digitakt II keeps TUNE on
 A, the sample slot on D and LEV on H; the Digitone II has A, D and H free.
 
-- Pool: click SMP (release without a turn) to open the list: `+ ADD`, then the entries 00 to 15 with name and length. YES on `+ ADD` opens the
-  folder browser; YES on a file adds it to the pool (it does not select it, turn SMP to select the entry); YES on an entry closes the list; RIGHT on
-  an entry gives CLEAR and INFO; NO goes back to the page. SHOT declares `DK_PARAM_ACTION(shot, 0, shot_smp_click)`; the runtime page hook calls
+- Pool: click SMP (release without a turn) to open the list: `+ ADD`, then the entries 00 to 15 with name and length. The entry SMP points at is
+  marked with `>` and the cursor starts on it. YES on an entry sets SMP to it and returns to the page. YES on `+ ADD` opens the folder browser; YES
+  on a file adds it to the pool, sets SMP to the new entry and returns to the page, all in one press. An error (pool full, bad path) closes the
+  list and shows its text on the page. RIGHT on an entry gives CLEAR and INFO; NO goes back one level (browser, list, page). The pick writes SMP of the
+  clicked track with `param_set` (API 1.6); while TRIG or FUNC is held it writes nothing and the page shows `RELEASE TRIG TO SET SMP`. The list is the
+  chooser of `docs/design/ui-rules.md`. SHOT declares `DK_PARAM_ACTION(shot, 0, shot_smp_click)`; the runtime page hook calls
   `void shot_smp_click(uint32_t track)` in the UI task (see `docs/design/machine-page-click.md`). The test route `test/track-select` fills the pool
   in tests.
 - Pitch: MIDI note 60 plays the sample at its own speed; the cursor rate is `srcrate / 48000 * 2^(semitones / 12)` in Q16.16, limited to 1/65536 to 64
@@ -36,7 +39,7 @@ A, the sample slot on D and LEV on H; the Digitone II has A, D and H free.
   rate, channels, token.
 
 - `src/module.c`: the machine, parameters, page and the pool table declaration; `dkm_init` resolves the table handle and starts the picker;
-  `shot_smp_click` (the SMP click action) opens the pool list.
+  `shot_smp_click` (the SMP click action) opens the pool list with the current entry marked; `smp_pick` sets SMP.
 - `src/dsp/shot.s`: `render`, `note_on`, the table storage and the descriptor. Every sample, mono or stereo, is read by the SDK stereo kernel
   `_dk_sample_pcm16_stereo_linear` (a mono sample passes `base_r = base_l`); there is no mono path.
 - `tests/test_shot_playback.py`: the DSP on the concrete core through the real adapter, against a float32 model (SMP picks the record).

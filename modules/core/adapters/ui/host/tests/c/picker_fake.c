@@ -3,6 +3,7 @@
    that pf_reset can clear its statics between tests. The pure functions (picker_logic.c) are linked. */
 #include <stdint.h>
 #include <string.h>
+#include "../../../../../../../sdk/src/chooser.c"
 #include "../../../../../../../sdk/src/sample_picker.c"
 
 #define MAXE 400
@@ -134,11 +135,12 @@ void pf_reset(int with_path)
     g_api = 0;
     g_handle = g_client = 0;
     g_has_path = 0;
-    g_tracks = g_browser = g_info = 0;
-    g_cur = g_n = g_more = g_state = g_err = g_ticking = g_info_file = g_info_at = 0;
+    g_list = g_browser = g_finfo = 0;
+    g_info = 0;
+    g_d = 0;
+    g_cur = g_n = g_more = g_state = g_err = g_ticking = g_info_at = 0;
     g_ticket = 0;
     g_dir[0] = 0;
-    g_add_err = 0;
     g_pick = 0;
     g_pick_ctx = 0;
     api.version = 1;
@@ -204,4 +206,64 @@ int pf_last_index(void) { return sm.last_index; }
 int pf_picks(void) { return sm.picks; }
 int pf_last_pick(void) { return sm.last_pick; }
 const char *pf_last_path(void) { return sm.last_path; }
-int pf_ticking(void) { return g_ticking; }
+
+/* ---- a toy chooser: five entries (entry 2 is a hole), to test the component without the sample pool ---- */
+static struct {
+    int done_calls, last_done, add_calls, panel_entry, with_text;
+    int add_rc;
+    char last_add[PK_PATH];
+    dk_chooser_desc d;
+} cf;
+
+static int toy_row(void *ctx, int i, int is_current, char *text)
+{
+    (void)ctx;
+    text[0] = is_current ? '>' : ' ';
+    text[1] = 'r';
+    text[2] = (char)('0' + i);
+    text[3] = 0;
+    return i == 2 ? DK_CHOOSER_HOLE : 0;
+}
+static int toy_add(void *ctx, const char *path)
+{
+    (void)ctx;
+    cf.add_calls++;
+    strcpy(cf.last_add, path);
+    return cf.add_rc;
+}
+static void toy_error(void *ctx, int code, char *text)
+{
+    (void)ctx;
+    (void)code;
+    if (cf.with_text)
+        strcpy(text, "TOY FAILED");
+}
+static void toy_panel(void *ctx, dk_ui_menu *p, int entry)
+{
+    (void)ctx;
+    cf.panel_entry = entry;
+    dk_ui_action(p, "ONE", 0, 0, entry);
+}
+static void toy_done(void *ctx, int result)
+{
+    (void)ctx;
+    cf.done_calls++;
+    cf.last_done = result;
+}
+
+int cf_init(void) { return dk_chooser_init(&api); }
+int cf_open(int current, int with_add, int with_text)
+{
+    memset(&cf, 0, sizeof cf);
+    cf.with_text = with_text;
+    cf.add_rc = 42;
+    cf.d = (dk_chooser_desc){.title = "TOY", .count = 5, .row = toy_row, .add = with_add ? "+ NEW" : 0, .root = DK_FILES_SAMPLES,
+                             .add_file = toy_add, .error_text = toy_error, .panel = toy_panel, .done = toy_done};
+    return dk_chooser_open(&cf.d, current);
+}
+void cf_add_result(int rc) { cf.add_rc = rc; }
+int cf_done_calls(void) { return cf.done_calls; }
+int cf_last_done(void) { return cf.last_done; }
+int cf_add_calls(void) { return cf.add_calls; }
+const char *cf_last_add(void) { return cf.last_add; }
+int cf_panel_entry(void) { return cf.panel_entry; }

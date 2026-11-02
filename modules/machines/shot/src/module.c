@@ -5,6 +5,7 @@
    files are added to the pool by the picker (the SMP click list) through the runtime. */
 #include <dk/api.h>
 #include <dk/machine.h>
+#include <dk/params.h>
 #include <dk/sample_picker.h>
 #include <dk/sample_track.h>
 #include <dk/ui.h>
@@ -22,7 +23,9 @@ DK_PARAM(shot, 4, shot_pitch, "Pitch", "PITCH", 0, 127, 64);
 DK_PAGE(shot, "SPK", "SHOT", DK_KNOB(0), DK_KNOB(1), DK_KNOB(2), DK_KNOB(3), DK_KNOB(4));
 DK_SAMPLE_TRACKS(0, _shot_rec, _shot_ctl);
 
+static const dk_api *g_api;
 static uint32_t pool; /* the runtime's handle of the 16-entry pool table; the picker adds and clears files with it */
+static uint32_t click_track; /* the track of the page the SMP click came from: where the pick sets SMP */
 
 int32_t dkm_init(const dk_api *api)
 {
@@ -33,6 +36,7 @@ int32_t dkm_init(const dk_api *api)
     if (handle <= 0)
         return handle < 0 ? handle : DK_SAMPLE_E_CONTRACT;
     pool = (uint32_t)handle;
+    g_api = api;
     dk_picker_init(api, pool); /* the picker is optional: when it cannot start, a click on SMP does nothing */
     return 0;
 }
@@ -42,14 +46,33 @@ void dkm_fini(const dk_api *api)
     (void)api;
     dk_picker_fini();
     pool = 0;
+    g_api = 0;
+}
+
+/* The pick: SMP of the clicked track becomes the pool index (raw = unit * 256). The lists have closed, the page is on top. A refusal shows on
+   the page, not in a dialog. */
+static void smp_pick(void *ctx, int index)
+{
+    int32_t rc;
+    (void)ctx;
+    if (!g_api || g_api->size < offsetof(dk_api, param_set) + sizeof g_api->param_set || !g_api->param_set)
+        return;
+    rc = g_api->param_set(click_track, 0, index << 8);
+    if (rc == DK_PARAM_E_HELD)
+        dk_ui_toast("RELEASE TRIG TO SET SMP");
+    else if (rc < 0)
+        dk_ui_toast("SMP NOT SET");
 }
 
 /* Click on SMP (release without a turn on the SHOT page): the runtime's page hook calls this in the UI task with the track of the page.
-   It opens the pool list over the page (sdk/src/sample_picker.c): "+ ADD" adds a file to the pool; the user then turns SMP to select
-   it (Em, 2026-11-02). NO returns to the page. */
+   It opens the pool list over the page (sdk/src/sample_picker.c) with the current SMP value marked and the cursor on it. YES on an entry
+   or on a file added with "+ ADD" sets SMP and returns to the page in one step (docs/design/ui-rules.md); NO goes back one level. */
 DK_PARAM_ACTION(shot, 0, shot_smp_click);
 void shot_smp_click(uint32_t track)
 {
-    (void)track;
-    dk_picker_open_pool(-1, 0, 0);
+    int32_t raw = -1;
+    click_track = track;
+    if (g_api && g_api->size >= offsetof(dk_api, param_get) + sizeof g_api->param_get && g_api->param_get)
+        raw = g_api->param_get(track, 0);
+    dk_picker_open_pool(DK_PARAM_IS_ERROR(raw) || raw < 0 ? -1 : (int)(raw >> 8), smp_pick, 0);
 }

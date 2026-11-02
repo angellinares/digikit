@@ -19,6 +19,17 @@ static void put(char *out, int cap, int *n, const char *s)
     out[*n] = 0;
 }
 
+void pk_cat(char *out, const char *a, const char *b)
+{
+    char t[PK_TEXT + 1];
+    int n = 0;
+    put(t, PK_TEXT + 1, &n, a);
+    put(t, PK_TEXT + 1, &n, b);
+    for (n = 0; t[n]; n++)
+        out[n] = t[n];
+    out[n] = 0;
+}
+
 int pk_utoa(char *out, uint32_t v)
 {
     char t[10];
