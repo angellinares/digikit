@@ -133,6 +133,8 @@ Folders compares the card by `plusdrive store ls` size and sha256 (as Python `ca
 
 Five cases (cuts after write 1, 3, 4, 5, 6), each on two cold boots (the cut card, then the card as the cut leaves it).
 
+Status: ported but skipped on both devices (`tests/regression/runtime/upload-faults.test.ts` ~:101, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-cut`.
+
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
 | cut | 733 | the upload ends ok only when all six writes are allowed, otherwise it is refused | F:CUT |
@@ -164,6 +166,8 @@ Difference: the stock reference is the unpatched firmware started from the CF sn
 Differences: the two runs are two cold boots in one daemon (not two parallel daemons); the trigger frame is the later of 3500 and the setup margin, and the second run keeps the first run's frame when it can. The machine is selected with `selectSine` (fx-session.ts), not `rig.select_type` and `dyn_type`.
 
 ## clear-cut (U:1194-1307), full tier, DT2 and DN2
+
+Status: ported but skipped on both devices (`tests/regression/runtime/upload-faults.test.ts` ~:162, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-clear-cut`.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |

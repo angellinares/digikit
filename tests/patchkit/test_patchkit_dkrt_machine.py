@@ -2,7 +2,7 @@
 
 Static checks: the committed objects are current, the DSP section is deterministic, its relocation agrees in three places
 (the Rust reference loader behind `patchkit dkm-dsp-image`, this file's own, and the loader's checks), and the two sides of the
-DSP area's size agree. The emulator proofs are the boot-time equivalence scenarios (tests/digikit, equiv-dyn-* and equiv-dn2-set: a selected
+DSP area's size agree. The emulator proofs are the boot-time equivalence scenarios (equiv-dyn-* in tests/digikit and tests/regression/runtime/equiv.test.ts: a selected
 module against the patched-in one, PCM sample for sample); the hot-load proof that was here is archived."""
 
 import json

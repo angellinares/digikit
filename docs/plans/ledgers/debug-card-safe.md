@@ -4,6 +4,8 @@ One line per Python check: `scenario | file:line | what | -> TS file:test`, or `
 D = `tools/patchkit/pk_digikit_debug.py`, S = `tools/patchkit/pk_digikit_scen.py`. TS files are in `tests/regression/runtime/`.
 Local helpers: `card-rig.ts` (`cardRigs`, `waitReset`), `debug-kit.ts` (`crashRecord`, `OPS`, `openAbout`).
 
+card-safety and card-small: Python stays until the assertions marked NOT PORTED are ported (agreed 2026-11-02).
+
 Differences that apply to many lines:
 
 - The Python scenarios run a `cf_only` daemon without DSP for most card and debug checks. The TS runtime sessions are always coupled (`dsp: 'sharc'`), so a boot is slower and has DSP events. No check depends on the missing DSP.
@@ -45,6 +47,8 @@ debug-log | D:792 | CAPACITY lists every kind with the device file's limit | -> 
 debug-log | D:798 | CAPACITY use agrees with MODULES | -> debug-module.test.ts: MODULES and CAPACITY list ... (use counts; the debug module is a third module, so MODULES and SELECTION are 3). The arena and DSP use equalities are tautologies once free comes from CAPACITY: DROPPED
 debug-log | D:815 | MODULES pages by start index | -> debug-module.test.ts: MODULES and CAPACITY list ... (from 1: two records, from 9: none, total 3)
 debug-log | D:820 | MODULES is not logged as an UPLOAD event | -> debug-module.test.ts: MODULES and CAPACITY list ...
+The DT2 periodic events (the four lines below) are ported, skipped on DT2 (`debug-module.test.ts` ~:349-358, handover open item 6); Python keeps that device.
+
 debug-log | D:1233 | HEALTH snapshot every ten seconds (full) | -> debug-module.test.ts: the periodic events ... (`expectPeriodicEvents`)
 debug-log | D:1242 | stable period logged once (full) | -> debug-module.test.ts: the periodic events ...
 debug-log | D:1249 | DSP diagnostics quiet: six events a set, 3 to 5 sets, ten seconds apart (full) | -> debug-module.test.ts: the periodic events ...
@@ -52,6 +56,8 @@ debug-log | D:1259 | a running DSP is never reported stopped (full) | -> debug-m
 debug-log | D:1266 | without dl_diag the DSP poll logs DSP_ABSENT once | DROPPED: the image under test always has dl_diag
 
 ## debug-guard (dt2 and dn2, full; D `run_guard` and `run_guard_dn2`)
+
+Ported, skipped on DN2 (`debug-guard.test.ts` ~:26, handover open item 6); Python keeps that device.
 
 debug-guard | D:1118 | DT2: both modules and the debug module loaded, two voice rows | -> debug-guard.test.ts: the guard zeroes a faulting machine ... (boot results; the voice-row count is NOT PORTED: `voice_rows` MISSING)
 debug-guard | D:1023 | DN2: fixture and debug module loaded, one voice row | -> debug-guard.test.ts: the guard zeroes ... (boot results; voice row count NOT PORTED as above)
@@ -70,6 +76,8 @@ debug-guard | D:1217 | follow --once writes guard.log | DROPPED: artifact of the
 debug-guard | D:1094 | common_checks_upload(project_writes_ok) | -> `cardTests` `afterClose` (write watch only, see above)
 
 ## crash-capture (dt2, full; D `run_crash`)
+
+Ported, skipped on DT2 (`crash-capture.test.ts` ~:42, handover open item 6). The TS test is DT2 only, so there is no TS coverage; Python keeps this scenario.
 
 crash-capture | D:1340 | boot 1: no crash record, exception hook installed, RAM not kept, no record in log | -> crash-capture.test.ts: early/late
 crash-capture | D:1351 | boot 2: record found, PC equals the log's, vector 4 (early) or 5 (late), module index 1 with a name, RAM kept | -> crash-capture.test.ts: early/late
@@ -119,6 +127,8 @@ card-small | D:149 | write watch on cf.expansion and flush check | -> `cardTests
 
 ## safe-fault, safe-late-fault (dt2 and dn2, full; S `run_safe`, `run_safe_late`)
 
+Ported, skipped on DT2 (`safe-mode.test.ts` ~:36, handover open item 6); Python keeps that device.
+
 safe-fault | S:893 | two boots never reach the UI loop, the third is safe mode (counter 2) | -> safe-mode.test.ts: a module that resets the machine in its init ...
 safe-fault | S:898 | safe mode loaded no module and reported E_SAFE_MODE | -> safe-mode.test.ts: a module that resets ... (loaded 0, first result -44)
 safe-fault | S:898 | all voice rows free | NOT PORTED: `voice_rows` (DSP voice registry) is MISSING in TS
@@ -133,6 +143,8 @@ safe-late-fault | S:863 | late: counter cleared before the failure, every boot s
 safe-late-fault | S:772 | fault-after.bin in the store (`cfg/`) | -> `h.cfg` and `buildCard` modules list
 
 ## cut-selection (dt2 and dn2, full; S `run_cut`)
+
+Ported, skipped on DN2 (`safe-mode.test.ts` ~:130, handover open item 6); Python keeps that device.
 
 cut-selection | S:959 | A new / B old, A torn / B old, A old / B new, A torn / B torn: valid copy with the higher seq | -> safe-mode.test.ts: power cut, A x / B y ... (four tests from one table)
 cut-selection | S:947 | the quick tier runs the first two cases (`quick_cases`) | DROPPED: the scenario is full tier, so all four cases run

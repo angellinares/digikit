@@ -58,6 +58,7 @@ broke every run once (`unknown module core/sample-pool`).
 
 1. Delete the Python wrappers, TOMLs and runner code of the families whose TypeScript passes both tiers,
    ledger by ledger (keep upload-cut, upload-clear-cut, upload-rust and the unported debug parts).
+   Done for settings, roundtrip and equiv-dn2-set (branch test/delete-py-settings); card stays until its unported assertions are ported.
 2. Fix open item 1, then delete those two Python scenarios.
 3. Port the remaining debug parts (item 3) with card-rig; then measure the Python tool graph again
    (finding 104).

@@ -9,7 +9,7 @@ globbing; no list names them; the names are unique across both places):
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx" | "settings"
+    kind = "equiv" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -29,9 +29,6 @@ Kinds:
              `pcm_samples` (default 24000) interleaved float32 samples; "record" fails and prints the hash. `env_run` and `env_ref` set environment variables of the run-time and the reference boot (`SHARC_UNINIT` for a machine that
              reads voice state beyond its cleared bytes: the run-time state is uninitialised L2). `ignore_run_machines` drops a run-time
              machine (with its parameters and pages) that the twin has no counterpart of. `play_module` and `play_machine` (default: the machine of `tools/patchkit/pk_dkrt_machine.py`, a sine) name the run-time machine the note is played with.
-  roundtrip  a project with the run-time machine on tracks, parameter values, p-locks and a sound lock is saved under set A,
-             loaded and saved under set B (machine absent) and under A again: the project slot's sound records, the sequencer
-             data and the sound locks are byte-identical to the first save; the track keeps its type while its machine is absent.
   safe       a module whose init resets the machine, twice: the third boot is safe mode (no module, reported). With `[safe] part = "late"`: a
              module that hangs the UI task some time into a session, before (early) or after (late) the stable period that clears the boot
              counter: early leads to safe mode at the third boot, late never does (finding 37).
@@ -47,14 +44,10 @@ Kinds:
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
-  settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not
-             current (A, then B, then A), never to anything else in the store range; a soft restart reads it back; the SETTINGS command and CAPACITY kind SETTINGS report it; `patchkit store dump`
-             decodes the card the guest left; a blank card is claimed first; a torn newer copy leaves the older one; tools/patchkit/pk_digikit_settings.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
-Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup), `[roundtrip] engine = "cf" | "coupled"` (the panel script on a
-ColdFire-only daemon beside a coupled boot check of each card, or all on coupled daemons). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
+Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
 (scenario, image) pairs in N processes, `DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` the emulated ms after a boot (default 300).
 
 Cards are cached by content in `out/cache/digikit/cards/`, or under `DIGIKIT_CACHE` (they are read-only for the guest, its writes live in an overlay), and the
@@ -1002,12 +995,6 @@ def run_cut(c: Ctx) -> None:
     c.common_checks()
 
 
-def run_roundtrip(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_project as P
-
-    P.run_roundtrip(c)
-
-
 def run_dkrun(
     c: Ctx, rig: B.BootRig, D: Any, blobs: dict[str, bytes], files: dict[str, str]
 ) -> None:
@@ -1358,15 +1345,8 @@ def run_pages(c: Ctx) -> None:
     PG.run_pages(c)
 
 
-def run_settings(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_settings as SET
-
-    SET.run_settings(c)
-
-
 KINDS = {
     "pages": run_pages,
-    "settings": run_settings,
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,
@@ -1375,7 +1355,6 @@ KINDS = {
     "menu": run_menu,
     "safe": run_safe,
     "cut": run_cut,
-    "roundtrip": run_roundtrip,
 }
 
 
@@ -1478,19 +1457,11 @@ def _run_pairs(
         "upload": 1,
         "card": 1,
         "debug": 1,
-        "roundtrip": 2,
         "safe": 3,
         "crash": 3,
         "equiv": 4,
     }
-    order = sorted(
-        pairs,
-        key=lambda p: (
-            -1
-            if p[0].data.get(p[0].kind, {}).get("engine") == "coupled"
-            else rank.get(p[0].kind, 9)
-        ),
-    )
+    order = sorted(pairs, key=lambda p: rank.get(p[0].kind, 9))
 
     def one(pair: tuple[Scenario, str]) -> tuple[tuple[str, str], dict[str, Any]]:
         s, image = pair

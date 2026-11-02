@@ -64,7 +64,6 @@ files = [
     "tools/patchkit/pk_digikit_fxsend.py",
     "tools/patchkit/pk_digikit_fxroute.py",
     "tools/patchkit/pk_digikit_fxroutes.py",
-    "tools/patchkit/pk_digikit_settings.py",
     "tools/patchkit/pk_digikit_fxpage.py",
     "tools/patchkit/pk_digikit_fxshift.py",
     "tools/patchkit/pk_idx65_poke.py",

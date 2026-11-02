@@ -328,7 +328,6 @@ and a table named like the kind. Kinds:
 | Kind | Checks |
 | --- | --- |
 | `equiv` | Machine, parameter, page and voice rows of a boot with set S equal those of the image patchkit builds with S's static twin; PCM of a note equal, or pinned by `pcm_sha256` (Em approves a new value). |
-| `roundtrip` | Project save and load under module sets A, B, A: the slot is byte-identical but for one header stamp word. |
 | `upload` | Module upload over USB SysEx: `ops`, `cut`, `stock`, `playback`, `rust`, `screenshot`, `quick`. |
 | `menu` | Ticking a set in SETTINGS > DIGIKIT > MODULES and restarting loads the set; PCM equals the patched-in set. |
 | `safe`, `cut` | Safe mode after a module resets the machine; card states after a power cut. |

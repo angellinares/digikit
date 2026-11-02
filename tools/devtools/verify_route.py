@@ -69,8 +69,8 @@ FRAMEWORK = frozenset(
 # call it.
 DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "__init__": (),
-    "dkupload": ("upload", "menu", "debug", "crash", "card", "settings"),
-    "dksettings": ("settings",),
+    "dkupload": ("upload", "menu", "debug", "crash", "card"),
+    "dksettings": (),  # the settings record CLI; no scenario kind runs it (the TS port is tests/regression/runtime/project-kit.ts)
     "dkrun": ("menu",),
     "dkneeds": (
         "menu",
@@ -669,7 +669,6 @@ RUNNER_KINDS: dict[str, tuple[str, ...]] = {
     "pk_digikit_fxsend.py": (),
     "pk_digikit_fxroute.py": (),  # retained offline TS oracles
     "pk_digikit_fxroutes.py": (),  # retained TS profile/card/OLED helpers
-    "pk_digikit_settings.py": ("settings",),
     "pk_digikit_fxpage.py": (),  # retained PCM comparison CLI
     "pk_digikit_fxshift.py": (),  # retained PCM/model analysis CLI
     "pk_digikit_capacity.py": ("debug",),
