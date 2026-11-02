@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { DEVICES, FIRMWARE, record } from './live.ts';
-import { GAIN, SINE } from './fx-live.ts';
+import { GAIN, SINE } from './fixtures.ts';
 import { withRouteFxSession } from './fx-route-live.ts';
 import { inspectFxBoot, tap } from './fx-session.ts';
 import { MASTER, routeUi, SEND_ROUTE } from './fx-routes-ui.ts';

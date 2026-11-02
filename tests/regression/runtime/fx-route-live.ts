@@ -1,13 +1,10 @@
 import type { Device } from '@digi/test-support';
 import { withPreparedFxSession, type PreparedFxSessionOptions } from './fx-session.ts';
+import { FX, GAIN, RT as RUNTIME_ROOTS, SEND, SINE } from './fixtures.ts';
 
-const RT = ['core/runtime', 'core/dynreg', 'core/dyndsp', 'core/dynfx'];
-export const SINE = 'test/sine';
-export const GAIN = 'test/dyn-fx-gain';
-export const SEND = 'test/dyn-fx-gain-send';
+const RT = [...RUNTIME_ROOTS, 'core/dynfx'];
 export const SENDONLY = 'test/dyn-fx-gain-sendonly';
 export const SEND3 = `${SEND}-3`;
-export const FX = 'test/dyn-fx-gain-both';
 
 export interface RouteFxSessionOptions extends Omit<PreparedFxSessionOptions, 'image'> {
   image: 'routes' | 'track' | 'track-base';

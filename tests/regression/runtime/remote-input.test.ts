@@ -1,9 +1,8 @@
-import { setTimeout as delay } from 'node:timers/promises';
 import { SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { timePhase } from '../timing.ts';
-import { liveArtifacts, runtimeTests, settleUi } from './live.ts';
+import { liveArtifacts, runtimeTests, expectRuntimeReady, waitEmulated } from './live.ts';
 import {
   captureRemoteOled,
   expectRemoteEnabled,
@@ -22,7 +21,7 @@ async function expectRemoteKeys(runtime: PatchedSession): Promise<void> {
     let shots = 0;
     const shot = (name: string) => captureRemoteOled(session, `${String(++shots).padStart(2, '0')}-${name}`);
     const tap = async (name: string, settleMs = 1200) => {
-      await remoteTap(dk, name, settleMs);
+      await remoteTap(session, dk, name, settleMs);
       await shot(name.toLowerCase());
     };
     await shot('start');
@@ -42,7 +41,7 @@ async function expectRemoteKeys(runtime: PatchedSession): Promise<void> {
 /** The remote commands answer as soon as digikit/remote is installed: checks, bounds and paced TURN. */
 async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   await installRemote(runtime);
   await expectRemoteEnabled(session, dk);
   const cmd = (command: number, body: number[] = []) => dk.request(command, Uint8Array.from(body));
@@ -70,7 +69,7 @@ async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
     expect(immediate.body.length).toBe(1);
     // Adjacent host requests may span a firmware refill; exact timing is covered by the C pacing unit.
     expect([0, 30]).toContain(immediate.body[0]);
-    await timePhase('settle.remote-refill', () => delay(3000));
+    await timePhase('settle.remote-refill', () => waitEmulated(session, 3000));
     const back = await cmd(SERVICE_CMD.REMOTE_TURN, [1, 156]);
     expect(back.status).toBe(0);
     expect(back.body.length).toBe(1);

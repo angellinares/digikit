@@ -20,7 +20,7 @@ import { cardStore, deviceProfile } from './device-data.ts';
 import { logEvents, ofKind } from './runtime-menu.ts';
 
 /**
- * Card safety (Python `run_card`, `run_card_small`; tests/digikit/scenarios/card-safety.toml and card-small.toml): the one card-write function refuses writes
+ * Card safety (was Python `run_card`, `run_card_small`; deleted: REF:tests/digikit/scenarios/card-safety.toml, REF:tests/digikit/scenarios/card-small.toml): the one card-write function refuses writes
  * outside the store range; a blank card works as before; foreign bytes in the range make the card read-only for the runtime; a card with our store keeps
  * working; an upload on a blank card claims the range first, so a cut upload leaves a card the next boot calls ours; a card smaller than the store area has
  * no store. The write watch and the card writes are checked as `common_checks_upload`.

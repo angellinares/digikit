@@ -2,12 +2,11 @@ import { hasCap } from '@digi/dk-session';
 import { RANGES } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { installModule, moduleArtifact, runtimeTests, settleLive } from './live.ts';
+import { expectRuntimeReady, installModule, moduleArtifact, runtimeTests } from './live.ts';
 
 /** Port of live-svc: runtime command registration, dispatch and refusal semantics. */
 async function expectServiceCommands({ session, dk }: PatchedSession): Promise<void> {
-  // live-svc uses live_boot's default on both devices, not the remote scenario's DN2 settle.
-  await settleLive(session);
+  await expectRuntimeReady(session);
   await installModule(dk, 'test/svc-echo', moduleArtifact(session.options.device, 'test/svc-echo'));
   expect(hasCap(await dk.info(), 'SERVICE_CMDS'), 'INFO advertises service commands').toBe(true);
   expect(RANGES.remote_state, 'reserved remote state command range').toEqual([0x3e, 0x3f]);

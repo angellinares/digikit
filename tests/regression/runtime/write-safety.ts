@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { cloneFile, type Device } from '@digi/test-support';
-import { cardStore, expansionRegion } from './device-data.ts';
+import { cardStore, expansionRegion, uploadStore } from './device-data.ts';
 import type { RuntimePlan } from './runtime-plan.ts';
 
 /** Write-watch and card-overlay safety of the runtime proofs. */
@@ -211,15 +211,17 @@ function runtimePolicy(device: Device, name: SafetyPolicy) {
 
 /** The card sectors an overlay may not contain: store sectors other than the selection copies and the policy's extras, and low sectors other than those and the kit areas. */
 function runtimeCardPolicy(sectors: number[], device: Device, areas: [number, number][], extra: number[]) {
-  const { selA, selB } = cardStore(device);
+  const { selA, selB, first, end, firmwareFirst } = uploadStore(device);
   const allowed = [selA, selB];
   const unique = [...new Set(sectors)];
   return {
+    // Below the firmware's own project sectors and outside the module store range.
+    outsideStore: unique.filter((s) => s < firmwareFirst && !(first <= s && s < end)).sort((a, b) => a - b),
     invalid_store: [...new Set(cardStoreHits(sectors, device))]
       .filter((s) => !allowed.includes(s) && !extra.includes(s))
       .sort((a, b) => a - b),
     invalid_low: unique
-      .filter((s) => s < 0x50000 && !allowed.includes(s) && !areas.some(([lo, hi]) => lo <= s && s < hi))
+      .filter((s) => s < firmwareFirst && !allowed.includes(s) && !areas.some(([lo, hi]) => lo <= s && s < hi))
       .sort((a, b) => a - b),
   };
 }

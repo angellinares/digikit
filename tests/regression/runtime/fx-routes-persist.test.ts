@@ -7,7 +7,8 @@ import { button, repoRoot } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { advance, analysisJson, bounded, frames, pickSine, rpc, word } from './fx-live.ts';
-import { SEND, SINE, withRouteFxSession } from './fx-route-live.ts';
+import { SEND, SINE, triggerFrame } from './fixtures.ts';
+import { withRouteFxSession } from './fx-route-live.ts';
 import { inspectFxBoot, withPausedFxProtocol, tap } from './fx-session.ts';
 import { MASTER, routeUi, SEND_ROUTE } from './fx-routes-ui.ts';
 import { DEVICES, expectRuntimeUi, FIRMWARE, record } from './live.ts';
@@ -105,7 +106,7 @@ for (const device of DEVICES) {
         } else await pickSine(session, hint);
         await tap(session, 'NO', 300);
         const current = await frames(session);
-        const trigger = Math.max(device === 'dt2' ? 7500 : 7000, current + 300);
+        const trigger = Math.max(triggerFrame(device), current + 300);
         record(artifacts, `${tag}-timing`, { currentFrame: current, triggerFrame: trigger });
         const file = path.join(artifacts, `${tag}.wav`);
         try {

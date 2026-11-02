@@ -55,9 +55,9 @@ export async function installRemote({ session, dk }: PatchedSession): Promise<vo
   await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
 }
 
-export async function remoteTap(dk: DkSession, name: string, settleMs = 1200): Promise<void> {
+export async function remoteTap(session: Session, dk: DkSession, name: string, settleMs = 1200): Promise<void> {
   const code = button(name);
-  await tap((down) => dk.remoteKey(code, down), 300, settleMs);
+  await tap(session, (down) => dk.remoteKey(code, down), 300, settleMs);
 }
 
 /** Always release held remote inputs, including on navigation/assertion failure. */

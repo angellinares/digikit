@@ -5,7 +5,8 @@ import { button, encoder, repoRoot } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { advance, analysisJson, bounded, compare, frames, rows, rpc, word } from './fx-live.ts';
-import { FX, SINE, withRouteFxSession } from './fx-route-live.ts';
+import { FX, SINE, triggerFrame as triggerFor } from './fixtures.ts';
+import { withRouteFxSession } from './fx-route-live.ts';
 import { inspectFxBoot, withPausedFxProtocol, selectSine, shot, tap } from './fx-session.ts';
 import { amountShown, kitMenu, kitSlotOne, selectTrack, setAmount, soundImage, trackNote } from './fx-track-ui.ts';
 import { DEVICES, FIRMWARE, record } from './live.ts';
@@ -37,7 +38,7 @@ for (const device of DEVICES) {
   describe.sequential(`${device.toUpperCase()} ${FIRMWARE[device]} track FX send page`, () => {
     let baseHash: string;
     let basePcm: string;
-    const triggerFrame = device === 'dt2' ? 7500 : 7000;
+    const triggerFrame = triggerFor(device);
 
     describe('image without the page hook', () => {
       const context = withRouteFxSession(device, 'track FX base', {

@@ -59,6 +59,7 @@ async function expectInputAdapter(device: Device): Promise<void> {
           const tap = async (name: string, settleMs = 1200) => {
             const code = button(name);
             await holdTap(
+              session,
               async (down) => {
                 if (source === 'panel') await session.client.inputButton(code, down);
                 else {

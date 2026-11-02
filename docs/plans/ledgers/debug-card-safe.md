@@ -4,13 +4,15 @@ One line per Python check: `scenario | file:line | what | -> TS file:test`, or `
 D = `tools/patchkit/pk_digikit_debug.py`, S = `tools/patchkit/pk_digikit_scen.py`. TS files are in `tests/regression/runtime/`.
 Local helpers: `card-rig.ts` (`cardRigs`, `waitReset`), `debug-kit.ts` (`crashRecord`, `OPS`, `openAbout`).
 
-card-safety and card-small: Python stays until the assertions marked NOT PORTED are ported (agreed 2026-11-02).
+card-safety and card-small: Python deleted; the store-range write check is ported to card-rig.ts (afterClose, uploads). `debug_on` is obsolete (the debug switch is gone); the saved-selection flag bit belongs to debug-log.
+
+card-torn (`tests/digikit/scenarios/card-torn.toml`, added 2026-11-02): stays Python (`run_card_torn`) until it is ported to card-safety.test.ts.
 
 Differences that apply to many lines:
 
 - The Python scenarios run a `cf_only` daemon without DSP for most card and debug checks. The TS runtime sessions are always coupled (`dsp: 'sharc'`), so a boot is slower and has DSP events. No check depends on the missing DSP.
 - A Python rig is one daemon per card. In TS one daemon per describe block boots one card image after the other (`fixture.reload`); each case still starts from a cold boot of its card.
-- `common_checks` / `common_checks_upload`: write watch and flush check are asserted for every card block (`cardTests`, `afterClose`). The card policy (`runtimeSafety` `pass`) is asserted only without `uploads`; with `uploads` (card-safety, card-small, debug-guard) only the write watch is, because `runtimeSafety` has no upload policy.
+- `common_checks` / `common_checks_upload`: write watch and flush check are asserted for every card block (`cardTests`, `afterClose`). The card policy (`runtimeSafety` `pass`) is asserted without `uploads`; with `uploads` (card-safety, card-small, debug-guard) the write watch is asserted and `outsideStore` must be empty (writes only in the store range or from 0x50000).
 
 ## debug-log (dt2, quick; D `run_debug` and `part_modules`; `periodic` is full tier)
 
@@ -101,7 +103,7 @@ card-safety | D:244 | foreign: check says foreign, first non-blank sector and cr
 card-safety | D:252 | foreign: the boot runs normally | -> card-safety.test.ts: foreign bytes in the range ...
 card-safety | D:261 | foreign: selection and in-range write E_CARD_RO, out of range E_RANGE, 3 refused | -> card-safety.test.ts: foreign bytes in the range ...
 card-safety | D:268 | foreign: no selection record written | -> card-safety.test.ts: foreign bytes in the range ...
-card-safety | D:274 | foreign: INFO read-only, LIST empty | -> card-safety.test.ts: foreign bytes in the range ... (the `debug_on` part is NOT PORTED, see debug-log)
+card-safety | D:274 | foreign: INFO read-only, LIST empty | -> card-safety.test.ts: foreign bytes in the range ...  (`debug_on` is obsolete, see debug-log)
 card-safety | D:286 | foreign: BEGIN, DELETE, CLEAR answer E_INUSE | -> card-safety.test.ts: foreign bytes in the range ...
 card-safety | D:293 | foreign: log reports state, sector and hash as error event | -> card-safety.test.ts: foreign bytes in the range ...
 card-safety | D:319 | foreign: ABOUT rows CARD READ-ONLY, NOT OURS AT n, NO BOOT COUNTER, each <= 21 characters | -> card-safety.test.ts: foreign bytes in the range ... (panel keys in a free-running session, `openAbout`)
@@ -115,7 +117,7 @@ card-safety | D:386 | our store: the selection loads | -> card-safety.test.ts: a
 card-safety | D:397 | our store: selection and upload work, nothing refused | -> card-safety.test.ts: a card with our store keeps working ...
 card-safety | D:416 | claim: the cut upload claimed the range, failed | -> card-safety.test.ts: an upload on a blank card claims the range ...
 card-safety | D:431 | claim: next boot calls the area ours, empty store, upload works | -> card-safety.test.ts: an upload on a blank card claims the range ... (`h.after()` = `card_after`)
-card-safety | D:439 | common_checks_upload(project_writes_ok) | -> `cardTests` `afterClose` (write watch only)
+card-safety | D:439 | common_checks_upload(project_writes_ok) | -> `cardTests` `afterClose` (write watch and `outsideStore` empty)
 card-small | D:92 | small card: too small, nothing refused, claimed or written | -> card-safety.test.ts: a card smaller than the store area ... (`DIGI_CARD_IDENTITY=small` via `cardTests` env)
 card-small | D:99 | small card: the boot goes on | -> card-safety.test.ts: a card smaller ...
 card-small | D:106 | small card: one error event for the check (state 5) | -> card-safety.test.ts: a card smaller ...

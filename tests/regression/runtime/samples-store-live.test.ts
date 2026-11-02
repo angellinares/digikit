@@ -3,13 +3,20 @@ import { join } from 'node:path';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import type { PatchedSession } from '../support.ts';
 import { timePhase } from '../timing.ts';
-import { liveArtifacts, liveCheck as check, liveProtocol, runtimeTests, sampleWav, settleLive } from './live.ts';
+import {
+  expectRuntimeReady,
+  liveArtifacts,
+  liveCheck as check,
+  liveProtocol,
+  runtimeTests,
+  sampleWav,
+} from './live.ts';
 import { deviceProfile } from './device-data.ts';
 import { hexSha256 } from '@digi/dk-session';
 import { openSamples } from '@digi/dk-session/samples';
 
 async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
-  await settleLive(session);
+  await expectRuntimeReady(session);
   const out = liveArtifacts(session, 'samples-store-live');
   const wav = sampleWav(2);
   const storage = 'digikit';

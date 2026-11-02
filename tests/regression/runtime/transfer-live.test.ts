@@ -4,7 +4,7 @@ import { hexSha256 } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { DEBUG_MODULE, liveArtifacts, record, runtimeTests, settleLive } from './live.ts';
+import { DEBUG_MODULE, expectRuntimeReady, liveArtifacts, record, runtimeTests } from './live.ts';
 import { cliInstall, transferCommand } from './transfer-cli.ts';
 
 interface FolderResult {
@@ -23,8 +23,7 @@ async function expectTransferLive({ session, dk }: PatchedSession): Promise<void
   const mirrored = path.join(mirror, 'digikit', modulePath);
   const sha256 = async () => (fs.existsSync(mirrored) ? await hexSha256(fs.readFileSync(mirrored)) : null);
 
-  // live_boot's wall-clock settle, on the free-running daemon; no instruction stepping.
-  await settleLive(session);
+  await expectRuntimeReady(session);
   const epoch = (await session.status()).epoch;
   if (typeof epoch !== 'number') throw new Error('daemon status must report a numeric epoch');
   await cliInstall(session, 'test/sine', artifacts, 300_000, [DEBUG_MODULE]);

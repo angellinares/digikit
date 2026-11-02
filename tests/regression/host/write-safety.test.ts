@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { Device } from '@digi/test-support';
-import { cardStore } from '../runtime/device-data.ts';
+import { cardStore, uploadStore } from '../runtime/device-data.ts';
 import { KIT_AREAS, overlayWrites, runtimeSafety, type SafetyPolicy } from '../runtime/write-safety.ts';
 
 const directories: string[] = [];
@@ -79,6 +79,13 @@ describe.each(['dt2', 'dn2'] as const)('runtime safety on %s', (device) => {
     for (const sector of [kitLo - 1, kitHi, store.first, store.setA + 1, store.setB + 1]) {
       expect(check(device, [sector], 'fx-routes').pass, `sector ${sector}`).toBe(false);
     }
+  });
+
+  test('outsideStore lists only sectors below the firmware project area', () => {
+    // The store lies above the firmware's project area, so only a write below that area is outside both.
+    const { firmwareFirst } = uploadStore(device);
+    const low = 0x100;
+    expect(check(device, [store.first, firmwareFirst, store.first - 1, low]).overlays[0]!.outsideStore).toEqual([low]);
   });
 
   test('overlayWrites lists the written store sectors once, sorted', () => {

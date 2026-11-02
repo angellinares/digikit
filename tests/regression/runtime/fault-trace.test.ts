@@ -4,7 +4,14 @@ import { CAP, CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { button, MS } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { DEBUG_MODULE, installWithDebug, liveArtifacts, moduleArtifact, runtimeTests, settleUi } from './live.ts';
+import {
+  DEBUG_MODULE,
+  expectRuntimeReady,
+  installWithDebug,
+  liveArtifacts,
+  moduleArtifact,
+  runtimeTests,
+} from './live.ts';
 import { openDigikitMenu, readAboutRows, readCrashSeen, readSmallRing, RING_SYMBOLS } from './runtime-menu.ts';
 import { prepareRuntimePlan } from './runtime-plan.ts';
 
@@ -87,7 +94,7 @@ async function expectNoDebugModule(runtime: PatchedSession, plan: Awaited<Return
 /** An effect on the send route stops the DSP: the next boot is safe mode, and ABOUT, dk/fault and the log name the module, the site and the step. */
 async function expectFxHang(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), [
     'DK_ABOUT',
     'DK_ABOUT_N',
@@ -135,7 +142,7 @@ async function expectFxHang(runtime: PatchedSession): Promise<void> {
 /** A machine whose render never returns: the DT2 voice site. The machine is put on track 1 through the SRC list (the first run-time machine is the 8th row). */
 async function expectVoiceHang(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   await installWithDebug(runtime, 'test/dyn-dsp-hang');
   const tap = panelTap(runtime);
   await session.client.inputButton(button('FUNC'), true);
@@ -168,7 +175,7 @@ async function expectVoiceHang(runtime: PatchedSession): Promise<void> {
 /** A send effect that faults in every block: FX_FAULT and FX_DISABLED, tagged with the module's source, and no stop. */
 async function expectFxFaultEvents(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   await installWithDebug(runtime, 'test/dyn-fx-nan');
   await expect
     .poll(async () => (await dk.readLog(true)).some((e) => e.kind === LOG_KIND.FX_DISABLED), {
@@ -198,7 +205,7 @@ async function expectFxFaultEvents(runtime: PatchedSession): Promise<void> {
 /** An ordinary effect runs for longer than the stall limit: no stop is declared and the device does not reset. */
 async function expectNoFalseStop(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   await installWithDebug(runtime, 'test/dyn-fx-gain-send');
   const boot = (await dk.readLog()).find((e) => e.kind === LOG_KIND.BOOT_START);
   await waitFrames(runtime, BLOCKS_PAST_THE_LIMIT);
@@ -213,7 +220,7 @@ async function expectNoFalseStop(runtime: PatchedSession): Promise<void> {
 /** A module that raises a CPU exception: the next boot keeps dk/fault with kind CPU crash and the PC. */
 async function expectCpuCrashFault(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   // the daemon stops the run at a CPU exception unless the guest's handler (the runtime's crash capture) is to run
   await session.client.call('cpu.exceptions', { deliver: true });
   const cfg = Uint8Array.of(0, 0, 0x0b, 0xb8, 0); // 3000 blocks (2 s) after the first slot call, an illegal instruction
@@ -240,7 +247,7 @@ async function expectCpuCrashFault(runtime: PatchedSession): Promise<void> {
 /** A panic of the runtime (CMD_FAULT, a failed bounds check) writes a panic record and resets: the next boot is safe mode and ABOUT, dk/fault and the log name it. */
 async function expectRuntimePanic(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), [
     'DK_ABOUT',
     'DK_ABOUT_N',

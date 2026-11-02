@@ -3,7 +3,7 @@ import path from 'node:path';
 import { repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { moduleArtifact, runtimeTests, settleLive } from './live.ts';
+import { expectRuntimeReady, moduleArtifact, runtimeTests } from './live.ts';
 
 /** The probe transport (with remote also selected): the SHARC probe effect sends one framed word per block through the module step word, and the ColdFire collector keeps it. */
 const PROBE = 'test/sharc-probe';
@@ -37,7 +37,7 @@ function status(body: Uint8Array): Record<string, number> {
 }
 
 async function installProbe({ session, dk }: PatchedSession, effect: string): Promise<void> {
-  await settleLive(session);
+  await expectRuntimeReady(session);
   const paths: string[] = [];
   for (const id of [REMOTE, effect, COLLECTOR]) {
     const bytes = fs.readFileSync(moduleArtifact(session.options.device, id));

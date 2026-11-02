@@ -20,14 +20,14 @@ import { deviceProfile } from './device-data.ts';
 import { fxExpectations, type FxExpectations } from './dkm.ts';
 import { planSymbol, prepareRuntimePlanOffline, validateRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 import { runtimeSafety, runtimeWatchEnv } from './write-safety.ts';
+import { GAIN, SINE } from './fixtures.ts';
+import { drainInputs, tap } from './fx-session.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
 // core/fx's published registry row: modules/core/adapters/fx/module.toml.
 export const ROW_WORDS = 24;
 export const FREE_PC = 0xffffffff;
-export const SINE = 'test/sine';
-export const GAIN = 'test/dyn-fx-gain';
 export const bounded = <T>(operation: () => Promise<T>) => withinRuntimeDeadline(Date.now() + 30_000, operation);
 export const rpc = <T>(session: Session, method: string, params?: Record<string, unknown>) =>
   bounded(() => session.client.call<T>(method, params));
@@ -148,38 +148,66 @@ export async function advance(session: Session, ms: number): Promise<void> {
 /** Choose the original device list hint or a numeric override without asserting selected-track identity.
  * The BASIC chain uses selectSine for DT2 type readback; gain/deselect retains its audible-input contract. */
 export async function pickSine(session: Session, selection?: number, ups = 0): Promise<void> {
-  const tap = async (key: string, held?: string) => {
-    try {
-      if (held) {
-        await bounded(() => session.client.inputButton(button(held), true));
-        await advance(session, 5);
-      }
-      await bounded(() => session.client.inputTap(button(key), 20 * MS));
-      await advance(session, 25);
-    } finally {
-      if (held) {
-        await bounded(() => session.client.inputButton(button(held), false));
-        await advance(session, 5);
-      }
-    }
-  };
   const hint = selection ?? (session.options.device === 'dt2' ? 7 : 5);
   if (!Number.isInteger(hint) || hint < 0) throw new Error('FX input hint must be a nonnegative list position');
-  await tap('SRC', 'FUNC');
+  await tap(session, 'SRC', 0, 'FUNC');
   await advance(session, 200);
   // `ups` UP presses first: every try starts from the top of the list
   for (let i = 0; i < ups; i++) {
-    await tap('UP');
+    await tap(session, 'UP', 0);
     await advance(session, 80);
   }
   for (let i = 0; i < hint; i++) {
-    await tap('DOWN');
+    await tap(session, 'DOWN', 0);
     await advance(session, 80);
   }
-  await tap('YES');
+  await tap(session, 'YES', 0);
   await advance(session, 300);
-  await tap('YES');
+  await tap(session, 'YES', 0);
   await advance(session, 300);
+}
+
+export interface NoteOptions {
+  /** WAV file for the PCM capture. */
+  file: string;
+  /** Absolute DSP frame at which the note starts (after the block boundary). */
+  trigger: number;
+  /** Names the setup error and the fault check. */
+  tag: string;
+  /** Frames captured after the trigger. */
+  length?: number;
+  /** `pcm.tap start` was already sent by the caller. */
+  tapStarted?: boolean;
+  /** Skip the 44 000-instruction offset after the block boundary. */
+  skipStep?: boolean;
+  /** Capture without pressing TRIG 1. */
+  noPress?: boolean;
+  /** Runs once after the key is down, inside the capture. */
+  during?: () => Promise<void>;
+}
+
+/** The shared note sequence: run to `trigger`, capture `length` frames with TRIG 1 held, then check for faults. */
+export async function captureNote(session: Session, opts: NoteOptions): Promise<void> {
+  const { file, trigger, tag, length = 1500 } = opts;
+  const current = await frames(session);
+  if (current >= trigger - 20) throw new Error(`${tag} setup too late: current frame ${current}, trigger ${trigger}`);
+  if (!opts.tapStarted) await rpc(session, 'pcm.tap', { action: 'start' });
+  try {
+    await bounded(() => session.client.runUntil({ frames: trigger, timeout_wall_s: 30 }));
+    if (!opts.skipStep) await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
+    await rpc(session, 'pcm.tap', { action: 'capture', path: file });
+    if (!opts.noPress) await bounded(() => session.client.inputButton(button('TRIG 1'), true));
+    await opts.during?.();
+    await bounded(() => session.client.runUntil({ frames: trigger + length, timeout_wall_s: 30 }));
+  } finally {
+    try {
+      await rpc(session, 'pcm.tap', { action: 'capture_stop' });
+    } finally {
+      await bounded(() => session.client.inputButton(button('TRIG 1'), false));
+    }
+  }
+  await advance(session, 50);
+  await bounded(() => session.expectNoFault(tag));
 }
 
 /** Future-frame choice follows the legacy restarted-note path; boundary offset and 1500-frame hold are unchanged. */
@@ -199,22 +227,7 @@ export async function capture(
     currentFrame: current,
     triggerFrame: trig,
   });
-  try {
-    if (current >= trig - 20) throw new Error(`FX capture setup too late: current frame ${current}, trigger ${trig}`);
-    await bounded(() => session.client.runUntil({ frames: trig, timeout_wall_s: 30 }));
-    await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
-    await rpc(session, 'pcm.tap', { action: 'capture', path: file });
-    await bounded(() => session.client.inputButton(button('TRIG 1'), true));
-    await bounded(() => session.client.runUntil({ frames: trig + 1500, timeout_wall_s: 30 }));
-  } finally {
-    try {
-      await rpc(session, 'pcm.tap', { action: 'capture_stop' });
-    } finally {
-      await bounded(() => session.client.inputButton(button('TRIG 1'), false));
-    }
-  }
-  await advance(session, 50);
-  await bounded(() => session.expectNoFault('FX note'));
+  await captureNote(session, { file, trigger: trig, tag: 'FX note', tapStarted: true });
   return trig;
 }
 
@@ -341,26 +354,7 @@ export function pcmWindow(pcm: Float32Array, n: number): { onset: number; window
  * runs once after the key is down, inside the capture. The key stays down for the whole capture. Python `Rig.note`.
  */
 export async function playNote(session: Session, file: string, trigger: number, during?: () => Promise<void>) {
-  const current = await frames(session);
-  if (current >= trigger - 20)
-    throw new Error(`note setup took until frame ${current}; raise the trigger frame ${trigger}`);
-  await rpc(session, 'pcm.tap', { action: 'start' });
-  try {
-    await bounded(() => session.client.runUntil({ frames: trigger, timeout_wall_s: 30 }));
-    await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
-    await rpc(session, 'pcm.tap', { action: 'capture', path: file });
-    await bounded(() => session.client.inputButton(button('TRIG 1'), true));
-    await during?.();
-    await bounded(() => session.client.runUntil({ frames: trigger + 1500, timeout_wall_s: 30 }));
-  } finally {
-    try {
-      await rpc(session, 'pcm.tap', { action: 'capture_stop' });
-    } finally {
-      await bounded(() => session.client.inputButton(button('TRIG 1'), false));
-    }
-  }
-  await advance(session, 50);
-  await bounded(() => session.expectNoFault('note'));
+  await captureNote(session, { file, trigger, tag: 'note', during });
 }
 
 /** Gain-fixture assertions only: fixed sine/gain module and default-emulator assumptions. */
@@ -397,15 +391,7 @@ export async function inspect(
   expect(capacity.FX_SLOTS).toEqual({ limit: slots, used: wet ? 1 : 0, largest: 0 });
   const settings = await bounded(() => readSettingsRecordIfPresent(dk));
   expect(settings === null ? null : settingsValue(settings, 'dk/fault')).toBeNull();
-  await expect
-    .poll(
-      async () => {
-        const status = await withinRuntimeDeadline(deadline, () => session.status());
-        return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
-      },
-      { timeout: Math.max(1, deadline - Date.now()), interval: 100, message: 'boot input has finished before pausing' },
-    )
-    .toEqual({ pending: 0, scheduled: 0 });
+  await drainInputs(session, Math.max(1, deadline - Date.now()));
   await rpc(session, 'run.mode', { mode: 'paused' });
   const boot = planSymbol(plan, 'DKRT_BOOT');
   const fields = await Promise.all(Array.from({ length: 10 + names.length }, (_, i) => word(session, boot + i * 4)));

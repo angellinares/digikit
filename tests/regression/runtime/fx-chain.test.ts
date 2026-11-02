@@ -1,29 +1,14 @@
 import path from 'node:path';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
-import { button } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import {
-  advance,
-  analysisJson,
-  bounded,
-  compare,
-  FREE_PC,
-  frames,
-  GAIN,
-  rows,
-  rpc,
-  SINE,
-  slotsFor,
-  word,
-} from './fx-live.ts';
+import { analysisJson, bounded, captureNote, compare, FREE_PC, frames, rows, rpc, slotsFor, word } from './fx-live.ts';
+import { GAIN, RT, SINE, triggerFrame } from './fixtures.ts';
 import { chainCheck, fxExpectations } from './dkm.ts';
 import { inspectFxBoot, selectSine, withPreparedFxSession } from './fx-session.ts';
 import { DEVICES, FIRMWARE, record } from './live.ts';
 import { readSmallRing } from './runtime-menu.ts';
 import { planSymbol } from './runtime-plan.ts';
-
-const RT = ['core/runtime', 'core/dynreg', 'core/dyndsp'];
 
 for (const device of DEVICES) {
   // These nested suites are ordered: the plain owned process closes before the hooked image starts.
@@ -41,26 +26,11 @@ for (const device of DEVICES) {
       // DT2 checks the assigned sine type and selected-track readback; DN2 retains its hint-only choice.
       await selectSine(runtime, context.profile);
       const current = await frames(session);
-      const trigger = device === 'dt2' ? 7500 : 7000;
+      const trigger = triggerFrame(device);
       record(context.artifacts, `${tag}-timing`, { currentFrame: current, triggerFrame: trigger });
-      if (current >= trigger - 20) throw new Error(`BASIC FX setup too late: frame ${current}, trigger ${trigger}`);
       const file = path.join(context.artifacts, `${tag}.wav`);
-      try {
-        await bounded(() => session.client.runUntil({ frames: trigger, timeout_wall_s: 30 }));
-        // Rig.note: same instruction offset after the DSP boundary, held for the whole 1500-frame capture.
-        await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
-        await rpc(session, 'pcm.tap', { action: 'capture', path: file });
-        await bounded(() => session.client.inputButton(button('TRIG 1'), true));
-        await bounded(() => session.client.runUntil({ frames: trigger + 1500, timeout_wall_s: 30 }));
-      } finally {
-        try {
-          await rpc(session, 'pcm.tap', { action: 'capture_stop' });
-        } finally {
-          await bounded(() => session.client.inputButton(button('TRIG 1'), false));
-        }
-      }
-      await advance(session, 50);
-      await bounded(() => session.expectNoFault(`BASIC FX ${tag}`));
+      // Rig.note: same instruction offset after the DSP boundary, held for the whole 1500-frame capture.
+      await captureNote(session, { file, trigger, tag: `BASIC FX ${tag}`, tapStarted: true });
       const pcm = await analysisJson<{ peak: number }>(
         'tools.patchkit.pk_digikit_fx',
         ['pcm-peak', file],

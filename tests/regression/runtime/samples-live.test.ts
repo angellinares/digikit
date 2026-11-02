@@ -7,7 +7,14 @@ import { expect } from 'vitest';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { RpcFiles, putVerified, verifyWritten } from '@digi/dk-session/rpcfiles';
 import type { PatchedSession } from '../support.ts';
-import { liveArtifacts, liveCheck as check, liveProtocol, runtimeTests, sampleWav, settleLive } from './live.ts';
+import {
+  expectRuntimeReady,
+  liveArtifacts,
+  liveCheck as check,
+  liveProtocol,
+  runtimeTests,
+  sampleWav,
+} from './live.ts';
 import { cardAfter } from './write-safety.ts';
 import { overlayArgs, plusdriveBinary } from './card-kit.ts';
 
@@ -51,7 +58,7 @@ async function expectSampleCard(session: Session, out: string, hash: number): Pr
 }
 
 async function expectSamplesLive({ session }: PatchedSession): Promise<void> {
-  await settleLive(session);
+  await expectRuntimeReady(session);
   const out = liveArtifacts(session, 'samples-live');
   const wav = sampleWav(1);
   const same = (a: Uint8Array, b: Uint8Array) => Buffer.from(a).equals(Buffer.from(b));

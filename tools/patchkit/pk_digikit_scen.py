@@ -35,8 +35,8 @@ Kinds:
   menu       a set checked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with NO and YES on APPLY & RESTART? is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
   cut        the card states a power cut leaves between the two copies of the selection record.
-  card       card safety (finding 46): the one card-write function refuses writes outside the store range; a blank card works as before, a card
-             with foreign bytes in the range goes read-only and the runtime writes nothing, a card with our store keeps working.
+  card       `[card] part = "torn"` only: a power cut inside the first writes to a blank card (finding 46, residual risk). The other card-safety
+             cases are the TypeScript card-safety test.
   debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
              `[debug] part = "sticky"`: sticky machine type numbers (assigned at the boot load, kept in the selection record's map, eviction); the plain part also checks MODULES.
              `part = "guard"` (both images): the runtime guard on a NaN fixture.

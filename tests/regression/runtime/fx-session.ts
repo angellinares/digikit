@@ -92,6 +92,19 @@ export async function tap(session: Session, key: string, settleMs = 300, held?: 
   if (settleMs) await advance(session, settleMs);
 }
 
+/** Wait until the boot input has finished, so the run can pause. */
+export async function drainInputs(session: Session, timeoutMs = 30_000): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const status = await bounded(() => session.status());
+        return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
+      },
+      { timeout: timeoutMs, interval: 100, message: 'boot input has finished before pausing' },
+    )
+    .toEqual({ pending: 0, scheduled: 0 });
+}
+
 /** Preserve the exact decoded OLED image and hash for pixel comparisons. */
 export async function shot(session: Session, artifacts: string, tag: string): Promise<string> {
   const frame = await bounded(() => session.client.framebufferGet({ hash: true, data: true }));
@@ -174,15 +187,7 @@ export async function inspectFxBoot(
     )
     .toEqual({ names: expectedNames, results: expectedResults });
   const capacity = await bounded(() => dk.capacity());
-  await expect
-    .poll(
-      async () => {
-        const status = await bounded(() => session.status());
-        return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
-      },
-      { timeout: 30_000, interval: 100, message: 'route boot input has finished before pausing' },
-    )
-    .toEqual({ pending: 0, scheduled: 0 });
+  await drainInputs(session);
   await bounded(() => session.client.call('run.mode', { mode: 'paused' }));
   const fields = await Promise.all(Array.from({ length: 10 }, (_, i) => word(session, boot + i * 4)));
   expect(fields.slice(0, 4)).toEqual([0x444b4254, 1, 0, 0]);

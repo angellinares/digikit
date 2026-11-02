@@ -74,7 +74,7 @@ export interface CardRigOptions {
   initial?: 'small' | (() => CardSpec);
   /** Seed every card with the stock firmware's project (Python `Env.card`). */
   project?: boolean;
-  /** Uploads and project writes are part of the scenario: the write watch is checked, the card writes are not (`common_checks_upload`). */
+  /** Uploads and project writes are part of the scenario: the card writes may be the store range and the firmware project sectors only (`common_checks_upload`). */
   uploads?: boolean;
   /** Store sectors besides the two selection sectors that the test writes on purpose (Python `store_extra`). */
   storeExtra?: number[];
@@ -275,7 +275,17 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         record(artifacts, 'lifetime-safety', report);
         expect(report.write_events, 'write-watch on cf.expansion over every boot: no stray write').toBe(0);
         expect(report.flush_hits, 'flush check over every boot: no hit').toBe(0);
-        if (!o.uploads)
+        // A blank small card is formatted by the stock firmware (writes below the store area): the test's own
+        // "nothing written in the store range" check is the one that counts there, as in Python `run_card_small`.
+        if (o.initial === 'small') {
+          // no card-write policy
+        } else if (o.uploads)
+          for (const card of report.overlays)
+            expect(
+              card.outsideStore,
+              `card writes of ${card.path}: the module store range and the firmware project sectors from 0x50000 only`,
+            ).toEqual([]);
+        else
           for (const card of report.overlays) {
             expect(
               card.invalid_store.filter((s) => !extra.has(s)),

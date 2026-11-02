@@ -2,7 +2,8 @@ import path from 'node:path';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { advance, analysisJson, bounded, frames, GAIN, rows, rpc, SINE, word } from './fx-live.ts';
+import { advance, analysisJson, bounded, frames, rows, rpc, word } from './fx-live.ts';
+import { GAIN, SINE, triggerFrame } from './fixtures.ts';
 import { inspectFxBoot, selectSine, shot, tap, withPausedFxProtocol, withPreparedFxSession } from './fx-session.ts';
 import {
   bits,
@@ -64,7 +65,7 @@ for (const device of DEVICES) {
   describe.sequential(`${device.toUpperCase()} ${FIRMWARE[device]} FUNC + FX effect pages`, () => {
     let referenceHashes: string[];
     let referencePcm: string;
-    const trigger = device === 'dt2' ? 7500 : 7000;
+    const trigger = triggerFrame(device);
 
     describe('image without the page hook', () => {
       const context = withPreparedFxSession(device, 'FX page reference', {

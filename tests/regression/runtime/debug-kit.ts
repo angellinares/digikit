@@ -1,10 +1,10 @@
 import { asciiOf, be32, type DkLogEvent, type DkSession } from '@digi/dk-session';
 import { CMD, LOG_KIND } from '@digi/dk-session/gen_proto';
 import { button, MS, type Session } from '@digi/test-support';
-import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { advance, rpc, word } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
+import { waitEmulatedFrames } from './live.ts';
 import { openDigikitMenu, readAboutRows } from './runtime-menu.ts';
 import type { RuntimePlan } from './runtime-plan.ts';
 
@@ -70,12 +70,8 @@ export function crashRecord(events: DkLogEvent[]) {
 // ---- emulated time and keys --------------------------------------------------------------------------------------------------------
 
 /** Wait until the DSP has run `blocks` more frames (emulated time, not wall time). */
-export async function waitFrames({ session }: { session: Session }, blocks: number): Promise<void> {
-  const frames = async () => Number(((await session.status()).audio as { frames?: number } | null)?.frames ?? 0);
-  const start = await frames();
-  await expect
-    .poll(async () => (await frames()) - start, { timeout: 900_000, interval: 1000, message: `${blocks} DSP blocks` })
-    .toBeGreaterThanOrEqual(blocks);
+export function waitFrames({ session }: { session: Session }, blocks: number): Promise<void> {
+  return waitEmulatedFrames(session, blocks);
 }
 
 /** The ABOUT page of the DIGIKIT menu, opened through the panel in a session that runs freely (keys held in emulated time). */

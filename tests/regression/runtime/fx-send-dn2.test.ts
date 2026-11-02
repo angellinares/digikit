@@ -3,9 +3,9 @@ import { button } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import {
-  advance,
   analysisJson,
   bounded,
+  captureNote,
   dspBytes,
   dspWords,
   frames,
@@ -17,6 +17,7 @@ import {
   withGainFxSession,
 } from './fx-live.ts';
 import { slotBusAddress } from './device-data.ts';
+import { triggerFrame } from './fixtures.ts';
 import { FIRMWARE, record } from './live.ts';
 import { planSymbol } from './runtime-plan.ts';
 
@@ -32,7 +33,7 @@ async function captureSend(
   slotBus: number,
   artifacts: string,
   tag: string,
-  triggerFrame?: number,
+  fixedTrigger?: number,
 ): Promise<number> {
   const { session } = runtime;
   const until = (target: number) => bounded(() => session.client.runUntil({ frames: target, timeout_wall_s: 30 }));
@@ -41,44 +42,39 @@ async function captureSend(
   await rpc(session, 'pcm.tap', { action: 'start' });
   await pickSine(session, sineHint);
   const current = await frames(session);
-  const trig = triggerFrame ?? current + 300;
+  const trig = fixedTrigger ?? current + 300;
   record(artifacts, `${tag}-trigger-frame`, { current, triggerFrame: trig });
-  try {
-    if (current >= trig - 20) throw new Error(`SEND capture setup too late: current frame ${current}, trigger ${trig}`);
-    await until(trig);
-    if (chord) await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
-    await rpc(session, 'pcm.tap', { action: 'capture', path: file });
-    if (chord) {
-      await trigger(true);
-      await until(trig + 60);
-      await trigger(false);
-      await until(trig + 120);
-      await trigger(true);
-      await until(trig + 220);
-      const bus = await dspBytes(session, slotBus, 16 * 256);
-      const peaks = Array.from({ length: 16 }, (_, slot) => {
-        let peak = 0;
-        for (let sample = 0; sample < 64; sample++) {
-          const value = bus.readFloatLE(slot * 256 + sample * 4);
-          expect(Number.isFinite(value), 'voice bus sample is finite').toBe(true);
-          peak = Math.max(peak, Math.abs(value));
-        }
-        return peak;
-      });
-      const sounding = peaks.filter((peak) => peak > 1e-5).length;
-      record(artifacts, `${tag}-voice-slots`, { peaks, sounding });
-      expect(sounding, 'two notes of track 1 sound in at least two voice slots').toBeGreaterThanOrEqual(2);
-    }
-    await until(trig + (chord ? 1500 : 750));
-  } finally {
-    try {
-      await rpc(session, 'pcm.tap', { action: 'capture_stop' });
-    } finally {
-      await trigger(false);
-    }
-  }
-  await advance(session, 50);
-  await bounded(() => session.expectNoFault(tag));
+  // Chord: the key goes down at the trigger, up at +60, down at +120; the voice slots are read at +220.
+  const during = async () => {
+    await until(trig + 60);
+    await trigger(false);
+    await until(trig + 120);
+    await trigger(true);
+    await until(trig + 220);
+    const bus = await dspBytes(session, slotBus, 16 * 256);
+    const peaks = Array.from({ length: 16 }, (_, slot) => {
+      let peak = 0;
+      for (let sample = 0; sample < 64; sample++) {
+        const value = bus.readFloatLE(slot * 256 + sample * 4);
+        expect(Number.isFinite(value), 'voice bus sample is finite').toBe(true);
+        peak = Math.max(peak, Math.abs(value));
+      }
+      return peak;
+    });
+    const sounding = peaks.filter((peak) => peak > 1e-5).length;
+    record(artifacts, `${tag}-voice-slots`, { peaks, sounding });
+    expect(sounding, 'two notes of track 1 sound in at least two voice slots').toBeGreaterThanOrEqual(2);
+  };
+  await captureNote(session, {
+    file,
+    trigger: trig,
+    tag,
+    length: chord ? 1500 : 750,
+    tapStarted: true,
+    skipStep: !chord,
+    noPress: !chord,
+    during: chord ? during : undefined,
+  });
   return trig;
 }
 
@@ -97,7 +93,7 @@ describe(`DN2 ${FIRMWARE.dn2} FX send voice slots`, () => {
     const initial = fixture.runtime;
     let previous = initial;
     // Established absolute frame target from the legacy DN2 fx-send fixture.
-    const triggerFrame = 7000;
+    const trigger = triggerFrame('dn2');
     for (const tag of ['chordzero', 'chordfull', 'idle'] as const) {
       const runtime = tag === 'chordzero' ? initial : await fixture.reload(wet);
       expect(runtime.session, 'all cases keep the owned daemon').toBe(initial.session);
@@ -123,7 +119,7 @@ describe(`DN2 ${FIRMWARE.dn2} FX send voice slots`, () => {
       const file = path.join(artifacts, `${tag}.wav`);
       files[tag] = file;
       if (tag !== 'idle') audible.add(runtime);
-      await captureSend(runtime, file, tag !== 'idle', slotBus, artifacts, tag, triggerFrame);
+      await captureSend(runtime, file, tag !== 'idle', slotBus, artifacts, tag, trigger);
       const after = (await rows(runtime.session, plan, slots))[0]!;
       expect(after[12], 'send adapter ran the effect').toBe(1);
       expect(after[14], 'effect remains enabled').toBe(0);

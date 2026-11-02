@@ -12,7 +12,7 @@ import {
 import { describe, expect, onTestFinished, test } from 'vitest';
 import { expectRuntimeBoot, withPatchedSession, type PatchedSession } from '../support.ts';
 import { timePhase, timingContext } from '../timing.ts';
-import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
+import { planSymbol, prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 
 export const DEVICES = ['dt2', 'dn2'] as const;
 export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
@@ -63,14 +63,36 @@ export function runtimeTests(
   }
 }
 
-export async function settleLive(session: Session, ms = 12_000): Promise<void> {
-  await timePhase('settle.live', () => delay(ms), { ...timingContext(session), detail: `settle ${ms} ms` });
-  expect((await session.status()).mode, 'the daemon runs freely').toBe('free');
+/** The DSP frame counter advances 1500 frames per emulated second. */
+const FRAMES_PER_MS = 1.5;
+
+/** Wait until the DSP has run `frames` more frames (emulated time). Wall time only guards against a stuck daemon. */
+export async function waitEmulatedFrames(session: Session, frames: number, { hangMs = 30_000 } = {}): Promise<void> {
+  const read = async () => Number(((await session.status()).audio as { frames?: number } | null)?.frames ?? 0);
+  const start = await read();
+  let seen = start;
+  let lastAdvance = Date.now();
+  while (seen < start + frames) {
+    await delay(50);
+    const now = await read();
+    if (now > seen) lastAdvance = Date.now();
+    else if (Date.now() - lastAdvance >= hangMs) {
+      throw new Error(`DSP frames stuck at ${now} (started at ${start}, wanted ${start + frames}) for ${hangMs} ms`);
+    }
+    seen = now;
+  }
 }
 
-/** The DN2 firmware needs a longer pre-install settle than the DT2. */
-export function settleUi(session: Session): Promise<void> {
-  return settleLive(session, session.options.device === 'dn2' ? 45_000 : 12_000);
+/** Wait for `ms` of emulated time (the daemon must run freely). */
+export function waitEmulated(session: Session, ms: number, opts: { hangMs?: number } = {}): Promise<void> {
+  return waitEmulatedFrames(session, Math.ceil(ms * FRAMES_PER_MS), opts);
+}
+
+/** Wait for the runtime's normal UI hook on a fresh free-running daemon, before the first install. */
+export async function expectRuntimeReady(session: Session): Promise<void> {
+  const artifacts = liveArtifacts(session, 'runtime-ready');
+  const plan = await prepareRuntimePlan(session, artifacts, ['DKRT_BOOT']);
+  await timePhase('ready', () => expectRuntimeUi(session, plan, artifacts), timingContext(session));
 }
 
 /** Shared lifecycle deadline; preserve the existing readiness-helper export for its callers. */
@@ -147,14 +169,19 @@ export async function expectRuntimeUi(
 }
 
 /** Press, hold, release (also when the press fails), then let the UI settle. */
-export async function tap(send: (down: boolean) => Promise<unknown>, holdMs: number, settleMs = 1200): Promise<void> {
+export async function tap(
+  session: Session,
+  send: (down: boolean) => Promise<unknown>,
+  holdMs: number,
+  settleMs = 1200,
+): Promise<void> {
   try {
     await send(true);
-    await delay(holdMs);
+    await waitEmulated(session, holdMs);
   } finally {
     await send(false);
   }
-  await timePhase('settle.input', () => delay(settleMs));
+  await timePhase('settle.input', () => waitEmulated(session, settleMs));
 }
 
 export function record(dir: string, name: string, value: unknown): void {

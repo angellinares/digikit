@@ -8,12 +8,12 @@ import { deviceProfile } from './device-data.ts';
 import { word } from './fx-live.ts';
 import {
   DEBUG_MODULE,
+  expectRuntimeReady,
   installModules,
   installWithDebug,
   liveArtifacts,
   moduleArtifact,
   runtimeTests,
-  settleUi,
 } from './live.ts';
 import { ofKind, readSmallRing, RING_SYMBOLS } from './runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from './runtime-plan.ts';
@@ -24,7 +24,7 @@ const text = (words: number[]) =>
 /** Without digikit/debug the runtime boots and works, has no log commands, and keeps its small ring of boot and error events. */
 async function expectWithoutDebugModule(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'debug-module'), RING_SYMBOLS);
   const info = await dk.info();
   expect(hasCap(info, 'SERVICE_CMDS'), 'a runtime that answers').toBe(true);
@@ -48,7 +48,7 @@ async function expectWithoutDebugModule(runtime: PatchedSession): Promise<void> 
  * and a module's own log line (digikit/probe logs `probe ready` in init) arrives with the module as its source. */
 async function expectWithDebugModule(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'debug-module'), ['DKRT_STATE']);
   await installWithDebug(runtime, 'digikit/probe');
   const info = await dk.info();
@@ -188,7 +188,7 @@ async function expectLevelsFilterUploadEvents({ dk }: PatchedSession) {
  * logged as an UPLOAD event. CAPACITY lists every kind with the device file's limit. */
 async function expectModulesReply(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   const device = session.options.device;
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'debug-module'), ['DKRT_STATE']);
   const ids = ['test/dyn-params', 'test/sine', DEBUG_MODULE]; // the debug module last: it owns no machine
@@ -279,7 +279,7 @@ async function expectModulesReply(runtime: PatchedSession): Promise<void> {
  * logged quietly (a full set of six events at the first poll, then every ten seconds), and a running DSP is never reported stopped. */
 async function expectPeriodicEvents(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   await installWithDebug(runtime);
   await waitFrames(runtime, 48_000);
   const log = await dk.readLog();
@@ -309,7 +309,7 @@ async function expectPeriodicEvents(runtime: PatchedSession): Promise<void> {
  * the debug module copies it when it starts. */
 async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
+  await expectRuntimeReady(session);
   const device = session.options.device;
   await installModules(
     dk,

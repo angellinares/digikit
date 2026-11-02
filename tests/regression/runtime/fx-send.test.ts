@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { DEVICES, FIRMWARE, record } from './live.ts';
 import { planSymbol } from './runtime-plan.ts';
+import { triggerFrame as triggerFor } from './fixtures.ts';
 import {
   analysisJson,
   bounded,
@@ -28,7 +29,7 @@ for (const device of DEVICES) {
       let previous = initial;
       // Established absolute frame targets from the legacy fx-send DT2/DN2 fixtures.
       // Every independent baseline must reach this target with the existing setup margin.
-      const triggerFrame = device === 'dt2' ? 7500 : 7000;
+      const triggerFrame = triggerFor(device);
       record(artifacts, 'send-trigger-frame', { triggerFrame });
       for (const [tag, amount] of [
         ['zero', 0],

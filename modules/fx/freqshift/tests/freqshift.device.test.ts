@@ -9,9 +9,9 @@ import {
   bounded,
   frames,
   rows,
-  SINE,
   word,
 } from '../../../../tests/regression/runtime/fx-live.ts';
+import { SINE, triggerFrame } from '../../../../tests/regression/runtime/fixtures.ts';
 import { bits, cstring, mainPage, openPages, pageKit } from '../../../../tests/regression/runtime/fx-pages-ui.ts';
 import {
   inspectFxBoot,
@@ -99,7 +99,7 @@ for (const device of DEVICES) {
       };
       const sound = async (tag: string, initial = false) => {
         const current = await frames(runtime.session);
-        const trigger = initial ? (device === 'dt2' ? 7500 : 7000) : current + 300;
+        const trigger = initial ? triggerFrame(device) : current + 300;
         record(artifacts, `${tag}-timing`, { currentFrame: current, triggerFrame: trigger });
         const file = path.join(artifacts, `${tag}.wav`);
         await trackNote(runtime, file, trigger);

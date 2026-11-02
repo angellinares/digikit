@@ -1,11 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { hexSha256, type DkLogEvent } from '@digi/dk-session';
 import { LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { DEBUG_MODULE, installWithDebug, liveArtifacts, record, settleUi } from '../runtime/live.ts';
+import {
+  DEBUG_MODULE,
+  expectRuntimeReady,
+  installWithDebug,
+  liveArtifacts,
+  record,
+  waitEmulated,
+} from '../runtime/live.ts';
 
 export interface RuntimeModule {
   id: string;
@@ -83,8 +89,7 @@ export async function expectModuleLoad(
   const artifacts = path.join(liveArtifacts(session, 'module-load'), module.id.split('/')[1]!);
   fs.mkdirSync(artifacts, { recursive: true });
 
-  // Match the existing coupled runtime fixtures' pre-install settle; do not step a free-running guest.
-  await settleUi(session);
+  await expectRuntimeReady(session);
   expect(await dk.list(), 'fresh daemon has an empty store').toEqual([]);
   expect(await dk.modules(), 'fresh runtime has no uploaded modules').toEqual([]);
   if (module.type === 'service') {
@@ -155,7 +160,7 @@ export async function expectModuleLoad(
       await dk.remoteRelease();
     }
     // Allow the loaded registration to run on the coupled DSP before checking its guard counters.
-    await delay(2000);
+    await waitEmulated(session, 2000);
     const modules = await dk.modules();
     record(artifacts, 'modules', modules);
     expect(modules.map(({ name, faults, guard_off }) => ({ name, faults, guard_off }))).toEqual([
