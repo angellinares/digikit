@@ -680,6 +680,15 @@ void dk_ui_refresh(dk_ui_menu *m)
         refill(m, 0);
 }
 
+void dk_ui_select(dk_ui_menu *m, int row_)
+{
+    if (!m || !m->obj || !m->d || m->kind == K_PANEL || row_ < 0)
+        return;
+    ((CompactVerticalMenuView *)m->obj)->selected = (uint32_t)row_; /* the next fill puts the cursor there (clamped to the rows) */
+    if (dk_ui_is_open(m))
+        refill(m, 0);
+}
+
 void dk_ui_close(dk_ui_menu *m)
 {
     if (!dk_ui_is_open(m))

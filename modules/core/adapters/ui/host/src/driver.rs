@@ -25,6 +25,12 @@ pub fn depth() -> usize {
     with(|s| s.stack.len())
 }
 
+/// The row the cursor is on in the top view (`dk_ui_select` and `press_yes` set it).
+pub fn cursor() -> usize {
+    let id = top();
+    with(|s| s.menus[id].selected)
+}
+
 /// The title of the top view; empty for a panel.
 pub fn title() -> String {
     let id = top();

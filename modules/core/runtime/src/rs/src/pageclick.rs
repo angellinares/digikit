@@ -11,7 +11,7 @@
 //! that follows the release (`tick`), in the UI task, with the track number: `void fn(u32 track)`.
 //!
 //! Without any action, `dkrt_page_key` and `dkrt_page_turn` return at one test of `ARMED`.
-use crate::paramapi::{self, Ctx};
+use crate::paramapi::{self, Ctx, Held};
 use crate::registry;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::limits;
@@ -107,8 +107,8 @@ pub struct Pending {
 }
 const NO_CLICK: Pending = Pending { callback: 0, track: 0, view: 0, code: 0 };
 static mut PENDING: Pending = NO_CLICK;
-/// The click whose callback is running (`param_get` and `param_set` work only while it is set).
-static mut CURRENT: Option<Ctx> = None;
+/// The click flow that `param_get` and `param_set` may serve: from the callback until the page gets input again.
+static mut HELD: Held = Held::new();
 
 /// Set (`addr` != 0) or clear (0) the action of parameter row `k` (a row of core/dynreg). Called by the registry.
 pub unsafe fn set(k: usize, addr: u32) {
@@ -129,8 +129,11 @@ pub unsafe fn set(k: usize, addr: u32) {
     write_volatile(addr_of_mut!(ARMED), n);
     // a click of an unloaded module must not run
     let p = &mut *addr_of_mut!(PENDING);
-    if addr == 0 && old != 0 && p.callback == old {
-        *p = NO_CLICK;
+    if addr == 0 && old != 0 {
+        if p.callback == old {
+            *p = NO_CLICK;
+        }
+        (*addr_of_mut!(HELD)).input(); // the module that owns the flow is going away
     }
 }
 
@@ -145,6 +148,7 @@ pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
     if read_volatile(addr_of!(ARMED)) == 0 {
         return;
     }
+    (*addr_of_mut!(HELD)).input();
     let det = &mut *addr_of_mut!(DET);
     if let Some(enc) = det.key(view as usize, word(ev, 0xc), word(ev, 0x10)) {
         click(view, enc);
@@ -158,6 +162,7 @@ pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) {
     if read_volatile(addr_of!(ARMED)) == 0 {
         return;
     }
+    (*addr_of_mut!(HELD)).input();
     if word(ev, 0xc).wrapping_sub(1) < ENCODERS {
         (*addr_of_mut!(DET)).turn(view as usize);
     }
@@ -185,7 +190,8 @@ pub fn context(p: &Pending, owners: &[u8], first: u32) -> Option<Ctx> {
     }
 }
 
-/// The UI loop pass: run the queued action (`void fn(u32 track)`). `param_get` and `param_set` see the clicked view while it runs.
+/// The UI loop pass: run the queued action (`void fn(u32 track)`). `param_get` and `param_set` serve the clicked view from here until the page
+/// gets input again, so the list the action opens can set the value when the user picks.
 #[cfg(not(test))]
 pub unsafe fn tick() {
     let p = *addr_of!(PENDING);
@@ -193,10 +199,9 @@ pub unsafe fn tick() {
         *addr_of_mut!(PENDING) = NO_CLICK;
         let owners = &(*addr_of!(registry::DKRT_REG)).param_owner;
         let Some(ctx) = context(&p, owners, registry::param_first()) else { return };
-        *addr_of_mut!(CURRENT) = Some(ctx);
+        (*addr_of_mut!(HELD)).begin(ctx);
         let call: unsafe extern "C" fn(u32) = core::mem::transmute(p.callback as usize);
         call(p.track);
-        *addr_of_mut!(CURRENT) = None;
     }
 }
 
@@ -254,14 +259,14 @@ impl paramapi::Fw for PageFw {
 #[cfg(not(test))]
 pub unsafe fn param_get(track: u32, word: u32) -> i32 {
     let owners = &(*addr_of!(registry::DKRT_REG)).param_owner;
-    paramapi::get(&PageFw, *addr_of!(CURRENT), owners, registry::param_first(), track, word)
+    paramapi::get(&PageFw, (*addr_of!(HELD)).ctx(), owners, registry::param_first(), track, word)
 }
 
 /// `Api.param_set`.
 #[cfg(not(test))]
 pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
     let owners = &(*addr_of!(registry::DKRT_REG)).param_owner;
-    paramapi::set(&PageFw, *addr_of!(CURRENT), owners, registry::param_first(), track, word, raw)
+    paramapi::set(&PageFw, (*addr_of!(HELD)).ctx(), owners, registry::param_first(), track, word, raw)
 }
 
 #[cfg(test)]

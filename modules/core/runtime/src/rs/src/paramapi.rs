@@ -1,10 +1,10 @@
-//! Read and write a digikit parameter from a click callback (`Api.param_get`, `Api.param_set`; docs/design/ui-rules.md).
+//! Read and write a digikit parameter from the flow of a click (`Api.param_get`, `Api.param_set`; docs/design/ui-rules.md).
 //!
-//! The firmware access goes through the `Fw` trait, so the rules are host-tested with a fake page: the call must come from inside the click
-//! callback, the word must belong to the module whose callback runs, the track must be 0 to 15, and nothing is written while a mode key is held.
-//! The real `Fw` (pageclick.rs) calls the page's own functions, the same ones a knob turn uses.
+//! The firmware access goes through the `Fw` trait, so the rules are host-tested with a fake page: the call must come from the flow a click
+//! started (the callback, or a list it opened: `Held`), the word must belong to the module whose callback runs, the track must be 0 to 15, and
+//! nothing is written while a mode key is held. The real `Fw` (pageclick.rs) calls the page's own functions, the same ones a knob turn uses.
 
-/// Called outside a click callback (the page the call needs is not known).
+/// Called outside the flow of a click (the page the call needs is not known, or it got input since).
 pub const E_STATE: i32 = -0x10001;
 /// A track above 15, or a word the calling module does not have.
 pub const E_ARG: i32 = -0x10002;
@@ -21,6 +21,26 @@ pub struct Ctx {
     pub view: usize,
     pub track: u32,
     pub owner: u8,
+}
+
+/// The click flow that may use the calls. It starts when the callback runs and ends at the next key or turn the page gets (a modal list
+/// the callback opened takes the keys itself, so the page sees none until the flow is over) and when the module unloads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Held(Option<Ctx>);
+
+impl Held {
+    pub const fn new() -> Self {
+        Held(None)
+    }
+    pub fn begin(&mut self, ctx: Ctx) {
+        self.0 = Some(ctx);
+    }
+    pub fn input(&mut self) {
+        self.0 = None;
+    }
+    pub fn ctx(&self) -> Option<Ctx> {
+        self.0
+    }
 }
 
 /// What the firmware gives us (one implementation on the device, one fake in the tests).
@@ -135,6 +155,22 @@ mod tests {
         assert_eq!(row_of_word(&OWNERS, 2, 3), None);
         assert_eq!(row_of_word(&OWNERS, 3, 0), Some(2));
         assert_eq!(row_of_word(&OWNERS, 0, 0), None, "free rows have no owner");
+    }
+
+    #[test]
+    fn the_flow_of_a_click_ends_with_the_next_input_of_the_page() {
+        let mut h = Held::new();
+        let f = Fake::default();
+        assert_eq!(get(&f, h.ctx(), &OWNERS, FIRST, 4, 0), E_STATE, "no click yet");
+        h.begin(CTX.unwrap());
+        // the callback has returned and a list is open: the flow is still ours
+        assert_eq!(set(&f, h.ctx(), &OWNERS, FIRST, 4, 0, 0x100), 0);
+        h.input();
+        assert_eq!(set(&f, h.ctx(), &OWNERS, FIRST, 4, 0, 0x100), E_STATE, "the page got a key");
+        assert_eq!(get(&f, h.ctx(), &OWNERS, FIRST, 4, 0), E_STATE);
+        // a second click starts again
+        h.begin(Ctx { track: 7, ..CTX.unwrap() });
+        assert_eq!(get(&f, h.ctx(), &OWNERS, FIRST, 7, 0), 0x0500);
     }
 
     #[test]

@@ -95,6 +95,9 @@ dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d); /* 0 when out of memory; d
 int dk_ui_open(dk_ui_menu *m); /* fill, then show on top of the current view; if open, refresh. A menu or list keeps its selected row
                                   from the last time; a text page opens at its first row. */
 void dk_ui_close(dk_ui_menu *m);
+/* Puts the cursor of a list or menu on row `row` (counted as the rows are added; clamped to the rows). Call it before dk_ui_open to start a
+   list on its current choice: dk_ui_open keeps the cursor row. On an open list the cursor moves at once. */
+void dk_ui_select(dk_ui_menu *m, int row);
 int dk_ui_is_open(const dk_ui_menu *m);
 void dk_ui_refresh(dk_ui_menu *m); /* fill again; the selection stays on the same row when it can */
 

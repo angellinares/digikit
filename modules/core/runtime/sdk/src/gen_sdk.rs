@@ -291,14 +291,14 @@ pub mod api {
         pub sample_pool_info: unsafe extern "C" fn(handle: u32, index: u32, out: *mut u8) -> i32,
         /// (api 1.6) Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the entry into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched.
         pub sample_pool_path: unsafe extern "C" fn(handle: u32, index: u32, buf: *mut u8, cap: u32) -> i32,
-        /// (api 1.6) Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). Only inside a DK_PARAM_ACTION callback (UI task), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows.
+        /// (api 1.6) Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). UI task only, and only in the flow of a click: from the DK_PARAM_ACTION callback until the page gets its next key or turn (so a list the callback opened may call it), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows.
         pub param_get: unsafe extern "C" fn(track: u32, word: u32) -> i32,
-        /// (api 1.6) Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. Only inside a DK_PARAM_ACTION callback (UI task). Returns 0, DK_PARAM_E_STATE (outside a callback), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).
+        /// (api 1.6) Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).
         pub param_set: unsafe extern "C" fn(track: u32, word: u32, raw: i32) -> i32,
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).
-    pub const IMPORT_NAMES: [&str; 34] = [
+    pub const IMPORT_NAMES: [&str; 35] = [
         "fw_block_read",
         "fw_alloc",
         "fw_free",
@@ -314,6 +314,7 @@ pub mod api {
         "dk_ui_menu_new",
         "dk_ui_open",
         "dk_ui_close",
+        "dk_ui_select",
         "dk_ui_is_open",
         "dk_ui_refresh",
         "dk_ui_action",
@@ -392,6 +393,7 @@ macro_rules! optional_imports {
                 pub fn dk_ui_menu_new(desc: *const u8) -> *mut u8;
                 pub fn dk_ui_open(menu: *mut u8) -> i32;
                 pub fn dk_ui_close(menu: *mut u8);
+                pub fn dk_ui_select(menu: *mut u8, row: i32);
                 pub fn dk_ui_is_open(menu: *const u8) -> i32;
                 pub fn dk_ui_refresh(menu: *mut u8);
                 pub fn dk_ui_action(menu: *mut u8, text: *const u8, run: *mut u8, ctx: *mut u8, arg: i32);
@@ -414,6 +416,7 @@ macro_rules! optional_imports {
                 pub unsafe extern "C" fn dk_ui_menu_new(_a0: *const u8) -> *mut u8 { 0 as _ }
                 pub unsafe extern "C" fn dk_ui_open(_a0: *mut u8) -> i32 { -1 as _ }
                 pub unsafe extern "C" fn dk_ui_close(_a0: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_select(_a0: *mut u8, _a1: i32) { }
                 pub unsafe extern "C" fn dk_ui_is_open(_a0: *const u8) -> i32 { 0 as _ }
                 pub unsafe extern "C" fn dk_ui_refresh(_a0: *mut u8) { }
                 pub unsafe extern "C" fn dk_ui_action(_a0: *mut u8, _a1: *const u8, _a2: *mut u8, _a3: *mut u8, _a4: i32) { }
@@ -431,7 +434,7 @@ macro_rules! optional_imports {
             }
 
             /// (name, address from the module or 0, address of the stub or 0)
-            pub fn table() -> [(&'static str, usize, usize); 20] {
+            pub fn table() -> [(&'static str, usize, usize); 21] {
                 [
                     ("input_key", core::hint::black_box(input_key as usize), 0),
                     ("input_turn", core::hint::black_box(input_turn as usize), 0),
@@ -439,6 +442,7 @@ macro_rules! optional_imports {
                     ("dk_ui_menu_new", core::hint::black_box(dk_ui_menu_new as usize), absent::dk_ui_menu_new as usize),
                     ("dk_ui_open", core::hint::black_box(dk_ui_open as usize), absent::dk_ui_open as usize),
                     ("dk_ui_close", core::hint::black_box(dk_ui_close as usize), absent::dk_ui_close as usize),
+                    ("dk_ui_select", core::hint::black_box(dk_ui_select as usize), absent::dk_ui_select as usize),
                     ("dk_ui_is_open", core::hint::black_box(dk_ui_is_open as usize), absent::dk_ui_is_open as usize),
                     ("dk_ui_refresh", core::hint::black_box(dk_ui_refresh as usize), absent::dk_ui_refresh as usize),
                     ("dk_ui_action", core::hint::black_box(dk_ui_action as usize), absent::dk_ui_action as usize),

@@ -280,6 +280,17 @@ pub extern "C" fn dk_ui_close(m: *mut DkUiMenu) {
 }
 
 #[no_mangle]
+pub extern "C" fn dk_ui_select(m: *mut DkUiMenu, row: c_int) {
+    let Some(id) = id_of(m) else { return };
+    if row >= 0 {
+        with(|s| {
+            s.log(format!("select {id} {row}"));
+            s.menus[id].selected = row as usize;
+        });
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn dk_ui_is_open(m: *const DkUiMenu) -> c_int {
     id_of(m).is_some_and(|id| with(|s| s.stack.contains(&id))) as c_int
 }
