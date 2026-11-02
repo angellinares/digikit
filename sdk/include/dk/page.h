@@ -52,6 +52,7 @@
      DK_GLYPH_PAN      0 .. 127 (centre 64, shows L/R)
      DK_GLYPH_ONOFF    0 .. 1
      DK_GLYPH_TUNE     4 .. 124 (centre 64, one unit = one semitone)
+     DK_GLYPH_PLAY     0 .. 3 (REV, REV.L, FWD.L, FWD; the Digitone II shows 0 .. 3)
    A parameter without a record gets DK_GLYPH_ENCODER. Glyphs on effect parameters are not supported yet. At most one per parameter. */
 #define DK_PARAM_GLYPH(OWNER, WORD, GLYPH)                                              \
     static const dk_desc_param_glyph dk_desc_param_glyph_##OWNER##_##WORD DK_DESC = {   \

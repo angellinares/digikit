@@ -2,7 +2,7 @@
 
 The pool table (`_shot_rec` records and `_shot_ctl` control sets, one of each for every pool index) is written the way the runtime does: PCM
 planes in free L2, the record published with `ready` last. The SMP parameter (word 0, index << 8) picks the record of a note. Checks: SMP
-picks the record (two values, two records; an empty or out-of-range entry is silent); start, end, reverse and pitch; L and R differ for a
+picks the record (two values, two records; an empty or out-of-range entry is silent); start, end, play (reverse and loop modes) and pitch; L and R differ for a
 stereo sample; a mono sample plays centred; the voice ends after the sample; a stale token or a closed entry is silent with no PCM read;
 every block leaves the count at 0.
 Skips when Selache is not built."""
@@ -25,6 +25,7 @@ FRAMES = 200
 RATE_HZ = 48000
 TOKEN = 7
 DK_STEREO = 2
+REV, REV_L, FWD_L, FWD = (mode << 8 for mode in range(4))  # the PLAY word: mode * 256
 
 
 STOCK_GAIN = np.uint32(0x3ECF1AA0).view(np.float32)  # DK_SAMPLE_STOCK_GAIN, 0.4045
@@ -90,7 +91,7 @@ class Shot:
                 "shot_smp": self.index << 8,
                 "shot_start": 0,
                 "shot_end": 0x7F00,
-                "shot_reverse": 0,
+                "shot_play": FWD,
                 "shot_pitch": 0x4000,
                 **(params or {}),
             }
@@ -122,24 +123,31 @@ class Shot:
         return self.step(blocks)
 
 
-def model(plane, start, end, rate, reverse, blocks, schedule=None):
+def model(plane, start, end, rate, reverse, blocks, schedule=None, loop=False):
     """The reader's output for one plane: split cursor, linear interpolation in float32, a zero tail after the end.
     Every block is multiplied by the stock gain G; the block in which the cursor passes the end by the running float32 gain G - k * G / 31.
-    `schedule` maps a block index to the (reverse, start, end) in frames that hold from that block on; the cursor continues. The range is
-    [0, end) forward and [start, end) in reverse. A cursor outside it renders the block over the whole sample and ends the voice."""
+    `schedule` maps a block index to the (reverse, start, end) or (reverse, start, end, loop) in frames that hold from that block on; the
+    cursor continues. The range is [0, end) forward and [start, end) in reverse and when looping. A cursor outside it renders the block over
+    the whole sample and ends the voice; when looping it moves into the region (START forward, END - 1 in reverse) instead.
+    A looping cursor wraps by the region length (once; still outside: the voice ends); a forward cursor at END - 1 interpolates toward START."""
     out = np.zeros(32 * blocks, dtype=np.float32)
     mag = abs(rate)
     pos = (end - 1 if reverse else start) * 65536
     done = start >= end
     ending = 0 if done else None
     for blk in range(blocks):
-        reverse, start, end = (schedule or {}).get(blk, (reverse, start, end))
+        if schedule and blk in schedule:
+            reverse, start, end, *rest = schedule[blk]
+            loop = bool(rest and rest[0])
         if done:
             continue
         step = -mag if reverse else mag
-        lo, hi = (start, end) if reverse else (0, end)
+        lo, hi = (start, end) if reverse or loop else (0, end)
         forced = not lo <= pos // 65536 < hi
-        if forced:
+        if forced and loop and lo < hi:
+            pos = (hi - 1 if reverse else lo) * 65536 + pos % 65536
+            forced = False
+        elif forced:
             lo, hi = 0, len(plane)
         for n in range(blk * 32, blk * 32 + 32):
             index, frac = divmod(pos, 65536)
@@ -147,13 +155,18 @@ def model(plane, start, end, rate, reverse, blocks, schedule=None):
                 done = True
                 break
             a = np.float32(plane[index] / 32768)
-            b = np.float32(plane[min(index + 1, hi - 1)] / 32768)
+            wraps = loop and not forced and not reverse
+            nxt = lo if wraps and index + 1 >= hi else min(index + 1, hi - 1)
+            b = np.float32(plane[nxt] / 32768)
             out[n] = np.float32(
                 a + np.float32(np.float32(frac / 65536) * np.float32(b - a))
             )
             pos += step
             if not lo * 65536 <= pos < hi * 65536:
-                done = True
+                if loop and hi - lo >= 2 and not forced:
+                    pos += -(hi - lo) * 65536 if pos >= hi * 65536 else (hi - lo) * 65536
+                if not lo * 65536 <= pos < hi * 65536:
+                    done = True
         if forced:
             done = True
         if done:
@@ -182,12 +195,13 @@ def check(s, note=60, blocks=8, **params):
     p = {
         "shot_start": 0,
         "shot_end": 0x7F00,
-        "shot_reverse": 0,
+        "shot_play": FWD,
         "shot_pitch": 0x4000,
         **params,
     }
     got_l, got_r = s.play(note, blocks, params)
-    reverse = p["shot_reverse"] >= 0x4000
+    reverse = p["shot_play"] >> 8 <= 1
+    loop = p["shot_play"] >> 8 in (1, 2)
     start = frames_of(p["shot_start"], s.frames)
     end = frames_of(p["shot_end"], s.frames)
     cur = s.cursor()
@@ -198,8 +212,9 @@ def check(s, note=60, blocks=8, **params):
         want,
     )  # the device's exp2 is a polynomial
     mag = abs(rate)
-    wl = model(s.left, start, end, -mag if reverse else mag, reverse, blocks)
-    wr = model(s.right, start, end, -mag if reverse else mag, reverse, blocks)
+    step = -mag if reverse else mag
+    wl = model(s.left, start, end, step, reverse, blocks, loop=loop)
+    wr = model(s.right, start, end, step, reverse, blocks, loop=loop)
     return got_l, got_r, wl, wr, (start, end, rate)
 
 
@@ -223,12 +238,12 @@ def test_default_params_play_the_whole_sample_with_distinct_channels(device):
     [
         {"shot_start": 40 * 256, "shot_end": 100 * 256},
         {"shot_start": 0, "shot_end": 50 * 256},
-        {"shot_start": 0, "shot_end": 90 * 256, "shot_reverse": 0x7F00},
-        {"shot_start": 20 * 256, "shot_end": 127 * 256, "shot_reverse": 0x4000},
+        {"shot_start": 0, "shot_end": 90 * 256, "shot_play": REV},
+        {"shot_start": 20 * 256, "shot_end": 127 * 256, "shot_play": REV},
     ],
     ids=["window", "end-only", "reverse", "reverse-start"],
 )
-def test_start_end_and_reverse_select_the_frames(params):
+def test_start_end_and_play_select_the_frames(params):
     s = Shot("dt2")
     gl, gr, wl, wr, (start, end, rate) = check(s, **params)
     assert 0 <= start < end <= FRAMES
@@ -403,16 +418,59 @@ def run_live(first, first_blocks, later, later_blocks, expect):
     return left, cursor, s
 
 
-def test_a_live_reverse_flip_turns_at_the_current_cursor():
+def test_a_live_play_flip_to_reverse_turns_at_the_current_cursor():
     expect = {0: (False, 0, FRAMES), 3: (True, 0, FRAMES)}
-    left, cursor, _ = run_live({}, 3, {"shot_reverse": 0x7F00}, 8, expect)
+    left, cursor, _ = run_live({}, 3, {"shot_play": REV}, 8, expect)
     assert cursor[2] == 96  # forward: 3 blocks of 32 frames
     s2 = Shot("dt2")
     s2.start()
     s2.step(3)
-    s2.step(1, {"shot_reverse": 0x7F00})
+    s2.step(1, {"shot_play": REV})
     assert s2.cursor()[2] == 64 and s2.cursor()[3] == 0  # back from 96, no reset
     assert np.any(left[96:128])
+
+
+def loop_run(mode, blocks, first=None):
+    """Play a looped region of the sample (frames 40 .. 100, 60 frames) for `blocks` blocks at the unison rate."""
+    reverse = mode == REV_L
+    params = {
+        "shot_start": word_of(40),
+        "shot_end": word_of(100),
+        "shot_play": mode,
+        **(first or {}),
+    }
+    s = Shot("dt2")
+    s.start(params=params)
+    left, right = s.step(blocks)
+    return s, left, right, reverse
+
+
+@pytest.mark.parametrize("mode", [FWD_L, REV_L], ids=["fwd-loop", "rev-loop"])
+def test_a_loop_mode_repeats_the_region_seamlessly(mode):
+    blocks = 6  # 192 frames: more than 3 times the 60 frame region
+    s, left, right, reverse = loop_run(mode, blocks)
+    step = -65536 if reverse else 65536
+    for plane, got in ((s.left, left), (s.right, right)):
+        want = model(plane, 40, 100, step, reverse, blocks, loop=True)
+        assert np.array_equal(got, want)
+    assert np.any(left[-32:]), "still playing after 3 region lengths"
+    assert s.cursor()[5] == 0, "a looping voice is not done"
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF != 0
+
+
+def test_a_live_switch_from_a_loop_to_fwd_ends_at_end_with_the_ramp():
+    first = {"shot_play": FWD_L}
+    s = Shot("dt2")
+    params = {"shot_start": word_of(40), "shot_end": word_of(100), **first}
+    s.start(params=params)
+    ll, _ = s.step(3)  # 96 frames: wrapped once, the cursor is at 76
+    gl, _ = s.step(3, {"shot_play": FWD})  # forward [0, 100): ends at frame 100
+    left = np.concatenate([ll, gl])
+    expect = {0: (False, 40, 100, True), 3: (False, 40, 100, False)}
+    want = model(s.left, 40, 100, 65536, False, 6, expect, loop=True)
+    assert np.array_equal(left, want)
+    assert np.any(left[96:128]) and not np.any(left[128:]), "ended in block 4"
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF == 0
 
 
 def test_a_live_end_moved_behind_the_cursor_fades_the_block_and_ends_the_voice():
@@ -438,7 +496,7 @@ def test_a_live_start_above_the_cursor_does_not_change_forward_play():
 
 
 def test_a_live_start_above_the_cursor_ends_reverse_play_with_the_ramp():
-    first = {"shot_reverse": 0x7F00}
+    first = {"shot_play": REV}
     expect = {0: (True, 0, FRAMES), 2: (True, word_of(150), FRAMES)}
     left, cursor, s = run_live(first, 2, {"shot_start": word_of(150)}, 3, expect)
     assert cursor[2] == 135 < 150
@@ -447,7 +505,7 @@ def test_a_live_start_above_the_cursor_ends_reverse_play_with_the_ramp():
 
 
 def test_a_live_end_at_or_below_start_in_reverse_ends_the_voice_with_the_ramp():
-    first = {"shot_reverse": 0x7F00, "shot_start": word_of(20)}
+    first = {"shot_play": REV, "shot_start": word_of(20)}
     expect = {0: (True, 20, FRAMES), 2: (True, 120, 100)}
     later = {"shot_start": word_of(120), "shot_end": word_of(100)}
     left, _, s = run_live(first, 2, later, 3, expect)

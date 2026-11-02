@@ -26,7 +26,7 @@ CONSTS.update({f"L{n}": 0 for n in range(8)})
 # The actual adapters enter with a byte-alias I6 and I7 (word address * 4); frame words are still addressed as normal words below.
 STACK_ALIAS = 4 * STACK
 REGS = {**SAVED, **CONSTS, "I6": STACK_ALIAS, "I7": STACK_ALIAS}
-CEILING = 2 * (32 * 64 + 100) + 100
+CEILING = 2 * (32 * 80 + 102) + 100
 CASES = [
     ref.Cursor(0, 0, 0, 0, 65536),
     ref.Cursor(0, 100, 0, 12345, 32769),

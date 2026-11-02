@@ -467,7 +467,7 @@ runtimeTests(
       await session.expectNoFault('SMP');
 
       // 5. Pitch: PITCH is 0.375 semitone per unit (0x100 raw), so +32 units (0x6000 from 0x4000) are one octave. ENC G: PITCH is knob 6, the second
-      // row of the SRC page under END and REV (knob 3 is the sample slot, SMP is knob B). The stock encoder accelerates by event rate, so the knob is turned in fast
+      // row of the SRC page under END and PLAY (knob 3 is the sample slot, SMP is knob B). The stock encoder accelerates by event rate, so the knob is turned in fast
       // bursts. The read-back is word 4 (PITCH) of `_dv_params`, the parameter words that core/dsp-voice builds every block and passes to SHOT
       // as R12 (the words SHOT actually reads). The buffer is rewritten only while a voice renders, so TRIG 1 is held during the turn.
       const PITCH_OCTAVE = 0x6000;

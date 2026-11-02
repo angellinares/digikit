@@ -273,7 +273,7 @@ _lp_reader_b_render_denied:
 .VAR _lp_play_desc3 = DK_MAX_VOICES;
 .VAR _lp_play_desc4 = 36;
 .VAR _lp_play_desc5 = 36;
-// SDK ceiling 2148 plus bounded wrapper and 32-word diagnostic copy.
+// SDK ceiling 2662 (measured 1854 without the loop option) plus bounded wrapper and 32-word diagnostic copy.
 // Instruction ceiling only; these historical fields do not measure hardware time.
 .VAR _lp_play_desc6 = 2500;
 .VAR _lp_play_desc7 = 300;

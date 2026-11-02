@@ -263,7 +263,7 @@ layout independently of object section order. Its eight-frame triangle is
 Per-track `_lp_reader_{a,b}_{notes,blocks,reads,state,output}` observations support
 the native diagnostic; `reads` counts admitted SDK kernel invocations, not memory
 transactions. Descriptor budgets are conservative instruction ceilings: 2500 for
-render (SDK ceiling 2148 plus bounded wrapper), 300 for note-on, depth 2 and
+render (SDK ceiling 2662, measured 1854 without the loop option, plus bounded wrapper), 300 for note-on, depth 2 and
 128 stack bytes. These historical `cycles` fields are not hardware timing claims.
 New initialization/zero loops use software branches, with no new hardware loop.
 The bridge retains machine JUMP I12/I13, the kernel stack slot and exact MODE1.
@@ -304,7 +304,7 @@ sequence and B's coherent raw triangle snapshot to advance after drain. External
 output pointers remain distinct observations, without immutable-content assertions.
 The mixed WAV's post-drain component still starts at the separate capture-origin
 marker after exact DRAINED/count zero. The 2,500-instruction render budget includes
-the SDK ceiling 2,148 and the bounded wrapper/snapshot copy; note budget remains
+the SDK ceiling 2,662 (measured 1,854 without the loop option) and the bounded wrapper/snapshot copy; note budget remains
 300, depth 2 and stack 128 bytes. No hardware timing claim follows. A new exact-hash
 boot fixture is required for these new DSP bytes. The corrected native run
 `16929724-3d8c-49b4-bc79-b2161af79af9` passed with the exact v2 fixture;

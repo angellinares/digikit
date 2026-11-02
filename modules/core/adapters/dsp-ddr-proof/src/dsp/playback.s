@@ -12,7 +12,7 @@
 .VAR _dd_play_desc3 = DK_MAX_VOICES;
 .VAR _dd_play_desc4 = 28;
 .VAR _dd_play_desc5 = 28;
-// Conservative instruction budgets include the 2148 reader ceiling and bridge.
+// Conservative instruction budgets include the 2662 reader ceiling (measured 1854 without the loop option) and bridge.
 // The contract's historical field names say cycles; no hardware timing claim.
 .VAR _dd_play_desc6 = 2400;
 .VAR _dd_play_desc7 = 2600;

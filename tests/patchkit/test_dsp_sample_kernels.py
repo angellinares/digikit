@@ -205,7 +205,7 @@ PCM16_CASES = CASES + [
     ref.Cursor(0, 1, -32768, 0, 0x7FFFFFFF),
     ref.Cursor(0, 1, 2**30 + 32767, 0, -0x80000000),
 ]
-PCM16_CEILING = 32 * 64 + 100
+PCM16_CEILING = 32 * 80 + 102
 
 
 def pcm16_source(st):
@@ -344,3 +344,60 @@ def test_pcm16_completion_on_output31(linked_pcm16, st):
     assert sess.peek(STATE + 5) == 1
     expected, _ = pcm16_expected(source, st)
     assert [sess.peek(OUT + i) for i in range(32)] == bits(expected[0])
+
+
+# The loop option: bit 1 of the done word is an input for one call and is written back as 0.
+LOOP_BIT = 2
+LOOP_CASES = [
+    ref.Cursor(10, 30, 25, 0, 65536, LOOP_BIT),  # forward, wraps more than once
+    ref.Cursor(10, 30, 12, 32768, -65536, LOOP_BIT),  # reverse
+    ref.Cursor(10, 30, 28, 40000, 100003, LOOP_BIT),  # fractional rate
+    ref.Cursor(10, 30, 11, 5, -70001, LOOP_BIT),
+    ref.Cursor(10, 12, 10, 0, 2 * 65536, LOOP_BIT),  # two frame region, wrap by 2
+    ref.Cursor(10, 12, 10, 0, 5 * 65536, LOOP_BIT),  # rate above the region: ends
+    ref.Cursor(10, 11, 10, 0, 65536, LOOP_BIT),  # one frame region: no loop
+    ref.Cursor(10, 30, 25, 0, 65536, LOOP_BIT | 1),  # already done
+]
+
+
+def loop_oracle(source, st):
+    """One block with the loop option: wrap by the region length once, the forward neighbor at the end is the start."""
+    out = np.zeros(32, dtype=F32)
+    done = st.done & 1
+    position = st.index * 65536 + st.fraction
+    length = st.end - st.start
+    for n in range(32):
+        index, fraction = divmod(position, 65536)
+        if not st.start <= index < st.end:
+            done = 1
+        if done:
+            break
+        nxt = st.start if st.rate >= 0 and index + 1 >= st.end else min(index + 1, st.end - 1)
+        a, b = F32(source[index]), F32(source[nxt])
+        out[n] = F32(a + F32(F32(fraction / 65536) * F32(b - a)))
+        position += st.rate
+        if not st.start * 65536 <= position < st.end * 65536:
+            if length >= 2:
+                position += -length * 65536 if position >= st.end * 65536 else length * 65536
+            if not st.start * 65536 <= position < st.end * 65536:
+                done = 1
+    index, fraction = divmod(position, 65536)
+    return out, replace(st, index=index, fraction=fraction, done=done)
+
+
+@pytest.mark.parametrize("st", LOOP_CASES)
+def test_pcm16_loop_option_wraps_by_the_region_length(linked_pcm16, st):
+    sess = pk_sharc.CallSession(
+        [linked_pcm16],
+        0xB9F000,
+        breaks=(linked_pcm16.symbols["_sample_after0"],),
+    )
+    source = pcm16_source(st)
+    for addr, word in pcm16_poke(source, st).items():
+        sess.poke(addr, word)
+    r = sess.call("_sample_h", REGS)
+    assert r["halt"]["reason"] == "breakpoint", r["halt"]
+    normalized = {i: F32(value / 32768) for i, value in source.items()}
+    out, final = loop_oracle(normalized, st)
+    assert [sess.peek(OUT + i) for i in range(32)] == bits(out)
+    assert [sess.peek(STATE + i) for i in range(6)] == words(final)

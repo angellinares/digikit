@@ -207,6 +207,7 @@ Glyphs on effect parameters are not supported yet.
 | `DK_GLYPH_PAN` | 0 .. 127 | centre 64, shows L/R |
 | `DK_GLYPH_ONOFF` | 0 .. 1 | on/off switch |
 | `DK_GLYPH_TUNE` | 4 .. 124 | centre 64, one unit = one semitone |
+| `DK_GLYPH_PLAY` | 0 .. 3 | REV, REV.L, FWD.L, FWD; the Digitone II has no PLAY row and shows 0 .. 3 |
 
 `DK_PARAM_ACTION(MACHINE, WORD, FN)` makes a click on the knob of that parameter (press and release of the encoder, no turn between) call
 `void FN(uint32_t track)`, a global function of the module, in the UI task. It may open a `<dk/ui.h>` menu over the page. A parameter has at most

@@ -11,6 +11,8 @@
 // mono-to-stereo. Output buffers must be disjoint. Sources, outputs, cursor,
 // descriptors and stack must otherwise not alias; sources/descriptors immutable.
 // All mono bounds, completion, float rounding and call.inc requirements apply.
+// The loop option (bit 1 of cursor word 5, see sample_pcm16.inc) applies to both
+// channels; the caller's word 5 is written back without the bit.
 // Saves R3,R5,R6,I1: 4 slots plus 6 cursor words = 10 local words.
 // Frame convention: the actual adapters enter modules with a byte-alias I6 (byte addresses, a word is 4), so the
 // stack copy of the cursor is at I6 - 44 (word slot 11) and the pointer arithmetic counts bytes. A normal-word
@@ -19,7 +21,7 @@
 // is word slot 26 (includes nested call frame and mono's 12 saves). Caller DK_CALL
 // writes I6 and I6-1. Clobbers only call.inc's caller-saved set.
 // Conservative instruction ceiling including caller DK_CALL and 3 argument
-// loads: 2*(32*64+100)+100 = 4396. Sequential composition; this is an
+// loads: 2*(32*80+102)+100 = 5428 (measured 4897 with the loop option, 3745 without). Sequential composition; this is an
 // instruction bound, not hardware cycles or a hardware performance claim.
 .SECTION/PM seg_pmco;
 .GLOBAL _dk_sample_pcm16_stereo_linear;

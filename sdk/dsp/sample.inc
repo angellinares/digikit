@@ -32,7 +32,7 @@
 // Finite source values are required; intermediate subtraction may still overflow.
 // Then advance the split cursor exactly; crossing either bound sets done=1,
 // including after output 31. Finished/empty/outside reads no source, zeros tail.
-// Only index/fraction/done are written back. No playback looping, fades or antialias filter.
+// Only index/fraction/done are written back. No fades or antialias filter. This float reader does not loop; the PCM16 readers have a loop option (sample_pcm16.inc).
 // Saves R3,R5-R7,R9-R11,R13-R15,I0,I1 (12 slots); call.inc clobbers otherwise.
 // Instruction ceiling with DK_CALL and 3 argument loads: 32*40+100 = 1380.
 // Two-call test harness measured 557..2231 instructions (ceiling 2761).

@@ -34,6 +34,8 @@
 #define DK_GLYPH_ONOFF 3
 /* Glyph: a tune knob, values 4 .. 124 (centre 64, one unit = one semitone). */
 #define DK_GLYPH_TUNE 4
+/* Glyph: a play-mode knob, values 0 .. 3 (REV, REV.L, FWD.L, FWD on the Digitakt II; the Digitone II shows 0 .. 3). */
+#define DK_GLYPH_PLAY 5
 /* Encoders on a page. */
 #define DK_PAGE_KNOBS 8
 /* The knob takes the lowest free position. */
@@ -134,7 +136,7 @@ typedef struct {
     uint32_t size;                           /* sizeof(dk_desc_param_glyph) */
     char owner[16];                          /* the id of the machine (an effect id is refused for now) */
     uint32_t word;                           /* 0 .. 7, the parameter word of the machine; the machine declares it with DK_PARAM */
-    uint32_t glyph;                          /* DK_GLYPH_ENCODER .. DK_GLYPH_TUNE */
+    uint32_t glyph;                          /* DK_GLYPH_ENCODER .. DK_GLYPH_PLAY */
 } dk_desc_param_glyph;
 
 /* One encoder of a page. An unused entry is all zero. */

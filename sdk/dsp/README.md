@@ -119,7 +119,8 @@ The reference and tests are `tools/patchkit/dsp_sample_ref.py` and `tests/patchk
 Tests compare against an independent combined-position oracle and watch for out-of-interval reads. The two-call
 harness measured 557–2,231 instructions across its cases, below its 2,761-instruction ceiling. These are concrete-core
 instruction counts, not hardware cycles or a speedup claim. This first implementation is sequential and has no
-anti-alias filter, playback looping or boundary fades. Float32 input is a numerical view, not a decision to store
+anti-alias filter or boundary fades; only the PCM16 readers have a loop option (bit 1 of cursor word 5, see
+`sample_pcm16.inc`). Float32 input is a numerical view, not a decision to store
 all transferred PCM as float32. Resource ownership and stereo playback remain separate work.
 
 

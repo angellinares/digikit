@@ -553,9 +553,9 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
         p.action = Some(func);
     }
     for (what, owner, word, glyph) in glyphs {
-        if glyph > 4 {
+        if glyph > 5 {
             return Err(err!(
-                "{what}: unknown glyph {glyph} (DK_GLYPH_ENCODER .. DK_GLYPH_TUNE is 0 to 4)"
+                "{what}: unknown glyph {glyph} (DK_GLYPH_ENCODER .. DK_GLYPH_PLAY is 0 to 5)"
             ));
         }
         if fxs.iter().any(|(_, f)| f.id == owner) {

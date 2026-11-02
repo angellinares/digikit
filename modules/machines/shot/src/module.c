@@ -1,6 +1,6 @@
 /* The machine declaration of digikit/shot: one stereo machine `shot` that plays a sample of its pool, with five
    parameters on one page. patchkit pack reads these records; the device never sees them. The DSP symbols are in src/dsp/shot.s;
-   the parameter words are read there in this order: SMP, START, END, REVERSE, PITCH.
+   the parameter words are read there in this order: SMP, START, END, PLAY, PITCH.
    The pool (16 entries) is the runtime's per-module table (<dk/sample_track.h>); SMP picks the entry of a note. The module only plays;
    files are loaded into pool slots by the picker (the SMP click list) through the runtime. */
 #include <dk/api.h>
@@ -13,12 +13,14 @@
 DK_MACHINE(shot, .name = "SHOT", .short_name = "SPK", .render = "_shot_render",
            .note_on = "_shot_note_on", .desc = "_shot_desc", .stereo = 1);
 /* SMP: the pool entry that plays, 0 .. 15 (turn: steps through the pool; p-lockable; an empty entry is silent).
-   START and END: 0 .. 127 spread over the whole sample (127 is its last frame boundary). REVERSE: 64 and above plays backwards.
+   START and END: 0 .. 127 spread over the whole sample (127 is its last frame boundary). PLAY: 0 REV, 1 REV.L, 2 FWD.L, 3 FWD (default); .L loops
+   START .. END (the glyph is the stock PLAY knob on the Digitakt II).
    PITCH: 64 is the played note unchanged, each unit is 0.375 semitones, so 0 .. 127 is -24 .. +23.6 semitones. */
 DK_PARAM(shot, 0, shot_smp, "Sample", "SMP", 0, 15, 0);
 DK_PARAM(shot, 1, shot_start, "Start", "START", 0, 127, 0);
 DK_PARAM(shot, 2, shot_end, "End", "END", 0, 127, 127);
-DK_PARAM(shot, 3, shot_reverse, "Reverse", "REV", 0, 127, 0);
+DK_PARAM(shot, 3, shot_play, "Play", "PLAY", 0, 3, 3);
+DK_PARAM_GLYPH(shot, 3, DK_GLYPH_PLAY);
 DK_PARAM(shot, 4, shot_pitch, "Pitch", "PITCH", 0, 127, 64);
 DK_PAGE(shot, "SPK", "SHOT", DK_KNOB(0), DK_KNOB(1), DK_KNOB(2), DK_KNOB(3), DK_KNOB(4));
 DK_SAMPLE_TRACKS(0, _shot_rec, _shot_ctl);

@@ -77,6 +77,7 @@ The rules are in [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), sectio
 | `DK_GLYPH_PAN` | 0 .. 127 (centre 64, shows L/R) |
 | `DK_GLYPH_ONOFF` | 0 .. 1 |
 | `DK_GLYPH_TUNE` | 4 .. 124 (centre 64, one unit = one semitone) |
+| `DK_GLYPH_PLAY` | 0 .. 3 (REV, REV.L, FWD.L, FWD; the Digitone II shows 0 .. 3) |
 
 ## Tracing
 

@@ -377,6 +377,7 @@ fader = 0xd7     # 215 A Level
 pan = 0x47       # 71 PAN
 onoff = 0xdd     # 221 ATRG
 tune = 0xee      # 238 TUN1
+play = 0xd5      # DN2 has no PLAY row: falls back to the encoder (shows 0 .. 3)
 
 # The DSP's copy of the frame holds the word of sound-array slot s of voice v at halfword 0x6d + 0x49 v + (s - 25).
 [modules.frame]

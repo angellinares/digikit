@@ -243,6 +243,7 @@ fn glyph_info(glyph: Option<u32>) -> Option<(&'static str, i64, i64)> {
         2 => ("pan", 0, 127),
         3 => ("onoff", 0, 1),
         4 => ("tune", 4, 124),
+        5 => ("play", 0, 3),
         _ => return None,
     })
 }
@@ -855,6 +856,7 @@ fader = 0xd1
 pan = 0x47
 onoff = 0x32
 tune = 0xca
+play = 0xcb
 [[modules.knobs.reserved]]
 clone_of = 0
 name = "SAMPLE"
@@ -890,6 +892,7 @@ fader = 0xd7
 pan = 0x47
 onoff = 0xdd
 tune = 0xee
+play = 0xd5
 [modules.frame]
 base = 0x6d
 stride = 0x49
@@ -1175,6 +1178,14 @@ summary = "t."
         m.param[1].glyph = Some(4);
         let e = bad(&m);
         assert!(e.contains("t_1") && e.contains("tune"), "{e}");
+        // PLAY is 0 .. 3: DT2 has the PLAY row, DN2 falls back to the encoder row
+        m.param[1].glyph = Some(5);
+        m.param[1].max = 127 * 256;
+        let e = bad(&m);
+        assert!(e.contains("t_1") && e.contains("play"), "{e}");
+        m.param[1].max = 3 * 256;
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0xcb]);
+        assert_eq!(templates(&m, "dn2"), [0xd5, 0xd5]);
     }
 
     #[test]

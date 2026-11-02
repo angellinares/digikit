@@ -10,11 +10,23 @@
 // halves outside the interval are ignored. Source words remain immutable.
 // Each selected half is sign-extended and converted exactly to float32(int16/32768).
 // Interpolation clamps its neighbor to end-1, then uses the float reader's order.
+// Loop option: the caller sets bit 1 of state word 5 (done) before the call. The
+// kernel reads only bit 0 as done, and writes word 5 back as 0 or 1 (the loop bit
+// is an input, set it again for every block). The stereo kernel passes it to both
+// channels. With the bit set and end-start >= 2, a cursor that crosses end going
+// forward (or start going in reverse) wraps by the region length end-start, keeps
+// the fraction and renders the rest of the block; done stays 0. One wrap only:
+// if the wrapped index is still outside [start,end) (rate magnitude above the
+// region length) the voice ends as without the loop. A region shorter than 2
+// frames does not loop. A forward cursor at end-1 interpolates toward the sample
+// at start; in reverse the neighbor stays clamped to end-1. Without the bit the
+// output and the state are as before (bit-identical).
 // Bounds: 0 <= start < end <= 2^30-1 (empty allowed); initial index in
 // [-32768, 2^30+32767], fraction 0..65535, any signed32 rate. The split update
 // stays within signed32 even at either bound with extreme rates.
 // Empty, finished or outside state reads no source. Caller handles unready resources.
-// Instruction ceiling including DK_CALL and three argument loads: 32*64+100 = 2148.
+// Instruction ceiling including DK_CALL and three argument loads: 32*80+102 = 2662
+// (measured worst case 2430 with the loop option (a 2-frame region wrapping on every output), 1854 without).
 // Counts are instructions, not hardware cycles or a performance claim.
 .SECTION/PM seg_pmco;
 .GLOBAL _dk_sample_pcm16_linear;
@@ -47,6 +59,8 @@ dk_sample_pcm16_linear.:
     R9 = DM(3, I1);
     R0 = DM(4, I1);
     R14 = DM(5, I1);
+    R2 = 1;
+    R14 = R14 AND R2;
     R2 = -16;
     R10 = ASHIFT R0 BY R2;
     R11 = R0 AND R13;
@@ -77,6 +91,13 @@ _dk_sample_pcm16_loop:
     COMP(R4, R6);
     IF LT JUMP _dk_sample_pcm16_neighbor;
     R4 = R7;
+    R1 = DM(5, I1);
+    R2 = 2;
+    R1 = R1 AND R2;
+    IF EQ JUMP _dk_sample_pcm16_neighbor;
+    R1 = PASS R10;
+    IF LT JUMP _dk_sample_pcm16_neighbor;
+    R4 = PASS R5;
 _dk_sample_pcm16_neighbor:
     R1 = LSHIFT R4 BY -1;
     R1 = R3 + R1;
@@ -103,6 +124,26 @@ _dk_sample_pcm16_neighbor:
     IF GE JUMP _dk_sample_pcm16_crossed;
     JUMP _dk_sample_pcm16_store;
 _dk_sample_pcm16_crossed:
+    R0 = DM(5, I1);
+    R1 = 2;
+    R0 = R0 AND R1;
+    IF EQ JUMP _dk_sample_pcm16_end;
+    R1 = R6 - R5;
+    R0 = 2;
+    COMP(R1, R0);
+    IF LT JUMP _dk_sample_pcm16_end;
+    COMP(R7, R5);
+    IF LT JUMP _dk_sample_pcm16_wrap_up;
+    R7 = R7 - R1;
+    JUMP _dk_sample_pcm16_wrapped;
+_dk_sample_pcm16_wrap_up:
+    R7 = R7 + R1;
+_dk_sample_pcm16_wrapped:
+    COMP(R7, R5);
+    IF LT JUMP _dk_sample_pcm16_end;
+    COMP(R7, R6);
+    IF LT JUMP _dk_sample_pcm16_store;
+_dk_sample_pcm16_end:
     R14 = 1;
     JUMP _dk_sample_pcm16_store;
 _dk_sample_pcm16_finish:
