@@ -315,3 +315,24 @@ retained; competing/base/width mismatches stay unknown. Pointer values are limit
 constant-propagation/loop-first-arrival estimates, never runtime bounds. Width
 stays a raw token: no byte footprint, SIMD or alias mapping is inferred. This is
 neither decoder-complete store coverage nor ownership/reservation proof.
+
+
+## Device probe (USB audio + remote)
+
+`tools/device/devprobe.py` presses keys on a real device through the digikit remote module, records its USB audio with ffmpeg and measures each hit (pitch, length, level).
+
+Setup:
+
+- On the device: SETTINGS > SYSTEM > USB CONFIG = USB AUDIO/MIDI; USB OUT = MAIN (or one track); tick `digikit/remote` in DIGIKIT > MODULES and restart.
+- On the Mac: ffmpeg in PATH.
+
+```sh
+mise run device:probe -- --list-audio
+mise run device:probe -- --steps 'trig1*10@500'
+```
+
+Results are in `out/runs/devprobe/<time>/`: `capture.wav`, `events.json`, `hits.json` and screenshots. The table shows one line per hit and whether the hits are consistent.
+
+- The remote presses keys only. It does not restart the device.
+- On hardware the panel scan may override remote keys (finding 58). The first run shows it.
+- `--analyse WAV` analyses any WAV, for example an emulator capture, to compare device and emulator.
