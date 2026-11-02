@@ -33,6 +33,12 @@ pub mod input {
     // cf.input.fn.enc_decoder: no sig yet
 
     // cf.input.fn.key_decoder: no sig yet
+
+    unsafe extern "C" {
+        /// Key state by logical key index: 1 while the key is held, else 0. The stock parameter page tests 0x10, 0x11 and 0x16 (turn modes that change what a parameter write does). DT2 0x4011e150, DN2 0x4011fac4.
+        #[link_name = "cf.input.fn.key_down"]
+        pub fn key_down(key: u32) -> u32;
+    }
 }
 
 pub mod link {
@@ -442,6 +448,12 @@ pub mod page {
 }
 
 pub mod param {
+    unsafe extern "C" {
+        /// The absolute parameter setter the stock page uses after a turn and the sample list uses after a pick: (obj, code, raw, track, 1, 1, 1). Clamps raw to the row range, stores it in the sound, notifies the project and the observers. obj is the parameter object of the page (view vtable 0xc4 (view, code, track)). DT2 0x4003b570, DN2 0x40037326.
+        #[link_name = "cf.param.fn.set_value"]
+        pub fn set_value(obj: *const u8, code: u32, raw: i32, track: u32, notify: u32, record: u32, redraw: u32) -> u32;
+    }
+
     // cf.param.fn.value_class: no sig yet
 
     unsafe extern "C" {

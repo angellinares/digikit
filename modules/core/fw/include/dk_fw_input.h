@@ -8,5 +8,7 @@
 
 /* cf.input.fn.enc_decoder: no sig yet */
 /* cf.input.fn.key_decoder: no sig yet */
+/* Key state by logical key index: 1 while the key is held, else 0. The stock parameter page tests 0x10, 0x11 and 0x16 (turn modes that change what a parameter write does). DT2 0x4011e150, DN2 0x4011fac4. */
+uint32_t dk_fw_input_key_down(uint32_t key) __asm__("cf.input.fn.key_down");
 
 #endif

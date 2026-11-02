@@ -291,6 +291,10 @@ pub mod api {
         pub sample_pool_info: unsafe extern "C" fn(handle: u32, index: u32, out: *mut u8) -> i32,
         /// (api 1.6) Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the entry into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched.
         pub sample_pool_path: unsafe extern "C" fn(handle: u32, index: u32, buf: *mut u8, cap: u32) -> i32,
+        /// (api 1.6) Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). Only inside a DK_PARAM_ACTION callback (UI task), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows.
+        pub param_get: unsafe extern "C" fn(track: u32, word: u32) -> i32,
+        /// (api 1.6) Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. Only inside a DK_PARAM_ACTION callback (UI task). Returns 0, DK_PARAM_E_STATE (outside a callback), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).
+        pub param_set: unsafe extern "C" fn(track: u32, word: u32, raw: i32) -> i32,
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).

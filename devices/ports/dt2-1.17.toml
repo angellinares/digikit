@@ -99,6 +99,16 @@ mark = "D"
 rule = "fw/input:cf_func"
 
 [[anchor]]
+name = "cf.input.fn.key_down"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e150
+len = 4
+sha256 = "722ca8039c8eebdf90cbebf597b0c144a2c7979c379def4f7d87b953df4f5b50"
+mark = "D"
+rule = "fw/input:cf_func"
+
+[[anchor]]
 name = "cf.input.site.key_decoder.prev_mask_lit"
 cpu = "cf"
 kind = "code"
@@ -1105,6 +1115,16 @@ len = 60
 sha256 = "f103497eeac02712980d73744c3e5e437e4708713cda144b48cf3998827240db"
 mark = "D"
 rule = "fw/param:cf_words"
+
+[[anchor]]
+name = "cf.param.fn.set_value"
+cpu = "cf"
+kind = "code"
+addr = 0x4003b570
+len = 4
+sha256 = "3f2a7a23497cd06e30629c3e1ea8ba643f614ea616aba5feafae54b013ae9750"
+mark = "D"
+rule = "fw/param:cf_func"
 
 [[anchor]]
 name = "cf.param.fn.value_class"

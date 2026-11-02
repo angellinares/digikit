@@ -11,6 +11,7 @@
 //! that follows the release (`tick`), in the UI task, with the track number: `void fn(u32 track)`.
 //!
 //! Without any action, `dkrt_page_key` and `dkrt_page_turn` return at one test of `ARMED`.
+use crate::paramapi::{self, Ctx};
 use crate::registry;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::limits;
@@ -96,8 +97,18 @@ static mut DET: Detector = Detector::new();
 static mut ACTIONS: [u32; limits::PARAM_ROWS] = [0; limits::PARAM_ROWS];
 /// The number of parameter rows that have an action: 0 keeps both hooks at one test.
 static mut ARMED: u32 = 0;
-/// A click waiting for the next UI pass: the callback and the track (0: none).
-static mut PENDING: (u32, u32) = (0, 0);
+/// A click waiting for the next UI pass: the callback (0: none), the track, the clicked view and the clicked parameter code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pending {
+    pub callback: u32,
+    pub track: u32,
+    pub view: usize,
+    pub code: u32,
+}
+const NO_CLICK: Pending = Pending { callback: 0, track: 0, view: 0, code: 0 };
+static mut PENDING: Pending = NO_CLICK;
+/// The click whose callback is running (`param_get` and `param_set` work only while it is set).
+static mut CURRENT: Option<Ctx> = None;
 
 /// Set (`addr` != 0) or clear (0) the action of parameter row `k` (a row of core/dynreg). Called by the registry.
 pub unsafe fn set(k: usize, addr: u32) {
@@ -118,8 +129,8 @@ pub unsafe fn set(k: usize, addr: u32) {
     write_volatile(addr_of_mut!(ARMED), n);
     // a click of an unloaded module must not run
     let p = &mut *addr_of_mut!(PENDING);
-    if addr == 0 && old != 0 && p.0 == old {
-        *p = (0, 0);
+    if addr == 0 && old != 0 && p.callback == old {
+        *p = NO_CLICK;
     }
 }
 
@@ -160,24 +171,98 @@ unsafe fn click(view: *const u8, enc: u32) {
     let code = code_of(view, enc);
     let first = registry::param_first();
     let track = || dkfw::page::view_track(word(view, VIEW_TRACK_REF) as *const u8);
-    if let Some(p) = resolve(&*addr_of!(ACTIONS), first, code, track) {
-        *addr_of_mut!(PENDING) = p;
+    if let Some((callback, track)) = resolve(&*addr_of!(ACTIONS), first, code, track) {
+        *addr_of_mut!(PENDING) = Pending { callback, track, view: view as usize, code: code as u32 };
     }
 }
 
-/// The UI loop pass: run the queued action (`void fn(u32 track)`).
+/// The context of a click: the owner is the module of the clicked parameter row.
+pub fn context(p: &Pending, owners: &[u8], first: u32) -> Option<Ctx> {
+    let k = p.code.wrapping_sub(first) as usize;
+    match owners.get(k) {
+        Some(&owner) if owner != 0 => Some(Ctx { view: p.view, track: p.track, owner }),
+        _ => None,
+    }
+}
+
+/// The UI loop pass: run the queued action (`void fn(u32 track)`). `param_get` and `param_set` see the clicked view while it runs.
 #[cfg(not(test))]
 pub unsafe fn tick() {
     let p = *addr_of!(PENDING);
-    if p.0 != 0 {
-        *addr_of_mut!(PENDING) = (0, 0);
-        let call: unsafe extern "C" fn(u32) = core::mem::transmute(p.0 as usize);
-        call(p.1);
+    if p.callback != 0 {
+        *addr_of_mut!(PENDING) = NO_CLICK;
+        let owners = &(*addr_of!(registry::DKRT_REG)).param_owner;
+        let Some(ctx) = context(&p, owners, registry::param_first()) else { return };
+        *addr_of_mut!(CURRENT) = Some(ctx);
+        let call: unsafe extern "C" fn(u32) = core::mem::transmute(p.callback as usize);
+        call(p.track);
+        *addr_of_mut!(CURRENT) = None;
     }
 }
 
 #[cfg(test)]
 pub unsafe fn tick() {}
+
+/// The page's own functions, as a knob turn uses them (docs/design/ui-rules.md, "Runtime API for parameter-driven flows").
+#[cfg(not(test))]
+struct PageFw;
+
+/// Vtable slots of the page (`view`) and of its parameter object.
+#[cfg(not(test))]
+const VT_PAGE_VALUE: usize = 0x54;
+#[cfg(not(test))]
+const VT_PAGE_OBJECT: usize = 0xc4;
+#[cfg(not(test))]
+const VT_OBJECT_VALUE: usize = 0x28;
+
+#[cfg(not(test))]
+unsafe fn vcall(obj: usize, off: usize) -> usize {
+    word(word(obj as *const u8, 0) as *const u8, off) as usize
+}
+
+#[cfg(not(test))]
+impl paramapi::Fw for PageFw {
+    fn mode_key_held(&self) -> bool {
+        paramapi::MODE_KEYS.iter().any(|&k| unsafe { dkfw::input::key_down(k) } != 0)
+    }
+    fn page_value(&self, view: usize, code: u32) -> i32 {
+        unsafe {
+            let f: unsafe extern "C" fn(usize, u32, i32) -> i32 = core::mem::transmute(vcall(view, VT_PAGE_VALUE));
+            f(view, code, -1)
+        }
+    }
+    fn object(&self, view: usize, code: u32, track: u32) -> usize {
+        unsafe {
+            let f: unsafe extern "C" fn(usize, u32, u32) -> usize = core::mem::transmute(vcall(view, VT_PAGE_OBJECT));
+            f(view, code, track)
+        }
+    }
+    fn object_value(&self, obj: usize, code: u32) -> i32 {
+        unsafe {
+            let f: unsafe extern "C" fn(usize, u32) -> i32 = core::mem::transmute(vcall(obj, VT_OBJECT_VALUE));
+            f(obj, code)
+        }
+    }
+    fn store(&self, obj: usize, code: u32, raw: i32, track: u32) {
+        unsafe {
+            dkfw::param::set_value(obj as *const u8, code, raw, track, 1, 1, 1);
+        }
+    }
+}
+
+/// `Api.param_get`.
+#[cfg(not(test))]
+pub unsafe fn param_get(track: u32, word: u32) -> i32 {
+    let owners = &(*addr_of!(registry::DKRT_REG)).param_owner;
+    paramapi::get(&PageFw, *addr_of!(CURRENT), owners, registry::param_first(), track, word)
+}
+
+/// `Api.param_set`.
+#[cfg(not(test))]
+pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
+    let owners = &(*addr_of!(registry::DKRT_REG)).param_owner;
+    paramapi::set(&PageFw, *addr_of!(CURRENT), owners, registry::param_first(), track, word, raw)
+}
 
 #[cfg(test)]
 mod tests {
@@ -299,5 +384,23 @@ mod tests {
         assert_eq!(find(&actions, 100, 104), 0, "past the last row");
         assert_eq!(find(&actions, 100, -1), 0);
         assert_eq!(find(&actions, 100, 0), 0);
+    }
+
+    #[test]
+    fn the_click_context_keeps_the_view_the_track_and_the_owner_of_the_clicked_row() {
+        let owners = [0u8, 3, 3, 5];
+        let p = Pending { callback: 0xa0, track: 6, view: 0x2000, code: 101 };
+        assert_eq!(context(&p, &owners, 100), Some(Ctx { view: 0x2000, track: 6, owner: 3 }));
+        let p = Pending { code: 103, ..p };
+        assert_eq!(context(&p, &owners, 100).map(|c| c.owner), Some(5));
+    }
+
+    #[test]
+    fn a_click_whose_row_was_unloaded_has_no_context() {
+        let owners = [0u8, 0, 3];
+        let p = Pending { callback: 0xa0, track: 1, view: 0x2000, code: 100 };
+        assert_eq!(context(&p, &owners, 100), None, "free row");
+        assert_eq!(context(&Pending { code: 50, ..p }, &owners, 100), None, "a stock code");
+        assert_eq!(context(&Pending { code: 200, ..p }, &owners, 100), None, "past the table");
     }
 }

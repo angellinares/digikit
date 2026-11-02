@@ -27,6 +27,7 @@ pub mod fxpage;
 mod fxsend;
 mod loader;
 pub mod pageclick;
+pub mod paramapi;
 pub mod registry;
 pub mod scan;
 pub mod settings;
@@ -523,6 +524,8 @@ unsafe extern "C" fn api_sample_pool_clear(handle: u32, track: u32) -> i32 { tra
 unsafe extern "C" fn api_sample_pool_status(handle: u32, track: u32) -> i32 { tracks::status(handle, track) }
 unsafe extern "C" fn api_sample_pool_info(handle: u32, track: u32, out: *mut u8) -> i32 { tracks::info(handle, track, out) }
 unsafe extern "C" fn api_sample_pool_path(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 { tracks::path(handle, track, buf, cap) }
+unsafe extern "C" fn api_param_get(track: u32, word: u32) -> i32 { pageclick::param_get(track, word) }
+unsafe extern "C" fn api_param_set(track: u32, word: u32, raw: i32) -> i32 { pageclick::param_set(track, word, raw) }
 unsafe extern "C" fn api_files_client() -> i32 { files::client() }
 unsafe extern "C" fn api_files_list(client: u32, root: u32, path: *const u8, notify: Option<dkrt_sdk::api::FileEvent>, context: *mut u8) -> i32 { files::list(client, root, path, notify, context) }
 unsafe extern "C" fn api_files_poll(client: u32, ticket: u32, out: *mut u8, cap: u32) -> i32 { files::poll(client, ticket, out, cap) }
@@ -562,6 +565,8 @@ pub static mut dkrt_api: Api = Api {
     sample_pool_status: api_sample_pool_status,
     sample_pool_info: api_sample_pool_info,
     sample_pool_path: api_sample_pool_path,
+    param_get: api_param_get,
+    param_set: api_param_set,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {

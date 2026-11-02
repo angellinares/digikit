@@ -20,6 +20,15 @@ mark = "D"
 doc = "The descriptor row (60 bytes) of that parameter: mirror index 66, range 0..0x7f00, default 0x5000."
 
 [[fn]]
+name = "cf.param.fn.set_value"
+cpu = "cf"
+sig = "u32 (const u8 *obj, u32 code, i32 raw, u32 track, u32 notify, u32 record, u32 redraw)"
+rule = { kind = "cf_func", hash = "89d965df70565c490efde3016d66a843", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "The absolute parameter setter the stock page uses after a turn and the sample list uses after a pick: (obj, code, raw, track, 1, 1, 1). Clamps raw to the row range, stores it in the sound, notifies the project and the observers. obj is the parameter object of the page (view vtable 0xc4 (view, code, track)). DT2 0x4003b570, DN2 0x40037326."
+
+[[fn]]
 name = "cf.param.fn.value_class"
 was = ["cf.param.fn.t2", "cf.params.t2"]
 cpu = "cf"
