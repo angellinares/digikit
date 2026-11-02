@@ -21,8 +21,9 @@ import {
 } from './shot-support.ts';
 
 // DT2 1.17: the SMP click flow of digikit/shot (docs/design/ui-rules.md, docs/design/machine-page-click.md, docs/design/sample-picker.md):
-// a click on knob B (press and release without a turn) opens the pool list; YES on an entry or on a file added with "+ ADD" sets SMP and returns
-// to the page; NO goes back one level; a held TRIG keeps SMP unchanged; a press with a turn is the stock coarse step and opens no list.
+// a click on knob B (press and release without a turn) opens the slot list 00..15; YES on a slot (empty or filled) opens the file browser for
+// that slot; YES on a file loads it into that slot, sets SMP to the slot and returns to the page; NO goes back one level; a held TRIG keeps SMP
+// unchanged; a press with a turn is the stock coarse step and opens no list.
 //
 // The state is read from the runtime, not from the framebuffer: SMP is word 0 of `_dv_params` (raw = entry << 8, rewritten only while a voice
 // renders, so TRIG 1 is held for each read), the pool entries come from `sample_pool_status` through test/track-select, and the played tones
@@ -41,7 +42,7 @@ const pickerOrder = (entries: { name: string; kind: 'file' | 'folder' }[]) =>
   });
 
 runtimeTests(
-  'SHOT: a click on SMP opens the pool list; YES picks an entry or adds a file and returns to the page',
+  'SHOT: a click on SMP opens the slot list; YES on a slot and a file loads it into that slot and returns to the page',
   async (runtime) => {
     const { session, dk } = runtime;
     const artifacts = liveArtifacts(session, 'shot-picker');
@@ -128,11 +129,13 @@ runtimeTests(
       expect((await api.status(0)).state, 'pool entry 0 starts unused').toBe(0);
       expect((await api.status(1)).state, 'pool entry 1 starts unused').toBe(0);
 
-      /** Click SMP, "+ ADD" (the first row), the file `name` of KICKS (the browser may open in the root or, after an earlier add, in KICKS). */
-      const addFile = async (name: string, shotName: string, inRoot: boolean) => {
+      /** Click SMP, move the cursor to `slot`, YES (the browser opens for it, in the root or in the folder an earlier load left it in), then the
+       * file `name` of KICKS with YES: the file loads into the slot and the flow closes. `hold` keeps TRIG 1 down for that last YES. */
+      const loadSlot = async (slot: number, name: string, shotName: string, inRoot: boolean, hold = false) => {
         await click();
         await screen(`${shotName}-list`);
-        await up(20); // row 0 is "+ ADD"
+        await up(20);
+        await down(slot);
         await ui.tap('YES', 1500);
         await screen(`${shotName}-browser`);
         if (inRoot) {
@@ -143,10 +146,17 @@ runtimeTests(
         }
         await up(inFolder.length + 3);
         await down(fileRow(name));
-        await ui.tap('YES', 300);
+        if (hold) await session.client.inputButton(button('TRIG 1'), true);
+        try {
+          if (hold) await ui.settle(200);
+          await ui.tap('YES', 300);
+          if (hold) await screen(`${shotName}-held-yes`);
+        } finally {
+          if (hold) await session.client.inputButton(button('TRIG 1'), false);
+        }
       };
 
-      // ---- 1. a click opens the pool list; NO goes back to the page -------------------------------------------------------------------------
+      // ---- 1. a click opens the slot list; NO goes back to the page -------------------------------------------------------------------------
       // The pool is empty, so no voice renders and SMP cannot be read yet; the page screen is the witness.
       await click();
       const listHash = await screen('01-list');
@@ -156,77 +166,73 @@ runtimeTests(
       // The page shows the touched value ("0" in place of the label SMP), so its hash is not the idle page's: the list is gone when the screen is not the list.
       expect(await screen('02-no-from-list'), 'NO from the list leaves the list').not.toBe(listHash);
 
-      // ---- 2. add K1: one YES on the file adds it, sets SMP to entry 0 and returns to the page ------------------------------------------
-      await addFile('K1', '03-add-k1', true);
+      // ---- 2. slot 0 gets K1: YES on the empty slot, YES on the file: loaded into slot 0, SMP 0, back on the page ----------------------
+      await loadSlot(0, 'K1', '03-slot0-k1', true);
       const readyK1 = await api.settle(0);
       log.readyK1 = readyK1;
-      expect(readyK1.state, 'entry 0 is READY').toBe(3);
+      expect(readyK1.state, 'slot 0 is READY').toBe(3);
       expect(readyK1.channels).toBe(2);
       expect(readyK1.rate).toBe(RATE);
       await ui.settle(2500);
-      const afterK1 = await screen('04-after-add-k1');
-      expect(afterK1, 'the list and the browser are closed: the page is back').not.toBe(hashes['03-add-k1-folder']);
+      const afterK1 = await screen('04-after-slot0-k1');
+      expect(afterK1, 'the list and the browser are closed: the page is back').not.toBe(hashes['03-slot0-k1-folder']);
       log.smpAfterK1 = await smp();
-      expect(log.smpAfterK1, 'SMP is the new entry 0').toBe(0);
-      expect(await smp(), 'the flow is closed: still entry 0').toBe(0);
+      expect(log.smpAfterK1, 'SMP is slot 0').toBe(0);
+      expect(await smp(), 'the flow is closed: still slot 0').toBe(0);
       log.noteK1 = await noteIs('k1', K1);
-      await session.expectNoFault('add K1');
+      await session.expectNoFault('slot 0 K1');
 
-      // ---- 3. add K2: entry 1, SMP 1 --------------------------------------------------------------------------------------------------
-      // The list opens with the cursor on entry 0 (the current SMP); the browser opens in the folder it was left in.
-      await addFile('K2', '05-add-k2', false);
+      // ---- 3. slot 1 gets K2: SMP 1 --------------------------------------------------------------------------------------------------
+      // The list opens with the cursor on slot 0 (the current SMP); the browser opens in the folder it was left in.
+      await loadSlot(1, 'K2', '05-slot1-k2', false);
       const readyK2 = await api.settle(1);
       log.readyK2 = readyK2;
-      expect(readyK2.state, 'entry 1 is READY').toBe(3);
+      expect(readyK2.state, 'slot 1 is READY').toBe(3);
       await ui.settle(2500);
-      await screen('06-after-add-k2');
-      expect(await smp(), 'SMP is the new entry 1').toBe(1);
+      await screen('06-after-slot1-k2');
+      expect(await smp(), 'SMP is slot 1').toBe(1);
       log.noteK2 = await noteIs('k2', K2);
 
-      // ---- 4. click again: the cursor is on the current entry (1); one UP and YES pick entry 0 -----------------------------------------------
-      await click();
-      const list1 = await screen('07-list-smp1');
-      expect(list1, 'the list at SMP 1 differs from the list at SMP 0 with an empty pool').not.toBe(listHash);
-      await ui.tap('UP', 200);
-      await ui.tap('YES', 800);
-      await ui.settle(2000);
-      const back0 = await screen('08-picked-entry-0');
-      expect(back0, 'the list is closed after a pick').not.toBe(list1);
-      expect(await smp(), 'cursor was on entry 1, UP then YES gives entry 0').toBe(0);
-      log.noteK1Again = await noteIs('k1-again', K1);
+      // ---- 4. YES on the filled slot 0 replaces it: K2 now plays from slot 0 ----------------------------------------------------------
+      await loadSlot(0, 'K2', '07-replace-slot0', false);
+      let replaced = await api.status(0);
+      for (let i = 0; i < 100 && !(replaced.state === 3 && replaced.token !== readyK1.token); i++) {
+        await ui.settle(200);
+        replaced = await api.status(0);
+      }
+      log.replacedSlot0 = replaced;
+      expect(replaced.state, 'slot 0 is READY again').toBe(3);
+      expect(replaced.token, 'slot 0 holds a new file').not.toBe(readyK1.token);
+      await ui.settle(2500);
+      await screen('08-after-replace');
+      expect(await smp(), 'SMP is slot 0').toBe(0);
+      log.noteReplaced = await noteIs('slot0-is-k2', K2);
 
       // ---- 5. NO inside the flow goes back one level ------------------------------------------------------------------------------------
       await click();
-      await ui.tap('UP', 200);
-      await ui.tap('YES', 1500); // "+ ADD": the browser
-      const browserHash = await screen('09-browser');
-      // The browser is still in KICKS: NO goes up to the root, NO again leaves the browser for the list, NO again the page.
+      const list0 = await screen('09-list');
+      await up(20);
+      await ui.tap('YES', 1500); // slot 0: the browser, in KICKS
+      const browserHash = await screen('10-browser');
+      // The browser is in KICKS: NO goes up to the root, NO again leaves the browser for the slot list, NO again the page.
       await ui.tap('NO', 1000);
-      const rootHash = await screen('09b-browser-root');
+      const rootHash = await screen('10b-browser-root');
       expect(rootHash, 'NO in KICKS is one folder up, still the browser').not.toBe(browserHash);
       await ui.tap('NO', 1000);
-      const listAgain = await screen('10-list-after-no');
-      expect(listAgain, 'NO from the browser root is the list, not the page').not.toBe(pageHash);
+      const listAgain = await screen('11-list-after-no');
+      expect(listAgain, 'NO from the browser root is the slot list, not the page').not.toBe(pageHash);
       expect(listAgain).not.toBe(rootHash);
       expect(listAgain).not.toBe(browserHash);
+      log.sameListAfterNo = listAgain === list0; // a record only: the cursor returns to the slot that was chosen
       await ui.tap('NO', 800); // the page
       await ui.settle(1500);
-      await screen('11-page-after-no');
+      await screen('12-page-after-no');
       expect(await smp(), 'NO changed nothing').toBe(0);
 
-      // ---- 6. a held TRIG refuses the pick (E_HELD): SMP is unchanged ---------------------------------------------------------------------
-      await click();
-      await ui.tap('DOWN', 200); // entry 1
-      await session.client.inputButton(button('TRIG 1'), true);
-      try {
-        await ui.settle(200);
-        await ui.tap('YES', 300);
-        await screen('12-held-yes');
-      } finally {
-        await session.client.inputButton(button('TRIG 1'), false);
-      }
+      // ---- 6. a held TRIG refuses the SMP write (E_HELD): the file loads into slot 1, SMP stays 0 -------------------------------------
+      await loadSlot(1, 'K1', '13-held', true, true) // step 5 left the browser in the root;
       await ui.settle(800);
-      await screen('13-held-after');
+      await screen('14-held-after');
       await toPage(); // the list may still be open when the chord did not reach it
       expect(await smp(), 'a held TRIG left SMP at 0').toBe(0);
 
@@ -241,9 +247,9 @@ runtimeTests(
         await session.client.inputButton(button('PUSH B'), false);
       }
       await ui.settle(1500);
-      const turned = await screen('14-press-turn');
-      expect(turned, 'no pool list opened').not.toBe(listHash);
-      expect(turned).not.toBe(list1);
+      const turned = await screen('15-press-turn');
+      expect(turned, 'no slot list opened').not.toBe(listHash);
+      expect(turned).not.toBe(list0);
       const after = await smp();
       log.pressTurn = { before, after };
       // No check on the value: one slow detent moves a parameter by about 1/256 of a unit (stock acceleration, finding 02), and
