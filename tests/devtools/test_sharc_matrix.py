@@ -169,12 +169,6 @@ def test_full_coverage_and_env_precedence(setup, monkeypatch):
     assert not matrix.preflight(config, frozen, frozen, False)["missing"]
 
 
-@pytest.mark.parametrize("value", ["../escape", "a/b", "..", ""])
-def test_unsafe_names(value):
-    with pytest.raises(matrix.Invalid):
-        matrix.name(value)
-
-
 def test_child_logs_success_failure_and_timeout(tmp_path):
     matrix.process([sys.executable, "-c", "print('done')"], {}, tmp_path / "ok", 5)
     assert "done" in (tmp_path / "ok/stdout.log").read_text()

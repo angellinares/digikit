@@ -14,7 +14,8 @@ skip when a toolchain is absent.
 `codegen-gcc` builds Rust for the ColdFire MCF54418 (finding 26, findings 23 S1b): the rust-lang GCC fork at the commit
 that rustc_codegen_gcc pins, as libgccjit for `--target=m68k-elf` (macOS patches in tools/patchkit/toolchain/), the
 rustc_codegen_gcc backend (one 3-line patch that passes -mcpu to the assembler) and a pinned nightly. It needs the `m68k`
-toolchain first (its `as` and `ld`), rustup and Homebrew gmp/mpfr/libmpc/isl/zstd. Stages skip when their output exists.
+toolchain first (its `as` and `ld`), rustup and gmp/mpfr/libmpc/isl/zstd: from Homebrew on macOS, from the system on
+Linux (Debian/Ubuntu: libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev). Stages skip when their output exists.
 Paths: `codegen_gcc_env()` for the build environment, `rust_target_json()` for the target (data layout `i64:16:64`:
 the GCC ColdFire ABI aligns 64-bit integers to 2 bytes).
 """
@@ -80,10 +81,12 @@ def selache_dir() -> pathlib.Path | None:
     )
 
 
+DARWIN = sys.platform == "darwin"
+
+
 def codegen_gcc_backend() -> pathlib.Path:
-    return (
-        CG_DIR / "rustc_codegen_gcc" / "target" / "debug" / "librustc_codegen_gcc.dylib"
-    )
+    lib = "librustc_codegen_gcc.dylib" if DARWIN else "librustc_codegen_gcc.so"
+    return CG_DIR / "rustc_codegen_gcc" / "target" / "debug" / lib
 
 
 def codegen_gcc_ready() -> bool:
@@ -143,6 +146,10 @@ def unpack(archive: pathlib.Path) -> pathlib.Path:
 
 
 def brew_prefix(formula: str) -> str:
+    """Where a library's headers and libs are: Homebrew's prefix for it, or /usr on a system
+    without Homebrew (a Linux distribution's packages install there)."""
+    if shutil.which("brew") is None and not DARWIN:
+        return "/usr"
     return subprocess.run(
         ["brew", "--prefix", formula], capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -317,7 +324,8 @@ def build_codegen_gcc() -> None:
     gsrc, gbuild, jitlib = CG_DIR / "gcc-src", CG_DIR / "gcc-build", CG_DIR / "jitlib"
     if not (jitlib / "libgccjit.so").exists():
         _git_checkout(gsrc, GCC_JIT_URL, GCC_JIT_REV)
-        _apply_patch(gsrc, CG_PATCHES / "libgccjit-darwin.patch")
+        if DARWIN:  # Apple clang only: GCC builds the jit sources as they are
+            _apply_patch(gsrc, CG_PATCHES / "libgccjit-darwin.patch")
         gbuild.mkdir(parents=True, exist_ok=True)
         if not (gbuild / "Makefile").exists():
             run(
@@ -340,17 +348,22 @@ def build_codegen_gcc() -> None:
             )  # fmt: skip
         # With Apple clang the jit/*.o objects need libc++ headers that GCC's safe-ctype macros clash with; the
         # force-included headers settle the order. `all-gcc` fails once there; `make -C gcc all` finishes.
-        pre = " ".join(
-            f"-include {h}"
-            for h in [
-                "vector",
-                "locale",
-                "string",
-                "map",
-                "set",
-                "algorithm",
-                "sstream",
-            ]
+        # A GCC host compiler (Linux) needs neither.
+        pre = (
+            ""
+            if not DARWIN
+            else " ".join(
+                f"-include {h}"
+                for h in [
+                    "vector",
+                    "locale",
+                    "string",
+                    "map",
+                    "set",
+                    "algorithm",
+                    "sstream",
+                ]
+            )
         )
         subprocess.run(
             ["make", "-j", jobs, "all-gcc"], cwd=gbuild, env=env
@@ -361,10 +374,18 @@ def build_codegen_gcc() -> None:
             env=env,
         )
         jitlib.mkdir(exist_ok=True)
-        for n in ("libgccjit.so", "libgccjit.dylib", "libgccjit.0.dylib"):
+        built = gbuild / "gcc" / ("libgccjit.0.dylib" if DARWIN else "libgccjit.so.0")
+        if not built.exists():
+            sys.exit(f"libgccjit did not build: no {built}")
+        names = (
+            ("libgccjit.so", "libgccjit.dylib", "libgccjit.0.dylib")
+            if DARWIN
+            else ("libgccjit.so", "libgccjit.so.0")
+        )
+        for n in names:
             link = jitlib / n
             link.unlink(missing_ok=True)
-            link.symlink_to(gbuild / "gcc" / "libgccjit.0.dylib")
+            link.symlink_to(built)
     # 3. the back end, with the -mcpu patch; the clone sits inside the repository's cargo workspace, so each of
     #    its manifests gets an empty [workspace]
     be = CG_DIR / "rustc_codegen_gcc"

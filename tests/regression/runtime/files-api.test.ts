@@ -7,10 +7,18 @@ import { RpcFiles } from '@digi/dk-session/rpcfiles';
 import { repoRoot, resolveInputs } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { withSession } from '../support.ts';
-import { liveProtocol, moduleArtifact } from './live.ts';
+import { moduleArtifact } from './install.ts';
+import { liveProtocol } from './protocol.ts';
 import type { RuntimePlan } from './runtime-plan.ts';
 
 const root = repoRoot();
+
+/** `size_of::<Api>()`: every field of the `[api]` table in sdk/sdk.toml is one 4-byte word. */
+function apiTableSize(): number {
+  const toml = fs.readFileSync(path.join(root, 'sdk/sdk.toml'), 'utf8');
+  const block = toml.slice(toml.indexOf('[api]\nfields = ['), toml.indexOf('\n]\n', toml.indexOf('[api]\nfields = [')));
+  return 4 * (block.match(/^\s*\{ name = /gm) ?? []).length;
+}
 const exec = promisify(execFile);
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const profiles = [
@@ -217,7 +225,11 @@ for (const profile of profiles) {
           return { ticket, entries };
         };
         const caps = await request(0x3d);
-        expect([caps.readUInt32BE(0), caps.readUInt32BE(4), caps.readUInt32BE(8)]).toEqual([96, 0x504, 304]);
+        expect([caps.readUInt32BE(0), caps.readUInt32BE(4), caps.readUInt32BE(8)]).toEqual([
+          apiTableSize(),
+          0x504,
+          304,
+        ]);
         expect(caps.readInt32BE(12), 'client acquisition outside init fails').toBeLessThan(0);
         if (profile.device === 'dn2') {
           phase = 'empty virtual samples root';

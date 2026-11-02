@@ -7,7 +7,7 @@ import { RpcFiles } from '@digi/dk-session/rpcfiles';
 import { repoRoot, resolveInputs } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { withSession } from '../support.ts';
-import { liveProtocol } from './live.ts';
+import { liveProtocol } from './protocol.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 
 const root = repoRoot();

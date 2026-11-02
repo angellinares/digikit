@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import struct
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.coldfire import arena_safety
 from tools.device import dksettings
 from tools.patchkit import pk_device
 from tools.patchkit import pk_digikit_fxroute as track_routes
@@ -29,14 +27,6 @@ class FxRouteHelpersTest(unittest.TestCase):
         with card.open("wb") as file:
             file.truncate(store.end * 512)
         return card, store
-
-    def watch(self):
-        output = self.folder / "watch.jsonl"
-        (self.folder / "watch-0.jsonl").write_text("")
-        (self.folder / "watch-0.summary.json").write_text(
-            json.dumps({"events": 0, "flush_hits": [], "cpushl": 1})
-        )
-        return output
 
     def overlay(self, *sectors):
         path = self.folder / "overlay.bin"
@@ -120,20 +110,9 @@ class FxRouteHelpersTest(unittest.TestCase):
         self.assertEqual(result["amount_diff"]["only_first"], 0)
         self.assertEqual(result["amount_diff"]["only_second"], 0)
 
-    def test_overlay_writes_uses_device_store_range_and_rejects_torn_records(self):
-        for device in ("dt2", "dn2"):
-            with self.subTest(device=device):
-                store = pk_device.store_of(device)
-                overlay = self.overlay(
-                    store.first - 1, store.set_a, store.sel_b, store.end, store.sel_b
-                )
-                self.assertEqual(
-                    track_routes.overlay_writes(overlay, device),
-                    {"store_sectors": [store.set_a, store.sel_b]},
-                )
+    def test_lock_check_rejects_torn_records_before_touching_the_card(self):
+        overlay = self.overlay()
         overlay.write_bytes(b"torn")
-        with self.assertRaises(ValueError):
-            track_routes.overlay_writes(overlay, "dt2")
         card = self.folder / "unused.img"
         card.write_bytes(b"original")
         with self.assertRaises(ValueError):
@@ -214,52 +193,6 @@ class FxRouteHelpersTest(unittest.TestCase):
             file.write(b"x")
         with self.assertRaisesRegex(ValueError, "empty"):
             routes.seed_card(card, "dt2", [])
-
-    def test_route_policy_allows_only_legacy_kit_and_settings_sectors(self):
-        output = self.watch()
-        for device in ("dt2", "dn2"):
-            with self.subTest(device=device):
-                store = pk_device.store_of(device)
-                lo, hi = routes.KIT_AREAS[device][0]
-                overlay = self.overlay(
-                    store.set_a, store.set_b, lo, hi - 1, store.sel_a, 0x58000
-                )
-                self.assertFalse(
-                    arena_safety.runtime_safety(device, output, [overlay])["pass"]
-                )
-                result = arena_safety.runtime_safety(
-                    device, output, [overlay], policy="fx-routes"
-                )
-                self.assertTrue(result["pass"])
-                self.assertEqual(
-                    set(result["policy"]["store_extra"]), {store.set_a, store.set_b}
-                )
-                for sector in (
-                    lo - 1,
-                    hi,
-                    store.first,
-                    store.set_a + 1,
-                    store.set_b + 1,
-                ):
-                    overlay = self.overlay(sector)
-                    self.assertFalse(
-                        arena_safety.runtime_safety(
-                            device, output, [overlay], policy="fx-routes"
-                        )["pass"]
-                    )
-
-    def test_route_policy_rejects_malformed_evidence_and_unknown_policy(self):
-        output = self.watch()
-        overlay = self.overlay()
-        with self.assertRaisesRegex(ValueError, "unknown"):
-            arena_safety.runtime_safety("dt2", output, [overlay], policy="all")
-        overlay.write_bytes(b"torn")
-        with self.assertRaises(ValueError):
-            arena_safety.runtime_safety("dt2", output, [overlay], policy="fx-routes")
-        overlay.write_bytes(b"")
-        (self.folder / "watch-0.summary.json").write_text('{"events":')
-        with self.assertRaises(ValueError):
-            arena_safety.runtime_safety("dt2", output, [overlay], policy="fx-routes")
 
 
 if __name__ == "__main__":

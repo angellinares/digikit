@@ -33,7 +33,7 @@ for tier-quick, all for tier-sweep), cut their (default/no-aot x file) groups in
 them from one shared queue, longest first, on the step's share of the budget in emulator processes (DIGI_TIER_JOBS replaces it).
 check-no-aot runs 17 native FX assertions even with --full (--all-no-aot: 61 normally, 191 with --full).
 Normal routing includes relevant stock, runtime and module acceptance; full tier sweeps stay explicit.
-python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, pathcheck, layercheck, gen-check), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
+python-tests runs the PY_CHECKS commands (ruff, ruff format, mypy, layercheck, gen-check), the PY_GATE files, the tests that reach a changed Python module of tools/ or tests/ in the
 import graph (changed_tests.gate_tests), the PY_SUITES whose trigger prefixes match a changed file (a suite with
 a test directory only for the other files),
 every changed tests/**/test_*.py, and the
@@ -84,7 +84,7 @@ from tools.emulator import (  # noqa: E402
     coupled,  # noqa: E402
     digi_env,  # noqa: E402
 )
-from tools.patchkit import modroots  # noqa: E402
+from tools.patchkit import modroots, patchkit  # noqa: E402
 
 PY = ["uv", "run", "python"]
 FX_FILES = (
@@ -102,13 +102,12 @@ DT2_FX_FILES = (
 # reach them in the import graph instead (changed_tests.gate_tests). Test paths may be globs or
 # directories; one that matches nothing is an error.
 PY_GATE = ("tests/patchkit/test_pk_current.py",)
-# Plain commands python-tests runs as sub-checks (label "python-tests:NAME"): lint, format, types, paths, generated sources.
+# Plain commands python-tests runs as sub-checks (label "python-tests:NAME"): lint, format, types, generated sources.
 # ruff and mypy read their file lists from pyproject.toml.
 PY_CHECKS: tuple[tuple[str, list[str]], ...] = (
     ("ruff", [sys.executable, "-m", "ruff", "check", "--no-cache"]),
     ("ruff-format", [sys.executable, "-m", "ruff", "format", "--check", "--no-cache"]),
     ("mypy", [sys.executable, "-m", "mypy"]),
-    ("pathcheck", [sys.executable, "-m", "tools.devtools.pathcheck"]),
     # the module layering (docs/ARCHITECTURE.md): reads manifests, sources and built objects, under a second
     ("layercheck", [sys.executable, "-m", "tools.devtools.layercheck"]),
     # the generated sources match sdk/sdk.toml, devices/*.toml and abi.toml (mise run gen:modules)
@@ -202,13 +201,10 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         (
             "tests/devtools/test_layercheck.py",
-            "tests/devtools/test_verify.py",
             "tests/devtools/test_verify_budget.py",
-            "tests/devtools/test_changed_tests.py",
             "tests/devtools/test_agent_guard.py",
             "tests/devtools/test_test_outcomes.py",
             "tests/devtools/test_benchlock.py",
-            "tests/patchkit/test_pk_proofs.py",
         ),
     ),
     (
@@ -325,7 +321,6 @@ UI_ONLY: tuple[str, ...] = (
 # table, not a prefix rule: neighbouring helpers and configuration stay conservative.
 SMOKE_EXEMPT: dict[str, str] = {
     "tools/devtools/agent_guard.py": "agent guard",
-    "tools/devtools/pathcheck.py": "path checker",
     "tools/devtools/layercheck.py": "layer checker",
     ".claude/settings.json": "agent settings",
 }
@@ -336,9 +331,15 @@ TEST_ONLY: tuple[str, ...] = (
     "tests/devtools/*",
     "tests/patchkit/test_*.py",
     "tests/digikit/test_*.py",
+    # test files of the emulator tools; the smoke harness closure is under tools/ and never imports them
+    "tests/emulator/test_*.py",
     "tests/digikit/scenarios/*.toml",
     "tests/regression/*.test.ts",
+    "tests/regression/emulator/*.ts",
     "tests/regression/runtime/*.ts",
+    "tests/conformance/*.ts",
+    "modules/**/tests/*.device.test.ts",
+    "tests/regression/project.json",
     "tools/devtools/*",
 )
 # Host Vitest test files (vitest.host.projects.json). The host config runs them without a device, so
@@ -356,8 +357,8 @@ def host_test_globs() -> tuple[str, ...]:
 # The first rule whose prefix matches a changed path decides that path's steps.
 RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("docs/", "README", "AGENTS.md", "CLAUDE.md", "tests/scenarios/README"), ()),
-    # GitHub settings files (templates, CODEOWNERS): only the path check reads them.
-    ((".github/",), ("python-tests",)),
+    # GitHub settings files (templates, CODEOWNERS): no gate step reads them.
+    ((".github/",), ()),
     # the agent hook settings (tools/devtools/agent_guard.py); .claude/skills/ holds links and .agents/skills/ markdown (the skills test)
     ((".claude/", ".agents/"), ("python-tests",)),
     (
@@ -508,6 +509,10 @@ RULES: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
         ),
         ("build", "pins", "python-tests"),
     ),
+    # test files of the emulator tools; the smoke harness closure is under tools/ and never imports them
+    (("tests/emulator/test_",), ("python-tests",)),
+    # the Nx graph: host affected selection and verify_route.nx_graph read it
+    (("nx.json", "tools/nx/"), ("host", "python-tests")),
     (("tools/", "tests/", "pyproject.toml"), ("python-tests",)),
     (
         ("Cargo.toml", "Cargo.lock", "mise.toml", "package.json", "pnpm-lock.yaml"),
@@ -640,9 +645,20 @@ def base_route(path: str) -> tuple[str, tuple[str, ...]]:
     """How one changed path is routed: (matched prefix or "docs"/"fallback", steps)."""
     if path.endswith(".md"):
         return "docs", ()  # documentation selects no steps
+    if path in COMMENT_ONLY:
+        return "comments only", ()
+    if path in PACKAGE_SCRIPTS_ONLY:
+        return "package scripts", ("host",)
     found = verify_route.fine(path)
     if found is not None:
         return found.label, found.steps
+    if (
+        path.startswith("tests/support/")
+        and path.endswith(".py")
+        and not (ROOT / path).is_file()
+        and not verify_route.deleted_path_referenced(path)
+    ):
+        return "deleted support module", ()  # nothing refers to it any more
     for prefixes, steps in RULES:
         for prefix in prefixes:
             if path.startswith(prefix):
@@ -655,6 +671,8 @@ def base_route(path: str) -> tuple[str, tuple[str, ...]]:
 def route(path: str) -> tuple[str, tuple[str, ...]]:
     """Keep the existing owner route and add relevant native acceptance."""
     label, original = base_route(path)
+    if path in COMMENT_ONLY:
+        return label, ()
     wanted = set(original)
     for step in verify_route.ACCEPTANCE_DIRS:
         if verify_route.acceptance_files(step, [path], resolve_helpers=False):
@@ -666,7 +684,9 @@ def acceptance_plan(step: str, files: list[str]) -> list[str]:
     """A broad owner must not be narrowed by a second leaf change; empty means all files."""
     if any(step in base_route(path)[1] for path in files):
         return []
-    return verify_route.acceptance_files(step, files)
+    return verify_route.acceptance_files(
+        step, [path for path in files if path not in COMMENT_ONLY]
+    )
 
 
 def is_python_source(path: str) -> bool:
@@ -776,6 +796,18 @@ def host_test_path(path: str) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in host_test_globs())
 
 
+# pyproject.toml when the current change touches only `tool.mypy` or `tool.ruff` (set by changed_plan);
+# python-tests, which runs ruff and mypy, is its only step.
+LINT_CONFIG_ONLY: set[str] = set()
+
+# Changed .py files whose code is the same at base and head (set by changed_plan): no steps.
+COMMENT_ONLY: set[str] = set()
+
+# The root package.json when the current change touches only scripts that no gate step invokes (set by
+# changed_plan); host is its only step.
+PACKAGE_SCRIPTS_ONLY: set[str] = set()
+
+
 def smoke_cells(files: list[str]) -> list[str] | None:
     """Filter only the three audited production leaves plus existing exemptions; None means full."""
     leaves: set[str] = set()
@@ -785,6 +817,11 @@ def smoke_cells(files: list[str]) -> list[str] | None:
             or path in SMOKE_EXEMPT
             or host_test_path(path)
             or test_only_path(path)
+            or path in LINT_CONFIG_ONLY
+            or path in COMMENT_ONLY
+            or path in PACKAGE_SCRIPTS_ONLY
+            or path in verify_route.PROJECT_REGISTRATIONS
+            or verify_route.outside_smoke_harness(path)
         ):
             continue
         mid = modroots.module_id(path)
@@ -809,6 +846,16 @@ def smoke_reason(files: list[str]) -> str | None:
             maintenance.append(reason)
         elif group := verify_route.patchkit_no_smoke(path):
             maintenance.append(group)
+        elif path in LINT_CONFIG_ONLY:
+            maintenance.append("lint configuration")
+        elif path in COMMENT_ONLY:
+            maintenance.append("comments only")
+        elif path in PACKAGE_SCRIPTS_ONLY:
+            maintenance.append("package scripts")
+        elif path in verify_route.PROJECT_REGISTRATIONS:
+            maintenance.append("test registration")
+        elif verify_route.outside_smoke_harness(path):
+            maintenance.append("outside the smoke harness closure")
         elif host_test_path(path):
             host = True
         elif test_only_path(path):
@@ -833,6 +880,8 @@ def steps_for(files: list[str]) -> tuple[str, ...]:
     """The steps the changed files need, in gate order."""
     wanted: set[str] = set()
     for path in files:
+        if path in COMMENT_ONLY:
+            continue
         wanted.update(route(path)[1])
         if is_changed_test(path) or (
             not path.endswith(".md")
@@ -932,6 +981,8 @@ class Gate:
         self.all_no_aot = all_no_aot
         self.budget = budget
         self.acceptance = acceptance or {}
+        # module ids the conformance suite loads (empty: all eligible modules)
+        self.conformance: list[str] = []
         self.smoke_selection = smoke_selection
         # variables set by an earlier node for the later ones (the pinned PGO daemons of build-daemons)
         self.shared_env: dict[str, str] = {}
@@ -991,20 +1042,42 @@ class Gate:
         """Run one step, log its output and print its line."""
         start = time.monotonic()
         with benchlock.hold("shared", f"verify {name}"):
-            proc = subprocess.run(
+            returncode, text = stream_process(
                 cmd,
+                self.out / f"{name}.log",
                 cwd=cwd,
                 env=python_env(self.step_env(env)),
-                capture_output=True,
-                text=True,
             )
-        text = proc.stdout + proc.stderr
-        (self.out / f"{name}.log").write_text(text)
-        if proc.returncode:
-            problem: str | None = f"exit {proc.returncode}"
+        if returncode:
+            problem: str | None = f"exit {returncode}"
         else:
             problem = check(text) if check else None
         self.report(name, problem, time.monotonic() - start, text)
+
+
+def stream_process(
+    cmd: list[str], log: Path, cwd: Path, env: dict[str, str]
+) -> tuple[int, str]:
+    """Run CMD with stdout and stderr merged; each line goes to LOG as it arrives (so `tail` follows a
+    long step). The exit code and the whole output."""
+    lines: list[str] = []
+    with log.open("w") as out:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            lines.append(line)
+            out.write(line)
+            out.flush()
+        returncode = proc.wait()
+    return returncode, "".join(lines)
 
 
 def tier_jobs_budget(share: int | None = None) -> int:
@@ -1138,7 +1211,7 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
             / "report.json"
         )
 
-    def run_chunk(chunk: Chunk) -> tuple[subprocess.CompletedProcess[str], float]:
+    def run_chunk(chunk: Chunk) -> tuple[tuple[int, str], float]:
         report = report_of(chunk)
         report.parent.mkdir(parents=True, exist_ok=True)
         cmd = [
@@ -1153,12 +1226,11 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
         if dt2:
             cmd += ["--device", "dt2", "--dt2-card"]
         with benchlock.hold("shared", f"verify {name}"):
-            proc = subprocess.run(
+            proc = stream_process(
                 cmd,
+                report.parent / "run.log",
                 cwd=ROOT,
                 env=python_env(step_envs[chunk.label]),
-                capture_output=True,
-                text=True,
             )
         return proc, time.monotonic() - start
 
@@ -1175,15 +1247,12 @@ def tier(gate: Gate, name: str, every: int, device: str = "dn2") -> None:
             f"{count} chunks, {ended.get((label, path), 0.0):.0f} s"
         )
     gate.say(f"     budget {budget} jobs, {len(chunks)} chunks")
-    for chunk, (proc, _) in zip(chunks, done, strict=True):
+    for chunk, ((returncode, text), _) in zip(chunks, done, strict=True):
         report = report_of(chunk)
-        text = proc.stdout + proc.stderr
-        (report.parent / "run.log").write_text(text)
         # Exit 2 is a failed gate in an unpinned FX scenario; only the PCM matters here.
-        if proc.returncode not in (0, 2) or not report.exists():
+        if returncode not in (0, 2) or not report.exists():
             problem = (
-                f"{chunk.label} {chunk.path} chunk {chunk.index}: "
-                f"exit {proc.returncode}"
+                f"{chunk.label} {chunk.path} chunk {chunk.index}: exit {returncode}"
             )
             gate.report(name, problem, time.monotonic() - start, text)
             return
@@ -1566,6 +1635,11 @@ def explain(
             and not ui_only_path(path)
             and not host_test_path(path)
             and not test_only_path(path)
+            and path not in LINT_CONFIG_ONLY
+            and path not in COMMENT_ONLY
+            and path not in PACKAGE_SCRIPTS_ONLY
+            and path not in verify_route.PROJECT_REGISTRATIONS
+            and not verify_route.outside_smoke_harness(path)
         ]
         if conservative:
             print(f"smoke: selected, conservative path: {', '.join(conservative)}")
@@ -1597,7 +1671,7 @@ def explain(
                 )
             if step == "runtime-fixture" and (
                 not selected
-                or set(verify_route.RUNTIME_PLUSDRIVE_FILES).intersection(selected)
+                or verify_route.runtime_plusdrive_files().intersection(selected)
             ):
                 print(
                     f"{step}: prerequisite plusdrive CLI build (tools.firmware.plusdrive_check --build-only)"
@@ -1758,7 +1832,7 @@ def runtime_pack_modules(selected: list[str]) -> list[str]:
     """Runtime fixture modules to pack for the SELECTED test files (empty: all files)."""
     return [
         mid
-        for mid, files in verify_route.RUNTIME_MODULES.items()
+        for mid, files in verify_route.runtime_modules().items()
         if not selected or set(files) & set(selected)
     ]
 
@@ -1767,7 +1841,7 @@ def runtime_pack_aliases(selected: list[str]) -> dict[str, str]:
     """Extra card identities required by the complete inventory of each selected FX suite."""
     return {
         alias: source
-        for alias, (source, files) in verify_route.RUNTIME_PACK_ALIASES.items()
+        for alias, (source, files) in verify_route.runtime_aliases().items()
         if not selected or set(files) & set(selected)
     }
 
@@ -1811,17 +1885,21 @@ def run_step(gate: Gate, step: str) -> None:
             raise RuntimeError(f"{step} requires a shared budget of at least two cores")
         selected = getattr(gate, "acceptance", {}).get(step, [])
         env = gate.step_env()
+        if step in ("runtime-fixture", "module-load"):
+            env["DIGI_PATCHKIT"] = str(patchkit.binary())
         if step == "stock":
             # Stock uses one stepped ColdFire thread per worker and the DT2 binary only.
             if binary := env.get("DIGI_EMUD_DT2"):
                 env["DIGI_EMUD"] = binary
             env["REGRESSION_JOBS"] = str(gate.share())
-        elif step == "module-load":
-            modules = [
-                m
-                for m, f in verify_route.RUNTIME_UPLOADS.items()
-                if not selected or f.removeprefix("tests/regression/") in selected
-            ]
+        else:
+            # One coupled daemon (two cores) per Vitest worker.
+            env["REGRESSION_JOBS"] = str(
+                verify_budget.workers_for(step, gate.share()).emulators
+            )
+        if step == "module-load":
+            modules = list(gate.conformance or verify_route.RUNTIME_UPLOADS)
+            env["DIGI_CONFORMANCE_MODULES"] = ",".join(modules)
             if "digikit/debug" not in modules:
                 modules.append(
                     "digikit/debug"
@@ -1837,16 +1915,19 @@ def run_step(gate: Gate, step: str) -> None:
             )
         if step == "runtime-fixture" and (
             not selected
-            or set(verify_route.RUNTIME_PLUSDRIVE_FILES).intersection(selected)
+            or verify_route.runtime_plusdrive_files().intersection(selected)
         ):
             gate.run(
                 "runtime-fixture:plusdrive",
                 [*PY, "-m", "tools.firmware.plusdrive_check", "--build-only"],
             )
+            from tools.firmware import plusdrive_check
+
+            env["DIGI_PLUSDRIVE"] = str(plusdrive_check.plusdrive_binary())
         script = {
             "stock": "test:stock",
             "runtime-fixture": "test:runtime",
-            "module-load": "test:modules",
+            "module-load": "test:conformance",
         }[step]
         env["REGRESSION_JUNIT_FILE"] = str(gate.out / f"{step}.junit.xml")
         gate.run(
@@ -1952,7 +2033,14 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
             gate.out,
         ),
     )
-    budget = verify_budget.Budget(max(1, gate.budget))
+    budget = verify_budget.Budget(
+        max(1, gate.budget),
+        files={
+            step: len(selected)
+            for step, selected in getattr(gate, "acceptance", {}).items()
+            if selected and step in verify_budget.COUPLED_ACCEPTANCE
+        },
+    )
     done: set[str] = set()
     failed_nodes: set[str] = set()
     pending = list(nodes)
@@ -2005,7 +2093,8 @@ def run_steps(gate: Gate, steps: tuple[str, ...]) -> list[tuple[str, float]]:
                 if not verify_budget.is_file_job(node):
                     print(
                         f"START {node}: {share} of {budget.total} cores "
-                        f"({verify_budget.describe(node, share)})",
+                        f"({verify_budget.describe(node, share)}), "
+                        f"log {gate.out / f'{node}.log'}",
                         flush=True,
                     )
                 running[pool.submit(work, node, share)] = (
@@ -2147,6 +2236,40 @@ def changed_plan(
     files, lock_origin = expand_lock(files, base, head)
     origin |= lock_origin
     files = drop_metadata_objects(files, base, head)
+    LINT_CONFIG_ONLY.clear()
+    if "pyproject.toml" in files:
+        since = merge_base(base, head)
+        if verify_route.lint_config_only(
+            git_show(since, "pyproject.toml"), git_show(head, "pyproject.toml")
+        ):
+            LINT_CONFIG_ONLY.add("pyproject.toml")
+    PACKAGE_SCRIPTS_ONLY.clear()
+    since = merge_base(base, head)
+    if "package.json" in files and verify_route.package_scripts_only(
+        git_show(since, "package.json"), git_show(head, "package.json")
+    ):
+        PACKAGE_SCRIPTS_ONLY.add("package.json")
+    verify_route.PROJECT_REGISTRATIONS.clear()
+    for path in files:
+        if not (
+            path.startswith("modules/")
+            and path.endswith("/project.json")
+            and (mid := modroots.module_id(path))
+            and (ROOT / path).parent == modroots.module_dir(mid)
+        ):
+            continue
+        new = git_show(head, path)
+        if new is None:
+            continue  # deleted: the module route stays
+        found = verify_route.project_record_files(path, new)
+        found |= verify_route.project_record_files(path, git_show(since, path))
+        verify_route.PROJECT_REGISTRATIONS[path] = tuple(sorted(found))
+    COMMENT_ONLY.clear()
+    for path in files:
+        if path.endswith(".py") and verify_route.python_code_unchanged(
+            git_show(since, path), git_show(head, path)
+        ):
+            COMMENT_ONLY.add(path)
     steps = steps_for(files)
     rust_packages: list[str] | None = None
     if "rust-tests" in steps:
@@ -2217,14 +2340,35 @@ def named_units(
     py_tests: list[str], tests: list[str]
 ) -> tuple[list[str], dict[str, list[str]]]:
     """The checked --py-tests files and the --tests files by acceptance step (by their directory in
-    tests/regression); ValueError names the first bad file."""
+    tests/regression, tests/conformance or a registered module test); ValueError names the first bad
+    file. Files are repo-relative or relative to tests/regression."""
     for path in py_tests:
         if not (ROOT / path).is_file():
             raise ValueError(f"--py-tests: no such file: {path}")
     by_step: dict[str, list[str]] = {}
+    registered = {
+        file.removeprefix("../../"): file
+        for file in verify_route.acceptance_records()
+        if file.startswith("../../")
+    }
     for path in tests:
+        if path in registered:
+            by_step.setdefault("runtime-fixture", []).append(registered[path])
+            continue
+        if path.startswith("tests/conformance/"):
+            path = os.path.relpath(path, "tests/regression")
+        else:
+            path = path.removeprefix("tests/regression/")
+        if Path(path).is_absolute() or (
+            ".." in Path(path).parts and not path.startswith("../conformance/")
+        ):
+            raise ValueError(
+                f"--tests: not a registered module test, emulator, conformance or stock path: {path}"
+            )
         if not (ROOT / "tests/regression" / path).is_file():
-            raise ValueError(f"--tests: no such file in tests/regression: {path}")
+            raise ValueError(
+                f"--tests: no such file (tests/regression, tests/conformance or a registered module test): {path}"
+            )
         step = next(
             (
                 s
@@ -2337,8 +2481,14 @@ def main(argv: list[str] | None = None) -> int:
         "--tests",
         nargs="+",
         metavar="FILE",
-        help="Vitest files relative to tests/regression, e.g. runtime/fault-trace.test.ts; each runs in "
-        "the acceptance step of its directory (implies those steps without --only)",
+        help="Vitest files: registered module device tests (modules/.../tests/X.device.test.ts), "
+        "tests/regression/emulator/<name>.test.ts, tests/regression/dt2/<name>.test.ts or tests/conformance/load.device.test.ts; "
+        "each runs in the acceptance step of its directory (implies those steps without --only)",
+    )
+    ap.add_argument(
+        "--conformance",
+        metavar="ID[,ID...]",
+        help="run only the module-load step (the shared conformance suite) for these module ids",
     )
     ap.add_argument(
         "--no-cache",
@@ -2348,7 +2498,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.rerun_failed and (args.only or args.full):
         ap.error("--rerun-failed cannot be combined with --only or --full")
-    named = bool(args.py_tests or args.tests)
+    conformance_ids = [m for m in (args.conformance or "").split(",") if m]
+    if args.conformance is not None:
+        bad = [m for m in conformance_ids if m not in verify_route.RUNTIME_UPLOADS]
+        if bad or not conformance_ids:
+            ap.error(
+                f"--conformance: not an eligible module (shipped dynamic, service or host): {', '.join(bad) or '(none given)'}"
+            )
+    named = bool(args.py_tests or args.tests or conformance_ids)
     if args.only and args.full:
         ap.error("--only cannot be combined with --full")
     if args.all_files and (not args.only or named or args.full or args.rerun_failed):
@@ -2367,6 +2524,10 @@ def main(argv: list[str] | None = None) -> int:
         named_py, named_acceptance = named_units(args.py_tests or [], args.tests or [])
     except ValueError as exc:
         ap.error(str(exc))
+    if conformance_ids:
+        named_acceptance.setdefault("module-load", []).append(
+            os.path.relpath(verify_route.CONFORMANCE_FILE, "tests/regression")
+        )
     implied = (["python-tests"] if named_py else []) + list(named_acceptance)
     files: list[str] = []
     origin: dict[str, str] = {}
@@ -2497,6 +2658,10 @@ def main(argv: list[str] | None = None) -> int:
         smoke_selection=smoke_selection,
         py_checks=rerun.py_checks if rerun else None,
     )
+    if conformance_ids:
+        gate.conformance = conformance_ids
+    elif rerun is None and routed and "module-load" in steps:
+        gate.conformance = verify_route.conformance_modules(files)
     nodes, deps = plan(steps, gate.py_tests)
     print(
         f"verify: {budget_label}; nice {niced if niced is not None else 'unchanged (--foreground or not allowed)'}; "

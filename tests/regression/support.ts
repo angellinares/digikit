@@ -4,14 +4,21 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import {
-  repoRoot,
   Session,
   withinRuntimeDeadline,
   type Device,
   type RuntimeBaseline,
   type SessionOptions,
 } from '@digi/test-support';
+import { portFile } from './runtime/device-data.ts';
 import { setTimingContext, timePhase, timingContext } from './timing.ts';
+import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
+
+/** An AggregateError whose message names its causes (Vitest prints only the message). */
+export function aggregate(errors: unknown[], what: string): AggregateError {
+  const causes = errors.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ');
+  return new AggregateError(errors, `${what}: ${causes}`);
+}
 
 export interface SessionHandle {
   /** The session of this test file; valid inside tests and hooks. */
@@ -62,6 +69,7 @@ export async function startPatchedSession(
     context,
   );
   setTimingContext(session, context);
+  const watchdog = startNoProgressWatchdog(session);
   try {
     const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
     let closing: Promise<void> | undefined;
@@ -69,6 +77,7 @@ export async function startPatchedSession(
       session,
       dk,
       close() {
+        watchdog.stop();
         return (closing ??= timePhase(
           'session.shutdown',
           async () => {
@@ -80,6 +89,7 @@ export async function startPatchedSession(
       },
     };
   } catch (err) {
+    watchdog.stop();
     await timePhase('session.shutdown', () => session.close(), context);
     throw err;
   }
@@ -148,7 +158,7 @@ export interface RuntimeCase extends PatchedSession {
 
 /** Opt-in fixture: independent cases reload pristine firmware/card state in one owned daemon. */
 export function withReusablePatchedSession(
-  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: 'zero' | 'sharc' | 'cold' },
   lifecycle: {
     prepareBaseline: (session: Session) => Promise<RuntimeBaseline>;
     /** Required scenario evidence (guard/fault/card/PCM) before state is discarded. Holds release in their own finally. */
@@ -159,6 +169,7 @@ export function withReusablePatchedSession(
   scope = 'reused runtime',
 ): { readonly runtime: RuntimeCase; reload(baseline: RuntimeBaseline): Promise<RuntimeCase> } {
   let session: Session | undefined;
+  let watchdog: Watchdog | undefined;
   let baseline: RuntimeBaseline | undefined;
   let runtime: RuntimeCase | undefined;
   let invalidate: (() => void) | undefined;
@@ -205,7 +216,9 @@ export function withReusablePatchedSession(
       errors.push(error);
     }
     try {
-      await withinRuntimeDeadline(deadline, () => session!.client.call('pcm.tap', { action: 'capture_stop' }));
+      // Without a DSP (zero or cold ColdFire-only) there is no audio capture to stop.
+      if (opts.dsp !== 'zero' && opts.dsp !== 'cold')
+        await withinRuntimeDeadline(deadline, () => session!.client.call('pcm.tap', { action: 'capture_stop' }));
       await withinRuntimeDeadline(deadline, () => session!.client.call('run.mode', { mode: 'paused' }));
     } catch (error) {
       errors.push(error);
@@ -224,15 +237,21 @@ export function withReusablePatchedSession(
         /* Preserve evidence/cleanup errors if diagnostics cannot be written. */
       }
       await session!.close({ preserveDiagnostics: true });
-      throw new AggregateError(errors, 'runtime case evidence or cleanup failed; owned daemon discarded');
+      throw aggregate(errors, 'runtime case evidence or cleanup failed; owned daemon discarded');
     }
   };
   beforeAll(async () => {
     const deadline = Date.now() + 120_000;
-    session = await Session.start({ ...opts, dsp: 'sharc', runtime: { patchSet: opts.patchSet, reuse: true } });
+    session = await Session.start({
+      ...opts,
+      dsp: opts.dsp ?? 'sharc',
+      runtime: { patchSet: opts.patchSet, reuse: true },
+    });
+    watchdog = startNoProgressWatchdog(session);
     try {
       baseline = await withinRuntimeDeadline(deadline, () => lifecycle.prepareBaseline(session!));
     } catch (error) {
+      watchdog.stop();
       await session.close({ preserveDiagnostics: true });
       throw error;
     }
@@ -242,10 +261,14 @@ export function withReusablePatchedSession(
   });
   afterEach(async (context) => {
     await finishCurrentCase();
-    if (context.task.result?.state === 'fail') await session?.close({ preserveDiagnostics: true });
+    if (context.task.result?.state === 'fail') {
+      watchdog?.stop();
+      await session?.close({ preserveDiagnostics: true });
+    }
   });
   let checkedClose = false;
   afterAll(async () => {
+    watchdog?.stop();
     invalidate?.();
     if (!session || checkedClose) return;
     checkedClose = true;
@@ -260,7 +283,7 @@ export function withReusablePatchedSession(
     } catch (error) {
       errors.push(error);
     }
-    if (errors.length) throw new AggregateError(errors, 'runtime shutdown or post-close evidence failed');
+    if (errors.length) throw aggregate(errors, 'runtime shutdown or post-close evidence failed');
   });
   return {
     get runtime() {
@@ -286,36 +309,19 @@ export interface FreeRegion {
   hi: number;
 }
 
-/** Free ColdFire regions of devices/ports/<device>-<firmware>.toml: every `[[region]]` block with
- * `cpu = "cf"` (e.g. `cf.flash_cave`, `cf.expansion`). Only the keys `name`, `cpu`, `start`, `end`
- * and `excludes` (a list of `[lo, hi]` pairs, cut out of the region) are read, by regex on the block
- * text; everything else in the file is ignored. `hi` is the file's `end`. */
+/** Free ColdFire regions of devices/ports/<device>-<firmware>.toml: every `[[region]]` with
+ * `cpu = "cf"` (e.g. `cf.flash_cave`, `cf.expansion`), minus its `excludes` (`[lo, hi]` pairs).
+ * `hi` is the file's `end`. */
 export function freeRegions(device: Device, firmware: string): FreeRegion[] {
-  const file = path.join(repoRoot(), 'devices', 'ports', `${device}-${firmware}.toml`);
-  const text = fs.readFileSync(file, 'utf8');
+  const file = `${device}-${firmware}.toml`;
   const out: FreeRegion[] = [];
-  for (const block of text.split(/^\[\[/m).slice(1)) {
-    if (!block.startsWith('region]]')) continue;
-    const str = (key: string) => new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, 'm').exec(block)?.[1];
-    const num = (key: string) => {
-      const m = new RegExp(`^${key}\\s*=\\s*(0x[0-9a-fA-F]+|\\d+)`, 'm').exec(block);
-      return m ? Number(m[1]) : undefined;
-    };
-    const name = str('name');
-    const start = num('start');
-    const end = num('end');
-    if (str('cpu') !== 'cf') continue;
+  for (const { name, cpu, start, end, excludes = [] } of portFile(device, firmware).region ?? []) {
+    if (cpu !== 'cf') continue;
     if (name === undefined || start === undefined || end === undefined) {
       throw new Error(`${file}: malformed region block`);
     }
-    const excludes: [number, number][] = [];
-    const exc = /^excludes\s*=\s*(\[.*\])\s*$/m.exec(block)?.[1] ?? '[]';
-    for (const m of exc.matchAll(/\[\s*(0x[0-9a-fA-F]+|\d+)\s*,\s*(0x[0-9a-fA-F]+|\d+)\s*\]/g)) {
-      excludes.push([Number(m[1]), Number(m[2])]);
-    }
-    excludes.sort((a, b) => a[0] - b[0]);
     let lo = start;
-    for (const [xl, xh] of excludes) {
+    for (const [xl, xh] of [...excludes].sort((a, b) => a[0] - b[0])) {
       if (xl > lo) out.push({ name, lo, hi: xl });
       lo = Math.max(lo, xh);
     }

@@ -29,7 +29,7 @@ Pan stage `FUN_1c642a`, loop `0x1c7040` over 16 voice pairs. At `0x1c7050` it re
 
 Commit 6eb7b8af: the dsp-voice adapter writes 1 to word +0xd8 of the even voice's record (`0x2507c4 + 0x1b8*track`) every block for a machine that returns DK_STEREO. Mono machines leave it. The record base is the anchor `dsp.voice.value.param_record_base`, the literal `I5 = 0x2506ec` of the per-voice loop in `FUN_1c2b24` (`sharc_literal`, offset 0x1bf). The adapter adds the stride and +0xd8 itself.
 
-Result (`modules/machines/shot/tests/shot-dt2.test.ts`): L 440 Hz 0.0763, R 660 Hz 0.0763. Cross tones 7e-9 and 2e-8. A second sample (330/495 Hz) is split with the other tone about 55 dB down.
+Result (`modules/machines/shot/tests/shot-dt2.device.test.ts`): L 440 Hz 0.0763, R 660 Hz 0.0763. Cross tones 7e-9 and 2e-8. A second sample (330/495 Hz) is split with the other tone about 55 dB down.
 
 ## 5. Open
 

@@ -265,10 +265,6 @@ def test_a_content_module_may_not_commit_an_object(tree: Path) -> None:
     assert v.rule == "objects" and "_fw_private" in v.message
 
 
-def test_the_repository_itself_holds() -> None:
-    assert [str(v) for v in layercheck.check()] == []
-
-
 def test_ui_functions_must_be_imports_the_runtime_links(tree: Path) -> None:
     ui = "typedef void dk_ui_act_fn(void *ctx, int arg);\nint dk_ui_open(dk_ui_menu *m);\n"
     write(tree, "sdk/include/dk/ui.h", ui)

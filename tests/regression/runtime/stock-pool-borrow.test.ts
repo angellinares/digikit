@@ -6,7 +6,11 @@ import { RpcFiles } from '@digi/dk-session/rpcfiles';
 import { repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { installModule, liveArtifacts, memory, moduleArtifact, panel, record, runtimeTests, settleUi } from './live.ts';
+import { liveArtifacts, record } from './artifacts.ts';
+import { installModule, moduleArtifact } from './install.ts';
+import { memory, panel } from './panel.ts';
+import { runtimeTests } from './ready.ts';
+import { settleUi } from './waits.ts';
 
 // DT2 1.17 stock sample pool (findings 81, 82, 85). All firmware state is read with peeks.
 const POOL = { slotMap: 0x405b5368, slotKey: 0x405b1368, slotLength: 0x405ba768, blocks: 0x405a0f64 };

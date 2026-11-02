@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/input",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/input-adapter.device.test.ts"],
+        "modules": ["test/input-probe"]
+      }
+    ]
+  }
+}

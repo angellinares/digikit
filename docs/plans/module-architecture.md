@@ -1,7 +1,7 @@
 # Module architecture: categories, contracts, capabilities and enforced layers (plan, 2026-11-01)
 
-Status: agreed design, nothing built. Branch: `docs/module-architecture`. Steps 1 and 2 start after the sampler branch
-(`sdk/dsp-sampler-discovery`) is merged.
+Status: agreed design, nothing built. It was written on the module-architecture design branch. Steps 1 and 2 start after the sampler branch
+(the DSP sampler discovery branch) is merged.
 
 Inputs: issue #240 (the store upload for patch-based images), PR #209 (machines patched into the firmware),
 [finding 73](../findings/73-dnfw-coexistence.md) (dnfw and the runtime in one image), the [capabilities plan](capabilities.md), the
@@ -358,7 +358,7 @@ A `raw` machine adds one line: `contract = "raw"`.
 - Templates: `sdk/templates/*/module.toml`.
 - Manifests: the 9 content modules, every fixture in `tests/fixtures/modules/`, the 21 `core/*` modules (`type` removed).
 - Tests that pin the strings: `tests/patchkit/test_pk_new.py`, `tests/patchkit/test_pk_package.py`, `tests/devtools/test_layercheck.py`,
-  `tests/devtools/test_verify.py`, `tests/regression/modules/acceptance.ts`.
+  `tests/devtools/test_verify.py`, `tests/conformance/load.ts`.
 - Docs: `docs/MODULE-AUTHORING.md`, `docs/design/digikit-dkm.md`, `docs/design/module-sdk.md` (D2, D10).
 
 ## 7. Raw modules and experimental adapters
@@ -790,7 +790,7 @@ default images and objects.
   - [ ] Templates and `module:new` use the category.
   - [ ] Docs of 6.4 updated.
   - Proof: `mise run test:changed`, `mise run test:host`, `mise run web:test`; every content module packs and loads as before
-    (`mise run test:modules`).
+    (`mise run test:conformance`).
 - [ ] **2. Store upload (#240).** After step 1. 1 to 2 days. Contract: a protocol minor (the INFO store bit).
   - [ ] `src/cap/store_upload` with the C-interface descriptor; the command split of 9.2; the unknown-command callback.
   - [ ] The host interface of 9.3, with a version.

@@ -49,7 +49,7 @@ A, the sample slot on D and LEV on H; the Digitone II has A, D and H free.
 - `src/dsp/shot.s`: `render`, `note_on`, the table storage and the descriptor. Every sample, mono or stereo, is read by the SDK stereo kernel
   `_dk_sample_pcm16_stereo_linear` (a mono sample passes `base_r = base_l`); there is no mono path.
 - `tests/test_shot_playback.py`: the DSP on the concrete core through the real adapter, against a float32 model (SMP picks the record).
-- `tests/shot-dt2.test.ts`, `tests/shot-dn2.test.ts`: the pool API, the stereo output and an SMP phase on the emulator.
+- `tests/shot-dt2.device.test.ts`, `tests/shot-dn2.device.test.ts`: the pool API, the stereo output and an SMP phase on the emulator.
 
 ```sh
 mise run module:check -- digikit/shot

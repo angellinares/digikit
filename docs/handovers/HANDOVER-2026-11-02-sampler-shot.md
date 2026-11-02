@@ -26,7 +26,7 @@
     - DT2 pair gate: [finding 112](../findings/112-dt2-pair-gate.md).
     - DN2 twins all pre-pan stages: [dn2-stereo](../design/dn2-stereo.md).
 - Proven in the emulator:
-  - `modules/machines/shot/tests/shot-dt2.test.ts`, `shot-dn2.test.ts` and `shot-picker.test.ts` pass.
+  - `modules/machines/shot/tests/shot-dt2.device.test.ts`, `shot-dn2.device.test.ts` and `shot-picker.device.test.ts` pass.
   - DT2 click flow covers load, replace, NO levels and held TRIG.
   - Em loaded a sample through the slot list in the DN2 workbench emulator and heard it.
 - Patch sets: DT2 `device` and `emulator` include core/sample-pool. DN2 has it only in `emulator` (no DN2 flash with the pool yet).
@@ -52,7 +52,8 @@
    - Fixtures still use `sample_pool_add`.
 6. Gate and PR to main when ready:
    - `mise run verify -- --base main --explain` selects nearly everything (the branch carries ~200 commits). Propose a targeted `--only` set to Em first.
-   - The module-own Vitest project (`tests/regression/vitest.config.ts`) is not wired into verify yet. Coordinate with the Nx session.
+   - The SHOT device tests are registered in `modules/machines/shot/project.json` (`runtimeAcceptance`) and run by the `runtime` Vitest project.
+
    - Pre-existing: the runtime crate's `cleanup_tests.rs` does not compile (`step_list`, `step_n`).
 
 ## Side quest agreed, not started: multi-choose mode
@@ -75,6 +76,6 @@
 - Agents never push. The coordinator pushes after Em's OK.
 - Iterate UI on DN2 with `mise run dk:dev`.
 - Rerun the three SHOT tests from `tests/regression`:
-  - `pnpm exec vitest run --project module-own ../../modules/machines/shot/tests/<file>`
+  - `pnpm exec vitest run --project runtime ../../modules/machines/shot/tests/<file>`
   - Set DIGI_EMUD_DT2 and DIGI_EMUD_DN2 from `uv run python -m tools.devtools.verify_build daemons --env-out FILE`.
   - Set DIGI_PATCHKIT_BIN=out/native/target/nogen/release/patchkit.

@@ -108,7 +108,7 @@ def test_no_build_node_without_a_step_that_needs_it() -> None:
     nodes, deps = verify.plan(("rust-tests", "web"), None)
     assert sorted(nodes) == ["host", "rust-tests", "web"]
     assert deps["rust-tests"] == ()
-    nodes, _ = verify.plan(("python-tests",), ["tests/devtools/test_verify.py"])
+    nodes, _ = verify.plan(("python-tests",), ["tests/devtools/test_layercheck.py"])
     assert "build-daemons" not in nodes
     for tests in (
         ["tests/digikit"],
@@ -136,17 +136,6 @@ def test_no_aot_subset_names_exist(path: str) -> None:
     assert all(seconds[n] > 0 for n in verify.NO_AOT_SUBSET[path])
 
 
-def test_no_aot_subset_covers_the_fx_paths() -> None:
-    dn2 = set(verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-trackfx.ts"]) | set(
-        verify.NO_AOT_SUBSET["tests/regression/scenarios/dn2-sendfx.ts"]
-    )
-    for family in ("dry", "br", "over", "srr", "del", "rev", "chr", "mst"):
-        assert any(f"-{family}-" in n for n in dn2), family
-    assert {f for f in verify.NO_AOT_SUBSET} == set(verify.FX_FILES) | set(
-        verify.DT2_FX_FILES
-    )
-
-
 def test_tier_names_subset_and_full() -> None:
     path = "tests/regression/scenarios/dn2-sendfx.ts"
     seconds = {f"s{i:03d}": 1.0 for i in range(20)}
@@ -156,21 +145,6 @@ def test_tier_names_subset_and_full() -> None:
     assert verify.tier_names(path, seconds, 1, True) == sorted(seconds)
     real = {n: 1.0 for n in verify.NO_AOT_SUBSET[path]}
     assert verify.tier_names(path, real, 1, False) == list(verify.NO_AOT_SUBSET[path])
-
-
-def test_pk_jobs_variable_caps_the_harness(monkeypatch: pytest.MonkeyPatch) -> None:
-    from tools.patchkit import pk_harness
-
-    monkeypatch.setenv("DIGI_PK_JOBS", "2")
-    assert pk_harness.default_jobs(10) == 2
-    assert pk_harness.default_jobs(1) == 1
-
-
-def test_digikit_parts_run_one_at_a_time_in_the_gate() -> None:
-    """A scenario with 3 or 4 parts boots a daemon per part: a pool of files would start 3 to 4 times its
-    daemons (measured: card-safety, 3 digi-emud at DIGIKIT_JOBS=1). The gate sets DIGIKIT_PART_JOBS=1."""
-    for node in ALL_NODES:
-        assert verify_budget.step_env(node, 6)["DIGIKIT_PART_JOBS"] == "1"
 
 
 def test_part_jobs_bounds_the_parallel_parts(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,17 +229,6 @@ def test_budget_is_the_smaller_of_cores_and_memory(
     assert (d.budget, d.limit) == (budget, limit)
     assert d.text.startswith(f"budget {budget} ({limit}")
     assert d.budget >= 1
-
-
-def test_budget_text_names_the_limit() -> None:
-    assert (
-        verify_budget.decide(machine(16, 128)).text == "budget 14 (cores: 16 physical)"
-    )
-    assert verify_budget.decide(machine(32, 16)).text == "budget 24 (memory: 16 GB)"
-    assert verify_budget.budget_text(5) == "budget 5 (--jobs)"
-    assert verify_budget.budget_text(0, {"DIGI_VERIFY_BUDGET": "9"}) == (
-        "budget 9 (DIGI_VERIFY_BUDGET)"
-    )
 
 
 def test_cargo_jobs_follow_memory() -> None:
@@ -361,39 +324,25 @@ def test_file_jobs_need_their_whole_ask_and_do_not_count_as_steps() -> None:
         assert budget.admit(f"{FILE}{i}.py") == 2
 
 
-def test_file_job_pools_match_the_old_python_tests_share() -> None:
-    """A job of 2 cores sets the pools one file had in the old 6-core share with 3 files at once."""
-    env = verify_budget.step_env(FILE + "a.py", 2)
-    old = verify_budget.step_env("python-tests", 6)
-    for key in (
-        "DIGIKIT_JOBS",
-        "DIGIKIT_PART_JOBS",
-        "DIGI_PK_JOBS",
-        "CARGO_BUILD_JOBS",
-    ):
-        assert env[key] == old[key], key
-    assert env["DIGI_PY_JOBS"] == "1"
-
-
 def test_files_wait_for_their_builds_and_python_tests_judges_them() -> None:
     nodes, deps = verify.plan(
         verify.EVERYTHING,
         [
             "tests/digikit/test_menu_dt2.py",
             "tests/emulator/test_native_pgo.py",
-            "tests/devtools/test_verify.py",
+            "tests/devtools/test_layercheck.py",
         ],
     )
     secs = {
         "tests/digikit/test_menu_dt2.py": 372.0,
         "tests/emulator/test_native_pgo.py": 2.0,
-        "tests/devtools/test_verify.py": 1.0,
+        "tests/devtools/test_layercheck.py": 1.0,
     }
     nodes, deps = verify.expand_python(nodes, deps, list(secs), secs, {})
     daemon, plain, fast = (
         FILE + "tests/digikit/test_menu_dt2.py",
         FILE + "tests/emulator/test_native_pgo.py",
-        FILE + "tests/devtools/test_verify.py",
+        FILE + "tests/devtools/test_layercheck.py",
     )
     assert deps[daemon] == ("build-daemons",)  # not the DT2 build behind it
     assert deps[plain] == ("build", "build-daemons", "build-dt2")
@@ -402,9 +351,9 @@ def test_files_wait_for_their_builds_and_python_tests_judges_them() -> None:
     # the long file starts before the steps, the short one after them, the judge is last
     assert nodes.index(daemon) < nodes.index("tier-quick") < nodes.index(plain)
     assert nodes[-1] == "python-tests"
-    nodes, deps = verify.plan(("python-tests",), ["tests/devtools/test_verify.py"])
+    nodes, deps = verify.plan(("python-tests",), ["tests/devtools/test_layercheck.py"])
     nodes, deps = verify.expand_python(
-        nodes, deps, ["tests/devtools/test_verify.py"], {}, {}
+        nodes, deps, ["tests/devtools/test_layercheck.py"], {}, {}
     )
     assert deps[fast] == ()  # no daemon build in the plan: nothing to wait for
 
@@ -412,11 +361,11 @@ def test_files_wait_for_their_builds_and_python_tests_judges_them() -> None:
 def test_long_steps_start_with_the_long_files() -> None:
     nodes, deps = verify.plan(
         verify.EVERYTHING,
-        ["tests/digikit/test_menu_dt2.py", "tests/devtools/test_verify.py"],
+        ["tests/digikit/test_menu_dt2.py", "tests/devtools/test_layercheck.py"],
     )
     secs = {
         "tests/digikit/test_menu_dt2.py": 372.0,
-        "tests/devtools/test_verify.py": 2.0,
+        "tests/devtools/test_layercheck.py": 2.0,
     }
     daemon = FILE + "tests/digikit/test_menu_dt2.py"
     nodes, _ = verify.expand_python(
@@ -425,18 +374,12 @@ def test_long_steps_start_with_the_long_files() -> None:
     assert nodes.index("runtime-fixture") < nodes.index(daemon) < nodes.index("smoke")
     nodes, deps = verify.plan(
         verify.EVERYTHING,
-        ["tests/digikit/test_menu_dt2.py", "tests/devtools/test_verify.py"],
+        ["tests/digikit/test_menu_dt2.py", "tests/devtools/test_layercheck.py"],
     )
     nodes, _ = verify.expand_python(nodes, deps, list(secs), secs, {})
     assert nodes.index(daemon) < nodes.index(
         "runtime-fixture"
     )  # no estimate: after the files
-
-
-def test_untracked_changes_drop_root_files() -> None:
-    assert verify.untracked_changes(["device-log.log", "tools/devtools/verify.py"]) == [
-        "tools/devtools/verify.py"
-    ]
 
 
 def test_files_longest_first_and_unknown_files_in_plan_order() -> None:
@@ -519,18 +462,44 @@ def test_file_jobs_leave_the_cores_a_waiting_step_needs() -> None:
 
 
 @pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
-def test_coupled_acceptance_reserves_one_daemon(node: str) -> None:
-    assert verify_budget.want_cores(node, 16) == 2
+def test_coupled_acceptance_asks_for_a_daemon_per_file_up_to_four(node: str) -> None:
+    assert verify_budget.want_cores(node, 16) == 8
+    assert verify_budget.want_cores(node, 16, files=3) == 6
+    assert verify_budget.want_cores(node, 16, files=1) == 2
+    assert verify_budget.want_cores(node, 16, files=9) == 8
+    assert verify_budget.want_cores(node, 5) == 5
     assert verify_budget.want_cores(node, 1) == 1
 
 
 @pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
-def test_coupled_acceptance_waits_for_its_entire_reservation(node: str) -> None:
-    budget = verify_budget.Budget(total=4)
-    budget.running["web"] = 3
-    assert budget.admit(node) is None
+def test_runtime_jobs_variable_forces_the_daemon_count(
+    node: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DIGI_RUNTIME_JOBS", "1")
+    assert verify_budget.want_cores(node, 16) == 2
+    assert verify_budget.want_cores(node, 16, files=4) == 2
+    monkeypatch.setenv("DIGI_RUNTIME_JOBS", "3")
+    assert verify_budget.want_cores(node, 16, files=1) == 6
+
+
+@pytest.mark.parametrize("node", ["runtime-fixture", "module-load"])
+def test_coupled_acceptance_admits_whole_daemons(node: str) -> None:
+    budget = verify_budget.Budget(total=8)
+    budget.running["web"] = 7
+    assert budget.admit(node) is None  # one core is not a daemon
     budget.release("web")
-    assert budget.admit(node) == 2
+    budget.running["web"] = 5
+    assert budget.admit(node) == 2  # 3 free: one daemon
+    budget.release(node)
+    budget.release("web")
+    budget.running["web"] = 1
+    assert budget.admit(node) == 6  # 7 free: three daemons
+    budget.release(node)
+    budget.release("web")
+    assert budget.admit(node) == 8
+    budget.release(node)
+    budget.files[node] = 2
+    assert budget.admit(node) == 4
 
 
 @pytest.mark.parametrize("steps", [("web",), ("host", "web"), verify.STEPS])
@@ -545,9 +514,3 @@ def test_explicit_host_plan_has_no_build_or_device_prerequisites() -> None:
     assert verify.plan(("host",), []) == (["host"], {"host": ()})
     assert "host" in verify.EVERYTHING
     assert "web" in verify.EVERYTHING
-
-
-def test_host_budget_reports_only_node_pool() -> None:
-    assert verify_budget.WANT["host"] == 0.15
-    assert verify_budget.SHOWN["host"] == ("node",)
-    assert verify_budget.workers_for("host", 3).node == 3

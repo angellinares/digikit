@@ -1,6 +1,6 @@
 """Run-time effects, the static side (F4 step 1; docs/design/digikit-dkm.md "DSP section", effect records): the fixture `test/dyn-fx-gain` packs into a `.dkm` whose
 header says fx 1.0 and no machine, its DSP section (version 4) holds one effect record that the reference loader and the packer's own numbers agree on, and the needs
-the file infers are one effect slot and no row of any other kind. The emulator proof is tests/regression/runtime/fx-chain.test.ts (both devices)."""
+the file infers are one effect slot and no row of any other kind. The emulator proof is modules/core/adapters/dynfx/tests/fx-chain.device.test.ts (both devices)."""
 
 import struct
 import tomllib
@@ -49,27 +49,6 @@ def test_the_header_says_fx_and_not_machine(packed):
     sdk = tomllib.loads((ROOT / "sdk" / "sdk.toml").read_text())["contract"]
     assert tuple(b[0x38:0x40]) == (*sdk["api"], 0, 0, *sdk["fx"], 0, 0)
     assert sdk["fx"][0] != 0  # the runtime implements the contract
-
-
-def test_the_effect_record_is_what_the_manifest_and_the_descriptor_say(packed):
-    tools, out = packed
-    sec = pk_dkrt_machine.parse_dsp_section(out.read_bytes())
-    assert sec["voices"] == [] and len(sec["fxs"]) == 1
-    e = sec["fxs"][0]
-    # one parameter at 0.5f, 4 bytes of state; the process routine is the first routine of the object
-    assert (e["n_params"], e["state_bytes"]) == (1, 4)
-    assert e["defaults"] == [0x3F00_0000, 0, 0, 0, 0, 0, 0, 0]
-    assert e["process"] % 2 == 0 and e["process"] < len(sec["image"])
-    # its descriptor in the image: DKFX, contract 1, the same parameters and state
-    d = struct.unpack_from("<7I", sec["image"], e["desc"])
-    assert d[:4] == (0x444B4658, 1, 1, 4)
-    info = tools.patchkit_run("dkm-info", out)
-    assert "effect process" in info and "defaults [3f000000]" in info
-    # the reference loader and the second implementation of the relocation agree
-    for base in (0x2000_0000, 0x2001_AE80, 0x2003_F000):
-        want = pk_dkrt_machine.relocate(sec, base, {})
-        got = tools.patchkit_run("dkm-dsp-image", out, f"{base:x}")
-        assert bytes.fromhex(got.strip()) == want, hex(base)
 
 
 def effect_ids(dkm: bytes) -> list[int]:

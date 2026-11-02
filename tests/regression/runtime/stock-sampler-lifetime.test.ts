@@ -4,10 +4,12 @@ import path from 'node:path';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { openSamples } from '@digi/dk-session/samples';
-import { button, encoder, repoRoot, type Session } from '@digi/test-support';
+import { button, repoRoot, type Session } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { withSession } from '../support.ts';
-import { memory, panel, record, settleUi } from './live.ts';
+import { record } from './artifacts.ts';
+import { memory, panel } from './panel.ts';
+import { settleUi } from './waits.ts';
 
 // Current DT2 1.17 observations in finding81. All diagnostic accesses are reads.
 const CF = { slotBlock: 0x405b5368, slotRef: 0x405b1368, slotLength: 0x405ba768, blocks: 0x405a0f64 };

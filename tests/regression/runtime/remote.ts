@@ -4,16 +4,11 @@ import { promisify } from 'node:util';
 import type { DkSession } from '@digi/dk-session';
 import { button, repoRoot, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '../support.ts';
-import {
-  beforeReadinessDeadline,
-  expectRuntimeUi,
-  installModule,
-  liveArtifacts,
-  moduleArtifact,
-  record,
-  tap,
-} from './live.ts';
+import { aggregate, type PatchedSession } from '../support.ts';
+import { liveArtifacts, record } from './artifacts.ts';
+import { installModule, moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
+import { beforeReadinessDeadline, tap } from './waits.ts';
 import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 
 const exec = promisify(execFile);
@@ -55,9 +50,9 @@ export async function installRemote({ session, dk }: PatchedSession): Promise<vo
   await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
 }
 
-export async function remoteTap(dk: DkSession, name: string, settleMs = 1200): Promise<void> {
+export async function remoteTap(session: Session, dk: DkSession, name: string, settleMs = 1200): Promise<void> {
   const code = button(name);
-  await tap((down) => dk.remoteKey(code, down), 300, settleMs);
+  await tap(session, (down) => dk.remoteKey(code, down), 300, settleMs);
 }
 
 /** Always release held remote inputs, including on navigation/assertion failure. */
@@ -79,7 +74,7 @@ export async function withRemoteRelease(dk: DkSession, action: () => Promise<voi
       }),
     ]);
   } catch (error) {
-    if (actionFailed) throw new AggregateError([actionError, error], 'remote action and release failed');
+    if (actionFailed) throw aggregate([actionError, error], 'remote action and release failed');
     throw error;
   } finally {
     clearTimeout(timer);

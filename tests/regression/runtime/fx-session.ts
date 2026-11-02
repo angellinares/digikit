@@ -14,8 +14,11 @@ import {
   type RuntimeBaseline,
   type Session,
 } from '@digi/test-support';
-import { withReusablePatchedSession, type PatchedSession } from '../support.ts';
-import { FIRMWARE, expectRuntimeUi, moduleArtifact, record } from './live.ts';
+import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
+import { record } from './artifacts.ts';
+import { FIRMWARE } from './devices.ts';
+import { moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
 import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
 import {
   planSymbol,
@@ -24,6 +27,7 @@ import {
   type PreparedRuntimePlan,
   type RuntimePlan,
 } from './runtime-plan.ts';
+import { runtimeSafety, runtimeWatchEnv } from './write-safety.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
@@ -66,7 +70,7 @@ export interface PreparedFxSessionOptions {
     modules: string[];
     inventory: string[];
     symbols: string[];
-    policy: 'default' | 'fx-routes';
+    policy: 'default' | 'fx-kit' | 'fx-routes';
   };
   initial: string;
   presets: Record<string, FxCardPreset>;
@@ -89,6 +93,19 @@ export async function tap(session: Session, key: string, settleMs = 300, held?: 
     }
   }
   if (settleMs) await advance(session, settleMs);
+}
+
+/** Wait until the boot input has finished, so the run can pause. */
+export async function drainInputs(session: Session, timeoutMs = 30_000): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const status = await bounded(() => session.status());
+        return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
+      },
+      { timeout: timeoutMs, interval: 100, message: 'boot input has finished before pausing' },
+    )
+    .toEqual({ pending: 0, scheduled: 0 });
 }
 
 /** Preserve the exact decoded OLED image and hash for pixel comparisons. */
@@ -173,15 +190,7 @@ export async function inspectFxBoot(
     )
     .toEqual({ names: expectedNames, results: expectedResults });
   const capacity = await bounded(() => dk.capacity());
-  await expect
-    .poll(
-      async () => {
-        const status = await bounded(() => session.status());
-        return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
-      },
-      { timeout: 30_000, interval: 100, message: 'route boot input has finished before pausing' },
-    )
-    .toEqual({ pending: 0, scheduled: 0 });
+  await drainInputs(session);
   await bounded(() => session.client.call('run.mode', { mode: 'paused' }));
   const fields = await Promise.all(Array.from({ length: 10 }, (_, i) => word(session, boot + i * 4)));
   expect(fields.slice(0, 4)).toEqual([0x444b4254, 1, 0, 0]);
@@ -217,7 +226,7 @@ export async function selectSine(runtime: PatchedSession, profile: FxProfile): P
 export function withPreparedFxSession(device: Device, scope: string, config: PreparedFxSessionOptions) {
   if (!Object.hasOwn(config.presets, config.initial)) throw new Error(`unknown initial route preset ${config.initial}`);
   const { name, inventory, modules, symbols, policy } = config.image;
-  if (policy !== 'default' && policy !== 'fx-routes')
+  if (policy !== 'default' && policy !== 'fx-kit' && policy !== 'fx-routes')
     throw new Error('prepared FX image requires an explicit safety policy');
   let prepared: PreparedRuntimePlan;
   let profile: FxProfile;
@@ -259,12 +268,9 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
           'profile',
         );
         watchOutput = path.join(artifacts, 'writewatch.jsonl');
-        return analysisJson<Record<string, string>>(
-          'tools.patchkit.pk_dkrt_machine',
-          ['watch-env', prepared.planFile, watchOutput],
-          artifacts,
-          'watch-environment',
-        );
+        const env = runtimeWatchEnv(prepared.planFile, watchOutput);
+        record(artifacts, 'watch-environment', env);
+        return env;
       },
     },
     {
@@ -317,31 +323,15 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
       afterClose: async () => {
         const results = await Promise.allSettled([
           (async () => {
-            const report = await analysisJson<{ pass: boolean }>(
-              'tools.coldfire.arena_safety',
-              [
-                'runtime-check',
-                '--device',
-                device,
-                '--policy',
-                policy,
-                '--watch-output',
-                watchOutput,
-                '--min-emulators',
-                String(epochs.size),
-                ...overlays.flatMap((file) => ['--overlay', file]),
-              ],
-              artifacts,
-              'lifetime-safety',
-            );
+            const report = runtimeSafety(device, watchOutput, overlays, epochs.size, policy);
+            record(artifacts, 'lifetime-safety', report);
             expect(report.pass, 'every route emulator and exported overlay meets legacy safety policy').toBe(true);
           })(),
           analysisJson('tools.patchkit.pk_digikit_fxroutes', ['render-shots', artifacts], artifacts, 'rendered-shots'),
         ]);
         const errors = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
         if (errors.length === 1) throw errors[0];
-        if (errors.length > 1)
-          throw new AggregateError(errors, 'route lifetime safety and screenshot rendering failed');
+        if (errors.length > 1) throw aggregate(errors, 'route lifetime safety and screenshot rendering failed');
       },
     },
     scope,

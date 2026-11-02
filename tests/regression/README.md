@@ -10,12 +10,20 @@ time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4)
 | --- | --- | --- |
 | `dt2/` | `stock` | Stock DT2 1.17 UI and transport goldens, zero DSP |
 | `scenarios/` | `fx-dn2`, `fx-dt2` | Stock FX oracles (see [scenarios/README.md](scenarios/README.md)) |
-| `runtime/` | `runtime` | Patched runtime workflows on DT2 1.17 and DN2 1.12 |
-| `modules/` | `modules` | Production module upload and load cells |
+| `emulator/` | device | Emulator checks that belong to no module: stock-firmware reply record, SHARC instruction semantics |
+| `runtime/` | none | Helpers only (daemon, card, UI and module-install kits) |
 | `host/` | none (root `regression-host`) | Mocked helper tests, no daemon or firmware |
 
-Shared helpers: `support.ts`, `runtime/live.ts`, `runtime/remote.ts`, `runtime/runtime-plan.ts`,
-`runtime/runtime-menu.ts`, `runtime/transfer-cli.ts`, `modules/suite.ts`, `modules/acceptance.ts`.
+Device tests for a module live in that module: `modules/**/tests/*.device.test.ts` (patched runtime on DT2 1.17
+and DN2 1.12). Each module's `project.json` lists them in `metadata.runtimeAcceptance`. Checks that run over
+every shipped module live in `tests/conformance/`; its load cell (`load.device.test.ts`) uploads each run-time
+module and checks persistence, contract, registration and faults. `DIGI_CONFORMANCE_MODULES` (comma-separated
+module ids) limits it; unset runs all.
+
+Shared helpers: `support.ts`, `timing.ts`, `runtime/devices.ts`, `runtime/ready.ts`, `runtime/waits.ts`, `runtime/install.ts`,
+`runtime/artifacts.ts`, `runtime/protocol.ts`, `runtime/fixtures.ts`, `runtime/remote.ts`, `runtime/runtime-plan.ts`,
+`runtime/runtime-menu.ts`, `runtime/transfer-cli.ts`, `runtime/probe-kit.ts`. Module tests import them as
+`@digi/regression/<path>` (for example `@digi/regression/runtime/ready.ts`).
 Goldens are in `goldens/dt2-1.17.json`.
 
 ## Commands
@@ -25,10 +33,10 @@ Goldens are in `goldens/dt2-1.17.json`.
 | `mise run test:stock [-- FILTER]` | `stock` | `DIGI_EMUD` names a current DT2 daemon |
 | `REGRESSION_JOBS=1 pnpm --filter @digi/regression test:update` | `stock` | Rewrites goldens |
 | `mise run test:runtime [-- FILTER]` | `runtime` | Builds plusdrive first (`build:plusdrive`) |
-| `mise run test:modules [-- FILTER]` | `modules` | |
+| `mise run test:conformance [-- FILTER]` | `conformance` | |
 | `mise run test:fx` | `fx-dn2` | 61 quick; `DIGI_FX_SWEEP=1` for 191 |
 | `mise run test:fx:dt2` | `fx-dt2` | 135 quick; `DIGI_FX_SWEEP=1` for 146 |
-| `mise run test:host` | host projects | No device inputs |
+| `pnpm test:host` | host projects | No device inputs |
 
 Filters are native Vitest file or test-name filters. The device tasks never build daemons, generated cores or
 module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/regression/junit.xml`.
@@ -40,7 +48,7 @@ module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/r
   must match the stock SHA-256 and `intc_force:false` in the ready directory's `SOURCE.json`.
 - Module artifacts: `out/regression/modules/<device>/<leaf>.dkm` (override the root with
   `DIGI_RUNTIME_MODULES`). Runtime cases need `input-probe`, `remote`, `svc-echo` and `debug` (the log: every cell that reads it
-  selects `digikit/debug` first, `installWithDebug` in `runtime/live.ts`); module cells need `pluck`, `freqshift`, `remote` and `debug`. The gate packs them itself. By hand:
+  selects `digikit/debug` first, `installWithDebug` in `runtime/install.ts`); the load cells need every run-time module. The gate packs them itself. By hand:
   `uv run python -m tools.patchkit.patchkit pack digikit/pluck --device dt2 -o out/regression/modules/dt2/pluck.dkm`.
 - DT2 card samples at `out/runs/patchkit/samples` (`tools.emulator.card_check.make_samples`).
 - Sample cases also need `apps/web/public/dksample.wasm` (`mise run wasm:dksample`).
@@ -61,27 +69,33 @@ UI scenarios"). A golden changes only with a reason; review the diff.
 
 ## Runtime workflows
 
-`runtime/*.test.ts`: `remote-input`, `service-commands`, `transfer-live`, `input-adapter`, `samples-live`
-(DT2) and `samples-store-live` (DN2). Those workflows use a fresh runtime daemon for each device case.
+Module device tests: `core/runtime` (`service-commands`, `transfer-live`, `samples-live` on DT2,
+`samples-store-live` on DN2, `modules-capacity`, upload, settings and crash tests), `core/input`
+(`input-adapter`), `modules/tools/remote` (`remote-input`), `modules/tools/debug` and `modules/tools/probe`. Those workflows use a
+fresh runtime daemon for each device case.
 
-FX route acceptance on both devices lives in `runtime/fx-routes-panel.test.ts` (route choices, defaults,
-capacity and pending changes), `runtime/fx-routes-persist.test.ts` (apply/restart persistence and PCM),
-and `runtime/fx-track-route.test.ts` (track SEND pages, amounts, kit loads and project-byte controls).
-These replace the Python `fxroute` and `fxroutes` scenarios. Independent cases reload clean card
-baselines in an owned daemon; apply/restart cases preserve the guest's writes. Track SEND's image
-without the page hook closes before its image with the hook starts. Offline profile, card settings,
-OLED and project-byte helpers remain in `tools/patchkit/pk_digikit_fxroute.py` and
-`tools/patchkit/pk_digikit_fxroutes.py`.
+FX route acceptance on both devices lives in `modules/core/adapters/fx/tests/fx-routes-panel.device.test.ts`
+(route choices, defaults, capacity and pending changes), `modules/core/adapters/fx/tests/fx-routes-persist.device.test.ts`
+(apply/restart persistence and PCM), and `modules/core/adapters/fxpages/tests/fx-track-route.device.test.ts`
+(track SEND pages, amounts, kit loads and project-byte controls). These replace the Python `fxroute` and
+`fxroutes` scenarios. Independent cases reload clean card baselines in an owned daemon; apply/restart cases
+preserve the guest's writes. Track SEND's image without the page hook closes before its image with the hook
+starts. Offline profile, card settings, OLED and project-byte helpers remain in
+`tools/patchkit/pk_digikit_fxroute.py` and `tools/patchkit/pk_digikit_fxroutes.py`.
 
-For example, `mise run test:runtime -- fx-routes-panel.test.ts` runs the panel suite. The gate prepares
-the complete card inventories, including renamed effect packs; manual runs need those prepared
-artifacts, the plusdrive builder and the native patchkit CLI used by store dump.
+The gate prepares the complete card inventories, including renamed effect packs; manual runs need those
+prepared artifacts, the plusdrive builder and the native patchkit CLI used by store dump.
 
-Helpers in `runtime/live.ts`:
+`emulator/reply-inflight.test.ts` runs stock firmware with the reply-record check. `emulator/sharc-semantics.test.ts`
+runs the SHARC probe modules and compares RECIPS, RSQRTS and the dsp-facts values with the device measurements
+in `tests/fixtures/sharc/`.
+
+Helpers in `runtime/devices.ts`, `ready.ts`, `waits.ts`, `install.ts`, `artifacts.ts`, `protocol.ts`:
 
 - `runtimeTests(name, body, opts)`: one test per device, after `expectRuntimeBoot`.
 - `liveOptions(device, extra)`: daemon binary, firmware version and card for `withPatchedSession`.
-- `settleUi`, `settleLive`: wait for the UI or the free-running firmware.
+- `expectRuntimeReady`: wait for the runtime's normal UI hook on a fresh free-running daemon.
+- `waitEmulated`: wait for emulated time (DSP frames); wall time is only a hang guard.
 - `installModule`, `moduleArtifact`: install a prepared `.dkm` and locate it.
 - `tap`, `record`: panel key presses and a log line in the run artifacts.
 - `liveArtifacts`: the run artifact directory.
@@ -109,21 +123,19 @@ and closes the owned daemon.
 protocol restart, then checks the store, the mirror hash, `card.folder` metadata and the next boot.
 
 `input-adapter` and `remote-input` check semantic KEY navigation, TURN delivery and decoder acceptance, not
-vendor parameter changes. Exact remote pacing is checked by the C unit in `modules/remote-pacing.c`:
+vendor parameter changes. Exact remote pacing is checked by the host C unit
+`modules/tools/remote/tests/pacing.test.ts` (it compiles `remote-pacing.c` with `cc`).
+
+## Module load cells
+
+`tests/conformance/load.device.test.ts` uploads every shipped run-time module (dynamic, service and host
+machine or effect modules) on DT2 1.17 and DN2 1.12 through `DkSession` and `EmuUsbTransport`, selects it,
+reboots, and checks persistence, SDK contract, DSP-loader completion, registration, guard counters, runtime
+log and guest faults. Each cell has a fresh daemon. These cells observe load and registration, not rendered
+audio. Module-specific behaviour is tested in the module's own `tests/` folder.
 
 ```sh
-mise run test:modules -- remote.test.ts -t 'pacing unit'
-```
-
-## Module cells
-
-`modules/{pluck,freqshift,remote}.test.ts` upload each production module on DT2 1.17 and DN2 1.12 through
-`DkSession` and `EmuUsbTransport`, select it, reboot, and check persistence, SDK contract, DSP-loader
-completion, registration, guard counters, runtime log and guest faults. Each cell has a fresh daemon. These
-cells observe load and registration, not rendered audio.
-
-```sh
-mise run test:modules -- pluck.test.ts --testNamePattern dt2
+uv run python -m tools.devtools.verify --conformance digikit/remote
 ```
 
 ## Artifacts

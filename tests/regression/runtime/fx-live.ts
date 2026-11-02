@@ -15,16 +15,22 @@ import {
 } from '@digi/test-support';
 import { expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession } from '../support.ts';
-import { FIRMWARE, expectRuntimeUi, moduleArtifact, record } from './live.ts';
+import { record } from './artifacts.ts';
+import { FIRMWARE } from './devices.ts';
+import { moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
+import { deviceProfile } from './device-data.ts';
+import { fxExpectations, type FxExpectations } from './dkm.ts';
 import { planSymbol, prepareRuntimePlanOffline, validateRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
+import { runtimeSafety, runtimeWatchEnv } from './write-safety.ts';
+import { GAIN, SINE } from './fixtures.ts';
+import { drainInputs, tap } from './fx-session.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
 // core/fx's published registry row: modules/core/adapters/fx/module.toml.
 export const ROW_WORDS = 24;
 export const FREE_PC = 0xffffffff;
-export const SINE = 'test/sine';
-export const GAIN = 'test/dyn-fx-gain';
 export const bounded = <T>(operation: () => Promise<T>) => withinRuntimeDeadline(Date.now() + 30_000, operation);
 export const rpc = <T>(session: Session, method: string, params?: Record<string, unknown>) =>
   bounded(() => session.client.call<T>(method, params));
@@ -36,10 +42,7 @@ export function options(device: Device) {
 }
 
 export function slotsFor(device: Device): number {
-  const file = path.join(root, 'devices', device === 'dt2' ? 'digitakt-ii.toml' : 'digitone-ii.toml');
-  const slots = /^fx_slots\s*=\s*(\d+)/m.exec(fs.readFileSync(file, 'utf8'))?.[1];
-  if (!slots) throw new Error(`missing fx_slots in ${file}`);
-  return Number(slots);
+  return deviceProfile(device).limits.fx_slots;
 }
 
 /** Native plusdrive owns all card/store/selection encoding. Each image has its own overlay-free directory. */
@@ -104,11 +107,6 @@ export async function analysisJson<T>(module: string, args: string[], artifacts:
   }
 }
 
-interface FxExpectations {
-  image_hex: string;
-  row: number[];
-  needs: Record<string, number>;
-}
 export function expectGainRow(row: number[], oracle: FxExpectations): void {
   expect(row.slice(0, 12), 'exact process/descriptor/state/default words').toEqual(oracle.row);
   expect(row[12], 'adapter ran the effect').toBe(1);
@@ -152,34 +150,67 @@ export async function advance(session: Session, ms: number): Promise<void> {
 
 /** Choose the original device list hint or a numeric override without asserting selected-track identity.
  * The BASIC chain uses selectSine for DT2 type readback; gain/deselect retains its audible-input contract. */
-export async function pickSine(session: Session, selection?: number): Promise<void> {
-  const tap = async (key: string, held?: string) => {
-    try {
-      if (held) {
-        await bounded(() => session.client.inputButton(button(held), true));
-        await advance(session, 5);
-      }
-      await bounded(() => session.client.inputTap(button(key), 20 * MS));
-      await advance(session, 25);
-    } finally {
-      if (held) {
-        await bounded(() => session.client.inputButton(button(held), false));
-        await advance(session, 5);
-      }
-    }
-  };
+export async function pickSine(session: Session, selection?: number, ups = 0): Promise<void> {
   const hint = selection ?? (session.options.device === 'dt2' ? 7 : 5);
   if (!Number.isInteger(hint) || hint < 0) throw new Error('FX input hint must be a nonnegative list position');
-  await tap('SRC', 'FUNC');
+  await tap(session, 'SRC', 0, 'FUNC');
   await advance(session, 200);
-  for (let i = 0; i < hint; i++) {
-    await tap('DOWN');
+  // `ups` UP presses first: every try starts from the top of the list
+  for (let i = 0; i < ups; i++) {
+    await tap(session, 'UP', 0);
     await advance(session, 80);
   }
-  await tap('YES');
+  for (let i = 0; i < hint; i++) {
+    await tap(session, 'DOWN', 0);
+    await advance(session, 80);
+  }
+  await tap(session, 'YES', 0);
   await advance(session, 300);
-  await tap('YES');
+  await tap(session, 'YES', 0);
   await advance(session, 300);
+}
+
+export interface NoteOptions {
+  /** WAV file for the PCM capture. */
+  file: string;
+  /** Absolute DSP frame at which the note starts (after the block boundary). */
+  trigger: number;
+  /** Names the setup error and the fault check. */
+  tag: string;
+  /** Frames captured after the trigger. */
+  length?: number;
+  /** `pcm.tap start` was already sent by the caller. */
+  tapStarted?: boolean;
+  /** Skip the 44 000-instruction offset after the block boundary. */
+  skipStep?: boolean;
+  /** Capture without pressing TRIG 1. */
+  noPress?: boolean;
+  /** Runs once after the key is down, inside the capture. */
+  during?: () => Promise<void>;
+}
+
+/** The shared note sequence: run to `trigger`, capture `length` frames with TRIG 1 held, then check for faults. */
+export async function captureNote(session: Session, opts: NoteOptions): Promise<void> {
+  const { file, trigger, tag, length = 1500 } = opts;
+  const current = await frames(session);
+  if (current >= trigger - 20) throw new Error(`${tag} setup too late: current frame ${current}, trigger ${trigger}`);
+  if (!opts.tapStarted) await rpc(session, 'pcm.tap', { action: 'start' });
+  try {
+    await bounded(() => session.client.runUntil({ frames: trigger, timeout_wall_s: 30 }));
+    if (!opts.skipStep) await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
+    await rpc(session, 'pcm.tap', { action: 'capture', path: file });
+    if (!opts.noPress) await bounded(() => session.client.inputButton(button('TRIG 1'), true));
+    await opts.during?.();
+    await bounded(() => session.client.runUntil({ frames: trigger + length, timeout_wall_s: 30 }));
+  } finally {
+    try {
+      await rpc(session, 'pcm.tap', { action: 'capture_stop' });
+    } finally {
+      await bounded(() => session.client.inputButton(button('TRIG 1'), false));
+    }
+  }
+  await advance(session, 50);
+  await bounded(() => session.expectNoFault(tag));
 }
 
 /** Future-frame choice follows the legacy restarted-note path; boundary offset and 1500-frame hold are unchanged. */
@@ -199,22 +230,7 @@ export async function capture(
     currentFrame: current,
     triggerFrame: trig,
   });
-  try {
-    if (current >= trig - 20) throw new Error(`FX capture setup too late: current frame ${current}, trigger ${trig}`);
-    await bounded(() => session.client.runUntil({ frames: trig, timeout_wall_s: 30 }));
-    await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
-    await rpc(session, 'pcm.tap', { action: 'capture', path: file });
-    await bounded(() => session.client.inputButton(button('TRIG 1'), true));
-    await bounded(() => session.client.runUntil({ frames: trig + 1500, timeout_wall_s: 30 }));
-  } finally {
-    try {
-      await rpc(session, 'pcm.tap', { action: 'capture_stop' });
-    } finally {
-      await bounded(() => session.client.inputButton(button('TRIG 1'), false));
-    }
-  }
-  await advance(session, 50);
-  await bounded(() => session.expectNoFault('FX note'));
+  await captureNote(session, { file, trigger: trig, tag: 'FX note', tapStarted: true });
   return trig;
 }
 
@@ -269,6 +285,81 @@ export async function compare(
   if (identical) expect(metrics.identical, 'dry PCM is bit-identical from onset').toBe(true);
 }
 
+/** Interleaved samples of an IEEE-float WAV (format 3). */
+export function readFloatWav(file: string): Float32Array {
+  const d = fs.readFileSync(file);
+  if (d.toString('latin1', 0, 4) !== 'RIFF' || d.toString('latin1', 8, 12) !== 'WAVE')
+    throw new Error(`${file}: not a WAV`);
+  let pos = 12;
+  let format = 0;
+  while (pos + 8 <= d.length) {
+    const tag = d.toString('latin1', pos, pos + 4);
+    const size = d.readUInt32LE(pos + 4);
+    if (tag === 'fmt ') format = d.readUInt16LE(pos + 8);
+    else if (tag === 'data') {
+      if (format !== 3) throw new Error(`${file}: expected an IEEE float WAV, format ${format}`);
+      const out = new Float32Array(Math.floor(Math.min(size, d.length - pos - 8) / 4));
+      for (let i = 0; i < out.length; i++) out[i] = d.readFloatLE(pos + 8 + 4 * i);
+      return out;
+    }
+    pos += 8 + size + (size & 1);
+  }
+  throw new Error(`${file}: no data chunk`);
+}
+
+/** (onset of `run` minus onset of `ref`, number of samples that differ from the onsets on over the common length); the onset is the first sample above 1e-6. */
+export function alignedCompare(ref: Float32Array, run: Float32Array) {
+  const onset = (x: Float32Array) => x.findIndex((v) => Math.abs(v) > 1e-6);
+  const a = onset(ref);
+  const b = onset(run);
+  if (a < 0 || b < 0) return { shift: null, differ: -1 };
+  const n = Math.min(ref.length - a, run.length - b);
+  let differ = 0;
+  for (let i = 0; i < n; i++) if (ref[a + i] !== run[b + i]) differ++;
+  return { shift: b - a, differ };
+}
+
+/** Python `M.pcm_check`: equal, or equal sample for sample from the onsets on with an even onset shift of at most `maxShift` samples. */
+export function pcmMatches(ref: Float32Array, run: Float32Array, maxShift: number) {
+  const exact = ref.length === run.length && ref.every((v, i) => v === run[i]);
+  const { shift, differ } = alignedCompare(ref, run);
+  const ok = exact || (shift !== null && shift % 2 === 0 && Math.abs(shift) <= maxShift && differ === 0);
+  return {
+    ok,
+    detail: `${run.length} samples, exact ${exact}, onset shift ${shift}, ${differ} differ after alignment`,
+  };
+}
+
+export const peak = (x: Float32Array): number => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+
+/** RMS of each full window of `win` samples. */
+export function windowRms(samples: Float32Array, win = 4800): number[] {
+  const out: number[] = [];
+  for (let i = 0; i + win < samples.length; i += win) {
+    let sum = 0;
+    for (let k = i; k < i + win; k++) sum += samples[k]! * samples[k]!;
+    out.push(Math.sqrt(sum / win));
+  }
+  return out;
+}
+
+/** The onset (first sample above 1e-6, -1 for none) and the little-endian float32 bytes of `n` interleaved samples from it (Python `pcm_pin`). */
+export function pcmWindow(pcm: Float32Array, n: number): { onset: number; window: Buffer } {
+  const onset = pcm.findIndex((x) => Math.abs(x) > 1e-6);
+  const part = onset >= 0 ? pcm.subarray(onset, onset + n) : pcm.subarray(0, 0);
+  const window = Buffer.alloc(part.length * 4);
+  part.forEach((x, i) => window.writeFloatLE(x, 4 * i));
+  return { onset, window };
+}
+
+/**
+ * Play TRIG 1 from DSP frame `trigger` (the same instruction after the block boundary in every run) and capture 1500 frames to `file`. `during`
+ * runs once after the key is down, inside the capture. The key stays down for the whole capture. Python `Rig.note`.
+ */
+export async function playNote(session: Session, file: string, trigger: number, during?: () => Promise<void>) {
+  await captureNote(session, { file, trigger, tag: 'note', during });
+}
+
 /** Gain-fixture assertions only: fixed sine/gain module and default-emulator assumptions. */
 export async function inspect(
   runtime: PatchedSession,
@@ -303,15 +394,7 @@ export async function inspect(
   expect(capacity.FX_SLOTS).toEqual({ limit: slots, used: wet ? 1 : 0, largest: 0 });
   const settings = await bounded(() => readSettingsRecordIfPresent(dk));
   expect(settings === null ? null : settingsValue(settings, 'dk/fault')).toBeNull();
-  await expect
-    .poll(
-      async () => {
-        const status = await withinRuntimeDeadline(deadline, () => session.status());
-        return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
-      },
-      { timeout: Math.max(1, deadline - Date.now()), interval: 100, message: 'boot input has finished before pausing' },
-    )
-    .toEqual({ pending: 0, scheduled: 0 });
+  await drainInputs(session, Math.max(1, deadline - Date.now()));
   await rpc(session, 'run.mode', { mode: 'paused' });
   const boot = planSymbol(plan, 'DKRT_BOOT');
   const fields = await Promise.all(Array.from({ length: 10 + names.length }, (_, i) => word(session, boot + i * 4)));
@@ -333,12 +416,8 @@ export async function inspect(
     expect(effect.rows).toBe(0);
     const base = planSymbol(plan, '_dl_area') + effect.dsp_off;
     const artifact = path.join(path.dirname(session.cardPath!), 'seed/digikit/modules/dyn-fx-gain.dkm');
-    oracle = await analysisJson<FxExpectations>(
-      'tools.patchkit.pk_dkrt_machine',
-      ['fx-expectations', artifact, `0x${base.toString(16)}`],
-      artifacts,
-      `${tag}-expected-gain`,
-    );
+    oracle = await fxExpectations(artifact, base);
+    record(artifacts, `${tag}-expected-gain`, oracle);
     expect(effect.dsp_len, 'MODULES range agrees with independently inferred needs').toBe(oracle.needs.DSP_AREA);
     expect(oracle.needs.FX_SLOTS).toBe(1);
     expect(capacity.FX_SLOTS!.used).toBe(oracle.needs.FX_SLOTS);
@@ -433,12 +512,9 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
         ]);
         plan = prepared.plan;
         watchOutput = path.join(artifacts, 'writewatch.jsonl');
-        return analysisJson<Record<string, string>>(
-          'tools.patchkit.pk_dkrt_machine',
-          ['watch-env', prepared.planFile, watchOutput],
-          artifacts,
-          'watch-environment',
-        );
+        const env = runtimeWatchEnv(prepared.planFile, watchOutput);
+        record(artifacts, 'watch-environment', env);
+        return env;
       },
     },
     {
@@ -450,21 +526,8 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
       },
       finishCase: (runtime) => collectEvidence(runtime, `case-${++closed}`),
       afterClose: async () => {
-        const report = await analysisJson<{ pass: boolean }>(
-          'tools.coldfire.arena_safety',
-          [
-            'runtime-check',
-            '--device',
-            device,
-            '--watch-output',
-            watchOutput,
-            '--min-emulators',
-            String(epochs.size),
-            ...overlays.flatMap((file) => ['--overlay', file]),
-          ],
-          artifacts,
-          'lifetime-safety',
-        );
+        const report = runtimeSafety(device, watchOutput, overlays, epochs.size);
+        record(artifacts, 'lifetime-safety', report);
         expect(report.pass, 'every emulator and exported overlay meets legacy safety policy').toBe(true);
       },
     },

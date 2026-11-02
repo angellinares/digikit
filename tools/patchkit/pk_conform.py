@@ -467,7 +467,7 @@ FX_PARAM_MAX = 0x7F00  # the range of a parameter word until the manifest declar
 FX_NEGATIVE = {"test/fx-nan": "guard stepped in", "test/dyn-fx-nan": "guard stepped in"}
 # Fixtures of the runtime's fault tests that the suite does not run.
 FX_SKIP = {
-    "test/dyn-fx-hang": "stops the DSP on purpose after 5000 calls; tests/regression/runtime/fault-trace.test.ts runs it"
+    "test/dyn-fx-hang": "stops the DSP on purpose after 5000 calls; modules/core/runtime/tests/fault-trace.device.test.ts runs it"
 }
 
 

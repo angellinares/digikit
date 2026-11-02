@@ -34,9 +34,11 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import shlex
 import subprocess
+import tempfile
 import tomllib
 from dataclasses import dataclass
 from functools import cache
@@ -64,11 +66,11 @@ FRAMEWORK = frozenset(
     }
 )
 # tools/device module -> the digikit scenario kinds whose runners (tools/patchkit/pk_digikit_*.py)
-# call it. A module of tools/device that is not listed here fails tests/devtools/test_verify.py.
+# call it.
 DEVICE_KINDS: dict[str, tuple[str, ...]] = {
     "__init__": (),
-    "dkupload": ("upload", "menu", "debug", "crash", "card", "settings"),
-    "dksettings": ("settings",),
+    "dkupload": ("upload", "menu", "debug", "crash", "card"),
+    "dksettings": (),  # the settings record CLI; no scenario kind runs it (the TS port is tests/regression/runtime/project-kit.ts)
     "dkrun": ("menu",),
     "dkneeds": (
         "menu",
@@ -115,20 +117,171 @@ class Fine:
     tests: tuple[str, ...]
 
 
+@dataclass(frozen=True, eq=False)
+class RuntimeAcceptance:
+    """One runtime acceptance record of an Nx project (`metadata.runtimeAcceptance`)."""
+
+    owner: str
+    files: tuple[str, ...]  # relative to tests/regression
+    modules: tuple[str, ...]
+    aliases: dict[str, str]  # alias -> source module
+    sources: tuple[str, ...]  # repo-relative
+    plusdrive: bool
+
+
+@cache
+def nx_graph() -> dict:
+    """The Nx project graph, built with a private daemon-free cache; module projects come from tools/nx/modules.mjs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "graph.json"
+        env = {
+            **os.environ,
+            "NX_DAEMON": "false",
+            "NX_NO_CLOUD": "true",
+            "NX_WORKSPACE_DATA_DIRECTORY": str(Path(tmp) / "data"),
+        }
+        done = subprocess.run(
+            ["mise", "exec", "--", "pnpm", "exec", "nx", "graph", f"--file={out}"],
+            cwd=ROOT,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if done.returncode:
+            raise RuntimeError(
+                f"nx graph failed (exit {done.returncode}): {done.stderr[-2000:]}"
+            )
+        return json.loads(out.read_text())["graph"]
+
+
 @cache
 def manifests() -> dict[str, tuple[str, ...]]:
     """Module id -> the modules it depends on: those it `requires` and those whose files its
-    build sources name (`sources = ["../../x/y/..."]`). Modules and ids: tools/patchkit/modroots.py."""
-    out: dict[str, tuple[str, ...]] = {}
-    for mid, moddir in modroots.manifests().items():
-        data = tomllib.loads((moddir / "module.toml").read_text(encoding="utf-8"))
-        deps = list(data.get("module", {}).get("requires", []))
-        for table in data.get("object", []):
-            for source in table.get("sources", []):
-                other = modroots.module_id(moddir / source)
-                if other is not None and other != mid:
-                    deps.append(other)
-        out[mid] = tuple(dict.fromkeys(deps))
+    build sources name. The edges are defined in tools/nx/modules.mjs."""
+    graph = nx_graph()
+    mods = {
+        name
+        for name, node in graph["nodes"].items()
+        if "module" in node["data"].get("tags", [])
+    }
+    out = {
+        name: tuple(
+            sorted(
+                dep["target"]
+                for dep in graph["dependencies"].get(name, [])
+                if dep["target"] in mods
+            )
+        )
+        for name in sorted(mods)
+    }
+    disk = set(modroots.manifests())
+    if set(out) != disk:
+        raise ValueError(
+            f"Nx module projects differ from module manifests: missing in Nx={sorted(disk - set(out))}, missing on disk={sorted(set(out) - disk)}"
+        )
+    return out
+
+
+def _invalid(root: str, why: str) -> ValueError:
+    return ValueError(f"{root}: invalid runtimeAcceptance {why}")
+
+
+@cache
+def acceptance_records() -> dict[str, RuntimeAcceptance]:
+    """Test file (relative to tests/regression) -> its record, read from the `runtimeAcceptance`
+    lists in the metadata of the Nx projects. Fails closed on any invalid or missing record."""
+    known = manifests()
+    out: dict[str, RuntimeAcceptance] = {}
+    alias_owner: dict[str, str] = {}
+    for name, node in sorted(nx_graph()["nodes"].items()):
+        data = node["data"]
+        root = data["root"]
+        for meta in data.get("metadata", {}).get("runtimeAcceptance", []):
+            if not isinstance(meta, dict) or not set(meta) <= {
+                "files",
+                "modules",
+                "aliases",
+                "sources",
+                "plusdrive",
+            }:
+                raise _invalid(root, "fields")
+            files = meta.get("files")
+            modules = meta.get("modules", [])
+            aliases = meta.get("aliases", {})
+            sources = meta.get("sources", [])
+            if (
+                not isinstance(files, list)
+                or not files
+                or not isinstance(modules, list)
+                or not isinstance(aliases, dict)
+                or not isinstance(sources, list)
+                or any(not isinstance(v, str) for v in [*files, *modules, *sources])
+                or any(
+                    not isinstance(k, str) or not isinstance(v, str)
+                    for k, v in aliases.items()
+                )
+                or type(meta.get("plusdrive", False)) is not bool
+            ):
+                raise _invalid(root, "types")
+            is_module = "module" in data.get("tags", [])
+            # An uploadable owner is packed with its tests; a core/* owner is patched into the image.
+            if is_module and name in RUNTIME_UPLOADS and name not in modules:
+                modules = [*modules, name]
+            if (
+                len(set(modules)) != len(modules)
+                or any(m not in known for m in [*modules, *aliases.values()])
+                or any(a in known or a in alias_owner for a in aliases)
+            ):
+                raise _invalid(root, "modules")
+            alias_owner.update(dict.fromkeys(aliases, name))
+            for source in sources:
+                if (
+                    Path(source).is_absolute()
+                    or ".." in Path(source).parts
+                    or not (ROOT / source).is_file()
+                ):
+                    raise _invalid(root, f"source {source}")
+            keys = []
+            for filename in files:
+                if (
+                    Path(filename).is_absolute()
+                    or ".." in Path(filename).parts
+                    or not filename.endswith(
+                        ".device.test.ts" if is_module else ".test.ts"
+                    )
+                    or not (ROOT / root / filename).is_file()
+                ):
+                    raise _invalid(root, f"file {filename}")
+                key = Path(
+                    os.path.relpath(ROOT / root / filename, ROOT / "tests/regression")
+                ).as_posix()
+                if key in out or key in keys:
+                    raise _invalid(root, f"duplicate file {filename}")
+                keys.append(key)
+            record = RuntimeAcceptance(
+                name,
+                tuple(keys),
+                tuple(modules),
+                dict(aliases),
+                tuple(sources),
+                meta.get("plusdrive", False),
+            )
+            out.update(dict.fromkeys(keys, record))
+    registered = {
+        os.path.normpath(f"tests/regression/{key}")
+        for key in out
+        if key.startswith("../../")
+    }
+    discovered = {
+        p.relative_to(ROOT).as_posix()
+        for p in ROOT.glob("modules/**/tests/**/*.device.test.ts")
+    }
+    if registered != discovered:
+        raise ValueError(
+            f"module device acceptance registration differs: unregistered={sorted(discovered - registered)}, undiscovered={sorted(registered - discovered)}"
+        )
     return out
 
 
@@ -147,10 +300,8 @@ def dependents(ids: set[str]) -> set[str]:
 
 
 def _production_uploads() -> dict[str, str]:
-    """Module id -> its coupled lifecycle acceptance file, for the shipped modules (under `modules/`) that are run-time
-    uploads: `dynamic`, a service or a `host` module. The file is `tests/regression/modules/<leaf>.test.ts`, `<leaf>` being
-    the last part of the id; a module without that file has no lifecycle cell. tests/regression/modules/acceptance.ts
-    scans the manifests by the same rule."""
+    """Module id -> the shared conformance suite, for the shipped modules (under `modules/`) that are run-time
+    uploads: `dynamic`, a service or a `host` module. tests/conformance/load.ts scans the manifests by the same rule."""
     out: dict[str, str] = {}
     for mid, moddir in sorted(modroots.manifests().items()):
         if not moddir.is_relative_to(ROOT / "modules"):
@@ -162,88 +313,18 @@ def _production_uploads() -> dict[str, str]:
             meta.get("dynamic") or meta.get("host") or meta.get("type") == "service"
         ):
             continue
-        rel = f"tests/regression/modules/{mid.split('/')[-1]}.test.ts"
-        if (ROOT / rel).is_file():
-            out[mid] = rel
+        out[mid] = CONFORMANCE_FILE
     return out
 
 
+CONFORMANCE_FILE = "tests/conformance/load.device.test.ts"
 # These production uploads have coupled lifecycle acceptance, in addition to their static owners.
 RUNTIME_UPLOADS = _production_uploads()
+# Step -> test directory, relative to tests/regression.
 ACCEPTANCE_DIRS = {
     "stock": "dt2",
-    "runtime-fixture": "runtime",
-    "module-load": "modules",
-}
-# Runtime test files by the fixture module they exercise; the gate packs a native artifact for each
-# module (DIGI_RUNTIME_MODULES). Paths are relative to tests/regression.
-RUNTIME_SEND_FILES = ("runtime/fx-send-dn2.test.ts", "runtime/fx-send.test.ts")
-RUNTIME_ROUTE_FILES = (
-    "runtime/fx-routes-panel.test.ts",
-    "runtime/fx-routes-persist.test.ts",
-)
-RUNTIME_TRACK_FILES = ("runtime/fx-track-route.test.ts",)
-RUNTIME_BASIC_FILES = ("runtime/fx-chain.test.ts", "runtime/fx-pages.test.ts")
-RUNTIME_PROFILE_FILES = (
-    *RUNTIME_BASIC_FILES,
-    *RUNTIME_ROUTE_FILES,
-    *RUNTIME_TRACK_FILES,
-)
-RUNTIME_GAIN_FILES = (
-    "runtime/fx-reuse.test.ts",
-    *RUNTIME_SEND_FILES,
-    *RUNTIME_BASIC_FILES,
-)
-RUNTIME_FX_FILES = (*RUNTIME_GAIN_FILES, *RUNTIME_ROUTE_FILES, *RUNTIME_TRACK_FILES)
-RUNTIME_PLUSDRIVE_FILES = ("runtime/samples-live.test.ts", *RUNTIME_FX_FILES)
-RUNTIME_MODULES: dict[str, tuple[str, ...]] = {
-    "test/sine": RUNTIME_FX_FILES,
-    "test/dyn-fx-gain": (*RUNTIME_GAIN_FILES, *RUNTIME_ROUTE_FILES),
-    "test/dyn-fx-gain-sendonly": RUNTIME_ROUTE_FILES,
-    "test/dyn-fx-gain-both": RUNTIME_TRACK_FILES,
-    "test/input-probe": ("runtime/input-adapter.test.ts",),
-    "digikit/remote": ("runtime/remote-input.test.ts", "runtime/sharc-probe.test.ts"),
-    "digikit/probe": ("runtime/sharc-probe.test.ts", "runtime/debug-module.test.ts"),
-    # the log: every cell that reads it installs this module with the one it tests (live.ts `installWithDebug`)
-    "digikit/debug": ("runtime/debug-module.test.ts", "runtime/fault-trace.test.ts"),
-    "test/sharc-probe": ("runtime/sharc-probe.test.ts",),
-    "test/step-beacon": ("runtime/sharc-probe.test.ts",),
-    "test/dsp-facts": ("runtime/sharc-probe.test.ts",),
-    "test/svc-echo": ("runtime/service-commands.test.ts",),
-    "test/dyn-fx-hang": ("runtime/fault-trace.test.ts",),
-    "test/dyn-dsp-hang": ("runtime/fault-trace.test.ts",),
-    "test/dyn-fx-nan": ("runtime/fault-trace.test.ts",),
-    "test/dyn-fx-gain-send": ("runtime/fault-trace.test.ts", *RUNTIME_ROUTE_FILES),
-    "test/dyn-crash": ("runtime/fault-trace.test.ts",),
-}
-# Renamed packs share canonical source objects; these are card identities, not module sources.
-RUNTIME_PACK_ALIASES = {
-    **{
-        f"test/dyn-fx-gain-{index}": ("test/dyn-fx-gain", ("runtime/fx-chain.test.ts",))
-        for index in (2, 3, 4)
-    },
-    "test/dyn-fx-gain-send-3": ("test/dyn-fx-gain-send", RUNTIME_ROUTE_FILES),
-    "test/dyn-fx-gain-both-2": ("test/dyn-fx-gain-both", RUNTIME_TRACK_FILES),
-    "test/dyn-fx-gain-both-3": ("test/dyn-fx-gain-both", RUNTIME_TRACK_FILES),
-}
-# Host sources and subprocess CLI helpers consumed by specific runtime files.
-RUNTIME_SOURCES: dict[str, tuple[str, ...]] = {
-    **{
-        path: ("runtime/samples-live.test.ts", "runtime/samples-store-live.test.ts")
-        for path in (
-            "packages/dk-session/src/dksample.ts",
-            "packages/dk-session/src/rpcfiles.ts",
-            "packages/dk-session/src/samples.ts",
-        )
-    },
-    "tools/patchkit/pk_dkrt_machine.py": RUNTIME_FX_FILES,
-    "tools/coldfire/arena_safety.py": RUNTIME_FX_FILES,
-    "tools/patchkit/pk_digikit_fxsend.py": (*RUNTIME_SEND_FILES, *RUNTIME_TRACK_FILES),
-    "tools/patchkit/hook_ab.py": RUNTIME_FX_FILES,
-    "tools/patchkit/pk_digikit_fx.py": RUNTIME_PROFILE_FILES,
-    "tools/patchkit/pk_digikit_fxpage.py": RUNTIME_PROFILE_FILES,
-    "tools/patchkit/pk_digikit_fxroutes.py": RUNTIME_PROFILE_FILES,
-    "tools/patchkit/pk_digikit_fxroute.py": RUNTIME_PROFILE_FILES,
+    "runtime-fixture": "emulator",
+    "module-load": "../conformance",
 }
 ACCEPTANCE_SHARED = (
     "packages/test-support/src/",
@@ -252,8 +333,14 @@ ACCEPTANCE_SHARED = (
     "devices/",
     "tests/regression/support.ts",
 )
+# Helper directories whose files a step's tests import from outside the step's own directory: a changed
+# helper there goes to Vitest's import discovery for that step (the runtime and conformance suites import
+# tests/regression/runtime/*.ts).
+HARNESS_DIRS: dict[str, tuple[str, ...]] = {
+    "runtime-fixture": ("tests/regression/runtime/",),
+    "module-load": ("tests/regression/runtime/",),
+}
 RUNTIME_SHARED = (
-    "tests/regression/runtime/live.ts",  # lifecycle shared by runtime and module suites
     "sdk/",
     "packages/dk-session/src/",
     "packages/patchkit/",
@@ -266,36 +353,220 @@ def emulator_test_path(path: str) -> bool:
 
 
 @cache
-def acceptance_python(step: str) -> set[str]:
-    """Dependencies of consumed preparation/client entry points, using the existing import graph."""
+def tracked_text() -> str:
+    """The text of the tracked .py, .ts, .mjs, .json and .toml files, joined."""
+    listed = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True
+    ).stdout.splitlines()
+    parts = []
+    for name in listed:
+        if name.endswith((".py", ".ts", ".mjs", ".json", ".toml")):
+            try:
+                parts.append((ROOT / name).read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return "\n".join(parts)
+
+
+def module_referenced(path: str, text: str) -> bool:
+    """Whether TEXT names the Python module at PATH: its dotted name (also `-m tools.x.y`), or its
+    stem in an `import` or `from ... import` line."""
+    dotted = path.removesuffix(".py").replace("/", ".")
+    stem = re.escape(dotted.rsplit(".", 1)[-1])
+    if dotted in text:
+        return True
+    return (
+        re.search(
+            rf"^[ \t]*(?:import\s+(?:[\w.]+\s*,\s*)*{stem}\b"
+            rf"|from\s+[\w.]+\s+import\s+(?:[^\n(]*\b{stem}\b|\([^)]*\b{stem}\b))",
+            text,
+            re.M,
+        )
+        is not None
+    )
+
+
+def deleted_path_referenced(path: str) -> bool:
+    """Whether a tracked file still refers to the deleted Python module PATH (fail closed)."""
+    return module_referenced(path, tracked_text())
+
+
+@cache
+def smoke_harness_closure() -> set[str]:
+    """Paths of the Python modules the smoke harness (pk_harness) can run, function-local imports included."""
+    return _import_closure(
+        {
+            "tools.patchkit.pk_harness",
+            "tools.patchkit.patchkit",
+            "tools.devtools.stablebin",
+            "tools.sharc_dev.sharc_disasm",
+        },
+        local_imports=True,
+    )
+
+
+def outside_smoke_harness(path: str) -> bool:
+    """A tools/ Python path (existing or deleted) the smoke harness cannot reach. A deleted path
+    counts only when no tracked file refers to it."""
+    if path.startswith("tests/support/") and path.endswith(".py"):
+        return not (ROOT / path).is_file() and not deleted_path_referenced(path)
+    if not (path.startswith("tools/") and path.endswith(".py")):
+        return False
+    if not (ROOT / path).is_file():
+        return not deleted_path_referenced(path)
+    return path not in smoke_harness_closure()
+
+
+def invoked_script_names(
+    scripts: dict[str, str], texts: list[str] | None = None
+) -> set[str]:
+    """The names of SCRIPTS (a package.json `scripts` table) that a gate step may invoke: named after
+    `pnpm [run]`, `npm run` or `"run",` in the gate sources and mise.toml, or as a quoted argv word after
+    "pnpm"/"npm"; then the scripts those scripts call. Conservative: when unsure, a script counts as invoked."""
+    if texts is None:
+        sources = [
+            *sorted((ROOT / "tools/devtools").glob("verify*.py")),
+            ROOT / "mise.toml",
+        ]
+        texts = [p.read_text(encoding="utf-8") for p in sources if p.is_file()]
+    text = "\n".join(texts)
+    invoked: set[str] = set()
+    for name in scripts:
+        n = re.escape(name)
+        end = r"(?![\w:.-])"
+        patterns = (
+            rf"\b(?:pnpm|npm)\s+(?:run\s+)?{n}{end}",
+            rf"\b(?:pnpm|npm)\s+[^\n\"']*\s(?:run\s+)?{n}{end}",
+            rf"[\"']run[\"']\s*,\s*[\"']{n}[\"']",
+            rf"[\"'](?:pnpm|npm)[\"'][^\]\n]*[\"']{n}[\"']",
+        )
+        if any(re.search(p, text) for p in patterns):
+            invoked.add(name)
+    todo = list(invoked)
+    while todo:
+        body = scripts.get(todo.pop(), "")
+        for name in scripts:
+            if name not in invoked and re.search(
+                rf"(?<![\w:.-]){re.escape(name)}(?![\w:.-])", body
+            ):
+                invoked.add(name)
+                todo.append(name)
+    return invoked
+
+
+def package_scripts_only(
+    old: str | None, new: str | None, texts: list[str] | None = None
+) -> bool:
+    """Whether two package.json texts differ only in `scripts` that no gate step invokes."""
+    if old is None or new is None:
+        return False
+    try:
+        a, b = json.loads(old), json.loads(new)
+    except ValueError:
+        return False
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    tables = []
+    for data in (a, b):
+        table = data.get("scripts", {})
+        if not isinstance(table, dict) or any(
+            not isinstance(v, str) for v in table.values()
+        ):
+            return False
+        tables.append(table)
+    invoked = invoked_script_names({**tables[0], **tables[1]}, texts)
+    for data, table in zip((a, b), tables, strict=True):
+        data["scripts"] = {k: v for k, v in table.items() if k in invoked}
+    return a == b
+
+
+# Module project.json path -> the acceptance files (relative to tests/regression) its records declare
+# at head and, when it existed at base, at base (set by verify.changed_plan).
+PROJECT_REGISTRATIONS: dict[str, tuple[str, ...]] = {}
+
+
+def project_record_files(path: str, text: str | None) -> set[str]:
+    """The existing acceptance files (relative to tests/regression) that the `runtimeAcceptance` records
+    in the project.json TEXT at PATH declare; empty when TEXT is missing or invalid."""
+    if text is None:
+        return set()
+    try:
+        records = json.loads(text).get("metadata", {}).get("runtimeAcceptance", [])
+        names = [f for r in records for f in r.get("files", [])]
+    except (ValueError, AttributeError, TypeError):
+        return set()
+    root = Path(path).parent
+    return {
+        os.path.relpath(ROOT / root / f, ROOT / "tests/regression")
+        for f in names
+        if isinstance(f, str) and (ROOT / root / f).is_file()
+    }
+
+
+def registered_module_test(path: str) -> str | None:
+    """The acceptance key of PATH when it is a registered modules/**/tests/**/*.device.test.ts."""
+    if not (
+        path.startswith("modules/")
+        and "/tests/" in path
+        and path.endswith(".device.test.ts")
+    ):
+        return None
+    key = os.path.relpath(ROOT / path, ROOT / "tests/regression")
+    return key if key in acceptance_records() else None
+
+
+def lint_config_only(old: str | None, new: str | None) -> bool:
+    """Whether two pyproject.toml texts differ only inside `tool.mypy` or `tool.ruff`."""
+    if old is None or new is None:
+        return False
+    try:
+        a, b = tomllib.loads(old), tomllib.loads(new)
+    except tomllib.TOMLDecodeError:
+        return False
+    for data in (a, b):
+        tool = data.get("tool")
+        if isinstance(tool, dict):
+            tool.pop("mypy", None)
+            tool.pop("ruff", None)
+            if not tool:
+                del data["tool"]
+    return a == b
+
+
+def _without_docstrings(tree: ast.AST) -> ast.AST:
+    for node in ast.walk(tree):
+        if isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                node.body = body[1:] or [ast.Pass()]
+    return tree
+
+
+def python_code_unchanged(old: str | None, new: str | None) -> bool:
+    """Whether two Python texts differ only in comments, docstrings or layout."""
+    if old is None or new is None:
+        return False
+    try:
+        a, b = ast.parse(old), ast.parse(new)
+    except (SyntaxError, ValueError):
+        return False
+    return ast.dump(_without_docstrings(a), include_attributes=False) == ast.dump(
+        _without_docstrings(b), include_attributes=False
+    )
+
+
+def _import_closure(roots: set[str], *, local_imports: bool = False) -> set[str]:
+    """Paths of ROOTS and of every module they import, using the existing import graph."""
     from tools.devtools import changed_tests
 
-    # The graph omits function-local imports. These consumed call paths need stablebin from
-    # patchkit.binary and sharc_disasm (imported inside the functions of the SHARC runner pk_sharc.run_call).
-    roots = {
-        "tools",
-        "tools.patchkit.patchkit",
-        "tools.devtools.stablebin",
-        "tools.sharc_dev.sharc_disasm",
-    }
-    if step == "runtime-fixture":
-        roots.update(
-            {
-                "tools.device.dktransfer",
-                "tools.control.digi_client",
-                "tools.emulator.card_overlay",
-                "tools.patchkit.pk_dkrt_machine",
-                "tools.patchkit.pk_digikit_fx",
-                "tools.patchkit.pk_digikit_fxsend",
-                "tools.patchkit.pk_digikit_fxroutes",
-                "tools.patchkit.pk_digikit_fxroute",
-                "tools.patchkit.hook_ab",
-                "tools.patchkit.pk_dsplink",  # named anchor reader imported inside the SEND oracle
-                "tools.coldfire.arena_safety",
-                "tools.device.dkneeds",  # called inside the FX oracle; local imports are not graphed
-            }
-        )
-    graph = changed_tests.graph()
+    graph = changed_tests.graph(local_imports=local_imports)
     found, todo = set(roots), list(roots)
     while todo:
         for dependency in graph.find_modules_directly_imported_by(todo.pop()):
@@ -303,6 +574,41 @@ def acceptance_python(step: str) -> set[str]:
                 found.add(dependency)
                 todo.append(dependency)
     return {changed_tests.path_of(module) for module in found}
+
+
+@cache
+def acceptance_shared(step: str) -> set[str]:
+    """Dependencies of the preparation/client entry points that every acceptance file consumes."""
+    # The graph omits function-local imports. These consumed call paths need stablebin from
+    # patchkit.binary and sharc_disasm (imported inside the functions of the SHARC runner pk_sharc.run_call).
+    return _import_closure(
+        {
+            "tools",
+            "tools.patchkit.patchkit",
+            "tools.devtools.stablebin",
+            "tools.sharc_dev.sharc_disasm",
+        }
+    )
+
+
+@cache
+def acceptance_record_closure(record: RuntimeAcceptance) -> set[str]:
+    """Dependencies of the Python sources one runtime record runs, and the record's own sources."""
+    paths = _import_closure(
+        {
+            source.removesuffix(".py").replace("/", ".")
+            for source in record.sources
+            if source.endswith(".py") and (ROOT / source).is_file()
+        }
+    )
+    paths.update(record.sources)
+    # Module-owned Python models may be loaded dynamically rather than imported.
+    if record.owner in manifests():
+        paths.update(
+            p.relative_to(ROOT).as_posix()
+            for p in (modroots.module_dir(record.owner) / "tests").rglob("*.py")
+        )
+    return paths
 
 
 @cache
@@ -339,6 +645,45 @@ def module_smoke_cells(ids: set[str]) -> list[str] | None:
     return selected
 
 
+def runtime_modules() -> dict[str, tuple[str, ...]]:
+    """Fixture module -> the runtime test files that exercise it; the gate packs a native artifact for each."""
+    owners: dict[str, list[str]] = {}
+    for file, record in acceptance_records().items():
+        for mid in record.modules:
+            owners.setdefault(mid, []).append(file)
+    return {mid: tuple(files) for mid, files in owners.items()}
+
+
+def runtime_aliases() -> dict[str, tuple[str, tuple[str, ...]]]:
+    """Alias -> (source module, the files of its record). Renamed packs share the source object; they are card identities."""
+    return {
+        alias: (source, record.files)
+        for record in dict.fromkeys(acceptance_records().values())
+        for alias, source in record.aliases.items()
+    }
+
+
+def conformance_modules(paths: list[str]) -> list[str]:
+    """Module ids the conformance suite needs for PATHS; empty means all eligible modules."""
+    ids: set[str] = set()
+    roots = tuple(r + "/" for r in modroots.REPO_ROOTS)
+    for path in paths:
+        if not acceptance_files("module-load", [path], resolve_helpers=False):
+            continue
+        mid = modroots.module_id(path) if path.startswith(roots) else None
+        if mid is None:
+            return []
+        hit = dependents({mid})
+        if hit & runtime_framework():
+            return []
+        ids |= hit & set(RUNTIME_UPLOADS)
+    return sorted(ids)
+
+
+def runtime_plusdrive_files() -> set[str]:
+    return {file for file, r in acceptance_records().items() if r.plusdrive}
+
+
 @cache
 def related_acceptance(step: str, paths: tuple[str, ...]) -> tuple[str, ...] | None:
     """Vitest's import discovery only; any unproven helper keeps the owner suite.
@@ -350,8 +695,9 @@ def related_acceptance(step: str, paths: tuple[str, ...]) -> tuple[str, ...] | N
     project = {
         "stock": "stock",
         "runtime-fixture": "runtime",
-        "module-load": "modules",
+        "module-load": "conformance",
     }[step]
+    owned = {f for f in acceptance_records() if f.startswith("../../")}
     try:
         done = subprocess.run(
             [
@@ -380,9 +726,16 @@ def related_acceptance(step: str, paths: tuple[str, ...]) -> tuple[str, ...] | N
             for path in files:
                 if (
                     not isinstance(path, str)
-                    or not path.startswith(f"{directory}/")
+                    or not (
+                        path.startswith(f"{directory}/")
+                        or (step == "runtime-fixture" and path in owned)
+                    )
                     or not path.endswith(".test.ts")
-                    or ".." in Path(path).parts
+                    or (
+                        ".." in Path(path).parts
+                        and not (step == "runtime-fixture" and path in owned)
+                        and step != "module-load"
+                    )
                     or not (ROOT / "tests/regression" / path).is_file()
                 ):
                     return None
@@ -402,10 +755,13 @@ def acceptance_files(
     """
     directory = ACCEPTANCE_DIRS[step]
     config = "tests/regression/vitest.config.ts"
+    base = Path(os.path.normpath(ROOT / "tests/regression" / directory))
     all_files = sorted(
-        p.relative_to(ROOT / "tests/regression").as_posix()
-        for p in (ROOT / "tests/regression" / directory).rglob("*.test.ts")
+        Path(os.path.relpath(p, ROOT / "tests/regression")).as_posix()
+        for p in base.rglob("*.test.ts")
     )
+    registered = acceptance_records() if step == "runtime-fixture" else {}
+    all_files = sorted(set(all_files) | set(registered))
     selected: set[str] = set()
     helpers: list[str] = []
     for path in paths:
@@ -419,13 +775,19 @@ def acceptance_files(
             }
         ):
             continue
-        if path in RUNTIME_SOURCES:
+        own_test = registered_module_test(path)
+        if own_test or path in PROJECT_REGISTRATIONS:
             if step == "runtime-fixture":
-                selected.update(RUNTIME_SOURCES[path])
+                selected.update([own_test] if own_test else PROJECT_REGISTRATIONS[path])
             continue
-        own = f"tests/regression/{directory}/"
-        if path.startswith(own):
-            rel = path.removeprefix("tests/regression/")
+        declared = {f for f, r in acceptance_records().items() if path in r.sources}
+        if declared:
+            if step == "runtime-fixture":
+                selected.update(declared)
+            continue
+        own = os.path.normpath(f"tests/regression/{directory}") + "/"
+        if path.startswith((own, *HARNESS_DIRS.get(step, ()))):
+            rel = os.path.relpath(path, "tests/regression")
             if path.endswith(".test.ts") and rel in all_files:
                 selected.add(rel)
             elif (
@@ -452,10 +814,26 @@ def acceptance_files(
             or (
                 step != "stock"
                 and path.startswith("tools/")
-                and path in acceptance_python(step)
+                and path.endswith(".py")
+                and (
+                    (
+                        step == "runtime-fixture"
+                        and not (ROOT / path).is_file()
+                        and deleted_path_referenced(path)
+                    )
+                    or path in acceptance_shared(step)
+                )
             )
         ):
             selected.update(all_files)
+        elif (
+            step == "runtime-fixture"
+            and path.startswith("tools/")
+            and path.endswith(".py")
+        ):
+            selected.update(
+                f for f, r in registered.items() if path in acceptance_record_closure(r)
+            )
         elif step != "stock" and path.startswith(
             tuple(r + "/" for r in modroots.REPO_ROOTS)
         ):
@@ -468,14 +846,14 @@ def acceptance_files(
                     selected.update(all_files)
                 elif step == "module-load":
                     selected.update(
-                        f.removeprefix("tests/regression/")
+                        os.path.relpath(f, "tests/regression")
                         for m, f in RUNTIME_UPLOADS.items()
                         if m in hit
                     )
                 else:
-                    for module, files in RUNTIME_MODULES.items():
-                        if module in hit:
-                            selected.update(files)
+                    selected.update(
+                        f for f, r in registered.items() if hit.intersection(r.modules)
+                    )
         elif step == "stock" and path.startswith("tests/regression/goldens/"):
             selected.update(all_files)
     if helpers and selected != set(all_files):
@@ -538,10 +916,8 @@ RUNNER_KINDS: dict[str, tuple[str, ...]] = {
     "pk_digikit_fxsend.py": (),
     "pk_digikit_fxroute.py": (),  # retained offline TS oracles
     "pk_digikit_fxroutes.py": (),  # retained TS profile/card/OLED helpers
-    "pk_digikit_settings.py": ("settings",),
-    "pk_digikit_fxpage.py": (),  # retained profile/PCM and legacy UI helpers
-    "pk_digikit_fxpersist.py": ("fxpersist",),
-    "pk_digikit_fxshift.py": ("fxshift",),
+    "pk_digikit_fxpage.py": (),  # retained PCM comparison CLI
+    "pk_digikit_fxshift.py": (),  # retained PCM/model analysis CLI
     "pk_digikit_capacity.py": ("debug",),
     "pk_digikit_memaudit.py": ("debug",),
     "pk_digikit_cost.py": ("debug",),
@@ -796,8 +1172,6 @@ def device_fine(path: str) -> Fine | None:
                     todo.append(name)
     kinds = {k for s in seen for k in DEVICE_KINDS.get(s, ())}
     tests += scenario_tests(kinds)
-    if stem not in DEVICE_KINDS:
-        tests.append("tests/devtools/test_verify.py")
     ordered = list(dict.fromkeys(tests))
     return Fine(f"tools/device/{stem}", ("python-tests",), tuple(ordered))
 
@@ -965,6 +1339,8 @@ def runner_fine(path: str) -> Fine | None:
 
 def fine(path: str) -> Fine | None:
     """The finer route of PATH, or None to use the prefix rules of verify.py."""
+    if registered_module_test(path) or path in PROJECT_REGISTRATIONS:
+        return Fine("test registration", ("runtime-fixture",), ())
     return (
         module_fine(path)
         or device_fine(path)
@@ -980,6 +1356,17 @@ def fine(path: str) -> Fine | None:
 def run_lines(task: dict) -> list[str]:
     run = task.get("run", [])
     return [run] if isinstance(run, str) else [str(x) for x in run]
+
+
+@cache
+def root_package_scripts() -> frozenset[str]:
+    """The names of the `scripts` of the root package.json."""
+    try:
+        data = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return frozenset()
+    table = data.get("scripts", {}) if isinstance(data, dict) else {}
+    return frozenset(table) if isinstance(table, dict) else frozenset()
 
 
 def paths_of_run(lines: list[str]) -> list[str] | None:
@@ -1000,7 +1387,13 @@ def paths_of_run(lines: list[str]) -> list[str] | None:
                         mine.append(cand)
                         break
             elif word in ("pnpm", "npx"):
-                mine.append("apps/web/package.json")
+                rest = words[i + 1 :]
+                if rest[:1] == ["run"]:
+                    rest = rest[1:]
+                if word == "pnpm" and rest and rest[0] in root_package_scripts():
+                    mine.append("package.json")  # a script of the root package.json
+                else:
+                    mine.append("apps/web/package.json")
             elif (ROOT / word).exists() and "/" in word:
                 mine.append(word)
         if not mine:
@@ -1074,6 +1467,13 @@ def object_metadata_only(old: str, new: str) -> bool:
     return drop(a) == drop(b)
 
 
+def _without_text(task: object) -> object:
+    """A mise task without the keys that only describe it."""
+    if not isinstance(task, dict):
+        return task
+    return {k: v for k, v in task.items() if k not in ("description", "alias")}
+
+
 def mise_paths(
     old: str | None, new: str | None
 ) -> tuple[list[str], dict[str, str]] | None:
@@ -1094,11 +1494,17 @@ def mise_paths(
     for name in sorted(set(tasks_old) | set(tasks_new)):
         if tasks_old.get(name) == tasks_new.get(name):
             continue
+        if (
+            name in tasks_old
+            and name in tasks_new
+            and _without_text(tasks_old[name]) == _without_text(tasks_new[name])
+        ):
+            continue  # only the description or alias changed: nothing runs differently
+        task = tasks_new.get(name)
+        if task is None:  # a removed task: nothing runs it any more
+            continue
         if name.split(":", 1)[0] in BROAD_TASK_GROUPS:
             return None
-        task = tasks_new.get(name)
-        if task is None:  # a removed task: only the path check reads it
-            continue
         other = {
             k: v
             for k, v in task.items()
@@ -1109,7 +1515,10 @@ def mise_paths(
         }:
             return None
         lines = run_lines(task)
+        old_deps = (tasks_old.get(name) or {}).get("depends", [])
         for dep in task.get("depends", []):
+            if dep in old_deps:
+                continue  # an unchanged dependency is routed by its own diff, if it changed
             lines += run_lines(tasks_new.get(dep, {}))
         named = paths_of_run(lines)
         if named is None:

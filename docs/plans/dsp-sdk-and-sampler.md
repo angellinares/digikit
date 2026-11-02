@@ -49,7 +49,7 @@ there is no outstanding reservation-choice request and no approved reservation p
   helper). Fix in the build phase.
 - Working rule for the design phase: static work, docs and design only. Run the
   emulator only when the run decides a design question.
-- First slice proven on DT2 in the emulator (`shot-dt2.test.ts`): API 1.5
+- First slice proven on DT2 in the emulator (`shot-dt2.device.test.ts`): API 1.5
   select in about 0.7-0.8 s, borrowed pool, stop-old-notes on reselect, stock
   reset detected and reloaded with a new token, contract 1.2 stereo split via
   the pair gate ([finding 112](../findings/112-dt2-pair-gate.md)).

@@ -11,11 +11,23 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
     "paths": {
-      "@digi/dk-session/*": ["../../packages/dk-session/src/*.ts"],
+      "@digi/regression/*": ["./*"],
       "@digi/test-support": ["../../packages/test-support/src/index.ts"],
-      "@digi/control-client": ["../../packages/control-client/src/index.ts"]
+      "@digi/control-client": ["../../packages/control-client/src/index.ts"],
+      "@digi/dk-session": ["../../packages/dk-session/src/index.ts"],
+      "@digi/dk-session/*": ["../../packages/dk-session/src/*.ts"]
     }
   },
-  "include": ["*.ts", "dt2", "runtime", "modules", "host", "scenarios", "../../modules/*/*/tests/*.test.ts"]
+  "include": [
+    "*.ts",
+    "dt2",
+    "runtime",
+    "emulator",
+    "host",
+    "scenarios",
+    "../conformance",
+    "../../modules/**/tests/**/*.device.test.ts"
+  ]
 }

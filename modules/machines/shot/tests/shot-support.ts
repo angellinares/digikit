@@ -2,11 +2,12 @@ import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { button } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '../../../../tests/regression/support.ts';
-import { memory, panel, record } from '../../../../tests/regression/runtime/live.ts';
+import type { PatchedSession } from '@digi/regression/support.ts';
+import { record } from '@digi/regression/runtime/artifacts.ts';
+import { memory, panel } from '@digi/regression/runtime/panel.ts';
 
 // Helpers of the SHOT device tests (shot-dn2): WAV fixtures, the sample pool requests of test/track-select, PCM capture with the
-// key held and the tone measurements on it. shot-dt2.test.ts has its own copies of the same code (it passed before they were split out).
+// key held and the tone measurements on it. shot-dt2.device.test.ts has its own copies of the same code (it passed before they were split out).
 
 export const RATE = 48000;
 export const HANDLE = 1; // the first module with a pool table (digikit/shot)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline project-byte and card-write oracles for the TypeScript track SEND suite.
 
-Device execution lives in tests/regression/runtime/fx-track-route.test.ts.
+Device execution lives in modules/core/adapters/fxpages/tests/fx-track-route.device.test.ts.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from tools.coldfire import arena_safety
 from tools.emulator import card_overlay
 from tools.patchkit import pk_digikit_project as P
 
@@ -48,11 +47,6 @@ def lock_check(
     }
 
 
-def overlay_writes(overlay: Path, device: str) -> dict[str, Any]:
-    """Written store sectors, including settings and selection copies, as in the legacy proof."""
-    return {"store_sectors": sorted(set(arena_safety.card_store_hits(overlay, device)))}
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Track FX routing offline comparison helpers"
@@ -63,17 +57,10 @@ def main(argv: list[str] | None = None) -> int:
     lock.add_argument("--card", type=Path, required=True)
     for name in ("base", "none", "amount", "send"):
         lock.add_argument(f"--{name}", type=Path, required=True)
-    writes = commands.add_parser("overlay-writes")
-    writes.add_argument("overlay", type=Path)
-    writes.add_argument("--device", choices=("dt2", "dn2"), required=True)
     args = parser.parse_args(argv)
     try:
-        result = (
-            lock_check(
-                args.device, args.card, args.base, args.none, args.amount, args.send
-            )
-            if args.command == "lock-check"
-            else overlay_writes(args.overlay, args.device)
+        result = lock_check(
+            args.device, args.card, args.base, args.none, args.amount, args.send
         )
     except (OSError, ValueError) as exc:
         parser.exit(1, f"error: {exc}\n")

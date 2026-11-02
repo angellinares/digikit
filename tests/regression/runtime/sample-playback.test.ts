@@ -6,7 +6,10 @@ import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { button, repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { installWithDebug, liveArtifacts, moduleArtifact, record, runtimeTests, settleUi } from './live.ts';
+import { liveArtifacts, record } from './artifacts.ts';
+import { installWithDebug, moduleArtifact } from './install.ts';
+import { runtimeTests } from './ready.ts';
+import { settleUi } from './waits.ts';
 import { planSymbol, prepareRuntimePlan } from './runtime-plan.ts';
 
 /** Deterministic exact PCM16 fixture: mono48k avoids converter/resampler rounding. */

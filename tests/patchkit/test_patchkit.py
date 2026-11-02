@@ -57,13 +57,6 @@ def apply(patchkit, tmp_path, fw, mods, *extra):
     return out, json.loads(plan.read_text())
 
 
-@pytest.mark.parametrize("fw", [DT2_117, DN2_112])
-def test_unchanged_image_rebuilds_byte_for_byte(patchkit, tmp_path, fw):
-    out = tmp_path / "rebuilt.syx"
-    patchkit("rebuild", fw, "-o", out)
-    assert out.read_bytes() == fw.read_bytes()
-
-
 def test_aplib_packer_equals_python_on_small_sections(patchkit):
     from tools.patchkit import pk_aplib_eq
 

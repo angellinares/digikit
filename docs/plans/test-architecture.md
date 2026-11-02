@@ -152,8 +152,8 @@ The earlier estimate of 80 boots per device reduced to nine is unsupported and i
 | fxroute (retired runner, historical line 558) | 11 | 11 | 0 |
 | fxroutes (retired runner, historical line 637) | 8 | 8 | 2 |
 | fxpage (retired runner, historical line 513) | 3 | 3 | 1 |
-| [fxpersist](../../tools/patchkit/pk_digikit_fxpersist.py) line 275 | 1 | 1 | 0 |
-| [fxshift](../../tools/patchkit/pk_digikit_fxshift.py) line 499 | 4 | 4 | 0 |
+| fxpersist (retired runner; `REF:tools/patchkit/pk_digikit_fxpersist.py`, historical line 275) | 1 | 1 | 0 |
+| fxshift (retired device runner, historical line 499) | 4 | 4 | 0 |
 | Total | 36 | 39 | 4 |
 
 Quick totals are therefore 40 DT2 and 43 DN2 static operations. Full tier adds one DT2 persistence
@@ -196,7 +196,7 @@ slice; resolve them before relying on the affected assertion, rather than blocki
 
 ### First implementation checkpoint (2026-11-01)
 
-**[D]** Historical first fixture proof, before the safety increment: both device proofs and fast preflight passed. the [gain-FX pilot](../../tests/regression/runtime/fx-reuse.test.ts)
+**[D]** Historical first fixture proof, before the safety increment: both device proofs and fast preflight passed. the [gain-FX pilot](../../modules/core/adapters/dynfx/tests/fx-reuse.device.test.ts)
 uses [Session baseline reload](../../packages/test-support/src/session.ts) and the existing Vitest
 [regression fixture](../../tests/regression/support.ts). No legacy family is deleted or declared equivalent.
 One serial scenario per device covers dry → gain → protocol deselection/restart → pristine dry,
@@ -545,8 +545,8 @@ FXPAGE relative PCM oracles retain audibility responsibility without relaxing fi
 
 | Legacy assertion group | Committed replacement ledger |
 | --- | --- |
-| BASIC capacity, selected type, free/live rows, overflow refusal and unchanged serial-gain PCM | [fx-chain.test.ts](../../tests/regression/runtime/fx-chain.test.ts), with separate plain reference and sequential dry/full baselines |
-| FXPAGE stock hashes, free-index poke invariance, page/index metadata, GAIN/MIX and A–E controls, SELECT/restart removal | [fx-pages.test.ts](../../tests/regression/runtime/fx-pages.test.ts), with independent reference and sequential stock/effect/deselect context |
+| BASIC capacity, selected type, free/live rows, overflow refusal and unchanged serial-gain PCM | [fx-chain.device.test.ts](../../modules/core/adapters/dynfx/tests/fx-chain.device.test.ts), with separate plain reference and sequential dry/full baselines |
+| FXPAGE stock hashes, free-index poke invariance, page/index metadata, GAIN/MIX and A–E controls, SELECT/restart removal | [fx-pages.device.test.ts](../../modules/core/adapters/fxpages/tests/fx-pages.device.test.ts), with independent reference and sequential stock/effect/deselect context |
 
 Both ports and the reviewed parity fixes passed their four family/device proofs. DN2 BASIC took
 58.75 s and DN2 FXPAGE 293.71 s. The combined DT2 invocation took 201.23 s, with BASIC 76.193 s
@@ -577,10 +577,93 @@ pathchecks passed. The original preflight was not a fully green run.
 
 The authoritative gate explanation uses `origin/main` at `e8c0e8ac` and selects eight FX runtime
 files, 41 Python files, host checks, smoke and native prerequisites. The initial `--base main`
-explanation used a stale local ref and is superseded. The broad gate was not run. Draft
-[PR #247](https://github.com/ElekLabs/digikit/pull/247) awaits a PR-specific focused-validation
-decision; no exception or broad-gate pass is claimed for this batch. Timings remain correctness
-evidence only, without a paired speedup claim.
+explanation used a stale local ref and is superseded. The broad gate was not run.
+[PR #247](https://github.com/ElekLabs/digikit/pull/247) merged at `4bd50f5b` on
+2026-11-01T19:45:12Z under Em's PR-247-only focused exception, accepting the three baseline path
+errors and the focused evidence. This was not a broad-gate pass; the exception does not transfer.
+Timings remain correctness evidence only, without a paired speedup claim.
 
 Deleted-scenario routing remains deferred because path-only callers need merge-base ownership
 evidence. No cache or tombstone tooling is introduced by this batch.
+
+### FX kit persistence and frequency shifter design (2026-11-02)
+
+The approved remaining FX batch keeps one owned context per device and family, with pristine
+cards and explicit baseline reloads for independent legs. DT2 persistence uses the full real
+SELECT/restart flow, which subsumes the quick table-poke setup; DN2 retains its existing quick
+coverage. Preserve every unique kit-storage, page/row, PCM, project and restart oracle.
+Frequency-shifter dry, master, send and other-track legs run on both devices: the DN2 TOML header
+is stale, while the existing runner invokes those legs unconditionally. Preserve its independent
+PCM/model, parameter, send and settings observations without changing thresholds or guest timing.
+
+The shared prerequisite is the fixed `fx-kit` card-safety policy: exactly the existing per-device
+`KIT_AREAS` firmware ranges, with no settings-sector allowance. Default and `fx-routes` policies
+retain their existing behavior; callers cannot supply arbitrary allowlists.
+
+The policy prerequisite `9b23b0ff`, kit/UI helpers `6f12384f`, persistence/shifter ports
+`73711a01` / `01594832` and gate ownership `8b7c248e` are pushed. Source reviews found no issues.
+DN2 persistence passed in 129.50 s invocation / 123.760 s case (`zDOVuw`), with three watch windows
+and two overlays under `fx-kit`. DN2 shifter passed in 215.72 s / 209.578 s (`WDkalo`), with nine
+windows and four overlays under `fx-routes`. Both lifetime reports had zero write/flush hits.
+DT2 shifter passed in 398.171 s file / 375.478 s case (`acXXAd`), and DT2 persistence in
+328.322 s / 320.201 s (`86nKeR`), with a combined invocation of 726.77 s. DT2 persistence passed
+seven watch windows/four overlays under `fx-kit`; DN2 persistence passed three/two. Both shifter
+reports passed nine/four under `fx-routes`. All four lifetime reports passed with zero write/flush
+hits and empty invalid-store/low-sector lists. These timings are correctness evidence, not a
+performance comparison; no new gate exception exists.
+
+The Nx audit confirms safe use of the five current cached host targets and partial adoption.
+Caching and affected-test routing are separate concerns. A next family-project migration remains
+unimplemented and needs an exact folder layout, validated project graph and selection matrix;
+see the [Nx audit checkpoint](nx-pilot.md#family-project-audit-checkpoint-2026-11-02). No custom
+plugin, cache expansion or selector deletion is authorized by this audit alone.
+
+The proved migration retires the four fxpersist/fxshift wrappers, three persistence scenario TOMLs
+(including full DT2 restart) and two module-owned shifter scenario TOMLs. Historical inputs:
+`REF:tests/digikit/test_fxpersist_dt2.py`, `REF:tests/digikit/test_fxpersist_dn2.py`,
+`REF:tests/digikit/test_fxshift_dt2.py`, `REF:tests/digikit/test_fxshift_dn2.py`,
+`REF:tests/digikit/scenarios/fx-persist-dt2.toml`, `REF:tests/digikit/scenarios/fx-persist-dn2.toml`,
+`REF:tests/digikit/scenarios/fx-persist-restart-dt2.toml`,
+`REF:modules/fx/freqshift/tests/scenarios/fx-freqshift-dt2.toml`, and
+`REF:modules/fx/freqshift/tests/scenarios/fx-freqshift-dn2.toml`.
+The persistence runner module is deleted after moving its exact kit ranges into arena safety.
+FXPAGE retains only its PCM CLI; BASIC retains range/fit/peak analysis; the shifter retains its
+unchanged spectral/model PCM oracles with an explicit model argument. Module unit, reference and
+conformance tests remain. Source ownership follows the reduced imports, with pack/aliases,
+production module coverage and conservative unknown/deleted-source fallbacks retained. Final
+preflight and gate acceptance remain pending; no device execution changed after the final proof.
+
+The frequency-shifter module's own `project.json` declares its uncached Nx `test-device` target,
+reusing the existing named verify selection/preparation workflow. `module:check` runs this target
+after Python tests (also for an owned target without Python tests), propagates failures and reports
+size/fit only after both pass. Both-device daemon/ready resolution uses the existing harness and
+overrides, with a shared lock around resolution only. The parent module-tests project's dependency
+retains prior host ownership after introducing the nested project. Conservative bounded target
+source inputs cover acceptance, preparation and model code; this is not the proposed family-wide
+routing replacement or a cache-closure claim. The command's device acceptance is preserved while
+retiring its old TOML discovery path; no second Python module-ownership registry is introduced.
+
+
+### PR #248 continuation checkpoint (2026-11-02)
+
+[PR #248](https://github.com/ElekLabs/digikit/pull/248) is draft, with code pushed through
+`942cae59`. Retirement `ec112ced` removes ten legacy files; module-local placement `501f0482`
+keeps the frequency-shifter scenario, analyzer tests and real-module routing assertions together
+under its module. The four device proofs above stand unchanged; the moved scenario differs only
+in imports and the analyzer tests are byte-identical. Shifter screenshots are captured evidence,
+not pixel-equality assertions; its four legs are dry, master, send and other-track send.
+
+Parent preflight passed 680 Python cases, 336 host cases (one skipped), all types/lint/format,
+layer and generated checks. Pathcheck alone failed; all new references were corrected and scoped
+pathcheck passed, leaving three baseline reports in the separate module-architecture plan.
+Focused metadata/routing/collection checks and independent review passed. The broad routed gate
+is unrun; no exception from an earlier PR transfers. Exact evidence, inputs and next actions are in
+[the handover](../handovers/HANDOVER-2026-11-02-test-consolidation.md).
+
+
+### PR #248 acceptance decision (2026-11-02)
+
+Em explicitly approved merging PR #248 using the recorded focused checks, accepting the three
+baseline pathcheck reports. The full routed gate remains unrun; this is a PR-248-only exception,
+not a full-gate pass or permission to skip later gates. The PR and external testing roadmap
+record the final merge state/commit; earlier draft/pending statements above are superseded.

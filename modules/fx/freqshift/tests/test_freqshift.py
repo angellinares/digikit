@@ -2,7 +2,7 @@
 
 The routine and its model do the same float32 operations in the same order: the output of the routine (`rig.scratch()`, the effect's block before the adapter's mix) is the model's output
 to the last bit. Tones through the routine show what the effect does: a 1 kHz sine moves by the shift, the image is 40 dB down. A long run (PyPy through uv when it can start, as the
-conformance suite does) shows that the oscillator does not drift. The emulator proof of the page and the knob is scenarios/fx-freqshift-dt2.toml.
+conformance suite does) shows that the oscillator does not drift. The device page/knob proof is modules/fx/freqshift/tests/freqshift.device.test.ts.
 Skips when Selache is not built."""
 
 import json

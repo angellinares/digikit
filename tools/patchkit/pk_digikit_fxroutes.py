@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Device facts, pristine-card settings seeds and OLED rendering for FX route suites.
 
-Device execution lives in tests/regression/runtime/fx-routes-panel.test.ts,
-fx-routes-persist.test.ts and fx-track-route.test.ts.
+Device execution lives in modules/core/adapters/fx/tests/fx-routes-panel.device.test.ts,
+fx-routes-persist.device.test.ts and modules/core/adapters/fxpages/tests/fx-track-route.device.test.ts.
 """
 
 from __future__ import annotations
@@ -14,13 +14,12 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from tools.coldfire import arena_safety
 from tools.control.digi_client import oled_png
 from tools.device import dksettings
 from tools.device.dksettings import encode as encode_record
 from tools.patchkit import pk_device
 from tools.patchkit import pk_dkrt_machine as M
-from tools.patchkit.pk_digikit_fxpage import profile as fx_profile
-from tools.patchkit.pk_digikit_fxpersist import KIT_AREAS
 from tools.patchkit.pk_digikit_fxroute import CLASSES
 
 
@@ -35,8 +34,8 @@ def profile(device: str) -> dict[str, Any]:
         "fx_slots": limits.fx_slots,
         "send_slots": limits.send_slots,
         "settings": {"copy_a": store.set_a, "copy_b": store.set_b},
-        "kit_areas": KIT_AREAS[device],
-        "fx": fx_profile(device),
+        "kit_areas": arena_safety.KIT_AREAS[device],
+        "fx": pk_device.load(device)["fx"],
     }
 
 

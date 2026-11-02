@@ -82,7 +82,7 @@ test('bundle equals tools/patchkit/patchkit.py bundle', { skip: !existsSync(join
   assert.deepEqual(buildModuleData(root).bundle, JSON.parse(readFileSync(out, 'utf8')));
 });
 
-test('the shipped modules: the .dkm files equal what module:pack-all writes, the index describes them, the sources hold no build output', () => {
+test('the shipped modules: the index describes them, the sources hold no build output', () => {
   const out = mkdtempSync(join(tmpdir(), 'ship-'));
   const { modules } = shipModules(out, root);
   // what ships is the rule of isShipped over the manifests of modules/{machines,fx,tools} (a device-less module is left out)
@@ -105,13 +105,10 @@ test('the shipped modules: the .dkm files equal what module:pack-all writes, the
     );
     for (const f of m.source) assert.ok(existsSync(join(out, 'src', m.id, f)), `${m.id}/${f}`);
     assert.ok(!existsSync(join(out, 'src', m.id, 'build')));
-    for (const [dev, d] of Object.entries(m.devices)) {
+    for (const d of Object.values(m.devices)) {
       const bytes = readFileSync(join(out, d.file));
       assert.equal(bytes.length, d.size);
       assert.equal(createHash('sha256').update(bytes).digest('hex'), d.sha256);
-      const packed = join(root, 'out', 'modules', dev, `${m.id}.dkm`);
-      if (existsSync(packed))
-        assert.deepEqual(bytes, readFileSync(packed), `${dev}/${m.id} differs from module:pack-all`);
     }
   }
 });

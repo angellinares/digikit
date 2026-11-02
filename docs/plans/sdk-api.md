@@ -308,7 +308,7 @@ Fault instrumentation follow-ups (the base is in finding 77): only when a real b
 - [ ] `api->fatal(code)` for C modules through the same fatal path as the runtime panic.
 - [ ] Review the runtime's footprint and move non-critical instrumentation into a debug module, keeping only critical fault handling in the runtime (Em's idea). Baseline from
       2026-10-30: .text 109 KB, bss 671 KB, of which the module arena is 512 KB, DKRT_STAGE 64 KB, DKRT_UPLOAD_BUF 36 KB and DKRT_LOG 16 KB.
-- [ ] A probe for the frame where a note-on reaches the DSP, so the fx route checks can measure route latency. Today the onset moves in 64-sample steps between boots (0 to 192 on DN2), and the bound in `tests/regression/runtime/fx-routes-persist.test.ts` only catches a delay of 256 samples or more.
+- [ ] A probe for the frame where a note-on reaches the DSP, so the fx route checks can measure route latency. Today the onset moves in 64-sample steps between boots (0 to 192 on DN2), and the bound in `modules/core/adapters/fx/tests/fx-routes-persist.device.test.ts` only catches a delay of 256 samples or more.
 
 ## Status at end of session
 

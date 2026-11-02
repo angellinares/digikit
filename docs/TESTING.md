@@ -12,19 +12,18 @@ execution requirements, not levels. A successful boot proves only what the run a
 
 | Level | What | Command |
 | --- | --- | --- |
-| Static (JS/TS) | oxlint, Prettier check, host Vitest, `pnpm -r run typecheck` | `mise run verify:host` |
-| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `uv run python -m tools.devtools.pathcheck`; `mise run check:layers` (module layering, docs/ARCHITECTURE.md) |
+| Static (JS/TS) | oxlint, Prettier check, host Vitest, `pnpm -r run typecheck` | `pnpm verify:host` |
+| Static (Python) | ruff check and format over pyproject `[tool.ruff] include`; mypy over `[tool.mypy] files` | `mise run lint:py`; `mise run check:layers` (module layering, docs/ARCHITECTURE.md) |
 | Fast preflight | Changed files only; no builds, no devices | `mise run test:changed` |
-| Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `mise run test:runtime:unit` | Standalone dkrt host cleanup tests through `rust_ws test --packages dkrt`, under the shared benchlock; pinned toolchain, worktree-aware `nogen/host-dkrt` target; no generated SHARC core, device or fixture build. |
-| `mise run test:host` |
-| Unit (web) | Web app Node suites in `apps/web/tests` | `mise run web:test` |
+| Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `pnpm test:host` |
+| Unit (web) | Web app Node suites in `apps/web/tests` | `pnpm --filter @digi/web test` |
 | Unit (Python) | RE, firmware and dev tools | pytest on named files under `tests/<owner>/`; `mise run test:pypy` for the PyPy subset |
 | Unit (Rust) | Workspace and standalone dkrt | Gate step `rust-tests` or `mise run test`; runtime-only: `mise run test:runtime:unit` |
 | Component | Module DSP conformance on the SHARC core | `mise run module:check ID` |
 | Device: stock UI | DT2 stock pages and transport goldens (zero DSP) | `mise run test:stock` |
 | Device: FX | Stock FX oracles | `mise run test:fx`, `mise run test:fx:dt2` |
-| Device: runtime | Patched runtime workflows | `mise run test:runtime` |
-| Device: module loads | PLUCK, freqshift, remote upload and registration | `mise run test:modules` |
+| Device: runtime | Emulator oracles (`tests/regression/emulator`) and module-owned device tests (`modules/**/tests/*.device.test.ts`) | `mise run test:runtime` |
+| Device: module loads | One shared conformance suite (`tests/conformance`) loads every shipped upload | `mise run test:conformance` |
 | Device: Python | Digikit boot scenarios, patchkit smoke matrix, patched-boot pytest files | owner pytest files; `mise run patch:test` |
 | App E2E | None yet | none |
 
@@ -37,16 +36,17 @@ Use the owner command while iterating. The coordinator runs the routed gate once
 
 | Change | While iterating |
 | --- | --- |
-| Docs (`*.md`) | `uv run python -m tools.devtools.pathcheck --paths PATH ...` when paths change |
-| JS/TS host tests and helpers | `test:host`, `verify:host` |
-| Web Node tests | `web:test` |
-| Desktop UI or app | `verify:host`; `ui:preview` and `ui_shots.mjs` for pages (below) |
+| JS/TS host tests and helpers | `pnpm test:host`, `pnpm verify:host` |
+| Web Node tests | `pnpm --filter @digi/web test` |
+| Desktop UI or app | `pnpm verify:host`; `ui:preview` and `ui_shots.mjs` for pages (below) |
 | Stock DT2 UI goldens | `test:stock` |
 | DN2 or DT2 FX sources and oracles | `test:fx`, `test:fx:dt2` |
 | Python under `tools/` or `tests/` | `test:changed`; then the named pytest files |
 | Patchkit, ports | `test:changed`; `patch:test --cell ...` for one smoke cell |
 | Leaf module | `module:check ID` |
-| Framework module, runtime, remote | `test:runtime`, `test:modules` with filters |
+| Device tests of one module | `pnpm nx:pilot run <module-id>:test-device` |
+| Loading one module | `uv run python -m tools.devtools.verify --conformance ID[,ID...]` |
+| Framework module, runtime | `test:runtime`, `test:conformance` with filters |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval |
@@ -67,7 +67,7 @@ require Rust toolchains or Cargo metadata. Explicit Rust targets retain their ow
 See the [Nx migration boundary](plans/nx-pilot.md#host-preflight-migration).
 
 Control-client, test-support, dk-session, desktop-host and regression-host targets use local result
-caching; web-transfer and the empty module-tests group remain uncached. Web tests retain ignored
+caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run through `verify --tests`) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (`verify --conformance ID`). Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
 generated WASM and optional inputs outside the cache boundary. Cache use assumes a frozen installation. New test helpers, environment
 reads or external inputs require an input audit before relying on cached results. The
 [bounded cache observations](findings/nx-pilot.md) include dependency failure/restoration probes;
@@ -75,20 +75,20 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 
 | Command | What runs |
 | --- | --- |
-| `mise run test:changed` | `tools/devtools/changed_tests.py`: ruff and mypy on changed Python, pathcheck, seven audited tooling unit files, Nx-affected host Vitest projects, changed JS/TS lint and format, host types. Options: `--base`, `--head`, `--files`, `--deep`, `--explain`. Does not run Rust, module builds or devices. |
-| `mise run test:host` | All seven Vitest projects from `vitest.host.projects.json`: control-client, test-support, dk-session, web-transfer, desktop-host, regression-host, module-tests. One worker by default; `-- --maxWorkers N` changes it. |
-| `mise run verify:host` | `pnpm verify:host`: oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
-| `mise run web:test` | `node --test` in `apps/web/tests`. Cases that need WASM or firmware skip when absent. |
+| `mise run test:changed` | `tools/devtools/changed_tests.py`: ruff and mypy on changed Python, seven audited tooling unit files, Nx-affected host Vitest projects, changed JS/TS lint and format, host types. Options: `--base`, `--head`, `--files`, `--deep`, `--explain`. Does not run Rust, module builds or devices. |
+| `pnpm test:host` | All seven Vitest projects from `vitest.host.projects.json`: control-client, test-support, dk-session, web-transfer, desktop-host, regression-host, module-tests. One worker by default; `-- --maxWorkers N` changes it. |
+| `pnpm verify:host` | oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
+| `pnpm --filter @digi/web test` | `node --test` in `apps/web/tests`. Cases that need WASM or firmware skip when absent. |
 | `mise run lint:py` | `ruff check` and `ruff format --check` over the pyproject include list. |
-| `mise run lint` | `lint:py`, `lint:web`, `fmt:check`, `lint:rust`. |
+| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. |
 | `mise run test:pypy` | The SHARC core tests under PyPy 3.11. Slow. |
 | `mise run test:stock` | Vitest project `stock` (`tests/regression/dt2`): DT2 1.17 zero-DSP goldens. Filters pass through. |
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
 | `mise run test:fx:dt2` | Project `fx-dt2`: 135 quick assertions; `DIGI_FX_SWEEP=1` runs 146 across 60 scenarios. `DIGI_DT2_CARD` selects a prepared card image. |
-| `mise run test:runtime [-- FILTER]` | Project `runtime`: remote-input, service-commands, transfer-live, input-adapter, samples-live (DT2), samples-store-live (DN2). Runs `build:plusdrive` first. |
-| `mise run test:modules [-- FILTER]` | Project `modules`: PLUCK, freqshift, remote on DT2 1.17 and DN2 1.12. |
+| `mise run test:runtime [-- FILTER]` | Project `runtime`: `tests/regression/emulator/*.test.ts` and every `modules/**/tests/*.device.test.ts`. Runs `build:plusdrive` first. |
+| `mise run test:conformance [-- FILTER]` | Project `conformance`: `tests/conformance/load.device.test.ts` on DT2 1.17 and DN2 1.12. `DIGI_CONFORMANCE_MODULES` (comma-separated module ids; empty: all eligible modules) selects the modules. |
 | `mise run build:plusdrive` | Builds the plusdrive CLI into `out/native/target/nogen`. |
-| `mise run module:check ID` | Machine or effect conformance and the module's own tests in one pytest process. Own tests may build or launch an emulator. Not an all-module load proof. |
+| `mise run module:check ID` | Machine/effect conformance and own Python tests, then any module-owned Nx `test-device` target. May build or emulate; size/fit follows both. Not an all-module load proof. |
 | `mise run module:audit NAME` | ColdFire memory audit of one run-time module. |
 | `mise run patch:test` | Smoke tour over `tests/patchkit/smoke/matrix.toml` (`-- --cell dt2-1.17:core/fx`, `-- --update`). |
 | `mise run patch:proofs` | Every emulator proof on its quick tier. |
@@ -100,6 +100,7 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run test:quick` | Launcher, PGO, target and coupled-tool tests, then `coupled test-quick`. |
 | `mise run verify` | The merge gate, routed by changed files. Options: `--base BRANCH`, `--head REV`, `--only STEPS`, `--all-files`, `--explain`, `--rerun-failed`, `--jobs N`, `--foreground`, `--all-no-aot`, `--no-cache`. |
 | `mise run verify:full` | `verify --full`: runtime acceptance, 191 DN2 FX assertions, `tier-sweep` instead of `tier-quick`. `-- --dt2` adds the DT2 full sweep. Only after generated-core changes. |
+| `mise run clean:runs` | Lists old `digi-*` run directories under the temp dir (older than 24 h, not used by a running `digi-emud` or node process) and orphan `digi-emud` processes; `-- --yes` deletes the directories, `-- --hours N` sets the age. It never kills a process. A Session refuses to start with less than 50 GB free. |
 
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
@@ -147,26 +148,29 @@ Tests that lack an input skip with a reason; `pytest -rs` lists them.
 | Captures `out/captures/*.dt2cap` | Not reproducible from the repository; those tests stay skipped. |
 | Opt-in switches | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `--slow` runs long firmware runs. |
 
-Device suites (`test:stock`, `test:fx*`, `test:runtime`, `test:modules`) also need:
+Device suites (`test:stock`, `test:fx*`, `test:runtime`, `test:conformance`) also need:
 
 - Pinned daemons: `DIGI_EMUD_DT2` and `DIGI_EMUD_DN2` point to built `digi-emud` binaries
   (`mise run emu:serve -- --build-only`). `test:stock` takes `DIGI_EMUD`. The gate sets these from
   `build-daemons`.
 - Complete ready inputs for each device, including the validated DSP files.
-- Module artifacts for `test:runtime` and `test:modules`: `out/regression/modules/<device>/<leaf>.dkm`.
-  `DIGI_RUNTIME_MODULES` overrides the directory. The gate packs input-probe, remote and svc-echo itself.
+- Module artifacts for `test:runtime` and `test:conformance`: `out/regression/modules/<device>/<leaf>.dkm`.
+  `DIGI_RUNTIME_MODULES` overrides the directory. The gate packs the fixtures of the selected records and the modules named in `DIGI_CONFORMANCE_MODULES` itself.
+- `DIGI_PATCHKIT` (optional) names the patchkit binary for `test:runtime` and `test:conformance`. The gate sets it; without it the tests build patchkit once through `patchkit.py bin`.
 - DT2 card samples at `out/runs/patchkit/samples`.
 - plusdrive: `test:runtime` builds it through `build:plusdrive`. The gate builds it before samples-live.
 
-FX route and track SEND acceptance runs in `tests/regression/runtime/fx-routes-panel.test.ts`,
-`tests/regression/runtime/fx-routes-persist.test.ts` and `tests/regression/runtime/fx-track-route.test.ts`
-with `mise run test:runtime`. The legacy Python `fxroute` and `fxroutes` scenarios are retired;
+FX route and track SEND acceptance runs in the device tests of the owning modules (`modules/**/tests/*.device.test.ts`)
+with `mise run test:runtime`. `tests/regression/runtime` keeps the shared helpers only. The legacy Python `fxroute` and `fxroutes` scenarios are retired;
 their offline data and comparison helpers remain.
 
 Details of the runtime and module fixtures: [tests/regression/README.md](../tests/regression/README.md).
 FX coverage: [tests/regression/scenarios/README.md](../tests/regression/scenarios/README.md).
-All regression device suites share `tests/regression/vitest.config.ts` with the projects `stock`,
-`runtime`, `modules`, `fx-dn2` and `fx-dt2`. A device project runs one file at a time.
+All device suites share `tests/regression/vitest.config.ts` with the projects `stock`,
+`runtime`, `conformance`, `fx-dn2` and `fx-dt2`. A device project runs one file at a time. Moved tests
+import helpers as `@digi/regression/<path under tests/regression>` and packages as `@digi/test-support`,
+`@digi/dk-session` and `@digi/control-client`; the config and `tsconfig.json` resolve them for files
+under `modules/` and `tests/conformance/`.
 
 ## Layout
 
@@ -175,7 +179,7 @@ All regression device suites share `tests/regression/vitest.config.ts` with the 
 | `tests/sharc/{semantics,trace,generation,analysis,integration}` | SHARC+ semantics, tracer, assembler and generator, loader and sharcdb, firmware-backed harness and golden hashes |
 | `tests/patchkit` | Patchkit, module primitives, DSP voice rig, PLUCK, proofs. `smoke/` holds the smoke matrix (`matrix.toml`, `tours/`, `goldens.json`). |
 | `tests/modules` | Machine and FX conformance for every module |
-| `modules/<kind>/<name>/tests` | A module's own tests (below, "Module-owned tests") |
+| `modules/**/tests` | A module's own tests, `*.device.test.ts` included (below, "Module-owned tests") |
 | `tests/coldfire` | ColdFire analysis tools |
 | `tests/emulator` | Launcher, PGO, coupled runner helpers, live audio, bootstrap |
 | `tests/control` | The control-socket client and daemon |
@@ -183,7 +187,8 @@ All regression device suites share `tests/regression/vitest.config.ts` with the 
 | `tests/dsp` | DSP maps, FX scenario generators, audio checks |
 | `tests/devtools` | Benchlock, verify routing and budget, render-cache audit, test outcomes |
 | `tests/digikit` | Digikit boot scenarios (below); data in `scenarios/*.toml` |
-| `tests/regression` | Native Vitest: `dt2/` (stock), `runtime/`, `modules/`, `scenarios/` (FX), `host/` (no device) |
+| `tests/regression` | Native Vitest: `dt2/` (stock), `emulator/` (emulator oracles), `runtime/` (helpers only), `scenarios/` (FX), `host/` (no device) |
+| `tests/conformance` | The shared module-load suite (`load.device.test.ts`, `load.ts`) |
 | `tests/scenarios` | Stock scenario inputs and PCM pins |
 | `tests/support` | Shared helpers, not collected; `paths.py` gives `REPO_ROOT`, `TESTS`, `TOOLS` |
 | `tests/golden`, `tests/fixtures` | Reference hashes and small fixtures |
@@ -205,12 +210,6 @@ Rust tests in their crates.
 - A test that needs firmware or generated artifacts skips with a reason when they are absent.
 - Lint and types come from `pyproject.toml`: new Python files are covered by `[tool.ruff] include`;
   add new typed files to `[tool.mypy] files`. Both run as commands in the gate step `python-tests`.
-- Pathcheck (`uv run python -m tools.devtools.pathcheck`): every path-like token in tracked text files
-  must name a tracked file or directory, a generated or ignored path, or an allowed token. Cite a
-  deleted file as `REF:path` (`unicorn-reference-final:emu/edma.py`). Files under `history_docs`
-  (findings, plans, design, archive, refs, contracts) may name paths that were once tracked.
-  Add an exception to `allow` in `tools/devtools/pathcheck.json` with a reason. An allow that matches
-  nothing fails.
 
 ## Module-owned tests
 
@@ -218,7 +217,10 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 
 - `test_*.py`, also in subfolders: pytest files. The basename is unique across the repository (prefix it with the module name). A helper
   next to the test is imported by name. Use `Path(__file__).parents[1]` for the module folder.
-- `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`mise run test:host`).
+- `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`pnpm test:host`), found recursively under `modules/`.
+- `*.device.test.ts`: device tests, registered in the module's `project.json` (`metadata.runtimeAcceptance`, files relative to the module
+  root) and run by the `runtime` project. `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `verify --conformance ID`
+  loads the module through the shared conformance suite.
 - `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them next to `tests/digikit/scenarios/`.
 - `module:check ID`, `verify` and `test:changed` select them. A change in the module selects its tests and those of the modules that depend
   on it; a change only in `tests/` runs python-tests (and `host` for `.ts`), no Rust or web step.
@@ -247,7 +249,7 @@ normal build prerequisites still apply. It requires `--only` and cannot be combi
 
 Named `--tests` and `--py-tests` files override selection for their respective steps and imply those
 steps. With `--only`, their steps must be requested; other requested steps keep their diff-derived
-scope. For example, `mise run verify -- --only runtime-fixture,stock --tests runtime/service-commands.test.ts`
+scope. For example, `mise run verify -- --only runtime-fixture,stock --tests modules/core/runtime/tests/service-commands.device.test.ts`
 runs that runtime file plus any stock files routed by the diff. `--head REV --explain` uses the same
 selection for a historical range, including with `--only`.
 
@@ -256,7 +258,7 @@ tier-quick, tier-sweep, python-tests, rust-tests, card, smoke, dt2-tone, dt2-che
 dt2-tier-sweep.
 
 - `host` runs `pnpm verify:host`. `web` depends on `host`.
-- `python-tests` runs ruff, ruff format, mypy, pathcheck, layercheck and `patchkit gen --check` (generated sources) as commands, then
+- `python-tests` runs ruff, ruff format, mypy, layercheck and `patchkit gen --check` (generated sources) as commands, then
   `tests/patchkit/test_pk_current.py` (module and port staleness), then the selected test files, one
   process per file. Selected files are the tests that reach a changed module in the import graph
   (`changed_tests.gate_tests`), the files changed, and the `PY_SUITES` the change triggers.
@@ -273,8 +275,7 @@ dt2-tier-sweep.
   Changes to `verify.py` and `verify_route.py` keep devtools owner tests, import-graph consumers,
   `PY_GATE` and static checks, without selecting unrelated production steps or the Rust workspace.
   Explicit `--full` retains full coverage. An unclassified `tools/device` module keeps its own tests,
-  transitive importers, scenario kinds mapped to those importers, and `test_verify.py`, which requires
-  its classification. This does not exempt deleted modules from conservative import-graph handling.
+  transitive importers and scenario kinds mapped to those importers. This does not exempt deleted modules from conservative import-graph handling.
   Framework modules (`FRAMEWORK` in `verify_route.py`) select all of `tests/patchkit` and `tests/digikit`.
 - `stock` runs the DT2 zero-DSP goldens. A changed case selects its file; configuration and shared
   session code select all files. It gives no audio coverage.
@@ -284,11 +285,18 @@ dt2-tier-sweep.
   runs every runtime file. Helpers inside stock/runtime/module acceptance directories use Vitest's
   import discovery to select importing test files, without collecting or running tests. Discovery
   errors, missing tools, unconsumed helpers and deleted files retain the whole owner suite.
+  A changed Python tool selects every runtime file only when it is in the shared preparation closure
+  (patchkit, stablebin, sharc_disasm) or is deleted while still named; otherwise it selects the records
+  whose own Python `sources` reach it by import (`verify_route.acceptance_record_closure`), or nothing.
+  A test that runs a Python tool lists it in its record's `sources`.
   It needs a two-core budget share and one fresh coupled daemon at a time.
-- `module-load` filters the production uploads to the changed module on both
-  devices. The uploads are the shipped modules that are `dynamic`, a service or `host`, and have a
-  `tests/regression/modules/<name>.test.ts` (`verify_route.RUNTIME_UPLOADS`, built from the manifests;
-  `acceptance.ts` scans them by the same rule). Shared ABI, protocol and unknown modules select all uploads.
+- `module-load` runs the shared conformance suite `tests/conformance/load.device.test.ts` (Vitest project
+  `conformance`) with `DIGI_CONFORMANCE_MODULES` set to the changed modules, on both devices, and packs
+  exactly those modules (plus `digikit/debug`, the log). The uploads are all shipped modules that are
+  `dynamic`, a service or `host` (`verify_route.RUNTIME_UPLOADS`, built from the manifests;
+  `tests/conformance/load.ts` scans them by the same rule). Shared ABI, protocol and unknown modules
+  select all uploads. `verify --conformance ID[,ID...]` runs only this step for the named modules and
+  fails on an id that is not an upload.
 - `rust-tests` runs the selected workspace packages with `cargo nextest` in release
   mode, without the desktop app crate, then selected standalone dkrt host tests
   with `cargo test --lib --offline` in the same job. Default/whole selection includes
@@ -310,13 +318,17 @@ Smoke is skipped when every changed path is:
 - UI-only (`UI_ONLY` in `verify.py`: `apps/desktop/ui/`, `apps/web/src/components/`,
   `apps/web/src/styles/`, `apps/web/tests/*.mjs`, `docs/`, `*.md`);
 - a host test file matched by `vitest.host.projects.json`; or
-- one of the four `SMOKE_EXEMPT` paths: `tools/devtools/agent_guard.py`,
-  `tools/devtools/pathcheck.py`, `tools/devtools/layercheck.py`, `.claude/settings.json`;
+- one of the three `SMOKE_EXEMPT` paths: `tools/devtools/agent_guard.py`,
+  `tools/devtools/layercheck.py`, `.claude/settings.json`;
 - a test-only path (`TEST_ONLY`: devtools tooling/tests, patchkit and digikit Python test files,
-  device acceptance test files, runtime acceptance TypeScript helpers and digikit scenario TOMLs),
+  module device tests `modules/**/tests/*.device.test.ts`, TypeScript helpers of `tests/regression/emulator`, `tests/regression/runtime` and `tests/conformance`, `tests/regression/project.json` and digikit
+  scenario TOMLs),
   or a crate-level Rust integration-test source under
   `packages/emulator/<crate>/tests/`;
-- a patchkit source in a `PATCHKIT_GROUPS` group that omits smoke (checks, flash, wasm, codegen).
+- a patchkit source in a `PATCHKIT_GROUPS` group that omits smoke (checks, flash, wasm, codegen);
+- a `tools/**/*.py` outside the import closure of `tools.patchkit.pk_harness` (function-local
+  imports and `-m tools.x` calls included), or a deleted one that no tracked file still names; or
+- a `pyproject.toml` change limited to `tool.mypy` and `tool.ruff`.
 
 These may be mixed. If every other changed path is in `digikit/pluck`, `digikit/freqshift` or
 `digikit/remote`, only the matrix cells that depend on those modules run (PLUCK keeps its DT2 and DN2
@@ -337,7 +349,6 @@ and a table named like the kind. Kinds:
 | Kind | Checks |
 | --- | --- |
 | `equiv` | Machine, parameter, page and voice rows of a boot with set S equal those of the image patchkit builds with S's static twin; PCM of a note equal, or pinned by `pcm_sha256` (Em approves a new value). |
-| `roundtrip` | Project save and load under module sets A, B, A: the slot is byte-identical but for one header stamp word. |
 | `upload` | Module upload over USB SysEx: `ops`, `cut`, `stock`, `playback`, `rust`, `screenshot`, `quick`. |
 | `menu` | Ticking a set in SETTINGS > DIGIKIT > MODULES and restarting loads the set; PCM equals the patched-in set. |
 | `safe`, `cut` | Safe mode after a module resets the machine; card states after a power cut. |
@@ -364,7 +375,15 @@ The `capacity` and `isolation` parts fill every runtime limit with synthetic mod
 ### Machine and FX conformance (`tests/modules`)
 
 `mise run module:check NAME [--device dt2|dn2]` (NAME: `<author/name>` or the name alone) selects the suite by
-module type and runs the module's own tests. The suite alone:
+module type and runs the module's own Python tests. A module with `tests/**/*.device.test.ts` files gets
+an uncached Nx `test-device` target (inferred by `tools/nx/modules.mjs`, read from the Nx graph); `module:check` runs it only after Python success, propagates a
+failure, and reports size/fit only after both stages pass. With no Python tests, the existing source
+check still precedes an owned target. Frequency shifter owns the exact existing TypeScript shifter
+suite on both devices, including when `--device` limits other checks. Its daemons and ready inputs
+use the existing harness resolution/overrides; only resolution holds a shared benchlock, released
+before the target. The target reuses the existing named verify workflow and does not run the broad
+gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
+fine-routing claim. This does not replace automatic gate routing. The suite alone:
 `DIGI_CONFORM_MODULES=<author/name> uv run python -m pytest tests/modules/test_machine_conformance.py -rf`.
 
 Machine rules (`pk_conform.py`, rig `tests/support/machine_rig.py`, workers `tests/support/conform_worker.py`),
@@ -416,6 +435,13 @@ every seventh scenario in routed `tier-quick`.
   `DIGI_JOBS`, `DIGI_TIER_JOBS`, `DIGI_PY_JOBS`, `DIGIKIT_JOBS`, `DIGI_CONFORM_JOBS`, `DIGI_PK_JOBS`,
   `DIGIKIT_PART_JOBS=1`, node `--test-concurrency`. A pool variable you set replaces the share.
   One coupled emulator process counts as 2 cores.
+- `runtime-fixture` and `module-load` run their files in parallel, one coupled daemon (2 cores) per
+  Vitest worker. The step asks for 2 cores x min(4, selected files) and starts on any whole number of
+  daemons; the gate sets `REGRESSION_JOBS` to the daemon count. `DIGI_RUNTIME_JOBS=N` forces the count
+  (1 is the serial run). A no-progress watchdog (`tests/regression/watchdog.ts`) closes a daemon whose
+  DSP frames, main loop hits and audio frames stay the same for `DIGI_NO_PROGRESS_MS` (default 120000)
+  of wall time, so the test fails at once; a paused daemon without a job is idle and not counted. Step
+  logs are live in the run dir (`out/runs/verify/<id>/<step>.log`); the START line names the path.
 - Every python-tests file is its own job of 2 cores, queued longest first by recent timings
   (`tools/devtools/verify_times.py`).
 - The seven audited devtools files in `changed_tests.FAST_PYTHON_TESTS` need no build barrier.
@@ -423,7 +449,7 @@ every seventh scenario in routed `tier-quick`.
   when the plan builds daemons. The audit is shared with fast preflight; new Python files are not
   presumed safe to overlap builds.
 - Builds run in a chain: `build`, `build-daemons`, `build-dt2` (`tools/devtools/verify_build.py`).
-  Test steps use immutable copies of the daemons (`tools/devtools/stablebin.py`) as `DIGI_EMUD_<DEV>`.
+  Test steps use the immutable daemons of the daemon store (`<git common dir>/emud-cache`) as `DIGI_EMUD_<DEV>`.
 - `verify` runs at nice 10 (`--foreground` keeps the priority). `--explain` prints the worker plan.
 
 ## Render cache
@@ -446,6 +472,37 @@ Two guards protect against a stale hit:
 
 Use `verify --no-cache` for release and publication gates.
 
+## Nx cache
+
+`pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The cache is
+per worktree: Nx 22's database cache does not restore entries that another worktree recorded. A hit
+replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
+
+A target may be cached only when `uv run python -m tools.devtools.nx_input_audit PROJECT:TARGET`
+passes. The audit runs the command with `tools/devtools/fs_trace.mjs` preloaded and compares every
+file read with the expanded inputs. Run it after changing the inputs or the command of a cached
+target. `--all-cached` audits every cached target; `--json FILE` keeps the full result.
+
+### Daemon store
+
+`verify_build daemons` (the gate's `build-daemons` node) keeps the coupled `digi-emud` daemons in
+`<git common dir>/emud-cache/<dev>/<key>/` (`digi-emud`, `key.txt`, `depfile.d`). All worktrees of the
+clone share it and it is never committed. A worktree with the same key restores the daemon and builds
+nothing; a stored file is never rewritten. The last 4 used keys per device stay.
+
+The key is printed by `uv run python -m tools.devtools.emud_key key --device DEV`: a sha256 over the
+content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file of the generated core
+directory (resolved as `pk_emud_pgo` does), the PGO profile, `rustc -vV` of the pinned toolchain, and the
+build flags. A device without its stock firmware or ready directory is skipped.
+
+Each build audits itself: `verify_build` compares the dependency file cargo wrote (`digi-emud.d`) with
+the key. A dependency that the key does not cover (and that is not under the cargo target dir) fails the
+build, so nothing is stored with an incomplete key. Add the missing path to `SOURCE_GLOBS` in
+`tools/devtools/emud_key.py`. `uv run python -m tools.devtools.emud_key audit --device DEV --depfile FILE`
+repeats the check on a kept file.
+
+To clear the Nx cache: `pnpm nx:pilot reset`.
+
 ## PCM pins
 
 PCM pins in `tests/scenarios/*.json` change only with Em's approval. `tests/sharc/integration/test_sharc_golden.py`
@@ -463,7 +520,7 @@ Type checks do not show a misaligned row. `mise run ui:preview` serves the deskt
 The Firmware page (`?page=firmware&fwdev=dt2|dn2&fwstate=stock|runtime|noreply|none`) runs the real patchkit checks (`patchkit.wasm`) over a fake
 device that restarts after the last message. `node tools/devtools/firmware_shots.mjs --app desktop|web [--url URL] [--out DIR] [scene ...]` takes its
 pictures for the workbench (this preview) and for the site (`astro dev` or `astro preview`, with a fake Web MIDI port); it needs the stock files in
-`firmware/` and `mise run wasm:patchkit` and `web:build` (or the site's `gen-modules`) for `patchkit.wasm` and the module bundle.
+`firmware/` and `mise run wasm:patchkit` and `pnpm build` (or the site's `gen-modules`) for `patchkit.wasm` and the module bundle.
 The same flash against an emulated device at OS UPGRADE: `os_upgrade_rig.py ... --exec` runs `apps/web/tests/firmware-emulator.test.ts` (finding 75).
 
 To test pages against a running emulator, `uv run python -m tools.devtools.emu_live --device dn2 --run-dir DIR`

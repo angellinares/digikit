@@ -4,8 +4,8 @@
     uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2] [--trace]      (mise run module:check NAME)
 
 NAME is a module id (`<author/name>`) or its last part (`<name>`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
-suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs all of them; the exit code is pytest's.
-Own tests may build or launch an emulator. A service/raw module with no own tests has its objects checked against their sources, then gets the size and fit lines; it returns success. This command does not prove every module loads in patched firmware.
+suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. A module-owned Nx `test-device` target then runs its declared TypeScript device acceptance; any failing stage stops the check before size/fit.
+Own tests may build or launch an emulator. A service/raw module with no Python tests has its objects checked against their sources, then runs its owned device target if present. Size and fit follow only after both stages pass. This command does not prove every module loads in patched firmware.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+from tools import python_env  # noqa: E402
 from tools.patchkit import modroots, pk_conform  # noqa: E402
 
 CONFORMANCE = "tests/modules/test_machine_conformance.py"
@@ -71,6 +72,39 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
         env["DIGIKIT_SCENARIOS"] = ",".join(scen)
         env["DIGIKIT_TIER"] = "full"
     return paths, env
+
+
+def own_device_target(mid: str) -> str | None:
+    """A module's own Nx test-device target (inferred by tools/nx/modules.mjs from its *.device.test.ts files)
+    is its sole TypeScript acceptance declaration."""
+    from tools.devtools import verify_route
+
+    node = verify_route.nx_graph()["nodes"].get(mid)
+    if node is None or "test-device" not in node["data"].get("targets", {}):
+        return None
+    return f"{mid}:test-device"
+
+
+def run_device_target(mid: str, target: str) -> int:
+    """Resolve the legacy both-device inputs, then let the owned Nx target run its existing preparation."""
+    from tools.devtools import benchlock
+    from tools.patchkit import pk_harness
+
+    binaries = {}
+    # The plain daemon build needs the same shared protection as the legacy harness path.
+    # Nested shared resolution is supported; release this span before the target owns its work.
+    with benchlock.hold("shared", f"module:check {mid} daemon resolution"):
+        for device, version in (("dt2", "1.17"), ("dn2", "1.12")):
+            syx, _ready = pk_harness.firmware_inputs(pk_harness.Cell(device, version))
+            binaries[f"DIGI_EMUD_{device.upper()}"] = str(
+                pk_harness.daemon_binary(device, syx, pgo=None)
+            )
+    print(f"{mid}: device acceptance {target} (DT2 and DN2)", flush=True)
+    return subprocess.run(
+        ["pnpm", "exec", "nx", "run", target],
+        cwd=ROOT,
+        env=python_env({**os.environ, **binaries}),
+    ).returncode
 
 
 def device_caps(dev: str) -> dict[str, dict[str, int]]:
@@ -183,6 +217,7 @@ def main() -> int:
     a = ap.parse_args()
     mid = resolve(a.name)
     paths, env = plan(mid, a.device)
+    target = own_device_target(mid)
     kind = (
         "machine module"
         if CONFORMANCE in paths
@@ -200,24 +235,29 @@ def main() -> int:
         except patchkit.BuildError as e:
             print(f"{mid}: {e}", file=sys.stderr)
             return 1
-        for line in size_lines(mid, devices, a.trace):
-            print(line, flush=True)
-        return 0
-    cmd = [
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        "-p",
-        "no:cacheprovider",
-        "-rf",
-        *paths,
-    ]
-    rc = subprocess.run(cmd, cwd=ROOT, env={**os.environ, **env}).returncode
-    if rc == 0:
-        for line in size_lines(mid, devices, a.trace):
-            print(line, flush=True)
-    return rc
+    else:
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-rf",
+            *paths,
+        ]
+        rc = subprocess.run(
+            cmd, cwd=ROOT, env=python_env({**os.environ, **env})
+        ).returncode
+        if rc:
+            return rc
+    if target:
+        rc = run_device_target(mid, target)
+        if rc:
+            return rc
+    for line in size_lines(mid, devices, a.trace):
+        print(line, flush=True)
+    return 0
 
 
 if __name__ == "__main__":

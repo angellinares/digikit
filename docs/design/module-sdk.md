@@ -554,7 +554,7 @@ a step that would move a pin stops and asks.
 | 4. Runtime table, limits, state placement | section 6; DSP section v3 | `table_check` unit test; `tests/digikit` boot scenarios (`card-safety`, `crash-capture`, `safe-fault`, `debug-*`) unchanged results; a new test that fills the machine rows, the DSP area and the module table and expects the named error codes |
 | 5. Manifest v2 and profile fields | section 7 | pluck rebuilt from the v2 manifest produces rows equal to today's `plan.json` rows for the same firmware (the test of finding 27, `27-module-schema.md:23-40`, with the new inputs); `patchkit gen --check` |
 | 6. Build-time checks | section 8 | each check has a negative fixture that must fail with the named message (as `pk_conform.NEGATIVE`, `:58-61`) |
-| 7. Fixtures | `dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-fault-late`, `dyn-crash`, `c-demo`, `rust-demo`, `dn2-*`, `twin-*`, `registry-demo`, `dyn-demo`, `dyn-params`, `dyn-sine-dn2` move to `tests/fixtures/modules/`; scenarios and `types.toml` keys are renamed | the scenarios' PCM and log results unchanged; `tools/devtools/pathcheck.py` clean |
+| 7. Fixtures | `dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-fault-late`, `dyn-crash`, `c-demo`, `rust-demo`, `dn2-*`, `twin-*`, `registry-demo`, `dyn-demo`, `dyn-params`, `dyn-sine-dn2` move to `tests/fixtures/modules/`; scenarios and `types.toml` keys are renamed | the scenarios' PCM and log results unchanged |
 | 8. Retire patched-in content | delete `digikit/pluck` as patched-in and `test/dyn-pluck`; one `digikit/pluck`, always run time; same for `xslice` if it fits a contract (`master-gain` is deleted) | see 10.3 |
 | 9. Tooling and guide | `module:new`, `module:check` extensions, Target, the guide | `module:new machine demo` then `module:check demo` passes on both devices, in CI |
 
@@ -683,7 +683,7 @@ A module that needs a SysEx command of its own (the first is `digikit/remote`: k
 The handler is `int handler(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)`: it returns the number of reply bytes written to `out`, or a negative status. It runs in the firmware's
 MIDI task, so it is short and never waits. The ranges a module may take are reserved in `sdk/sdk.toml` `[protocol.ranges]`; a request outside them, over another module's, or empty
 returns `E_CMD_RANGE` (-64). The ranges are released when the module's `fini` has run. `docs/design/digikit-upload.md` ("Service commands") has the wire side; the fixture
-`test/svc-echo` and `tests/regression/runtime/service-commands.ts` show the round trip; the acceptance cases run with full verification, explicit `--only runtime-fixture`, or `mise run test:runtime -- service-commands` (see `tests/regression/README.md` for prerequisites).
+`test/svc-echo` and `modules/core/runtime/tests/service-commands.device.test.ts` show the round trip; the acceptance cases run with full verification, explicit `--only runtime-fixture`, or `mise run test:runtime -- service-commands` (see `tests/regression/README.md` for prerequisites).
 
 ### 11.7 The input adapter (`core/input`, runtime 0.2.5)
 

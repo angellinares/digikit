@@ -3,7 +3,6 @@
 
 uv run python -m tools.patchkit.pk_digikit_fxsend added-factor BASE.wav OUT.wav
 uv run python -m tools.patchkit.pk_digikit_fxsend pcm FILE.wav
-uv run python -m tools.patchkit.pk_digikit_fxsend slot-bus --device dn2 --firmware 1.12
 """
 
 from __future__ import annotations
@@ -59,22 +58,6 @@ def _read_pcm(path: Path) -> np.ndarray:
     return samples
 
 
-def slot_bus_address(device: str, firmware: str) -> int:
-    """Read the current DN2 send-slot bus from its named port anchor."""
-    from tools.patchkit.pk_dsplink import plan_anchors
-
-    if (device, firmware) != ("dn2", "1.12"):
-        raise ValueError("slot-bus supports only dn2 firmware 1.12")
-    name = "dsp.fx.value.send.slot_bus"
-    anchors = [a for a in plan_anchors(device, firmware) if a.get("name") == name]
-    if len(anchors) != 1:
-        raise ValueError(f"expected exactly one {name} anchor, found {len(anchors)}")
-    address = anchors[0].get("addr")
-    if type(address) is not int or address <= 0:
-        raise ValueError(f"{name}: invalid address")
-    return address
-
-
 def main(argv: list[str] | None = None) -> int:
     """Small JSON analysis interface for host-owned FX send scenarios."""
     parser = argparse.ArgumentParser(description=main.__doc__)
@@ -84,15 +67,10 @@ def main(argv: list[str] | None = None) -> int:
     factor.add_argument("out", type=Path)
     pcm = commands.add_parser("pcm")
     pcm.add_argument("file", type=Path)
-    slot = commands.add_parser("slot-bus")
-    slot.add_argument("--device", required=True)
-    slot.add_argument("--firmware", required=True)
     args = parser.parse_args(argv)
     result: dict[str, int | float | bool]
     try:
-        if args.command == "slot-bus":
-            result = {"address": slot_bus_address(args.device, args.firmware)}
-        elif args.command == "pcm":
+        if args.command == "pcm":
             samples = _read_pcm(args.file)
             result = {
                 "samples": len(samples),

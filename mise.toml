@@ -1,5 +1,5 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
-# Task groups: setup, workbench and emu:*, web:*, scenario:*, verify:*, test:*, lint:*/fmt:*, perf:*, gen:*,
+# Task groups: setup, workbench and emu:*, web:*, scenario:*, verify:*, test:*, lint:*, perf:*, gen:*,
 # dev:*, module:*, patch:*, dk:*. `mise run TASK -- --help` prints a tool's options.
 
 [settings]
@@ -48,22 +48,6 @@ description = "Build a device's ready snapshot from the .syx alone: mise run emu
 [tasks."ui:preview"]
 run = "pnpm --filter @digi/desktop exec vite --config ui/preview/vite.config.ts"
 description = "Serve the desktop UI pages in a browser (http://127.0.0.1:5199/) over a fake device and a fake samples folder; the state is in the address (?dev=ok|empty|noreply|error|slow&folder=files|empty|none&speed=3&mode=modules|samples&mkdir=0|1); screenshots: node tools/devtools/ui_shots.mjs"
-
-[tasks.web]
-run = "pnpm dev"
-description = "Build the browser core (WASM) and serve the web panel (astro dev)"
-
-[tasks."web:build"]
-run = "pnpm build"
-description = "Build the browser core (WASM) and the static web panel (astro build, with the firmware guard)"
-
-[tasks."web:check"]
-run = "pnpm --filter @digi/web check"
-description = "Type-check the web panel (astro check)"
-
-[tasks."web:test"]
-run = "pnpm --filter @digi/web test"
-description = "Run the web Node suites (node --test)"
 
 [tasks."web:wasm"]
 run = "uv run python -m tools.emulator.native_wasm"
@@ -125,15 +109,11 @@ description = "Check the module layering (docs/ARCHITECTURE.md): roles match fol
 
 [tasks."test:changed"]
 run = "uv run python -m tools.devtools.changed_tests"
-description = "Fast preflight: changed-Python lint/types, pathcheck, audited tooling units, related host tests and types; no builds or devices. --base/--head/--files/--deep/--explain"
+description = "Fast preflight: changed-Python lint/types, audited tooling units, related host tests and types; no builds or devices. --base/--head/--files/--deep/--explain"
 
 [tasks.verify]
 run = "uv run python -m tools.devtools.verify"
 description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes use owner checks"
-
-[tasks."verify:host"]
-run = "pnpm verify:host"
-description = "Host lint, format, Vitest and type checks (no device)"
 
 [tasks."verify:full"]
 run = "uv run python -m tools.devtools.verify --full"
@@ -141,9 +121,9 @@ description = "Full gate: every runtime acceptance file, 191 DN2 FX assertions a
 
 # --- tests ---
 
-[tasks."test:host"]
-run = "pnpm test:host"
-description = "Run the host-only Vitest projects with the native test runner; no native/WASM build or device checks"
+[tasks."clean:runs"]
+run = "uv run python -m tools.devtools.clean_runs"
+description = "Dry run: list old digi-* run directories in the temp dir and orphan digi-emud processes; -- --yes deletes the directories (never kills), -- --hours N sets the minimum age (default 24)"
 
 [tasks."test:runtime:unit"]
 run = "uv run python -m tools.devtools.benchlock run --shared --label runtime-unit -- uv run python -m tools.devtools.rust_ws test --packages dkrt"
@@ -170,9 +150,9 @@ depends = ["build:plusdrive"]
 run = "pnpm --filter @digi/regression test:runtime"
 description = "Coupled runtime acceptance (also relevant-change gate owner), serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries; plusdrive is built automatically and the DT2 card samples come from out/runs/patchkit/samples; no implicit emulator build; accepts Vitest filters (for example -- service-commands)"
 
-[tasks."test:modules"]
-run = "pnpm --filter @digi/regression test:modules"
-description = "Serial coupled module-load acceptance (also relevant-change gate owner): three production uploads on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
+[tasks."test:conformance"]
+run = "pnpm --filter @digi/regression test:conformance"
+description = "Serial coupled module-load conformance (also relevant-change gate owner): the shared suite tests/conformance/load.device.test.ts loads the modules named in DIGI_CONFORMANCE_MODULES (empty: all eligible) on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
 
 [tasks."test:quick"]
 run = [
@@ -189,7 +169,7 @@ run = [
   "pnpm --filter @digi/web test",
   "uv run python -m tools.emulator.coupled scenario --all",
 ]
-description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock, test:runtime, test:modules)"
+description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock, test:runtime, test:conformance)"
 
 [tasks."test:slow"]
 run = [
@@ -211,24 +191,13 @@ description = "ruff check and ruff format --check on the files of [tool.ruff].in
 run = "uv run --no-project --python pypy3.11 --with pytest --with networkx python -m pytest -q tests/sharc/semantics/test_sharc_compute_mr.py tests/sharc/semantics/test_sharc_compute_table.py tests/sharc/trace/test_sharc_trace_control.py tests/sharc/trace/test_sharc_trace_memory.py tests/sharc/trace/test_sharc_trace_ureg.py tests/sharc/trace/test_sharc_trace_branches.py tests/sharc/trace/test_sharc_trace_addressing.py tests/sharc/trace/test_sharc_trace_cli.py tests/sharc/trace/test_sharc_trace_flags.py tests/sharc/trace/test_sharc_trace_float.py tests/sharc/trace/test_sharc_trace_realblob.py tests/sharc/trace/test_sharc_trace_mult.py tests/sharc/trace/test_sharc_trace_alu.py tests/sharc/trace/test_sharc_trace_forms.py tests/sharc/trace/test_sharc_trace_simd.py tests/sharc/semantics/test_sharc_denormal.py tests/sharc/semantics/test_sharc_run.py tests/sharc/analysis/test_sharc_contract.py"
 description = "The SHARC core's tests under PyPy 3.11 (slow; needs uv and a PyPy download)"
 
-[tasks."lint:web"]
-run = "pnpm lint"
-description = "Lint the JS/TS workspaces (oxlint with eslint-plugin-solid)"
-
-[tasks."fmt:check"]
-run = "pnpm fmt:check"
-description = "Check JS/TS/Astro/CSS formatting (Prettier)"
-
-[tasks.fmt]
-run = "pnpm fmt"
-description = "Format JS/TS/Astro/CSS in place (Prettier)"
-
 [tasks."lint:rust"]
 run = "uv run python -m tools.devtools.rust_ws fmt"
 description = "cargo fmt --check on the crates that are already clean (CLEAN_CRATES in tools/devtools/rust_ws.py)"
 
 [tasks.lint]
-depends = ["lint:py", "lint:web", "fmt:check", "lint:rust"]
+depends = ["lint:py", "lint:rust"]
+run = ["pnpm lint", "pnpm fmt:check"]
 description = "All linters"
 
 # --- performance ---
@@ -323,7 +292,7 @@ description = "Compile module sources to objects (core/* modules: build/*.dko.js
 
 [tasks."module:check"]
 run = "uv run python -m tools.patchkit.pk_modcheck"
-description = "Check one module: module:check ID [--device dt2|dn2] [--trace]. Machine/effect conformance plus own tests in one pytest process; own tests may build or launch an emulator. Service/raw modules without tests can succeed with nothing to run; not an all-module patched load proof. After passing tests, reports packed size/fit per device (or why it is not packed)"
+description = "Check one module: module:check ID [--device dt2|dn2] [--trace]. Machine/effect conformance and own Python tests, then any module-owned Nx test-device target; may build or emulate. Modules without tests retain source/size checks; not an all-module patched load proof. Size/fit follows only after all owned stages pass"
 
 [tasks."module:audit"]
 run = "uv run python -m tools.patchkit.pk_modaudit"

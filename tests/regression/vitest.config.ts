@@ -1,23 +1,27 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// Coupled daemons take two cores; admission belongs to the caller's shared budget.
-// Stock audio (stock, fx-*) is distinct from patched-daemon runtime and modules.
+// Each worker runs one coupled daemon (two cores); the gate sets REGRESSION_JOBS from its core share.
+// stock, runtime and conformance files run in parallel up to maxWorkers; fx-* stay serial.
 // Vitest 3.2 reads only singleFork per project; worker caps are root-level.
 const serial = { poolOptions: { forks: { singleFork: true } } };
 
-// A module's own tests (modules/<group>/<name>/tests) sit outside this package, so its @digi imports are mapped here.
-const pkg = (name: string) => fileURLToPath(new URL(`../../packages/${name}/src`, import.meta.url));
-const moduleAlias = [
-  { find: /^@digi\/dk-session\/(.*)$/, replacement: `${pkg('dk-session')}/$1.ts` },
-  { find: /^@digi\/test-support$/, replacement: `${pkg('test-support')}/index.ts` },
-  { find: /^@digi\/control-client$/, replacement: `${pkg('control-client')}/index.ts` },
+const at = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
+// Files under modules/ and tests/conformance/ have no node_modules: resolve the workspace packages here.
+const alias = [
+  { find: /^@digi\/regression\/(.*)$/, replacement: `${at('.').replace(/\/$/, '')}/$1` },
+  { find: /^@digi\/test-support$/, replacement: at('../../packages/test-support/src/index.ts') },
+  { find: /^@digi\/control-client$/, replacement: at('../../packages/control-client/src/index.ts') },
+  { find: /^@digi\/dk-session$/, replacement: at('../../packages/dk-session/src/index.ts') },
+  { find: /^@digi\/dk-session\/(.*)$/, replacement: `${at('../../packages/dk-session/src')}/$1.ts` },
 ];
 
 export default defineConfig({
-  root: fileURLToPath(new URL('.', import.meta.url)),
+  root: at('.'),
+  resolve: { alias },
   test: {
-    // Caps the shared pool; only stock runs files in parallel.
+    // Caps the shared pool: workers at once in stock, runtime and conformance.
     maxWorkers: Number(process.env.REGRESSION_JOBS ?? 4),
     // REGRESSION_JUNIT_FILE (verify's failed-unit record) names the report; REGRESSION_JUNIT=1 alone keeps the default.
     reporters:
@@ -34,6 +38,7 @@ export default defineConfig({
         : ['default'],
     projects: [
       {
+        extends: true,
         test: {
           name: 'stock',
           include: ['dt2/**/*.test.ts'],
@@ -43,37 +48,39 @@ export default defineConfig({
         },
       },
       {
+        extends: true,
         test: {
           name: 'runtime',
+          include: ['emulator/**/*.test.ts', '../../modules/**/tests/**/*.device.test.ts'],
+          pool: 'forks',
+          testTimeout: 300_000,
+          hookTimeout: 150_000,
+        },
+      },
+      {
+        // Named sampler and DSP proofs (tests/regression/runtime/*.test.ts). Not part of `runtime`: run one by name,
+        // `pnpm exec vitest run --project proofs runtime/FILE.test.ts`. New device tests live in their module (`*.device.test.ts`).
+        extends: true,
+        test: {
+          name: 'proofs',
           include: ['runtime/**/*.test.ts'],
           pool: 'forks',
-          ...serial,
           testTimeout: 300_000,
           hookTimeout: 150_000,
         },
       },
       {
-        resolve: { alias: moduleAlias },
+        extends: true,
         test: {
-          name: 'module-own',
-          include: ['../../modules/*/*/tests/**/*.test.ts'],
+          name: 'conformance',
+          include: ['../conformance/**/*.device.test.ts'],
           pool: 'forks',
-          ...serial,
           testTimeout: 300_000,
           hookTimeout: 150_000,
         },
       },
       {
-        test: {
-          name: 'modules',
-          include: ['modules/**/*.test.ts'],
-          pool: 'forks',
-          ...serial,
-          testTimeout: 300_000,
-          hookTimeout: 150_000,
-        },
-      },
-      {
+        extends: true,
         test: {
           name: 'fx-dn2',
           include: ['scenarios/dn2-*.test.ts'],
@@ -84,6 +91,7 @@ export default defineConfig({
         },
       },
       {
+        extends: true,
         test: {
           name: 'fx-dt2',
           include: ['scenarios/dt2-fx.test.ts'],

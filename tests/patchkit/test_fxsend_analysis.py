@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 from tools.patchkit import pk_digikit_fxsend as fxsend
-from tools.patchkit import pk_dsplink
 
 
 def write_wav(path: Path, samples: np.ndarray) -> None:
@@ -94,54 +93,3 @@ def test_added_factor_rejects_silent_reference_fit_window(tmp_path, capsys):
     output = capsys.readouterr()
     assert not output.out
     assert "non-silent reference fit window" in output.err
-
-
-def write_port(root: Path, anchors: str) -> None:
-    ports = root / "devices" / "ports"
-    ports.mkdir(parents=True)
-    (ports / "dn2-1.12.toml").write_text(anchors)
-
-
-def test_slot_bus_reads_named_anchor_from_exact_port(tmp_path, monkeypatch, capsys):
-    write_port(
-        tmp_path,
-        """
-[[anchor]]
-name = "dsp.fx.value.send.return_bus"
-addr = 1234
-[[anchor]]
-name = "dsp.fx.value.send.slot_bus"
-addr = 5678
-""",
-    )
-    monkeypatch.setattr(pk_dsplink, "ROOT", tmp_path)
-    assert fxsend.main(["slot-bus", "--device", "dn2", "--firmware", "1.12"]) == 0
-    assert json.loads(capsys.readouterr().out) == {"address": 5678}
-
-
-@pytest.mark.parametrize("count", [0, 2])
-def test_slot_bus_rejects_missing_or_ambiguous_anchor(
-    tmp_path, monkeypatch, capsys, count
-):
-    write_port(
-        tmp_path,
-        count
-        * """
-[[anchor]]
-name = "dsp.fx.value.send.slot_bus"
-addr = 5678
-""",
-    )
-    monkeypatch.setattr(pk_dsplink, "ROOT", tmp_path)
-    assert fxsend.main(["slot-bus", "--device", "dn2", "--firmware", "1.12"]) == 1
-    output = capsys.readouterr()
-    assert not output.out
-    assert output.err
-
-
-@pytest.mark.parametrize("device,firmware", [("dt2", "1.17"), ("dn2", "1.11")])
-def test_slot_bus_rejects_unsupported_target(device, firmware, capsys):
-    assert fxsend.main(["slot-bus", "--device", device, "--firmware", firmware]) == 1
-    output = capsys.readouterr()
-    assert not output.out
-    assert "supports only dn2 firmware 1.12" in output.err

@@ -76,367 +76,132 @@ def about_rows(rig: Any, plan: Any) -> list[str]:
 # ---- card -------------------------------------------------------------------------------------------------------------------
 
 
-def run_card_small(c: Any) -> None:
-    """A card smaller than the store area (the emulator's `small` identity reports 0x3B0000 sectors, below both devices' areas): the runtime
-    has no store (state too small), nothing is read or written there, uploads answer E_NOSTORE, the log says so, and the boot goes on."""
+def run_card_torn(c: Any) -> None:
+    """A power cut inside one sector write of the first writes to a blank card (finding 46, "Residual risk"): the sector holds the start of
+    the new bytes and the blank tail. The claim writes header B, then header A. The check reads the first BLANK_SECTORS of the area for
+    blankness, so header B and the records at the end of the area are not part of it."""
     img = c.image_for(B.RT, "run")
-    card = c.work / "small-card.img"
-    card.write_bytes(
-        bytes(1 << 20)
-    )  # blank; the identity, not the file, sets the capacity
-    mod = "modules/x.dkm"
-    with c.rig(
-        img, card, "small", {"DIGI_CARD_IDENTITY": "small"}, cf_only=True
-    ) as rig:
-        ci = rig.card_info()
-        c.check(
-            "small card: the check says too small; nothing refused, claimed or written",
-            ci["state_name"] == "too small"
-            and (ci["refused"], ci["claims"], ci["writes"]) == (0, 0, 0),
-            str(ci),
-        )
-        b = rig.boot_info()
-        c.check(
-            "small card: the boot goes on (no module selected, no safe mode, UI loop reached)",
-            b["safe"] == 0 and b["count"] == 0 and b["ui_reached"] == 1,
-            str(b),
-        )
-        evs = events(rig)
-        chk = [e for e in evs if e[2] == L.K["CARD_CHECK"]]
-        c.check(
-            "small card: the log has one error event for the check (state too small)",
-            len(chk) == 1 and chk[0][3] & 1 and chk[0][4][0] == 5,
-            str(chk),
-        )
-        up = uploader(rig)
-        info = up.info()
-        ops = [
-            up.request(
-                DK.CMD_BEGIN, mod.encode() + b"\0" + struct.pack(">I", 10) + bytes(32)
-            )[0],
-            up.request(DK.CMD_DELETE, mod.encode() + b"\0")[0],
-            up.request(DK.CMD_MKDIR, b"samples\0")[0],
-            up.request(DK.CMD_CLEAR, struct.pack(">I", DK.CLEAR_MAGIC))[0],
-            up.request(DK.CMD_LIST, struct.pack(">I", 0))[0],
-        ]
-        c.check(
-            "small card: INFO answers; BEGIN, DELETE, MKDIR, CLEAR and LIST answer E_NOSTORE",
-            ops == [E_NOSTORE] * 5,
-            f"{info} {ops}",
-        )
-        cap = up.capacity()
-        c.check(
-            "small card: CAPACITY reports a store of 0 KiB",
-            cap["STORE"]["limit"] == 0 and cap["STORE"]["used"] == 0,
-            str(cap.get("STORE")),
-        )
-        r_sel = rig.set_selection([mod])
-        r_probe = rig.probe_write(c.store.first + 5, 512)
-        ci = rig.card_info()
-        c.check(
-            "small card: a selection and a write in the area are refused (E_CARD_RO), counted as too small",
-            (r_sel, r_probe) == (B.E_CARD_RO, B.E_CARD_RO) and ci["writes"] == 0,
-            f"{(r_sel, r_probe)} {ci}",
-        )
-        c.check(
-            "small card: the runtime wrote nothing in the store range",
-            rig.card_store_writes() == [],
-            str(rig.card_store_writes()),
-        )
-        c.done(rig)
-    # the stock firmware formats this blank card (writes below the store area), so the store-range check above is the one that counts
-    t = c.totals
-    c.check(
-        "write-watch on cf.expansion: no stray write; flush check: no hit",
-        t["write_events"] == 0 and t["emulators"] > 0 and t["flush_hits"] == 0,
-        str(t),
-    )
-
-
-def run_card(c: Any) -> None:
-    if c.table().get("part") == "small":
-        return run_card_small(c)
-    from tools.coldfire import digikit_menu_proof as D
-    from tools.patchkit.pk_digikit_project import card_after
-
-    img = c.image_for(B.RT, "run")
-    menu_img = c.image_for(f"{B.RT},core/digikit-menu", "menu")
-    FIRST, END = c.store.first, c.store.end  # the store area of this device
-    pat = bytes(
-        (i * 7 + 3) & 0xFF for i in range(512)
-    )  # a sector that is neither all 0x00 nor all 0xFF
-    # the cards without a store come first: the card folder is shared, and packing a module puts a store in every card built after it
-    blank = c.card(None)
-    stray = 100  # relative sector of the foreign bytes
-    foreign = c.card(None, foreign={FIRST + stray: pat})
-    # a valid selection record and nothing else in the range makes the area ours; with blank header sectors it is an empty store, with foreign
-    # bytes in both header sectors it is not (these two come before the first pack, like the cards above)
-    selonly = c.card([])
-    selforeign = c.card([], foreign={FIRST: pat, c.store.header_b: pat})
+    st = c.store
+    # the claim's header (card.rs `claim`): an empty store, seq 1
+    claim = bytearray(512)
+    claim[0:4] = b"DKST"
+    struct.pack_into(">IIIIIIII", claim, 4, 3, 0, 0, 1, 0, 1, 1, st.sectors)
+    struct.pack_into(">I", claim, 508, zlib.crc32(bytes(claim[:508])) & 0xFFFFFFFF)
+    claim = bytes(claim)
+    torn = claim[:256] + bytes(256)  # the cut came after half the sector
+    pat = bytes((i * 7 + 3) & 0xFF for i in range(512))
+    # every card is built before a module is packed (see run_card)
+    torn_b = c.card(None, foreign={st.header_b: torn})
+    torn_a = c.card(None, foreign={st.first: torn, st.header_b: claim})
+    torn_a_only = c.card(None, foreign={st.first: torn})
+    torn_sel = c.card(None, foreign={st.sel_a: pat[:256] + bytes(256)})
+    stray_b = c.card(None, foreign={st.header_b: pat})
     mod = c.pack("test/c-demo", "a.dkm")
-    ours = c.card([mod])
-    plan = D.Plan(menu_img.plan)
 
-    def part_blank() -> None:
-        with c.rig(img, blank, "blank", cf_only=True) as rig:
+    def upload(rig: Any, name: str) -> tuple[int, list[str]]:
+        """-> the upload's status and the listing; a failed listing is reported in the list, so the
+        check that follows shows the card state and the status beside it"""
+        up = uploader(rig)
+        s = U.put_status(up, f"modules/{name}.dkm", U.blob(3_000, 31))
+        try:
+            return s, U.device_ls(up)
+        except Exception as exc:  # noqa: BLE001 - reported by the check, not raised
+            return s, [f"ls failed: {exc}"]
+
+    def part_torn_b() -> None:
+        # The boot's blank check does not read header B, so the card reads blank. The upload's store check does (upload.rs `state`): a header
+        # sector with bytes that are not a store header is somebody's data, so every write is refused. A CLEAR (which the refusal's text says
+        # still works) writes an empty store, and the next upload commits.
+        with c.rig(img, torn_b, "torn-b", cf_only=True) as rig:
             ci = rig.card_info()
+            up = uploader(rig)
+            s = U.put_status(up, "modules/b.dkm", U.blob(3_000, 31))
             c.check(
-                "blank card: the check finds the range blank; nothing refused, claimed or written",
+                "header B torn by the claim's first write, header A blank: the boot calls the card blank, an upload answers E_NOSTORE and "
+                "writes nothing in the store range",
                 ci["state_name"] == "blank"
-                and ci["first_nonblank"] == 0xFFFFFFFF
-                and (ci["refused"], ci["claims"], ci["writes"]) == (0, 0, 0),
-                str(ci),
+                and s == E_NOSTORE
+                and rig.card_store_writes() == [],
+                f"{ci['state_name']} {s} {rig.card_store_writes()}",
             )
-            bad = [
-                (FIRST - 1, 512),
-                (END, 512),
-                (END - 1, 1024),
-                (FIRST, 100),
-                (0, 512),
-                (FIRST, 0),
-                (0xFFFFFFFF, 512),
-                (FIRST - 1, 1024),
-            ]
-            res = [rig.probe_write(s, n) for s, n in bad]
+            cleared = up.request(DK.CMD_CLEAR, struct.pack(">I", DK.CLEAR_MAGIC))[0]
+            s2, files = upload(rig, "b")
             c.check(
-                "blank card: the card-write function refuses every write outside the store range (E_RANGE), whatever its size",
-                res == [B.E_RANGE] * len(bad),
-                str(res),
-            )
-            ci = rig.card_info()
-            c.check(
-                "blank card: the refusals are counted and nothing was written",
-                ci["refused"] == len(bad)
-                and ci["refused_range"] == len(bad)
-                and ci["writes"] == 0
-                and ci["state_name"] == "blank",
-                str(ci),
-            )
-            r = rig.set_selection([mod])
-            recs = rig.sel_records()
-            ci = rig.card_info()
-            c.check(
-                "blank card: a selection is written as before (two record sectors, no store header), and the area is ours from then on",
-                r == 0
-                and recs[0] is not None
-                and recs[0] == recs[1]
-                and (ci["state_name"], ci["claims"], ci["writes"]) == ("ours", 0, 2),
-                f"{r} {recs} {ci}",
-            )
-            evs = events(rig)
-            refused = [e for e in evs if e[2] == L.K["CARD_REFUSED"]]
-            check = [e for e in evs if e[2] == L.K["CARD_CHECK"]]
-            c.check(
-                "blank card: the log has the card check (blank) and one error event per refused write (reason: outside the range)",
-                len(check) == 1
-                and check[0][4][0] == 2
-                and not check[0][3] & 1
-                and len(refused) == len(bad)
-                and all(e[3] & 1 and e[4][2] == 1 for e in refused),
-                str([(e[2], e[4]) for e in refused[:2]]),
+                "header B torn, header A blank: CLEAR recovers the card, and the next upload commits",
+                cleared == 0 and s2 == 0 and "modules/b.dkm" in files,
+                f"clear {cleared} upload {s2} {files}",
             )
             c.done(rig)
 
-    def part_foreign() -> None:
-        with c.rig(menu_img, foreign, "foreign", cf_only=True) as rig:
+    def part_torn_a() -> None:
+        with c.rig(img, torn_a, "torn-a", cf_only=True) as rig:
             ci = rig.card_info()
-            want_hash = zlib.crc32(pat)
+            s, files = upload(rig, "a")
             c.check(
-                "foreign bytes in the range: the check says foreign, names the first non-blank sector and its crc32",
-                ci["state_name"] == "foreign"
-                and ci["first_nonblank"] == stray
-                and ci["hash"] == want_hash,
-                f"{ci} want hash {want_hash:08x}",
+                "header A torn by the claim's second write, header B whole: the card is ours, and an upload commits",
+                ci["state_name"] == "ours" and s == 0 and "modules/a.dkm" in files,
+                f"{ci['state_name']} {s} {files}",
             )
-            b = rig.boot_info()
-            c.check(
-                "foreign card: the boot runs normally (no module selected, no safe mode, UI loop reached)",
-                b["safe"] == 0 and b["count"] == 0 and b["ui_reached"] == 1,
-                str(b),
-            )
-            r_sel = rig.set_selection([mod])
-            r_probe = rig.probe_write(FIRST + 5, 512)
-            r_range = rig.probe_write(FIRST - 1, 512)
+            c.done(rig)
+
+    def part_torn_a_only() -> None:
+        # header A torn and header B blank happens only when the card did not keep the order of the two claim writes (a write cache). The
+        # card then stays read-only for the runtime: this is what is left of the residual risk.
+        with c.rig(img, torn_a_only, "torn-a-only", cf_only=True) as rig:
             ci = rig.card_info()
-            c.check(
-                "foreign card: a selection and a write at a sector in the range are refused (E_CARD_RO); one outside the range is E_RANGE",
-                (r_sel, r_probe, r_range) == (B.E_CARD_RO, B.E_CARD_RO, B.E_RANGE)
-                and ci["refused"] == 3
-                and ci["writes"] == 0,
-                f"{(r_sel, r_probe, r_range)} {ci}",
-            )
-            c.check(
-                "foreign card: no selection record was written",
-                rig.sel_records() == [None, None],
-            )
             up = uploader(rig)
-            info = up.info()
-            c.check(
-                "foreign card: INFO says the card is read-only; LIST works (empty)",
-                info["card_read_only"] and not info["debug_on"] and up.ls() == [],
-                str(info),
-            )
             ops = [
                 up.request(
                     DK.CMD_BEGIN, b"modules/x.dkm\0" + struct.pack(">I", 10) + bytes(32)
                 )[0],
-                up.request(DK.CMD_DELETE, b"modules/x.dkm\0")[0],
                 up.request(DK.CMD_CLEAR, struct.pack(">I", DK.CLEAR_MAGIC))[0],
             ]
             c.check(
-                "foreign card: BEGIN, DELETE and CLEAR answer E_INUSE",
-                ops == [E_INUSE] * 3,
-                str(ops),
-            )
-            evs = events(rig)
-            chk = [e for e in evs if e[2] == L.K["CARD_CHECK"]]
-            c.check(
-                "foreign card: the log reports what the check found (error event: state foreign, the sector, the hash)",
-                len(chk) == 1
-                and chk[0][3] & 1
-                and chk[0][4][:3] == (3, stray, want_hash),
-                str(chk),
-            )
-
-            # ABOUT: a short line
-            def tap(key: str, gap_ms: int = 350) -> None:
-                rig.s.do_tap(key)
-                rig.s.run_ms(gap_ms)
-
-            rig.s.run_ms(
-                3000
-            )  # a daemon without DSP is handed out before the first screen has settled
-            tap("NO", 400)
-            tap("SETTINGS", 600)
-            for _ in range(8):
-                tap("DOWN", 200)
-            tap("YES", 700)  # DIGIKIT
-            tap("YES", 800)  # ABOUT, the first row
-            rows = about_rows(rig, plan)
-            png = c.work / "about-foreign.png"
-            png.write_bytes(rig.emu.frame_png())
-            c.report["about_foreign_png"] = str(png)
-            c.check(
-                "foreign card: ABOUT shows CARD READ-ONLY, where the foreign data starts, and that the boot counter is off; every row fits 21 characters",
-                "CARD READ-ONLY" in rows
-                and f"NOT OURS AT {stray}" in rows
-                and "NO BOOT COUNTER" in rows
-                and max(len(x) for x in rows) <= 21,
-                str(rows),
+                "header A torn and header B blank (claim writes out of order): the card is foreign at sector 0, BEGIN and CLEAR answer E_INUSE",
+                ci["state_name"] == "foreign"
+                and ci["first_nonblank"] == 0
+                and ops == [E_INUSE] * 2,
+                f"{ci} {ops}",
             )
             c.check(
-                "foreign card: the runtime wrote nothing in the store range",
+                "header A torn and header B blank: the runtime wrote nothing in the store range",
                 rig.card_store_writes() == [],
                 str(rig.card_store_writes()),
             )
             c.done(rig)
 
-    def part_selonly() -> None:
-        # only a selection record is valid. Blank header sectors: an empty store, an upload works. Foreign bytes in header A and B: the store is
-        # somebody's data, BEGIN, DELETE and LIST refuse (E_NOSTORE) and nothing is written to the range.
-        with c.rig(img, selonly, "selblank", cf_only=True) as rig:
+    def part_torn_sel() -> None:
+        with c.rig(img, torn_sel, "torn-sel", cf_only=True) as rig:
             ci = rig.card_info()
-            up = uploader(rig)
-            st = U.put_status(up, "modules/s.dkm", U.blob(3_000, 4))
+            r = rig.set_selection([mod])
+            recs = rig.sel_records()
             c.check(
-                "selection record only, blank header sectors: the card is ours, the store is empty and an upload works",
-                ci["state_name"] == "ours"
-                and "modules/s.dkm" in U.device_ls(up)
-                and st == 0,
-                f"{ci['state_name']} {st}",
-            )
-            c.done(rig)
-        with c.rig(img, selforeign, "selforeign", cf_only=True) as rig:
-            ci = rig.card_info()
-            up = uploader(rig)
-            ops = [
-                up.request(
-                    DK.CMD_BEGIN, b"modules/x.dkm\0" + struct.pack(">I", 10) + bytes(32)
-                )[0],
-                up.request(DK.CMD_DELETE, b"modules/x.dkm\0")[0],
-                up.request(DK.CMD_LIST, struct.pack(">I", 0))[0],
-            ]
-            up.request(
-                DK.CMD_DATA, struct.pack(">I", 0) + bytes(10)
-            )  # no upload is open (BEGIN was refused): E_STATE, nothing staged
-            c.check(
-                "selection record only, foreign bytes in header A and B: the card counts as ours, but BEGIN, DELETE and LIST answer E_NOSTORE",
-                ci["state_name"] == "ours" and ops == [E_NOSTORE] * 3,
-                f"{ci['state_name']} {ops}",
-            )
-            c.check(
-                "selection record only, foreign bytes in header A and B: nothing was written to the store range",
-                rig.card_store_writes() == [] and rig.card_info()["writes"] == 0,
-                f"{rig.card_store_writes()}",
+                "selection copy A torn by the first selection write, the rest blank: the card is blank, and the next selection writes both copies",
+                ci["state_name"] == "blank"
+                and r == 0
+                and recs[0] is not None
+                and recs[0] == recs[1],
+                f"{ci['state_name']} {r} {recs}",
             )
             c.done(rig)
 
-    def part_ours() -> None:
-        with c.rig(img, ours, "ours", cf_only=True) as rig:
-            ci = rig.card_info()
-            c.check(
-                "our store on the card: the check says ours without reading the range (no non-blank sector found, no hash)",
-                ci["state_name"] == "ours"
-                and ci["first_nonblank"] == 0xFFFFFFFF
-                and ci["hash"] == 0
-                and ci["refused"] == 0,
-                str(ci),
-            )
-            b = rig.boot_info()
-            c.check(
-                "our store: the selection loads as before",
-                b["count"] == 1 and b["loaded"] == 1 and b["safe"] == 0,
-                str(b),
-            )
-            r = rig.set_selection([mod, mod])
-            up = uploader(rig)
-            data = U.blob(70_000, 5)
-            st = U.put_status(up, "modules/b.dkm", data)
-            files = U.device_ls(up)
-            ci = rig.card_info()
-            c.check(
-                "our store: a selection and an upload still work; the range check refused nothing of theirs",
-                r == 0
-                and st == 0
-                and "modules/b.dkm" in files
-                and ci["refused"] == 0
-                and ci["claims"] == 0,
-                f"{r} {st} {sorted(files)} {ci}",
-            )
+    def part_stray_b() -> None:
+        # not a check: bytes that are not ours in the header B sector only. The blank check does not read that sector (see the docstring).
+        with c.rig(img, stray_b, "stray-b", cf_only=True) as rig:
+            c.report["stray_header_b_state"] = rig.card_info()["state_name"]
             c.done(rig)
 
-    def part_claim() -> None:
-        # an upload on a blank card claims the range before it stages data; a power cut in the middle leaves a card the next boot calls ours
-        base = blank
-        with c.rig(img, base, "claim", cf_only=True) as rig:
-            rig.emu.poke32(M.sym(rig.plan, "core/runtime", "DKRT_UPLOAD_CUT"), 1)
-            up = uploader(rig)
-            data = U.blob(70_000, 9)  # three DATA chunks: the second write is refused
-            st = U.put_status(up, "modules/c.dkm", data)
-            ci = rig.card_info()
-            c.check(
-                "claim: the first data write of an upload on a blank card claimed the range (empty store headers, both copies), and the cut upload failed",
-                ci["claims"] == 1 and ci["state_name"] == "ours" and st != 0,
-                f"{st} {ci}",
-            )
-            ov = rig.work / "claim.ov.bin"
-            rig.emu.call("card.overlay", path=str(ov))
-            nxt = card_after(c, base, ov)
-            c.done(rig)
-        with c.rig(img, nxt, "claim2", cf_only=True) as rig:
-            ci = rig.card_info()
-            up = uploader(rig)
-            ls = up.ls()
-            st = U.put_status(up, "modules/c.dkm", U.blob(5_000, 3))
-            c.check(
-                "claim: after the cut upload the next boot calls the area ours (not foreign), the store is empty, and an upload works",
-                ci["state_name"] == "ours" and ls == [] and st == 0,
-                f"{ci} {ls} {st}",
-            )
-            c.done(rig)
-
-    c.parallel(part_blank, part_foreign, part_selonly, part_ours, part_claim)
+    c.parallel(part_torn_b, part_torn_a, part_torn_a_only, part_torn_sel, part_stray_b)
     c.common_checks_upload(project_writes_ok=True)
+
+
+def run_card(c: Any) -> None:
+    """Only the torn part stays in Python (card-safety and card-small are tests/regression card-safety in TS)."""
+    if c.table().get("part") != "torn":
+        raise ValueError(
+            f"card scenario part {c.table().get('part')!r}: only 'torn' runs in Python"
+        )
+    run_card_torn(c)
 
 
 # ---- debug ------------------------------------------------------------------------------------------------------------------

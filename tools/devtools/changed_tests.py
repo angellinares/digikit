@@ -52,10 +52,11 @@ def _named_module(text: str) -> str | None:
 
 
 @cache
-def graph() -> grimp.ImportGraph:
+def graph(*, local_imports: bool = False) -> grimp.ImportGraph:
     """The import graph of tools/ and tests/, corrected in three ways:
-    - an import inside a function of a tools module is dropped: it runs only when that function runs, and
-      such edges join unrelated tools (tools/emulator/digi_env.py reaches all of patchkit through one);
+    - an import inside a function of a tools module is dropped (kept with `local_imports=True`): it runs only
+      when that function runs, and such edges join unrelated tools (tools/emulator/digi_env.py reaches all of
+      patchkit through one);
     - a test's import of a helper by its pytest path (`support.x`, a sibling `scen_cases`) is an edge to the
       tests.* module (grimp does not resolve those names);
     - a module named by a whole string constant (`[sys.executable, "-m", "tools.x.y"]`, a script path) is an
@@ -68,7 +69,7 @@ def graph() -> grimp.ImportGraph:
             text = (ROOT / path_of(mod)).read_text(encoding="utf-8")
         except OSError:
             continue
-        if mod.startswith("tools."):
+        if mod.startswith("tools.") and not local_imports:
             lines = text.splitlines()
             for dst in sorted(g.find_modules_directly_imported_by(mod)):
                 details = g.get_import_details(importer=mod, imported=dst)
@@ -253,24 +254,6 @@ def gate_tests(files: list[str]) -> tuple[dict[str, str], list[str]]:
     g = graph()
     out: dict[str, str] = {}
     broad: list[str] = []
-    launcher_modules = {
-        "tools.emulator.coupled",
-        "tools.emulator.digi_env",
-        "tools.emulator.native_emu",
-        "tools.emulator.native_pgo",
-    }
-    # These launchers retain owner/consumer tests and the gate's full smoke matrix.
-    # Only their deep legacy scenario fanout is replaced; direct importers always stay.
-    # Graph cycles also put devtools units downstream of scen_cases: keep those.
-    legacy_scenarios = {
-        path_of(m)
-        for m in (
-            g.find_downstream_modules("tests.digikit.scen_cases")
-            if "tests.digikit.scen_cases" in g.modules
-            else ()
-        )
-        if path_of(m).startswith("tests/digikit/") and is_test_file(path_of(m))
-    }
     for f in files:
         module = module_of(f)
         if module is None or is_test_file(f) or module not in g.modules:
@@ -278,9 +261,13 @@ def gate_tests(files: list[str]) -> tuple[dict[str, str], list[str]]:
         if "tests.conftest" in g.find_downstream_modules(module):
             broad.append(f)
         direct = importing_tests(module)
-        deep = deep_tests(module)
-        if module in launcher_modules:
-            deep = {t: r for t, r in deep.items() if t not in legacy_scenarios}
+        # Device scenarios (verify.DAEMON_TESTS) run for their own triggers (fine rules) and
+        # their direct importers, never through a deep import chain.
+        deep = {
+            t: r
+            for t, r in deep_tests(module).items()
+            if not t.startswith(verify.DAEMON_TESTS)
+        }
         # Filter per source: a changed scenario helper must restore its consumers
         # even when one of the bounded launchers changes alongside it.
         for t, reason in {**direct, **deep}.items():
@@ -485,7 +472,6 @@ def plan(
             [*verify.PY, "-m", "mypy", *typed] if typed else None,
             "no changed TYPED files",
         ),
-        ("pathcheck", [*verify.PY, "-m", "tools.devtools.pathcheck"], ""),
         ("layercheck", [*verify.PY, "-m", "tools.devtools.layercheck"], ""),
         (
             "gen-check",

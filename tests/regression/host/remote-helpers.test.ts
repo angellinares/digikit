@@ -16,9 +16,7 @@ const fake = vi.hoisted(() => ({
 vi.mock('node:timers/promises', () => ({
   setTimeout: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 }));
-vi.mock('node:child_process', () => ({
-  execFile: Object.assign(vi.fn(), { [Symbol.for('nodejs.util.promisify.custom')]: fake.exec }),
-}));
+vi.mock('../runtime/patchkit.ts', () => ({ patchkit: fake.exec }));
 vi.mock('node:fs', async (original) => ({
   default: {
     ...(await original<{ default: typeof import('node:fs') }>()).default,
@@ -33,7 +31,8 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   ...(await original<object>()),
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
-import { expectRuntimeUi } from '../runtime/live.ts';
+import { expectRuntimeUi } from '../runtime/ready.ts';
+import { waitEmulated } from '../runtime/waits.ts';
 import { expectRemoteEnabled, installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
 import {
   planSymbol,
@@ -145,25 +144,10 @@ test('symbol lookup accepts aliases of one address, including mangled Rust names
   expect(() => planSymbol({ ...plan, symbols: {} }, 'DK_ABOUT')).toThrow('0 addresses');
 });
 
-test('setup reuses the Python patch command, its own daemon and a bounded tool deadline, then installs natively', async () => {
+test('setup patches once with a bounded tool deadline, uses its own daemon, then installs natively', async () => {
   const { calls, runtime } = fakeDk();
   expect(await prepareRemote(runtime)).toEqual(plan);
-  expect(fake.exec.mock.calls[0]?.[1]).toEqual([
-    'run',
-    'python',
-    '-m',
-    'tools.patchkit.patchkit',
-    'patch',
-    '--firmware',
-    '/stock.syx',
-    '--set',
-    'emulator',
-    '-o',
-    '/run/own-daemon/runtime-dt2.syx',
-    '--plan',
-    '/run/own-daemon/runtime-dt2.plan.json',
-  ]);
-  expect(fake.exec.mock.calls.map((call) => call[2].timeout)).toEqual([30_000]);
+  expect(fake.exec.mock.calls.map((call) => call[1].timeout)).toEqual([30_000]);
   expect(fs.readFileSync).toHaveBeenCalledWith('/run/own-daemon/runtime-dt2.plan.json', 'utf8');
   expect(calls).toEqual(['put', 'verifyFile', 'select', 'restart', 'waitForBoot', 'modules']);
 });
@@ -186,7 +170,7 @@ test('failed KEY press still attempts key-up and overall release', async () => {
     remoteRelease: vi.fn(),
   };
   await expect(
-    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(dk as unknown as DkSession, 'YES')),
+    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(session, dk as unknown as DkSession, 'YES')),
   ).rejects.toThrow('key failed');
   expect(dk.remoteKey.mock.calls).toEqual([
     [10, true],
@@ -224,28 +208,31 @@ test('navigation failure releases remote inputs; a hung release has a bounded de
   }
 });
 
-test('successful tap retains the 300 ms hold and requested UI settle', async () => {
-  vi.useFakeTimers();
+/** A daemon whose DSP frame counter advances by `step` frames per status read (0: stuck). */
+function framesDaemon(step: number) {
+  let frames = 1000;
+  const status = vi.fn(async () => ({ audio: { frames: (frames += step) } }));
+  return { daemon: { ...session, status } as unknown as Session, status };
+}
+
+test('successful tap holds and settles in emulated time', async () => {
+  // 1500 frames per status read: the 300 ms hold (450 frames) and the 3000 ms settle (4500 frames).
+  const { daemon, status } = framesDaemon(1500);
   const dk = { remoteKey: vi.fn().mockResolvedValue(undefined) } as unknown as DkSession;
-  try {
-    const tap = remoteTap(dk, 'SETTINGS', 3000);
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(299);
-    expect(dk.remoteKey).toHaveBeenCalledExactlyOnceWith(8, true);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(dk.remoteKey).toHaveBeenLastCalledWith(8, false);
-    let settled = false;
-    void tap.then(() => {
-      settled = true;
-    });
-    await vi.advanceTimersByTimeAsync(2999);
-    expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    await tap;
-    expect(settled).toBe(true);
-  } finally {
-    vi.useRealTimers();
-  }
+  await remoteTap(daemon, dk, 'SETTINGS', 3000);
+  expect(dk.remoteKey).toHaveBeenNthCalledWith(1, 8, true);
+  expect(dk.remoteKey).toHaveBeenNthCalledWith(2, 8, false);
+  // hold: start read + 1 poll; settle: start read + 3 polls
+  expect(status).toHaveBeenCalledTimes(6);
+});
+
+test('waitEmulated resolves once the frame counter has advanced by ms * 1.5 and throws when it is stuck', async () => {
+  const { daemon, status } = framesDaemon(100);
+  await waitEmulated(daemon, 1000);
+  // start read, then 1500 frames at 100 per read
+  expect(status).toHaveBeenCalledTimes(16);
+  const stuck = framesDaemon(0);
+  await expect(waitEmulated(stuck.daemon, 1000, { hangMs: 100 })).rejects.toThrow('stuck at 1000');
 });
 
 test('installer failure still releases remote inputs without reaching scenario actions', async () => {
@@ -265,7 +252,7 @@ test('installer failure still releases remote inputs without reaching scenario a
 test('key-up failure still reaches the overall remote release', async () => {
   const dk = { remoteKey: vi.fn().mockRejectedValue(new Error('key failed')), remoteRelease: vi.fn() };
   await expect(
-    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(dk as unknown as DkSession, 'YES')),
+    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(session, dk as unknown as DkSession, 'YES')),
   ).rejects.toThrow('key failed');
   expect(dk.remoteRelease).toHaveBeenCalledTimes(1);
 });

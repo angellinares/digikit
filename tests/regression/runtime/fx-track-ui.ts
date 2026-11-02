@@ -1,7 +1,6 @@
-import { button, encoder, type Session } from '@digi/test-support';
-import { expect } from 'vitest';
+import { encoder, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
-import { advance, bounded, frames, rpc, word } from './fx-live.ts';
+import { advance, bounded, captureNote, word } from './fx-live.ts';
 import { tap, type FxProfile } from './fx-session.ts';
 
 export async function halfword(session: Session, address: number): Promise<number> {
@@ -53,25 +52,7 @@ export async function setAmount(
 
 /** Already-selected input: legacy note boundary offset and 1500-frame hold, without reopening the machine list. */
 export async function trackNote(runtime: PatchedSession, file: string, triggerFrame: number): Promise<void> {
-  const { session } = runtime;
-  const current = await frames(session);
-  expect(current, 'legacy fixed trigger has its setup margin').toBeLessThan(triggerFrame - 20);
-  await rpc(session, 'pcm.tap', { action: 'start' });
-  try {
-    await bounded(() => session.client.runUntil({ frames: triggerFrame, timeout_wall_s: 30 }));
-    await bounded(() => session.client.step(44_000, { timeout_wall_s: 30 }));
-    await rpc(session, 'pcm.tap', { action: 'capture', path: file });
-    await bounded(() => session.client.inputButton(button('TRIG 1'), true));
-    await bounded(() => session.client.runUntil({ frames: triggerFrame + 1500, timeout_wall_s: 30 }));
-  } finally {
-    try {
-      await rpc(session, 'pcm.tap', { action: 'capture_stop' });
-    } finally {
-      await bounded(() => session.client.inputButton(button('TRIG 1'), false));
-    }
-  }
-  await advance(session, 50);
-  await bounded(() => session.expectNoFault('track send note'));
+  await captureNote(runtime.session, { file, trigger: triggerFrame, tag: 'track send note' });
 }
 
 export async function selectTrack(session: Session, n: number) {

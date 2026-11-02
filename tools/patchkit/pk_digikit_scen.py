@@ -9,7 +9,7 @@ globbing; no list names them; the names are unique across both places):
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx" | "settings"
+    kind = "equiv" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -29,17 +29,14 @@ Kinds:
              `pcm_samples` (default 24000) interleaved float32 samples; "record" fails and prints the hash. `env_run` and `env_ref` set environment variables of the run-time and the reference boot (`SHARC_UNINIT` for a machine that
              reads voice state beyond its cleared bytes: the run-time state is uninitialised L2). `ignore_run_machines` drops a run-time
              machine (with its parameters and pages) that the twin has no counterpart of. `play_module` and `play_machine` (default: the machine of `tools/patchkit/pk_dkrt_machine.py`, a sine) name the run-time machine the note is played with.
-  roundtrip  a project with the run-time machine on tracks, parameter values, p-locks and a sound lock is saved under set A,
-             loaded and saved under set B (machine absent) and under A again: the project slot's sound records, the sequencer
-             data and the sound locks are byte-identical to the first save; the track keeps its type while its machine is absent.
   safe       a module whose init resets the machine, twice: the third boot is safe mode (no module, reported). With `[safe] part = "late"`: a
              module that hangs the UI task some time into a session, before (early) or after (late) the stable period that clears the boot
              counter: early leads to safe mode at the third boot, late never does (finding 37).
   menu       a set checked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with NO and YES on APPLY & RESTART? is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
   cut        the card states a power cut leaves between the two copies of the selection record.
-  card       card safety (finding 46): the one card-write function refuses writes outside the store range; a blank card works as before, a card
-             with foreign bytes in the range goes read-only and the runtime writes nothing, a card with our store keeps working.
+  card       `[card] part = "torn"` only: a power cut inside the first writes to a blank card (finding 46, residual risk). The other card-safety
+             cases are the TypeScript card-safety test.
   debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
              `[debug] part = "sticky"`: sticky machine type numbers (assigned at the boot load, kept in the selection record's map, eviction); the plain part also checks MODULES.
              `part = "guard"` (both images): the runtime guard on a NaN fixture.
@@ -47,24 +44,13 @@ Kinds:
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
-  settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not
-             current (A, then B, then A), never to anything else in the store range; a soft restart reads it back; the SETTINGS command and CAPACITY kind SETTINGS report it; `patchkit store dump`
-             decodes the card the guest left; a blank card is claimed first; a torn newer copy leaves the older one; tools/patchkit/pk_digikit_settings.py.
-  fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II and Digitone II): Save Kit and Load Kit restore them to the
-             same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
-             pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
-  fxshift    the frequency shifter (`[fxshift] module` names it; Digitakt II and Digitone II; the manifest says send, MIX 127): its page (tab FSH, title Freq Shifter, SHIFT bipolar, MIX default 127), on the master route (stored `master` on
-             the Digitakt II, the fallback on the Digitone II, which has no send cells) MIX 0 leaves the PCM bit for bit as it was, MIX 127 and SHIFT 0 keeps the sine, turning SHIFT moves the sine by the shift of the routine's
-             mapping in either direction with the image 40 dB down, Save Kit and Load Kit give SHIFT back; on the Digitakt II also the send route (the default): an amount on track 1 gives a return of amount^2 x MIX x the shifted
-             track (compared with the float32 model), an amount on another track adds nothing; tools/patchkit/pk_digikit_fxshift.py.
   upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
-Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup), `[roundtrip] engine = "cf" | "coupled"` (the panel script on a
-ColdFire-only daemon beside a coupled boot check of each card, or all on coupled daemons). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
+Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
 (scenario, image) pairs in N processes, `DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` the emulated ms after a boot (default 300).
 
-Cards are cached by content in `out/cache/digikit/cards/` (they are read-only for the guest, its writes live in an overlay), and the
+Cards are cached by content in `out/cache/digikit/cards/`, or under `DIGIKIT_CACHE` (they are read-only for the guest, its writes live in an overlay), and the
 daemon's own boot cache is keyed by the card path, so a repeated scenario restores its boots instead of running them cold.
 """
 
@@ -96,7 +82,13 @@ from tools.patchkit import pk_harness as H  # noqa: E402
 
 # a module's own scenarios: modules/<group>/<name>/tests/scenarios/*.toml
 MODULE_SCENARIOS = "modules/*/*/tests/scenarios"
-CACHE = ROOT / "out" / "cache" / "digikit"
+# DIGIKIT_CACHE moves the cache: the cards are sparse files of the card's full size (16.7 GiB for a
+# DN2), and a file system without sparse files (WSL's mount of a Windows drive) writes each one out in full
+CACHE = (
+    Path(os.environ["DIGIKIT_CACHE"])
+    if os.environ.get("DIGIKIT_CACHE")
+    else ROOT / "out" / "cache" / "digikit"
+)
 # every device with a module store and its newest image that has a port (`port = true` in the device file)
 QUICK_IMAGES = {d: pk_device.port_images(d)[-1] for d in pk_device.digikit_devices()}
 RT = B.RT
@@ -1003,12 +995,6 @@ def run_cut(c: Ctx) -> None:
     c.common_checks()
 
 
-def run_roundtrip(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_project as P
-
-    P.run_roundtrip(c)
-
-
 def run_dkrun(
     c: Ctx, rig: B.BootRig, D: Any, blobs: dict[str, bytes], files: dict[str, str]
 ) -> None:
@@ -1359,29 +1345,8 @@ def run_pages(c: Ctx) -> None:
     PG.run_pages(c)
 
 
-def run_settings(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_settings as SET
-
-    SET.run_settings(c)
-
-
-def run_fxpersist(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxpersist as FPS
-
-    FPS.run_fxpersist(c)
-
-
-def run_fxshift(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxshift as FSH
-
-    FSH.run_fxshift(c)
-
-
 KINDS = {
     "pages": run_pages,
-    "settings": run_settings,
-    "fxpersist": run_fxpersist,
-    "fxshift": run_fxshift,
     "card": run_card,
     "debug": run_debug,
     "crash": run_crash,
@@ -1390,7 +1355,6 @@ KINDS = {
     "menu": run_menu,
     "safe": run_safe,
     "cut": run_cut,
-    "roundtrip": run_roundtrip,
 }
 
 
@@ -1493,19 +1457,11 @@ def _run_pairs(
         "upload": 1,
         "card": 1,
         "debug": 1,
-        "roundtrip": 2,
         "safe": 3,
         "crash": 3,
         "equiv": 4,
     }
-    order = sorted(
-        pairs,
-        key=lambda p: (
-            -1
-            if p[0].data.get(p[0].kind, {}).get("engine") == "coupled"
-            else rank.get(p[0].kind, 9)
-        ),
-    )
+    order = sorted(pairs, key=lambda p: rank.get(p[0].kind, 9))
 
     def one(pair: tuple[Scenario, str]) -> tuple[tuple[str, str], dict[str, Any]]:
         s, image = pair

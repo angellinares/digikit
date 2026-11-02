@@ -25,7 +25,7 @@ before it goes near the device.
 - **Emulator:** the real firmware (ColdFire and SHARC DSP) runs on your computer, with the front panel, display and audio.
 - **Module tests:** every machine is checked against a standard set of tests (parameter limits, modulation, long
   notes), in seconds, before it reaches a device.
-- **Browser patcher:** patch your firmware in the browser (`mise run web`, page `/patch`); nothing is uploaded.
+- **Browser patcher:** patch your firmware in the browser (`pnpm dev`, page `/patch`); nothing is uploaded.
 
 ## Modules
 

@@ -1,18 +1,14 @@
-import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import {
   validatePreparedRuntimeImage,
-  repoRoot,
   resolveInputs,
   type Session,
   type SessionOptions,
   type PreparedRuntimeImage,
 } from '@digi/test-support';
+import { patchkit } from './patchkit.ts';
 
-const exec = promisify(execFile);
-const root = repoRoot();
 export interface RuntimePlan {
   base: { device: string; version: string; syx_sha256: string };
   modules: string[];
@@ -91,14 +87,9 @@ export async function prepareRuntimePlanOffline(
   fs.mkdirSync(directory, { recursive: true });
   const syx = path.join(directory, `runtime-${device}.syx`);
   const planFile = syx.replace(/\.syx$/, '.plan.json');
-  const patch = await exec(
-    'uv',
+  const patch = await patchkit(
     [
-      'run',
-      'python',
-      '-m',
-      'tools.patchkit.patchkit',
-      'patch',
+      'apply',
       '--firmware',
       resolveInputs(device, firmware).syx,
       ...(selection ? ['--modules', selection.modules.join(',')] : ['--set', options.runtime?.patchSet ?? 'emulator']),
@@ -107,7 +98,7 @@ export async function prepareRuntimePlanOffline(
       '--plan',
       planFile,
     ],
-    { cwd: root, timeout: 30_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, UV_NO_SYNC: '1' } },
+    { timeout: 30_000 },
   );
   fs.writeFileSync(path.join(artifacts, 'patch.log'), `${patch.stdout}\n${patch.stderr}`);
   const plan: RuntimePlan = JSON.parse(fs.readFileSync(planFile, 'utf8'));

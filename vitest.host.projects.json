@@ -5,5 +5,5 @@
   { "name": "web-transfer", "dir": "apps/web", "include": "tests/*.test.ts" },
   { "name": "desktop-host", "dir": "apps/desktop", "include": "ui/tests/*.test.ts", "conditions": ["browser"] },
   { "name": "regression-host", "dir": "tests/regression", "include": "host/**/*.test.ts" },
-  { "name": "module-tests", "dir": "modules", "include": "*/*/tests/**/*.test.ts" }
+  { "name": "module-tests", "dir": "modules", "include": "**/tests/**/*.test.ts" }
 ]

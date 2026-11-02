@@ -23,7 +23,6 @@ import contextlib
 import json
 import os
 import pathlib
-import re
 import struct
 import subprocess
 import sys
@@ -37,6 +36,8 @@ from tools.patchkit import pk_device
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SECTOR_RECORD = 8 + 64 + 512
+# The existing firmware kit-library sector ranges (hi exclusive), shared by fixed FX policies.
+KIT_AREAS = {"dt2": ((0x16000, 0x17000),), "dn2": ((0x2000, 0x2100),)}
 
 
 def card_store(device: str) -> tuple[int, int]:
@@ -104,96 +105,6 @@ def runtime_card_policy(
             if s < 0x50000
             and s not in allowed
             and not any(lo <= s < hi for lo, hi in firmware_areas)
-        ),
-    }
-
-
-def runtime_policy(device: str, name: str = "default") -> dict:
-    """Fixed card allowances for a named acceptance scenario policy."""
-    if device not in ("dt2", "dn2"):
-        raise ValueError(f"unsupported runtime safety device: {device}")
-    if name == "default":
-        areas, extra = (), ()
-    elif name == "fx-routes":
-        from tools.patchkit.pk_digikit_fxpersist import KIT_AREAS
-
-        store = pk_device.store_of(device)
-        areas, extra = KIT_AREAS[device], (store.set_a, store.set_b)
-    else:
-        raise ValueError(f"unknown runtime safety policy: {name}")
-    return {"name": name, "firmware_areas": areas, "store_extra": extra}
-
-
-def runtime_safety(
-    device: str,
-    output: pathlib.Path,
-    overlays: list[pathlib.Path],
-    min_emulators: int = 1,
-    policy: str = "default",
-) -> dict:
-    """After the owned process exits: every sequenced watch log needs a complete clean summary."""
-    if min_emulators < 1 or not overlays:
-        raise ValueError(
-            "runtime safety needs observed emulators and exported overlays"
-        )
-
-    policy_facts = runtime_policy(device, policy)
-
-    def indexed(suffix: str) -> dict[int, pathlib.Path]:
-        files = {}
-        for file in output.parent.glob(f"{output.stem}-*.{suffix}"):
-            match = re.fullmatch(
-                re.escape(output.stem) + r"-(\d+)\." + re.escape(suffix), file.name
-            )
-            if match is None:
-                raise ValueError(f"malformed watch sequence filename: {file}")
-            files[int(match[1])] = file
-        return files
-
-    logs, summaries = indexed("jsonl"), indexed("summary.json")
-    if (
-        len(logs) < min_emulators
-        or set(logs) != set(range(len(logs)))
-        or set(logs) != set(summaries)
-    ):
-        raise ValueError("missing or incomplete sequenced emulator summaries")
-    events = flush = cpushl = 0
-    for file in summaries.values():
-        data = json.loads(file.read_text())
-        for key in ("events", "cpushl"):
-            if type(data.get(key)) is not int or data[key] < 0:
-                raise ValueError(f"invalid {key} in {file}")
-        if not isinstance(data.get("flush_hits"), list):
-            raise ValueError(f"invalid flush_hits in {file}")
-        events += data["events"]
-        flush += len(data["flush_hits"])
-        cpushl += data["cpushl"]
-    cards = []
-    for file in overlays:
-        sectors = parse_overlay(file.read_bytes())
-        cards.append(
-            {
-                "path": str(file),
-                "sectors": len(sectors),
-                **runtime_card_policy(
-                    sectors,
-                    device,
-                    policy_facts["firmware_areas"],
-                    frozenset(policy_facts["store_extra"]),
-                ),
-            }
-        )
-    return {
-        "policy": policy_facts,
-        "emulators": len(summaries),
-        "write_events": events,
-        "flush_hits": flush,
-        "cpushl": cpushl,
-        "overlays": cards,
-        "pass": events == 0
-        and flush == 0
-        and all(
-            not card["invalid_store"] and not card["invalid_low"] for card in cards
         ),
     }
 
@@ -733,21 +644,7 @@ def main(argv=None) -> int:
     )
     c.add_argument("--lo", type=lambda s: int(s, 0), default=None)
     c.add_argument("--hi", type=lambda s: int(s, 0), default=None)
-    runtime = sub.add_parser("runtime-check")
-    runtime.add_argument("--device", choices=("dt2", "dn2"), required=True)
-    runtime.add_argument("--watch-output", type=pathlib.Path, required=True)
-    runtime.add_argument("--min-emulators", type=int, default=1)
-    runtime.add_argument("--overlay", type=pathlib.Path, action="append", required=True)
-    runtime.add_argument(
-        "--policy", choices=("default", "fx-routes"), default="default"
-    )
     a = ap.parse_args(argv)
-    if a.cmd == "runtime-check":
-        result = runtime_safety(
-            a.device, a.watch_output, a.overlay, a.min_emulators, a.policy
-        )
-        print(json.dumps(result))
-        return 0 if result["pass"] else 1
     if a.cmd == "list":
         for n in sorted(SCRIPTS_BY_NAME):
             print(n)

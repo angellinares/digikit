@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/fx",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": [
+          "tests/fx-routes-panel.device.test.ts",
+          "tests/fx-routes-persist.device.test.ts"
+        ],
+        "modules": [
+          "test/dyn-fx-gain",
+          "test/dyn-fx-gain-send",
+          "test/dyn-fx-gain-sendonly",
+          "test/sine"
+        ],
+        "aliases": {
+          "test/dyn-fx-gain-send-3": "test/dyn-fx-gain-send"
+        },
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py"
+        ],
+        "plusdrive": true
+      },
+      {
+        "files": [
+          "tests/fx-send-dn2.device.test.ts",
+          "tests/fx-send.device.test.ts"
+        ],
+        "modules": [
+          "test/dyn-fx-gain",
+          "test/sine"
+        ],
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "plusdrive": true
+      }
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 // The ready-state cache logic under Node with an in-memory store, on the DN2
 // ready inputs when present: the round trip is exact, key and version
 // handling work, and the timings of saving and restoring are printed.
-//   node --test apps/web/tests/ready-cache.test.mjs (run by mise run web:test)
+//   node --test apps/web/tests/ready-cache.test.mjs (run by pnpm --filter @digi/web test)
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';

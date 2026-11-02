@@ -61,10 +61,10 @@ separate from the focused migration checks below.
 | `@digi/web` | `web-transfer` |
 | `@digi/desktop` | `desktop-host` |
 | `regression` | `regression-host` |
-| `module-tests` | `module-tests` |
+| each module with host tests | `module-tests` |
 
 Control-client, test-support, dk-session, desktop-host and regression-host result caching is enabled.
-Web-transfer and the empty module-tests group still use `cache: false`.
+Web-transfer and the per-module `test-host` targets still use `cache: false`.
 Each fixed command runs its whole Vitest project; preflight supplies all changed paths on standard
 Nx `--stdin`, rejecting newlines rather than splitting a pathname. `--parallel=1` preserves the
 previous one-worker host budget. There is no root project covering the repository. Existing package
@@ -75,9 +75,9 @@ Shared host inputs include the registry/config/toolchain files and desktop `ui/s
 preserving the conservative all-host trigger for filesystem reads. Known package/relative-import
 edges are explicit where needed; desktop also declares device TOMLs and module manifests, and
 dk-session declares the SDK format source. Deleted paths remain inputs to affected selection.
-The distributed module-tests group currently has no tests: it retains its modules root and uses
-`--passWithNoTests`. Add real helper/dependency inputs when introducing its first TypeScript tests;
-there are no speculative dependencies on all host projects.
+The module-tests group is replaced by per-module `test-host` targets that tools/nx/modules.mjs
+infers for modules with host tests (none today). Add real helper/dependency inputs when introducing
+the first TypeScript module test; there are no speculative dependencies on all host projects.
 
 The web host target clears `DIGI_FW_EMU_SOCKET` so fast preflight cannot opt into the firmware
 emulator test through inherited environment. That test remains available through its direct owner
@@ -263,8 +263,9 @@ The audit found production/preparation consumers of emulator examples: coupled i
 helpers, ready preparation uses DSP/SHARC examples, and card checks use plusdrive. Examples therefore
 retain production routes. No generic deleted-file exemption is introduced: absent modules can be
 missing from the current import graph, leaving ownership unproven. Root manifests and Vitest
-configuration retain conservative shared coverage. The existing `acceptance_python` closure remains
-unchanged because its consumed preparation/client entry points have real production dependencies.
+configuration retain conservative shared coverage. A changed `tools/` Python path selects all
+runtime files if it is in `acceptance_shared` (the preparation/client entry points all files consume),
+else only the files of the records whose `acceptance_record_closure` (from their `sources`) contains it.
 
 `docs/TESTING.md` now reflects the actual 16 smoke cells, four maintenance exemptions, existing
 test-only/patchkit-group exemptions, and seven fast devtools files.
@@ -335,7 +336,7 @@ gaps; synthetic TypeScript decoder tests do not prove guest capture or cross-boo
 (lines 774–953) retain unique init-reset/safe-once, counter/result/selection and three-boot early/late
 stability assertions on both devices. The [crash runner](../../tools/patchkit/pk_digikit_debug.py)
 (lines 1277–1443) adds DT2 vectors 4/5, 16 registers, 32 stack words, cold-RAM behavior, record replay
-and selection across boots absent from the [TypeScript crash case](../../tests/regression/runtime/fault-trace.test.ts)
+and selection across boots absent from the [TypeScript crash case](../../modules/core/runtime/tests/fault-trace.device.test.ts)
 (lines 213–237). Inputs are [safe-fault](../../tests/digikit/scenarios/safe-fault.toml),
 [safe-late-fault](../../tests/digikit/scenarios/safe-late-fault.toml) and
 [crash-capture](../../tests/digikit/scenarios/crash-capture.toml).
@@ -489,6 +490,148 @@ owned fixture contexts, clean independent cards and two real menu restarts. Gate
 `86e1a7ae`: legacy route device scenarios are removed, retaining the analysis oracles, with no device
 execution change after proof. Final preflight passed 666 Python and 95 host cases plus static/type
 checks, but exited 1 on three unchanged baseline path references; the detailed checkpoint records
-the limits and gate selection. The gate explanation ran; the broad gate did not. A draft PR and
-single-PR focused-exception request are next, with no new exception in place. Earlier exceptions
-do not transfer. Timings are correctness evidence, with no paired A/B or measured speedup claim.
+the limits and gate selection. The gate explanation ran; the broad gate did not. PR #246 merged
+at `e8c0e8ac` under its PR-only focused exception; later BASIC/FXPAGE PR #247 merged at `4bd50f5b`
+under a separate PR-247-only exception. Neither decision was a broad-gate pass or transfers to the
+current persistence/shifter batch. Timings are correctness evidence, with no measured speedup claim.
+
+### Family-project audit checkpoint (2026-11-02)
+
+The current five cached host targets remain safe within their audited inputs; Nx adoption is
+partial. Cache replay, project dependency edges, hashing inputs, affected selection and artifact
+inventories have distinct responsibilities. The installed standard Nx locator
+(`workspace-projects.js`, lines 17–73) confirms that workspace-root target inputs participate in
+affected-project selection even when `cache: false`; disabling cache does not isolate that scope.
+
+Validated selector probes with the pinned environment selected: `fx-session.ts` seven files,
+`fx-route-live.ts` three, `fx-live.ts` ten, `runtime-plan.ts` twenty, `runtime-menu.ts` five
+(debug, fault, chain, input and remote), and `transfer-cli.ts` one. The earlier scout's all-twenty
+helper probes were environment-error fallbacks and are retracted. These observations establish
+selection behavior, not a measured speedup.
+
+A proposed next coherent family-project migration is unimplemented. It needs a static spike with
+an exact folder layout, validated project graph and before/after selection matrix, using standard
+Nx configuration rather than a custom plugin. The scout's candidate has 18 projects: one stock,
+14 runtime and three module families, each owning one to three files. Grouping may not introduce
+expensive sibling execution without an explicit decision; keep unrelated remote and probe
+lifecycles separate. Project counts alone do not establish a sound boundary.
+
+The eventual deletion target is `related_acceptance`, `related-tests.mjs` and the TypeScript
+selector branches, only after every acceptance consumer migrates. Preserve domain-module closure,
+pack/alias preparation and Python fallback ownership. Broad regression-root or shared-helper edges
+can erase precision; manual input lists can miss new imports. Unknown/deleted-source fallbacks must
+remain conservative. Exact graph and selection proof are pending; this audit does not mark the
+next migration implemented or adopted, expand caching, or claim performance gains.
+
+The current persistence/shifter batch is pushed through `8b7c248e`, with source reviews reporting
+no issues. All four persistence/shifter device proofs passed. The
+[architecture checkpoint](test-architecture.md#fx-kit-persistence-and-frequency-shifter-design-2026-11-02)
+records proof and retirement evidence; legacy device runners are removed while offline analyzers
+and module tests remain. Final preflight/gate acceptance is pending, with no new exception. The
+proposed Nx family-project migration remains unimplemented.
+
+
+### Module-owned device target checkpoint (PR #248)
+
+The active draft [PR #248](https://github.com/ElekLabs/digikit/pull/248), code checkpoint
+`942cae59`, adds an uncached `module-freqshift:test-device` target used by `module:check`.
+The scenario and module-specific tests live under the module, with generic runtime inclusion,
+explicit host exclusion and TypeScript checking. Module `project.json` metadata declares its
+acceptance files, required packs, external source dependencies and plusdrive need. The existing
+Python router reads that small contract; Nx does not interpret this custom metadata. No plugin,
+new cache or second central module-ID table is introduced.
+
+Actual Nx probes passed: the moved device file selects its device target; module source retains
+parent `module-tests:test-host` coverage; unrelated web project changes select no device target.
+Exact named verify selection prepares only the registered runtime file's packs/plusdrive, using
+existing daemon resolution. Runtime collection and helper discovery include the moved test;
+host collection excludes it. Broader family-based automatic selection remains unimplemented.
+
+The four device proofs and focused host/static checks passed; the full gate remains unrun and
+PR #248 is draft. See [the handover](../handovers/HANDOVER-2026-11-02-test-consolidation.md) for
+exact evidence and the three remaining baseline pathcheck reports. Next is the bounded graph and
+selection spike above, with deletion of superseded routing as an acceptance criterion.
+
+
+### PR #248 acceptance decision (2026-11-02)
+
+Em explicitly approved merging PR #248 using the recorded focused checks, accepting the three
+baseline pathcheck reports. The full routed gate remains unrun; this is a PR-248-only exception,
+not a full-gate pass or permission to skip later gates. The PR and external testing roadmap
+record the final merge state/commit; earlier draft/pending statements above are superseded.
+
+### Module graph and staged selection design (2026-11-02)
+
+Em agreed this design. Projects are the things under test: modules, packages and the regression
+harness. Test files are not projects. Nx answers which modules a change affects; Vitest's import
+graph and one per-file needs record answer which test files run.
+
+The 18-project family candidate is rejected. Nx affected selection works per project, so keeping
+the current per-file precision would need one project per test file.
+
+Static spike, uncommitted on lane branch `test/nx-family-design`: a 35-line local plugin
+(`createNodesV2` and `createDependencies`) made one project per `module.toml`, named by module id,
+58 modules over `modules/` and `tests/fixtures/modules/`. Direct edges equal
+`verify_route.manifests()` for all 58 modules. The reverse closure equals `dependents()` for 57; the
+difference is the hand-written implicit dependency in `modules/project.json`.
+`nx show projects --affected --files` works in Nx 22.7.12. A TypeScript plugin needs a root
+`tsconfig.json`, so the plugin uses `.mjs`; `smol-toml` becomes a root devDependency. The freqshift
+`test-device` inputs (`tools/**`, `devices/**`, `tests/regression/**`) widen affected selection.
+
+Stages:
+
+1. Module graph plugin `tools/nx/modules.mjs`. Python routing takes the module closure from Nx and
+   deletes `manifests()` and `dependents()`. One per-file needs schema (`runtimeAcceptance`:
+   modules, aliases, sources, plusdrive) in each owning `project.json` replaces the `RUNTIME_*`
+   tables. The freqshift target loses its broad inputs. Explain output comes from the plan. Proof:
+   identical selection over the spike paths and the 25-commit audit replay; no device runs.
+2. Device tests move to the module they test. `tests/regression` keeps the shared harness, exported
+   as a package, and the stock DT2 tests. Per-file `modules` still narrows fixture-module changes.
+3. Per-module `pack` targets replace the `verify.py` build/pack loop; uncached until an input audit.
+
+Follow-up: a small Cargo plugin (workspace members and path dependencies, no `cargo metadata`)
+replaces `rust_ws.affected_packages`, then cached results for crates without generated code.
+Caching: none in stages 1 and 2. Stage 3 measures the pack ceiling before any cache. Device test
+results are not cached.
+
+Stage 1 status (2026-11-02): implemented on `test/nx-family-design` (`449b8444` plus review fixes).
+Selection and preparation are identical before and after over 129 paths and all 58 module
+closures. `verify_route.nx_graph()` builds the graph with private Nx workspace data per call
+(about 0.8 s cold) and fails with Nx's error text. `manifests()` fails closed when the Nx modules
+differ from `modroots` (for example `PATCHKIT_MODULES` roots). `test:changed` passes except the
+pre-existing reports: three pathcheck lines in `docs/plans/module-architecture.md` (resolved by the
+sampler branch) and the `pk_digikit_fxshift.py` layer report (resolved when stage 1b moves the
+freqshift oracle into its module).
+
+Stage 1b (next): the TypeScript tests stop calling Python. Front-ends with a Rust, daemon or
+TypeScript equivalent are called directly; small test-only oracles move to TypeScript; firmware
+results come as data. Python modules used elsewhere stay and are cleaned up later. This deletes
+`sources`, `acceptance_shared`, `acceptance_record_closure` and their routing tests.
+
+Stage 1b plumbing (2026-11-02): the device tests no longer run Python for the DN2 slot-bus anchor,
+the write-watch environment, the runtime safety check, overlay store writes and overlay apply.
+`tests/regression/runtime/device-data.ts` is the one reader of `devices/*.toml` and
+`devices/ports/*.toml`; `runtime/write-safety.ts` holds the safety code with host tests. Outputs
+equal the Python outputs on eight saved proof directories (and all written sectors for overlay
+apply). Python code used only by those calls is deleted; code with other users stays.
+`KIT_AREAS` stays in both languages for now: the Rust device-profile loader rejects new card keys,
+and the Python copy goes when the legacy scenarios and the `profile` subcommand stop using it.
+The patchkit handoff followed: the tests run the Rust binary directly (`runtime/patchkit.ts`;
+the gate passes `DIGI_PATCHKIT`, local runs build once through `patchkit.py bin`), and
+`fx-expectations` and `chain-check` are TypeScript (`runtime/dkm.ts`), equal to Python on 20
+cases. Focused device proofs passed: DN2 fx-kit-persist and fx-send-dn2 (154 s), DT2 samples-live
+(43 s), DN2 fx-chain and fx-reuse without `DIGI_PATCHKIT` (116 s). Python stays only for audio
+analysis (hook_ab, fxpage, fxsend, pk_digikit_fx pcm-peak, fxshift) and the fxroutes/fxroute
+subcommands that need the settings encoder, PNG output or project-slot code; audio analysis moves
+to the audio-QA crate ([plan](audio-qa.md)).
+
+
+Device tests as Nx targets (2026-11-02): a module's device tests run with
+`pnpm nx:pilot run <module-id>:test-device` (the former family targets `test-device-upload`,
+`-settings` and `-debug` are gone); `nx.json` sets `parallel: 3`, and
+`nx run-many -p regression -t <the three> --parallel=3` ran the quick tier in 10 minutes. Supporting
+tooling on the same branch: zero-copy card images (hard link plus `overlay.bin`, `plusdrive --overlay`),
+`cloneFile`, session run-directory cleanup, a 50 GB free-disk guard at session start, `mise run
+clean:runs` (dry run by default), verify passing `DIGI_PLUSDRIVE`, and the daemon honouring
+`DIGI_COLD_RELAX_FS` on the ColdFire-only cold path. Next: a shared Nx cache directory with
+`maxCacheSize`, cached `pack` targets as `dependsOn`, then the daemon binary as a cached output.

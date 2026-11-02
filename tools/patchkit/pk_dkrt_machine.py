@@ -9,7 +9,6 @@ which uses `Rig`, `pcm_check`, `parse_dsp_section` and `relocate` from here.
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import hashlib
 import json
@@ -206,28 +205,6 @@ def runtime_watch_env(
     if sequential:
         env["DIGI_WRITE_WATCH_SEQ"] = "1"
     return env
-
-
-def fx_expectations(dkm: bytes, base: int) -> dict[str, Any]:
-    """Independent Python relocation/row oracle; resource needs use the existing dkneeds wrapper."""
-    from tools.device import dkneeds
-
-    sec = parse_dsp_section(dkm)
-    if len(sec["fxs"]) != 1 or sec["imports"]:
-        raise Fail("FX oracle requires exactly one effect without DSP imports")
-    effect = sec["fxs"][0]
-    state_at = (len(sec["image"]) + sec["bss"] + 7) & ~7
-    return {
-        "image_hex": relocate(sec, base, {}).hex(),
-        "row": [
-            L2_SW_BASE + (base + effect["process"] - L2_BYTE_BASE) // 2,
-            base + effect["desc"],
-            base + state_at,
-            1,
-            *effect["defaults"],
-        ],
-        "needs": dkneeds.needs_of(dkm),
-    }
 
 
 # ---- sessions --------------------------------------------------------------------------------------------------------------
@@ -558,28 +535,3 @@ def run_imports(run: Rig, plan: dict) -> dict[str, int]:
         )
         out[raw[:28].split(b"\0")[0].decode()] = int.from_bytes(raw[28:32], "big")
     return out
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Runtime proof's existing offline oracles"
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-    watch = sub.add_parser("watch-env")
-    watch.add_argument("plan", type=Path)
-    watch.add_argument("out", type=Path)
-    effect = sub.add_parser("fx-expectations")
-    effect.add_argument("dkm", type=Path)
-    effect.add_argument("base", type=lambda value: int(value, 0))
-    args = parser.parse_args(argv)
-    result = (
-        runtime_watch_env(args.plan, args.out, sequential=True)
-        if args.command == "watch-env"
-        else fx_expectations(args.dkm.read_bytes(), args.base)
-    )
-    print(json.dumps(result))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

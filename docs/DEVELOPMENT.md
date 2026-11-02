@@ -98,8 +98,8 @@ disabled ("desktop only for now"). Headless: the control socket's `card.load {di
 ## Web panel
 
 ```sh
-mise run web                       # build the browser core (WASM) and serve the panel
-mise run web:build                 # static build; it fails if firmware-derived files would ship
+pnpm dev                           # build the browser core (WASM) and serve the panel
+pnpm build                         # static build; it fails if firmware-derived files would ship
 mise run web:wasm                  # only the browser core
 mise run web:parity trig1-tap-release   # browser PCM equals native PCM
 ```
@@ -132,8 +132,8 @@ Test levels, layout and all commands are in [docs/TESTING.md](TESTING.md). The m
 
 ```sh
 mise run test:changed         # checks for the changed files; no builds or devices (--explain shows the selection)
-mise run test:host            # host Vitest projects; no device
-mise run verify:host          # host lint, format, tests and types
+pnpm test:host                # host Vitest projects; no device
+pnpm verify:host              # host lint, format, tests and types
 mise run verify               # the gate: the steps your changed files need
 mise run module:check ID      # one module: conformance and its own tests
 ```
@@ -170,7 +170,7 @@ patchkit applies modules (new machines, parameters, master-bus effects) to your 
 mise run patch:toolchains   # once: pinned ColdFire and SHARC+ toolchains for building modules
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/fx -o out/patch/fx.syx
 mise run patch:inject -- out/patch/fx.syx   # into a running emulator (mise run workbench, or emu:serve)
-mise run web                            # the gallery at /patch: patch in the browser, nothing is uploaded
+pnpm dev                                # the gallery at /patch: patch in the browser, nothing is uploaded
 ```
 
 **Writing a module** (create, build, patch, inject into the running emulator, test, and what modules can do):

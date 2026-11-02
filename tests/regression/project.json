@@ -6,25 +6,34 @@
     "test-host": {
       "executor": "nx:run-commands",
       "cache": true,
-      "inputs": ["hostTests", "^hostTests", "{workspaceRoot}/tools/emulator/fast_regions.json"],
+      "inputs": [
+        "hostTests",
+        "^hostTests",
+        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/sdk/vectors/**/*",
+        {
+          "runtime": "shasum -a 256 out/native/target/nogen/release/plusdrive 2>/dev/null || echo no-plusdrive"
+        }
+      ],
       "outputs": [],
       "options": {
         "forwardAllArgs": false,
         "command": "pnpm exec vitest run --config vitest.host.config.ts --project regression-host",
         "cwd": "."
       }
-    },
-    "service-commands": {
-      "executor": "nx:run-commands",
-      "cache": false,
-      "parallelism": false,
-      "outputs": [],
-      "options": {
-        "forwardAllArgs": false,
-        "command": "pnpm --filter @digi/regression exec vitest run --project runtime runtime/service-commands.test.ts",
-        "cwd": ".",
-        "env": { "REGRESSION_JOBS": "1" }
-      }
     }
+  },
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["emulator/reply-inflight.test.ts"],
+        "modules": []
+      },
+      {
+        "files": ["emulator/sharc-semantics.test.ts"],
+        "modules": ["digikit/probe", "digikit/remote", "test/dsp-facts", "test/sharc-probe", "test/step-beacon"]
+      }
+    ]
   }
 }

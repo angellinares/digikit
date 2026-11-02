@@ -22,6 +22,7 @@ export default defineConfig({
         name: p.name,
         root: fileURLToPath(new URL(p.dir, import.meta.url)),
         include: [p.include],
+        exclude: [...configDefaults.exclude, '**/*.device.test.ts'],
         testTimeout: 5000,
       },
     })),

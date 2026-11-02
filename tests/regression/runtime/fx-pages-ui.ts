@@ -24,10 +24,10 @@ async function burst(session: Session, enc: string, detents: number, events: num
   await bounded(() => session.expectNoFault(`FX page burst ${enc}`));
 }
 
-export function pageKit(session: Session, profile: FxProfile) {
+export function pageKit(session: Session, profile: FxProfile, row = 0) {
   const fx = profile.fx;
   const address = async (index: number) => (await word(session, fx.kit_ptr)) + fx.array_off + 2 * index;
-  const raw = async (knob: number) => halfword(session, await address(fx.value_indices[knob]!));
+  const raw = async (knob: number) => halfword(session, await address(fx.value_indices[row * 8 + knob]!));
   return {
     raw,
     async snapshot() {
