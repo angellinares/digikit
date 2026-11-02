@@ -153,9 +153,130 @@ def run_card_small(c: Any) -> None:
     )
 
 
+def run_card_torn(c: Any) -> None:
+    """A power cut inside one sector write of the first writes to a blank card (finding 46, "Residual risk"): the sector holds the start of
+    the new bytes and the blank tail. The claim writes header B, then header A. The check reads the first BLANK_SECTORS of the area for
+    blankness, so header B and the records at the end of the area are not part of it."""
+    img = c.image_for(B.RT, "run")
+    st = c.store
+    # the claim's header (card.rs `claim`): an empty store, seq 1
+    claim = bytearray(512)
+    claim[0:4] = b"DKST"
+    struct.pack_into(">IIIIIIII", claim, 4, 3, 0, 0, 1, 0, 1, 1, st.sectors)
+    struct.pack_into(">I", claim, 508, zlib.crc32(bytes(claim[:508])) & 0xFFFFFFFF)
+    claim = bytes(claim)
+    torn = claim[:256] + bytes(256)  # the cut came after half the sector
+    pat = bytes((i * 7 + 3) & 0xFF for i in range(512))
+    # every card is built before a module is packed (see run_card)
+    torn_b = c.card(None, foreign={st.header_b: torn})
+    torn_a = c.card(None, foreign={st.first: torn, st.header_b: claim})
+    torn_a_only = c.card(None, foreign={st.first: torn})
+    torn_sel = c.card(None, foreign={st.sel_a: pat[:256] + bytes(256)})
+    stray_b = c.card(None, foreign={st.header_b: pat})
+    mod = c.pack("test/c-demo", "a.dkm")
+
+    def upload(rig: Any, name: str) -> tuple[int, list[str]]:
+        """-> the upload's status and the listing; a failed listing is reported in the list, so the
+        check that follows shows the card state and the status beside it"""
+        up = uploader(rig)
+        s = U.put_status(up, f"modules/{name}.dkm", U.blob(3_000, 31))
+        try:
+            return s, U.device_ls(up)
+        except Exception as exc:  # noqa: BLE001 - reported by the check, not raised
+            return s, [f"ls failed: {exc}"]
+
+    def part_torn_b() -> None:
+        # The boot's blank check does not read header B, so the card reads blank. The upload's store check does (upload.rs `state`): a header
+        # sector with bytes that are not a store header is somebody's data, so every write is refused. A CLEAR (which the refusal's text says
+        # still works) writes an empty store, and the next upload commits.
+        with c.rig(img, torn_b, "torn-b", cf_only=True) as rig:
+            ci = rig.card_info()
+            up = uploader(rig)
+            s = U.put_status(up, "modules/b.dkm", U.blob(3_000, 31))
+            c.check(
+                "header B torn by the claim's first write, header A blank: the boot calls the card blank, an upload answers E_NOSTORE and "
+                "writes nothing in the store range",
+                ci["state_name"] == "blank"
+                and s == E_NOSTORE
+                and rig.card_store_writes() == [],
+                f"{ci['state_name']} {s} {rig.card_store_writes()}",
+            )
+            cleared = up.request(DK.CMD_CLEAR, struct.pack(">I", DK.CLEAR_MAGIC))[0]
+            s2, files = upload(rig, "b")
+            c.check(
+                "header B torn, header A blank: CLEAR recovers the card, and the next upload commits",
+                cleared == 0 and s2 == 0 and "modules/b.dkm" in files,
+                f"clear {cleared} upload {s2} {files}",
+            )
+            c.done(rig)
+
+    def part_torn_a() -> None:
+        with c.rig(img, torn_a, "torn-a", cf_only=True) as rig:
+            ci = rig.card_info()
+            s, files = upload(rig, "a")
+            c.check(
+                "header A torn by the claim's second write, header B whole: the card is ours, and an upload commits",
+                ci["state_name"] == "ours" and s == 0 and "modules/a.dkm" in files,
+                f"{ci['state_name']} {s} {files}",
+            )
+            c.done(rig)
+
+    def part_torn_a_only() -> None:
+        # header A torn and header B blank happens only when the card did not keep the order of the two claim writes (a write cache). The
+        # card then stays read-only for the runtime: this is what is left of the residual risk.
+        with c.rig(img, torn_a_only, "torn-a-only", cf_only=True) as rig:
+            ci = rig.card_info()
+            up = uploader(rig)
+            ops = [
+                up.request(
+                    DK.CMD_BEGIN, b"modules/x.dkm\0" + struct.pack(">I", 10) + bytes(32)
+                )[0],
+                up.request(DK.CMD_CLEAR, struct.pack(">I", DK.CLEAR_MAGIC))[0],
+            ]
+            c.check(
+                "header A torn and header B blank (claim writes out of order): the card is foreign at sector 0, BEGIN and CLEAR answer E_INUSE",
+                ci["state_name"] == "foreign"
+                and ci["first_nonblank"] == 0
+                and ops == [E_INUSE] * 2,
+                f"{ci} {ops}",
+            )
+            c.check(
+                "header A torn and header B blank: the runtime wrote nothing in the store range",
+                rig.card_store_writes() == [],
+                str(rig.card_store_writes()),
+            )
+            c.done(rig)
+
+    def part_torn_sel() -> None:
+        with c.rig(img, torn_sel, "torn-sel", cf_only=True) as rig:
+            ci = rig.card_info()
+            r = rig.set_selection([mod])
+            recs = rig.sel_records()
+            c.check(
+                "selection copy A torn by the first selection write, the rest blank: the card is blank, and the next selection writes both copies",
+                ci["state_name"] == "blank"
+                and r == 0
+                and recs[0] is not None
+                and recs[0] == recs[1],
+                f"{ci['state_name']} {r} {recs}",
+            )
+            c.done(rig)
+
+    def part_stray_b() -> None:
+        # not a check: bytes that are not ours in the header B sector only. The blank check does not read that sector (see the docstring).
+        with c.rig(img, stray_b, "stray-b", cf_only=True) as rig:
+            c.report["stray_header_b_state"] = rig.card_info()["state_name"]
+            c.done(rig)
+
+    c.parallel(part_torn_b, part_torn_a, part_torn_a_only, part_torn_sel, part_stray_b)
+    c.common_checks_upload(project_writes_ok=True)
+
+
 def run_card(c: Any) -> None:
     if c.table().get("part") == "small":
         return run_card_small(c)
+    if c.table().get("part") == "torn":
+        return run_card_torn(c)
     from tools.coldfire import digikit_menu_proof as D
     from tools.patchkit.pk_digikit_project import card_after
 
