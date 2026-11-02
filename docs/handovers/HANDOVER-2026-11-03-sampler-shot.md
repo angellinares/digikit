@@ -27,13 +27,6 @@
 
 ## Next (in order)
 
-1. Run the full routed gate once on a quiet machine (`mise run verify -- --base main`; `--explain` selects all 18 steps because the branch touches emulator, runtime, SDK and patchkit). Known open item: `modules/machines/shot/tests/shot-dn2.device.test.ts` fails with "no reply from the device" during the upload stage under load (also before the merge; passed on a rerun earlier). Investigate if it fails on a quiet machine: DN2 daemon log in the kept run directory, the dk-session upload timeout.
+1. After the testing refactor (another session) lands on main and this branch is rebased onto it, run the full routed gate once on a quiet machine (`mise run verify -- --base main`; `--explain` selects all 18 steps because the branch touches emulator, runtime, SDK and patchkit). Known open item: `modules/machines/shot/tests/shot-dn2.device.test.ts` fails with "no reply from the device" during the upload stage under load (also before the merge; passed on a rerun earlier). Investigate if it fails on a quiet machine: DN2 daemon log in the kept run directory, the dk-session upload timeout.
 2. Em's OK, then push and open the PR to main.
-3. After the merge, from the plans:
-   - docs/plans/device-ab-harness.md: `wb screen/key/turn`, `wb param`, navigation with feedback, fixtures, report; consolidate the Python device scripts into `wb`.
-   - docs/design/param-views.md: live/latched parameter views in the voice adapter (needs Em's OK).
-   - docs/plans/digikit-project.md: per-project persistence (`.dkp`), module persistence API.
-   - SMP: name on the knob through the value-text hook (the stock sample glyph only shows a bank letter and number and needs raw storage that DN2 cannot show).
-   - The 13 sampler/DSP proof tests in tests/regression/runtime/*.test.ts run only by name (Vitest project `proofs`); move them into their modules' tests folders and register them.
-   - Loop budget: the loop option raised SHOT's per-block ceiling to 7000/7200 (worst case a 1-frame loop wrapping on every output); trim the wrap path.
-   - Track 1/2 level difference (9.2 dB in the emulator): find the cause.
+3. After the merge: the backlog in [sampler-follow-ups](../plans/sampler-follow-ups.md).
