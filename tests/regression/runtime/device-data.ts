@@ -5,9 +5,11 @@ import { parse } from 'smol-toml';
 
 /** The one reader of devices/<profile>.toml and devices/ports/<device>-<firmware>.toml. Only the keys read by the tests are typed. */
 export interface DeviceProfile {
-  limits: { fx_slots: number };
+  limits: { fx_slots: number } & Record<string, number>;
+  digikit: { peek: [number, number][]; dsp_area_bytes: number };
   storage?: { samples?: string };
   card: {
+    regions?: { role: string; sector: number }[];
     store: {
       first_sector: number;
       end_sector: number;
@@ -55,6 +57,15 @@ export function cardStore(device: Device) {
     setA,
     setB: setA + settings / 2,
   };
+}
+
+/** The module store in absolute card sectors, with the sectors a store may use (`limit`) and the first sector of the firmware's own project area. */
+export function uploadStore(device: Device) {
+  const profile = deviceProfile(device);
+  const project = profile.card.regions?.find((r) => r.role === 'working-project');
+  if (!project) throw new Error(`${device}: no working-project card region`);
+  const store = cardStore(device);
+  return { ...store, limit: profile.card.store.header_b_sector - store.first, firmwareFirst: project.sector };
 }
 
 /** The `cf.expansion` region of the port file: [lo, hi). */

@@ -3,7 +3,10 @@
   "cacheDirectory": ".nx/cache",
   "neverConnectToCloud": true,
   "analytics": false,
-  "plugins": ["./tools/nx/modules.mjs", "./tools/nx/cargo.mjs"],
+  "plugins": [
+    "./tools/nx/modules.mjs",
+    "./tools/nx/cargo.mjs"
+  ],
   "namedInputs": {
     "hostTests": [
       "{projectRoot}/**/*",
@@ -12,7 +15,11 @@
       "{workspaceRoot}/vitest.host.projects.json",
       "{workspaceRoot}/tsconfig*.json",
       "{workspaceRoot}/apps/desktop/ui/src/**/*",
-      { "externalDependencies": ["vitest"] }
+      {
+        "externalDependencies": [
+          "vitest"
+        ]
+      }
     ],
     "jsToolchain": [
       "{workspaceRoot}/package.json",
@@ -20,14 +27,31 @@
       "{workspaceRoot}/pnpm-workspace.yaml",
       "{workspaceRoot}/mise.toml",
       "{workspaceRoot}/nx.json",
-      { "runtime": "node -p 'JSON.stringify({versions:process.versions,platform:process.platform,arch:process.arch})'" },
-      { "runtime": "pnpm --version" },
-      { "env": "NODE_OPTIONS" },
-      { "env": "NODE_ENV" },
-      { "env": "CI" },
-      { "env": "TZ" },
-      { "env": "LANG" },
-      { "env": "LC_ALL" }
+      {
+        "runtime": "node -p 'JSON.stringify({versions:process.versions,platform:process.platform,arch:process.arch})'"
+      },
+      {
+        "runtime": "pnpm --version"
+      },
+      {
+        "env": "NODE_OPTIONS"
+      },
+      {
+        "env": "NODE_ENV"
+      },
+      {
+        "env": "CI"
+      },
+      {
+        "env": "TZ"
+      },
+      {
+        "env": "LANG"
+      },
+      {
+        "env": "LC_ALL"
+      }
     ]
-  }
+  },
+  "parallel": 3
 }

@@ -25,14 +25,16 @@ import { button, encoder } from './keys.ts';
 
 /** ColdFire instructions per emulated millisecond (the oracle clock). */
 export const MS = 132_000;
+/** A session refuses to start on a volume with less free space (card images and run dirs add up). */
+const MIN_FREE_GB = 50;
 const MAX_STEP = 200_000_000;
 const FAULT_KINDS = new Set(['halt', 'fault', 'stall', 'stall.end', 'lagged']);
 
 export interface SessionOptions {
   device: Device;
   firmware: string;
-  /** "zero": no DSP (`--dsp zero --cf-snapshot`); "sharc": coupled DSP audio from the ready inputs. */
-  dsp: 'zero' | 'sharc';
+  /** "zero": no DSP (`--dsp zero --cf-snapshot`); "sharc": coupled DSP audio from the ready inputs; "cold": no DSP and no snapshot (every load boots cold, for a card identity other than the snapshot's). */
+  dsp: 'zero' | 'sharc' | 'cold';
   /** Card sample directory for `card.load` (DT2). */
   card?: string;
   /** Run directory; default a fresh temporary directory. */
@@ -58,6 +60,10 @@ export interface RuntimeBaseline {
   /** Every caller must explicitly choose its scenario's guard policy, including an unguarded one. */
   guard: GuardSetParams;
   deliverExceptions?: boolean;
+  /** The daemon boots with DIGI_COLD_RELAX_FS: its restored runtime is not `ready` (the DT2 filesystem check is skipped); the main panel is the contract. */
+  relaxedReady?: boolean;
+  /** Leave the emulator paused at the ready point (the default is free running); a test that times events in DSP frames steps from there. */
+  paused?: boolean;
   timeoutMs?: number;
 }
 
@@ -125,24 +131,34 @@ export class Session {
     if (options.runtime?.reuse && options.mirror) throw new Error('reusable runtime sessions cannot mirror cards');
     const inp = resolveInputs(options.device, options.firmware);
     if (options.runtime) validateRuntimeInputs(inp);
+    const volume = options.runDir && fs.existsSync(options.runDir) ? options.runDir : os.tmpdir();
+    const { bavail, bsize } = fs.statfsSync(volume);
+    const freeGb = (bavail * bsize) / 1e9;
+    if (freeGb < MIN_FREE_GB) {
+      throw new Error(
+        `refusing to start: ${freeGb.toFixed(1)} GB free under ${volume}, need ${MIN_FREE_GB} GB (mise run clean:runs)`,
+      );
+    }
     const ownedDir = options.runDir ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'digi-session-'));
     const runDir = options.runDir ?? ownedDir!;
     const args =
-      options.dsp === 'zero'
-        ? [...(options.runtime ? [inp.syx] : []), '--dsp', 'zero', '--cf-snapshot', inp.cfSnapshot]
-        : [
-            inp.syx,
-            '--auto-coupled',
-            '--audio-profile-syx',
-            inp.syx,
-            '--dsp-image',
-            inp.dspImage,
-            '--dsp-state',
-            inp.dspState,
-            '--cf-snapshot',
-            inp.cfSnapshot,
-            '--no-audio',
-          ];
+      options.dsp === 'cold'
+        ? []
+        : options.dsp === 'zero'
+          ? [...(options.runtime ? [inp.syx] : []), '--dsp', 'zero', '--cf-snapshot', inp.cfSnapshot]
+          : [
+              inp.syx,
+              '--auto-coupled',
+              '--audio-profile-syx',
+              inp.syx,
+              '--dsp-image',
+              inp.dspImage,
+              '--dsp-state',
+              inp.dspState,
+              '--cf-snapshot',
+              inp.cfSnapshot,
+              '--no-audio',
+            ];
     if (options.runtime?.reuse) args.push('--no-card-sync');
     if (options.mirror) args.push('--mirror-dir', path.join(runDir, 'mirror'));
     const startupDeadline = Date.now() + (options.runtime ? 120_000 : 300_000);
@@ -242,12 +258,8 @@ export class Session {
       if (!inside(directory) || !inside(image)) {
         throw new Error('runtime baseline card must be in a fixture-owned child directory of runDir');
       }
-      if (
-        !fs.statSync(image).isFile() ||
-        [directory, path.dirname(image)].some((dir) => fs.existsSync(path.join(dir, 'overlay.bin')))
-      ) {
-        throw new Error('runtime baseline must be a card image without an inherited overlay.bin');
-      }
+      // The card's own `overlay.bin` (its test writes) is part of the baseline: the daemon applies it on load.
+      if (!fs.statSync(image).isFile()) throw new Error('runtime baseline must be a card image file');
       if (!baseline.guard) throw new Error('runtime baseline requires an explicit scenario guard policy');
       // The visible job can finish; a hidden patch job may still reject load as BUSY, which discards this daemon.
       let before = (lastStatus = await checked(() => this.client.status()));
@@ -269,6 +281,9 @@ export class Session {
         ? { ...baseline.preparedImage, modules: [...baseline.preparedImage.modules] }
         : undefined;
       if (prepared) validatePreparedRuntimeImage(prepared, inp.syx);
+      // A paused baseline pauses before the load: the runtime is installed in the mode the daemon has (a new session runs free,
+      // at full speed), so the DSP frames it runs between the install and the pause would count against a test's trigger frame.
+      if (baseline.paused) await checked(() => this.client.call('run.mode', { mode: 'paused' }));
       const load = await checked(() =>
         this.client.firmwareLoad({
           syx: prepared?.syx ?? inp.syx,
@@ -285,9 +300,16 @@ export class Session {
         }),
       );
       await checked(() => this.client.guardSet(baseline.guard));
-      await checked(() => this.client.call('run.mode', { mode: 'free' }));
+      await checked(() => this.client.call('run.mode', { mode: baseline.paused ? 'paused' : 'free' }));
       const status = (lastStatus = await checked(() => this.client.status()));
-      if (typeof status.epoch !== 'number' || status.epoch <= epoch || !status.cf.ready || status.mode !== 'free') {
+      if (
+        typeof status.epoch !== 'number' ||
+        status.epoch <= epoch ||
+        !(baseline.relaxedReady
+          ? status.cf.main_ui_reached && status.cf.filesystem_verified !== false
+          : status.cf.ready) ||
+        status.mode !== (baseline.paused ? 'paused' : 'free')
+      ) {
         throw new Error(`runtime baseline did not establish a new ready epoch: ${JSON.stringify(status)}`);
       }
       if (prepared) {

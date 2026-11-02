@@ -14,7 +14,7 @@ import {
   type RuntimeBaseline,
   type Session,
 } from '@digi/test-support';
-import { withReusablePatchedSession, type PatchedSession } from '../support.ts';
+import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { FIRMWARE, expectRuntimeUi, moduleArtifact, record } from './live.ts';
 import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
 import {
@@ -323,8 +323,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
         ]);
         const errors = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
         if (errors.length === 1) throw errors[0];
-        if (errors.length > 1)
-          throw new AggregateError(errors, 'route lifetime safety and screenshot rendering failed');
+        if (errors.length > 1) throw aggregate(errors, 'route lifetime safety and screenshot rendering failed');
       },
     },
     scope,

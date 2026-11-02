@@ -3280,7 +3280,7 @@ impl Actor {
                 .map_err(&rejected)?;
         }
         let mut runtime = Runtime::new_patched(&bytes, card_obj, &base_sha).map_err(&rejected)?;
-        if resetting {
+        if resetting || std::env::var_os("DIGI_COLD_RELAX_FS").is_some() {
             // A used card may skip the boot-time filesystem check, as on the coupled reset path.
             runtime.relax_fs_check();
         }

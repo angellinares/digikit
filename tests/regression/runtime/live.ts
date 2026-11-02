@@ -29,24 +29,37 @@ export function liveOptions(device: Device, extra: { patchSet?: string; mirror?:
   return { device, firmware: FIRMWARE[device], binary, card, ...extra };
 }
 
+/** Full-tier scenarios run only under `DIGIKIT_TIER=full` (`verify --full`), as the Python tiers do. */
+export const FULL_TIER = process.env.DIGIKIT_TIER === 'full';
+
 /** One test per device, each on its own fresh runtime daemon that has passed `expectRuntimeBoot`. */
 export function runtimeTests(
   name: string,
   body: (runtime: PatchedSession) => Promise<void>,
-  opts: { patchSet?: string; mirror?: boolean; timeout?: number; devices?: readonly Device[] } = {},
+  opts: {
+    patchSet?: string;
+    mirror?: boolean;
+    timeout?: number;
+    devices?: readonly Device[];
+    full?: boolean;
+    skip?: string;
+  } = {},
 ): void {
   for (const device of opts.devices ?? DEVICES) {
-    describe(`${device.toUpperCase()} ${FIRMWARE[device]}`, () => {
-      const handle = withPatchedSession(liveOptions(device, opts), name);
-      test(
-        name,
-        async () => {
-          await expectRuntimeBoot(handle.runtime);
-          await timePhase('scenario.body', () => body(handle.runtime), timingContext(handle.runtime.session));
-        },
-        opts.timeout,
-      );
-    });
+    describe.skipIf((opts.full === true && !FULL_TIER) || opts.skip !== undefined)(
+      `${device.toUpperCase()} ${FIRMWARE[device]}`,
+      () => {
+        const handle = withPatchedSession(liveOptions(device, opts), name);
+        test(
+          name,
+          async () => {
+            await expectRuntimeBoot(handle.runtime);
+            await timePhase('scenario.body', () => body(handle.runtime), timingContext(handle.runtime.session));
+          },
+          opts.timeout,
+        );
+      },
+    );
   }
 }
 
@@ -71,7 +84,7 @@ export async function expectRuntimeUi(
   session: Session,
   plan: RuntimePlan,
   artifacts: string,
-  options: { fresh?: boolean; afterEpoch?: number; timeout?: number } = {},
+  options: { fresh?: boolean; afterEpoch?: number; timeout?: number; paused?: boolean } = {},
 ): Promise<number> {
   const timeout = options.timeout ?? 45_000;
   const deadline = Date.now() + timeout;
@@ -94,7 +107,7 @@ export async function expectRuntimeUi(
             ),
           ) as typeof boot;
           return (
-            status.mode === 'free' &&
+            status.mode === (options.paused ? 'paused' : 'free') &&
             // Restart preserves the card and relaxes the DT2 filesystem-worker check.
             // A new epoch still needs the current UI guards; an explicit filesystem failure is never accepted.
             (options.afterEpoch === undefined ? status.cf.ready : status.cf.filesystem_verified !== false) &&

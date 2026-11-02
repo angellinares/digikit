@@ -286,11 +286,9 @@ test('baseline reload replaces Session identity/card/events and reapplies actor 
   }
 });
 
-for (const invalid of ['overlay', 'outside', 'symlink', 'same-epoch', 'busy', 'load-error'] as const) {
+for (const invalid of ['outside', 'symlink', 'same-epoch', 'busy', 'load-error'] as const) {
   test(`unusable ${invalid} baseline discards only the owned daemon and invalidates Session metadata`, async () => {
     const { session, baseline } = await reusableSession();
-    if (invalid === 'overlay')
-      fs.writeFileSync(path.join(path.dirname(baseline.cardImage), 'overlay.bin'), 'old writes');
     if (invalid === 'outside') baseline.cardImage = '/private/tmp/card.img';
     if (invalid === 'symlink') {
       fs.unlinkSync(baseline.cardImage);

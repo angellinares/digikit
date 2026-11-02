@@ -1844,6 +1844,9 @@ def run_step(gate: Gate, step: str) -> None:
                 "runtime-fixture:plusdrive",
                 [*PY, "-m", "tools.firmware.plusdrive_check", "--build-only"],
             )
+            from tools.firmware import plusdrive_check
+
+            env["DIGI_PLUSDRIVE"] = str(plusdrive_check.plusdrive_binary())
         script = {
             "stock": "test:stock",
             "runtime-fixture": "test:runtime",

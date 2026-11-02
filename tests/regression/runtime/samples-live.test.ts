@@ -8,23 +8,23 @@ import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { RpcFiles, putVerified, verifyWritten } from '@digi/dk-session/rpcfiles';
 import type { PatchedSession } from '../support.ts';
 import { liveArtifacts, liveCheck as check, liveProtocol, runtimeTests, sampleWav, settleLive } from './live.ts';
-import { applyOverlay } from './write-safety.ts';
+import { cardAfter } from './write-safety.ts';
+import { overlayArgs, plusdriveBinary } from './card-kit.ts';
 
 const exec = promisify(execFile);
 
 /** Independent +Drive reader/builder oracle over the guest's card writes. No implicit builds. */
 async function expectSampleCard(session: Session, out: string, hash: number): Promise<void> {
-  const plusdrive = join(repoRoot(), 'out/native/target/nogen/release/plusdrive');
+  const plusdrive = plusdriveBinary();
   if (!existsSync(plusdrive)) throw new Error('plusdrive CLI missing: run mise run build:plusdrive');
   const base = session.cardPath;
   if (!base) throw new Error('sample card oracle requires the loaded base card image');
   const overlay = join(out, 'samples.ov.bin');
   await session.client.call('card.overlay', { path: overlay });
-  const after = join(out, 'samples-after.img');
-  applyOverlay(base, overlay, after);
+  const after = cardAfter(base, overlay, join(out, 'samples-after'));
   const run = (args: string[]) =>
     exec(plusdrive, args, { cwd: repoRoot(), timeout: 30_000, encoding: 'buffer', maxBuffer: 4 * 1024 * 1024 });
-  const got = (await run(['fs', 'cat', after, '/live/test'])).stdout;
+  const got = (await run(['fs', 'cat', after, ...overlayArgs(after), '/live/test'])).stdout;
   const sent = readFileSync(join(out, 'sent-test.bin'));
   expect(got, 'the card holds sent bytes plus a 16-byte zero trailer').toEqual(Buffer.concat([sent, Buffer.alloc(16)]));
   const folder = join(out, 'built/plus_drive/dt2');
@@ -35,7 +35,7 @@ async function expectSampleCard(session: Session, out: string, hash: number): Pr
   const want = (await run(['fs', 'cat', built, '/test'])).stdout;
   expect(want.length).toBeGreaterThan(0x50);
   expect(got, 'the card equals the +Drive builder file for the same WAV').toEqual(want);
-  const listing = (await run(['fs', 'ls', after])).stdout.toString();
+  const listing = (await run(['fs', 'ls', after, ...overlayArgs(after)])).stdout.toString();
   writeFileSync(join(out, 'card-listing.txt'), listing);
   const row = listing
     .split('\n')

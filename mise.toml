@@ -132,6 +132,10 @@ description = "Full gate: every runtime acceptance file, 191 DN2 FX assertions a
 
 # --- tests ---
 
+[tasks."clean:runs"]
+run = "uv run python -m tools.devtools.clean_runs"
+description = "Dry run: list old digi-* run directories in the temp dir and orphan digi-emud processes; -- --yes deletes the directories (never kills), -- --hours N sets the minimum age (default 24)"
+
 [tasks."test:host"]
 run = "pnpm test:host"
 description = "Run the host-only Vitest projects with the native test runner; no native/WASM build or device checks"

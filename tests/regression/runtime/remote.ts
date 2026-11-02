@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import type { DkSession } from '@digi/dk-session';
 import { button, repoRoot, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '../support.ts';
+import { aggregate, type PatchedSession } from '../support.ts';
 import {
   beforeReadinessDeadline,
   expectRuntimeUi,
@@ -79,7 +79,7 @@ export async function withRemoteRelease(dk: DkSession, action: () => Promise<voi
       }),
     ]);
   } catch (error) {
-    if (actionFailed) throw new AggregateError([actionError, error], 'remote action and release failed');
+    if (actionFailed) throw aggregate([actionError, error], 'remote action and release failed');
     throw error;
   } finally {
     clearTimeout(timer);

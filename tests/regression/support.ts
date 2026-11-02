@@ -13,6 +13,12 @@ import {
 import { portFile } from './runtime/device-data.ts';
 import { setTimingContext, timePhase, timingContext } from './timing.ts';
 
+/** An AggregateError whose message names its causes (Vitest prints only the message). */
+export function aggregate(errors: unknown[], what: string): AggregateError {
+  const causes = errors.map((e) => (e instanceof Error ? e.message : String(e))).join(' | ');
+  return new AggregateError(errors, `${what}: ${causes}`);
+}
+
 export interface SessionHandle {
   /** The session of this test file; valid inside tests and hooks. */
   readonly session: Session;
@@ -148,7 +154,7 @@ export interface RuntimeCase extends PatchedSession {
 
 /** Opt-in fixture: independent cases reload pristine firmware/card state in one owned daemon. */
 export function withReusablePatchedSession(
-  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: 'zero' | 'sharc' | 'cold' },
   lifecycle: {
     prepareBaseline: (session: Session) => Promise<RuntimeBaseline>;
     /** Required scenario evidence (guard/fault/card/PCM) before state is discarded. Holds release in their own finally. */
@@ -205,7 +211,9 @@ export function withReusablePatchedSession(
       errors.push(error);
     }
     try {
-      await withinRuntimeDeadline(deadline, () => session!.client.call('pcm.tap', { action: 'capture_stop' }));
+      // Without a DSP (zero or cold ColdFire-only) there is no audio capture to stop.
+      if (opts.dsp !== 'zero' && opts.dsp !== 'cold')
+        await withinRuntimeDeadline(deadline, () => session!.client.call('pcm.tap', { action: 'capture_stop' }));
       await withinRuntimeDeadline(deadline, () => session!.client.call('run.mode', { mode: 'paused' }));
     } catch (error) {
       errors.push(error);
@@ -224,12 +232,16 @@ export function withReusablePatchedSession(
         /* Preserve evidence/cleanup errors if diagnostics cannot be written. */
       }
       await session!.close({ preserveDiagnostics: true });
-      throw new AggregateError(errors, 'runtime case evidence or cleanup failed; owned daemon discarded');
+      throw aggregate(errors, 'runtime case evidence or cleanup failed; owned daemon discarded');
     }
   };
   beforeAll(async () => {
     const deadline = Date.now() + 120_000;
-    session = await Session.start({ ...opts, dsp: 'sharc', runtime: { patchSet: opts.patchSet, reuse: true } });
+    session = await Session.start({
+      ...opts,
+      dsp: opts.dsp ?? 'sharc',
+      runtime: { patchSet: opts.patchSet, reuse: true },
+    });
     try {
       baseline = await withinRuntimeDeadline(deadline, () => lifecycle.prepareBaseline(session!));
     } catch (error) {
@@ -260,7 +272,7 @@ export function withReusablePatchedSession(
     } catch (error) {
       errors.push(error);
     }
-    if (errors.length) throw new AggregateError(errors, 'runtime shutdown or post-close evidence failed');
+    if (errors.length) throw aggregate(errors, 'runtime shutdown or post-close evidence failed');
   });
   return {
     get runtime() {

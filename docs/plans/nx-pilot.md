@@ -624,3 +624,12 @@ analysis (hook_ab, fxpage, fxsend, pk_digikit_fx pcm-peak, fxshift) and the fxro
 subcommands that need the settings encoder, PNG output or project-slot code; audio analysis moves
 to the audio-QA crate ([plan](audio-qa.md)).
 
+
+Device families as Nx targets (2026-11-02): `regression:test-device-upload`, `-settings` and `-debug`
+run `verify --tests` for their files; `nx.json` sets `parallel: 3`, and
+`nx run-many -p regression -t <the three> --parallel=3` ran the quick tier in 10 minutes. Supporting
+tooling on the same branch: zero-copy card images (hard link plus `overlay.bin`, `plusdrive --overlay`),
+`cloneFile`, session run-directory cleanup, a 50 GB free-disk guard at session start, `mise run
+clean:runs` (dry run by default), verify passing `DIGI_PLUSDRIVE`, and the daemon honouring
+`DIGI_COLD_RELAX_FS` on the ColdFire-only cold path. Next: a shared Nx cache directory with
+`maxCacheSize`, cached `pack` targets as `dependsOn`, then the daemon binary as a cached output.

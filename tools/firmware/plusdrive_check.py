@@ -126,6 +126,11 @@ def cargo(args: list[str], env: dict[str, str]) -> None:
         raise SystemExit(done.returncode)
 
 
+def plusdrive_binary() -> pathlib.Path:
+    """Where build_plusdrive puts the plusdrive CLI."""
+    return pathlib.Path(native_target.target_dir("")) / "release" / "plusdrive"
+
+
 def build_plusdrive() -> pathlib.Path:
     """Build the plusdrive CLI and return its binary."""
     target = native_target.target_dir("")
@@ -136,7 +141,7 @@ def build_plusdrive() -> pathlib.Path:
         ],
         digi_env.rust_env(),
     )  # fmt: skip
-    return pathlib.Path(target) / "release" / "plusdrive"
+    return plusdrive_binary()
 
 
 def store_listing(

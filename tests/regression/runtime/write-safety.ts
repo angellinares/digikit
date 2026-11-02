@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Device } from '@digi/test-support';
+import { cloneFile, type Device } from '@digi/test-support';
 import { cardStore, expansionRegion } from './device-data.ts';
 import type { RuntimePlan } from './runtime-plan.ts';
 
@@ -40,24 +40,117 @@ export function overlayWrites(overlay: string, device: Device): { store_sectors:
   return { store_sectors: [...new Set(cardStoreHits(overlaySectors(overlay), device))] };
 }
 
-/** Copy BASE (a copy-on-write clone where the file system has one) to OUT and write the masked bytes of the overlay over it. */
-export function applyOverlay(base: string, overlay: string, out: string): number {
-  fs.rmSync(out, { force: true });
-  fs.copyFileSync(base, out, fs.constants.COPYFILE_FICLONE);
-  const fd = fs.openSync(out, 'r+');
-  try {
-    let n = 0;
-    for (const { sector, mask, data } of overlayRecords(fs.readFileSync(overlay))) {
-      const cur = Buffer.alloc(SECTOR);
-      fs.readSync(fd, cur, 0, SECTOR, sector * SECTOR);
-      for (let i = 0; i < SECTOR; i++) if (mask[i >> 3]! & (1 << (i & 7))) cur[i] = data[i]!;
-      fs.writeSync(fd, cur, 0, SECTOR, sector * SECTOR);
-      n++;
-    }
-    return n;
-  } finally {
-    fs.closeSync(fd);
+type Masked = { mask: Buffer; data: Buffer };
+
+/** Overlay records for the sectors, sorted: the Rust parser wants strictly rising sectors. */
+function pack(sectors: Map<number, Masked>): Buffer {
+  const out = Buffer.alloc(sectors.size * RECORD);
+  [...sectors]
+    .sort((a, b) => a[0] - b[0])
+    .forEach(([sector, { mask, data }], i) => {
+      out.writeBigUInt64LE(BigInt(sector), i * RECORD);
+      mask.copy(out, i * RECORD + 8);
+      data.copy(out, i * RECORD + 72);
+    });
+  return out;
+}
+
+/** An overlay of whole sectors (sector number -> 512 bytes). */
+export const encodeOverlay = (sectors: Map<number, Buffer>): Buffer =>
+  pack(new Map([...sectors].map(([sector, data]) => [sector, { mask: Buffer.alloc(64, 0xff), data }])));
+
+type Records = Map<number, { mask: Buffer; data: Buffer }>;
+const parsed = new Map<string, { key: string; records: Records }>();
+
+/** The records of an overlay file by sector. They are kept until the file changes: a reader asks for many sectors. */
+function overlayOf(file: string): Records {
+  if (!fs.existsSync(file)) return new Map();
+  const st = fs.statSync(file);
+  const key = `${st.size}:${st.mtimeMs}`;
+  let hit = parsed.get(file);
+  if (hit?.key !== key) {
+    hit = { key, records: new Map(Array.from(overlayRecords(fs.readFileSync(file)), (r) => [r.sector, r])) };
+    parsed.set(file, hit);
   }
+  return hit.records;
+}
+
+/** The sectors FIRST on of the card the guest sees: BUF holds the image bytes, the `overlay.bin` next to it and then the optional EXTRA overlay blob go over them. */
+export function layOver(buf: Buffer, first: number, card: string, extra?: Buffer): void {
+  const records = [
+    overlayOf(overlayFile(card)),
+    new Map(Array.from(overlayRecords(extra ?? Buffer.alloc(0)), (r) => [r.sector, r])),
+  ];
+  for (let n = 0; n * SECTOR < buf.length; n++)
+    for (const map of records) {
+      const r = map.get(first + n);
+      if (r) for (let i = 0; i < SECTOR; i++) if (r.mask[i >> 3]! & (1 << (i & 7))) buf[n * SECTOR + i] = r.data[i]!;
+    }
+}
+
+/**
+ * The writes of a session: the records of an exported overlay minus those that only repeat OWN, the `overlay.bin` the card was loaded with
+ * (the daemon exports its whole overlay). A guest write of the very bytes the card already held is not told apart from them.
+ */
+export function withoutOwn(exported: Buffer, own: Buffer): Buffer {
+  const mine = new Map(Array.from(overlayRecords(own), (r) => [r.sector, r]));
+  const repeats = (r: { sector: number; mask: Buffer; data: Buffer }) => {
+    const m = mine.get(r.sector);
+    if (!m) return false;
+    for (let i = 0; i < SECTOR; i++)
+      if (r.mask[i >> 3]! & (1 << (i & 7)) && (!(m.mask[i >> 3]! & (1 << (i & 7))) || m.data[i] !== r.data[i]))
+        return false;
+    return true;
+  };
+  return Buffer.concat(
+    Array.from(overlayRecords(exported))
+      .filter((r) => !repeats(r))
+      .map((r) => pack(new Map([[r.sector, r]]))),
+  );
+}
+
+/** One overlay of several, in order: later bytes win. */
+export function mergeOverlays(...blobs: Buffer[]): Buffer {
+  const all = new Map<number, Masked>();
+  for (const blob of blobs)
+    for (const r of overlayRecords(blob)) {
+      const cur = all.get(r.sector) ?? { mask: Buffer.alloc(64), data: Buffer.alloc(SECTOR) };
+      for (let i = 0; i < SECTOR; i++)
+        if (r.mask[i >> 3]! & (1 << (i & 7))) {
+          cur.data[i] = r.data[i]!;
+          cur.mask[i >> 3]! |= 1 << (i & 7);
+        }
+      all.set(r.sector, cur);
+    }
+  return pack(all);
+}
+
+/** The `overlay.bin` that sits next to a card image: the daemon applies it on load. */
+export const overlayFile = (card: string): string => path.join(path.dirname(card), 'overlay.bin');
+
+export const cardOverlay = (card: string): Buffer =>
+  fs.existsSync(overlayFile(card)) ? fs.readFileSync(overlayFile(card)) : Buffer.alloc(0);
+
+/**
+ * A card is a directory with `card.img` and its own `overlay.bin`. `link` makes one that shares the base image (a hard link: no copy;
+ * `cloneFile` only where linking fails, e.g. across volumes) and holds `overlay` as its writes. Returns the new `card.img`.
+ */
+export function linkCard(base: string, dir: string, overlay: Buffer): string {
+  const card = path.join(dir, 'card.img');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.rmSync(card, { force: true });
+  try {
+    fs.linkSync(base, card);
+  } catch {
+    cloneFile(base, card);
+  }
+  fs.writeFileSync(overlayFile(card), overlay);
+  return card;
+}
+
+/** The card as the guest left it: a new card in DIR with the writes of BASE, then those of the session's exported OVERLAY file. */
+export function cardAfter(base: string, overlayFile: string, dir: string): string {
+  return linkCard(base, dir, mergeOverlays(cardOverlay(base), fs.readFileSync(overlayFile)));
 }
 
 const hex = (n: number) => `0x${n.toString(16)}`;

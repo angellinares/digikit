@@ -710,6 +710,19 @@ impl RandomAccessRead for FileImage {
     }
 }
 
+/// Run `f` on the card the guest sees: the image file, with the writes of a `card.overlay` file over it when given.
+pub fn with_overlay<T>(
+    image: &Path,
+    overlay: Option<&Path>,
+    f: impl FnOnce(&dyn RandomAccessRead) -> Result<T, String>,
+) -> Result<T, String> {
+    let base = FileImage::open(image)?;
+    let Some(path) = overlay else { return f(&base) };
+    let sectors = parse_overlay(&fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+        .map_err(|e| e.to_string())?;
+    f(&OverlayImage::new(&base, &sectors))
+}
+
 pub const EXPORT_USAGE: &str = "usage: plusdrive export IMAGE [--overlay FILE] -o FOLDER [--out DIR] [--prune] [--with-working-project] [--device dt2|dn2]\n  \
      IMAGE   card image (sparse file); --overlay: a `card.overlay` file of the guest's writes\n  \
      -o      the plus_drive/<device> folder to bring up to date\n  \
@@ -775,6 +788,30 @@ mod tests {
         out.extend_from_slice(&(data.len() as u32).to_le_bytes());
         out.extend_from_slice(&data);
         out
+    }
+
+    #[test]
+    fn with_overlay_reads_the_image_under_the_masked_overlay_bytes() {
+        let dir = temp("with-overlay");
+        let (image, overlay) = (dir.join("card.img"), dir.join("overlay.bin"));
+        fs::write(&image, vec![7u8; 1024]).unwrap();
+        let mut sector = CardOverlaySector {
+            sector: 1,
+            written: [0; 64],
+            data: [9; 512],
+        };
+        sector.written[0] = 0b11; // bytes 0 and 1 only
+        fs::write(&overlay, crate::encode_overlay(&[sector])).unwrap();
+        let read = |overlay: Option<&Path>| {
+            with_overlay(&image, overlay, |view| {
+                let mut out = [0u8; 4];
+                view.read_at(510, &mut out);
+                Ok(out)
+            })
+            .unwrap()
+        };
+        assert_eq!(read(None), [7, 7, 7, 7]);
+        assert_eq!(read(Some(&overlay)), [7, 7, 9, 9]);
     }
 
     fn temp(name: &str) -> PathBuf {

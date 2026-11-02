@@ -1,6 +1,8 @@
-import { fmtVersion, type DkLogEvent, type DkSession } from '@digi/dk-session';
+import { fmtVersion, hasCap, type DkLogEvent, type DkSession } from '@digi/dk-session';
+import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import type { Session } from '@digi/test-support';
 import { expect } from 'vitest';
+import type { PatchedSession } from '../support.ts';
 import { beforeReadinessDeadline, record } from './live.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 
@@ -130,6 +132,22 @@ export async function readSmallRing(session: Session, plan: RuntimePlan): Promis
     events.push({ seq, time: w[1]!, kind: w[2]! >>> 16, flags: w[2]! & 0xffff, args: w.slice(3, 8) });
   }
   return events;
+}
+
+export const ofKind = (events: DkLogEvent[], kind: number) => events.filter((e) => e.kind === kind);
+
+/** The events of one kind in the runtime's small ring (what exists while the debug module is not loaded). */
+export async function ringEvents(
+  session: Session,
+  plan: RuntimePlan,
+  kind: keyof typeof LOG_KIND,
+): Promise<DkLogEvent[]> {
+  return ofKind(await readSmallRing(session, plan), LOG_KIND[kind]);
+}
+
+/** Every event the device's log holds: over SysEx while the debug module is loaded, else the runtime's own small ring from memory. */
+export async function logEvents({ session, dk }: PatchedSession, plan: RuntimePlan): Promise<DkLogEvent[]> {
+  return hasCap(await dk.info(), 'LOG') ? dk.readLog() : readSmallRing(session, plan);
 }
 
 /** What the boot found of a crash record (`DKRT_CRASH`, crash.rs `CrashSeen`): the words that tests look at. */

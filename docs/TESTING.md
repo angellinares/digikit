@@ -99,6 +99,7 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run test:quick` | Launcher, PGO, target and coupled-tool tests, then `coupled test-quick`. |
 | `mise run verify` | The merge gate, routed by changed files. Options: `--base BRANCH`, `--head REV`, `--only STEPS`, `--all-files`, `--explain`, `--rerun-failed`, `--jobs N`, `--foreground`, `--all-no-aot`, `--no-cache`. |
 | `mise run verify:full` | `verify --full`: runtime acceptance, 191 DN2 FX assertions, `tier-sweep` instead of `tier-quick`. `-- --dt2` adds the DT2 full sweep. Only after generated-core changes. |
+| `mise run clean:runs` | Lists old `digi-*` run directories under the temp dir (older than 24 h, not used by a running `digi-emud` or node process) and orphan `digi-emud` processes; `-- --yes` deletes the directories, `-- --hours N` sets the age. It never kills a process. A Session refuses to start with less than 50 GB free. |
 
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.

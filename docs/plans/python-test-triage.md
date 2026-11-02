@@ -34,3 +34,15 @@ Kept after review: `test_pk_types.py` (type-number registry contract), `test_sha
    DSP analysis, probe tooling): proposed for deletion. A scout first separates them from tools that
    production code imports or mise build tasks run (those keep their tests).
 4. Measure the Python tool graph again (finding 104) after steps 1 and 2.
+
+## Migration status (2026-11-02)
+
+TypeScript ports exist for upload (all but upload-rust), settings, roundtrip, equiv, card-safety,
+card-small, debug-log (in `debug-module.test.ts`), debug-guard, crash-capture, safe-fault,
+safe-late-fault and cut-selection. Shared helpers: `card-kit.ts` (cards, guest reads, mailbox),
+`card-rig.ts` (one reusable card fixture with the common close checks), `write-safety.ts` (zero-copy
+cards: a hard link to a shared base plus `overlay.bin`), `device-data.ts`, `fx-live.ts` (PCM).
+Each file has a `runtimeAcceptance` record, and the three families are Nx targets
+(`test-device-upload`, `-settings`, `-debug`). Proof state and open items:
+[handover](../handovers/HANDOVER-2026-11-02-scenario-migration.md). No Python scenario is deleted yet;
+upload-cut and upload-clear-cut are skipped in TypeScript until the overlay issue is fixed.
