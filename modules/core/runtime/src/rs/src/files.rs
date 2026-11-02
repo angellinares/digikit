@@ -450,7 +450,13 @@ impl Backend {
     }
 }
 
-/// One provider step and one deferred callback per UI pass, independent of slot0.
+// Steps per pass: at most MAX_STEPS provider steps, within BUDGET_BLOCKS firmware blocks (the counter runs at 1500/s, so about 5 ms).
+const MAX_STEPS: u32 = 32;
+const BUDGET_BLOCKS: u32 = 8;
+// Step cap when the firmware's counter is not there.
+const FALLBACK_STEPS: u32 = 8;
+
+/// Several provider steps, each with its deferred callback, per UI pass within a time budget, independent of slot0.
 pub unsafe fn tick() {
     let entered = locked(|_| {
         if TICKING {
@@ -463,69 +469,87 @@ pub unsafe fn tick() {
     if !entered {
         return;
     }
-    let work = locked(|jobs| match jobs.take_work() {
-        Ok(Some(lease)) if READY[lease.owner] == 2 => Some(lease),
-        Ok(Some(lease)) => {
-            let _ = jobs.finish_work(lease, Outcome::Pending);
-            None
-        }
-        Err(error) => {
-            SCHED_ERROR = error;
-            None
-        }
-        _ => None,
-    });
-    if let Some(lease) = work {
-        let backend = &mut BACKENDS[lease.owner];
-        let result = if backend.ticket != lease.ticket.id() {
-            backend
-                .start(lease.ticket.id(), &lease.request)
-                .and_then(|_| backend.step())
-        } else {
-            backend.step()
-        };
-        let outcome = match result {
-            Ok(value) => value,
-            Err(error) => Outcome::Error(error),
-        };
-        locked(|jobs| {
-            let _ = jobs.finish_work(lease, outcome);
-        });
-    }
-    // Capture callback AND context in the same serialization as lease validation.
-    let event = locked(|jobs| {
-        let lease = match jobs.take_event() {
-            Ok(Some(value)) => value,
+    let blocks = crate::fw_blocks();
+    let start = blocks.unwrap_or(0);
+    let mut steps = 0;
+    loop {
+        let work = locked(|jobs| match jobs.take_work() {
+            Ok(Some(lease)) if READY[lease.owner] == 2 => Some(lease),
+            Ok(Some(lease)) => {
+                let _ = jobs.finish_work(lease, Outcome::Pending);
+                None
+            }
             Err(error) => {
                 SCHED_ERROR = error;
+                None
+            }
+            _ => None,
+        });
+        let worked = work.is_some();
+        if let Some(lease) = work {
+            let backend = &mut BACKENDS[lease.owner];
+            let result = if backend.ticket != lease.ticket.id() {
+                backend
+                    .start(lease.ticket.id(), &lease.request)
+                    .and_then(|_| backend.step())
+            } else {
+                backend.step()
+            };
+            let outcome = match result {
+                Ok(value) => value,
+                Err(error) => Outcome::Error(error),
+            };
+            locked(|jobs| {
+                let _ = jobs.finish_work(lease, outcome);
+            });
+            steps += 1;
+        }
+        // Capture callback AND context in the same serialization as lease validation.
+        let event = locked(|jobs| {
+            let lease = match jobs.take_event() {
+                Ok(Some(value)) => value,
+                Err(error) => {
+                    SCHED_ERROR = error;
+                    return None;
+                }
+                _ => return None,
+            };
+            let info = INFO_ROWS[lease.owner];
+            if READY[lease.owner] != 2
+                || info.handle != lease.handle.id()
+                || info.ticket != lease.ticket.id()
+            {
+                let _ = jobs.finish_event(lease);
                 return None;
             }
-            _ => return None,
-        };
-        let info = INFO_ROWS[lease.owner];
-        if READY[lease.owner] != 2
-            || info.handle != lease.handle.id()
-            || info.ticket != lease.ticket.id()
-        {
-            let _ = jobs.finish_event(lease);
-            return None;
-        }
-        Some((lease, info.notify, info.context))
-    });
-    if let Some((lease, notify, context)) = event {
-        if let Some(call) = notify {
-            let state = match lease.state {
-                EventState::Row => 1,
-                EventState::Done => 2,
-                EventState::Error(error) => error,
-            };
-            let prev = crate::dlog::enter_module(lease.owner);
-            call(lease.handle.id(), lease.ticket.id(), state, context);
-            crate::dlog::leave_module(prev);
-        }
-        locked(|jobs| {
-            let _ = jobs.finish_event(lease);
+            Some((lease, info.notify, info.context))
         });
+        let called = event.is_some();
+        if let Some((lease, notify, context)) = event {
+            if let Some(call) = notify {
+                let state = match lease.state {
+                    EventState::Row => 1,
+                    EventState::Done => 2,
+                    EventState::Error(error) => error,
+                };
+                let prev = crate::dlog::enter_module(lease.owner);
+                call(lease.handle.id(), lease.ticket.id(), state, context);
+                crate::dlog::leave_module(prev);
+            }
+            locked(|jobs| {
+                let _ = jobs.finish_event(lease);
+            });
+        }
+        if !worked && !called {
+            break;
+        }
+        let spent = match crate::fw_blocks() {
+            Some(now) => now.wrapping_sub(start) >= BUDGET_BLOCKS,
+            None => steps >= FALLBACK_STEPS,
+        };
+        if spent || steps >= MAX_STEPS {
+            break;
+        }
     }
     locked(|_| {
         TICKING = false;

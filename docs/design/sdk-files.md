@@ -142,8 +142,9 @@ both provider adapters in bounded emulator cases before building picker flows.
 The existing UI host fake will cover track capture, folder navigation and stale
 result rejection without claiming a sample is loaded.
 
-The scheduler performs at most one provider step and one deferred notification
-per UI pass. Store scratch is 4,096 bytes, with a separate 512-byte fingerprint
+The scheduler performs provider steps, each with its deferred notification, in a
+loop per UI pass: it stops when there is no work or event, after about 5 ms (8
+firmware blocks), or after 32 steps (8 steps when the firmware counter is absent). Store scratch is 4,096 bytes, with a separate 512-byte fingerprint
 buffer, 16 raw rows and eight retained directory children per client. The initial
 implementation reserves roughly 42 KiB of fixed ColdFire listing storage for
 eight clients. This is a memory/call-count ceiling, not a latency measurement;

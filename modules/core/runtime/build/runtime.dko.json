@@ -13017,616 +13017,546 @@
   },
   {
    "addend": 0,
-   "offset": 42,
+   "offset": 46,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "dkrt_irq_mask",
-   "type": "cf.32"
-  },
-  {
-   "addend": 5108,
-   "offset": 50,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
+   "symbol": ".sec..text._RNvCsdWzhuXZnywa_4dkrt9fw_blocks",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 78,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 120,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "dkrt_irq_restore",
-   "type": "cf.32"
-  },
-  {
-   "addend": 12,
-   "offset": 142,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 154,
+   "offset": 72,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "memcpy",
    "type": "cf.32"
   },
   {
-   "addend": 5104,
-   "offset": 170,
+   "addend": 12,
+   "offset": 110,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 5104,
-   "offset": 202,
+   "offset": 134,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
+   "type": "cf.32"
+  },
+  {
+   "addend": 5104,
+   "offset": 166,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 280,
-   "offset": 210,
+   "offset": 174,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 5108,
-   "offset": 244,
+   "offset": 208,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 262,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 296,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 336,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 346,
+   "offset": 282,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt5files5READY",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 398,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 406,
+   "offset": 338,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_restore",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 440,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 474,
+   "offset": 370,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files8BACKENDS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 572,
+   "offset": 468,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvMNtCsfgJyBKL6YOn_8dkrt_sdk5filesNtB2_9FileEntry5empty",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 596,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 796,
+   "offset": 696,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RNvNtCsfgJyBKL6YOn_8dkrt_sdk5files8path_len",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 840,
+   "offset": 740,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 856,
+   "offset": 756,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RINvNtCs6uNbiqmv1Ak_4core5slice20copy_from_slice_implhEB4_",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 872,
+   "offset": 772,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 878,
+   "offset": 778,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RNvNtCs6uNbiqmv1Ak_4core6option13unwrap_failed",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 918,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 936,
+   "offset": 832,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 946,
+   "offset": 842,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvMs3_NtCsfgJyBKL6YOn_8dkrt_sdk9files_jobINtB5_6BrokerKj8_NtNtCsdWzhuXZnywa_4dkrt5files7RequestNtNtB7_5files9FileEntryE11finish_workBZ_",
    "type": "cf.32"
   },
   {
    "addend": 6,
-   "offset": 998,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1010,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 604,
-   "offset": 1036,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
-   "type": "cf.32"
-  },
-  {
-   "addend": 5104,
-   "offset": 1054,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
-   "type": "cf.32"
-  },
-  {
-   "addend": 5104,
-   "offset": 1082,
+   "offset": 886,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 604,
-   "offset": 1088,
+   "offset": 916,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
+   "type": "cf.32"
+  },
+  {
+   "addend": 5104,
+   "offset": 934,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
+   "type": "cf.32"
+  },
+  {
+   "addend": 5104,
+   "offset": 962,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
+   "type": "cf.32"
+  },
+  {
+   "addend": 604,
+   "offset": 968,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 614,
-   "offset": 1102,
+   "offset": 982,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 5112,
-   "offset": 1146,
+   "offset": 1018,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1166,
+   "offset": 1034,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt5files11SCHED_ERROR",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1180,
+   "offset": 1048,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1186,
+   "offset": 1054,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RNvNtCs6uNbiqmv1Ak_4core6option13unwrap_failed",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1224,
+   "offset": 1084,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt5files5READY",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1246,
+   "offset": 1106,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt5files9INFO_ROWS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1260,
+   "offset": 1120,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1270,
+   "offset": 1130,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvMs3_NtCsfgJyBKL6YOn_8dkrt_sdk9files_jobINtB5_6BrokerKj8_NtNtCsdWzhuXZnywa_4dkrt5files7RequestNtNtB7_5files9FileEntryE12finish_eventBZ_",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1308,
+   "offset": 1160,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_restore",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1344,
+   "offset": 1192,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt4dlog11CURRENT_SRC",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1384,
+   "offset": 1226,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_mask",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1428,
+   "offset": 1262,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1438,
+   "offset": 1272,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvMs3_NtCsfgJyBKL6YOn_8dkrt_sdk9files_jobINtB5_6BrokerKj8_NtNtCsdWzhuXZnywa_4dkrt5files7RequestNtNtB7_5files9FileEntryE12finish_eventBZ_",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1446,
+   "offset": 1280,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_restore",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1456,
+   "offset": 1294,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..text._RNvCsdWzhuXZnywa_4dkrt9fw_blocks",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1330,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": "dkrt_irq_mask",
+   "type": "cf.32"
+  },
+  {
+   "addend": 5108,
+   "offset": 1338,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1364,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1408,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": "dkrt_irq_restore",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1432,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..text._RNvMNtCsdWzhuXZnywa_4dkrt5filesNtB2_7Backend4step",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1486,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_mask",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1464,
+   "offset": 1546,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt5files7TICKING",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1472,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "dkrt_irq_restore",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1484,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..rodata.global.13",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1496,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "_RNvNtCs6uNbiqmv1Ak_4core9panicking18panic_bounds_check",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1508,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..text._RNvMNtCsdWzhuXZnywa_4dkrt5filesNtB2_7Backend4step",
+   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 1556,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1566,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "dkrt_irq_mask",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1588,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1628,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1638,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvMs3_NtCsfgJyBKL6YOn_8dkrt_sdk9files_jobINtB5_6BrokerKj8_NtNtCsdWzhuXZnywa_4dkrt5files7RequestNtNtB7_5files9FileEntryE11finish_workBZ_",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1650,
+   "offset": 1568,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_restore",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1658,
+   "offset": 1586,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_mask",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1672,
+   "offset": 1598,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1702,
+   "offset": 1626,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..data._RNvNtCsdWzhuXZnywa_4dkrt5files4JOBS",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1744,
+   "offset": 1664,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_restore",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1756,
+   "offset": 1680,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": "dkrt_irq_mask",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1688,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt5files7TICKING",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1696,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": "dkrt_irq_restore",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1708,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_device_id",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1782,
+   "offset": 1734,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1792,
+   "offset": 1744,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.1A",
    "type": "cf.32"
   },
   {
    "addend": 0,
+   "offset": 1756,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": "_RINvNtCs6uNbiqmv1Ak_4core5slice20copy_from_slice_implhEB4_",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1790,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": ".sec..rodata.global.13",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
    "offset": 1804,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "_RINvNtCs6uNbiqmv1Ak_4core5slice20copy_from_slice_implhEB4_",
+   "symbol": "_RNvNtNtCs6uNbiqmv1Ak_4core5slice5index16slice_index_fail",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1840,
+   "offset": 1826,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1854,
+   "offset": 1842,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RNvNtNtCs6uNbiqmv1Ak_4core5slice5index16slice_index_fail",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1876,
+   "offset": 1848,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1892,
+   "offset": 1862,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RNvNtNtCs6uNbiqmv1Ak_4core5slice5index16slice_index_fail",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1898,
+   "offset": 1936,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1912,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "_RNvNtNtCs6uNbiqmv1Ak_4core5slice5index16slice_index_fail",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1962,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": ".sec..rodata.global.13",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1980,
+   "offset": 1954,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RINvNtCs6uNbiqmv1Ak_4core5slice20copy_from_slice_implhEB4_",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2022,
+   "offset": 1998,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..rodata.global.13",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2038,
+   "offset": 2014,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RINvNtCs6uNbiqmv1Ak_4core5slice20copy_from_slice_implhEB4_",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2082,
+   "offset": 2058,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvMNtNtCsfgJyBKL6YOn_8dkrt_sdk5store9directoryINtB2_18DirectoryCollectorKj8_E3newCsdWzhuXZnywa_4dkrt",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2126,
-   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "symbol": "memcpy",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 2174,
+   "offset": 2114,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvNtCsdWzhuXZnywa_4dkrt5store10block_read",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2184,
+   "offset": 2124,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvNtCsdWzhuXZnywa_4dkrt5store8no_write",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2198,
+   "offset": 2134,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvNtCsdWzhuXZnywa_4dkrt5store6layout",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2224,
+   "offset": 2160,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "_RNvMs_NtNtCsfgJyBKL6YOn_8dkrt_sdk5store7catalogNtB4_11CatalogOpen5begin",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2322,
+   "offset": 2204,
+   "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
+   "symbol": "memcpy",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 2236,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..text._RNvMNtCsdWzhuXZnywa_4dkrt5filesNtB2_7Backend4step",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2344,
+   "offset": 2258,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": ".sec..bss._RNvNtCsdWzhuXZnywa_4dkrt5files11SCHED_ERROR",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 2356,
+   "offset": 2270,
    "section": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
    "symbol": "dkrt_irq_restore",
    "type": "cf.32"
@@ -27997,14 +27927,14 @@
   },
   {
    "addend": 0,
-   "offset": 80,
+   "offset": 72,
    "section": ".text._RNvNtCsfgJyBKL6YOn_8dkrt_sdk6sample13native_header",
    "symbol": ".sec..text._RNvNtCsfgJyBKL6YOn_8dkrt_sdk6sample4be32",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 110,
+   "offset": 102,
    "section": ".text._RNvNtCsfgJyBKL6YOn_8dkrt_sdk6sample13native_header",
    "symbol": ".sec..text._RNvNtCsfgJyBKL6YOn_8dkrt_sdk6sample4be32",
    "type": "cf.32"
@@ -31408,10 +31338,10 @@
   },
   {
    "align": 2,
-   "hex": "4e56c54c48d71c1c4eb9000000004a39000000006600091a720113c1000000002f004eb9000000004eb900000000264022390000000020415088588f7407c481263c0000027e4c0238002443d5fc000000004a2a027c671679ea01187001b084670c4a6a012a66064a6a000666145281b1c166c82f0b4eb900000000588f600005f8286a00084878010c22030681000000002f01486ecd884eb9000000004fef000c4a52670002c02839000000004a8467000872246a00020c847fffffff6706200452806002428023c0000000002043d1fc0000000030bc000121420002214a0006214c000a2144000e200252807207c28023c1000000004878010c486ecd88486ecfbe4eb9000000002d42cfb22d4acfb62d4ccfba2d44d0ca4878011c486ecfb2486ece964eb90000000070013d40ce942d42ce962d4ace9a2d4cce9e2d44cfae4878011e486ece94486eca1c4eb9000000004fef002441f90000000071b028007202b2806600020a70013d40ca1c2d42ca1e2d4aca222d4cca262d44cb364878011e486eca1c486ec57e4eb9000000002f0b4eb9000000002d42c5802d4ac5842d4cc5882d44c6984878011c486ec580486ec69c4eb900000000202ec69c4fef001c7207b28065000400223c00000e184c0108002440d5fc00000000242ec6a4b4aa082c670003f441eef9a8200e0680fffffaa84218b08866fa41eefaa8200e0680fffffb484218b08866fa42aefb4842aefb4c42aefb5042aefb5441eefb58200e0680fffffc6c4218b08866fa280e0684fffffc6c20444eb90000000049eef9a8263c000001002f032f0c486eda2647f9000000004e93487800a0486efaa8486edb264e93487800a0486efaa8486edc164e934fef00242f032f0c486edcb64e9343eefb4841eeddb620d920d920d9209148780114486efb58486eddc64e93487801302f04486ededa4e9370023d40d1f672021d41da2042aeda2242aedbc642aedbca42aedbce42aedc1242001d40e00a1d40e00b1d40e00c4fef002448780e18486ed1f62f0a4e932542082c240e0682ffffe00e2f03486ec6a82f024e932f032f02486a08304e934fef00242f03486ec6a841eef9a24eb900000000508f4a6ef9a267000470242ef9a47201b2aec7a8670003a4420015400e14280a06840000093048790000000042a74878000142a72f044eb9000000004fef00144280600004684879000000004eb9000000002d42ca1e2d4aca222d4cca262d44cb36240e0682ffffcb3a4878011c486eca1e2f024eb90000000042403d40cc56486ecc562f0248790000000041eec5764eb9000000004fef00186000fcb8382a026071c40c800000ffff670002f2222a025c2d41c56a206a02622d48c56e487801122843d9fc000000002f0c486ed0e44eb9000000004fef000c4a54670a226ec56ab3eed0e6671070ff41f90000000031803804600002a84a52677e2679000000004a8b67000368246a0002b7fc7fffffff6762200b528023c00000000041f90000000070ff318038042043d1fc000000002082214a0004222ec56a21410008214b000c31440010226ec56e21490012200252807207c28023c10000000071c40c800000fffe661e226ec56e23c900000000600002364280609e4879000000004eb9000000003d44d0ce202ec56e2d40d0d02d42d0d42d4ad0d8222ec56a2d41d0dc2d4bd0e041f90000000071b028007202b28066102002e9882040d1fc00000000b5d0671a486ed0ce48790000000041eec5764eb900000000508f600001cc226ec56ab3e8000466dc226800082d49c5642628000c2f2ec5724eb900000000588f4aaec564673e71c47201b280670002587202b2806600024a202ec56e49f9000000001d54c5692202528118812f032f002f2ec56a2f0a206ec5644e9018aec5694fef00104eb90000000026003d44ffea206ec56e2d48ffec2d42fff02d4afff4226ec56a2d49fff82d4bfffc486effea48790000000041eec5764eb9000000002f034eb9000000004fef000c4eb900000000420113c1000000002f004eb900000000588f60000372487900000000487800082f004eb9000000002f0a41eec7b84eb900000000382ec7b8262ec7ba588f71c40c800000ffff670001803d44c7b82d43c7ba48780132486ec7b8486ec8ea4eb9000000004fef000c4eb900000000240045eefd9c4878011c486ec69c2f0a47f9000000004e933d44c8ea2d43c8ec260e0683fffffeb848780132486ec8ea2f034e932f032f0a48790000000041eec5764eb9000000004fef00242f024eb900000000588f4eb9000000002d40c57242aec56447f900000000242ec564d4ab13f87007c480263c0000027e4c0238002443d5fc000000004a2a027c670e71ea02760c800000ffff6700fd0252aec5647208b2aec56466c22f2ec5724eb900000000588f6000fed6b2b90000000067604a8257c0448015400e14280a06840000093048790000000048780007487900000000487800072f044eb9000000004fef00144a82670000b2702f1540093726025083700872f7b282640000a4487900000000487800a02f032f004eb900000000702f15400ac02002528072ffb282664e487900000000487801002f00487800014eb900000000487900000000487801002f0242a74eb90000000078036000fe9c70016000fdb870026000fdb270f32d40c56e6000fcf276d878036000fe7e0c800000010062aa4879000000002f02486ec6a82f02486a0ac14eb9000000004fef0014700a6000013e70072602d6800c83000000a06200ff56d0840c820000010062844879000000002f02486ec6a82f022f004eb900000000254309d04fef00147201b2aec7a857c07100e7884480254009d442a742a72f032f0441eef04e4eb900000000262ef04e142ef7ec4fef001071827202b2806700ff60283c000007a02f04486ef04e486ee8ae47f9000000004e932d43e8ae1d42f04c49eee10e2f04486ee8ae2f0c4e932d43e10e1d42e8ac2f042f0c486a008c4e9341f9000000002d48f99243f9000000002d49f9964fef00244eb9000000002d40f99a2d41f99e486ef99a486ef99241eef9064eb900000000342ef906262ef908508f71c27202b2806700fed4283c0000008c2f04486ef906486ef87a4e933d42f87a2d43f87c49eef7ee2f04486ef87a2f0c4e933d42f7ee2d43f7f02f042f0c2f0a4e934fef0024700115400e162f0a41eec7b84eb900000000382ec7b8262ec7ba588f6000fcd072f323c1000000006000f7462f004eb900000000588f4cee1c1cc54c4e5e4e75",
+   "hex": "4e56cd5c48d73cfc4eb9000000004a3900000000660008c4720113c1000000002f004eb90000000041eed2424eb900000000588f4a6ed24267222c2ed2442d46cd9242aecd844bf90000000041eecebc41e8000c2d48cd8e600004d642aecd9260e0242a00084878010c2044d1fc000000002f08486ed5b44e954fef000c4a52670002802c39000000004a86670008402e2a00020c867fffffff6706200652806002428023c0000000002044d1fc0000000030bc000121430002214700062142000a2146000e200352807207c28023c1000000004878010c486ed5b4486ed7ea4e952d43d7de2d47d7e22d42d7e62d46d8f64878011c486ed7de486ed6c24e9570013d40d6c04878011e486ed6c0486ed2484e954fef002441f90000000071b038007202b280660001e670013d40d2482d43d24a2d47d24e2d42d2522d46d3624878011e486ed248486ecd9e4e952f054eb9000000004878011c486ecda0486ecebc4e95223c00000e184c0138002443d5fc000000004fef001cb4aa082c6700041041eef9a8200e0680fffffaa84218b08866fa41eefaa8200e0680fffffb484218b08866fa42aefb4842aefb4c42aefb5042aefb5441eefb58200e0680fffffc6c4218b08866fa280e0684fffffc6c20444eb9000000002a0e0685fffff9a8263c000001002f032f05486ee2524e952c0e0686fffffaa82e3c000000a02f072f06486ee3524e952f072f06486ee4424e954fef00242f032f05486ee4e24e9543eefb4841eee5e220d920d920d9209148780114486efb58486ee5f24e95487801302f04486ee7064e957c023d46da2270021d40e24c42aee24e42aee3f242aee3f642aee3fa42aee43e42011d41e8361d41e8371d41e8384fef002448780e18486eda222f0a4e952542082c240e0682ffffe83a2f03486ecec82f024e952f032f02486a08304e954fef00242f032f2ecd8e41eef9a24eb900000000508f4a6ef9a2670004ba242ef9a47c01bcaecfc8670003d8420115410e14280a06840000093048790000000042a74878000142a72f044eb9000000004fef00144280600004b24879000000004eb9000000002d43d24a2d47d24e2d42d2522d46d362240e0682ffffd3664878011c486ed24a2f024e9542463d46d482486ed4822f0248790000000041eecd964eb9000000004fef0018600002283a2a026071c50c800000ffff6700030e2c2a025c2e2a0262487801122844d9fc000000002f0c486ed9104e954fef000c4a546706bcaed91267107cff41f90000000031864804600002d44a5267722879000000004a8c670003ca262a0002b9fc7fffffff6756200c528023c00000000041f90000000070ff318048042044d1fc0000000020822143000421460008214c000c3145001021470012200252807207c28023c10000000071c50c800000fffe661a23c7000000006000026a428060aa4879000000004eb9000000003d45d8fa2d47d8fc2d42d9002d43d9042d46d9082d4cd90c41f90000000071b028007202b28066102002e9882040d1fc00000000b690671a486ed8fa48790000000041eecd964eb900000000508f60000208bca8000466e0266800082828000c2f2ecd884eb900000000588f4a8b673671c57201b280670002cc7202b280660002be200745f9000000001d52cd882202528114812f042f002f062f034e9314aecd884fef00104eb90000000028003d45ffea2d47ffec2d42fff02d43fff42d46fff82d4cfffc486effea48790000000041eecd964eb9000000002f044eb9000000004fef000c41eed23c4eb9000000004a6ed23c66000254202ecd847207b2806500016a7c1fbcaecd84650001604eb9000000002a00223900000000200150807607c681283c0000027e4c0348002444d5fc000000004a2a027c671875ea01187c01bc82670e4a6a012a66084a6a00066600faee5281b08166c62f054eb900000000588f42061d46cd8d600000a22f0a41eecfd84eb900000000362ecfd82a2ecfda588f71c30c800000ffff670001aa3d43cfd82d45cfda48780132486ecfd8486ed10a4e954fef000c4eb9000000002400280e0684fffffd9c4878011c486ecebc2f044e953d43d10a2d45d10c260e0683fffffeb848780132486ed10a2f034e952f032f0448790000000041eecd964eb9000000004fef00242f024eb90000000052aecd84588f7c011d46cd8d4eb9000000002d40cd88428347f9000000002403d4ab13f87207c481283c0000027e4c0248002444d5fc000000004a2a027c670e71ea02760c800000ffff6700fce652837008b08366c82f2ecd884eb900000000588f4a2ecd8d6600fe7c4eb900000000420613c6000000002f004eb900000000588f6000023cbcb900000000675e4a8257c0448015400e14280a06840000093048790000000048780007487900000000487800072f044eb9000000004fef00144a82670000c87c2f154609372602508370f7b08264567008487900000000487800a02f032f004eb900000000702f15400ac02002528072ffb2826666487900000000487801002f00487800014eb900000000487900000000487801002f0242a74eb9000000002a2ef0da6030700860622a2ef908602676036000fe6e70016000fd4270026000fd3c202ed23e90aecd926000fda87ef36000fc8c7ad876036000fe480c800000010062924879000000002f02486ecec82f02486a0ac14eb9000000004fef0014700a6000010270072602d6800c83000000a06200ff3ed0840c82000001006200ff6c4879000000002f022f2ecd8e2f022f004eb900000000254309d04fef00147c01bcaecfc857c07100e7884480254009d442a742a72f032f0441eef0da4eb9000000004fef001071aef8787202b2806700ff2e240e0682ffffe93a263c000007a02f03486ef0da2f024e952f032f02486a008c4e95223c000000002d41f9922c3c000000002d46f9964eb9000000002d40f99a2d41f99e486ef99a486ef99241eef9064eb9000000004fef002071eef9067202b2806700fed2240e0682fffff87a263c0000008c2f03486ef9062f0247f9000000004e932f032f022f0a4e934fef0018700115400e162f0a41eecfd84eb900000000362ecfd82a2ecfda588f6000fcda70f323c0000000006000fca42f004eb900000000588f4cee3cfccd5c4e5e4e75",
    "kind": "text",
    "name": ".text._RNvNtCsdWzhuXZnywa_4dkrt5files4tick",
-   "size": 2372
+   "size": 2286
   },
   {
    "align": 2,
@@ -33648,10 +33578,10 @@
   },
   {
    "align": 2,
-   "hex": "4fefffe448d70c1c2448703fb0af00246408724fb2af0028651674fb2542000270013480200a4cd70c1c4fef001c4e75206f0020162800011f43001b71837201b28065d6487800082f2f00282f084eb9000000004fef000c0c800000bb8066ba487800042f2f00282f2f00284eb9000000004fef000c4a80660874fb25420002609e222f00280681ffffffb0b28066ea73af001b52812601d6832f43001628004c43400220424a8266d0600c78fb254400026000ff6c52887601b68867f87603b6886422780bb88864ec266f00201633880032437414b48866167583767fb68266ca528860d2266f002018338800324436094a0366b652887440b48866ba282f00164c440000254000022541000642406000ff10",
+   "hex": "4fefffd448d7043c2448703fb0af0034651672fb2541000270013480200a4cd7043c4fef002c4e75206f0030142800011f42001b71827201b28065d6487800082f2f00382f084eb9000000004fef000c0c800000bb8066ba487800042f2f00382f2f00384eb9000000004fef000c4a80660874fb25420002609e73af001b52812601d683204328004c4340054a8566e22f6f0038002842af00242f40002042af001c242f001c262f00204284068300000040d584282f00242a2f00289a83998265b02a084c450000254000022541000642406000ff46",
    "kind": "text",
    "name": ".text._RNvNtCsfgJyBKL6YOn_8dkrt_sdk6sample13native_header",
-   "size": 276
+   "size": 214
   },
   {
    "align": 2,
@@ -34417,7 +34347,7 @@
    "size": 24
   }
  ],
- "source_sha256": "c9d273f5bbeda797a526261b5a6789a083a3b6aa293f62d957e03a9b182affa6",
+ "source_sha256": "22fb59bc13f22e5042ef13c42131340779789682345777ab7d8030c8363ec797",
  "symbols": [
   {
    "global": false,
@@ -39336,8 +39266,8 @@
  ],
  "toolchain": {
   "exports": "DKRT_ARENA DKRT_ASSIGN DKRT_BOOT DKRT_CARD DKRT_CONTRACTS DKRT_CRASH DKRT_DSP DKRT_DSP_STOPPED DKRT_FXP DKRT_FXS DKRT_HEALTH DKRT_LOG DKRT_LOG_COUNT DKRT_MAILBOX DKRT_MENUS DKRT_PATHS DKRT_POLL DKRT_REG DKRT_SAVE_MODE DKRT_SECBUF DKRT_SET DKRT_SETTINGS DKRT_SETTINGS_HDR DKRT_STABLE_BLOCKS DKRT_STAGE DKRT_STATE DKRT_STORE_CAP DKRT_STORE_FP DKRT_STORE_PEEK DKRT_TABLE_BAD DKRT_UI_START DKRT_UPLOAD_BUF DKRT_UPLOAD_COUNT DKRT_UPLOAD_CUT DKRT_UPLOAD_DROPPED DKRT_UPLOAD_LAST DKRT_UPLOAD_TEAR DKRT_UPLOAD_WRITES dkrt_api dkrt_blocks dkrt_boot dkrt_boot_info dkrt_capacity dkrt_diag dkrt_exc dkrt_fit dkrt_fx dkrt_health dkrt_load dkrt_log_ev dkrt_log_sink_set dkrt_midi_rx dkrt_module dkrt_module_header dkrt_page_key dkrt_page_turn dkrt_poll_add dkrt_poll_remove dkrt_poll_set dkrt_pool_done dkrt_pool_lost dkrt_project_changed dkrt_restart dkrt_scan dkrt_scan_reads dkrt_selection_get dkrt_selection_set dkrt_settings_flush dkrt_settings_get dkrt_settings_put dkrt_settings_remove dkrt_status dkrt_store_list dkrt_store_read dkrt_store_stat dkrt_tick",
-  "instructions_redecoded": "45332",
-  "isa_check": "3df12b8c0a866e615c63b99b38d51e66b578958e91e0c13617365d2988500393",
+  "instructions_redecoded": "45295",
+  "isa_check": "2754c6ff44080a16be9b53115e3c89b6582381d94c10de53e7dac6d3d4324355",
   "libgccjit_gcc": "37ea7cd851f04ee6a313c5067c9fde9328f876aa",
   "rustc": "rustc 1.101.0-nightly (6f5da406b 2026-10-10)",
   "rustc_codegen_gcc": "a7d8a5227b520187e3d93c1f7fc01dd1ba8659cf",
