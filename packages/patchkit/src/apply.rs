@@ -851,6 +851,13 @@ pub fn apply_with(
                 let t = w.text();
                 add(&mut names, prim::word_spec(&t)?.1)?;
             }
+            if let Some(ed) = &s.def.edit {
+                add(&mut names, &ed.at.text())?;
+                for f in &ed.fields {
+                    let t = f.value.text();
+                    add(&mut names, prim::word_spec(&t)?.1)?;
+                }
+            }
         }
         for r in &active.regs {
             add(&mut names, &r.def.first.text())?;
@@ -1183,6 +1190,14 @@ pub fn apply_with(
             let (addr, cpu) = sec_at[si];
             let sp = &stg.secs[si];
             let mut bytes = sp.copied.clone();
+            if let Some(ed) = &s.def.edit {
+                let ri = active
+                    .regs
+                    .iter()
+                    .position(|r| r.def.name == ed.registry)
+                    .unwrap();
+                prim::apply_edits(s, &built[ri], cpu == CF, &scope, &mut bytes)?;
+            }
             let mut rows = 0u64;
             if let Some(ap) = &s.def.append {
                 let ri = active

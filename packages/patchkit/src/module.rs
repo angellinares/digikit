@@ -107,6 +107,26 @@ pub struct SectionDef {
     pub from: SectionFrom,
     #[serde(default)]
     pub append: Option<SectionAppend>,
+    #[serde(default)]
+    pub edit: Option<SectionEdit>,
+}
+
+/// Rewrites of the copied bytes, one per entry of a registry: an entry names the copied row (`at`) and new values for
+/// some of its words (a module changes a stock row of a framework's table).
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionEdit {
+    pub registry: String,
+    /// Byte offset of the edited row in the copied bytes (expression; the entry's fields are `$name`).
+    pub at: ExprSrc,
+    pub fields: Vec<SectionEditField>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionEditField {
+    /// Byte offset in the row.
+    pub offset: u64,
+    /// The new value; `u8:EXPR` and `u16:EXPR` as in `append.row`.
+    pub value: ExprSrc,
 }
 
 #[derive(Clone, Debug, Deserialize)]
