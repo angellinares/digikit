@@ -1,0 +1,16 @@
+{
+  "name": "workspace",
+  "$schema": "node_modules/nx/schemas/project-schema.json",
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "pnpm lint", "cwd": "." }
+    },
+    "fmt-check": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": { "command": "pnpm fmt:check", "cwd": "." }
+    }
+  }
+}

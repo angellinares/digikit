@@ -114,7 +114,7 @@ export const createNodesV2 = [
           },
         };
       if (shipped && deviceTests.length) {
-        const dependsOn = ['patchkit:cli'];
+        const dependsOn = ['patchkit:cli', 'digi-control:daemons'];
         if (uploadable) dependsOn.push('pack');
         for (const rec of recs) {
           for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
@@ -139,7 +139,7 @@ export const createNodesV2 = [
           executor: 'nx:run-commands',
           cache: false,
           parallelism: false,
-          dependsOn: ['pack', 'digikit/debug:pack'],
+          dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons'],
           outputs: [],
           options: {
             command: 'pnpm --filter @digi/regression test:conformance',

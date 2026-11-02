@@ -21,10 +21,22 @@ export function cachedRunDir(device: Device): string {
   return dir;
 }
 
+/** The device daemon: `DIGI_EMUD_<DEV>`, else the same key in `dist/daemons.json` (written by `digi-control:daemons`). */
+export function daemonBinary(device: Device): string {
+  const key = `DIGI_EMUD_${device.toUpperCase()}`;
+  const fromEnv = process.env[key];
+  if (fromEnv) return fromEnv;
+  const file = path.join(repoRoot(), 'dist/daemons.json');
+  if (fs.existsSync(file)) {
+    const value = (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, string>)[key];
+    if (value) return value;
+  }
+  throw new Error(`${key} unset and dist/daemons.json missing: run pnpm nx:pilot run digi-control:daemons`);
+}
+
 /** Mirror sessions and `fresh: true` keep a fresh run dir (the mirror folder must start empty). */
 export function liveOptions(device: Device, extra: { patchSet?: string; mirror?: boolean; fresh?: boolean } = {}) {
-  const binary = process.env[device === 'dt2' ? 'DIGI_EMUD_DT2' : 'DIGI_EMUD_DN2'];
-  if (!binary) throw new Error(`DIGI_EMUD_${device.toUpperCase()} must name a preflighted daemon`);
+  const binary = daemonBinary(device);
   const card = device === 'dt2' ? path.join(repoRoot(), 'out/runs/patchkit/samples') : undefined;
   if (card && !fs.existsSync(card)) {
     throw new Error(

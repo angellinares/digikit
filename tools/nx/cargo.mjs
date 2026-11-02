@@ -35,6 +35,34 @@ const cliTarget = ({ build, bin, dir }) => ({
   },
 });
 
+// Gate helper targets. They build under dist/ or out/native; out/ is never an Nx output.
+const GATE = {
+  'digi-control': {
+    daemons: {
+      executor: 'nx:run-commands',
+      cache: false,
+      outputs: ['{workspaceRoot}/dist/daemons.json'],
+      options: {
+        commands: ['mkdir -p dist', 'uv run python -m tools.devtools.verify_build daemons --env-out dist/daemons.json'],
+        parallel: false,
+        cwd: '.',
+      },
+    },
+  },
+  'digi-coupled': {
+    build: {
+      executor: 'nx:run-commands',
+      cache: false,
+      options: { command: 'uv run python -m tools.emulator.coupled build', cwd: '.' },
+    },
+    'build-dt2': {
+      executor: 'nx:run-commands',
+      cache: false,
+      options: { command: 'uv run python -m tools.emulator.coupled build --device dt2', cwd: '.' },
+    },
+  },
+};
+
 export const createNodesV2 = [
   'Cargo.toml',
   (files, _opts, ctx) =>
@@ -56,7 +84,8 @@ export const createNodesV2 = [
               inputs,
               options: { command: `uv run python -m tools.devtools.rust_ws test --packages ${name}`, cwd: '.' },
             },
-            ...(CLI[name] ? { cli: cliTarget(CLI[name]) } : {}),
+            ...(CLI[name] && { cli: cliTarget(CLI[name]) }),
+            ...GATE[name],
           },
         };
       }

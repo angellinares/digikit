@@ -3,6 +3,41 @@
   "name": "regression",
   "implicitDependencies": ["control-client", "@digi/test-support", "@digi/dk-session"],
   "targets": {
+    "test:stock": {
+      "executor": "nx:run-script",
+      "options": { "script": "test:stock" },
+      "dependsOn": ["digi-control:daemons"],
+      "parallelism": false
+    },
+    "test:fx": {
+      "dependsOn": ["digi-coupled:build"],
+      "parallelism": false,
+      "options": { "env": { "DIGI_FX_NO_AOT_SUBSET": "0" } }
+    },
+    "test:fx:dt2": {
+      "dependsOn": ["digi-coupled:build-dt2"],
+      "parallelism": false,
+      "options": { "env": { "DIGI_FX_NO_AOT_SUBSET": "0" } }
+    },
+    "test-device": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": [
+        "patchkit:cli",
+        "digi-control:daemons",
+        "digikit/probe:pack",
+        "digikit/remote:pack",
+        "test/dsp-facts:pack",
+        "test/sharc-probe:pack",
+        "test/step-beacon:pack"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "pnpm --filter @digi/regression test:runtime emulator/",
+        "cwd": "."
+      }
+    },
     "test-host": {
       "executor": "nx:run-commands",
       "cache": true,

@@ -3,6 +3,17 @@
   "name": "@digi/web",
   "implicitDependencies": ["control-client", "@digi/dk-session"],
   "targets": {
+    "patchkit-wasm": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "uv run python -m tools.emulator.native_wasm --patchkit-only",
+        "cwd": "."
+      }
+    },
+    "test": {
+      "dependsOn": ["patchkit-wasm"]
+    },
     "test-host": {
       "executor": "nx:run-commands",
       "cache": false,
