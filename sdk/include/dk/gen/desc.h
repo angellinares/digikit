@@ -22,6 +22,18 @@
 #define DK_DESC_FX_PARAM 5
 /* Record kind of dk_desc_param_action. */
 #define DK_DESC_PARAM_ACTION 8
+/* Record kind of dk_desc_param_glyph. */
+#define DK_DESC_PARAM_GLYPH 9
+/* Glyph (the dk_glyph values): a plain encoder knob, values 0 .. 127 (the default). */
+#define DK_GLYPH_ENCODER 0
+/* Glyph: a fader, values 0 .. 127. */
+#define DK_GLYPH_FADER 1
+/* Glyph: a pan knob, values 0 .. 127 (centre 64, shows L/R). */
+#define DK_GLYPH_PAN 2
+/* Glyph: an on/off switch, values 0 .. 1. */
+#define DK_GLYPH_ONOFF 3
+/* Glyph: a tune knob, values 4 .. 124 (centre 64, one unit = one semitone). */
+#define DK_GLYPH_TUNE 4
 /* Encoders on a page. */
 #define DK_PAGE_KNOBS 8
 /* The knob takes the lowest free position. */
@@ -116,6 +128,15 @@ typedef struct {
     char fn[32];                             /* the ColdFire symbol of the callback, `void fn(u32 track)`: a global function of the module, called in the UI task */
 } dk_desc_param_action;
 
+/* The look of one parameter word of a machine: its glyph (a dk_glyph value) selects the stock row whose knob picture, value text and step behaviour the parameter copies. At most one per parameter; without it the glyph is DK_GLYPH_ENCODER. Glyphs on effect parameters are not supported yet. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_PARAM_GLYPH */
+    uint32_t size;                           /* sizeof(dk_desc_param_glyph) */
+    char owner[16];                          /* the id of the machine (an effect id is refused for now) */
+    uint32_t word;                           /* 0 .. 7, the parameter word of the machine; the machine declares it with DK_PARAM */
+    uint32_t glyph;                          /* DK_GLYPH_ENCODER .. DK_GLYPH_TUNE */
+} dk_desc_param_glyph;
+
 /* One encoder of a page. An unused entry is all zero. */
 typedef struct {
     uint32_t used;                           /* 1 when the encoder is set, else 0 */
@@ -193,6 +214,12 @@ _Static_assert(offsetof(dk_desc_param_action, size) == 4, "dk_desc_param_action.
 _Static_assert(offsetof(dk_desc_param_action, machine) == 8, "dk_desc_param_action.machine");
 _Static_assert(offsetof(dk_desc_param_action, word) == 24, "dk_desc_param_action.word");
 _Static_assert(offsetof(dk_desc_param_action, fn) == 28, "dk_desc_param_action.fn");
+_Static_assert(sizeof(dk_desc_param_glyph) == 32, "dk_desc_param_glyph size");
+_Static_assert(offsetof(dk_desc_param_glyph, kind) == 0, "dk_desc_param_glyph.kind");
+_Static_assert(offsetof(dk_desc_param_glyph, size) == 4, "dk_desc_param_glyph.size");
+_Static_assert(offsetof(dk_desc_param_glyph, owner) == 8, "dk_desc_param_glyph.owner");
+_Static_assert(offsetof(dk_desc_param_glyph, word) == 24, "dk_desc_param_glyph.word");
+_Static_assert(offsetof(dk_desc_param_glyph, glyph) == 28, "dk_desc_param_glyph.glyph");
 _Static_assert(sizeof(dk_desc_page_knob) == 12, "dk_desc_page_knob size");
 _Static_assert(offsetof(dk_desc_page_knob, used) == 0, "dk_desc_page_knob.used");
 _Static_assert(offsetof(dk_desc_page_knob, word) == 4, "dk_desc_page_knob.word");

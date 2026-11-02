@@ -149,7 +149,7 @@
         "name": "Sample",
         "short": "SMP",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -159,7 +159,7 @@
         "name": "Start",
         "short": "START",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 32512,
@@ -169,7 +169,7 @@
         "name": "End",
         "short": "END",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -179,7 +179,7 @@
         "name": "Reverse",
         "short": "REV",
         "slot": 5,
-        "template": 209
+        "template": 204
       },
       {
         "default": 16384,
@@ -189,7 +189,7 @@
         "name": "Pitch",
         "short": "PITCH",
         "slot": 6,
-        "template": 209
+        "template": 204
       }
     ]
   }

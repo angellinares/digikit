@@ -231,6 +231,20 @@ pub struct ParamDef {
     pub default: i64,
     /// The symbol of the click callback (a `DK_PARAM_ACTION` record), `void fn(u32 track)`.
     pub action: Option<String>,
+    /// The glyph (a `DK_PARAM_GLYPH` record, `dk_glyph`); `None`: the encoder.
+    pub glyph: Option<u32>,
+}
+
+/// The template name and the allowed knob range (min, max) of a `dk_glyph` value.
+fn glyph_info(glyph: Option<u32>) -> Option<(&'static str, i64, i64)> {
+    Some(match glyph.unwrap_or(0) {
+        0 => ("encoder", 0, 127),
+        1 => ("fader", 0, 127),
+        2 => ("pan", 0, 127),
+        3 => ("onoff", 0, 1),
+        4 => ("tune", 4, 124),
+        _ => return None,
+    })
 }
 
 /// One encoder of a machine page (a `DK_KNOB` or `DK_KNOB_AT` entry of a `DK_PAGE` record).
@@ -514,10 +528,6 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 kn.to
             ));
         }
-        let plain = *model
-            .templates
-            .get("plain")
-            .ok_or_else(|| err!("{who}: devices/{dev}.toml has no `plain` template"))?;
         let mut machines = vec![];
         let mut params = vec![];
         let mut pages = vec![];
@@ -574,11 +584,25 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 level: kn.level_default,
             });
             for (p, &at) in mine.iter().zip(&placed.pos) {
+                let Some((gname, gmin, gmax)) = glyph_info(p.glyph) else {
+                    return Err(err!("{who}: param {}: unknown glyph {:?}", p.id, p.glyph));
+                };
+                if p.min < gmin * 256 || p.max > gmax * 256 {
+                    return Err(err!(
+                        "{who}: param {}: glyph {gname} needs knob values {gmin} .. {gmax}, the param has {} .. {}",
+                        p.id,
+                        p.min as f64 / 256.0,
+                        p.max as f64 / 256.0
+                    ));
+                }
+                let template = *model.templates.get(gname).ok_or_else(|| {
+                    err!("{who}: devices/{dev}.toml has no `{gname}` template")
+                })?;
                 params.push(RParam {
                     id: p.id.clone(),
                     name: p.name.clone(),
                     short: p.short.clone(),
-                    template: plain,
+                    template,
                     min: p.min,
                     max: p.max,
                     default: p.default,
@@ -826,7 +850,11 @@ tune = 0xca
 level = 0xd1
 level_knob = 7
 [modules.templates]
-plain = 0xd1
+encoder = 0xcc
+fader = 0xd1
+pan = 0x47
+onoff = 0x32
+tune = 0xca
 [[modules.knobs.reserved]]
 clone_of = 0
 name = "SAMPLE"
@@ -857,7 +885,11 @@ level_field = "c8"
 level_default = 10
 own_dsp = true
 [modules.templates]
-plain = 0xd5
+encoder = 0xd5
+fader = 0xd7
+pan = 0x47
+onoff = 0xdd
+tune = 0xee
 [modules.frame]
 base = 0x6d
 stride = 0x49
@@ -900,6 +932,7 @@ summary = "t."
                 max: 100,
                 default: 50,
                 action: None,
+                glyph: None,
             })
             .collect();
         m.page = pages
@@ -961,7 +994,7 @@ summary = "t."
         // slots are the knob positions
         let q = on("dt2", "params");
         assert_eq!(field(q[0], "slot"), Some(&int(1)));
-        assert_eq!(field(q[0], "template"), Some(&int(0xd1)));
+        assert_eq!(field(q[0], "template"), Some(&int(0xcc)));
         assert_eq!(field(q[1], "slot"), Some(&int(2)));
         assert!(on("dt2", "pages").is_empty());
         // the runtime guard's ranges: knobs 1 and 2 are params (0 .. 100 = 100 << 16)
@@ -1117,6 +1150,31 @@ summary = "t."
             let e = reg.set_actions(r, &Default::default()).unwrap_err().0;
             assert!(e.contains("_t_click") && e.contains("static"), "{e}");
         }
+    }
+
+    #[test]
+    fn a_glyph_selects_the_template_row_of_the_device() {
+        let templates = |m: &Manifest, dev: &str| -> Vec<i64> {
+            let r = resolve(m, &models()).unwrap();
+            r.iter().find(|x| x.dev == dev).unwrap().params.iter().map(|q| q.template).collect()
+        };
+        let mut m = manifest(2, &[]);
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0xcc]);
+        assert_eq!(templates(&m, "dn2"), [0xd5, 0xd5]);
+        m.param[1].glyph = Some(1);
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0xd1]);
+        assert_eq!(templates(&m, "dn2"), [0xd5, 0xd7]);
+        // the range of the glyph: ONOFF is 0 .. 1, the param is 0 .. 127
+        m.param[1].glyph = Some(3);
+        m.param[1].max = 127 * 256;
+        let e = bad(&m);
+        assert!(e.contains("t_1") && e.contains("onoff"), "{e}");
+        m.param[1].max = 256;
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0x32]);
+        // TUNE is 4 .. 124
+        m.param[1].glyph = Some(4);
+        let e = bad(&m);
+        assert!(e.contains("t_1") && e.contains("tune"), "{e}");
     }
 
     #[test]

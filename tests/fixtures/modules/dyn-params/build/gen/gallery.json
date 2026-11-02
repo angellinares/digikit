@@ -132,7 +132,7 @@
         "name": "Param 0",
         "short": "P0",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 4369,
@@ -142,7 +142,7 @@
         "name": "Param 1",
         "short": "P1",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 4642,
@@ -152,7 +152,7 @@
         "name": "Param 2",
         "short": "P2",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 5188,
@@ -162,7 +162,7 @@
         "name": "Param 4",
         "short": "P4",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

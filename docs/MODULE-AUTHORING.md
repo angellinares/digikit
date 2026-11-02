@@ -193,8 +193,20 @@ Names are printable ASCII. Text longer than its field is a compile error. The ki
 | enum | step x 256 | step number | step 0 | a switch or a mode with n steps |
 | pitch | 0 .. 0x7f00 | semitone offset | 0x4000 | a pitch offset the adapter adds to `pitch` |
 
-Every parameter shows as a plain 0 to 127 value. For an enum, set `MAX` to n-1 (the word is (n-1) x 256). No module uses an enum yet.
+By default a parameter shows as a plain 0 to 127 value. For an enum, set `MAX` to n-1 (the word is (n-1) x 256). No module uses an enum yet.
 A signed or named display is not available for a machine.
+
+`DK_PARAM_GLYPH(MACHINE, WORD, GLYPH)` sets the look, the value text and the step of the knob of that parameter. A parameter has at most one
+glyph and its `MIN` .. `MAX` must fit the range of the glyph, or `pack` refuses the module. Without a record the glyph is `DK_GLYPH_ENCODER`.
+Glyphs on effect parameters are not supported yet.
+
+| Glyph | Range | Notes |
+| --- | --- | --- |
+| `DK_GLYPH_ENCODER` (default) | 0 .. 127 | plain encoder |
+| `DK_GLYPH_FADER` | 0 .. 127 | fader |
+| `DK_GLYPH_PAN` | 0 .. 127 | centre 64, shows L/R |
+| `DK_GLYPH_ONOFF` | 0 .. 1 | on/off switch |
+| `DK_GLYPH_TUNE` | 4 .. 124 | centre 64, one unit = one semitone |
 
 `DK_PARAM_ACTION(MACHINE, WORD, FN)` makes a click on the knob of that parameter (press and release of the encoder, no turn between) call
 `void FN(uint32_t track)`, a global function of the module, in the UI task. It may open a `<dk/ui.h>` menu over the page. A parameter has at most

@@ -68,7 +68,7 @@ fn the_register_records_are_the_lowered_typed_sections() {
         [0xca, KNOB_PARAM, 0, 0, 0, 0, 0, 0xd1]
     );
     let p = &reg.params[0];
-    assert_eq!((p.template, p.slot, p.min, p.max), (0xd1, 1, 0, 0x7f00));
+    assert_eq!((p.template, p.slot, p.min, p.max), (0xcc, 1, 0, 0x7f00));
     // the Digitone: a page holds the parameter, the machine row none
     let reg2 = Register::lower(dev("dn2"), "test/sine").unwrap();
     assert_eq!((reg2.device, reg2.machines[0].own_dsp), (2, 1));

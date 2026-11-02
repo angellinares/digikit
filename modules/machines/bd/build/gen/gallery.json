@@ -132,7 +132,7 @@
         "name": "Bend",
         "short": "BEND",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 8192,
@@ -142,7 +142,7 @@
         "name": "FM Index",
         "short": "INDEX",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -152,7 +152,7 @@
         "name": "Ratio",
         "short": "RATIO",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -162,7 +162,7 @@
         "name": "Noise",
         "short": "NOISE",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

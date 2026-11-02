@@ -39,7 +39,7 @@ const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "test/patched-pluck",
-        "5c4a69710cc8ca3012e251c1c50380b11b4856bafe6597de75aa500b5c5e7c3e",
+        "936b551870c40b71b04a5a2c5cf59ba651c1fdcfe185ce9668a06799db3b490b",
     ),
     (
         "Digitone_II_OS1.12.syx",

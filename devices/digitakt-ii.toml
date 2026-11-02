@@ -383,9 +383,13 @@ tune = 0xca
 level = 0xd1
 level_knob = 7
 
-# Stock parameter rows a module parameter can copy by name: `plain` shows a plain 0..127 value.
+# Stock parameter rows a module parameter copies by glyph name (dk_glyph in sdk/sdk.toml); `encoder` is the default.
 [modules.templates]
-plain = 0xd1
+encoder = 0xcc   # 204 CFADE
+fader = 0xd1     # 209 LEV
+pan = 0x47       # 71 PAN
+onoff = 0x32     # 50 RSET
+tune = 0xca      # 202 TUNE
 
 # A clone of SAMPLE (machine 0) keeps knob 3: it is the sample slot, the firmware's own sample number field. The DSP gets only the sample
 # number bits of its value (`value & 0x3ff`), the module default replaces the track's sample number, so no module parameter goes there.

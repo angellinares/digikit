@@ -132,7 +132,7 @@
         "name": "Detune",
         "short": "DET",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -142,7 +142,7 @@
         "name": "Wave",
         "short": "WAVE",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -152,7 +152,7 @@
         "name": "Sub",
         "short": "SUB",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -162,7 +162,7 @@
         "name": "Fold",
         "short": "FOLD",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

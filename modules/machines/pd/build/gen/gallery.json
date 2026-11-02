@@ -132,7 +132,7 @@
         "name": "Distortion",
         "short": "PD",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -142,7 +142,7 @@
         "name": "Curve",
         "short": "CURVE",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 10240,
@@ -152,7 +152,7 @@
         "name": "Detune",
         "short": "DET",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -162,7 +162,7 @@
         "name": "Fold",
         "short": "FOLD",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

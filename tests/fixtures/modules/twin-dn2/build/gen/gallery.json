@@ -132,7 +132,7 @@
         "name": "Dyn Alpha",
         "short": "ALPH",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 4096,
@@ -142,7 +142,7 @@
         "name": "Dyn Beta",
         "short": "BETA",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 28672,
@@ -152,7 +152,7 @@
         "name": "Dyn Gamma",
         "short": "GAMA",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 16384,
@@ -162,7 +162,7 @@
         "name": "Dyn Delta",
         "short": "DELT",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

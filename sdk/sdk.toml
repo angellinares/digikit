@@ -185,6 +185,12 @@ consts = [
     { name = "DK_DESC_PAGE", value = 4, doc = "Record kind of dk_desc_page." },
     { name = "DK_DESC_FX_PARAM", value = 5, doc = "Record kind of dk_desc_fx_param." },
     { name = "DK_DESC_PARAM_ACTION", value = 8, doc = "Record kind of dk_desc_param_action." },
+    { name = "DK_DESC_PARAM_GLYPH", value = 9, doc = "Record kind of dk_desc_param_glyph." },
+    { name = "DK_GLYPH_ENCODER", value = 0, doc = "Glyph (the dk_glyph values): a plain encoder knob, values 0 .. 127 (the default)." },
+    { name = "DK_GLYPH_FADER", value = 1, doc = "Glyph: a fader, values 0 .. 127." },
+    { name = "DK_GLYPH_PAN", value = 2, doc = "Glyph: a pan knob, values 0 .. 127 (centre 64, shows L/R)." },
+    { name = "DK_GLYPH_ONOFF", value = 3, doc = "Glyph: an on/off switch, values 0 .. 1." },
+    { name = "DK_GLYPH_TUNE", value = 4, doc = "Glyph: a tune knob, values 4 .. 124 (centre 64, one unit = one semitone)." },
     { name = "DK_PAGE_KNOBS", value = 8, doc = "Encoders on a page." },
     { name = "DK_POS_AUTO", value = 255, doc = "The knob takes the lowest free position." },
     { name = "DK_PERCENT", value = 1, doc = "A knob shown as 0 .. 127 (the default)." },
@@ -293,6 +299,18 @@ fields = [
     "char machine[16] // the id of the machine",
     "u32 word // 0 .. 7, the parameter word of the machine whose knob is clicked; the machine declares it with DK_PARAM",
     "char fn[32] // the ColdFire symbol of the callback, `void fn(u32 track)`: a global function of the module, called in the UI task",
+]
+
+[[desc.record]]
+name = "dk_desc_param_glyph"
+kind = "DK_DESC_PARAM_GLYPH"
+doc = "The look of one parameter word of a machine: its glyph (a dk_glyph value) selects the stock row whose knob picture, value text and step behaviour the parameter copies. At most one per parameter; without it the glyph is DK_GLYPH_ENCODER. Glyphs on effect parameters are not supported yet."
+fields = [
+    "u32 kind // DK_DESC_PARAM_GLYPH",
+    "u32 size // sizeof(dk_desc_param_glyph)",
+    "char owner[16] // the id of the machine (an effect id is refused for now)",
+    "u32 word // 0 .. 7, the parameter word of the machine; the machine declares it with DK_PARAM",
+    "u32 glyph // DK_GLYPH_ENCODER .. DK_GLYPH_TUNE",
 ]
 
 [[desc.record]]

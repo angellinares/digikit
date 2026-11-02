@@ -80,7 +80,7 @@
         "name": "Reverse",
         "short": "REV",
         "slot": 1,
-        "template": 209
+        "template": 204
       }
     ]
   }

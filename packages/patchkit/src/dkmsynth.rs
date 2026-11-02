@@ -153,7 +153,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
         device,
         ..Default::default()
     };
-    let template = if dev == "dn2" { 0xd5 } else { 0xd1 };
+    let template = if dev == "dn2" { 0xd5 } else { 0xcc };
     let slots = model.knobs.count.max(1) as i64;
     for i in 0..spec.params {
         reg.params.push(Param {

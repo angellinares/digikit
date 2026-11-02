@@ -57,6 +57,12 @@ enum Rec {
         word: u32,
         func: String,
     },
+    ParamGlyph {
+        what: String,
+        owner: String,
+        word: u32,
+        glyph: u32,
+    },
     Page {
         what: String,
         owner: String,
@@ -234,7 +240,17 @@ fn param_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
             max: sword(b, rec, "max")?,
             default: sword(b, rec, "def")?,
             action: None,
+            glyph: None,
         },
+    })
+}
+
+fn param_glyph(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    Ok(Rec::ParamGlyph {
+        what: what.to_string(),
+        owner: req(what, b, rec, "owner")?,
+        word: word(b, rec, "word")?,
+        glyph: word(b, rec, "glyph")?,
     })
 }
 
@@ -378,6 +394,7 @@ fn records(obj: &Dko, spec: &DescSpec) -> Result<Vec<Rec>> {
                 "dk_desc_machine" => machine_def(&what, rb, rec)?,
                 "dk_desc_param" => param_def(&what, rb, rec)?,
                 "dk_desc_param_action" => param_action(&what, rb, rec)?,
+                "dk_desc_param_glyph" => param_glyph(&what, rb, rec)?,
                 "dk_desc_page" => page_def(&what, spec, rb, rec)?,
                 _ => return Err(err!("{what}: no reader for {}", rec.name)),
             });
@@ -439,6 +456,7 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
     let mut machines: Vec<(MachineDef, VoiceDef)> = vec![];
     let mut params: Vec<(String, ParamDef)> = vec![];
     let mut actions: Vec<(String, String, u32, String)> = vec![];
+    let mut glyphs: Vec<(String, String, u32, u32)> = vec![];
     let mut pages: Vec<(String, String, String, String, Vec<PageKnob>)> = vec![];
     for r in recs {
         match r {
@@ -475,6 +493,12 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
                 word,
                 func,
             } => actions.push((what, machine, word, func)),
+            Rec::ParamGlyph {
+                what,
+                owner,
+                word,
+                glyph,
+            } => glyphs.push((what, owner, word, glyph)),
             Rec::Page {
                 what,
                 owner,
@@ -527,6 +551,33 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
             ));
         }
         p.action = Some(func);
+    }
+    for (what, owner, word, glyph) in glyphs {
+        if glyph > 4 {
+            return Err(err!(
+                "{what}: unknown glyph {glyph} (DK_GLYPH_ENCODER .. DK_GLYPH_TUNE is 0 to 4)"
+            ));
+        }
+        if fxs.iter().any(|(_, f)| f.id == owner) {
+            return Err(err!(
+                "{what}: effect {owner}: glyphs on effect parameters are not supported yet"
+            ));
+        }
+        let Some((_, p)) = params
+            .iter_mut()
+            .find(|(_, p)| p.machine == owner && p.word == word)
+        else {
+            return Err(err!(
+                "{what}: machine {owner} has no param at word {word} for a glyph"
+            ));
+        };
+        if p.glyph.is_some() {
+            return Err(err!(
+                "{what}: param {} (word {word}) has two glyphs",
+                p.id
+            ));
+        }
+        p.glyph = Some(glyph);
     }
     for (m, _) in &machines {
         let mut words: Vec<u32> = params
@@ -826,6 +877,12 @@ mod tests {
         r
     }
 
+    fn glyph(owner: &str, word: u32, glyph: u32) -> Rb {
+        let mut r = Rb::new("dk_desc_param_glyph");
+        r.text("owner", owner).num("word", word).num("glyph", glyph);
+        r
+    }
+
     fn page(owner: &str) -> Rb {
         let mut r = Rb::new("dk_desc_page");
         r.text("owner", owner).text("name", "PLUCK").text("title", "Pluck");
@@ -989,6 +1046,29 @@ mod tests {
         let mut empty = action("pluck", 0, "");
         empty.text("fn", "");
         assert!(err_of(&[&m, &param("pluck", "a", 0), &empty]).contains("fn is empty"));
+    }
+
+    #[test]
+    fn a_glyph_joins_the_param_at_its_word() {
+        let m = machine("pluck");
+        let recs = [
+            &m,
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &glyph("pluck", 1, 4),
+        ];
+        let d = read(&obj(&all(&recs))).unwrap();
+        assert_eq!(d.params[0].glyph, None);
+        assert_eq!(d.params[1].glyph, Some(4));
+        // an effect owner, no param at that word, two glyphs on one, a value that is no glyph
+        let e = err_of(&[&m, &fx("fshift"), &param("pluck", "a", 0), &glyph("fshift", 0, 1)]);
+        assert!(e.contains("not supported yet"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 1, 1)]);
+        assert!(e.contains("no param at word 1"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 0, 1), &glyph("pluck", 0, 2)]);
+        assert!(e.contains("two glyphs"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 0, 9)]);
+        assert!(e.contains("unknown glyph 9"), "{e}");
     }
 
     #[test]

@@ -132,7 +132,7 @@
         "name": "Decay",
         "short": "DECAY",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 8192,
@@ -142,7 +142,7 @@
         "name": "Pick position",
         "short": "PICK",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 20480,
@@ -152,7 +152,7 @@
         "name": "Brightness",
         "short": "BRIGHT",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 10240,
@@ -162,7 +162,7 @@
         "name": "Excitation colour",
         "short": "COLOR",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

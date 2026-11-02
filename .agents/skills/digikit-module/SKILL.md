@@ -46,6 +46,7 @@ Each task takes `-- --help`.
 - **Reserved authors.** `core` and `test` are reserved. Use `digikit` or your own author. `module:new` refuses `core` and `framework`.
 - **Commit `build/gen/`** (only `gallery.json` is generated there); do not edit it by hand (guide 4, 6). Do not commit built objects: a content module has no `build/*.dko.json` (they are cache in `out/cache/dko`; only `core/*` commits objects).
 - **Knobs and parameters.** A machine has at most as many `DK_PARAM` words as the device's `param_slots` (Digitakt II 5, Digitone II 8; in order, knob units 0 to 127) and at most one `DK_PAGE` with `DK_KNOB` only.
+  The knob look is `DK_GLYPH_ENCODER` (0 to 127) unless `DK_PARAM_GLYPH(machine, word, G)` sets `DK_GLYPH_FADER` (0 to 127), `_PAN` (0 to 127, centre 64), `_ONOFF` (0 to 1) or `_TUNE` (4 to 124, centre 64, semitones); the range must fit. Not for effects yet.
   The adapter places word w on a fixed knob (words 0 to 4 on knobs B C E F G on both devices; the Digitone II adds A, D, H for words 5 to 7). The word is the slot, so a released parameter keeps its word.
   Effect knobs may sit at any position 0 to 7 (`DK_KNOB_AT`). No data-only machines; `clone_of` is fixed by the profile (guide 5.2, 5.3, 5.7).
 - **No fixed type number** for a run-time machine. The runtime assigns it at load. Never write a number into code or a test.

@@ -370,9 +370,13 @@ level_field = "c8"
 level_default = 10          # the track level code
 own_dsp = true
 
-# Stock parameter rows a module parameter can copy by name: `plain` shows a plain 0..127 value.
+# Stock parameter rows a module parameter copies by glyph name (dk_glyph in sdk/sdk.toml); `encoder` is the default.
 [modules.templates]
-plain = 0xd5
+encoder = 0xd5   # 213 DEC
+fader = 0xd7     # 215 A Level
+pan = 0x47       # 71 PAN
+onoff = 0xdd     # 221 ATRG
+tune = 0xee      # 238 TUN1
 
 # The DSP's copy of the frame holds the word of sound-array slot s of voice v at halfword 0x6d + 0x49 v + (s - 25).
 [modules.frame]
