@@ -261,8 +261,24 @@ without running it.
   `tools/devtools/py_select.py` selects by the diff: the gate test (`PY_GATE`), the `PY_SUITES` the
   change triggers, the tests that reach a changed module in the import graph, and the changed tests.
   One process runs one file.
+- Inputs name the toolchain by version (runtime inputs such as the pinned `rustup run <version> rustc -vV`, node versions), not by
+  `mise.toml`, so task edits in `mise.toml` do not select every project.
 - If the selection is wider or narrower than the change can reach, fix the inputs and edges in
   `tools/nx/*.mjs` or the `project.json` files.
+
+### Remote cache
+
+All worktrees of a clone share one Cacheiro server on `127.0.0.1:47311`. Its state is in
+`<git common dir>/nx-remote-cache` (config with a read/write and a read-only token, mode 0600).
+`mise run gate` and `gate:full` write; `test:changed` reads. `tools/nx/remote-cache.mjs` starts the
+server on demand (`status` and `stop` subcommands) and sets the Nx variables only when it answers.
+
+Cached targets: module `test-device` and `test-conformance`. Inputs: the module and its graph deps,
+the outputs of the pack, CLI and daemon targets, the toolchain, the emulator env switches, the harness
+packages (`test-support`, `control-client`, `dk-session`), every `module.toml`,
+`tools/emulator/fast_regions.json`, and the firmware, ready dirs and DT2 sample card (hashed by
+`tools/nx/device-inputs.mjs`). Not in the key on purpose: `dist/session-cache` (boot cache, cannot
+change a result) and directory scans such as `modules/README.md`. Failed tasks are not cached.
 
 ### Digikit boot scenarios
 

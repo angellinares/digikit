@@ -1,0 +1,9 @@
+{
+  "name": "digikit-nx-cache-server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@renatorodrigues/cacheiro": "1.6.0",
+    "@renatorodrigues/cacheiro-store-fs": "1.1.4"
+  }
+}

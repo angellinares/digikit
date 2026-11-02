@@ -18,6 +18,30 @@ const packDevices = (m) => {
 };
 // Shipped module that is loaded at run time: it gets test-conformance.
 const isUploadable = (root, m) => root.startsWith('modules/') && !!(m.dynamic || m.host || m.type === 'service');
+// Cache inputs of test-device and test-conformance: the module and its graph deps (core modules, harness via
+// regression/conformance, daemon and patchkit crate sources), the outputs of the pack, CLI and daemons targets
+// (dist/daemons.json names the content-keyed daemon), and the firmware and ready dirs via device-inputs.mjs.
+// Also named explicitly: the harness packages (test-support, control-client, dk-session), every module.toml
+// (the conformance suite scans manifests to select modules) and tools/emulator/fast_regions.json (sets SHARC_* env).
+const DEVICE_INPUTS = [
+  'default',
+  '^default',
+  'jsToolchain',
+  { dependentTasksOutputFiles: '**/*', transitive: true },
+  { runtime: 'node tools/nx/device-inputs.mjs' },
+  { env: 'DIGI_EMU_FAST' },
+  { env: 'DIGI_PK_READY_DT2_117' },
+  { env: 'DIGI_PK_READY_DN2_112' },
+  { env: 'SHARC_FAST_REGIONS' },
+  { env: 'SHARC_BLOCKTRANS' },
+  { env: 'SHARC_FAST_FALLBACK_REGIONS' },
+  { env: 'SHARC_FAST_AUTO' },
+  '{workspaceRoot}/packages/test-support/**/*',
+  '{workspaceRoot}/packages/control-client/**/*',
+  '{workspaceRoot}/packages/dk-session/**/*',
+  '{workspaceRoot}/modules/**/module.toml',
+  '{workspaceRoot}/tools/emulator/fast_regions.json',
+];
 const leaf = (id) => id.split('/').at(-1);
 const dkm = (dev, id) => `dist/modules/${dev}/${leaf(id)}.dkm`;
 const records = (root) => {
@@ -125,7 +149,8 @@ export const createNodesV2 = [
         }
         targets['test-device'] = {
           executor: 'nx:run-commands',
-          cache: false,
+          cache: true,
+          inputs: DEVICE_INPUTS,
           dependsOn: [...new Set(dependsOn)],
           outputs: [],
           options: {
@@ -139,7 +164,8 @@ export const createNodesV2 = [
       if (uploadable)
         targets['test-conformance'] = {
           executor: 'nx:run-commands',
-          cache: false,
+          cache: true,
+          inputs: DEVICE_INPUTS,
           dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons'],
           outputs: [],
           options: {
@@ -184,7 +210,9 @@ export const createDependencies = (_opts, ctx) => {
       }));
     // Implicit edges: a module with device or conformance tests depends on the harness, the daemon and the packs.
     const hasDeviceTests = !!(p.targets?.['test-device'] || p.targets?.['test-conformance']);
-    const implicitDeps = hasDeviceTests ? ['regression', 'conformance', 'digi-control', 'patchkit'] : [];
+    const implicitDeps = hasDeviceTests
+      ? ['regression', 'conformance', 'digi-control', 'patchkit', 'devices', 'sdk']
+      : [];
     // Projects that live inside the module directory (for example core/ui and dkui-host).
     for (const q of all) if (q.name !== p.name && q.root.startsWith(p.root + '/')) implicitDeps.push(q.name);
     const implicits = [...new Set(implicitDeps)]
