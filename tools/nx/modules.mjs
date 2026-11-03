@@ -6,11 +6,37 @@ import { existsSync, globSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 import { DependencyType } from '@nx/devkit';
 import { parse } from 'smol-toml';
+import { testImportInputs } from './test-imports.mjs';
 
 const read = (root, toml) => parse(readFileSync(join(root, toml), 'utf8'));
 // Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
 const PK = 'dist/patchkit/patchkit --root .';
 const IMAGE_BUILD = { target: 'build-objects', projects: ['tag:acceptance-image'] };
+// Build/pack producers do not read acceptance tests. Nx's implicit ^default input would
+// otherwise turn a harness-only edit into a changed image output for every consumer.
+const BUILD_INPUTS = [
+  'production',
+  '^production',
+  'jsToolchain',
+  { dependentTasksOutputFiles: '**/*', transitive: true },
+  '{workspaceRoot}/tools/nx/modules.mjs',
+  // gen reads the library manifests and device facts; builders read shared SDK headers and pins.
+  '{workspaceRoot}/modules/**/module.toml',
+  '{workspaceRoot}/tests/fixtures/modules/**/module.toml',
+  '{workspaceRoot}/devices/**/*',
+  '{workspaceRoot}/sdk/**/*',
+  '{workspaceRoot}/tools/patchkit/**/*',
+  '{workspaceRoot}/Cargo.toml',
+  '{workspaceRoot}/Cargo.lock',
+  '{workspaceRoot}/.cargo/**/*',
+  '{workspaceRoot}/rust-toolchain*',
+  '{workspaceRoot}/mise.toml',
+  '{workspaceRoot}/pyproject.toml',
+  '{workspaceRoot}/uv.lock',
+  '{workspaceRoot}/tools/__init__.py',
+  '{workspaceRoot}/tools/devtools/benchlock.py',
+  '{workspaceRoot}/tools/devtools/portable_flock.py',
+];
 
 // The devices a module packs for: no ports means both devices.
 const packDevices = (m) => {
@@ -21,7 +47,7 @@ const packDevices = (m) => {
 const isUploadable = (root, m) => root.startsWith('modules/') && !!(m.dynamic || m.host || m.type === 'service');
 // Cache inputs of test-device and test-conformance: the module and its graph deps (core modules, harness via
 // regression/conformance, daemon and patchkit crate sources) with their `production` files (sources without
-// tests/ and docs; for regression only the harness files, see tests/regression/project.json), the outputs of
+// tests/ and docs; regression's runtime helpers come from each suite's import closure), the outputs of
 // the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
 // ready dirs via device-inputs.mjs.
 // Image core sources/objects are explicit production inputs, without acceptance-fixture graph edges.
@@ -48,6 +74,8 @@ const DEVICE_INPUTS = [
   '{workspaceRoot}/packages/dk-session/**/*',
   '{workspaceRoot}/modules/**/module.toml',
   '{workspaceRoot}/tools/nx/device-inputs.mjs',
+  '{workspaceRoot}/tools/nx/modules.mjs',
+  '{workspaceRoot}/tools/nx/test-imports.mjs',
   '{workspaceRoot}/tools/emulator/fast_regions.json',
 ];
 const leaf = (id) => id.split('/').at(-1);
@@ -57,7 +85,7 @@ const records = (root) => {
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
 };
 
-const deviceTarget = (root, tests, recs, imageInput, uploadable = false) => {
+const deviceTarget = (root, tests, recs, imageInput, importInputs, uploadable = false) => {
   const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD];
   if (uploadable) dependsOn.push('pack');
   for (const rec of recs) {
@@ -71,6 +99,7 @@ const deviceTarget = (root, tests, recs, imageInput, uploadable = false) => {
     inputs: [
       ...DEVICE_INPUTS,
       imageInput,
+      ...importInputs(tests.map((test) => join(root, test))),
       ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
     ],
     dependsOn: [...new Set(dependsOn)],
@@ -84,8 +113,11 @@ const deviceTarget = (root, tests, recs, imageInput, uploadable = false) => {
 };
 
 export const createNodesV2 = [
-  '{modules,tests/fixtures/modules}/**/{module.toml,project.json}',
+  '{modules,tests/fixtures/modules,tests/regression}/**/{module.toml,project.json}',
   (matched, _opts, ctx) => {
+    // Lazy for manifests without device targets (including small plugin fixtures).
+    let imports;
+    const importInputs = (files) => (imports ??= testImportInputs(ctx.workspaceRoot))(files);
     const files = matched.filter((f) => f.endsWith('/module.toml'));
     const testOwners = matched
       .filter((f) => f.endsWith('/project.json'))
@@ -156,6 +188,7 @@ export const createNodesV2 = [
         targets['build-objects'] = {
           executor: 'nx:run-commands',
           cache: false,
+          inputs: BUILD_INPUTS,
           description:
             'Check generated sources, then incrementally build committed core objects; may update tracked outputs.',
           dependsOn: [
@@ -176,6 +209,7 @@ export const createNodesV2 = [
         targets.pack = {
           executor: 'nx:run-commands',
           cache: false,
+          inputs: BUILD_INPUTS,
           dependsOn: ['patchkit:cli'],
           outputs: devices.map((d) => `{workspaceRoot}/${dkm(d, m.id)}`),
           options: {
@@ -205,6 +239,7 @@ export const createNodesV2 = [
         targets['pack-aliases'] = {
           executor: 'nx:run-commands',
           cache: false,
+          inputs: BUILD_INPUTS,
           dependsOn: ['patchkit:cli', ...[...aliasSources].map((s) => `${s}:pack`)],
           outputs: aliasOutputs,
           options: {
@@ -225,13 +260,17 @@ export const createNodesV2 = [
           },
         };
       if (shipped && deviceTests.length)
-        targets['test-device'] = deviceTarget(root, deviceTests, recs, imageInput, uploadable);
+        targets['test-device'] = deviceTarget(root, deviceTests, recs, imageInput, importInputs, uploadable);
       // The rule is `isUploadable` in this file: the shared conformance suite loads these.
       if (uploadable)
         targets['test-conformance'] = {
           executor: 'nx:run-commands',
           cache: true,
-          inputs: [...DEVICE_INPUTS, imageInput],
+          inputs: [
+            ...DEVICE_INPUTS,
+            imageInput,
+            ...importInputs(globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot })),
+          ],
           dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD],
           outputs: [],
           options: {
@@ -257,7 +296,7 @@ export const createNodesV2 = [
       const recs = records(join(ctx.workspaceRoot, root));
       if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
         throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
-      const target = deviceTarget(root, tests, recs, imageInput);
+      const target = deviceTarget(root, tests, recs, imageInput, importInputs);
       // This new target identity awaits input/output and cache-behavior evidence.
       target.cache = false;
       target.description =
@@ -267,6 +306,26 @@ export const createNodesV2 = [
         { projects: { [root]: { name: config.name, root, tags: config.tags, targets: { 'test-device': target } } } },
       ]);
     }
+    if (matched.includes('tests/regression/project.json'))
+      nodes.push([
+        'tests/regression/project.json',
+        {
+          projects: {
+            'tests/regression': {
+              targets: {
+                'test-device': {
+                  inputs: [
+                    ...DEVICE_INPUTS.map((input) => (input === 'default' ? 'production' : input)),
+                    imageInput,
+                    '{projectRoot}/project.json',
+                    ...importInputs(globSync('tests/regression/emulator/**/*.test.ts', { cwd: ctx.workspaceRoot })),
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ]);
     return nodes;
   },
 ];

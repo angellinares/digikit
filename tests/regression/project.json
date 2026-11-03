@@ -14,7 +14,6 @@
       "{projectRoot}/support.ts",
       "{projectRoot}/timing.ts",
       "{projectRoot}/watchdog.ts",
-      "{projectRoot}/runtime/**/*",
       "{projectRoot}/vitest.config.ts",
       "{projectRoot}/tsconfig.json",
       "{projectRoot}/package.json"

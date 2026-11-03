@@ -214,6 +214,68 @@ it('keeps every runtime device file in exactly one owner command', () => {
 });
 
 describe('workspace selection', () => {
+  it('selects only the importing suites for the card rig helper', () => {
+    const graph = selected('tests/regression/runtime/card-rig.ts', 'test-device,test-conformance');
+    expect(
+      Object.values(graph.tasks)
+        .filter((task) => ['test-device', 'test-conformance'].includes(task.target.target))
+        .map((task) => `${task.target.project}:${task.target.target}`)
+        .sort(),
+    ).toEqual([
+      'core/digikit-menu:test-device',
+      'core/dynreg:test-device',
+      'core/runtime-settings-tests:test-device',
+      'core/runtime-tests:test-device',
+    ]);
+  }, 30_000);
+
+  it('hashes transitive helpers only in suites that import them, with shared configuration intact', () => {
+    const consumer = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
+    const conformance = JSON.parse(nx(['show', 'target', 'inputs', `${imageConsumer()}:test-conformance`, '--json']));
+    const emulator = JSON.parse(nx(['show', 'target', 'inputs', 'regression:test-device', '--json']));
+    for (const file of ['tests/regression/runtime/card-rig.ts', 'tests/regression/runtime/card-kit.ts']) {
+      expect(consumer.files).toContain(file);
+      expect(conformance.files).not.toContain(file);
+      expect(emulator.files).not.toContain(file);
+    }
+    for (const inputs of [consumer, conformance, emulator])
+      for (const file of [
+        'tests/regression/vitest.config.ts',
+        'tests/regression/tsconfig.json',
+        'tests/regression/package.json',
+        'tests/regression/support.ts',
+        'tools/nx/modules.mjs',
+        'tools/nx/test-imports.mjs',
+        'pnpm-lock.yaml',
+      ])
+        expect(inputs.files, file).toContain(file);
+    expect(conformance.files).toContain('tests/regression/runtime/ready.ts');
+    const graph = selected('tests/regression/runtime/ready.ts', 'test-device,test-conformance');
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+  }, 30_000);
+
+  it('keeps producer source, device and toolchain inputs while excluding test helpers', () => {
+    const packer = imageConsumer();
+    for (const target of ['core/runtime:build-objects', 'core/dynfx:pack-aliases', `${packer}:pack`]) {
+      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
+      expect(inputs.files).not.toContain('tests/regression/runtime/card-rig.ts');
+      for (const file of [
+        'sdk/sdk.toml',
+        'devices/digitakt-ii.toml',
+        'tools/patchkit/toolchain/pins.toml',
+        'modules/core/runtime/module.toml',
+      ])
+        expect(inputs.files, `${target}: ${file}`).toContain(file);
+    }
+    for (const file of ['devices/digitakt-ii.toml', 'tools/patchkit/toolchain/pins.toml']) {
+      const graph = selected(file, 'build-objects,pack,pack-aliases');
+      expect(graph.tasks['core/runtime:build-objects']).toBeDefined();
+      expect(graph.tasks['core/dynfx:pack-aliases']).toBeDefined();
+      expect(graph.tasks[`${packer}:pack`]).toBeDefined();
+    }
+  }, 30_000);
+
   it('selects only the settings owner for a settings acceptance edit', () => {
     const graph = selected(
       'modules/core/runtime/tests/settings/settings.device.test.ts',
