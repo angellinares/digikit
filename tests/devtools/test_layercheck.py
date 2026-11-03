@@ -320,6 +320,20 @@ def test_self_contained_docs_agents_and_fixtures_may_name_modules(tree: Path) ->
     assert sc(tree) == []
 
 
+def test_runtime_acceptance_metadata_exception_is_owned_by_the_test_project(
+    tree: Path,
+) -> None:
+    project = "modules/core/runtime/tests/project.json"
+    metadata = {"metadata": {"runtimeAcceptance": [{"modules": ["digikit/gain"]}]}}
+    write(tree, project, json.dumps(metadata))
+    assert sc(tree) == []
+    write(tree, "modules/core/runtime/project.json", json.dumps(metadata))
+    assert [v.where for v in sc(tree)] == ["modules/core/runtime/project.json:1"]
+    write(tree, "modules/core/runtime/project.json", "{}")
+    write(tree, project, json.dumps({**metadata, "note": "digikit/gain"}))
+    assert [v.where for v in sc(tree)] == [f"{project}:1"]
+
+
 def test_self_contained_a_host_module_is_exempt(tree: Path) -> None:
     write(tree, "apps/page.ts", "'digikit/gain'\n")
     assert len(sc(tree)) == 1

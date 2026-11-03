@@ -54,9 +54,39 @@ const records = (root) => {
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
 };
 
+const deviceTarget = (root, tests, recs, uploadable = false) => {
+  const dependsOn = ['patchkit:cli', 'digi-control:daemons'];
+  if (uploadable) dependsOn.push('pack');
+  for (const rec of recs) {
+    for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
+    if (Object.keys(rec.aliases ?? {}).length) dependsOn.push('pack-aliases');
+    if (rec.plusdrive) dependsOn.push('plusdrive-format:cli');
+  }
+  return {
+    executor: 'nx:run-commands',
+    cache: true,
+    inputs: [
+      ...DEVICE_INPUTS,
+      ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
+    ],
+    dependsOn: [...new Set(dependsOn)],
+    outputs: [],
+    options: {
+      env: { REGRESSION_JOBS: '2' },
+      command: `pnpm --filter @digi/regression test:runtime ${tests.map((t) => `../../${root}/${t}`).join(' ')}`,
+      cwd: '.',
+    },
+  };
+};
+
 export const createNodesV2 = [
-  '{modules,tests/fixtures/modules}/**/module.toml',
-  (files, _opts, ctx) => {
+  '{modules,tests/fixtures/modules}/**/{module.toml,project.json}',
+  (matched, _opts, ctx) => {
+    const files = matched.filter((f) => f.endsWith('/module.toml'));
+    const testOwners = matched
+      .filter((f) => f.endsWith('/project.json'))
+      .map((f) => [f, JSON.parse(readFileSync(join(ctx.workspaceRoot, f), 'utf8'))])
+      .filter(([, p]) => p.tags?.includes('test-only'));
     // id -> manifest, so an alias can find the devices of its source module.
     const byId = new Map(
       files.map((f) => [read(ctx.workspaceRoot, f).module.id, { manifest: read(ctx.workspaceRoot, f).module }]),
@@ -79,11 +109,13 @@ export const createNodesV2 = [
         for (const source of Object.values(rec.aliases ?? {})) packable.add(source);
       }
     }
-    return files.map((f) => {
+    const nodes = files.map((f) => {
       const { module: m } = read(ctx.workspaceRoot, f);
       const root = dirname(f);
       const project = { name: m.id, root, tags: ['module', `type:${m.type}`] };
-      const tests = globSync('tests/**/*.test.ts', { cwd: join(ctx.workspaceRoot, root) });
+      const tests = globSync('tests/**/*.test.ts', { cwd: join(ctx.workspaceRoot, root) }).filter(
+        (t) => !testOwners.some(([pf]) => join(root, t).startsWith(dirname(pf) + '/')),
+      );
       const hostTests = tests.filter((t) => !t.endsWith('.device.test.ts'));
       const deviceTests = tests.filter((t) => t.endsWith('.device.test.ts')).sort();
       const shipped = root.startsWith('modules/');
@@ -144,27 +176,7 @@ export const createNodesV2 = [
             cwd: '.',
           },
         };
-      if (shipped && deviceTests.length) {
-        const dependsOn = ['patchkit:cli', 'digi-control:daemons'];
-        if (uploadable) dependsOn.push('pack');
-        for (const rec of recs) {
-          for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
-          if (Object.keys(rec.aliases ?? {}).length) dependsOn.push('pack-aliases');
-          if (rec.plusdrive) dependsOn.push('plusdrive-format:cli');
-        }
-        targets['test-device'] = {
-          executor: 'nx:run-commands',
-          cache: true,
-          inputs: DEVICE_INPUTS,
-          dependsOn: [...new Set(dependsOn)],
-          outputs: [],
-          options: {
-            env: { REGRESSION_JOBS: '2' },
-            command: `pnpm --filter @digi/regression test:runtime ${deviceTests.map((t) => `../../${root}/${t}`).join(' ')}`,
-            cwd: '.',
-          },
-        };
-      }
+      if (shipped && deviceTests.length) targets['test-device'] = deviceTarget(root, deviceTests, recs, uploadable);
       // The rule is `isUploadable` in this file: the shared conformance suite loads these.
       if (uploadable)
         targets['test-conformance'] = {
@@ -182,6 +194,24 @@ export const createNodesV2 = [
       if (Object.keys(targets).length) project.targets = targets;
       return [f, { projects: { [root]: project } }];
     });
+    for (const [file, config] of testOwners) {
+      const root = dirname(file);
+      const tests = globSync('**/*.device.test.ts', { cwd: join(ctx.workspaceRoot, root) }).sort();
+      if (!tests.length) continue;
+      const recs = records(join(ctx.workspaceRoot, root));
+      if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
+        throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
+      const target = deviceTarget(root, tests, recs);
+      // This new target identity awaits a bounded device-input audit before caching is enabled.
+      target.cache = false;
+      target.description =
+        'Runtime acceptance; cache temporarily disabled pending a bounded input audit of this new target identity.';
+      nodes.push([
+        file,
+        { projects: { [root]: { name: config.name, root, tags: config.tags, targets: { 'test-device': target } } } },
+      ]);
+    }
+    return nodes;
   },
 ];
 
@@ -201,33 +231,39 @@ export const createDependencies = (_opts, ctx) => {
           ...(type === 'fx' ? ['core/dynfx', 'core/fxpages'] : []),
         ];
   const all = Object.values(ctx.projects);
-  return mods.flatMap((p) => {
-    const t = read(ctx.workspaceRoot, join(p.root, 'module.toml'));
-    const deps = [...(t.module.requires ?? []), ...implicit(p, t.module.type)];
-    for (const o of t.object ?? []) for (const s of o.sources ?? []) deps.push(owner(normalize(join(p.root, s))) ?? '');
-    const statics = [...new Set(deps)]
-      .filter((d) => d && d !== p.name)
-      .map((target) => ({
-        source: p.name,
-        target,
-        sourceFile: join(p.root, 'module.toml'),
-        type: DependencyType.static,
-      }));
-    // Implicit edges: a module with device tests depends on the harness, the daemon and the packs;
-    // only a module with test-conformance also depends on the conformance suite.
-    const hasDeviceTests = !!(p.targets?.['test-device'] || p.targets?.['test-conformance']);
-    const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
-    // Runtime acceptance records name the fixture/content modules loaded by device tests.
-    // Their source changes must invalidate the consumer's device-test cache.
-    for (const rec of records(join(ctx.workspaceRoot, p.root))) {
-      implicitDeps.push(...(rec.modules ?? []), ...Object.values(rec.aliases ?? {}));
-    }
-    if (p.targets?.['test-conformance']) implicitDeps.push('conformance');
-    // Projects that live inside the module directory (for example core/ui and dkui-host).
-    for (const q of all) if (q.name !== p.name && q.root.startsWith(p.root + '/')) implicitDeps.push(q.name);
-    const implicits = [...new Set(implicitDeps)]
-      .filter((d) => d !== p.name && ctx.projects[d])
-      .map((target) => ({ source: p.name, target, type: DependencyType.implicit }));
-    return [...statics, ...implicits];
-  });
+  return all
+    .filter((p) => p.tags?.includes('module') || p.tags?.includes('test-only'))
+    .flatMap((p) => {
+      const isModule = p.tags?.includes('module');
+      const t = isModule ? read(ctx.workspaceRoot, join(p.root, 'module.toml')) : { module: {} };
+      const deps = isModule ? [...(t.module.requires ?? []), ...implicit(p, t.module.type)] : [];
+      for (const o of t.object ?? [])
+        for (const s of o.sources ?? []) deps.push(owner(normalize(join(p.root, s))) ?? '');
+      const statics = [...new Set(deps)]
+        .filter((d) => d && d !== p.name)
+        .map((target) => ({
+          source: p.name,
+          target,
+          sourceFile: join(p.root, 'module.toml'),
+          type: DependencyType.static,
+        }));
+      // Implicit edges: a module with device tests depends on the harness, the daemon and the packs;
+      // only a module with test-conformance also depends on the conformance suite.
+      const hasDeviceTests = !!(p.targets?.['test-device']?.options?.command || p.targets?.['test-conformance']);
+      const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
+      // Runtime acceptance records name the fixture/content modules loaded by device tests.
+      // Their source changes must invalidate the consumer's device-test cache.
+      for (const rec of records(join(ctx.workspaceRoot, p.root))) {
+        implicitDeps.push(...(rec.modules ?? []), ...Object.values(rec.aliases ?? {}));
+      }
+      if (p.targets?.['test-conformance']) implicitDeps.push('conformance');
+      // Projects that live inside the module directory (for example core/ui and dkui-host).
+      for (const q of all)
+        if (q.name !== p.name && q.root.startsWith(p.root + '/') && !q.tags?.includes('test-only'))
+          implicitDeps.push(q.name);
+      const implicits = [...new Set(implicitDeps)]
+        .filter((d) => d !== p.name && ctx.projects[d])
+        .map((target) => ({ source: p.name, target, type: DependencyType.implicit }));
+      return [...statics, ...implicits];
+    });
 };

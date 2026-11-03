@@ -68,11 +68,12 @@ require Rust toolchains or Cargo metadata. Explicit Rust targets retain their ow
 See the [Nx migration boundary](plans/nx-pilot.md#host-preflight-migration).
 
 Control-client, test-support, dk-session, desktop-host and regression-host targets use local result
-caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). Device targets set `parallelism: false`. Other Nx targets: `pack` (patchkit build, then pack for each device into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
+caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). The gate runs two tasks concurrently; device targets set `REGRESSION_JOBS=2`. Other Nx targets: `pack` (patchkit build, then pack for each device into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
 generated WASM and optional inputs outside the cache boundary. Cache use assumes a frozen installation. New test helpers, environment
 reads or external inputs require an input audit before relying on cached results. The
 [bounded cache observations](findings/nx-pilot.md) include dependency failure/restoration probes;
-only the support/session pair was timed, not whole preflight. Rust and runtime targets remain uncached.
+only the support/session pair was timed, not whole preflight. The standalone runtime unit target and
+relocated runtime acceptance target remain uncached; the latter awaits a bounded device-input audit.
 
 | Command | What runs |
 | --- | --- |
@@ -231,8 +232,10 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 - `test_*.py`, also in subfolders: pytest files. The basename is unique across the repository (prefix it with the module name). A helper
   next to the test is imported by name. Use `Path(__file__).parents[1]` for the module folder.
 - `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`pnpm test:host`), found recursively under `modules/`.
-- `*.device.test.ts`: device tests, registered in the module's `project.json` (`metadata.runtimeAcceptance`, files relative to the module
-  root) and run by the `runtime` project. `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
+- `*.device.test.ts`: device tests, registered in the owner's `project.json` (`metadata.runtimeAcceptance`, files relative to that
+  project root) and run by Vitest's `runtime` project. Runtime acceptance is owned by `core/runtime-tests`
+  (`modules/core/runtime/tests/project.json`), with a forwarding `core/runtime:test-device` compatibility target.
+  `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
   loads the module through the shared conformance suite.
 - `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them in `tests/digikit/scenarios/` and `modules/*/*/tests/scenarios/`.
 - `module:check ID`, `gate` and `test:changed` select them. A change in the module selects its tests and those of the modules that depend

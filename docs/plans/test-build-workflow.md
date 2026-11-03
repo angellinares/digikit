@@ -24,12 +24,24 @@ coverage. Nx owns scheduling; mise remains a thin entry point rather than a seco
    Legacy UI selection still includes web's host suite through web's other UI inputs; task-level
    selection selects only desktop. Stage 1 remains active for the cycle fix and affected-mode decision.
    Keep `affected.legacy=true` until the broader matrix is accepted.
-   Next, break runtime acceptance cycles: proposed nested `modules/core/runtime/tests` project
+   **Current checkpoint: runtime acceptance cycle split.** Nested `modules/core/runtime/tests` project
    `core/runtime-tests` owns acceptance metadata and depends on runtime plus its fixtures. The
-   plugin must avoid parent-to-child edges for tagged test-only projects, infer their targets and
-   include their metadata when discovering packs. Retain `core/runtime:test-device` as a task
-   alias; update the layercheck exception. Prove no runtime/content strongly connected component.
-   This boundary is a design checkpoint, not part of the current implementation batch.
+   plugin avoids parent-to-child edges for tagged test-only projects, infers their targets and
+   includes their metadata when discovering packs. `core/runtime:test-device` is a supported no-op
+   task alias with argument forwarding; the layercheck exception follows the metadata owner.
+   Graph checks find no runtime/content cycle; old/new commands, file inventories and all pack
+   targets agree (16 device files, 37 pack/alias targets, identical dependency-project closure).
+   Saved PLUCK plans select 20 device/conformance tasks before and two after: its own conformance
+   plus runtime acceptance. Total tasks including prerequisites fall from 58 to 29; this is
+   selection evidence, not a measured speedup. Seventeen real selection tests pass across both modes, including test-only edits,
+   runtime source/units/acceptance, leaf conformance isolation and helper-source triggers.
+   Twenty layercheck unit tests, direct layercheck, Python lint/mypy, formatting and seven affected
+   preflight tasks pass. No device/native builds or full gate were run for this checkpoint.
+   The relocated acceptance target is explicitly uncached pending a bounded input audit. No device
+   suite was run. The auditor cannot yet prove dependency-output/runtime-device hashes or Python
+   import closure; explicit helper-source inputs are triggers, not proof of complete cache closure.
+   Next: extend that audit, then trace one representative acceptance case per relevant path/device
+   with existing artifacts and verify cache invalidation/restoration before enabling the new cache.
 2. **Next: prove build-cache boundaries.** Early win `16594f8b` excludes task definitions from the
    daemon key while hashing the Rust pin and actual compiler identity. Six focused tests, mypy,
    Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.

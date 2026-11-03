@@ -1,22 +1,36 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { globSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 type TaskGraph = {
-  tasks: Record<string, { target: { project: string; target: string } }>;
+  tasks: Record<string, { target: { project: string; target: string }; overrides: Record<string, unknown> }>;
   dependencies: Record<string, { id: string }[]>;
 };
 
-function selected(file: string, targets: string, legacy: boolean): TaskGraph {
+type ProjectGraph = {
+  nodes: Record<
+    string,
+    {
+      data: {
+        root: string;
+        targets: Record<string, { options?: { command?: string }; inputs?: unknown[] }>;
+        metadata?: { runtimeAcceptance?: { files?: string[]; sources?: string[] }[] };
+      };
+    }
+  >;
+  dependencies: Record<string, { target: string }[]>;
+};
+
+function plan(args: string[], legacy = true, outputFlag = '--graph'): { tasks: TaskGraph; graph: ProjectGraph } {
   const output = join(scratch, 'tasks.json');
-  execFileSync('pnpm', ['exec', 'nx', 'affected', `--files=${file}`, `--targets=${targets}`, `--graph=${output}`], {
+  execFileSync('pnpm', ['exec', 'nx', ...args, `${outputFlag}=${output}`], {
     cwd: root,
     env: {
       ...process.env,
@@ -29,14 +43,62 @@ function selected(file: string, targets: string, legacy: boolean): TaskGraph {
     timeout: 30_000,
     stdio: 'pipe',
   });
-  return JSON.parse(readFileSync(output, 'utf8')).tasks;
+  return JSON.parse(readFileSync(output, 'utf8'));
 }
+
+const selected = (file: string, targets: string, legacy: boolean) =>
+  plan(['affected', `--files=${file}`, `--targets=${targets}`], legacy).tasks;
+
+let workspace: ProjectGraph;
+beforeAll(() => {
+  workspace = plan(['graph'], true, '--file').graph;
+});
+
+it('keeps runtime and shipped content outside dependency cycles', () => {
+  const reaches = (from: string, target: string, seen = new Set<string>()): boolean => {
+    if (seen.has(from)) return false;
+    seen.add(from);
+    return (workspace.dependencies[from] ?? []).some(
+      (dep) => dep.target === target || reaches(dep.target, target, seen),
+    );
+  };
+  for (const [name, node] of Object.entries(workspace.nodes)) {
+    if (name === 'core/runtime' || /^modules\/(machines|fx|tools)\//.test(node.data.root))
+      expect(reaches(name, name), name).toBe(false);
+  }
+  expect(reaches('core/runtime', 'core/runtime-tests')).toBe(false);
+});
+
+it('keeps every runtime device file in the new owner command', () => {
+  const owner = workspace.nodes['core/runtime-tests'].data;
+  const command = owner.targets['test-device'].options?.command ?? '';
+  const actual = (command.match(/\S+\.device\.test\.ts/g) ?? [])
+    .map((file) => resolve(root, 'tests/regression', file))
+    .sort();
+  const expected = globSync('**/*.device.test.ts', { cwd: join(root, owner.root) })
+    .map((file) => join(root, owner.root, file))
+    .sort();
+  expect(actual).toEqual(expected);
+  const sources = new Set((owner.metadata?.runtimeAcceptance ?? []).flatMap((rec) => rec.sources ?? []));
+  for (const source of sources) expect(owner.targets['test-device'].inputs).toContain(`{workspaceRoot}/${source}`);
+  for (const rec of owner.metadata?.runtimeAcceptance ?? [])
+    for (const file of rec.files ?? []) expect(actual).toContain(join(root, owner.root, file));
+});
+
+it('forwards compatibility target filters to the executable acceptance task', () => {
+  const graph = plan(['run', 'core/runtime:test-device', '--testNamePattern=own-filter']).tasks;
+  expect(graph.dependencies['core/runtime:test-device'].map((dep) => dep.id)).toEqual([
+    'core/runtime-tests:test-device',
+  ]);
+  expect(graph.tasks['core/runtime-tests:test-device'].overrides.testNamePattern).toBe('own-filter');
+});
 
 describe.each([true, false])('workspace selection (legacy=%s)', (legacy) => {
   it('runs the standalone runtime unit tests without build or daemon prerequisites', () => {
-    const graph = selected('modules/core/runtime/src/rs/src/lib.rs', 'rust-tests', legacy);
+    const graph = selected('modules/core/runtime/src/rs/src/lib.rs', 'rust-tests,test-device', legacy);
     expect(graph.tasks['core/runtime:rust-tests']).toBeDefined();
     expect(graph.dependencies['core/runtime:rust-tests']).toEqual([]);
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
   }, 30_000);
 
   it('keeps desktop source edits out of unrelated host suites', () => {
@@ -58,8 +120,41 @@ describe.each([true, false])('workspace selection (legacy=%s)', (legacy) => {
   );
 
   it('retains a leaf module’s own conformance and pack prerequisites', () => {
-    const graph = selected('modules/machines/pluck/src/module.c', 'test-conformance', legacy);
-    expect(graph.tasks['digikit/pluck:test-conformance']).toBeDefined();
-    expect(graph.dependencies['digikit/pluck:test-conformance'].map((dep) => dep.id)).toContain('digikit/pluck:pack');
+    const fixtures = new Set(workspace.dependencies['core/runtime-tests'].map((dep) => dep.target));
+    const [owner, node] = Object.entries(workspace.nodes)
+      .filter(
+        ([name, node]) =>
+          node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'] && fixtures.has(name),
+      )
+      .sort(([a], [b]) => a.localeCompare(b))[0];
+    const source = globSync('src/**/*.{c,rs}', { cwd: join(root, node.data.root) }).sort()[0];
+    expect(source).toBeDefined();
+    const file = `${node.data.root}/${source}`;
+    const graph = selected(file, 'test-conformance,test-device', legacy);
+    expect(graph.tasks[`${owner}:test-conformance`]).toBeDefined();
+    expect(graph.dependencies[`${owner}:test-conformance`].map((dep) => dep.id)).toContain(`${owner}:pack`);
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(
+      Object.values(graph.tasks)
+        .filter((task) => task.target.target === 'test-conformance')
+        .map((task) => task.target.project),
+    ).toEqual([owner]);
+  }, 30_000);
+
+  it('keeps runtime acceptance edits out of production consumers', () => {
+    const graph = selected(
+      'modules/core/runtime/tests/capacity.device.test.ts',
+      'rust-tests,test-device,test-conformance',
+      legacy,
+    );
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks['core/runtime:rust-tests']).toBeUndefined();
+    expect(graph.tasks['core/runtime:test-device']).toBeUndefined();
+    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
+  }, 30_000);
+
+  it('selects acceptance for its declared Python helper source', () => {
+    const graph = selected('tools/device/dktransfer.py', 'test-device', legacy);
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
   }, 30_000);
 });
