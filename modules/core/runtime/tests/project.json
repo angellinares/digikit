@@ -97,11 +97,6 @@
         "files": ["memaudit.device.test.ts"],
         "modules": ["test/c-demo", "test/dyn-demo", "test/dyn-demo-stray", "test/dyn-dn2", "test/sine"],
         "plusdrive": true
-      },
-      {
-        "files": ["memaudit-module.device.test.ts"],
-        "modules": [],
-        "plusdrive": true
       }
     ]
   }

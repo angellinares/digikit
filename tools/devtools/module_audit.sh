@@ -1,6 +1,6 @@
 #!/bin/sh
 # The ColdFire memory audit of one run-time module: tools/devtools/module_audit.sh NAME [--device dt2|dn2]  (mise run module:audit NAME)
-# NAME is a module id or its last part. Runs modules/core/runtime/tests/memaudit-module.device.test.ts (docs/MODULE-AUTHORING.md).
+# NAME is a module id or its last part. Runs modules/core/runtime/tests/memaudit-module.manual.device.test.ts (docs/MODULE-AUTHORING.md).
 set -eu
 if [ $# -lt 1 ] || [ "$1" = --help ] || [ "$1" = -h ]; then
   echo "usage: module_audit.sh NAME [--device dt2|dn2]" >&2
@@ -14,4 +14,4 @@ cd "$(dirname "$0")/../.."
 # the patchkit CLI, plusdrive and the daemons (cached when current)
 pnpm nx:pilot run-many -t cli,daemons -p patchkit,plusdrive-format,digi-control
 DIGI_AUDIT_MODULE=$name DIGI_AUDIT_DEVICE=$device DIGIKIT_TIER=full REGRESSION_JOBS=1 \
-  exec pnpm --filter @digi/regression test:runtime ../../modules/core/runtime/tests/memaudit-module.device.test.ts
+  exec pnpm --filter @digi/regression test:runtime ../../modules/core/runtime/tests/memaudit-module.manual.device.test.ts

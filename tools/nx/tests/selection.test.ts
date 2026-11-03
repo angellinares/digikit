@@ -33,7 +33,7 @@ type ProjectGraph = {
             cache?: boolean;
           }
         >;
-        metadata?: { runtimeAcceptance?: { files?: string[]; sources?: string[] }[] };
+        metadata?: { runtimeAcceptance?: { files?: string[]; sources?: string[]; modules?: string[] }[] };
       };
     }
   >;
@@ -194,7 +194,7 @@ it('keeps runtime and shipped content outside dependency cycles', () => {
   expect(reaches('core/runtime', 'core/runtime-tests')).toBe(false);
 });
 
-it('keeps every runtime device file in exactly one owner command', () => {
+it('keeps every gated runtime device file in exactly one owner command', () => {
   const base = workspace.nodes['core/runtime-tests'].data;
   const owners = Object.values(workspace.nodes)
     .map((node) => node.data)
@@ -216,6 +216,7 @@ it('keeps every runtime device file in exactly one owner command', () => {
     })
     .sort();
   const expected = globSync('**/*.device.test.ts', { cwd: join(root, base.root) })
+    .filter((file) => !file.endsWith('.manual.device.test.ts'))
     .map((file) => join(root, base.root, file))
     .sort();
   expect(actual).toEqual(expected);
@@ -267,6 +268,27 @@ it('forms explicit manifest libraries from selected modules and transitive requi
 });
 
 describe('workspace selection', () => {
+  it('selects only actual device consumers of the Analog manifest', () => {
+    const graph = selected('modules/machines/analog/module.toml', 'test-device');
+    expect(
+      Object.values(graph.tasks)
+        .filter((task) => task.target.target === 'test-device')
+        .map((task) => task.target.project),
+    ).toEqual(['core/runtime-tests']);
+    const consumer = workspace.nodes['core/runtime-tests'];
+    expect(workspace.dependencies['core/runtime-tests'].map((dep) => dep.target)).toContain('fadedlimes/analog');
+    expect(
+      consumer.data.metadata?.runtimeAcceptance?.find((rec) => rec.files?.includes('capacity.device.test.ts'))?.modules,
+    ).toContain('fadedlimes/analog');
+  }, 30_000);
+
+  it('leaves manual device audits out of inferred gate commands', () => {
+    const manual = 'modules/core/runtime/tests/memaudit-module.manual.device.test.ts';
+    expect(existsSync(join(root, manual))).toBe(true);
+    for (const { data } of Object.values(workspace.nodes))
+      expect(data.targets['test-device']?.options?.command ?? '').not.toContain('.manual.device.test.ts');
+  });
+
   it('keeps unrelated manifests out of core producers and other conformance suites', () => {
     const unrelated = 'modules/machines/analog/module.toml';
     expect(Object.keys(selected(unrelated, 'build-objects').tasks)).toEqual([]);
@@ -305,8 +327,8 @@ describe('workspace selection', () => {
     expect(remote.files).toContain('modules/core/adapters/input/module.toml');
     const conformance = workspace.nodes['digikit/pluck'].data.targets['test-conformance'];
     expect(conformance.options?.env?.DIGI_CONFORMANCE_MANIFEST).toBe(own);
-    const general = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
-    expect(general.files).toContain(unrelated);
+    const general = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-service-tests:test-device', '--json']));
+    expect(general.files).not.toContain(unrelated);
   }, 30_000);
 
   it('selects scoped packs for owned and required manifests while excluding unrelated packs', () => {

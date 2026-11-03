@@ -49,9 +49,9 @@ export const scopedManifestInputs = (inputs, manifests) => [
 // the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
 // ready dirs via device-inputs.mjs.
 // Image core sources/objects are explicit production inputs, without acceptance-fixture graph edges.
-// Also named explicitly: the harness packages (test-support, control-client, dk-session), every shipped
-// module.toml for general device tests, and tools/emulator/fast_regions.json (sets SHARC_* env).
-// Scoped conformance replaces the manifest glob with the selected manifest.
+// Also named explicitly: the harness packages (test-support, control-client, dk-session) and
+// tools/emulator/fast_regions.json (sets SHARC_* env). Manifests follow production and declared
+// acceptance module dependencies; conformance also names its scoped selected manifest.
 export const DEVICE_INPUTS = [
   'default',
   '^production',
@@ -71,7 +71,6 @@ export const DEVICE_INPUTS = [
   '{workspaceRoot}/packages/test-support/**/*',
   '{workspaceRoot}/packages/control-client/**/*',
   '{workspaceRoot}/packages/dk-session/**/*',
-  '{workspaceRoot}/modules/**/module.toml',
   '{workspaceRoot}/tools/nx/device-inputs.mjs',
   '{workspaceRoot}/tools/nx/modules.mjs',
   '{workspaceRoot}/tools/nx/module-dependencies.mjs',

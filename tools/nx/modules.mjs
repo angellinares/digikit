@@ -78,7 +78,9 @@ export const createNodesV2 = [
       if (root.startsWith('modules/') && m.category !== 'core') project.tags.push('release-module');
       if (coreBuilds.has(m.id) && imageModules.has(m.id)) project.tags.push('acceptance-image');
       const tests = globSync('tests/**/*.test.ts', { cwd: join(ctx.workspaceRoot, root) }).filter(
-        (t) => !testOwners.some(([pf]) => join(root, t).startsWith(dirname(pf) + '/')),
+        (t) =>
+          !t.endsWith('.manual.device.test.ts') &&
+          !testOwners.some(([pf]) => join(root, t).startsWith(dirname(pf) + '/')),
       );
       const hostTests = tests.filter((t) => !t.endsWith('.device.test.ts'));
       const deviceTests = tests.filter((t) => t.endsWith('.device.test.ts')).sort();
@@ -194,6 +196,7 @@ export const createNodesV2 = [
       const tests = globSync('**/*.device.test.ts', { cwd: join(ctx.workspaceRoot, root) })
         .filter(
           (t) =>
+            !t.endsWith('.manual.device.test.ts') &&
             !testOwners.some(
               ([pf]) => dirname(pf).startsWith(root + '/') && join(root, t).startsWith(dirname(pf) + '/'),
             ),
