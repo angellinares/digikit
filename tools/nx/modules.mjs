@@ -28,6 +28,11 @@ export const createNodesV2 = [
         return [parsed.module.id, { file: f, manifest: parsed.module, objects: parsed.object ?? [] }];
       }),
     );
+    // Core generation reads the allocation providers and declarations of the complete core library.
+    const coreManifests = [...byId.values()]
+      .filter(({ manifest }) => manifest.category === 'core')
+      .map(({ file }) => file)
+      .sort();
     const coreBuilds = new Set(
       [...byId]
         .filter(([, { manifest, objects }]) => manifest.category === 'core' && objects.some((o) => o.sources?.length))
@@ -86,7 +91,7 @@ export const createNodesV2 = [
         targets['build-objects'] = {
           executor: 'nx:run-commands',
           cache: false,
-          inputs: BUILD_INPUTS,
+          inputs: scopedManifestInputs(BUILD_INPUTS, coreManifests),
           description:
             'Check generated sources, then incrementally build committed core objects; may update tracked outputs.',
           dependsOn: [
@@ -96,7 +101,7 @@ export const createNodesV2 = [
           outputs: objects.filter((o) => o.sources?.length).map((o) => `{workspaceRoot}/${root}/${o.path}`),
           options: {
             commands: [
-              `${PK} gen --modules ${m.id} --check --scope modules`,
+              `${PK} gen --modules ${m.id} ${manifestArgs(coreManifests)} --check --scope modules`,
               `uv run python -m tools.devtools.benchlock run --shared --label module-build -- ${PK} build ${root}`,
             ],
             parallel: false,

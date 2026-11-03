@@ -39,6 +39,14 @@ it('infers core producers from category and source-backed objects, independently
   expect(owner.tags).toEqual(expect.arrayContaining(['module', 'type:raw', 'acceptance-image']));
   const producer = owner.targets['build-objects'];
   expect(producer.cache).toBe(false);
+  for (const module of modules) {
+    const input = `{workspaceRoot}/${module.dir}/module.toml`;
+    if (module.category === 'core') expect(producer.inputs).toContain(input);
+    else expect(producer.inputs).not.toContain(input);
+  }
+  expect(producer.inputs).not.toContain('{workspaceRoot}/modules/**/module.toml');
+  expect(producer.inputs).not.toContain('{workspaceRoot}/tests/fixtures/modules/**/module.toml');
+
   expect(producer.outputs).toEqual([`{workspaceRoot}/${modules[0].dir}/build/object.dko.json`]);
   expect(producer.dependsOn).toEqual(['sdk:check-generated', 'example/dep:build-objects']);
   expect(producer.options.parallel).toBe(false);

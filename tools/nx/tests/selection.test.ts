@@ -267,6 +267,32 @@ it('forms explicit manifest libraries from selected modules and transitive requi
 });
 
 describe('workspace selection', () => {
+  it('keeps unrelated manifests out of core producers and other conformance suites', () => {
+    const unrelated = 'modules/machines/analog/module.toml';
+    expect(Object.keys(selected(unrelated, 'build-objects').tasks)).toEqual([]);
+    const graph = selected(unrelated, 'test-conformance');
+    expect(
+      Object.values(graph.tasks)
+        .filter((task) => task.target.target === 'test-conformance')
+        .map((task) => task.target.project),
+    ).toEqual(['fadedlimes/analog']);
+    const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime:build-objects', '--json']));
+    expect(inputs.files).not.toContain(unrelated);
+    expect(inputs.files).not.toContain('tests/fixtures/modules/c-demo/module.toml');
+    const core = globSync('modules/**/module.toml', { cwd: root }).filter(
+      (file) => (parse(readFileSync(join(root, file), 'utf8')).module as { category: string }).category === 'core',
+    );
+    expect(core.length).toBeGreaterThan(0);
+    for (const file of core) expect(inputs.files).toContain(file);
+  }, 30_000);
+
+  it('retains core manifest selection for producers and their image consumers', () => {
+    const graph = selected('modules/core/runtime/module.toml', 'build-objects,test-conformance');
+    expect(graph.tasks['core/runtime:build-objects']).toBeDefined();
+    expect(graph.tasks['digikit/pluck:test-conformance']).toBeDefined();
+    expect(graph.tasks['fadedlimes/analog:test-conformance']).toBeDefined();
+  }, 30_000);
+
   it('limits pack and conformance manifest inputs to their scoped reads', () => {
     const own = 'modules/machines/pluck/module.toml';
     const unrelated = 'modules/machines/analog/module.toml';
