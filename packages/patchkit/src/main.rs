@@ -110,7 +110,7 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
 }
 
 /// `library`; with `lenient`, a module whose object files are missing still loads (for `gen`); with `only`, the objects of these
-/// content modules only are loaded or built (`pack`: the others load without objects).
+/// content modules only are loaded or built (`pack` and `apply`: the others load without objects).
 fn library_with(
     root: &Path,
     rest: &[String],
@@ -152,6 +152,17 @@ fn with_requires(lib: &Library, ids: Vec<String>) -> Result<Vec<String>> {
         println!("added by requires: {}", added.join(", "));
     }
     Ok(all)
+}
+
+fn library_for_apply(
+    root: &Path,
+    rest: &[String],
+    ids: Vec<String>,
+) -> Result<(Library, Vec<String>)> {
+    // Discover requires before building content: unrelated sources need not be buildable.
+    let manifests = library_with(root, rest, false, Some(&[]))?;
+    let ids = with_requires(&manifests, ids)?;
+    Ok((library_with(root, rest, false, Some(&ids))?, ids))
 }
 
 fn preflight_known(root: &Path) -> Result<Vec<patchkit::preflight::Known>> {
@@ -262,8 +273,13 @@ fn run(a: Args) -> Result<()> {
                 None => vec![],
             };
             let reg = registry(&a.root)?;
-            let lib = library(&a.root, rest)?;
-            let ids = with_requires(&lib, ids)?;
+            let (lib, ids) = if cmd == "apply" {
+                library_for_apply(&a.root, rest, ids)?
+            } else {
+                let lib = library(&a.root, rest)?;
+                let ids = with_requires(&lib, ids)?;
+                (lib, ids)
+            };
             if cmd == "check" {
                 let fw = Firmware::parse(&raw)?;
                 let port = reg
@@ -1000,5 +1016,95 @@ fn main() {
     if let Err(e) = run(a) {
         eprintln!("patchkit: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use patchkit::build::{cache_dir, toolchain::Env};
+
+    struct ApplyRoot(PathBuf);
+
+    impl ApplyRoot {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("pk-apply-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join("out")).unwrap();
+            std::fs::create_dir_all(dir.join("devices")).unwrap();
+            let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+            std::os::unix::fs::symlink(Env::new(&real).tools, dir.join("out/tools")).unwrap();
+            std::os::unix::fs::symlink(real.join("sdk"), dir.join("sdk")).unwrap();
+            Self(dir)
+        }
+
+        fn module(&self, base: &str, id: &str, requires: &[&str], source: bool) {
+            let dir = self.0.join(base).join(id);
+            std::fs::create_dir_all(dir.join("src")).unwrap();
+            std::fs::write(
+                dir.join("module.toml"),
+                format!(
+                    "[module]\nid = {id:?}\nversion = \"0.1.0\"\nname = \"fixture\"\ncategory = \"test\"\ntype = \"raw\"\nauthor = \"test\"\nstatus = \"experimental\"\nsummary = \"apply selection fixture\"\nrequires = {requires:?}\n\n[[object]]\npath = \"build/tiny.dko.json\"\nplace = \"cf.expansion\"\nsources = [\"src/t.c\"]\n"
+                ),
+            )
+            .unwrap();
+            if source {
+                std::fs::write(dir.join("src/t.c"), "int twice(int x) { return x + x; }\n")
+                    .unwrap();
+            }
+        }
+    }
+
+    impl Drop for ApplyRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn apply_builds_selected_content_and_requires_but_not_unrelated_sources() {
+        let root = ApplyRoot::new("selection");
+        assert!(
+            Env::new(&root.0).m68k("gcc").is_ok(),
+            "this build regression needs the public m68k-elf toolchain"
+        );
+        root.module("modules", "test/selected", &["test/dependency"], true);
+        root.module("extra", "test/dependency", &[], true);
+        root.module("modules", "test/unrelated", &[], false);
+        let rest = vec![
+            "--modules-dir".into(),
+            root.0.join("extra").display().to_string(),
+        ];
+        let (lib, ids) = library_for_apply(&root.0, &rest, vec!["test/selected".into()]).unwrap();
+        assert_eq!(ids.len(), 2);
+        for id in ["test/selected", "test/dependency"] {
+            assert!(ids.iter().any(|selected| selected == id));
+            assert_eq!(lib.get(id).unwrap().objects.len(), 1);
+            assert!(
+                cache_dir(&root.0)
+                    .join(id)
+                    .join("build/tiny.dko.json")
+                    .is_file()
+            );
+        }
+        assert!(lib.get("test/unrelated").unwrap().objects.is_empty());
+        assert!(!cache_dir(&root.0).join("test/unrelated").exists());
+    }
+
+    #[test]
+    fn apply_refuses_missing_requires_before_building_content() {
+        let root = ApplyRoot::new("missing");
+        root.module("modules", "test/selected", &["test/missing"], false);
+        assert!(library_for_apply(&root.0, &[], vec!["test/selected".into()]).is_err());
+        assert!(!cache_dir(&root.0).exists());
+    }
+
+    #[test]
+    fn apply_refuses_requires_cycles_before_building_content() {
+        let root = ApplyRoot::new("cycle");
+        root.module("modules", "test/selected", &["test/dependency"], false);
+        root.module("modules", "test/dependency", &["test/selected"], false);
+        assert!(library_for_apply(&root.0, &[], vec!["test/selected".into()]).is_err());
+        assert!(!cache_dir(&root.0).exists());
     }
 }

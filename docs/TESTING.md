@@ -61,6 +61,10 @@ iteration checks do not replace this gate. `mise run test:plan` explains task se
 Nx owns task selection and prerequisites; mise supplies thin entry points. Nx 24 selects individual
 affected tasks using their declared inputs and dependencies. Both local plugins (`tools/nx/modules.mjs`
 and `cargo.mjs`) discover projects without running Cargo. Explicit Rust targets use their pinned commands.
+`nx.json` owns shared inputs, target defaults and plugin registration. `tools/nx/modules.mjs` infers
+module targets and patch-set inputs; `tools/nx/cargo.mjs` infers Rust targets and path dependencies.
+Each owner's `project.json` supplies its explicit targets and overrides. The real plan regressions
+in `tools/nx/tests/selection.test.ts` verify native Nx input resolution and affected selection.
 Device targets may build their declared packs, CLIs and daemons on demand; direct Vitest invocations
 require those artifacts to exist already (see "Inputs").
 

@@ -42,10 +42,13 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
 2. **Active: prove build-cache boundaries.** Checkpoint A (`daf7f3a0`) deletes the custom Nx input auditor,
    tracer and dedicated tests (four preflight checks pass): no operational callers beyond manual policy/docs/tests.
    Use native Nx declared-input inspection plus scoped invalidation/restoration evidence; no replacement tracer.
-   Checkpoint B adds explicit production inputs for the 16-core-module requires closure of profile `emulator`/`sample-tracks` sets.
+   Checkpoint B (`10995853`) adds explicit production inputs for the 16-core-module requires closure of profile `emulator`/`sample-tracks` sets.
    Native inspection covers menu/UI/transitive sources and committed objects, excluding consumer acceptance files; 19 selection cases and four preflight tasks pass.
    Nonhermetic Rust tests include dependencies and patchkit's external compile inputs; device digest source changes select consumers.
-   Next: core-object preparation (source selection does not rebuild core objects), patchkit over-scan, toolchain/daemon overrides and `PATCHKIT_MODULES` / `DIGI_PK_ROOT`.
+   Checkpoint C bounds apply's content builds to the selected requires closure, using existing library discovery/loading; check retains all-library semantics.
+   Three focused Rust tests pass: selected/dependency objects build, unrelated missing sources stay unloaded, and missing/cyclic requires refuse before builds; five affected preflight tasks and doc formatting pass.
+   Next: core-object preparation (source selection does not rebuild core objects), toolchain/daemon overrides and `PATCHKIT_MODULES` / `DIGI_PK_ROOT`.
+   Move implicit Nx runtime/adapter requirements into the authoritative module contract after checking manifest semantics; no new schema/framework yet.
    Early win `16594f8b` excludes task definitions from the daemon key while hashing the Rust pin
    and actual compiler identity. Six focused tests, mypy, Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.
    The new scheme causes one initial daemon-store miss. Next audit module-pack and daemon
