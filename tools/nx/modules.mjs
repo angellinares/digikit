@@ -1,6 +1,6 @@
 // Nx plugin: one project per module.toml. Edges: [module].requires plus [[object]].sources paths
 // that resolve into another module directory. tools/devtools/nx_graph.py reads them from the graph.
-// Targets: pack (build + pack to dist/modules/<dev>/<leaf>.dkm), pack-aliases (renamed copies named by
+// Targets: pack (build stale objects and pack to dist/modules/<dev>/<leaf>.dkm), pack-aliases (renamed copies named by
 // metadata.runtimeAcceptance), test-host, test-device and test-conformance (vitest directly, after the packs).
 import { existsSync, globSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
@@ -181,7 +181,6 @@ export const createNodesV2 = [
           options: {
             commands: [
               'mkdir -p dist/modules/dt2 dist/modules/dn2',
-              `${PK} build ${root}`,
               ...devices.map((d) => `${PK} pack ${m.id} --device ${d} -o ${dkm(d, m.id)}`),
             ],
             parallel: false,

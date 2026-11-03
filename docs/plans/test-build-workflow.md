@@ -48,6 +48,22 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    Checkpoint C bounds apply's content builds to the selected requires closure, using existing library discovery/loading; check retains all-library semantics.
    Three focused Rust tests pass: selected/dependency objects build, unrelated missing sources stay unloaded, and missing/cyclic requires refuse before builds; five affected preflight tasks and doc formatting pass.
    Next: remaining core-freshness validation, toolchain/daemon overrides and `PATCHKIT_MODULES` / `DIGI_PK_ROOT`.
+   Pack checkpoint: removed the explicit module build before per-device pack. `pack` calls
+   `library_with` with only its module ID; `Library::read_root` calls `build::load_object`, which
+   shares `source_hash` / `build_object` with explicit build. ColdFire hashing includes compiler-discovered
+   header dependencies. Neither path builds the manifest's `requires` modules; imported symbols remain
+   runtime imports. Existing on-demand-cache and header-invalidation tests cover the shared behavior.
+   Named `digikit/remote:pack` proof on DT2/DN2: warm artifacts match before/after, and a reversible
+   `E_MSG` source edit (-50 to -51) produced changed bytes with identical old/new DKM and complete
+   cached DKO metadata. Restoring the source reproduced the original bytes and DKO; warm packs left
+   the object mtime unchanged. Both devices' baseline SHA-256:
+   `8678c47cbf7abf91c6b55f1f03fea39f367655d5e7bda6fb212d8bdea1b1161c`;
+   stale-source SHA-256: `94470a4c75027c3b62afc40bc334f696907377016cc60d2016079878fdfe0b32`.
+   Evidence: `/tmp/digikit-pack-proof/`. No cache setting, output or task dependency changed;
+   no device/emulator run or performance claim. The inferred remote project is identical apart from
+   the removed command. The focused module-builds host test, four affected preflight tasks
+   (`DIGI_GATE_BASE=HEAD mise run test:changed`), Prettier and `git diff --check` pass. No new
+   exact-command regression was added; the existing cache tests exercise the behavior.
    Follow up: manifest-driven dependency/type/category contracts; redundant debug pack seed removed after graph equivalence. Further modules.mjs splitting is intentionally deferred until a specific responsibility/schema contract benefits; no generic framework.
    Core freshness checkpoint: uncached category-core source-backed producers check scoped generation, then incrementally build tracked objects under shared benchlock; image consumers use the profile-derived acceptance-image tag. No actual core build or generated-output update run here.
    Evidence: 23 scoped Nx host tests and six affected preflight tasks pass; native graphs select exactly 16 producers for image consumers and none for stock/runtime units. Declared Rust source/output checks pass; no end-to-end freshness measurement claimed.
