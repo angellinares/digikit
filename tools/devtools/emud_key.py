@@ -5,7 +5,7 @@
 
 `key` prints a sha256 over everything the daemon build reads: the source files (SOURCE_GLOBS, content
 hashes), the build recipe scripts (RECIPE_FILES), every file of the generated core directory (and of
-SHARC_GEN_DIR_2), the PGO profile (content), `rustc -vV` of the pinned toolchain and the build flags.
+SHARC_GEN_DIR_2), the PGO profile (content), the Rust toolchain pin, `rustc -vV` and the build flags.
 It resolves the generated core and the profile with the same calls as tools/patchkit/pk_emud_pgo.py.
 
 `audit` reads the dependency file cargo wrote (`digi-emud.d`) and fails when it lists a file that the key does
@@ -34,7 +34,6 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 SOURCE_GLOBS = (
     "Cargo.toml",
     "Cargo.lock",
-    "mise.toml",
     "rust-toolchain",
     "rust-toolchain.toml",
     ".cargo/**",
@@ -216,6 +215,8 @@ def inputs(device: str, environ: Mapping[str, str] | None = None) -> EmudInputs:
         "profile": "release",
         "locked": "1",
         "bin": BIN,
+        # digi_env reads only tools.rust from mise.toml; task edits do not affect the build.
+        "toolchain": pk_emud_pgo.digi_env.TOOLCHAIN,
     }
     if gen2 := environ.get("SHARC_GEN_DIR_2"):
         path = Path(gen2)

@@ -451,8 +451,10 @@ nothing; a stored file is never rewritten. The last 4 used keys per device stay.
 
 The key is printed by `uv run python -m tools.devtools.emud_key key --device DEV`: a sha256 over the
 content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file of the generated core
-directory (resolved as `pk_emud_pgo` does), the PGO profile, `rustc -vV` of the pinned toolchain, and the
-build flags. A device without its stock firmware or ready directory is skipped.
+directory (resolved as `pk_emud_pgo` does), the PGO profile, the `tools.rust` pin from `mise.toml`,
+`rustc -vV` of that toolchain, and the build flags. Task definitions in `mise.toml` are excluded.
+Narrowing this input changes the key once, so existing stored daemons miss on the next request.
+A device without its stock firmware or ready directory is skipped.
 
 Each build audits itself: `verify_build` compares the dependency file cargo wrote (`digi-emud.d`) with
 the key. A dependency that the key does not cover (and that is not under the cargo target dir) fails the
