@@ -3,7 +3,7 @@ import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wri
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
 import { manifestClosure } from '../module-manifests.mjs';
@@ -91,6 +91,8 @@ function otherImageConsumer(): string {
 const manifestOf = (id: string) => `${workspace.nodes[id].data.root}/module.toml`;
 
 describe('default gate menu scheduling policy', () => {
+  beforeEach(() => vi.stubEnv('NX_HEAD', ''));
+  afterEach(() => vi.unstubAllEnvs());
   const targets = 'pack,test-device,test-conformance,rust-tests';
   const commandsFor = (files: string[]) =>
     gateCommands(
@@ -112,6 +114,14 @@ describe('default gate menu scheduling policy', () => {
     const graph = plan([...command, `--files=${MENU_SOURCE}`]).tasks;
     expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
   }, 30_000);
+
+  it('keeps an Nx environment head override on the broad path', () => {
+    vi.stubEnv('NX_HEAD', 'another-commit');
+    expect(changedFiles(['--base=main'])).toEqual([]);
+    expect(gateCommands(['--base=main', '-t', targets], [{ file: MENU_SOURCE, status: 'M' }])).toEqual([
+      ['affected', '--base=main', '-t', targets],
+    ]);
+  });
 
   it('keeps alternate file and stdin selectors on the broad path', () => {
     for (const selector of [['--stdin'], ['--stdin=true']]) expect(menuOnly(changedFiles(selector))).toBe(false);

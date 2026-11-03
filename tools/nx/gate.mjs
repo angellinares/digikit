@@ -26,6 +26,7 @@ const alternateSelection = (args) =>
 // mise supplies one explicit base. Other comparisons may use Nx environment or configuration defaults.
 const supportedComparison = (args) =>
   !alternateSelection(args) &&
+  !process.env.NX_HEAD &&
   args.filter((arg) => arg === '--base' || arg.startsWith('--base=')).length === 1 &&
   Boolean(option(args, ['--base'])) &&
   !args.some((arg) => arg === '--head' || arg.startsWith('--head='));
