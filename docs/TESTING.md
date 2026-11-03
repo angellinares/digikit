@@ -52,7 +52,8 @@ iteration checks do not replace this gate. `mise run test:plan` explains task se
 | Device tests of one module | `pnpm nx:pilot run <module-id>:test-device` |
 | One device test file | `pnpm nx:pilot run <module-id>:pack`, then `pnpm --filter @digi/regression test:runtime <path filter>` |
 | Loading one module | `pnpm nx:pilot run <module-id>:test-conformance` |
-| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers; default `test` retains their coverage until SDK fixtures prove a narrower contract. |
+| Runtime loader fixtures | `pnpm nx:pilot run core/runtime-fixture-tests:test-device` checks a machine and FX on both coupled devices; `core/runtime-service-tests:test-device` covers a zero-DSP service. |
+| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers; the default gate still selects shipped conformance until the fixture-first scheduling policy is agreed and implemented. |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval |

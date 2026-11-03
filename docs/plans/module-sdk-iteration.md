@@ -2,6 +2,13 @@
 
 Status: in progress on `test/module-sdk-iteration` (2026-11-04). This plan follows the Nx workflow work merged in #285 and the SDK host fixture and zero-DSP card safety work merged in #286.
 
+## Checkpoint: selected module work
+
+- Scoped patchkit pack/gen and selected TypeScript conformance now read explicit manifests. The separate `patchkit:catalog-check` validates the repository catalog; its named Nx target passed on 69 manifests. Core generation with all 21 core manifests reproduced 24 generated files byte for byte against the former full scan.
+- A hypothetical Analog manifest edit now selects seven requested targets: its pack and conformance, the single-file runtime capacity owner, the catalog check, and three host/Rust checks. It selects no other shipped module conformance. Pluck C source selects four requested targets. These are selection proofs, not device run times.
+- A runtime-owned machine/FX fixture passed four coupled cells (DT2 1.17 and DN2 1.12) through its named Nx target: 23 prerequisite/test tasks in 3m 27s, with 2m 34s in the fixture target. The existing zero-DSP service fixture is a separate owner. Adding fixtures does not reduce gate time until their scheduling policy replaces repeated unchanged-module acceptance.
+- The whole branch plans more than 80 requested tasks because it changes Nx plugin and gate files. The already agreed broad-suite exception is being used during implementation; no full device gate has run on this branch.
+
 ## Outcome
 
 `mise run test:plan` must explain a small, correct affected task set before any build or test runs. A changed shipped module must produce its own `.dkm` and run its own load and behavior checks for the supported devices. Runtime and SDK work must use shared fixtures for common behavior, while real changed modules still prove that their artifacts load. Builds and repeat tests should use caching only after the input and output boundary is demonstrated.
@@ -24,4 +31,6 @@ Status: in progress on `test/module-sdk-iteration` (2026-11-04). This plan follo
 
 - Catalog validation must be selected for every manifest edit without becoming a dependency of each local module pack. A local selected pack may succeed while an unrelated manifest is broken; the merge gate must still reject the repository.
 - The final runtime/SDK fixture matrix and triggers for wider shipped-module compatibility testing need assertion-level coverage evidence before any existing device checks are removed.
+- Nx 24 affected selection propagates through declared producer outputs and `^production`; a truthful cache key alone cannot express "hash this runtime but do not schedule its consumers." Runtime and SDK fixture-first scheduling therefore needs an explicit, documented gate policy rather than deleting real inputs. Manual per-module conformance keeps its full runtime/image cache key.
+- The full-tier inferred-needs block in the capacity owner names 12 real modules but does not execute in the default quick tier. Separating that block from the quick generic capacity cases is the next ownership refinement; do not count a skipped full-tier case as quick coverage.
 - A future raw card module needs explicit delivery metadata. Current Nx inference gives a pack target to dynamic, host, or service modules (and acceptance fixtures), so a plain `type = "raw"` module with no such marker would not pack in the gate. Do not overload `dynamic` to mean card delivery.
