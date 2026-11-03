@@ -154,6 +154,51 @@ pub mod sel {
         if i == 0 { 28 } else { 480 + 4 * (i - 1) }
     }
 
+    /// The record a new selection writes over `cur`: the sequence number goes up, the boot counter, the stable period and the sticky type map are
+    /// kept (the map survives a new selection), the flags keep only `FLAG_SAFE_ONCE`.
+    pub fn next_record(cur: &Record, flags: u32, count: u32, paths: &[[u8; SEL_PATH]; SEL_MAX]) -> Record {
+        let mut r = Record::empty();
+        r.seq = cur.seq.wrapping_add(1);
+        r.boot_counter = cur.boot_counter;
+        r.stable_blocks = cur.stable_blocks;
+        r.map = cur.map;
+        r.flags = flags & FLAG_SAFE_ONCE;
+        r.count = count;
+        let mut k = 0;
+        while k < count as usize && k < SEL_MAX {
+            r.paths[k] = paths[k];
+            k += 1;
+        }
+        r
+    }
+
+    /// `E_SEL_COUNT` when a selection names more than `SEL_MAX` paths, else `OK`.
+    pub fn check_count(count: u32) -> i32 {
+        if count as usize > SEL_MAX {
+            E_SEL_COUNT
+        } else {
+            OK
+        }
+    }
+
+    /// `check_count` for `CMD_SELECT_ONE`, whose copy index must be 0 or 1 (a bad index has the same code).
+    pub fn check_one(count: u32, copy: u32) -> i32 {
+        if copy > 1 {
+            E_SEL_COUNT
+        } else {
+            check_count(count)
+        }
+    }
+
+    /// The mailbox list of paths takes path number `n` (0-based): `E_SEL_COUNT` when `SEL_MAX` paths are already there.
+    pub fn check_slot(n: usize) -> i32 {
+        if n >= SEL_MAX {
+            E_SEL_COUNT
+        } else {
+            OK
+        }
+    }
+
     impl Record {
         pub const fn empty() -> Record {
             Record { seq: 0, boot_counter: 0, flags: 0, count: 0, stable_blocks: 0, map: [0; MAP_N], paths: [[0; SEL_PATH]; SEL_MAX] }
@@ -275,6 +320,12 @@ pub mod sample_tracks;
 pub mod files_job;
 pub mod files;
 pub mod sample_stream;
+
+/// The sticky machine type assignment (docs/design/module-sdk.md 11.5 D7) as a pure function, tested on the host; the runtime's `assign` calls it.
+pub mod sticky;
+
+/// The loader's limit decisions (DSP placement, row counts, refusal codes) as pure functions, tested on the host; the runtime calls them.
+pub mod capacity;
 
 /// The settings record, two copies before the selection record (docs/design/digikit-store.md, "The settings record").
 pub mod settings;

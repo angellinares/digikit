@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { hexSha256, type DkLogEvent } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
-import { repoRoot } from '@digi/test-support';
-import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import { repoRoot, type Device } from '@digi/test-support';
+import { expect, test } from 'vitest';
+import { expectRuntimeBoot, startPatchedSession, type PatchedSession } from '@digi/regression/support.ts';
+import { timePhase, timingContext } from '@digi/regression/timing.ts';
+import { FIRMWARE, liveOptions } from '@digi/regression/runtime/devices.ts';
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
-import { DEBUG_MODULE, installWithDebug } from '@digi/regression/runtime/install.ts';
+import { DEBUG_MODULE, installWithDebug, moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
 import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
@@ -36,7 +38,7 @@ function moduleTable(text: string): Map<string, string> {
 }
 
 /** Production upload candidates: the shipped modules (`modules/<kind>/<name>`) that are `dynamic`, a service or a
- * `host` module. Same rule as RUNTIME_UPLOADS in tools/devtools/verify_route.py. Framework/static modules are
+ * `host` module. Same rule as `isUploadable` in tools/nx/modules.mjs. Framework/static modules are
  * firmware prerequisites. */
 export function scanRuntimeModules(root = path.join(repoRoot(), 'modules')): RuntimeModule[] {
   const found: RuntimeModule[] = [];
@@ -63,6 +65,41 @@ export function scanRuntimeModules(root = path.join(repoRoot(), 'modules')): Run
 }
 
 export const runtimeModules: readonly RuntimeModule[] = scanRuntimeModules();
+
+/** `DIGI_CONFORMANCE_MODULES`: comma-separated module ids; unset or empty runs every run-time module. */
+function selectedModules(): readonly RuntimeModule[] {
+  const ids = (process.env.DIGI_CONFORMANCE_MODULES ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (ids.length === 0) return runtimeModules;
+  const unknown = ids.filter((id) => !runtimeModules.some((module) => module.id === id));
+  if (unknown.length > 0) throw new Error(`DIGI_CONFORMANCE_MODULES: unknown run-time module ${unknown.join(', ')}`);
+  return runtimeModules.filter((module) => ids.includes(module.id));
+}
+
+// Each cell starts its own daemon. Sessions of a worker reuse one cached run dir (fast boot);
+// the store starts empty in every cell.
+export function conformanceSuite(device: Device): void {
+  for (const module of selectedModules()) {
+    const name = `${device} ${FIRMWARE[device]} loads and registers ${module.id} through USB without runtime faults`;
+    test(name, async () => {
+      const options = liveOptions(device);
+      const artifact = moduleArtifact(device, module.id);
+      const runtime = await startPatchedSession(options, name);
+      try {
+        await expectRuntimeBoot(runtime);
+        await timePhase(
+          'scenario.body',
+          () => expectModuleLoad(runtime, module, artifact),
+          timingContext(runtime.session),
+        );
+      } finally {
+        await runtime.close();
+      }
+    });
+  }
+}
 
 /** Real USB upload, persisted bytes, selected reboot, registration and fault acceptance.
  * DSP allocation/registration does not establish rendered audio correctness. */

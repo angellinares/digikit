@@ -215,6 +215,7 @@ export class Session {
           ...(card ? { card } : {}),
         }),
       );
+      session.#touchCacheHit(session.#load);
       await checked(c.watchdogConfig(options.stallMs ?? 1000));
       if (options.runtime) await checked(c.call('run.mode', { mode: 'free' }));
       return session;
@@ -234,6 +235,17 @@ export class Session {
       throw err;
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  // The boot cache is pruned by mtime (tests/regression/runtime/devices.ts cachedRunDir), so a hit marks its entry as recent.
+  #touchCacheHit(load: { cache_hit?: boolean; cache_dir?: unknown }): void {
+    if (load.cache_hit !== true || typeof load.cache_dir !== 'string') return;
+    try {
+      const now = new Date();
+      fs.utimesSync(load.cache_dir, now, now);
+    } catch {
+      /* A missing cache dir is not an error. */
     }
   }
 
@@ -299,6 +311,7 @@ export class Session {
           auto_no: this.options.autoNo ?? true,
         }),
       );
+      this.#touchCacheHit(load);
       await checked(() => this.client.guardSet(baseline.guard));
       await checked(() => this.client.call('run.mode', { mode: baseline.paused ? 'paused' : 'free' }));
       const status = (lastStatus = await checked(() => this.client.status()));

@@ -16,7 +16,7 @@ time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4)
 
 Device tests for a module live in that module: `modules/**/tests/*.device.test.ts` (patched runtime on DT2 1.17
 and DN2 1.12). Each module's `project.json` lists them in `metadata.runtimeAcceptance`. Checks that run over
-every shipped module live in `tests/conformance/`; its load cell (`load.device.test.ts`) uploads each run-time
+every shipped module live in `tests/conformance/`; its load cells (`load-dt2.device.test.ts`, `load-dn2.device.test.ts`) upload each run-time
 module and checks persistence, contract, registration and faults. `DIGI_CONFORMANCE_MODULES` (comma-separated
 module ids) limits it; unset runs all.
 
@@ -32,8 +32,8 @@ Goldens are in `goldens/dt2-1.17.json`.
 | --- | --- | --- |
 | `mise run test:stock [-- FILTER]` | `stock` | `DIGI_EMUD` names a current DT2 daemon |
 | `REGRESSION_JOBS=1 pnpm --filter @digi/regression test:update` | `stock` | Rewrites goldens |
-| `mise run test:runtime [-- FILTER]` | `runtime` | Builds plusdrive first (`build:plusdrive`) |
-| `mise run test:conformance [-- FILTER]` | `conformance` | |
+| `pnpm nx:pilot run <module-id>:test-device` | `runtime` | Builds the packs and plusdrive first (Nx targets, into `dist/`) |
+| `pnpm nx:pilot run-many -t test-conformance` | `conformance` | Builds the packs first |
 | `mise run test:fx` | `fx-dn2` | 61 quick; `DIGI_FX_SWEEP=1` for 191 |
 | `mise run test:fx:dt2` | `fx-dt2` | 135 quick; `DIGI_FX_SWEEP=1` for 146 |
 | `pnpm test:host` | host projects | No device inputs |
@@ -46,14 +46,14 @@ module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/r
 - Pinned daemons: `DIGI_EMUD` (stock), `DIGI_EMUD_DT2` and `DIGI_EMUD_DN2` (runtime, modules, FX).
 - Ready inputs for the device, validated by `resolveInputs` (CF snapshot, DSP image and state). Runtime inputs
   must match the stock SHA-256 and `intc_force:false` in the ready directory's `SOURCE.json`.
-- Module artifacts: `out/regression/modules/<device>/<leaf>.dkm` (override the root with
+- Module artifacts: `dist/modules/<device>/<leaf>.dkm` (override the root with
   `DIGI_RUNTIME_MODULES`). Runtime cases need `input-probe`, `remote`, `svc-echo` and `debug` (the log: every cell that reads it
   selects `digikit/debug` first, `installWithDebug` in `runtime/install.ts`); the load cells need every run-time module. The gate packs them itself. By hand:
-  `uv run python -m tools.patchkit.patchkit pack digikit/pluck --device dt2 -o out/regression/modules/dt2/pluck.dkm`.
+  `pnpm nx:pilot run digikit/pluck:pack` (artifacts in `dist/modules/<dev>/<leaf>.dkm`).
 - DT2 card samples at `out/runs/patchkit/samples` (`tools.emulator.card_check.make_samples`).
 - Sample cases also need `apps/web/public/dksample.wasm` (`mise run wasm:dksample`).
-- plusdrive is built by `build:plusdrive` at a fixed path. There is no `DIGI_PLUSDRIVE` or
-  `DIGI_RUNTIME_CARD` variable.
+- plusdrive is built by the Nx target `plusdrive-format:cli` into `dist/plusdrive/plusdrive` (`DIGI_PLUSDRIVE` overrides the path).
+  There is no `DIGI_RUNTIME_CARD` variable.
 
 ## Stock suite
 
@@ -128,14 +128,14 @@ vendor parameter changes. Exact remote pacing is checked by the host C unit
 
 ## Module load cells
 
-`tests/conformance/load.device.test.ts` uploads every shipped run-time module (dynamic, service and host
+`tests/conformance/load-{dt2,dn2}.device.test.ts` upload every shipped run-time module (dynamic, service and host
 machine or effect modules) on DT2 1.17 and DN2 1.12 through `DkSession` and `EmuUsbTransport`, selects it,
 reboots, and checks persistence, SDK contract, DSP-loader completion, registration, guard counters, runtime
-log and guest faults. Each cell has a fresh daemon. These cells observe load and registration, not rendered
+log and guest faults. Each cell has a fresh daemon and reuses the worker's cached run dir. These cells observe load and registration, not rendered
 audio. Module-specific behaviour is tested in the module's own `tests/` folder.
 
 ```sh
-uv run python -m tools.devtools.verify --conformance digikit/remote
+pnpm nx:pilot run digikit/remote:test-conformance
 ```
 
 ## Artifacts

@@ -1,5 +1,9 @@
 {
   "dynamic_env_reads": {
+    "packages/emulator/boot/src/runtime.rs": {
+      "count": 1,
+      "reason": "legacy snapshot unit-test helper reads DIGI_LEGACY_SNAPSHOT_DT2_SYX / DIGI_LEGACY_SNAPSHOT_DN2_SYX; both DIGI_ names remain in the key"
+    },
     "packages/emulator/boot/src/sharc_peer.rs": {
       "count": 2,
       "reason": "unit-test helpers read caller-named fixture variables (name, k); test code inside the file"
@@ -11,17 +15,21 @@
     "packages/emulator/sharc/src/fast/mod.rs": {
       "count": 2,
       "reason": "region_env() picks SHARC_FAST_REGIONS(_2) / SHARC_BLOCKTRANS(_2); SHARC_ keys are in the cache key and @FILE content is hashed"
+    },
+    "packages/emulator/sharc/src/reply_watch.rs": {
+      "count": 1,
+      "reason": "env_f64 reads SHARC_REPLY_INFLIGHT_{IPS,SCK,SKIP,LOG} and DIGI_DSP_PERIOD; all remain in the key, including diagnostic fail-mode settings"
     }
   },
   "file_reads": {
     "packages/emulator/boot/src/capture.rs": 1,
     "packages/emulator/boot/src/card_file.rs": 1,
     "packages/emulator/boot/src/dsp_patch.rs": 1,
-    "packages/emulator/boot/src/runtime.rs": 12,
+    "packages/emulator/boot/src/runtime.rs": 14,
     "packages/emulator/boot/src/sharc_peer.rs": 3,
     "packages/emulator/boot/src/wav.rs": 1,
     "packages/emulator/coupled/src/bin/coupled_run.rs": 4,
-    "packages/emulator/coupled/src/cold.rs": 2,
+    "packages/emulator/coupled/src/cold.rs": 3,
     "packages/emulator/coupled/src/lib.rs": 7,
     "packages/emulator/coupled/src/scenario.rs": 1,
     "packages/emulator/device-profile/src/lib.rs": 5,
@@ -29,19 +37,44 @@
     "packages/emulator/live/src/source.rs": 1,
     "packages/emulator/loader/src/lib.rs": 1,
     "packages/emulator/periph/src/trace.rs": 1,
-    "packages/emulator/plusdrive/src/export.rs": 27,
+    "packages/emulator/plusdrive/src/export.rs": 28,
     "packages/emulator/plusdrive/src/folder.rs": 11,
     "packages/emulator/plusdrive/src/mirror.rs": 7,
     "packages/emulator/plusdrive/src/project.rs": 2,
     "packages/emulator/sharc/src/cycmix.rs": 1,
     "packages/emulator/sharc/src/fast/mod.rs": 3,
+    "packages/patchkit/src/build/cf.rs": 1,
+    "packages/patchkit/src/build/mod.rs": 6,
+    "packages/patchkit/src/build/rust.rs": 4,
+    "packages/patchkit/src/build/sharc_obj.rs": 2,
+    "packages/patchkit/src/build/toolchain.rs": 4,
+    "packages/patchkit/src/build_cli.rs": 5,
     "packages/patchkit/src/devdata.rs": 2,
     "packages/patchkit/src/devgen.rs": 2,
+    "packages/patchkit/src/fit.rs": 1,
+    "packages/patchkit/src/flash_cli.rs": 1,
+    "packages/patchkit/src/fwgen.rs": 3,
     "packages/patchkit/src/modgen.rs": 2,
-    "packages/patchkit/src/module.rs": 3,
+    "packages/patchkit/src/module.rs": 6,
     "packages/patchkit/src/port.rs": 2,
-    "packages/patchkit/src/sdkgen.rs": 6,
+    "packages/patchkit/src/sdkgen.rs": 10,
     "packages/patchkit/src/storedump.rs": 3,
     "packages/patchkit/src/typed.rs": 2
+  },
+  "file_read_notes": {
+    "packages/emulator/boot/src/runtime.rs": "Firmware reads are in the inline unit tests; render firmware is supplied through --syx and hashed in argv.",
+    "packages/emulator/coupled/src/cold.rs": "ColdInputs.image is the packed DSP image; coupled.run_args supplies --dsp-image and the cache hashes its content. State and cold-idle paths are explicit caller inputs to the cold boot helper.",
+    "packages/emulator/plusdrive/src/export.rs": "same_bytes compares the exported card file with the destination folder during export reconciliation; it does not feed a coupled render.",
+    "packages/patchkit/src/build/cf.rs": "Cargo manifest read for module compilation; render inputs are the resulting artifacts, not the build sources.",
+    "packages/patchkit/src/build/mod.rs": "Build metadata, generated object and module-manifest discovery reads; not used by coupled rendering. PATCHKIT_MODULES is classified conservatively in semantic_env.",
+    "packages/patchkit/src/build/rust.rs": "Embedded helper assembly and source/workspace discovery for compilation; embedded data is covered by the binary digest.",
+    "packages/patchkit/src/build/sharc_obj.rs": "Inline unit-test include_str fixtures; covered by the binary digest.",
+    "packages/patchkit/src/build/toolchain.rs": "Embedded toolchain pins/spec and build-time tool file reads; not coupled render inputs.",
+    "packages/patchkit/src/build_cli.rs": "Build/ISA-check CLI reads explicit input paths; this source is scanned but not called by coupled-run.",
+    "packages/patchkit/src/fit.rs": "Inline unit-test include_str vectors; covered by the binary digest.",
+    "packages/patchkit/src/flash_cli.rs": "Flash CLI stock-image input; this source is scanned but not called by coupled-run.",
+    "packages/patchkit/src/fwgen.rs": "Firmware binding/reference generation reads devices/fw TOMLs and ports; not called by coupled-run.",
+    "packages/patchkit/src/module.rs": "Repository loader reads manifests/objects; new includes and cache read are inline unit-test fixtures. Coupled rendering only uses patchkit verification of the supplied firmware bytes.",
+    "packages/patchkit/src/sdkgen.rs": "Embedded SDK contract is covered by the binary digest; filesystem contract and ABI reads are SDK generation/packing inputs, not coupled-run reads."
   }
 }

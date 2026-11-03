@@ -3294,10 +3294,13 @@ impl Actor {
             .main_sha256()
             .ok_or_else(|| rejected("the firmware has no MAIN section".into()))?
             .to_string();
+        // The ColdFire-only ready state holds the runtime's picture of the card (its store header and table), so it belongs to
+        // the card it booted on: a state restored onto another card would write that picture back.
+        let card_key = card_snapshot_key(card.as_deref(), std::env::var_os("DIGI_COLD_RELAX_FS").is_some());
         let cache = self
             .run_dir
             .join("patched")
-            .join(format!("{main_sha}.snap"));
+            .join(format!("{main_sha}{card_key}.snap"));
         // With coupled audio inputs for the base: boot the ColdFire and the
         // DSP together (or restore the cached pair).
         match self.load_patched_coupled(
@@ -3468,6 +3471,25 @@ struct PatchJob {
     reset_out: Arc<Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>,
     /// The kept RAM range of a boot that ended in a soft reset (see `digi_coupled::cold::KeepRam`).
     keep_out: Arc<Mutex<Option<Vec<u8>>>>,
+}
+
+/// The file name suffix of a ColdFire-only ready state for `card` (empty without a card): the card file's identity and the readiness
+/// contract the boot ran with.
+fn card_snapshot_key(card: Option<&Path>, relax_fs: bool) -> String {
+    use sha2::{Digest, Sha256};
+    let Some(card) = card else {
+        return String::new();
+    };
+    let mut hash = Sha256::new();
+    if let Ok(meta) = std::fs::metadata(card) {
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs());
+        hash.update(format!("{}:{}:{modified}:{relax_fs}", card.display(), meta.len()).as_bytes());
+    }
+    format!("-{:x}", hash.finalize())[..17].to_string()
 }
 
 /// The file name stem of the ready pair of a (MAIN, DSP inputs, card): the

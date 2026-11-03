@@ -372,13 +372,19 @@ def loop_oracle(source, st):
             done = 1
         if done:
             break
-        nxt = st.start if st.rate >= 0 and index + 1 >= st.end else min(index + 1, st.end - 1)
+        nxt = (
+            st.start
+            if st.rate >= 0 and index + 1 >= st.end
+            else min(index + 1, st.end - 1)
+        )
         a, b = F32(source[index]), F32(source[nxt])
         out[n] = F32(a + F32(F32(fraction / 65536) * F32(b - a)))
         position += st.rate
         if not st.start * 65536 <= position < st.end * 65536:
             if length >= 2:
-                position += -length * 65536 if position >= st.end * 65536 else length * 65536
+                position += (
+                    -length * 65536 if position >= st.end * 65536 else length * 65536
+                )
             if not st.start * 65536 <= position < st.end * 65536:
                 done = 1
     index, fraction = divmod(position, 65536)

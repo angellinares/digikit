@@ -4,7 +4,7 @@
 
 ## Verified
 
-- [ ] `mise run verify` passed (paste the summary line)
+- [ ] `mise run gate` passed (paste the Nx summary line)
 - [ ] Anything checked by hand (emulator, browser, device):
 
 ## Rules

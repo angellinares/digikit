@@ -291,9 +291,9 @@ def repo_files() -> frozenset[str]:
 
 
 def build_workspace(files: frozenset[str]) -> Workspace:
-    from tools.devtools import verify_route
+    from tools.devtools import nx_graph
 
-    graph = verify_route.nx_graph()
+    graph = nx_graph.nx_graph()
     nodes = graph["nodes"]
     roots = {n: d["data"].get("root", ".") for n, d in nodes.items()}
     project_named = {n: d["data"].get("namedInputs") or {} for n, d in nodes.items()}
@@ -323,6 +323,9 @@ def target_command(project: str, config: dict, target: str) -> tuple[str, Path]:
         command = " && ".join(
             c if isinstance(c, str) else c["command"] for c in opts["commands"]
         )
+    if command is None and opts.get("script"):
+        # nx:run-script (a package.json script): pnpm runs it in the project directory.
+        return f"pnpm run {opts['script']}", ROOT / config.get("root", ".")
     if command is None:
         raise RuntimeError(f"{project}:{target} has no options.command")
     command = command.replace("{projectRoot}", config.get("root", ".")).replace(

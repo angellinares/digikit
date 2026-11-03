@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +46,16 @@ def own_tests(mid: str) -> list[str]:
     return [p.relative_to(ROOT).as_posix() for p in found]
 
 
+def _scenario_tests(kinds: set[str]) -> list[str]:
+    """The tests/digikit test files that run scenarios of KINDS (their `cases((kinds), device)` call)."""
+    files: set[str] = set()
+    for path in sorted((ROOT / "tests/digikit").glob("test_*.py")):
+        match = re.search(r"cases\(\(([^)]*)\)", path.read_text(encoding="utf-8"))
+        if match and kinds.intersection(re.findall(r'"([a-z]+)"', match.group(1))):
+            files.add(path.relative_to(ROOT).as_posix())
+    return sorted(files)
+
+
 def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
     """(pytest paths, extra environment) for module MID."""
     paths: list[str] = []
@@ -62,13 +74,13 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
         p.stem for p in (modroots.module_dir(mid) / "tests/scenarios").glob("*.toml")
     )
     if scen:
-        from tools.devtools import verify_route
-
         kinds = {
-            verify_route.scenario_refs()[f][0]
-            for f in verify_route.module_scenario_files(mid)
+            tomllib.loads(p.read_text(encoding="utf-8"))
+            .get("scenario", {})
+            .get("kind", "")
+            for p in (modroots.module_dir(mid) / "tests/scenarios").glob("*.toml")
         }
-        paths += [t for t in verify_route.scenario_tests(kinds) if t not in paths]
+        paths += [t for t in _scenario_tests(kinds) if t not in paths]
         env["DIGIKIT_SCENARIOS"] = ",".join(scen)
         env["DIGIKIT_TIER"] = "full"
     return paths, env
@@ -77,9 +89,9 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
 def own_device_target(mid: str) -> str | None:
     """A module's own Nx test-device target (inferred by tools/nx/modules.mjs from its *.device.test.ts files)
     is its sole TypeScript acceptance declaration."""
-    from tools.devtools import verify_route
+    from tools.devtools import nx_graph
 
-    node = verify_route.nx_graph()["nodes"].get(mid)
+    node = nx_graph.nx_graph()["nodes"].get(mid)
     if node is None or "test-device" not in node["data"].get("targets", {}):
         return None
     return f"{mid}:test-device"

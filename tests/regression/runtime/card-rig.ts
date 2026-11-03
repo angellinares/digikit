@@ -3,11 +3,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport, frame, parseReply } from '@digi/dk-session';
-import { resolveInputs, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
+import {
+  resolveInputs,
+  withinRuntimeDeadline,
+  type Device,
+  type RuntimeBaseline,
+  type Session,
+} from '@digi/test-support';
 import { describe, expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type RuntimeCase } from '../support.ts';
 import {
   bootInfo,
+  bootInfoLoaded,
   buildCard,
   cardView,
   pokeKnob,
@@ -69,8 +76,8 @@ export interface CardRigOptions {
   roots?: string[];
   /** Plan symbols besides `DKRT_BOOT`. */
   symbols?: string[];
-  /** Daemon environment besides the write watch. */
-  env?: Record<string, string>;
+  /** Daemon environment besides the write watch; it overrides the watch's variables. A function gets the prepared runtime plan when the daemon starts. */
+  env?: Record<string, string> | ((prepared: PreparedRuntimePlan) => Record<string, string>);
   /** ColdFire-only daemon ('zero'; 'cold': also without a snapshot) or with the SHARC (default). */
   dsp?: 'zero' | 'sharc' | 'cold';
   /** The first card: a function that gives its spec (default a blank store card) or `small`, a blank 1 MiB file (a test sets `DIGI_CARD_IDENTITY=small`). */
@@ -251,7 +258,11 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         watchOutput = path.join(artifacts, 'writewatch.jsonl');
         const env = runtimeWatchEnv(prepared.planFile, watchOutput);
         record(artifacts, 'watch-environment', env);
-        return { ...env, ...(o.relaxFs ? { DIGI_COLD_RELAX_FS: '1' } : {}), ...o.env };
+        return {
+          ...env,
+          ...(o.relaxFs ? { DIGI_COLD_RELAX_FS: '1' } : {}),
+          ...(typeof o.env === 'function' ? o.env(prepared) : o.env),
+        };
       },
     },
     {
@@ -313,8 +324,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     if (o.hold) {
       // Python `settle_ms` (SETTLE_MS, 300 emulated ms), then `wait_dsp`: up to 5 s until no module is still LOADING (its DSP part follows the ColdFire part)
       await advance(runtime.session, 300);
-      for (let i = 0; i < 50 && (await bootInfo(runtime.session, prepared.plan)).results.includes(1); i++)
-        await advance(runtime.session, 100);
+      await bootInfoLoaded(runtime.session, prepared.plan);
     }
     await expectRuntimeUi(runtime.session, prepared.plan, artifacts, { afterEpoch, paused: o.hold });
     await rpc(runtime.session, 'run.mode', { mode: 'paused' });
@@ -396,7 +406,8 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       runtime.dk.cancelPending();
       const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
       try {
-        await bounded(() => dk.waitForBoot());
+        // DN2 cold restarts take about 45 s; retain the protocol's 90 s boot budget.
+        await withinRuntimeDeadline(Date.now() + 90_000, () => dk.waitForBoot());
       } finally {
         dk.cancelPending();
       }

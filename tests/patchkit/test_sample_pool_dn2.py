@@ -522,7 +522,9 @@ def test_transport_faults(xfer_exe):
     assert scenario(xfer_exe, "dead") == ["a -3 sends 0", "next -3"]
     # nothing is acknowledged: the page, three resends, then E_READ at 4 x 75 blocks (the job lasts 301: one block until the first reply);
     # the block is freed
-    assert scenario(xfer_exe, "timeout") == [f"a -3 sends 4 job blocks 301 free {FREE_ALL}"]
+    assert scenario(xfer_exe, "timeout") == [
+        f"a -3 sends 4 job blocks 301 free {FREE_ALL}"
+    ]
     # a receiver that never arms: E_READ after 200 ms (300 blocks), nothing sent
     assert scenario(xfer_exe, "unarmed") == ["a -3 sends 0 job blocks 299"]
     # an acknowledgement with a bad checksum is no acknowledgement
@@ -543,7 +545,10 @@ def test_transport_cancel(xfer_exe):
         f"free {FREE_ALL - 4 * 2048}",
     ]
     # cancelled during the job's first card read: nothing is sent; the next load works
-    assert scenario(xfer_exe, "cancelread") == [f"done 1 -15 sends 0 reads 2 free {FREE_ALL}", "b 0 planes 3"]
+    assert scenario(xfer_exe, "cancelread") == [
+        f"done 1 -15 sends 0 reads 2 free {FREE_ALL}",
+        "b 0 planes 3",
+    ]
     # cancelled with page 1 in flight and its reply late: the page is acknowledged first (the receiver counted it), then the load ends
     assert scenario(xfer_exe, "settle") == ["done 1 -15 sends 1 count 1"]
 
@@ -564,12 +569,31 @@ def test_raw_sender(xfer_exe):
     # whose first word is bytes 01 06 0b 10 goes out as 10 0b 06 01; 1,025 words; the model checks every word's command and pairs
     out = scenario(xfer_exe, "wire")
     assert out[0] == "send 0"
-    assert out[1].split() == "5680 5600 3480 3400 1280 1200 d080 d000 1080 1000 0b80 0b00 0680 0600 0180 0100".split()
+    assert out[1].split() == [
+        "5680",
+        "5600",
+        "3480",
+        "3400",
+        "1280",
+        "1200",
+        "d080",
+        "d000",
+        "1080",
+        "1000",
+        "0b80",
+        "0b00",
+        "0680",
+        "0600",
+        "0180",
+        "0100",
+    ]
     assert out[2] == "sent tag d0123456 page first 01 06 0b 10 last fc bad 0 words 1025"
     # a port that stops answering ends the send after 8,192 reads of one word (the bound), with an error
     assert out[3] == "stuck send -1 max polls 8192 reads"
     # in a load: the stuck page is lost, counted, sent again after 50 ms, and the load completes
-    assert scenario(xfer_exe, "stuck") == ["done 1 0 stuck 1 max polls 8192 sends 4 planes 3"]
+    assert scenario(xfer_exe, "stuck") == [
+        "done 1 0 stuck 1 max polls 8192 sends 4 planes 3"
+    ]
 
 
 def test_card_reads(xfer_exe):
@@ -599,5 +623,7 @@ def test_page_rate(xfer_exe):
     assert abs(rate(xfer_exe, 400, 1, 300) - base) < 0.01 * base
     assert 600 < rate(xfer_exe, 50, 2, 300) < 700
     assert 420 < rate(xfer_exe, 50, 3, 300) < 500
-    assert 600 < rate(xfer_exe, 50, 1, 890) < 700   # the send is longer than a frame: the next reply is two frames away
+    assert (
+        600 < rate(xfer_exe, 50, 1, 890) < 700
+    )  # the send is longer than a frame: the next reply is two frames away
     assert 300 < rate(xfer_exe, 50, 3, 890) < 400

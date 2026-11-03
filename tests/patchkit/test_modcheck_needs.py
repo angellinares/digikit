@@ -3,8 +3,8 @@ an empty device (tools/patchkit/pk_modcheck.py). The needs come from a real pack
 
 import pytest
 
+from tests.support import synth_spec as P
 from tools.device import dkneeds
-from tools.patchkit import pk_capacity as P
 from tools.patchkit import pk_device, pk_modcheck
 
 

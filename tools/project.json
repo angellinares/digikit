@@ -1,0 +1,42 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "tools",
+  "namedInputs": {
+    "pythonGate": [
+      "{workspaceRoot}/tools/**/*",
+      "{workspaceRoot}/tests/**/*",
+      "{workspaceRoot}/packages/**/*",
+      "{workspaceRoot}/modules/**/*",
+      "{workspaceRoot}/apps/**/*",
+      "{workspaceRoot}/sdk/**/*",
+      "{workspaceRoot}/devices/**/*",
+      "{workspaceRoot}/pyproject.toml",
+      "{workspaceRoot}/uv.lock",
+      "{workspaceRoot}/Cargo.toml",
+      "{workspaceRoot}/Cargo.lock",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/pnpm-lock.yaml"
+    ]
+  },
+  "targets": {
+    "python-checks": {
+      "executor": "nx:run-commands",
+      "description": "ruff, ruff format, mypy, layercheck and gen-check on every change outside docs/ and the repository's meta files. Nx affected ignores negated inputs, so the inputs list the directories.",
+      "cache": false,
+      "inputs": ["pythonGate"],
+      "options": { "command": "uv run python -m tools.devtools.py_select checks", "cwd": "." }
+    },
+    "python-tests": {
+      "executor": "nx:run-commands",
+      "description": "py_select picks the tests from the diff against DIGI_GATE_BASE; tests/patchkit/test_pk_current.py always runs. Skipped for changes under docs/ only.",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "inputs": ["pythonGate"],
+      "options": {
+        "command": "uv run python -m tools.devtools.py_select run --base ${DIGI_GATE_BASE:-origin/main}",
+        "cwd": "."
+      }
+    }
+  }
+}

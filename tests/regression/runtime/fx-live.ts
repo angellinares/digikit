@@ -16,7 +16,7 @@ import {
 import { expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
-import { FIRMWARE } from './devices.ts';
+import { daemonBinary, FIRMWARE } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { deviceProfile } from './device-data.ts';
@@ -36,9 +36,7 @@ export const rpc = <T>(session: Session, method: string, params?: Record<string,
   bounded(() => session.client.call<T>(method, params));
 
 export function options(device: Device) {
-  const binary = process.env[device === 'dt2' ? 'DIGI_EMUD_DT2' : 'DIGI_EMUD_DN2'];
-  if (!binary) throw new Error(`DIGI_EMUD_${device.toUpperCase()} must name a preflighted daemon`);
-  return { device, firmware: FIRMWARE[device], binary, autoNo: true };
+  return { device, firmware: FIRMWARE[device], binary: daemonBinary(device), autoNo: true };
 }
 
 export function slotsFor(device: Device): number {
@@ -281,7 +279,8 @@ export async function compare(
   expect(metrics.rms_db).not.toBeNull();
   expect(Math.abs(metrics.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
   expect(metrics.shift).not.toBeNull();
-  expect(Math.abs(metrics.shift!)).toBeLessThanOrEqual(128);
+  // hook_ab counts interleaved stereo samples; the onset tolerance is 128 audio frames.
+  expect(Math.abs(metrics.shift!) / 2).toBeLessThanOrEqual(128);
   if (identical) expect(metrics.identical, 'dry PCM is bit-identical from onset').toBe(true);
 }
 

@@ -9,7 +9,7 @@ globbing; no list names them; the names are unique across both places):
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx"
+    kind = "equiv" | "menu" | "upload" | "pages" | "fx"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -34,17 +34,13 @@ Kinds:
              counter: early leads to safe mode at the third boot, late never does (finding 37).
   menu       a set checked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with NO and YES on APPLY & RESTART? is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
-  cut        the card states a power cut leaves between the two copies of the selection record.
   card       `[card] part = "torn"` only: a power cut inside the first writes to a blank card (finding 46, residual risk). The other card-safety
              cases are the TypeScript card-safety test.
-  debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
-             `[debug] part = "sticky"`: sticky machine type numbers (assigned at the boot load, kept in the selection record's map, eviction); the plain part also checks MODULES.
-             `part = "guard"` (both images): the runtime guard on a NaN fixture.
   crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
-  upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
+  upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = rust, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
 Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
@@ -750,251 +746,6 @@ def run_equiv(c: Ctx) -> None:
     c.common_checks()
 
 
-def run_safe_late(c: Ctx) -> None:
-    """A module that fails some time into a session (docs/findings/37-boot-load.md, "Safe mode after the first UI pass"). The runtime
-    clears its boot counter only after a stable period of UI loop; here the period is shortened (the scenario pokes `DKRT_STABLE_BLOCKS`).
-    EARLY: the module hangs the UI task before the period is over: each boot counts as bad, the third boot is safe mode. LATE: it hangs
-    after the period: the counter was cleared, every boot loads the module and none is safe. A power cycle is a new rig on the card the
-    last one left (the overlay of its writes laid over it)."""
-    from tools.patchkit.pk_digikit_project import card_after
-
-    t = c.table()
-    mod = c.pack(t["fault"], "late.dkm")
-    img = c.image_for(RT, "run")
-    cfg = c.env.folder / "digikit" / "cfg"
-    cfg.mkdir(parents=True, exist_ok=True)
-    cards: dict[str, Path] = {}
-    for kind in ("early", "late"):
-        (cfg / "fault-after.bin").write_bytes(
-            int(t[f"{kind}_blocks"]).to_bytes(4, "big") + bytes([1])
-        )  # hang
-        cards[kind] = c.card([mod], stable_blocks=int(t["stable_blocks"]))
-    # The coupled cold boot runs to its ready point before the rig is handed out: about 6,000 blocks (4 s) after the first UI-loop pass on
-    # a fresh card (measured: the first pass is at block 5,972 of the firmware's counter, the ready point at 11,921), fewer on a card the
-    # firmware has saved to. A failure earlier than the ready point would stop the boot from ever being ready, so the periods lie above it.
-    # The rig then runs until the UI loop stands still (the hang) or, in safe mode, for the same time.
-
-    def settle_hang(rig: Any, ticks_sym: int, limit_ms: int = 9000) -> bool:
-        """Run in steps until the runtime's UI-loop count stops rising; False when it never does within LIMIT_MS."""
-        for _ in range(limit_ms // 400):
-            t0 = rig.w(ticks_sym)
-            rig.s.run_ms(400)
-            if rig.w(ticks_sym) == t0:
-                return True
-        return False
-
-    def sequence(kind: str) -> Callable[[], None]:
-        def run() -> None:
-            base = cards[kind]
-            seen: list[dict[str, Any]] = []
-            ticks_sym = M.sym(img.plan, "core/runtime", "DKRT_STATE") + 8
-            for boot in range(3):
-                with c.rig(img, base, f"late-{kind}{boot}") as rig:
-                    info = rig.boot_info()
-                    hung = settle_hang(rig, ticks_sym)
-                    after = rig.boot_info()
-                    rec = B.current(rig.sel_records())
-                    seen.append(
-                        {"info": info, "after": after, "rec": rec, "hung": hung}
-                    )
-                    ov = rig.work / f"late-{kind}{boot}.ov.bin"
-                    rig.emu.call("card.overlay", path=str(ov))
-                    nxt = card_after(c, base, ov)
-                    c.done(rig)
-                base = nxt
-            i0, i1, i2 = (s["info"] for s in seen)
-
-            def m(s: dict[str, Any]) -> tuple[Any, ...]:
-                return (
-                    s["info"]["counter"],
-                    s["after"]["stable"],
-                    s["rec"] and s["rec"]["counter"],
-                    s["hung"],
-                )
-
-            if kind == "early":
-                c.check(
-                    "early: boots 1 and 2 load the module and the UI task hangs in it",
-                    all(
-                        s["info"]["safe"] == 0
-                        and s["info"]["loaded"] == 1
-                        and s["hung"]
-                        for s in seen[:2]
-                    ),
-                    str([m(s) for s in seen]),
-                )
-                c.check(
-                    "early: the counter is raised at the start of each boot and not cleared (the failure came before the stable period)",
-                    [i0["counter"], i1["counter"], i2["counter"]] == [0, 1, 2]
-                    and all(
-                        s["after"]["stable"] == 0
-                        and s["rec"]["counter"] == s["info"]["counter"] + 1
-                        for s in seen[:2]
-                    ),
-                    str([m(s) for s in seen]),
-                )
-                c.check(
-                    "early: two bad boots in a row, the third boot is safe mode (counter): the module is not loaded and the UI keeps running",
-                    i2["safe"] == 1
-                    and i2["reason"] == 1
-                    and i2["loaded"] == 0
-                    and not seen[2]["hung"],
-                    f"{i2['reason_name']} loaded {i2['loaded']} hung {seen[2]['hung']}",
-                )
-                c.check(
-                    "early: the safe boot clears the counter at its first UI-loop pass (nothing of a module runs in it), selection kept",
-                    seen[2]["after"]["stable"] == 1
-                    and seen[2]["rec"]["counter"] == 0
-                    and seen[2]["rec"]["paths"] == [mod],
-                    str(seen[2]["rec"]),
-                )
-            else:
-                c.check(
-                    "late: every boot loads the module and the UI task hangs in it",
-                    all(
-                        s["info"]["safe"] == 0
-                        and s["info"]["loaded"] == 1
-                        and s["hung"]
-                        for s in seen
-                    ),
-                    str([m(s) for s in seen]),
-                )
-                c.check(
-                    "late: the counter was cleared once the stable period was over, before the failure: every boot starts at 0, no boot is safe",
-                    all(
-                        s["after"]["stable"] == 1 and s["rec"]["counter"] == 0
-                        for s in seen
-                    )
-                    and [i0["counter"], i1["counter"], i2["counter"]] == [0, 0, 0],
-                    str([m(s) for s in seen]),
-                )
-
-        return run
-
-    c.parallel(sequence("early"), sequence("late"))
-    c.common_checks()
-
-
-def run_safe(c: Ctx) -> None:
-    t = c.table()
-    if t.get("part") == "late":
-        run_safe_late(c)
-        return
-    mod = c.pack(t["fault"], "fault.dkm")
-    other = [c.pack(m, f"m{i}.dkm") for i, m in enumerate(t.get("modules", []))]
-    img = c.image_for(RT, "run")
-    card_fault = c.card([mod])
-    card_flag = c.card(other, flags=1) if other else None
-
-    def fault() -> None:
-        with c.rig(img, card_fault, "safe") as rig:
-            info = rig.boot_info()
-            c.check(
-                "two boots that never reached the UI loop, the third boots in safe mode",
-                info["safe"] == 1 and info["reason"] == 1 and info["counter"] == 2,
-                f"{info['reason_name']} counter {info['counter']}",
-            )
-            c.check(
-                "safe mode loaded no module and reported it",
-                info["loaded"] == 0
-                and info["all_results"][0] == B.E_SAFE_MODE
-                and all(r[0] == B.FREE_TYPE for r in rig.voice_rows()),
-                str(info["all_results"][:2]),
-            )
-            rec = B.current(rig.sel_records())
-            c.check(
-                "the UI loop ran: counter 0, selection kept",
-                info["ui_reached"] == 1
-                and rec is not None
-                and rec["counter"] == 0
-                and rec["paths"] == [mod],
-                str(rec),
-            )
-            c.done(rig)
-
-    def flag() -> None:
-        assert card_flag is not None
-        with c.rig(img, card_flag, "safe-flag") as rig:
-            info = rig.boot_info()
-            rec = B.current(rig.sel_records())
-            c.check(
-                "the safe-once flag: safe mode (flag), no module, flag cleared, selection kept",
-                info["safe"] == 1
-                and info["reason"] == 3
-                and info["loaded"] == 0
-                and rec is not None
-                and rec["flags"] == 0
-                and rec["paths"] == other,
-                f"{info['reason_name']} {rec}",
-            )
-            c.done(rig)
-
-    c.parallel(*([fault, flag] if other else [fault]))
-    c.common_checks()
-
-
-def run_cut(c: Ctx) -> None:
-    t = c.table()
-    mods = [c.pack(m, f"m{i}.dkm") for i, m in enumerate(t["modules"])]
-    img = c.image_for(RT, "run")
-    new, old = B.make_record(mods, seq=2), B.make_record([], seq=1)
-    torn = bytearray(new)
-    torn[100] ^= 0xFF
-    named = {"new": new, "old": old, "torn": bytes(torn)}
-    cases = t["case"]
-    if c.tier == "quick":  # the first cases only
-        cases = cases[: t.get("quick_cases", len(cases))]
-
-    def one_case(case: dict[str, Any], k: int) -> Callable[[], None]:
-        a, b = named[case["a"]], named[case["b"]]
-        card = c.card(None, recs=(a, b))
-
-        def run() -> None:
-            with c.rig(img, card, f"cut{k}") as rig:
-                info = rig.boot_info()
-                want = case["want"]
-                n = len(mods) if want["loaded"] == "all" else want["loaded"]
-                c.check(
-                    f"power cut, A {case['a']} / B {case['b']}: the boot uses the valid copy with the higher sequence number",
-                    info["loaded"] == n
-                    and info["seq"] == want["seq"]
-                    and info["copy"] == want["copy"]
-                    and info["safe"] == 0,
-                    f"loaded {info['loaded']} seq {info['seq']} copy {info['copy']}",
-                )
-                c.done(rig)
-
-        return run
-
-    def runtime_cut() -> None:
-        with c.rig(img, c.card(None), "cut-rt") as rig:
-            r = rig.post(B.CMD_SELECT_ONE, "\0" + "\0".join(mods) + "\0\0")
-            recs = rig.sel_records()
-            c.check(
-                "one copy written by the runtime: A new, B still empty",
-                r == 0
-                and recs[0] is not None
-                and recs[0]["seq"] == 1
-                and recs[1] is None,
-                str(recs),
-            )
-            rig.restart()
-            info = rig.boot_info()
-            c.check(
-                "the restart after the cut loads the new copy",
-                info["loaded"] == len(mods) and info["copy"] == 0,
-                str(info["results"]),
-            )
-            c.done(rig)
-
-    # every boot is its own daemon on its own card: they run side by side
-    c.parallel(
-        *[one_case(case, k) for k, case in enumerate(cases)],
-        *([runtime_cut] if t.get("runtime_cut", True) else []),
-    )
-    c.common_checks()
-
-
 def run_dkrun(
     c: Ctx, rig: B.BootRig, D: Any, blobs: dict[str, bytes], files: dict[str, str]
 ) -> None:
@@ -1321,24 +1072,6 @@ def run_upload(c: Ctx) -> None:
     U.run_upload(c)
 
 
-def run_card(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_card(c)
-
-
-def run_debug(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_debug(c)
-
-
-def run_crash(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_crash(c)
-
-
 def run_pages(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_pages as PG
 
@@ -1347,14 +1080,9 @@ def run_pages(c: Ctx) -> None:
 
 KINDS = {
     "pages": run_pages,
-    "card": run_card,
-    "debug": run_debug,
-    "crash": run_crash,
     "equiv": run_equiv,
     "upload": run_upload,
     "menu": run_menu,
-    "safe": run_safe,
-    "cut": run_cut,
 }
 
 
@@ -1453,12 +1181,7 @@ def _run_pairs(
     base.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     rank = {
-        "cut": 1,
         "upload": 1,
-        "card": 1,
-        "debug": 1,
-        "safe": 3,
-        "crash": 3,
         "equiv": 4,
     }
     order = sorted(pairs, key=lambda p: rank.get(p[0].kind, 9))

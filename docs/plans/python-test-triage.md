@@ -44,5 +44,7 @@ safe-late-fault and cut-selection. Shared helpers: `card-kit.ts` (cards, guest r
 cards: a hard link to a shared base plus `overlay.bin`), `device-data.ts`, `fx-live.ts` (PCM).
 Each file has a `runtimeAcceptance` record, and a module's device tests run with
 `pnpm nx:pilot run <module-id>:test-device`. Proof state and open items:
-[handover](../handovers/HANDOVER-2026-11-02-scenario-migration.md). No Python scenario is deleted yet;
-upload-cut and upload-clear-cut are skipped in TypeScript until the overlay issue is fixed.
+[handover](../handovers/HANDOVER-2026-11-02-scenario-migration.md). The Python scenarios card-torn,
+cut-selection and upload quick, ops, folders, stock, txfull, screenshot, playback, cut and clear-cut are
+deleted (proven in TypeScript on DT2 and DN2, 2026-11-03). upload-rust stays in Python, and so do the
+families not yet ported.

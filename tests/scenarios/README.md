@@ -57,7 +57,7 @@ Renders are cached per scenario by content in `out/cache/renders/` (see
 `docs/TESTING.md`, "Render cache"). A hit restores the report entry and the WAV;
 `--diag` runs bypass the cache. Force renders with `--no-cache` or
 `DIGI_RENDER_CACHE=0`. `DIGI_RENDER_CACHE_CHECK=p` re-renders each hit with
-probability p and fails on a difference (`verify` uses 0.03).
+probability p and fails on a difference.
 
 The runs need the private ready inputs (`mise run emu:ready -- dn2|dt2`). Pins are
 only valid for the firmware and ready snapshot they were recorded with.
@@ -85,7 +85,7 @@ independently restores its ready snapshot. The existing native emulator binary i
 required. Card preparation invokes the small +Drive helper build/check, unless
 `DIGI_DT2_CARD` points to an existing compatible card image.
 Reports, measurements and logs are under `out/regression/dt2-fx/`; WAVs are
-removed after the run unless `DIGI_FX_KEEP_RUNS=1`. `verify.py --full --dt2` also
+removed after the run unless `DIGI_FX_KEEP_RUNS=1`. `mise run gate:full` (or `pnpm nx:pilot run gate-fx-dt2:dt2-tier-sweep`) also
 compares DT2 FX PCM with and without AOT.
 
 Add cases and assertions to the corresponding DN2 or DT2 TypeScript sources in

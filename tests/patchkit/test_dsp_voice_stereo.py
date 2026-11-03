@@ -80,7 +80,9 @@ def test_a_mono_machine_is_unchanged_the_odd_voice_copies_l():
     rig.block("friendly")
     rig.block("friendly")
     even = rig.block("friendly")
-    assert all(np.isnan(x) for x in even.right), "a mono machine leaves the odd buffer alone"
+    assert all(np.isnan(x) for x in even.right), (
+        "a mono machine leaves the odd buffer alone"
+    )
     assert flag(rig) == 0
     odd = rig.odd_block()
     assert odd == even.samples and np.max(np.abs(odd)) > 0.1

@@ -269,21 +269,10 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         }
     }
     // already loaded; a free record
-    let mut rec: usize = MAX_MODULES;
-    i = 0;
-    while i < MAX_MODULES {
-        if s.modules[i].used != 0 {
-            if cstr_eq(s.modules[i].name.as_ptr(), name) {
-                return E_LOADED;
-            }
-        } else if rec == MAX_MODULES {
-            rec = i;
-        }
-        i += 1;
-    }
-    if rec == MAX_MODULES {
-        return E_TABLE_FULL;
-    }
+    let rec = match capacity::pick_record(MAX_MODULES, |i| s.modules[i].used != 0, |i| cstr_eq(s.modules[i].name.as_ptr(), name)) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
 
     // ---- allocate, copy, relocate, zero bss ----
     // The DSP range, the relocated DSP image and the voice rows come first: nothing else is allocated yet if they fail.

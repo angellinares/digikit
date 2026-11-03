@@ -8,9 +8,9 @@ import { timePhase } from '../timing.ts';
 
 /** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. */
 export function moduleArtifact(device: Device, id: string): string {
-  const directory = process.env.DIGI_RUNTIME_MODULES ?? path.join(repoRoot(), 'out/regression/modules');
+  const directory = process.env.DIGI_RUNTIME_MODULES ?? path.join(repoRoot(), 'dist/modules');
   const artifact = path.join(directory, device, `${id.split('/').at(-1)}.dkm`);
-  if (!fs.existsSync(artifact)) throw new Error(`prepare ${id} for ${device} with patchkit pack: missing ${artifact}`);
+  if (!fs.existsSync(artifact)) throw new Error(`missing ${artifact}: run nx run ${id}:pack`);
   return artifact;
 }
 

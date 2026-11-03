@@ -54,7 +54,7 @@ Each task takes `-- --help`.
   Never rename the module id or the effect `id` after release.
 - **Elektron files stay stock.** Digikit data lives in the runtime's settings store, not in kit, project or pattern files.
 - **Versions.** Contract versions are in `sdk/sdk.toml`. A contract major mismatch is refused (`E_CONTRACT`): rebuild (guide 9).
-- **Tests.** Use the owner's checks (`mise run test:changed -- --explain`). Do not run the emulator when a static answer is enough, and bound every run.
+- **Tests.** Use the owner's checks (`mise run test:changed`). Do not run the emulator when a static answer is enough, and bound every run.
 - Facts go in `docs/findings/` with the marks [V], [D], [O], not in handovers.
 
 ## Tracing

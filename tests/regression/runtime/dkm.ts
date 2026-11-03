@@ -23,7 +23,7 @@ interface FxRecord {
 }
 
 /** The DSP section of a .dkm (docs/design/digikit-dkm.md); only what the effect oracle reads. */
-function parseDspSection(dkm: Buffer) {
+export function parseDspSection(dkm: Buffer) {
   const start = dkm.readUInt32BE(0x98);
   const s = dkm.subarray(start, start + dkm.readUInt32BE(0x9c));
   if (s.readUInt32BE(0) !== 0x444b4453) throw new Error('no DSP section');
@@ -55,7 +55,7 @@ function parseDspSection(dkm: Buffer) {
 }
 
 /** The image placed at BASE; DSP imports are not supported (the oracle refuses a module that has them). */
-function relocate(sec: ReturnType<typeof parseDspSection>, base: number): Buffer {
+export function relocate(sec: ReturnType<typeof parseDspSection>, base: number): Buffer {
   const m = Buffer.from(sec.image);
   const byteShift = base - L2_BYTE_BASE;
   const pcShift = Math.floor(byteShift / 2);

@@ -55,7 +55,7 @@ Run it:
 mise run check:layers          # or: uv run python -m tools.devtools.layercheck
 ```
 
-Each violation prints `file:line: rule: what is wrong. Instead: what to do.` The gate runs it in `python-tests` (with ruff and mypy) whenever modules, the SDK or the firmware declarations change; `mise run test:changed` runs it too.
+Each violation prints `file:line: rule: what is wrong. Instead: what to do.` The gate runs it in `python-checks` (with ruff and mypy) whenever modules, the SDK or the firmware declarations change; `mise run test:changed` runs it too.
 
 ## How a new device or firmware version fits
 

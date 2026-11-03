@@ -118,8 +118,9 @@ pub unsafe fn read_head(f: &File, head: &mut [u8; 64]) -> Result<(), i32> {
 
 /// Read the file `f` into the staging buffer and check the table's sha256. The file is then at `stage()`.
 pub unsafe fn load_to_stage(f: &File) -> i32 {
-    if f.size == 0 || f.size as usize > STAGE_BYTES {
-        return E_TOO_BIG;
+    let r = capacity::stage_fit(f.size, STAGE_BYTES as u32);
+    if r != OK {
+        return r;
     }
     let sectors = (f.size + 511) / 512;
     let buf = stage();
@@ -142,8 +143,9 @@ pub unsafe fn read_file(path: *const u8, dst: *mut u8, cap: u32) -> i32 {
         Ok(f) => f,
         Err(e) => return e,
     };
-    if f.size > cap {
-        return E_TOO_BIG;
+    let r = capacity::read_fit(f.size, cap);
+    if r != OK {
+        return r;
     }
     let r = load_to_stage(&f);
     if r != OK {

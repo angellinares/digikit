@@ -1,9 +1,0 @@
-# One upload, a replace and a delete on a ColdFire-only rig, for the verify gate (the full set is upload-ops).
-[scenario]
-name = "upload-quick"
-kind = "upload"
-devices = ["dt2"]
-tier = "quick"
-
-[upload]
-part = "quick"

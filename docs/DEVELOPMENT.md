@@ -131,10 +131,10 @@ mise run scenario trig1-taps --wav
 Test levels, layout and all commands are in [docs/TESTING.md](TESTING.md). The most used:
 
 ```sh
-mise run test:changed         # checks for the changed files; no builds or devices (--explain shows the selection)
+mise run test:changed         # lint, format, types, host tests and Python checks of the affected projects; no builds or devices
 pnpm test:host                # host Vitest projects; no device
 pnpm verify:host              # host lint, format, tests and types
-mise run verify               # the gate: the steps your changed files need
+mise run gate                 # the gate: Nx targets of the affected projects
 mise run module:check ID      # one module: conformance and its own tests
 ```
 

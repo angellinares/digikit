@@ -164,7 +164,9 @@ def model(plane, start, end, rate, reverse, blocks, schedule=None, loop=False):
             pos += step
             if not lo * 65536 <= pos < hi * 65536:
                 if loop and hi - lo >= 2 and not forced:
-                    pos += -(hi - lo) * 65536 if pos >= hi * 65536 else (hi - lo) * 65536
+                    pos += (
+                        -(hi - lo) * 65536 if pos >= hi * 65536 else (hi - lo) * 65536
+                    )
                 if not lo * 65536 <= pos < hi * 65536:
                     done = True
         if forced:

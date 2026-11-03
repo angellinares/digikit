@@ -447,7 +447,7 @@ _STAMP_RE = re.compile(r"\d{8}-\d{6}(-\d+)?")
 def _prune_runs(base: pathlib.Path, current: pathlib.Path) -> None:
     """Keep the newest KEEP_RUNS stamped run dirs of one kind.
 
-    verify_times reads the newest 12 verify runs. Symlinks (`latest`), the new
+    Symlinks (`latest`), the new
     dir and the latest target are never removed.
     """
     try:
@@ -583,6 +583,9 @@ def diag_stderr(names: str | list[tuple[str, str]]) -> bool:
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["exec"] and len(sys.argv) > 3 and sys.argv[2] == "--":
+        cmd = sys.argv[3:]
+        os.execvpe(cmd[0], cmd, {**rust_env(), "SHARC_GEN_DIR": str(generated_dir())})
     print(f"toolchain   {TOOLCHAIN} ({toolchain_rustc() or 'not installed'})")
     print(f"generated   {generated_dir()}")
     for label, path in ready_inputs().items():

@@ -385,8 +385,9 @@ pub unsafe fn check(reg: *const u8, size: u32, image_size: u32) -> i32 {
                 bad = E_FORMAT;
                 return;
             }
-            if t < dyn0 || t >= dyn0 + dyn_n || clone >= m_first {
-                bad = E_TYPE_RANGE;
+            let r = capacity::machine_type(t, dyn0, dyn_n, clone, m_first);
+            if r != OK {
+                bad = r;
                 return;
             }
             let mut j = 0;
@@ -447,31 +448,13 @@ pub unsafe fn check(reg: *const u8, size: u32, image_size: u32) -> i32 {
     if bad != OK {
         return bad;
     }
-    // free reserved page rows
-    let mut free_pg = 0u32;
-    let mut k = 0;
-    while k < iw(inf, w::PG_DYN_N) as usize && k < MAX_PAGE {
-        if s.page_owner[k] == 0 {
-            free_pg += 1;
-        }
-        k += 1;
-    }
-    if free_pg < ng {
-        return E_PAGE_FULL;
-    }
-    // free reserved parameter rows
-    let mut free = 0u32;
-    let mut k = 0;
-    while k < iw(inf, w::P_DYN_N) as usize && k < MAX_PARAM {
-        if s.param_owner[k] == 0 {
-            free += 1;
-        }
-        k += 1;
-    }
-    if free < np {
-        return E_PARAM_FULL;
-    }
-    OK
+    // free reserved page and parameter rows
+    capacity::registry_rows(
+        ng,
+        capacity::free_rows(&s.page_owner, iw(inf, w::PG_DYN_N)),
+        np,
+        capacity::free_rows(&s.param_owner, iw(inf, w::P_DYN_N)),
+    )
 }
 
 /// Write one 60-byte parameter table row from its lowering spec (the template's words, the record's values).

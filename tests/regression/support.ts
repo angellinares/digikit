@@ -11,6 +11,7 @@ import {
   type SessionOptions,
 } from '@digi/test-support';
 import { portFile } from './runtime/device-data.ts';
+import { daemonBinary } from './runtime/devices.ts';
 import { setTimingContext, timePhase, timingContext } from './timing.ts';
 import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
 
@@ -30,7 +31,9 @@ export interface SessionHandle {
 export function withSession(opts: SessionOptions & { restart?: boolean }): SessionHandle {
   let session: Session | undefined;
   beforeAll(async () => {
-    session = await Session.start(opts);
+    // Without an explicit binary or DIGI_EMUD, take the daemon from DIGI_EMUD_<DEV> or dist/daemons.json.
+    const binary = opts.binary ?? (process.env.DIGI_EMUD ? undefined : daemonBinary(opts.device));
+    session = await Session.start({ ...opts, binary });
   });
   afterAll(async () => {
     await session?.close();

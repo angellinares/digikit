@@ -25,7 +25,6 @@
       "{workspaceRoot}/package.json",
       "{workspaceRoot}/pnpm-lock.yaml",
       "{workspaceRoot}/pnpm-workspace.yaml",
-      "{workspaceRoot}/mise.toml",
       "{workspaceRoot}/nx.json",
       {
         "runtime": "node -p 'JSON.stringify({versions:process.versions,platform:process.platform,arch:process.arch})'"
@@ -51,7 +50,23 @@
       {
         "env": "LC_ALL"
       }
+    ],
+    "production": [
+      "default",
+      "!{projectRoot}/tests/**/*",
+      "!{projectRoot}/**/*.md"
     ]
+  },
+  "targetDefaults": {
+    "typecheck": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain"
+      ],
+      "outputs": []
+    }
   },
   "parallel": 3
 }

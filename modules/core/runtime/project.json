@@ -4,6 +4,24 @@
   "metadata": {
     "runtimeAcceptance": [
       {
+        "files": ["tests/capacity.device.test.ts"],
+        "modules": [
+          "digikit/debug",
+          "digikit/freqshift",
+          "digikit/pluck",
+          "digikit/probe",
+          "digikit/remote",
+          "fadedlimes/analog",
+          "fadedlimes/bd",
+          "fadedlimes/pd",
+          "test/c-demo",
+          "test/dyn-fx-gain",
+          "test/dyn-params",
+          "test/sine"
+        ],
+        "plusdrive": true
+      },
+      {
         "files": ["tests/modules-capacity.device.test.ts"],
         "modules": ["digikit/debug", "digikit/probe", "digikit/remote", "test/dyn-params"]
       },
@@ -80,6 +98,16 @@
       {
         "files": ["tests/debug-guard.device.test.ts"],
         "modules": ["digikit/debug", "test/dyn-guard-nan", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/memaudit.device.test.ts"],
+        "modules": ["test/c-demo", "test/dyn-demo", "test/dyn-demo-stray", "test/dyn-dn2", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/memaudit-module.device.test.ts"],
+        "modules": [],
         "plusdrive": true
       }
     ]

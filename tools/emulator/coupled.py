@@ -330,7 +330,7 @@ def scenario_document(scenarios_file: pathlib.Path | str) -> dict:
     """Read JSON or execute an erasable TypeScript scenario source with Node >=24.
 
     Always evaluate source afresh; callers may retain this document for their batch.
-    Enumeration does not write generated files (including in verify --explain).
+    Enumeration does not write generated files (including in an explain-only run).
     """
     path = pathlib.Path(scenarios_file).resolve()
     if path.suffix == ".ts":

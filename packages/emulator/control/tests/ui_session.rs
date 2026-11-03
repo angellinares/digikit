@@ -37,7 +37,7 @@ fn a_session_is_adopted_by_the_load_that_starts_it() {
     // The status keeps the patch report.
     let status = handle.call("status", json!({})).unwrap();
     assert_eq!(status["firmware"]["runtime"]["set"], "emulator", "{status}");
-    assert_eq!(status["firmware"]["runtime"]["modules"].as_array().unwrap().len(), 15);
+    assert_eq!(status["firmware"]["runtime"]["modules"].as_array().unwrap().len(), 16);
     // The same token again is not newer; a reset takes the next one and keeps the runtime report.
     assert!(stale(handle.call("firmware.load", load)));
     handle.call("restart", json!({"session": 4})).unwrap();

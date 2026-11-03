@@ -1,9 +1,0 @@
-# The debug log (docs/findings/46-digikit-debug.md): LOG and PEEK over the SysEx protocol, INFO's log range, the DEBUG switch, the periodic
-# events, tools/device/dklog.py against the emulator.
-[scenario]
-name = "debug-log"
-kind = "debug"
-devices = ["dt2"]
-tier = "quick"
-
-[debug]

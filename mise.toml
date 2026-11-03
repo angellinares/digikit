@@ -1,6 +1,6 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
-# Task groups: setup, workbench and emu:*, web:*, scenario:*, verify:*, test:*, lint:*, perf:*, gen:*,
-# dev:*, module:*, patch:*, dk:*. `mise run TASK -- --help` prints a tool's options.
+# Task groups: setup, workbench and emu:*, ui:*, web:*, wasm:*, scenario:*, check:*, gate*, clean:*, test:*, lint:*,
+# perf:*, gen:*, dev:*, module:*, patch:*, dk:*. `mise run TASK -- --help` prints a tool's options.
 
 [settings]
 activate_aggressive = true
@@ -101,23 +101,23 @@ description = "Replay inputs recorded by the desktop app (Export diagnostics fil
 run = "uv run python -m tools.emulator.coupled bisect"
 description = "Find the DSP tier (fast region, cluster root, AOT) that changes a scenario's PCM"
 
-# --- verify ---
+# --- gate ---
 
 [tasks."check:layers"]
 run = "uv run python -m tools.devtools.layercheck"
 description = "Check the module layering (docs/ARCHITECTURE.md): roles match folders, apps and content modules include only the SDK, no firmware anchors outside adapters, apps have no [[op]]/[[claim]]; no builds"
 
 [tasks."test:changed"]
-run = "uv run python -m tools.devtools.changed_tests"
-description = "Fast preflight: changed-Python lint/types, audited tooling units, related host tests and types; no builds or devices. --base/--head/--files/--deep/--explain"
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; node tools/nx/remote-cache.mjs exec --access ro -- pnpm nx:pilot affected --base "$DIGI_GATE_BASE" -t lint,fmt-check,typecheck,test-host,python-checks'
+description = "Fast preflight: lint, format, types, host tests and Python checks of the affected projects; no builds or devices"
 
-[tasks.verify]
-run = "uv run python -m tools.devtools.verify"
-description = "Merge gate, routed by the changed files (tools/devtools/verify.py; --base BRANCH, --only STEPS, --explain [--head REV] shows the routing, the plan and the worker plan without running, --jobs N the CPU budget in cores, --foreground, --all-no-aot; runs at nice 10); one PASS/FAIL line per step, logs in out/runs/verify/. The coordinator runs it once per merge; lanes use owner checks"
+[tasks.gate]
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot affected --base "$DIGI_GATE_BASE" --parallel 2 -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone'
+description = "Merge gate: nx affected over the gate targets against DIGI_GATE_BASE (default main); emulator targets run one at a time (parallelism false); runs at nice 10"
 
-[tasks."verify:full"]
-run = "uv run python -m tools.devtools.verify --full"
-description = "Full gate: every runtime acceptance file, 191 DN2 FX assertions and tier-sweep in place of tier-quick; no-AOT retains the fixed subset (`-- --all-no-aot`: all 134 scenarios and 191 assertions); DT2 full tier sweep requires -- --dt2; only after generated-core changes"
+[tasks."gate:full"]
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot run-many --parallel 2 -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone,tier-sweep,dt2-tier-sweep'
+description = "Full gate: every gate target on every project, plus the tier sweeps"
 
 # --- tests ---
 
@@ -141,35 +141,12 @@ description = "DN2 stock FX oracles: 61 quick assertions; DIGI_FX_SWEEP=1 select
 run = "pnpm --filter @digi/regression test:fx:dt2"
 description = "DT2 stock FX: 135 quick / 146 full (DIGI_FX_SWEEP=1); native Vitest filters; existing binary/ready inputs, no emulator build; sample-card preparation may build its helper (DIGI_DT2_CARD selects a prepared image to avoid it)"
 
-[tasks."build:plusdrive"]
-run = "uv run python -m tools.firmware.plusdrive_check --build-only"
-description = "Build the plusdrive CLI into out/native/target/nogen (card image oracle for runtime tests)"
-
-[tasks."test:runtime"]
-depends = ["build:plusdrive"]
-run = "pnpm --filter @digi/regression test:runtime"
-description = "Coupled runtime acceptance (also relevant-change gate owner), serial with preflighted DIGI_EMUD_DT2/DIGI_EMUD_DN2 binaries; plusdrive is built automatically and the DT2 card samples come from out/runs/patchkit/samples; no implicit emulator build; accepts Vitest filters (for example -- service-commands)"
-
-[tasks."test:conformance"]
-run = "pnpm --filter @digi/regression test:conformance"
-description = "Serial coupled module-load conformance (also relevant-change gate owner): the shared suite tests/conformance/load.device.test.ts loads the modules named in DIGI_CONFORMANCE_MODULES (empty: all eligible) on DT2 1.17/DN2 1.12; requires prepared DKM artifacts, preflighted device binaries, ready inputs and DT2 samples; no implicit builds; accepts native Vitest filters"
-
 [tasks."test:quick"]
 run = [
   "uv run python -m pytest -q tests/emulator/test_native_emu_launcher.py tests/emulator/test_native_pgo.py tests/emulator/test_native_target.py tests/emulator/test_coupled_tool.py",
   "uv run python -m tools.emulator.coupled test-quick",
 ]
 description = "Fast checks for the tooling, the audio sink and the coupled runtime"
-
-[tasks.test]
-run = [
-  "uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests",
-  "uv run python -m tools.devtools.rust_ws test",
-  "pnpm test:host",
-  "pnpm --filter @digi/web test",
-  "uv run python -m tools.emulator.coupled scenario --all",
-]
-description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock, test:runtime, test:conformance)"
 
 [tasks."test:slow"]
 run = [
@@ -295,8 +272,8 @@ run = "uv run python -m tools.patchkit.pk_modcheck"
 description = "Check one module: module:check ID [--device dt2|dn2] [--trace]. Machine/effect conformance and own Python tests, then any module-owned Nx test-device target; may build or emulate. Modules without tests retain source/size checks; not an all-module patched load proof. Size/fit follows only after all owned stages pass"
 
 [tasks."module:audit"]
-run = "uv run python -m tools.patchkit.pk_modaudit"
-description = "ColdFire memory audit of one run-time module in the emulator: `module:audit NAME [--device dt2|dn2]`. Loads the module (and the run-time modules it requires) on a ColdFire-only rig, drives the UI for a bounded time (DIGIKIT menu, machine list, parameter turns, project save and load) and reports every store into the free regions outside the module blocks by code that is not a patch object (pc, address, size, the code it belongs to). About 10 to 30 s per device"
+run = "sh tools/devtools/module_audit.sh"
+description = "ColdFire memory audit of one run-time module in the emulator: `module:audit NAME [--device dt2|dn2]`. Loads the module (and the run-time modules it requires) on a ColdFire-only rig, drives the UI for a bounded time (DIGIKIT menu, machine list, parameter turns, project save and load) and reports every store into the free regions outside the module blocks by code that is not a patch object (pc, address, size, the code it belongs to). Runs a Vitest device test (modules/core/runtime/tests/memaudit-module.device.test.ts) with DIGI_AUDIT_MODULE=NAME. About 1 to 2 minutes per device"
 
 [tasks."module:pack-all"]
 run = "uv run python -m tools.device.dkpackall"
