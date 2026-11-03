@@ -40,7 +40,7 @@ it('infers core producers from category and source-backed objects, independently
   const producer = owner.targets['build-objects'];
   expect(producer.cache).toBe(false);
   expect(producer.outputs).toEqual([`{workspaceRoot}/${modules[0].dir}/build/object.dko.json`]);
-  expect(producer.dependsOn).toEqual(['patchkit:cli', 'example/dep:build-objects']);
+  expect(producer.dependsOn).toEqual(['sdk:check-generated', 'example/dep:build-objects']);
   expect(producer.options.parallel).toBe(false);
   expect(producer.options.commands).toHaveLength(2);
   expect(projects[modules[1].dir].tags).toContain('acceptance-image');

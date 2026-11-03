@@ -94,9 +94,14 @@ it('prepares precisely the declared image core objects before patched-image cons
       graph.dependencies[consumer].map((dep) => dep.id),
       consumer,
     ).toEqual(expect.arrayContaining(expected.map((id) => `${id}:build-objects`)));
+    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'check-generated')).toEqual([
+      expect.objectContaining({ target: expect.objectContaining({ project: 'sdk' }) }),
+    ]);
+    expect(graph.dependencies['sdk:check-generated'].map((dep) => dep.id)).toContain('patchkit:cli');
+    expect(workspace.nodes.sdk.data.targets['check-generated'].cache).toBe(false);
     for (const producer of producers) {
       const id = `${producer.target.project}:build-objects`;
-      expect(graph.dependencies[id].map((dep) => dep.id)).toContain('patchkit:cli');
+      expect(graph.dependencies[id].map((dep) => dep.id)).toContain('sdk:check-generated');
       expect(workspace.nodes[producer.target.project].data.targets['build-objects'].cache).toBe(false);
     }
     expect(graph.dependencies['core/runtime:build-objects'].map((dep) => dep.id)).toContain(
@@ -109,7 +114,7 @@ it('keeps stock and runtime host units independent of core-object preparation', 
   for (const target of ['gate-stock:stock', 'core/runtime:rust-tests']) {
     const graph = plan(['run', target]).tasks;
     expect(
-      Object.values(graph.tasks).filter((task) => task.target.target === 'build-objects'),
+      Object.values(graph.tasks).filter((task) => ['build-objects', 'check-generated'].includes(task.target.target)),
       target,
     ).toEqual([]);
   }

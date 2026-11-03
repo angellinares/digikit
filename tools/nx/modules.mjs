@@ -159,13 +159,13 @@ export const createNodesV2 = [
           description:
             'Check generated sources, then incrementally build committed core objects; may update tracked outputs.',
           dependsOn: [
-            'patchkit:cli',
+            'sdk:check-generated',
             ...(m.requires ?? []).filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`),
           ],
           outputs: objects.filter((o) => o.sources?.length).map((o) => `{workspaceRoot}/${root}/${o.path}`),
           options: {
             commands: [
-              `${PK} gen --modules ${m.id} --check`,
+              `${PK} gen --modules ${m.id} --check --scope modules`,
               `uv run python -m tools.devtools.benchlock run --shared --label module-build -- ${PK} build ${root}`,
             ],
             parallel: false,

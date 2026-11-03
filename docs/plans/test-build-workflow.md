@@ -80,7 +80,23 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    Core freshness checkpoint: uncached category-core source-backed producers check scoped generation, then incrementally build tracked objects under shared benchlock; image consumers use the profile-derived acceptance-image tag. No actual core build or generated-output update run here.
    Evidence: 23 scoped Nx host tests and six affected preflight tasks pass; native graphs select exactly 16 producers for image consumers and none for stock/runtime units. Declared Rust source/output checks pass; no end-to-end freshness measurement claimed.
    Subsequent real runtime preparation: exactly CLI, expansion and runtime tasks pass in 22.3 s, including generated-source checks. Only runtime source_sha256 changed; object payload/symbols/relocations/toolchain metadata are identical. Runtime build status now reports unchanged; no device run.
-   Conservative producer inputs remain; narrow after test ownership is clearer. Repeated owner checks repeat shared SDK/fw generation checks; optimize later. The mixed stock/runtime regression target prepares images; stage3 can split it.
+   Conservative producer inputs remain; narrow after test ownership is clearer. The mixed stock/runtime regression target prepares images; stage3 can split it.
+   Shared generation checkpoint: `gen --check --scope shared` checks SDK and firmware outputs without
+   scanning module libraries; `--scope modules` retains each producer's module-output checks.
+   Scopes require `--check`; unscoped generation/checks and `--modules` keep their existing behavior.
+   The uncached `sdk:check-generated` target depends on the CLI and is a prerequisite of every
+   core producer, so Nx schedules shared checks once per task graph. No cache boundary or
+   generated output changed. Static baseline: each of 16 image producers previously ran both
+   shared generators. The real Nx matrix still selects precisely those 16 producers and now
+   selects one shared check for every image consumer, with none added to stock/runtime unit plans.
+   Evidence: 28 scoped Nx host tests, 33 focused Rust CLI/SDK/firmware tests and eight affected
+   preflight tasks pass. The Rust fixture test proves separate stale SDK, firmware and module
+   outputs fail their check scope and unscoped/default checks, while the other scope succeeds;
+   byte/mtime snapshots remain
+   unchanged by successful and failing checks. Fixtures copy repository inputs into a
+   temporary root and never edit repository-generated files. The real shared Nx target passes
+   (CLI plus shared check), as does the actual runtime module-only check. Prettier and
+   `git diff --check` pass. No core object build, device run, full gate or speedup claim.
    Early win `16594f8b` excludes task definitions from the daemon key while hashing the Rust pin
    and actual compiler identity. Six focused tests, mypy, Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.
    The new scheme causes one initial daemon-store miss. Next audit module-pack and daemon
