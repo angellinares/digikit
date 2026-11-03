@@ -9,6 +9,9 @@ import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime
 runtimeTests(
   'empty-store DIGIKIT menu without DSP',
   async ({ session, dk }) => {
+    const status = await session.status();
+    expect(status.dsp).toBe('zero');
+    expect(status.audio).toBeNull();
     const artifacts = liveArtifacts(session, 'menu-zero');
     const plan = await prepareRuntimePlan(session, artifacts, [
       'DKRT_BOOT',
