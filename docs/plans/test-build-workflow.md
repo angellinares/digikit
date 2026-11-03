@@ -93,6 +93,15 @@ planning works; all 59 executable device/conformance and pack targets retain the
 
 ## Acceptance and remaining decisions
 
+Versioning checkpoint: Nx Release separates independent shipped non-core modules from one runtime/SDK
+release; sdk/sdk.toml is canonical and core/runtime's module version mirrors it (baseline aligned to 0.5.4).
+The formatting-preserving TOML adapter rejects unsupported packed versions/mirror drift; dependent bumps,
+git operations and changelogs are disabled. Use only version subcommands; no publishing. Future public
+runtime range >=0.5.4 <0.6.0 is a policy plan only; loading/contracts/binary behavior remain unchanged.
+Evidence: 39 Nx host checks, tracked layercheck and 16 affected preflight tasks pass, including formatting/mirror/packed-version refusal and native filtered
+dry runs with unchanged source/index/tag hashes. Module patch proposes only its manifest; runtime minor
+proposes only canonical SDK and mirror versions (0.5.4 to 0.6.0); no builds or publish/tag commands ran.
+
 - Keep a real-file selection matrix with task IDs, dependencies and reasons; check positive
   coverage and unwanted selection. Leaf changes retain their own conformance.
 - Audit narrowed inputs against meaningful tests. Cached outputs must restore correctly and

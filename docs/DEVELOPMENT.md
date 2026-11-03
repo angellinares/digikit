@@ -3,6 +3,39 @@
 The details behind the [README](../README.md): firmware files, the emulator and its options, tests, analysis tools and the repository
 layout. For modules see [MODULE-AUTHORING.md](MODULE-AUTHORING.md) and [PATCHING.md](PATCHING.md); for tests [TESTING.md](TESTING.md).
 
+## Release versions
+
+Shipped non-core modules own independent `[module].version` values in `module.toml`, including raw
+modules. Fixtures and patched-in core adapters are excluded. Nx derives their `release-module` tag
+from the manifest category and shipped root; the `modules` release group uses those tags.
+
+The runtime release also defines the SDK release: `[runtime].version` in `sdk/sdk.toml` is canonical,
+and `modules/core/runtime/module.toml` mirrors it. The `runtime` group versions that one identity.
+The setup aligns the historical module version `0.1.0` with the existing runtime/SDK version `0.5.4`;
+the adapter refuses a missing or mismatched mirror. SDK contract numbers are a separate internal check.
+
+Preview one version change with Nx's version subcommand:
+
+```sh
+pnpm nx:pilot release version patch --projects=<module-id> --dry-run
+pnpm nx:pilot release version minor --groups=runtime --dry-run
+```
+
+While experimental at `0.x`, choose minor for breaking changes and patch for features/fixes; `1.0.0`
+is an explicit future milestone. Bump names are literal (`minor` changes `0.5.4` to `0.6.0`), and explicit
+versions also work. Packed versions must be plain `major.minor.patch`, each part at most 255; prerelease
+and build suffixes are rejected. Versioning does not bump dependents or rewrite dependency declarations.
+
+The custom adapter changes only quoted version values through Nx's Tree, preserving TOML comments and
+formatting. Git commits, staging, tags, pushing and changelogs are disabled. Use only `nx release version`
+for this workflow; combined release and publishing are not configured or part of these commands.
+Removing `--dry-run` writes the selected metadata for review; generated SDK sources and core objects
+still need their normal generation/build checks before release verification.
+
+The planned public runtime requirement is `>=0.5.4 <0.6.0`. Declaring ranges and changing module-loading
+enforcement are deferred. Current loading still checks SDK contracts, with packed runtime version
+information unchanged; this versioning setup does not implement a new compatibility gate.
+
 ## Firmware files
 
 Modules and patchkit target Digitakt II 1.17 and Digitone II 1.12. The emulator runs

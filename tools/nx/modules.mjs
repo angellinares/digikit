@@ -140,6 +140,7 @@ export const createNodesV2 = [
       const { module: m, object: objects = [] } = read(ctx.workspaceRoot, f);
       const root = dirname(f);
       const project = { name: m.id, root, tags: ['module', `type:${m.type}`] };
+      if (root.startsWith('modules/') && m.category !== 'core') project.tags.push('release-module');
       if (coreBuilds.has(m.id) && imageModules.has(m.id)) project.tags.push('acceptance-image');
       const tests = globSync('tests/**/*.test.ts', { cwd: join(ctx.workspaceRoot, root) }).filter(
         (t) => !testOwners.some(([pf]) => join(root, t).startsWith(dirname(pf) + '/')),

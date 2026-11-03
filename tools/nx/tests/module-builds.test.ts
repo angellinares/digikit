@@ -20,6 +20,7 @@ it('infers core producers from category and source-backed objects, independently
     { dir: 'modules/arbitrary/content', id: 'core/content', category: 'test', sources: ['src/c.c'] },
     { dir: 'modules/arbitrary/prebuilt', id: 'example/prebuilt', category: 'core', sources: [] },
     { dir: 'modules/arbitrary/unrelated', id: 'example/unrelated', category: 'core', sources: ['src/d.c'] },
+    { dir: 'tests/fixtures/modules/release-example', id: 'fixture/example', category: 'tools', sources: ['src/f.c'] },
   ];
   const files = modules.map((m) => {
     const file = `${m.dir}/module.toml`;
@@ -47,4 +48,7 @@ it('infers core producers from category and source-backed objects, independently
   expect(projects[modules[3].dir].targets?.['build-objects']).toBeUndefined();
   expect(projects[modules[4].dir].targets['build-objects']).toBeDefined();
   expect(projects[modules[4].dir].tags).not.toContain('acceptance-image');
+  expect(projects[modules[2].dir].tags).toContain('release-module'); // shipped raw content, no uploadability flags
+  expect(owner.tags).not.toContain('release-module');
+  expect(projects[modules[5].dir].tags).not.toContain('release-module');
 });
