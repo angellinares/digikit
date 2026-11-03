@@ -427,6 +427,20 @@ Set `DIGI_RENDER_CACHE=0` for release and publication gates.
 
 ## Nx cache
 
+Patched-image device and conformance targets first run `build-objects` for the core modules in the
+supported profiles' image closure. The plugin derives the `acceptance-image` tag from those profiles;
+it is not a manually maintained module list. Stock-only targets and runtime host units have no such prerequisite.
+The existing regression device target mixes stock and patched-runtime cases, so its prerequisites prepare the image too.
+
+Each producer checks generated inputs with `patchkit gen --modules ID --check`, then runs the existing
+incremental `patchkit build MODULE_ROOT` under shared benchlock. If generation is stale, run
+`mise run gen:modules -- --modules ID`, inspect the generated diff, and retry. The module filter scopes
+owner-generated files; SDK and firmware-interface generation is shared and is also checked or written.
+Core objects are tracked `build/*.dko.json` outputs: a stale build may update them, and their diff needs review.
+These producers are uncached; patchkit's source hashes skip current objects. Conservative default inputs
+remain in place, so existing graph edges can overselect preparation; narrowing awaits clearer test ownership.
+Repeated per-owner generation checks currently repeat shared SDK/interface checks. This is a future optimization.
+
 `pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The local cache is
 per worktree; the "Remote cache" section covers sharing across worktrees. A hit
 replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.

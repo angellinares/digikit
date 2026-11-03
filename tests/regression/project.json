@@ -27,6 +27,7 @@
       "cache": false,
       "dependsOn": [
         "patchkit:cli",
+        { "target": "build-objects", "projects": ["tag:acceptance-image"] },
         "digi-control:daemons",
         "digikit/probe:pack",
         "digikit/remote:pack",

@@ -20,7 +20,11 @@ type ProjectGraph = {
     {
       data: {
         root: string;
-        targets: Record<string, { options?: { command?: string }; inputs?: unknown[] }>;
+        tags?: string[];
+        targets: Record<
+          string,
+          { options?: { command?: string }; inputs?: unknown[]; outputs?: string[]; cache?: boolean }
+        >;
         metadata?: { runtimeAcceptance?: { files?: string[]; sources?: string[] }[] };
       };
     }
@@ -64,6 +68,60 @@ function imageConsumer(): string {
     ([, node]) => node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'],
   )![0];
 }
+
+it('prepares precisely the declared image core objects before patched-image consumers', () => {
+  const consumers = ['core/runtime-tests:test-device', `${imageConsumer()}:test-conformance`, 'regression:test-device'];
+  const image = workspace.nodes['core/runtime-tests'].data.targets['test-device'].inputs!.find(
+    (input): input is { input: string; projects: string[] } =>
+      typeof input === 'object' && input !== null && 'projects' in input,
+  )!;
+  const expected = image.projects.filter((id) => workspace.nodes[id].data.targets['build-objects']).sort();
+  expect(expected.length).toBeGreaterThan(0);
+  for (const consumer of consumers) {
+    const graph = plan(['run', consumer]).tasks;
+    const producers = Object.values(graph.tasks).filter((task) => task.target.target === 'build-objects');
+    expect(producers.map((task) => task.target.project).sort(), consumer).toEqual(expected);
+    expect(
+      graph.dependencies[consumer].map((dep) => dep.id),
+      consumer,
+    ).toEqual(expect.arrayContaining(expected.map((id) => `${id}:build-objects`)));
+    for (const producer of producers) {
+      const id = `${producer.target.project}:build-objects`;
+      expect(graph.dependencies[id].map((dep) => dep.id)).toContain('patchkit:cli');
+      expect(workspace.nodes[producer.target.project].data.targets['build-objects'].cache).toBe(false);
+    }
+    expect(graph.dependencies['core/runtime:build-objects'].map((dep) => dep.id)).toContain(
+      'core/expansion:build-objects',
+    );
+  }
+}, 30_000);
+
+it('keeps stock and runtime host units independent of core-object preparation', () => {
+  for (const target of ['gate-stock:stock', 'core/runtime:rust-tests']) {
+    const graph = plan(['run', target]).tasks;
+    expect(
+      Object.values(graph.tasks).filter((task) => task.target.target === 'build-objects'),
+      target,
+    ).toEqual([]);
+  }
+}, 30_000);
+
+it('selects core preparation for source edits and declares external Rust build sources', () => {
+  const graph = selected('modules/core/apps/digikit-menu/src/menu.c', 'build-objects');
+  expect(graph.tasks['core/digikit-menu:build-objects']).toBeDefined();
+  expect(Object.values(graph.tasks).some((task) => task.target.target === 'test-device')).toBe(false);
+  const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime:build-objects', '--json']));
+  for (const source of [
+    'modules/core/runtime/src/rs/src/lib.rs',
+    'modules/core/runtime/sdk/src/device.rs',
+    'modules/core/fw/rs/src/lib.rs',
+    'packages/dkneeds/src/lib.rs',
+  ])
+    expect(inputs.files, source).toContain(source);
+  const outputs = JSON.parse(nx(['show', 'target', 'outputs', 'core/ui:build-objects', '--json']));
+  expect(outputs.outputPaths).toEqual(['modules/core/adapters/ui/build/ui.dko.json']);
+  expect(outputs.expandedOutputs).toEqual(outputs.outputPaths);
+}, 30_000);
 
 it('declares patch-image sources and objects without consumer acceptance files', () => {
   const conformance = JSON.parse(nx(['show', 'target', 'inputs', `${imageConsumer()}:test-conformance`, '--json']));

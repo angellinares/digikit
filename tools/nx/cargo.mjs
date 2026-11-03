@@ -13,7 +13,8 @@ const KINDS = ['dependencies', 'dev-dependencies', 'build-dependencies'];
 // CLI builds into dist/ (gitignored). Copy then rename: a running process keeps the old file.
 const CLI = {
   patchkit: {
-    build: 'cargo build -p patchkit --release --offline --target-dir dist/cargo',
+    build:
+      'uv run python -m tools.devtools.benchlock run --shared --label patchkit-cli -- cargo build -p patchkit --release --offline --target-dir dist/cargo',
     bin: 'patchkit',
     dir: 'patchkit',
   },

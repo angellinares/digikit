@@ -10,6 +10,7 @@ import { parse } from 'smol-toml';
 const read = (root, toml) => parse(readFileSync(join(root, toml), 'utf8'));
 // Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
 const PK = 'dist/patchkit/patchkit --root .';
+const IMAGE_BUILD = { target: 'build-objects', projects: ['tag:acceptance-image'] };
 
 // The devices a module packs for: no ports means both devices.
 const packDevices = (m) => {
@@ -57,7 +58,7 @@ const records = (root) => {
 };
 
 const deviceTarget = (root, tests, recs, imageInput, uploadable = false) => {
-  const dependsOn = ['patchkit:cli', 'digi-control:daemons'];
+  const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD];
   if (uploadable) dependsOn.push('pack');
   for (const rec of recs) {
     for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
@@ -92,7 +93,15 @@ export const createNodesV2 = [
       .filter(([, p]) => p.tags?.includes('test-only'));
     // id -> manifest, so an alias can find the devices of its source module.
     const byId = new Map(
-      files.map((f) => [read(ctx.workspaceRoot, f).module.id, { manifest: read(ctx.workspaceRoot, f).module }]),
+      files.map((f) => {
+        const parsed = read(ctx.workspaceRoot, f);
+        return [parsed.module.id, { manifest: parsed.module, objects: parsed.object ?? [] }];
+      }),
+    );
+    const coreBuilds = new Set(
+      [...byId]
+        .filter(([, { manifest, objects }]) => manifest.category === 'core' && objects.some((o) => o.sources?.length))
+        .map(([id]) => id),
     );
     // Patch image composition follows module.requires, not acceptance-fixture graph edges.
     const imageModules = new Set();
@@ -128,9 +137,10 @@ export const createNodesV2 = [
       }
     }
     const nodes = files.map((f) => {
-      const { module: m } = read(ctx.workspaceRoot, f);
+      const { module: m, object: objects = [] } = read(ctx.workspaceRoot, f);
       const root = dirname(f);
       const project = { name: m.id, root, tags: ['module', `type:${m.type}`] };
+      if (coreBuilds.has(m.id) && imageModules.has(m.id)) project.tags.push('acceptance-image');
       const tests = globSync('tests/**/*.test.ts', { cwd: join(ctx.workspaceRoot, root) }).filter(
         (t) => !testOwners.some(([pf]) => join(root, t).startsWith(dirname(pf) + '/')),
       );
@@ -141,6 +151,26 @@ export const createNodesV2 = [
       const uploadable = isUploadable(root, m);
       const recs = records(join(ctx.workspaceRoot, root));
       const devices = packDevices(m);
+      if (coreBuilds.has(m.id))
+        targets['build-objects'] = {
+          executor: 'nx:run-commands',
+          cache: false,
+          description:
+            'Check generated sources, then incrementally build committed core objects; may update tracked outputs.',
+          dependsOn: [
+            'patchkit:cli',
+            ...(m.requires ?? []).filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`),
+          ],
+          outputs: objects.filter((o) => o.sources?.length).map((o) => `{workspaceRoot}/${root}/${o.path}`),
+          options: {
+            commands: [
+              `${PK} gen --modules ${m.id} --check`,
+              `uv run python -m tools.devtools.benchlock run --shared --label module-build -- ${PK} build ${root}`,
+            ],
+            parallel: false,
+            cwd: '.',
+          },
+        };
       if (devices.length && packable.has(m.id))
         targets.pack = {
           executor: 'nx:run-commands',
@@ -202,7 +232,7 @@ export const createNodesV2 = [
           executor: 'nx:run-commands',
           cache: true,
           inputs: [...DEVICE_INPUTS, imageInput],
-          dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons'],
+          dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD],
           outputs: [],
           options: {
             command: 'pnpm --filter @digi/regression test:conformance',
