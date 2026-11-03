@@ -222,7 +222,24 @@ export const createNodesV2 = [
       const recs = records(join(ctx.workspaceRoot, root));
       if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
         throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
-      const target = deviceTarget(root, tests, recs, imageInput, importInputs);
+      // Explicit fixture images build only their manifest requirements; ordinary owners keep the default image.
+      const patchRoots = [...new Set(recs.flatMap((rec) => rec.patchModules ?? []))];
+      const patchIds = patchRoots.length
+        ? manifestClosure(byId, patchRoots).map((file) => read(ctx.workspaceRoot, file).module.id)
+        : undefined;
+      const target = deviceTarget(
+        root,
+        tests,
+        recs,
+        patchIds ? { input: 'production', projects: patchIds } : imageInput,
+        importInputs,
+      );
+      if (patchIds)
+        target.dependsOn = target.dependsOn.flatMap((dependency) =>
+          dependency === IMAGE_BUILD
+            ? patchIds.filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`)
+            : [dependency],
+        );
       const targetName = config.tags.includes('tier:full') ? 'test-device-full' : 'test-device';
       if (targetName === 'test-device-full') target.options.env.DIGIKIT_TIER = 'full';
       // This new target identity awaits input/output and cache-behavior evidence.
