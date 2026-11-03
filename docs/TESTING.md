@@ -405,11 +405,15 @@ The no-AOT halves of `tier-quick` and `tier-sweep` use `NO_AOT_SUBSET` in `tools
 
 The gate limits CPU use through Nx and the shared benchlock.
 
-- Nx runs at most 2 tasks at once (`--parallel 2`). Device targets (module `test-device` and
-  `test-conformance`, regression `test-device`) run up to 2 at a time with `REGRESSION_JOBS=2` vitest
-  workers each. 2 targets x `REGRESSION_JOBS=2` x 2 cores per emulator is about 8 emulator cores, the
-  same budget the old gate gave the runtime suite on a 16-core machine; at 3, a load-sensitive FX page
-  test failed. The other heavy targets set `parallelism: false` and run one at a time. The gate runs at nice 10 under the shared benchlock.
+- Nx runs at most 3 tasks at once by default (`nx.json`); `test` and `test:full` inherit that
+  setting. Override it with, for example, `mise run test -- --parallel=2`. Device targets
+  (module `test-device` and `test-conformance`, regression `test-device`) use
+  `REGRESSION_JOBS=2` Vitest workers each. 3 targets x 2 workers x 2 cores per emulator is
+  about 12 emulator cores on a 16-core machine. Other heavy targets set `parallelism: false`
+  and run one at a time. The gate runs at nice 10 under the shared benchlock. The repaired
+  affected gate passed all 140 tasks at three-task concurrency; see the
+  [workflow evidence](plans/test-build-workflow.md#limits-of-current-evidence). Split or shorten
+  long owners only after proving isolation before considering another concurrency increase.
 - Pool sizes inside a target have defaults from the machine and can be set by variable:
   `DIGI_PY_JOBS` (Python test files at once), `DIGI_TIER_JOBS` (coupled-run processes of the tier
   sweeps), `DIGI_PK_JOBS` (patchkit smoke cells), `DIGI_JOBS`, `DIGIKIT_JOBS`, `DIGI_CONFORM_JOBS`,

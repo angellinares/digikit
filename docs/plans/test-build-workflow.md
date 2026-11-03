@@ -305,12 +305,32 @@ alignment shift of 192 against a raw bound of 128. The shared comparator reports
 interleaved stereo samples, so that shift is 96 frames. Both assertions now divide
 the reported shift by two, retaining the existing 128-frame bound. The same named
 DN2 case then passed with shift 192 in 193.84 s. Lint, Prettier, regression
-typecheck and `git diff --check` passed. DT2 and the affected merge gate have not
-been rerun after this fix; a green gate remains unproven. The next merge
-checkpoint remains `mise run test` on the repaired tree.
+typecheck and `git diff --check` passed. At this checkpoint DT2 and the affected merge gate had not
+been rerun after this fix; the subsequent green gate is recorded below.
 This documentation checkpoint passes Prettier, `git diff --check` and
 `DIGI_GATE_BASE=HEAD mise run test:changed` (zero selected tasks).
 
-No measured speedup or green full gate is claimed. Task-level affected selection is the default after
+At the earlier checkpoints no measured speedup or green gate was established. Task-level affected selection is the default after
 matrix review; the repository workflow no longer maintains legacy-mode compatibility branches.
 No device coverage has been removed, and no new device-test cache boundary has been established.
+
+Final affected-gate checkpoint (2026-11-04):
+`DIGI_GATE_BASE=main mise run test -- --parallel=3`, with `NX_PROFILE` enabled,
+completed all 140 tasks successfully (23 cached) in 66m 51s on the repaired tree.
+Log: `/tmp/digikit-nx24-final-gate.log`; profile:
+`/tmp/digikit-nx24-final-profile.json`. Nx reported a 19m 55s critical path
+(eight tasks) and 46m 56s recoverable time. Long target durations included
+`core/runtime-tests:test-device` (19.9m), `core/fxpages:test-device` (16.8m),
+`core/fx:test-device` (12.4m), `digikit/freqshift:test-device` (11.3m),
+`digikit/shot:test-device` (10.8m) and `gate-smoke:smoke` (4.4m).
+The earlier 97m 36s gate used two-task concurrency, failed three tasks and had
+only 10 cache hits. These runs are not a controlled A/B and establish no measured
+speedup. The green run supports inheriting the existing `nx.json` default of
+three tasks in both `test` and `test:full`; their target lists are unchanged.
+The next opportunity is to prove isolation and then split or shorten long owners,
+not to raise concurrency based solely on Nx's recoverable-time estimate.
+
+The default and explicit `--parallel=3` test plans have identical selection bodies;
+both task commands retain their target lists. Prettier, `git diff --check` and
+`DIGI_GATE_BASE=HEAD mise run test:changed` pass (zero selected tasks). The device
+and full gates were not repeated for this command-default/documentation change.
