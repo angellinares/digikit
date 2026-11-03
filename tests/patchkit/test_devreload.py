@@ -82,10 +82,32 @@ def test_zero_safe_base_still_requires_sharc_for_content_dsp():
 
 def test_stop_checks_both_modes_without_resolving_changed_modules(monkeypatch):
     emulators = [Mock(), Mock()]
-    connect = Mock(side_effect=emulators)
+    connect = Mock(side_effect=[*emulators, None])
     monkeypatch.setattr(dev, "connect", connect)
     dev.stop("dn2", "removed/module")
-    assert connect.call_count == 2
+    assert connect.call_count == 3
     for emu in emulators:
         emu.quit.assert_called_once()
         emu.close.assert_called_once()
+
+
+def test_stop_reaches_exact_legacy_directory_for_same_device_target_store_and_trace(
+    monkeypatch,
+):
+    legacy = Mock()
+    visited = []
+    expected = dev.H.OUT / "run-devreload-dn2-test_ui-demo+store-digikit_pluck+trace"
+
+    def connect(path):
+        visited.append(path)
+        return legacy if path == expected else None
+
+    monkeypatch.setattr(dev, "connect", connect)
+    dev.stop("dn2", "test/ui-demo", ["digikit/pluck"], trace=True)
+    assert visited == [
+        expected.with_name(expected.name + "-zero"),
+        expected.with_name(expected.name + "-sharc"),
+        expected,
+    ]
+    legacy.quit.assert_called_once()
+    legacy.close.assert_called_once()

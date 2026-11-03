@@ -223,7 +223,7 @@ def run_dir_of(
     target: str,
     store: list[str] | None = None,
     trace: bool = False,
-    dsp: str = "sharc",
+    dsp: str | None = "sharc",
 ) -> Path:
     slug = re.sub(
         r"[^A-Za-z0-9.+-]+",
@@ -232,7 +232,9 @@ def run_dir_of(
         + ("+store-" + ",".join(store) if store else "")
         + ("+trace" if trace else ""),
     )
-    return H.OUT / f"run-devreload-{device}-{slug}-{dsp}"
+    # None names the exact pre-mode directory, used only to stop legacy daemons.
+    suffix = f"-{dsp}" if dsp is not None else ""
+    return H.OUT / f"run-devreload-{device}-{slug}{suffix}"
 
 
 def connect(run_dir: Path) -> Emu | None:
@@ -352,7 +354,7 @@ def stop(
     device: str, target: str, store: list[str] | None = None, trace: bool = False
 ) -> None:
     stopped = False
-    for dsp in ("zero", "sharc"):
+    for dsp in ("zero", "sharc", None):
         run_dir = run_dir_of(device, target, store, trace, dsp)
         emu = connect(run_dir)
         if emu is None:
@@ -361,7 +363,7 @@ def stop(
             emu.quit()
         emu.close()
         stopped = True
-        print(f"{device}: {dsp} daemon stopped")
+        print(f"{device}: {dsp or 'legacy'} daemon stopped")
     if not stopped:
         print(f"{device}: no daemon for {target}")
 
