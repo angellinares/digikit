@@ -181,7 +181,7 @@ New unit tests with no Python counterpart: a full map whose entries are all in t
 
 ## capacity, inferred-needs, fits, menu-open, isolation (dt2 and dn2; C `tools/patchkit/pk_digikit_capacity.py`, K `tools/patchkit/pk_capacity.py`; Python deleted)
 
-Status: proven on DT2 and DN2 (2026-11-03). TS tests: `modules/core/runtime/tests/capacity.device.test.ts` (below `capacity.test`), `modules/core/apps/digikit-menu/tests/fits.device.test.ts` (`fits.test`). Helper: `tests/regression/runtime/synth.ts` (typed `synth-dkm` spec, packing, geometry). K stays for `memaudit-*-full` and `test_capacity_sets.py`.
+Status: proven on DT2 and DN2 (2026-11-03). TS tests: `modules/core/runtime/tests/capacity.device.test.ts` (below `capacity.test`), `modules/core/apps/digikit-menu/tests/fits.device.test.ts` (`fits.test`). Helper: `tests/regression/runtime/synth.ts` (typed `synth-dkm` spec, packing, geometry). `fullSet` and its types moved from the capacity test into `synth.ts` (the memaudit full variant uses them). `pk_capacity.py` and `test_capacity_sets.py` are deleted; `fullSet` throws when the sizes do not fit the profile.
 The pure limit logic (first-fit DSP placement, row counting, registry rows, type range, stage and read fit) is unit-tested in `modules/core/runtime/sdk/src/capacity.rs` and `sticky.rs`; the device tests keep what a unit cannot: the real loader on the real memory map.
 Names in `capacity.test`: **full set CF** = "capacity, ColdFire only > full set: every limit is filled ..."; **files** and **arena** likewise; **full set coupled** = "capacity, coupled > full set behind a real module ..."; **needs** = "inferred needs > ID: the resources taken are the needs inferred from its contents" (full tier, 12 modules per device).
 
@@ -227,13 +227,13 @@ Differences that apply to many lines:
 - The Python `capacity` cases booted in threads, one rig per case, ColdFire-only. In TS one daemon per describe block boots the cases one after the other; the full set, files and arena run on a ColdFire-only daemon (`dsp: 'zero'`), the coupled full set and the needs on a coupled daemon with `hold: true`.
 - The full set has no reference module on the ColdFire-only daemon: a DSP reference's registry rows come after the DSP acknowledges, so machine types and rows would not add up there.
 
-## memaudit (dt2 and dn2, quick; D `run_memaudit`; clean and stray ported, `-full` stays Python)
+## memaudit (dt2 and dn2, quick; D `run_memaudit`; all variants ported; Python deleted)
 
-Status: proven on DT2 and DN2 (full tier, 2026-11-03). The scenarios `memaudit-{dt2,dn2}` and `memaudit-{dt2,dn2}-stray` and `pk_modaudit.py` are deleted. `memaudit-{dt2,dn2}-full` and `pk_digikit_memaudit.py` remain for the full synthetic set (B2). The test is `modules/core/runtime/tests/memaudit.device.test.ts`; the helpers are `tests/regression/runtime/memaudit-kit.ts` (guard plan, writer names, module sets) and `memaudit-suite.ts` (the two daemons), and `project-kit.ts` (the panel drive).
+Status: proven on DT2 and DN2 (full tier, 2026-11-03). The scenarios `memaudit-{dt2,dn2}` and `memaudit-{dt2,dn2}-stray` and `pk_modaudit.py` are deleted. `memaudit-{dt2,dn2}-full` and `pk_digikit_memaudit.py` are deleted too (full variant in the same test, `full` tier). The test is `modules/core/runtime/tests/memaudit.device.test.ts`; the helpers are `tests/regression/runtime/memaudit-kit.ts` (guard plan, writer names, module sets) and `memaudit-suite.ts` (the two daemons), and `project-kit.ts` (the panel drive).
 
 memaudit | D:run_memaudit | every module of the set loaded (ColdFire part), count, no safe mode | -> memaudit.device.test.ts: the set loads ... (`bootInfo`: safe 0, count, results 0 or LOADING)
 memaudit | D:run_memaudit | MODULES lists the loaded modules and every block lies inside the arena | -> memaudit.device.test.ts: the set loads ... (`dk.modules()`, `arenaBounds`)
-memaudit | D:run_memaudit | the full set uses the arena and the DSP area to the last byte | NOT PORTED: only the `-full` scenarios (still Python)
+memaudit | D:run_memaudit | the full set uses the arena and the DSP area to the last byte | -> memaudit.device.test.ts: full set > drive (`fullSet` behind test/dyn-demo; the three refused modules with their codes in the boot record; `dk.capacity()`: ARENA limit - used = 0, largest 0, DSP_AREA largest < granule 64)
 memaudit | D:plan_guard, arm | protect the free cf regions minus the module blocks, arena labelled, allowed PCs = placed patch code | -> memaudit-kit.ts `guardPlan`, `patchCode` (the plan's `writes`); `guard.set` in the test
 memaudit | D:drive | DIGIKIT menu, MODULES, project save, machine on the track, p-lock, save, load | -> memaudit-kit.ts `driveAuditUi`, project-kit.ts `buildPanelProject`, `savePanelProject`, `loadPanelProject`, `selectDt2`
 memaudit | D:run_memaudit | the must_run module's block changed while the guard was armed | -> memaudit.device.test.ts: same test (`moduleBlocks`, `bytesChanged`)

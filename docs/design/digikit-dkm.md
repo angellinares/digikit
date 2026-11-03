@@ -110,7 +110,7 @@ It does not read the image, the tables' entries, the records' bodies or the DSP 
 Names that are capacity kinds (`[capacity.kinds]` of `sdk/sdk.toml`) are in the unit of that kind's CAPACITY entry, so "fits" is need <= limit - used, with the largest free block for the arena and the DSP area.
 
 Who calls it: the DIGIKIT menu (`modules/core/apps/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
-`patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`, `pk_capacity`). The arithmetic exists once.
+`patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`). The arithmetic exists once.
 
 The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit` in `modules/core/runtime/fit`, vectors in `sdk/vectors/fit-vectors.json`; the compare and the needs are each written once, in Rust: the web app calls the compare through `pk_fit` and the tools through `patchkit fit --json -`): the staging buffer holds the file, a module record and a selection path are free,
 the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most

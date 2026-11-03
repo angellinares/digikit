@@ -72,8 +72,10 @@ This PR (branch `test/watchdog-default`):
        library.
      - B3: done on branch `test/memaudit-device`. memaudit clean and stray are
        `modules/core/runtime/tests/memaudit.device.test.ts`; `module:audit` runs
-       `memaudit-module.device.test.ts` through `tools/devtools/module_audit.sh`. `memaudit-*-full` and
-       `pk_digikit_memaudit.py` stay until B2's generator lands.
+       `memaudit-module.device.test.ts` through `tools/devtools/module_audit.sh`. memaudit-full is done on branch
+       `test/memaudit-full` (full-set builder moved to `synth.ts`); `memaudit-*-full`,
+       `pk_digikit_memaudit.py`, `pk_capacity.py` and `test_capacity_sets.py` are deleted. `P.spec` of the
+       Python tests is `tests/support/synth_spec.py`.
      - Dropped: menu-open and the isolation PCM comparison.
    - Future: capacity tests through a committed set of fixture modules uploaded into a running
      emulator (one per limit, arena-fill and expansion variants). This could replace B2's generator and

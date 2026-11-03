@@ -150,3 +150,91 @@ export const block = (n: number): number => ((n + 15) & ~15) + ARENA_HDR;
 
 /** `pad` of a raw module whose file is `stageBytes + extra` bytes (the file is the header, the code and the pad). */
 export const stageFilePad = (stageBytes: number, extra = 0): number => stageBytes + extra - DKM_HEADER - CODE;
+
+// ---- the full set: every limit used at once (capacity.device.test.ts, memaudit.device.test.ts) ---------------------------------
+
+export const E_NOMEM = -8;
+export const E_DSP_NOSPACE = -33;
+export const E_DSP_ROWS = -34;
+export const LOADED = 'loaded';
+/** The result a module must give at boot: loaded, or the loader's error code. */
+export type Want = number | typeof LOADED;
+
+/** What a packed module takes of each resource (`patchkit needs`). */
+export interface Usage {
+  arena: number;
+  arenaXfer: number;
+  dspLen: number;
+  dspAlign: number;
+  rows: number;
+  machines: number;
+  params: number;
+  pages: number;
+}
+
+export function usageOf(n: Record<string, number>): Usage {
+  return {
+    arena: n.ARENA!,
+    arenaXfer: n.ARENA_XFER!,
+    dspLen: n.DSP_AREA!,
+    dspAlign: n.DSP_ALIGN!,
+    rows: n.VOICE_ROWS!,
+    machines: n.MACHINE_ROWS!,
+    params: n.PARAM_ROWS!,
+    pages: n.PAGE_ROWS!,
+  };
+}
+
+/**
+ * The modules that, behind the reference modules REFS (loaded first), use every limit at once, followed by three that do not fit:
+ * M takes the machine types, parameter rows and page rows the references leave; V the voice rows (pinned types, behind the references' hashed ones);
+ * D the DSP area, to its last whole granule; F the arena, to the last byte (the references' and V's and D's blocks and the arena copies of their DSP
+ * images counted: a ColdFire-only rig keeps those until a transfer that never comes). Then X (a raw module: E_NOMEM), Y (a voice: E_DSP_ROWS) and
+ * Z (a DSP module: E_DSP_NOSPACE).
+ */
+export function fullSet(g: Geometry, refs: Usage[]): { spec: SynthSpec; want: Want }[] {
+  const sum = (key: keyof Usage) => refs.reduce((n, r) => n + r[key], 0);
+  const typesLeft = g.machineRows - sum('machines');
+  const rowsLeft = g.machineRows - sum('rows');
+  const paramsLeft = g.paramRows - sum('params');
+  const pagesLeft = g.pageRows - sum('pages');
+  if (refs.length + 7 > g.modules)
+    throw new Error(`the full set needs ${refs.length + 7} modules, the device has ${g.modules}`);
+  if (rowsLeft > MAX_VOICES || rowsLeft < 1 || typesLeft < 1)
+    throw new Error(`the references leave ${rowsLeft} rows and ${typesLeft} types`);
+  if (pagesLeft > typesLeft)
+    throw new Error(`${pagesLeft} page rows left, but only ${typesLeft} machines to put them on`);
+  const firstPinned = g.typeFirst + sum('rows');
+  // the DSP area: references, then V (one granule), then D takes every whole granule left (first fit from the area's start, each range at the
+  // first address its alignment allows)
+  let cursor = 0;
+  for (const [length, align] of [
+    ...refs.filter((r) => r.dspLen).map((r) => [r.dspLen, r.dspAlign] as const),
+    [DSP_GRANULE, 8] as const,
+  ]) {
+    const start = Math.ceil((g.dspBase + cursor) / align) * align - g.dspBase;
+    cursor = start + length;
+  }
+  const dStart = Math.ceil((g.dspBase + cursor) / 8) * 8 - g.dspBase;
+  const dLen = Math.floor((g.dspArea - dStart) / DSP_GRANULE) * DSP_GRANULE;
+  if (dLen < DSP_GRANULE) throw new Error('the references leave no DSP area for D');
+  // every raw block is `block(CODE)`; V's and D's DSP images keep an arena copy of `block(64)` each (as does every reference's)
+  const used = refs.reduce((n, r) => n + r.arena + r.arenaXfer, 0) + 3 * block(CODE) + 2 * block(DSP_GRANULE);
+  const fTotal = g.arenaFree - used - 16;
+  if (fTotal < CODE) throw new Error('the references leave no arena for F');
+  return [
+    { spec: { name: 'cap/full-m', machines: typesLeft, params: paramsLeft, pages: pagesLeft }, want: LOADED },
+    {
+      spec: {
+        name: 'cap/full-v',
+        dsp: { image: 64, voices: pinned(Array.from({ length: rowsLeft }, (_, i) => firstPinned + i)) },
+      },
+      want: LOADED,
+    },
+    { spec: { name: 'cap/full-d', dsp: { image: 64, bss: dLen - 64 } }, want: LOADED },
+    { spec: { name: 'cap/full-f', bss: fTotal - CODE }, want: LOADED },
+    { spec: { name: 'cap/full-x' }, want: E_NOMEM },
+    { spec: { name: 'cap/full-y', dsp: { image: 64, voices: pinned([firstPinned]) } }, want: E_DSP_ROWS },
+    { spec: { name: 'cap/full-z', dsp: { image: 64 } }, want: E_DSP_NOSPACE },
+  ];
+}

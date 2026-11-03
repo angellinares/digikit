@@ -1,8 +1,9 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { DkModule } from '@digi/dk-session';
 import type { Device } from '@digi/test-support';
-import { describe, expect, test } from 'vitest';
+import { afterAll, describe, expect, test } from 'vitest';
 import { record } from './artifacts.ts';
 import { bootInfo } from './card-kit.ts';
 import { CARD_SYMBOLS, cardRig, RT, type CardRig, type CardSpec } from './card-rig.ts';
@@ -20,8 +21,10 @@ import {
   moduleBlocks,
   type GuardPlan,
 } from './memaudit-kit.ts';
+import { needsOf } from './dkm.ts';
 import { dynType, type PanelMachine } from './project-kit.ts';
 import { dmaHoles } from './write-safety.ts';
+import { DSP_GRANULE, fullSet, geometryOf, LOADED, packSynth, usageOf, type Want } from './synth.ts';
 
 /**
  * The ColdFire memory audit as a device test (port of the `memaudit` part of pk_digikit_memaudit.py; protected ranges and allowed writers: memaudit-kit.ts).
@@ -49,6 +52,8 @@ export interface AuditSet {
   sweep?: number;
   /** Negative control: the one store the audit must report, by this module's code, in the arena. */
   stray?: string;
+  /** Behind the modules, the full set of the capacity tests (synth.ts `fullSet`): every limit used, three modules refused. */
+  full?: boolean;
 }
 
 export interface AuditOptions {
@@ -85,9 +90,13 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
         let guard: GuardPlan | undefined;
         let blocks: DkModule[] = [];
         let cardSpec: CardSpec | undefined;
+        const synthDir = spec.full ? fs.mkdtempSync(path.join(os.tmpdir(), 'digi-memaudit-synth-')) : '';
+        afterAll(() => {
+          if (synthDir) fs.rmSync(synthDir, { recursive: true, force: true });
+        });
         const base = {
           roots: [...RT, 'core/digikit-menu'],
-          symbols: [...CARD_SYMBOLS, 'DKRT_ASSIGN'],
+          symbols: [...CARD_SYMBOLS, 'DKRT_ASSIGN', 'DKRT_ARENA', '_dl_area'],
           dsp: 'zero' as const,
         };
         // a negative control's guard hit is a fault event of the session: the case end must not fail on it (the test judges the faults itself)
@@ -113,29 +122,51 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
                 if ('skip' in m) return ctx.skip(m.skip);
                 mods.push(m);
               }
+              const wants: Want[] = mods.map(() => LOADED);
+              const loaded = [...spec.modules]; // the module ids MODULES must list
+              if (spec.full) {
+                // the second daemon builds the same card: the files must outlive the first daemon's artifact directory
+                const g = geometryOf(device, h.plan);
+                const fill = fullSet(g, (await needsOf(mods.map((m) => m.file))).map(usageOf));
+                for (const [i, f] of fill.entries()) {
+                  mods.push({
+                    name: `modules/full${i}.dkm`,
+                    file: await packSynth(device, f.spec, synthDir, `${i}.dkm`),
+                  });
+                  wants.push(f.want);
+                  if (f.want === LOADED) loaded.push(f.spec.name);
+                }
+              }
               cardSpec = { modules: mods, selection: mods.map((m) => m.name) };
               const runtime = await h.load('audit', cardSpec);
               const { session } = runtime;
 
               const info = await bootInfo(session, h.plan);
               expect(info.safe, 'not in safe mode').toBe(0);
-              expect(info.count, 'every module of the set is in the boot record').toBe(spec.modules.length);
+              expect(info.count, 'every module of the set is in the boot record').toBe(mods.length);
               expect(
-                info.results.every((r) => r === 0 || r === E_LOADING),
-                `every module loaded (ColdFire part): ${JSON.stringify(info.results)}`,
+                info.results.every((r, i) => (wants[i] === LOADED ? r === 0 || r === E_LOADING : r === wants[i])),
+                `every module loaded (ColdFire part), the refused ones with their code: ${JSON.stringify(info.results)} for ${JSON.stringify(wants)}`,
               ).toBe(true);
 
-              const modules = await pausedProtocol(runtime, (dk) => dk.modules());
+              const { modules, cap } = await pausedProtocol(runtime, async (dk) => ({
+                modules: await dk.modules(),
+                cap: await dk.capacity(),
+              }));
               blocks = modules;
               const arena = await arenaBounds(session, h.plan);
-              expect(modules.map((m) => m.name).sort(), 'MODULES lists the loaded modules').toEqual(
-                [...spec.modules].sort(),
-              );
+              expect(modules.map((m) => m.name).sort(), 'MODULES lists the loaded modules').toEqual([...loaded].sort());
               for (const m of modules)
                 expect(
                   arena[0] <= m.cf_base && m.cf_base + m.cf_size <= arena[1],
                   `${m.name}: the block lies inside the arena ${arena.map((a) => a.toString(16))}`,
                 ).toBe(true);
+
+              if (spec.full)
+                expect(
+                  [cap.ARENA!.limit - cap.ARENA!.used, cap.ARENA!.largest, cap.DSP_AREA!.largest < DSP_GRANULE],
+                  'the full set uses the arena to its last byte and the DSP area to its last whole granule',
+                ).toEqual([0, 0, true]);
 
               const plan = guardPlan(device, FIRMWARE[device], h.plan, modules, arena);
               guard = plan;

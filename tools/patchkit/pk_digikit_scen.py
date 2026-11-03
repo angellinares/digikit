@@ -9,7 +9,7 @@ globbing; no list names them; the names are unique across both places):
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "menu" | "upload" | "debug" | "pages" | "fx"
+    kind = "equiv" | "menu" | "upload" | "pages" | "fx"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -36,9 +36,6 @@ Kinds:
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
   card       `[card] part = "torn"` only: a power cut inside the first writes to a blank card (finding 46, residual risk). The other card-safety
              cases are the TypeScript card-safety test.
-  debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
-             The plain part also checks MODULES.
-             `part = "guard"` (both images): the runtime guard on a NaN fixture.
   crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
@@ -1075,12 +1072,6 @@ def run_upload(c: Ctx) -> None:
     U.run_upload(c)
 
 
-def run_debug(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_debug(c)
-
-
 def run_pages(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_pages as PG
 
@@ -1089,7 +1080,6 @@ def run_pages(c: Ctx) -> None:
 
 KINDS = {
     "pages": run_pages,
-    "debug": run_debug,
     "equiv": run_equiv,
     "upload": run_upload,
     "menu": run_menu,
@@ -1192,7 +1182,6 @@ def _run_pairs(
     t0 = time.monotonic()
     rank = {
         "upload": 1,
-        "debug": 1,
         "equiv": 4,
     }
     order = sorted(pairs, key=lambda p: rank.get(p[0].kind, 9))

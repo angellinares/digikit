@@ -2,12 +2,12 @@
 
 import pytest
 
+from tests.support import synth_spec as P
 from tools.device import dklog as L
 from tools.device import dkproto
 from tools.device import dkrun as R
 from tools.device import dkupload as D
 from tools.patchkit import patchkit as PK
-from tools.patchkit import pk_capacity as P
 
 UP = L.K["UPLOAD"]
 

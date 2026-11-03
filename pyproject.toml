@@ -57,8 +57,6 @@ files = [
     "tools/patchkit/modroots.py",
     "tools/patchkit/pk_conform.py",
     "tools/patchkit/pk_modcheck.py",
-    "tools/patchkit/pk_digikit_memaudit.py",
-    "tools/patchkit/pk_capacity.py",
     "tools/patchkit/pk_digikit_fx.py",
     "tools/patchkit/pk_digikit_fxsend.py",
     "tools/patchkit/pk_digikit_fxroute.py",

@@ -300,7 +300,6 @@ and a table named like the kind. Kinds:
 | `equiv` | Machine, parameter, page and voice rows of a boot with set S equal those of the image patchkit builds with S's static twin; PCM of a note equal, or pinned by `pcm_sha256` (Em approves a new value). |
 | `upload` | Module upload over USB SysEx: only `rust` is Python. The other parts are in `modules/core/runtime/tests/upload.device.test.ts` and `upload-faults.device.test.ts`. |
 | `menu` | Ticking a set in SETTINGS > DIGIKIT > MODULES and restarting loads the set; PCM equals the patched-in set. |
-| `debug` | Part `memaudit` (below). The log, guard, crash and safe-mode scenarios are TypeScript device tests: `modules/tools/debug/tests/debug-module.device.test.ts` and `modules/core/runtime/tests/{debug-guard,crash-capture,safe-mode}.device.test.ts`. |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)
 and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default; `gate:full` sets `full`.
@@ -316,15 +315,14 @@ is `tests/regression/runtime/memaudit-kit.ts` and `memaudit-suite.ts`. The rig i
 first daemon protects the `cpu = "cf"` regions of `devices/ports/<image>.toml` minus each module's
 block, allows writes only from placed patch code, drives the UI and expects `guard.report` total 0. A
 second daemon boots the same card with the write watch on the same ranges, so the load and `dkm_init`
-are audited too. DMA and host writes are not seen. Only the `memaudit-dt2-full` and `memaudit-dn2-full`
-scenarios still use `tools/patchkit/pk_digikit_memaudit.py`; they stay until the full synthetic set is a
-TypeScript fixture.
+are audited too. DMA and host writes are not seen. The full-tier variant loads the full synthetic set
+of the capacity tests behind `test/dyn-demo` (`fullSet` in `synth.ts`) and also expects no free arena byte and
+no whole free DSP granule.
 
 The capacity tests are TypeScript device tests: `modules/core/runtime/tests/capacity.device.test.ts` fills every runtime limit with
 synthetic modules (`patchkit synth-dkm`, built by `tests/regression/runtime/synth.ts`; limits in `[limits]` of `devices/*.toml`), checks the refusal codes,
 the reference module's DSP bytes and the needs that `patchkit needs` infers (full tier); `modules/core/apps/digikit-menu/tests/fits.device.test.ts` checks the
-MODULES page. `tests/patchkit/test_capacity_sets.py` checks the set sizes of `pk_capacity.py` (used by `memaudit`) without an emulator;
-`tests/patchkit/test_limits.py` keeps tools from repeating a limit as a number.
+MODULES page. `tests/patchkit/test_limits.py` keeps tools from repeating a limit as a number.
 
 ### Machine and FX conformance (`tests/modules`)
 

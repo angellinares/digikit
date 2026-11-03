@@ -1,7 +1,7 @@
 import { defineMemaudit, type AuditSet } from '@digi/regression/runtime/memaudit-suite.ts';
 
 /**
- * The ColdFire memory audit (Python scenarios memaudit-{dt2,dn2} and memaudit-{dt2,dn2}-stray, pk_digikit_memaudit.py; mapping in docs/plans/ledgers/debug-card-safe.md).
+ * The ColdFire memory audit (ported from the Python scenarios memaudit-{dt2,dn2}, -stray and -full; mapping in docs/plans/ledgers/debug-card-safe.md).
  * test/dyn-demo's slot function runs on every UI pass; test/c-demo is loaded and not called.
  */
 
@@ -29,3 +29,14 @@ defineMemaudit(() => ({
   mustRun: ['test/dyn-demo-stray'],
   stray: 'test/dyn-demo-stray',
 }));
+
+/** Every limit used (docs/plans/capacity-isolation.md): behind test/dyn-demo the full set of the capacity tests and three modules that do not fit. Full tier. */
+defineMemaudit(
+  () => ({
+    title: 'full set',
+    modules: ['test/dyn-demo'],
+    mustRun: ['test/dyn-demo'],
+    full: true,
+  }),
+  { full: true },
+);
