@@ -131,6 +131,23 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    Four final affected preflight tasks pass (`DIGI_GATE_BASE=HEAD mise run test:changed`), as do
    Prettier and `git diff --check`. These are declared-input and runtime-digest proofs; no device
    rerun, actual Nx result-cache restoration, Cargo compilation or full merge gate was run.
+   Harness-selection checkpoint (`b67a9edc`): device targets now include the transitive local
+   TypeScript import closure of their test files, using regression's compiler options and aliases.
+   Conformance and regression's emulator suite get their own closures; regression production
+   retains shared configuration and non-runtime helpers without the runtime wildcard. Explicit
+   deleted helper imports remain inputs; computed or unresolved ambiguous imports fail closed.
+   Native Nx `--explain` reduces a `tests/regression/runtime/card-rig.ts` edit from 15 device and
+   nine conformance targets to four device and zero conformance targets: `core/digikit-menu`,
+   `core/dynreg`, `core/runtime-settings-tests` and `core/runtime-tests`, each on `test-device`.
+   `IMAGE_BUILD` stays: selected patched-image tests still require fresh core objects. Build,
+   pack and alias producers instead use production inputs, shared SDK/device/toolchain inputs
+   and prerequisite outputs; their previous implicit dependency defaults propagated unrelated
+   helper edits through image outputs. Native input plans retain helpers only for actual consumers,
+   shared configuration and image sources; selection tests preserve image producers and real
+   source/device/toolchain triggers. Evidence: 35 focused host tests and all six cheap preflight
+   tasks pass (`DIGI_GATE_BASE=HEAD mise run test:changed`); independent review reports no issues.
+   This is selection and declared-input evidence, without a measured time speedup, device run,
+   full gate or actual Nx result-cache restoration proof.
 3. **Active pilot: separate execution boundaries.** Provide independent unit, component, ColdFire-only,
    coupled and device targets. Establish SDK contract fixtures and retain each module's own
    conformance. Runtime edits may skip consumer conformance only when contract evidence proves
@@ -222,10 +239,9 @@ proposes only canonical SDK and mirror versions (0.5.4 to 0.6.0); no builds or p
   coverage and unwanted selection. Leaf changes retain their own conformance.
 - Audit narrowed inputs against meaningful tests. Cached outputs must restore correctly and
   invalidate for source, dependency, toolchain and device-identity changes.
-- Audit regression helper source reads before narrowing selection. A `card-rig.ts` edit currently
-  selects 81 tasks including prerequisites (15 device and nine conformance targets), through broad
-  regression production / `IMAGE_BUILD` inputs and uncached producers. No narrowing experiment
-  is committed. Preserve coverage while separating helper consumers and image-build prerequisites;
+- Retain the regression helper import-closure boundary established in `b67a9edc`: `card-rig.ts`
+  selects its four device-test owners and no conformance targets, while selected patched-image
+  tests retain `IMAGE_BUILD`. Continue auditing real source reads and cache behavior;
   selection counts alone do not establish a performance improvement.
 - Decide the minimum SDK contract fixtures before reducing cross-module conformance.
 - Decide the fresh-card/reset/epoch contract and ColdFire progress signal before pooling sessions.
