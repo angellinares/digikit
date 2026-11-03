@@ -80,6 +80,15 @@ function imageConsumer(): string {
   )![0];
 }
 
+function otherImageConsumer(): string {
+  return Object.entries(workspace.nodes).find(
+    ([id, node]) =>
+      id !== imageConsumer() && node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'],
+  )![0];
+}
+
+const manifestOf = (id: string) => `${workspace.nodes[id].data.root}/module.toml`;
+
 it('prepares precisely the declared image core objects before patched-image consumers', () => {
   const consumers = [
     'core/runtime-tests:test-device',
@@ -160,7 +169,7 @@ it('declares patch-image sources and objects without consumer acceptance files',
     expect(conformance.files, file).toContain(file);
     expect(acceptance.files, file).toContain(file);
   }
-  expect(conformance.files).not.toContain('modules/core/runtime/tests/capacity.device.test.ts');
+  expect(conformance.files).not.toContain('modules/core/runtime/tests/capacity/capacity.device.test.ts');
   expect(conformance.files).not.toContain('tests/fixtures/modules/dyn-demo-stray/src/rs/src/lib.rs');
 }, 30_000);
 
@@ -192,6 +201,7 @@ it('keeps runtime and shipped content outside dependency cycles', () => {
       expect(reaches(name, name), name).toBe(false);
   }
   expect(reaches('core/runtime', 'core/runtime-tests')).toBe(false);
+  expect(reaches('core/runtime', 'core/runtime-capacity-tests')).toBe(false);
 });
 
 it('keeps every gated runtime device file in exactly one owner command', () => {
@@ -268,18 +278,21 @@ it('forms explicit manifest libraries from selected modules and transitive requi
 });
 
 describe('workspace selection', () => {
-  it('selects only actual device consumers of the Analog manifest', () => {
-    const graph = selected('modules/machines/analog/module.toml', 'test-device');
+  it('selects only actual device consumers of a shipped machine manifest', () => {
+    const graph = selected(manifestOf(otherImageConsumer()), 'test-device');
     expect(
       Object.values(graph.tasks)
         .filter((task) => task.target.target === 'test-device')
         .map((task) => task.target.project),
-    ).toEqual(['core/runtime-tests']);
-    const consumer = workspace.nodes['core/runtime-tests'];
-    expect(workspace.dependencies['core/runtime-tests'].map((dep) => dep.target)).toContain('fadedlimes/analog');
+    ).toEqual(['core/runtime-capacity-tests']);
+    const consumer = workspace.nodes['core/runtime-capacity-tests'];
+    expect(workspace.dependencies['core/runtime-capacity-tests'].map((dep) => dep.target)).toContain(
+      otherImageConsumer(),
+    );
+    expect(workspace.dependencies['core/runtime-tests'].map((dep) => dep.target)).not.toContain(otherImageConsumer());
     expect(
       consumer.data.metadata?.runtimeAcceptance?.find((rec) => rec.files?.includes('capacity.device.test.ts'))?.modules,
-    ).toContain('fadedlimes/analog');
+    ).toContain(otherImageConsumer());
   }, 30_000);
 
   it('leaves manual device audits out of inferred gate commands', () => {
@@ -290,14 +303,14 @@ describe('workspace selection', () => {
   });
 
   it('keeps unrelated manifests out of core producers and other conformance suites', () => {
-    const unrelated = 'modules/machines/analog/module.toml';
+    const unrelated = manifestOf(otherImageConsumer());
     expect(Object.keys(selected(unrelated, 'build-objects').tasks)).toEqual([]);
     const graph = selected(unrelated, 'test-conformance');
     expect(
       Object.values(graph.tasks)
         .filter((task) => task.target.target === 'test-conformance')
         .map((task) => task.target.project),
-    ).toEqual(['fadedlimes/analog']);
+    ).toEqual([otherImageConsumer()]);
     const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime:build-objects', '--json']));
     expect(inputs.files).not.toContain(unrelated);
     expect(inputs.files).not.toContain('tests/fixtures/modules/c-demo/module.toml');
@@ -311,31 +324,31 @@ describe('workspace selection', () => {
   it('retains core manifest selection for producers and their image consumers', () => {
     const graph = selected('modules/core/runtime/module.toml', 'build-objects,test-conformance');
     expect(graph.tasks['core/runtime:build-objects']).toBeDefined();
-    expect(graph.tasks['digikit/pluck:test-conformance']).toBeDefined();
-    expect(graph.tasks['fadedlimes/analog:test-conformance']).toBeDefined();
+    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+    expect(graph.tasks[`${otherImageConsumer()}:test-conformance`]).toBeDefined();
   }, 30_000);
 
   it('limits pack and conformance manifest inputs to their scoped reads', () => {
-    const own = 'modules/machines/pluck/module.toml';
-    const unrelated = 'modules/machines/analog/module.toml';
-    for (const target of ['digikit/pluck:pack', 'digikit/pluck:test-conformance']) {
+    const own = manifestOf(imageConsumer());
+    const unrelated = manifestOf(otherImageConsumer());
+    for (const target of [`${imageConsumer()}:pack`, `${imageConsumer()}:test-conformance`]) {
       const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
       expect(inputs.files).toContain(own);
       expect(inputs.files).not.toContain(unrelated);
     }
     const remote = JSON.parse(nx(['show', 'target', 'inputs', 'digikit/remote:pack', '--json']));
     expect(remote.files).toContain('modules/core/adapters/input/module.toml');
-    const conformance = workspace.nodes['digikit/pluck'].data.targets['test-conformance'];
+    const conformance = workspace.nodes[imageConsumer()].data.targets['test-conformance'];
     expect(conformance.options?.env?.DIGI_CONFORMANCE_MANIFEST).toBe(own);
     const general = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-service-tests:test-device', '--json']));
     expect(general.files).not.toContain(unrelated);
   }, 30_000);
 
   it('selects scoped packs for owned and required manifests while excluding unrelated packs', () => {
-    expect(selected('modules/machines/analog/module.toml', 'pack').tasks['digikit/pluck:pack']).toBeUndefined();
-    const own = selected('modules/machines/pluck/module.toml', 'pack,test-conformance');
-    expect(own.tasks['digikit/pluck:pack']).toBeDefined();
-    expect(own.tasks['digikit/pluck:test-conformance']).toBeDefined();
+    expect(selected(manifestOf(otherImageConsumer()), 'pack').tasks[`${imageConsumer()}:pack`]).toBeUndefined();
+    const own = selected(manifestOf(imageConsumer()), 'pack,test-conformance');
+    expect(own.tasks[`${imageConsumer()}:pack`]).toBeDefined();
+    expect(own.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
     const required = selected('modules/core/adapters/input/module.toml', 'pack,test-conformance');
     expect(required.tasks['digikit/remote:pack']).toBeDefined();
     expect(required.tasks['digikit/remote:test-conformance']).toBeDefined();
@@ -365,6 +378,7 @@ describe('workspace selection', () => {
     ).toEqual([
       'core/digikit-menu:test-device',
       'core/dynreg:test-device',
+      'core/runtime-capacity-tests:test-device',
       'core/runtime-settings-tests:test-device',
       'core/runtime-tests:test-device',
     ]);
@@ -440,7 +454,7 @@ describe('workspace selection', () => {
         .filter((task) => task.target.target === 'test-device')
         .map((task) => task.target.project)
         .sort(),
-    ).toEqual(['core/runtime-settings-tests', 'core/runtime-tests']);
+    ).toEqual(['core/runtime-capacity-tests', 'core/runtime-settings-tests', 'core/runtime-tests']);
     expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
   }, 30_000);
 
@@ -545,7 +559,7 @@ describe('workspace selection', () => {
   );
 
   it('retains a leaf module’s own conformance and pack prerequisites', () => {
-    const fixtures = new Set(workspace.dependencies['core/runtime-tests'].map((dep) => dep.target));
+    const fixtures = new Set(workspace.dependencies['core/runtime-capacity-tests'].map((dep) => dep.target));
     const [owner, node] = Object.entries(workspace.nodes)
       .filter(
         ([name, node]) =>
@@ -558,7 +572,7 @@ describe('workspace selection', () => {
     const graph = selected(file, 'test-conformance,test-device');
     expect(graph.tasks[`${owner}:test-conformance`]).toBeDefined();
     expect(graph.dependencies[`${owner}:test-conformance`].map((dep) => dep.id)).toContain(`${owner}:pack`);
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
     expect(
       Object.values(graph.tasks)
         .filter((task) => task.target.target === 'test-conformance')
@@ -568,10 +582,10 @@ describe('workspace selection', () => {
 
   it('keeps runtime acceptance edits out of production consumers', () => {
     const graph = selected(
-      'modules/core/runtime/tests/capacity.device.test.ts',
+      'modules/core/runtime/tests/capacity/capacity.device.test.ts',
       'rust-tests,test-device,test-conformance',
     );
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
     expect(graph.tasks['core/runtime:rust-tests']).toBeUndefined();
     expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
   }, 30_000);
