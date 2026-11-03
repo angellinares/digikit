@@ -70,6 +70,7 @@ for (const device of DEVICES) {
     const sectors = s.end - first;
     const settingsArea = [s.setA, s.setB];
     const kit = cardRig(device, 'settings', {
+      dsp: 'zero',
       roots: RT,
       symbols: ['DKRT_MAILBOX', 'DKRT_CARD', ...RING_SYMBOLS],
       // an empty selection record: the area is ours, the settings copies are zero
