@@ -47,10 +47,11 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    Nonhermetic Rust tests include dependencies and patchkit's external compile inputs; device digest source changes select consumers.
    Checkpoint C bounds apply's content builds to the selected requires closure, using existing library discovery/loading; check retains all-library semantics.
    Three focused Rust tests pass: selected/dependency objects build, unrelated missing sources stay unloaded, and missing/cyclic requires refuse before builds; five affected preflight tasks and doc formatting pass.
-   Next: bounded real core-freshness validation, toolchain/daemon overrides and `PATCHKIT_MODULES` / `DIGI_PK_ROOT`.
+   Next: remaining core-freshness validation, toolchain/daemon overrides and `PATCHKIT_MODULES` / `DIGI_PK_ROOT`.
    Follow up: manifest-driven dependency/type/category contracts; redundant debug pack seed removed after graph equivalence. Further modules.mjs splitting is intentionally deferred until a specific responsibility/schema contract benefits; no generic framework.
    Core freshness checkpoint: uncached category-core source-backed producers check scoped generation, then incrementally build tracked objects under shared benchlock; image consumers use the profile-derived acceptance-image tag. No actual core build or generated-output update run here.
    Evidence: 23 scoped Nx host tests and six affected preflight tasks pass; native graphs select exactly 16 producers for image consumers and none for stock/runtime units. Declared Rust source/output checks pass; no end-to-end freshness measurement claimed.
+   Subsequent real runtime preparation: exactly CLI, expansion and runtime tasks pass in 22.3 s, including generated-source checks. Only runtime source_sha256 changed; object payload/symbols/relocations/toolchain metadata are identical. Runtime build status now reports unchanged; no device run.
    Conservative producer inputs remain; narrow after test ownership is clearer. Repeated owner checks repeat shared SDK/fw generation checks; optimize later. The mixed stock/runtime regression target prepares images; stage3 can split it.
    Early win `16594f8b` excludes task definitions from the daemon key while hashing the Rust pin
    and actual compiler identity. Six focused tests, mypy, Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.
