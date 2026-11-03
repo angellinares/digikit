@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/digikit-menu-zero-tests",
+  "tags": ["test-only"],
+  "implicitDependencies": ["core/runtime", "core/digikit-menu"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["menu.device.test.ts"],
+        "modules": []
+      }
+    ]
+  }
+}
