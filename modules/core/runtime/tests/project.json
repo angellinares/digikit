@@ -63,10 +63,6 @@
         ]
       },
       {
-        "files": ["service-commands.device.test.ts"],
-        "modules": ["test/svc-echo"]
-      },
-      {
         "files": ["upload.device.test.ts"],
         "modules": [],
         "plusdrive": true

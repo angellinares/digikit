@@ -4,7 +4,7 @@
     uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2] [--trace]      (mise run module:check NAME)
 
 NAME is a module id (`<author/name>`) or its last part (`<name>`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
-suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. A module-owned Nx `test-device` target then runs its declared TypeScript device acceptance; any failing stage stops the check before size/fit.
+suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. Module-owned Nx `test-device` targets then run their declared TypeScript device acceptance; any failing stage stops the check before size/fit.
 Own tests may build or launch an emulator. A service/raw module with no Python tests has its objects checked against their sources, then runs its owned device target if present. Size and fit follow only after both stages pass. This command does not prove every module loads in patched firmware.
 """
 
@@ -86,14 +86,14 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
     return paths, env
 
 
-def own_device_target(mid: str) -> str | None:
-    """The module root or nested test-only project's Nx device acceptance target."""
+def own_device_targets(mid: str) -> list[str]:
+    """Nx device acceptance targets at the module root and its nested test-only owners."""
     from tools.devtools import nx_graph
 
     nodes = nx_graph.nx_graph()["nodes"]
     node = nodes.get(mid)
     if node is None:
-        return None
+        return []
     data = node["data"]
     owners = [mid] if "test-device" in data.get("targets", {}) else []
     root = data.get("root")
@@ -106,15 +106,20 @@ def own_device_target(mid: str) -> str | None:
                 and "test-device" in candidate.get("targets", {})
             ):
                 owners.append(name)
-    if len(owners) > 1:
-        raise SystemExit(
-            f"{mid}: ambiguous device acceptance owners: {', '.join(sorted(owners))}"
-        )
-    return f"{owners[0]}:test-device" if owners else None
+    roots: dict[str, str] = {}
+    for owner in sorted(owners):
+        owner_root = nodes[owner]["data"].get("root")
+        if owner_root and owner_root in roots:
+            raise SystemExit(
+                f"{mid}: ambiguous device acceptance root {owner_root}: {roots[owner_root]}, {owner}"
+            )
+        if owner_root:
+            roots[owner_root] = owner
+    return [f"{owner}:test-device" for owner in sorted(owners)]
 
 
-def run_device_target(mid: str, target: str) -> int:
-    """Resolve the legacy both-device inputs, then let the owned Nx target run its existing preparation."""
+def run_device_targets(mid: str, targets: list[str]) -> int:
+    """Resolve both-device inputs once, then schedule all owned suites serially through Nx."""
     from tools.devtools import benchlock
     from tools.patchkit import pk_harness
 
@@ -127,9 +132,19 @@ def run_device_target(mid: str, target: str) -> int:
             binaries[f"DIGI_EMUD_{device.upper()}"] = str(
                 pk_harness.daemon_binary(device, syx, pgo=None)
             )
-    print(f"{mid}: device acceptance {target} (DT2 and DN2)", flush=True)
+    print(f"{mid}: device acceptance {', '.join(targets)} (DT2 and DN2)", flush=True)
     return subprocess.run(
-        ["pnpm", "exec", "nx", "run", target],
+        [
+            "pnpm",
+            "exec",
+            "nx",
+            "run-many",
+            "-t",
+            "test-device",
+            "--projects",
+            ",".join(t.rsplit(":", 1)[0] for t in targets),
+            "--parallel=1",
+        ],
         cwd=ROOT,
         env=python_env({**os.environ, **binaries}),
     ).returncode
@@ -245,7 +260,7 @@ def main() -> int:
     a = ap.parse_args()
     mid = resolve(a.name)
     paths, env = plan(mid, a.device)
-    target = own_device_target(mid)
+    targets = own_device_targets(mid)
     kind = (
         "machine module"
         if CONFORMANCE in paths
@@ -279,8 +294,8 @@ def main() -> int:
         ).returncode
         if rc:
             return rc
-    if target:
-        rc = run_device_target(mid, target)
+    if targets:
+        rc = run_device_targets(mid, targets)
         if rc:
             return rc
     for line in size_lines(mid, devices, a.trace):

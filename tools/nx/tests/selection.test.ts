@@ -70,7 +70,12 @@ function imageConsumer(): string {
 }
 
 it('prepares precisely the declared image core objects before patched-image consumers', () => {
-  const consumers = ['core/runtime-tests:test-device', `${imageConsumer()}:test-conformance`, 'regression:test-device'];
+  const consumers = [
+    'core/runtime-tests:test-device',
+    'core/runtime-service-tests:test-device',
+    `${imageConsumer()}:test-conformance`,
+    'regression:test-device',
+  ];
   const image = workspace.nodes['core/runtime-tests'].data.targets['test-device'].inputs!.find(
     (input): input is { input: string; projects: string[] } =>
       typeof input === 'object' && input !== null && 'projects' in input,
@@ -172,23 +177,64 @@ it('keeps runtime and shipped content outside dependency cycles', () => {
   expect(reaches('core/runtime', 'core/runtime-tests')).toBe(false);
 });
 
-it('keeps every runtime device file in the new owner command', () => {
-  const owner = workspace.nodes['core/runtime-tests'].data;
-  const command = owner.targets['test-device'].options?.command ?? '';
-  const actual = (command.match(/\S+\.device\.test\.ts/g) ?? [])
-    .map((file) => resolve(root, 'tests/regression', file))
+it('keeps every runtime device file in exactly one owner command', () => {
+  const base = workspace.nodes['core/runtime-tests'].data;
+  const owners = Object.values(workspace.nodes)
+    .map((node) => node.data)
+    .filter(
+      (owner) =>
+        owner.tags?.includes('test-only') && (owner.root === base.root || owner.root.startsWith(base.root + '/')),
+    );
+  const actual = owners
+    .flatMap((owner) => {
+      const command = owner.targets['test-device'].options?.command ?? '';
+      const files = (command.match(/\S+\.device\.test\.ts/g) ?? []).map((file) =>
+        resolve(root, 'tests/regression', file),
+      );
+      const sources = new Set((owner.metadata?.runtimeAcceptance ?? []).flatMap((rec) => rec.sources ?? []));
+      for (const source of sources) expect(owner.targets['test-device'].inputs).toContain(`{workspaceRoot}/${source}`);
+      for (const rec of owner.metadata?.runtimeAcceptance ?? [])
+        for (const file of rec.files ?? []) expect(files).toContain(join(root, owner.root, file));
+      return files;
+    })
     .sort();
-  const expected = globSync('**/*.device.test.ts', { cwd: join(root, owner.root) })
-    .map((file) => join(root, owner.root, file))
+  const expected = globSync('**/*.device.test.ts', { cwd: join(root, base.root) })
+    .map((file) => join(root, base.root, file))
     .sort();
   expect(actual).toEqual(expected);
-  const sources = new Set((owner.metadata?.runtimeAcceptance ?? []).flatMap((rec) => rec.sources ?? []));
-  for (const source of sources) expect(owner.targets['test-device'].inputs).toContain(`{workspaceRoot}/${source}`);
-  for (const rec of owner.metadata?.runtimeAcceptance ?? [])
-    for (const file of rec.files ?? []) expect(actual).toContain(join(root, owner.root, file));
 });
 
 describe('workspace selection', () => {
+  it.each([
+    'modules/core/runtime/tests/service-commands/service-commands.device.test.ts',
+    'tests/fixtures/modules/svc-echo/src/c/svc_echo.c',
+  ])(
+    'selects only the CF owner for %s',
+    (file) => {
+      const graph = selected(file, 'test-device,test-conformance');
+      expect(
+        Object.values(graph.tasks)
+          .filter((task) => task.target.target === 'test-device')
+          .map((task) => task.target.project),
+      ).toEqual(['core/runtime-service-tests']);
+      expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
+    },
+    30_000,
+  );
+
+  it('keeps the CF file out of parent inputs while preserving owner metadata selection', () => {
+    const file = 'modules/core/runtime/tests/service-commands/service-commands.device.test.ts';
+    const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
+    expect(inputs.files).not.toContain(file);
+    expect(
+      selected('modules/core/runtime/tests/project.json', 'test-device').tasks['core/runtime-tests:test-device'],
+    ).toBeDefined();
+    expect(
+      selected('modules/core/runtime/tests/service-commands/project.json', 'test-device').tasks[
+        'core/runtime-service-tests:test-device'
+      ],
+    ).toBeDefined();
+  }, 30_000);
   it.each(['modules/core/apps/digikit-menu/src/menu.c', 'modules/core/adapters/ui/src/ui.c'])(
     'selects image consumers when %s changes',
     (file) => {
@@ -217,6 +263,7 @@ describe('workspace selection', () => {
   it('selects cached device consumers when the device digest recipe changes', () => {
     const graph = selected('tools/nx/device-inputs.mjs', 'test-device,test-conformance,stock');
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks['core/runtime-service-tests:test-device']).toBeDefined();
     expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
     expect(graph.tasks['gate-stock:stock']).toBeDefined();
   }, 30_000);
@@ -232,6 +279,7 @@ describe('workspace selection', () => {
     expect(graph.tasks['core/runtime:rust-tests']).toBeDefined();
     expect(graph.dependencies['core/runtime:rust-tests']).toEqual([]);
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks['core/runtime-service-tests:test-device']).toBeDefined();
   }, 30_000);
 
   it('keeps desktop source edits out of unrelated host suites', () => {

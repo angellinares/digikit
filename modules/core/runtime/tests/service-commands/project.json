@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime-service-tests",
+  "tags": ["test-only"],
+  "implicitDependencies": ["core/runtime"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["service-commands.device.test.ts"],
+        "modules": ["test/svc-echo"]
+      }
+    ]
+  }
+}

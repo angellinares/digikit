@@ -62,12 +62,14 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    as well as hash invalidation for Rust/Node/toolchain pin changes and ignored firmware/generated
    input changes: runtime hashes alone do not cause Git affected selection. Any new
    cached device target requires input/output review, scoped cache-behavior and coverage-parity evidence before enabling cache.
-3. **Next: separate execution boundaries.** Provide independent unit, component, ColdFire-only,
+3. **Active pilot: separate execution boundaries.** Provide independent unit, component, ColdFire-only,
    coupled and device targets. Establish SDK contract fixtures and retain each module's own
    conformance. Runtime edits may skip consumer conformance only when contract evidence proves
    that boundary; folder names alone do not establish independence.
    CF-only pilot: existing session helpers accept an optional DSP mode; service-command acceptance alone uses zero mode, without an Nx target split. Both DT2 1.17/DN2 1.12 pass original RPC/readiness assertions and report non-SHARC status; a first attempt exposed only a new status-label assertion mismatch (none vs zero), corrected from controller semantics.
    Successful warm named-file run: 15.07 s total, cases 6.65/6.59 s, including about 5.04 s install boot waits each. Observation only, no paired speedup claim. The 31-test host lifecycle file, regression typecheck and five affected preflight tasks pass; no prerequisite builds were needed.
+   Ownership split: move that unchanged file/record into nested core/runtime-service-tests, exclude descendant-owned files generically, retain native test-device scheduling. Module-check discovers all valid owners and schedules them serially; main/full target lists stay unchanged. Both owners remain uncached.
+   Evidence: 26 Nx host tests, 15 module-check tests, Python lint/mypy, tracked layercheck, canonical planning and six affected preflight tasks pass. Service-file/svc-echo edits select only CF; runtime edits select both. All 16 runtime file contents and 37 pack/alias definitions match before; no device rerun for the unchanged file move.
 4. **Next: share session infrastructure.** Consolidate TypeScript fixtures, reset and event
    helpers; use bounded concurrency after session isolation is proven. ColdFire waits cannot
    depend on DSP-frame progress. Define a fresh card baseline, epoch/protocol checks and a rule

@@ -245,7 +245,9 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 - `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`pnpm test:host`), found recursively under `modules/`.
 - `*.device.test.ts`: device tests, registered in the owner's `project.json` (`metadata.runtimeAcceptance`, files relative to that
   project root) and run by Vitest's `runtime` project. Runtime acceptance is owned by `core/runtime-tests`
-  (`modules/core/runtime/tests/project.json`); invoke `core/runtime-tests:test-device` directly.
+  (`modules/core/runtime/tests/project.json`) with CF-only service commands in nested
+  `core/runtime-service-tests` (`service-commands/project.json`). Each owner's `test-device` runs its files;
+  `mise run module:check core/runtime` discovers and runs both owners serially.
   `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
   loads the module through the shared conformance suite.
 - `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them in `tests/digikit/scenarios/` and `modules/*/*/tests/scenarios/`.

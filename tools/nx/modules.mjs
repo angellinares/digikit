@@ -245,7 +245,14 @@ export const createNodesV2 = [
     });
     for (const [file, config] of testOwners) {
       const root = dirname(file);
-      const tests = globSync('**/*.device.test.ts', { cwd: join(ctx.workspaceRoot, root) }).sort();
+      const tests = globSync('**/*.device.test.ts', { cwd: join(ctx.workspaceRoot, root) })
+        .filter(
+          (t) =>
+            !testOwners.some(
+              ([pf]) => dirname(pf).startsWith(root + '/') && join(root, t).startsWith(dirname(pf) + '/'),
+            ),
+        )
+        .sort();
       if (!tests.length) continue;
       const recs = records(join(ctx.workspaceRoot, root));
       if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
