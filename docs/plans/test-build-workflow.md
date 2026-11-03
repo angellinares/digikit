@@ -74,6 +74,26 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    After rebuilding only DT2/DN2 daemons, both devices passed the delayed-write/copy assertions, then hit CardRig.restart's dk.waitForBoot deadline. The controller can answer during resets, so protocol silence is not a reliable emulator boot observer. CardRig now keeps its existing fresh-epoch/CF-ready/UI-hook predicate as the single wait, with a 90 s restart budget (other settles stay 45 s); real-transport waitForBoot is unchanged.
    Settings now runs zero mode: both named main cases pass (61.52 s file), then all 16 original cases pass on DT2/DN2 (239.62 s). One DN2 coupled main case also passes (106.58 s), with 37 lifecycle host tests, regression typecheck and five affected preflight tasks passing. These are observations, not paired A/B speedup claims; no assertions or reset guards removed. Logs: /tmp/digikit-zero-settings-epoch-full.log and /tmp/digikit-coupled-settings-epoch-main.log.
    Settings owner checkpoint: unchanged file/record move into core/runtime-settings-tests; existing generic inference and module-check discover all three owners. Settings-file edits select only that owner; shared c-demo edits retain settings and remaining consumers, and runtime edits select all owners. Native plans retain all 16 file contents once and all 37 pack/alias definitions; 41 Nx host tests, tracked layercheck and six affected preflight tasks pass. No device rerun for the move.
+   Conformance CF-only pilot stopped (2026-11-04): a temporary change selected zero mode only for
+   uploadable modules with `module.dsp === false`, retaining coupled DSP modules and all acceptance
+   checks. `pnpm nx:pilot run digikit/remote:test-conformance` executed DT2 1.17 and DN2 1.12.
+   Both passed initial boot/readiness, USB upload, selected restart/registration, persisted store/hash
+   verification and version/SDK-contract assertions. Both then failed the two-second post-registration
+   ColdFire instruction-clock wait with `ColdFire clock reset during wait`; final status showed
+   DT2 epoch 4 / elapsed 999999 and DN2 epoch 3 / elapsed 12749899, with `dsp: zero` and no audio
+   session. Final module-counter, UI log and fault acceptance had not run: this is a failed pilot,
+   not conformance evidence. Root cause is undetermined. The target took 19.9 s overall, with
+   Vitest at 17.02 s (failed cases 16.77/16.59 s); no paired A/B or speedup claim.
+   Reverted the activation and unused clock helper/tests; conformance stays coupled, with its
+   original checks and per-module Nx ownership/cache configuration unchanged. Did not expand to
+   debug/probe or run more device tests. Temporary helper verification passed 32 focused host
+   tests and regression typecheck before the revert. Run log: `/tmp/digikit-zero-conformance-remote.log`;
+   full test log: `.nx/cache/terminalOutputs/12934460849230255417`. Retained final status/module
+   evidence: `$TMPDIR/digi-regression/module-load/dt2/run-J8kvTD/remote/` and
+   `$TMPDIR/digi-regression/module-load/dn2/run-WsvdBh/remote/`. Diagnose the extra reset before
+   retrying service conformance without SHARC; do not relax fault or restart acceptance to enable it.
+   Final doc-only checkpoint: Prettier and `git diff --check` pass;
+   `DIGI_GATE_BASE=HEAD mise run test:changed` succeeds with zero selected tasks.
    Next highest-payoff candidate: batch conformance daemon boots with a proven pristine-card/reset contract before reducing runtime-to-module coverage edges. SDK contract fixtures are additive; loader compatibility changes remain deferred by the user.
 4. **Next: share session infrastructure.** Consolidate TypeScript fixtures, reset and event
    helpers; use bounded concurrency after session isolation is proven. ColdFire waits cannot
