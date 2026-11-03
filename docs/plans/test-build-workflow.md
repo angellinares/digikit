@@ -81,19 +81,37 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    verification and version/SDK-contract assertions. Both then failed the two-second post-registration
    ColdFire instruction-clock wait with `ColdFire clock reset during wait`; final status showed
    DT2 epoch 4 / elapsed 999999 and DN2 epoch 3 / elapsed 12749899, with `dsp: zero` and no audio
-   session. Final module-counter, UI log and fault acceptance had not run: this is a failed pilot,
-   not conformance evidence. Root cause is undetermined. The target took 19.9 s overall, with
+   session. Final module-counter, UI log and fault acceptance had not run: that attempt is not
+   conformance evidence. The target took 19.9 s overall, with
    Vitest at 17.02 s (failed cases 16.77/16.59 s); no paired A/B or speedup claim.
-   Reverted the activation and unused clock helper/tests; conformance stays coupled, with its
+   At the first checkpoint, reverted the activation and unused clock helper/tests; conformance stayed coupled, with its
    original checks and per-module Nx ownership/cache configuration unchanged. Did not expand to
    debug/probe or run more device tests. Temporary helper verification passed 32 focused host
    tests and regression typecheck before the revert. Run log: `/tmp/digikit-zero-conformance-remote.log`;
    full test log: `.nx/cache/terminalOutputs/12934460849230255417`. Retained final status/module
    evidence: `$TMPDIR/digi-regression/module-load/dt2/run-J8kvTD/remote/` and
-   `$TMPDIR/digi-regression/module-load/dn2/run-WsvdBh/remote/`. Diagnose the extra reset before
-   retrying service conformance without SHARC; do not relax fault or restart acceptance to enable it.
+   `$TMPDIR/digi-regression/module-load/dn2/run-WsvdBh/remote/`.
    Final doc-only checkpoint: Prettier and `git diff --check` pass;
    `DIGI_GATE_BASE=HEAD mise run test:changed` succeeds with zero selected tasks.
+   Correction after controller audit: the first attempt's elapsed/epoch check did not establish a
+   guest reset. Boot-job completion rebases the controller's elapsed clock and advances its epoch;
+   the added wait rejected that lifecycle transition. The original two-second wait exists to
+   exercise DSP registration, so the retry retains it only for `module.dsp === true`, without a
+   substitute CF wait. Uploadable modules without DSP images now select zero mode and explicitly
+   assert `dsp: zero` / `audio: null`; DSP modules remain coupled. All upload/restart, persisted
+   bytes/hash, registration/contracts, UI, module-counter and fault acceptance remains. No
+   `DSP_ABSENT` exception was needed: the forbidden runtime log-kind set is unchanged. No Nx task,
+   dependency or cache configuration changed.
+   Retry evidence: named `digikit/remote:test-conformance`, `digikit/debug:test-conformance` and
+   `digikit/probe:test-conformance` each pass DT2 1.17 and DN2 1.12 (six cases). Nx elapsed times:
+   remote 13.6 s, debug 13.6 s, probe 20.0 s; Vitest durations 11.23/11.22/17.58 s respectively.
+   These are observations, without a paired A/B or speedup claim. Logs:
+   `/tmp/digikit-zero-conformance-remote-retry.log`, `/tmp/digikit-zero-conformance-debug.log`,
+   `/tmp/digikit-zero-conformance-probe.log`; full test outputs under `.nx/cache/terminalOutputs/`:
+   `9939036396911283181` (remote), `12438612099909313564` (debug), `15819926900823830916` (probe).
+   Focused remote-helper host file passes all 31 tests; regression typecheck, three affected preflight
+   tasks (`DIGI_GATE_BASE=HEAD mise run test:changed`), Prettier and `git diff --check` pass. This is module
+   load conformance, not an audio or coupled DSP correctness proof; no full suite or merge gate run.
    Next highest-payoff candidate: batch conformance daemon boots with a proven pristine-card/reset contract before reducing runtime-to-module coverage edges. SDK contract fixtures are additive; loader compatibility changes remain deferred by the user.
 4. **Next: share session infrastructure.** Consolidate TypeScript fixtures, reset and event
    helpers; use bounded concurrency after session isolation is proven. ColdFire waits cannot

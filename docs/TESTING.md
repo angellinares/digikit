@@ -250,7 +250,11 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
   `settings/project.json`). Each owner's `test-device` runs its files;
   `mise run module:check core/runtime` discovers and runs all owners serially.
   `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
-  loads the module through the shared conformance suite.
+  loads the module through the shared conformance suite. Uploadable modules without a DSP image run
+  with the zero SSI peer and no SHARC audio session; modules with DSP images retain coupled execution
+  and the DSP registration wait. Both paths retain upload/restart, persisted bytes/hash, SDK contract,
+  registration, UI and fault acceptance, including the same forbidden runtime log kinds. Task and
+  cache ownership remain per module.
 - `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them in `tests/digikit/scenarios/` and `modules/*/*/tests/scenarios/`.
 - `module:check ID`, `gate` and `test:changed` select them. A change in the module selects its tests and those of the modules that depend
   on it; a change only in `tests/` runs python-tests (and `host` for `.ts`), no Rust or web step.

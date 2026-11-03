@@ -86,7 +86,7 @@ export function conformanceSuite(device: Device): void {
     test(name, async () => {
       const options = liveOptions(device);
       const artifact = moduleArtifact(device, module.id);
-      const runtime = await startPatchedSession(options, name);
+      const runtime = await startPatchedSession({ ...options, dsp: module.dsp ? 'sharc' : 'zero' }, name);
       try {
         await expectRuntimeBoot(runtime);
         await timePhase(
@@ -179,8 +179,16 @@ export async function expectModuleLoad(
     } else {
       expect(loaded.dsp_len).toBe(0);
     }
-    // Allow the loaded registration to run on the coupled DSP before checking its guard counters.
-    await waitEmulated(session, 2000);
+    // DSP registrations need time to run on the coupled DSP before checking guard counters.
+    // CF-only registration is already complete; UI and fault acceptance below still apply.
+    if (module.dsp) {
+      expect((await session.status()).dsp, 'DSP conformance remains coupled').toBe('sharc');
+      await waitEmulated(session, 2000);
+    } else {
+      const status = await session.status();
+      expect(status.dsp, 'CF-only conformance retains the zero SSI peer').toBe('zero');
+      expect(status.audio, 'CF-only conformance has no SHARC audio session').toBeNull();
+    }
     const modules = await dk.modules();
     record(artifacts, 'modules', modules);
     expect(modules.map(({ name, faults, guard_off }) => ({ name, faults, guard_off }))).toEqual(
