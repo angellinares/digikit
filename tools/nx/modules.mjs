@@ -6,6 +6,7 @@ import { globSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { read, records, packDevices, isUploadable, dkm, manifestClosure, manifestArgs } from './module-manifests.mjs';
 import { PK, IMAGE_BUILD, BUILD_INPUTS, DEVICE_INPUTS, deviceTarget, scopedManifestInputs } from './module-targets.mjs';
+import { packSourceInputs } from './pack-inputs.mjs';
 import { testImportInputs } from './test-imports.mjs';
 
 export { createDependencies } from './module-dependencies.mjs';
@@ -29,6 +30,16 @@ export const createNodesV2 = [
       }),
     );
     // Core generation reads the allocation providers and declarations of the complete core library.
+    // Build inputs follow manifest/source ownership, never the module's acceptance relationships.
+    const packInputs = (manifests) => [
+      ...scopedManifestInputs(
+        BUILD_INPUTS.filter((input) => input !== '^production'),
+        manifests,
+      ),
+      '{workspaceRoot}/tools/nx/pack-inputs.mjs',
+      '{workspaceRoot}/tools/nx/cargo.mjs',
+      ...packSourceInputs(ctx.workspaceRoot, byId, manifests),
+    ];
     const coreManifests = [...byId.values()]
       .filter(({ manifest }) => manifest.category === 'core')
       .map(({ file }) => file)
@@ -115,7 +126,7 @@ export const createNodesV2 = [
         targets.pack = {
           executor: 'nx:run-commands',
           cache: false,
-          inputs: scopedManifestInputs(BUILD_INPUTS, manifests),
+          inputs: packInputs(manifests),
           dependsOn: ['patchkit:cli'],
           outputs: devices.map((d) => `{workspaceRoot}/${dkm(d, m.id)}`),
           options: {
@@ -148,7 +159,7 @@ export const createNodesV2 = [
         targets['pack-aliases'] = {
           executor: 'nx:run-commands',
           cache: false,
-          inputs: scopedManifestInputs(BUILD_INPUTS, manifestClosure(byId, [...aliasSources])),
+          inputs: packInputs(manifestClosure(byId, [...aliasSources])),
           dependsOn: ['patchkit:cli', ...[...aliasSources].map((s) => `${s}:pack`)],
           outputs: aliasOutputs,
           options: {
@@ -176,7 +187,10 @@ export const createNodesV2 = [
           executor: 'nx:run-commands',
           cache: true,
           inputs: [
-            ...scopedManifestInputs(DEVICE_INPUTS, [f]),
+            ...scopedManifestInputs(
+              DEVICE_INPUTS.filter((input) => input !== '^production'),
+              [f],
+            ),
             imageInput,
             ...importInputs(globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot })),
           ],

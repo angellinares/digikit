@@ -278,6 +278,60 @@ it('forms explicit manifest libraries from selected modules and transitive requi
 });
 
 describe('workspace selection', () => {
+  it('scopes Remote changes to its pack and actual conformance artifact consumer', () => {
+    const source = 'modules/tools/remote/src/c/remote.c';
+    const packs = selected(source, 'pack,pack-aliases');
+    expect(
+      Object.values(packs.tasks)
+        .filter((task) => ['pack', 'pack-aliases'].includes(task.target.target))
+        .map((task) => task.target.project),
+    ).toEqual(['digikit/remote']);
+    const conformance = selected(source, 'test-conformance');
+    expect(
+      Object.values(conformance.tasks)
+        .filter((task) => task.target.target === 'test-conformance')
+        .map((task) => task.target.project),
+    ).toEqual(['digikit/remote']);
+    for (const target of ['digikit/debug:pack', 'digikit/probe:pack', 'digikit/debug:test-conformance']) {
+      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
+      expect(inputs.files).not.toContain(source);
+    }
+  }, 30_000);
+
+  it('keeps shared object sources, Cargo path dependencies and declared requirements in pack inputs', () => {
+    const sine = selected('tests/fixtures/modules/sine/src/dsp/sine.s', 'pack');
+    for (const id of ['test/dyn-params', 'test/dyn-dn2']) expect(sine.tasks[`${id}:pack`]).toBeDefined();
+    const sdk = selected('modules/core/runtime/sdk/src/lib.rs', 'pack');
+    for (const id of ['test/dyn-demo', 'test/dyn-demo-stray']) expect(sdk.tasks[`${id}:pack`]).toBeDefined();
+    const source = globSync('src/**/*.c', { cwd: join(root, workspace.nodes['core/input'].data.root) }).sort()[0];
+    expect(source).toBeDefined();
+    expect(
+      selected(`${workspace.nodes['core/input'].data.root}/${source}`, 'pack').tasks['digikit/remote:pack'],
+    ).toBeDefined();
+    for (const id of ['test/dyn-params', 'test/dyn-demo']) {
+      const inputs = JSON.parse(nx(['show', 'target', 'inputs', `${id}:pack`, '--json']));
+      expect(inputs.files).toContain(
+        id === 'test/dyn-params' ? 'tests/fixtures/modules/sine/src/dsp/sine.s' : 'modules/core/runtime/sdk/src/lib.rs',
+      );
+      expect(workspace.nodes[id].data.targets.pack.cache).toBe(false);
+    }
+  }, 30_000);
+
+  it('keeps the shared Debug artifact connected to every conformance suite', () => {
+    const graph = selected('modules/tools/debug/src/c/debug.c', 'test-conformance');
+    expect(
+      Object.values(graph.tasks)
+        .filter((task) => task.target.target === 'test-conformance')
+        .map((task) => task.target.project)
+        .sort(),
+    ).toEqual(
+      Object.entries(workspace.nodes)
+        .filter(([, node]) => node.data.targets['test-conformance'])
+        .map(([id]) => id)
+        .sort(),
+    );
+  }, 30_000);
+
   it('selects only actual device consumers of a shipped machine manifest', () => {
     const graph = selected(manifestOf(otherImageConsumer()), 'test-device');
     expect(
@@ -418,12 +472,7 @@ describe('workspace selection', () => {
     for (const target of ['core/runtime:build-objects', 'core/dynfx:pack-aliases', `${packer}:pack`]) {
       const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
       expect(inputs.files).not.toContain('tests/regression/runtime/card-rig.ts');
-      for (const file of [
-        'sdk/sdk.toml',
-        'devices/digitakt-ii.toml',
-        'tools/patchkit/toolchain/pins.toml',
-        'modules/core/runtime/module.toml',
-      ])
+      for (const file of ['sdk/sdk.toml', 'devices/digitakt-ii.toml', 'tools/patchkit/toolchain/pins.toml'])
         expect(inputs.files, `${target}: ${file}`).toContain(file);
     }
     for (const file of ['devices/digitakt-ii.toml', 'tools/patchkit/toolchain/pins.toml']) {
