@@ -1,0 +1,108 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime-tests",
+  "tags": ["test-only"],
+  "implicitDependencies": ["core/runtime"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["capacity.device.test.ts"],
+        "modules": [
+          "digikit/debug",
+          "digikit/freqshift",
+          "digikit/pluck",
+          "digikit/probe",
+          "digikit/remote",
+          "fadedlimes/analog",
+          "fadedlimes/bd",
+          "fadedlimes/pd",
+          "test/c-demo",
+          "test/dyn-fx-gain",
+          "test/dyn-params",
+          "test/sine"
+        ],
+        "plusdrive": true
+      },
+      {
+        "files": ["modules-capacity.device.test.ts"],
+        "modules": ["digikit/debug", "digikit/probe", "digikit/remote", "test/dyn-params"]
+      },
+      {
+        "files": ["fault-trace.device.test.ts"],
+        "modules": [
+          "digikit/debug",
+          "test/dyn-crash",
+          "test/dyn-dsp-hang",
+          "test/dyn-fx-gain-send",
+          "test/dyn-fx-hang",
+          "test/dyn-fx-nan"
+        ]
+      },
+      {
+        "files": ["transfer-live.device.test.ts"],
+        "modules": ["digikit/debug", "test/sine"],
+        "sources": ["tools/device/dktransfer.py"]
+      },
+      {
+        "files": ["samples-live.device.test.ts"],
+        "modules": [],
+        "sources": [
+          "packages/dk-session/src/dksample.ts",
+          "packages/dk-session/src/rpcfiles.ts",
+          "packages/dk-session/src/samples.ts"
+        ],
+        "plusdrive": true
+      },
+      {
+        "files": ["samples-store-live.device.test.ts"],
+        "modules": [],
+        "sources": [
+          "packages/dk-session/src/dksample.ts",
+          "packages/dk-session/src/rpcfiles.ts",
+          "packages/dk-session/src/samples.ts"
+        ]
+      },
+      {
+        "files": ["upload.device.test.ts"],
+        "modules": [],
+        "plusdrive": true
+      },
+      {
+        "files": ["upload-faults.device.test.ts"],
+        "modules": ["test/sine"],
+        "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
+        "plusdrive": true
+      },
+      {
+        "files": ["card-safety.device.test.ts"],
+        "modules": ["test/c-demo"],
+        "plusdrive": true
+      },
+      {
+        "files": ["safe-mode.device.test.ts"],
+        "modules": ["test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["crash-capture.device.test.ts"],
+        "modules": ["digikit/debug", "test/dyn-crash"],
+        "plusdrive": true
+      },
+      {
+        "files": ["debug-guard.device.test.ts"],
+        "modules": ["digikit/debug", "test/dyn-guard-nan", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["memaudit.device.test.ts"],
+        "modules": ["test/c-demo", "test/dyn-demo", "test/dyn-demo-stray", "test/dyn-dn2", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["memaudit-module.device.test.ts"],
+        "modules": [],
+        "plusdrive": true
+      }
+    ]
+  }
+}

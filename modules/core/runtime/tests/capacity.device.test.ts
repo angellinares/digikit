@@ -155,7 +155,8 @@ function expectFull(
   expect(cap.DSP_AREA!.largest, 'the DSP area has no whole granule left').toBeLessThan(DSP_GRANULE);
 }
 
-cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'zero', symbols: SYMBOLS }, (rig) => {
+// Keep DSP transfers pending: zero mode advances SSI blocks and times out without a SHARC peer.
+cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }, (rig) => {
   test(
     'full set: every limit is filled to its last unit and the next module of each kind is refused',
     async () => {

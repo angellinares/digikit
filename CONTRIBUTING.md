@@ -36,9 +36,9 @@ state and next steps, not results.
 
 - While you work, run the tests for the code you changed (pytest on the test file; see
   [docs/TESTING.md](docs/TESTING.md)).
-- Before a PR, run `mise run gate`. It selects the Nx projects your changes affect;
-  `pnpm nx:pilot show projects --affected --base main` shows the selection.
-- `mise run gate` is also the gate for merging to `main`. Run `mise run gate:full` only after changes to the
+- Before a PR, run `mise run test`. It selects the Nx tasks your changes affect;
+  `mise run test:plan` explains the selection without running it.
+- `mise run test` is also the gate for merging to `main`. Run `mise run test:full` only after changes to the
   generated SHARC core.
 - New Python files are covered by ruff through `[tool.ruff] include` in `pyproject.toml`. Add typed files to
   `[tool.mypy] files` in `pyproject.toml` where practical.

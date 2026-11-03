@@ -23,10 +23,6 @@ MODULE = "test/dyn-guard-nan"
 FIX = (
     pk_conform.ROOT / "tests" / "fixtures" / "modules" / "dyn-guard-nan" / "src" / "dsp"
 )
-KNOB = {
-    "dt2": 1,
-    "dn2": 0,
-}  # the knob position of the first module parameter (ADM_PARAM_SLOT0)
 
 
 def rig(device: str, fixture: str = "nan", prefix: str = "gn") -> MachineRig:
@@ -77,7 +73,8 @@ def test_the_type_is_disabled_after_eight_faults(device):
 @pytest.mark.parametrize("device", ["dt2", "dn2"])
 def test_a_parameter_beyond_the_range_is_clamped_before_the_module(device):
     r = rig(device, "clamp", "cp")
-    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, KNOB[device]), 0xFFFF)
+    knob = next(p.knob for p in r.spec.params if p.id == "nan_a")
+    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, knob), 0xFFFF)
     b = note(r)
     assert b.faults == 0
     assert all(
@@ -88,8 +85,9 @@ def test_a_parameter_beyond_the_range_is_clamped_before_the_module(device):
 @pytest.mark.parametrize("device", ["dt2", "dn2"])
 def test_a_declared_wider_range_lets_it_through_to_the_guard(device):
     r = rig(device, "clamp", "cp")
-    r.sess.poke(nw(dv.TABLE) + 2 + KNOB[device], 0xFFFF << 16)
-    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, KNOB[device]), 0xFFFF)
+    knob = next(p.knob for p in r.spec.params if p.id == "nan_a")
+    r.sess.poke(nw(dv.TABLE) + 2 + knob, 0xFFFF << 16)
+    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, knob), 0xFFFF)
     b = note(r)
     assert b.faults == 1  # 0xffff * 2^-12 = 16.0 is above the bound of 8.0
     assert all(x == 0.0 for x in b.samples)

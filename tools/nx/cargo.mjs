@@ -13,7 +13,8 @@ const KINDS = ['dependencies', 'dev-dependencies', 'build-dependencies'];
 // CLI builds into dist/ (gitignored). Copy then rename: a running process keeps the old file.
 const CLI = {
   patchkit: {
-    build: 'cargo build -p patchkit --release --offline --target-dir dist/cargo',
+    build:
+      'uv run python -m tools.devtools.benchlock run --shared --label patchkit-cli -- cargo build -p patchkit --release --offline --target-dir dist/cargo',
     bin: 'patchkit',
     dir: 'patchkit',
   },
@@ -106,6 +107,19 @@ export const HERMETIC = {
 // those files are outside the project root.
 const SHARED_SOURCE = { 'sharc-native-2': ['{workspaceRoot}/packages/emulator/sharc/**/*'] };
 
+// Files outside the crate embedded by patchkit's source, unit tests and build.rs.
+const COMPILE_SOURCE = {
+  patchkit: [
+    '{workspaceRoot}/sdk/sdk.toml',
+    '{workspaceRoot}/sdk/vectors/fit-vectors.json',
+    '{workspaceRoot}/sdk/vectors/settings-vectors.json',
+    '{workspaceRoot}/devices/*.toml',
+    '{workspaceRoot}/tools/patchkit/toolchain/pins.toml',
+    '{workspaceRoot}/tools/patchkit/toolchain/m68k-cf-none-elf-a2.json',
+    '{workspaceRoot}/tools/patchkit/pk_toolchains.py',
+  ],
+};
+
 // Normalized repo-relative roots of the path dependencies of a crate (all dependency tables).
 export const pathDeps = (workspaceRoot, crateRoot) => {
   const t = read(workspaceRoot, join(crateRoot, 'Cargo.toml'));
@@ -122,7 +136,7 @@ export const createNodesV2 = [
   'Cargo.toml',
   (files, _opts, ctx) =>
     files.map((f) => {
-      const inputs = ['default', '{workspaceRoot}/Cargo.toml', '{workspaceRoot}/Cargo.lock'];
+      const inputs = ['default', '^production', '{workspaceRoot}/Cargo.toml', '{workspaceRoot}/Cargo.lock'];
       if (existsSync(join(ctx.workspaceRoot, 'rust-toolchain.toml')))
         inputs.push('{workspaceRoot}/rust-toolchain.toml');
       const rust = read(ctx.workspaceRoot, 'mise.toml').tools.rust;
@@ -133,6 +147,8 @@ export const createNodesV2 = [
         '{workspaceRoot}/Cargo.lock',
         ...(existsSync(join(ctx.workspaceRoot, 'rust-toolchain.toml')) ? ['{workspaceRoot}/rust-toolchain.toml'] : []),
         { runtime: `rustup run ${rust} rustc -vV` },
+        { runtime: 'node tools/nx/cargo-profile-env.mjs' },
+        '{workspaceRoot}/tools/nx/cargo-profile-env.mjs',
         { env: 'RUSTFLAGS' },
         { env: 'CARGO_ENCODED_RUSTFLAGS' },
         { env: 'CARGO_BUILD_TARGET' },
@@ -155,7 +171,7 @@ export const createNodesV2 = [
           : {
               executor: 'nx:run-commands',
               cache: false,
-              inputs: [...inputs, ...(SHARED_SOURCE[name] ?? [])],
+              inputs: [...inputs, ...(SHARED_SOURCE[name] ?? []), ...(COMPILE_SOURCE[name] ?? [])],
               options: { command: `uv run python -m tools.devtools.rust_ws test --packages ${name}`, cwd: '.' },
             };
       const projects = {};

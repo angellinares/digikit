@@ -26,6 +26,9 @@ The desktop app free-runs a runtime that has no DSP audio (ColdFire only, as a D
 DT2 firmware read SETTINGS as a long press (it opens only on a press shorter than about 0.5 emulated seconds).
 
 Coupled DSP audio in the daemon needs `--auto-coupled` and the ready inputs; see [PATCHING.md](PATCHING.md).
+Zero-DSP mode retains the existing SSI/DMA clock with zero samples, including patched-image loads,
+snapshot restores and reset reconstruction; it executes no SHARC engine. Its patched snapshots use a separate
+`-zero.snap` identity, so earlier CF-only snapshots cannot silently remove that timing.
 Startup flags are shared by both servers (`packages/emulator/control/src/cli.rs`): `--control`, `--no-control`, `--paused`,
 `--run-dir DIR`, `--card-image FILE` (with `--card-folder DIR`: the +Drive folder the image was built from; the firmware's changes are exported to it on exit; `--no-card-sync` turns the export off), `--device-folders` (one card folder per device, below), `--mirror-dir DIR` (the folder of the first loaded device), `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
 flags. `--scenario` needs a coupled-audio build.

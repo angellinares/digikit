@@ -47,7 +47,9 @@ def test_the_header_says_fx_and_not_machine(packed):
     _, out = packed
     b = out.read_bytes()
     sdk = tomllib.loads((ROOT / "sdk" / "sdk.toml").read_text())["contract"]
-    assert tuple(b[0x38:0x40]) == (*sdk["api"], 0, 0, *sdk["fx"], 0, 0)
+    # This fixture needs no newer API entries or sample-track table: the packer
+    # declares its compatibility floor, rather than the latest SDK minor.
+    assert tuple(b[0x38:0x40]) == (sdk["api"][0], 4, 0, 0, *sdk["fx"], 0, 0)
     assert sdk["fx"][0] != 0  # the runtime implements the contract
 
 

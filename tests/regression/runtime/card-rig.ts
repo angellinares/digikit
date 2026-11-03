@@ -3,13 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport, frame, parseReply } from '@digi/dk-session';
-import {
-  resolveInputs,
-  withinRuntimeDeadline,
-  type Device,
-  type RuntimeBaseline,
-  type Session,
-} from '@digi/test-support';
+import { resolveInputs, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
 import { describe, expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type RuntimeCase } from '../support.ts';
 import {
@@ -129,7 +123,11 @@ export interface CardRig {
   /** The first case (the `initial` card), settled. */
   first(): Promise<RuntimeCase>;
   /** Wait for the runtime's UI and pause (the test steps time itself). */
-  settle(runtime: PatchedSession & { epoch?: number }, afterEpoch?: number): Promise<PatchedSession>;
+  settle(
+    runtime: PatchedSession & { epoch?: number },
+    afterEpoch?: number,
+    options?: { timeout?: number },
+  ): Promise<PatchedSession>;
   /** Poll until the UI loop was reached (and the boot is safe mode when `safe`); returns the boot's fields. */
   ready(safe?: boolean): Promise<Awaited<ReturnType<typeof bootInfo>>>;
   /** A protocol restart (the card and its guest writes stay); returns the runtime of the new boot, settled. */
@@ -268,7 +266,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     {
       prepareBaseline: async (session) => {
         // A cold daemon (no firmware at spawn) has no emulator, so no watch summary, for its first epoch.
-        if (o.initial !== 'small') epochs.add((await session.status()).epoch as number);
+        if (o.initial !== 'small' && o.dsp !== 'cold') epochs.add((await session.status()).epoch as number);
         if (o.initial === 'small') {
           image = path.join(freshDir(session), 'small-card.img');
           fs.writeFileSync(image, Buffer.alloc(1 << 20)); // blank; the identity, not the file, sets the capacity
@@ -320,13 +318,18 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
   const settle: CardRig['settle'] = async (
     runtime,
     afterEpoch = o.relaxFs && runtime.epoch ? runtime.epoch - 1 : undefined,
+    options = {},
   ) => {
     if (o.hold) {
       // Python `settle_ms` (SETTLE_MS, 300 emulated ms), then `wait_dsp`: up to 5 s until no module is still LOADING (its DSP part follows the ColdFire part)
       await advance(runtime.session, 300);
       await bootInfoLoaded(runtime.session, prepared.plan);
     }
-    await expectRuntimeUi(runtime.session, prepared.plan, artifacts, { afterEpoch, paused: o.hold });
+    await expectRuntimeUi(runtime.session, prepared.plan, artifacts, {
+      afterEpoch,
+      paused: o.hold,
+      timeout: options.timeout,
+    });
     await rpc(runtime.session, 'run.mode', { mode: 'paused' });
     return runtime;
   };
@@ -405,14 +408,9 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       await bounded(() => runtime.dk.restart());
       runtime.dk.cancelPending();
       const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
-      try {
-        // DN2 cold restarts take about 45 s; retain the protocol's 90 s boot budget.
-        await withinRuntimeDeadline(Date.now() + 90_000, () => dk.waitForBoot());
-      } finally {
-        dk.cancelPending();
-      }
+      // This controller can answer throughout the guest reset: settle proves the fresh ready epoch/UI hook.
       cap = undefined;
-      return settle({ session, dk, close: runtime.close }, before);
+      return settle({ session, dk, close: runtime.close }, before, { timeout: 90_000 });
     },
     usb: (runtime, run) => withPausedFxProtocol(runtime, run),
     after: (tag = `after-${++seq}`, base = image) => afterCard(tag, base),

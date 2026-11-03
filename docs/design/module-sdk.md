@@ -540,7 +540,7 @@ The SDK a module author sees: `<dk/machine.h>` (or `sdk/asm/dk_machine.inc`), th
 
 ## 10. Migration
 
-Every step keeps `main` green (`mise run gate`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
+Every step keeps `main` green (`mise run test`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
 a step that would move a pin stops and asks.
 
 ### 10.1 Order
@@ -683,7 +683,7 @@ A module that needs a SysEx command of its own (the first is `digikit/remote`: k
 The handler is `int handler(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)`: it returns the number of reply bytes written to `out`, or a negative status. It runs in the firmware's
 MIDI task, so it is short and never waits. The ranges a module may take are reserved in `sdk/sdk.toml` `[protocol.ranges]`; a request outside them, over another module's, or empty
 returns `E_CMD_RANGE` (-64). The ranges are released when the module's `fini` has run. `docs/design/digikit-upload.md` ("Service commands") has the wire side; the fixture
-`test/svc-echo` and `modules/core/runtime/tests/service-commands.device.test.ts` show the round trip; the acceptance cases run with full verification, explicit `--only runtime-fixture`, or `pnpm nx:pilot run core/runtime:test-device` (see `tests/regression/README.md` for prerequisites).
+`test/svc-echo` and `modules/core/runtime/tests/service-commands/service-commands.device.test.ts` show the round trip; the acceptance cases run with default verification or `pnpm nx:pilot run core/runtime-service-tests:test-device` (see `tests/regression/README.md` for prerequisites).
 
 ### 11.7 The input adapter (`core/input`, runtime 0.2.5)
 

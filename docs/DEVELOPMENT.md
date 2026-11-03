@@ -3,6 +3,8 @@
 The details behind the [README](../README.md): firmware files, the emulator and its options, tests, analysis tools and the repository
 layout. For modules see [MODULE-AUTHORING.md](MODULE-AUTHORING.md) and [PATCHING.md](PATCHING.md); for tests [TESTING.md](TESTING.md).
 
+For version ownership and preview/apply commands, see [Releasing digikit](RELEASING.md).
+
 ## Firmware files
 
 Modules and patchkit target Digitakt II 1.17 and Digitone II 1.12. The emulator runs
@@ -134,7 +136,7 @@ Test levels, layout and all commands are in [docs/TESTING.md](TESTING.md). The m
 mise run test:changed         # lint, format, types, host tests and Python checks of the affected projects; no builds or devices
 pnpm test:host                # host Vitest projects; no device
 pnpm verify:host              # host lint, format, tests and types
-mise run gate                 # the gate: Nx targets of the affected projects
+mise run test                 # the gate: Nx targets of the affected projects
 mise run module:check ID      # one module: conformance and its own tests
 ```
 

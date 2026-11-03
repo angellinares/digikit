@@ -1,4 +1,16 @@
 {
   "$schema": "../node_modules/nx/schemas/project-schema.json",
-  "name": "sdk"
+  "name": "sdk",
+  "targets": {
+    "check-generated": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["patchkit:cli"],
+      "outputs": [],
+      "options": {
+        "command": "dist/patchkit/patchkit --root . gen --check --scope shared",
+        "cwd": "."
+      }
+    }
+  }
 }

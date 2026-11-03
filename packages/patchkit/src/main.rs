@@ -65,8 +65,9 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          device's OS UPGRADE receiver does, then send it (USB MIDI) and read INFO after the restart;
                                          --restore sends the stock file itself; --dry-run only checks (docs/PATCHING.md, \"Flashing\")
   list                                   modules under modules/ and ports under devices/ports/
-  gen [--check] [--modules a,b]          write (or check) build/gen/ of modules with typed sections: Rust constants,
-                                         a SHARC include per device, gallery JSON
+  gen [--check [--scope all|modules|shared]] [--modules a,b]
+                                         write (or check) generated module, SDK and firmware files
+                                         --scope restricts checks to module outputs or shared SDK/firmware outputs (default all)
   reference [-o OUT.html] [--fragment]   the searchable firmware reference page (default out/reference/fw.html) from
                                          modules/core/fw/reference.json (written by `gen`); --fragment writes the
                                          page body without the document tags, for publishing
@@ -110,7 +111,7 @@ fn library(root: &Path, rest: &[String]) -> Result<Library> {
 }
 
 /// `library`; with `lenient`, a module whose object files are missing still loads (for `gen`); with `only`, the objects of these
-/// content modules only are loaded or built (`pack`: the others load without objects).
+/// content modules only are loaded or built (`pack` and `apply`: the others load without objects).
 fn library_with(
     root: &Path,
     rest: &[String],
@@ -152,6 +153,17 @@ fn with_requires(lib: &Library, ids: Vec<String>) -> Result<Vec<String>> {
         println!("added by requires: {}", added.join(", "));
     }
     Ok(all)
+}
+
+fn library_for_apply(
+    root: &Path,
+    rest: &[String],
+    ids: Vec<String>,
+) -> Result<(Library, Vec<String>)> {
+    // Discover requires before building content: unrelated sources need not be buildable.
+    let manifests = library_with(root, rest, false, Some(&[]))?;
+    let ids = with_requires(&manifests, ids)?;
+    Ok((library_with(root, rest, false, Some(&ids))?, ids))
 }
 
 fn preflight_known(root: &Path) -> Result<Vec<patchkit::preflight::Known>> {
@@ -262,8 +274,13 @@ fn run(a: Args) -> Result<()> {
                 None => vec![],
             };
             let reg = registry(&a.root)?;
-            let lib = library(&a.root, rest)?;
-            let ids = with_requires(&lib, ids)?;
+            let (lib, ids) = if cmd == "apply" {
+                library_for_apply(&a.root, rest, ids)?
+            } else {
+                let lib = library(&a.root, rest)?;
+                let ids = with_requires(&lib, ids)?;
+                (lib, ids)
+            };
             if cmd == "check" {
                 let fw = Firmware::parse(&raw)?;
                 let port = reg
@@ -314,26 +331,91 @@ fn run(a: Args) -> Result<()> {
             flash_cli::run(&reg, &lib, rest)?;
         }
         "gen" => {
-            // the generated files are inputs of the build: nothing is built here
-            let lib = library_with(&a.root, rest, true, Some(&[]))?;
-            let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
-            let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
-            let only: Vec<String> = flag(rest, "--modules")
-                .unwrap_or_default()
-                .split(',')
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .collect();
             let check = rest.iter().any(|a| a == "--check");
+            let scope = flag(rest, "--scope");
+            if rest.iter().any(|a| a == "--scope")
+                && (!check || !matches!(scope.as_deref(), Some("all" | "modules" | "shared")))
+            {
+                return Err(Error(
+                    "gen --scope requires --check and all, modules or shared".into(),
+                ));
+            }
             let mut stale = 0;
-            for m in &lib.modules {
-                if !only.is_empty() && !only.iter().any(|o| o == m.id()) {
-                    continue;
+            if scope.as_deref() != Some("shared") {
+                // the generated files are inputs of the build: nothing is built here
+                let lib = library_with(&a.root, rest, true, Some(&[]))?;
+                let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+                let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
+                let only: Vec<String> = flag(rest, "--modules")
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
+                for m in &lib.modules {
+                    if !only.is_empty() && !only.iter().any(|o| o == m.id()) {
+                        continue;
+                    }
+                    let mut files = patchkit::modgen::generate(&lib, &models, m.id())?;
+                    files.extend(patchkit::devgen::generate(&lib, &facts, m.id())?);
+                    for (rel, text) in files {
+                        let path = m.dir.join(&rel);
+                        let have = std::fs::read_to_string(&path).ok();
+                        if have.as_deref() == Some(text.as_str()) {
+                            continue;
+                        }
+                        if check {
+                            println!("stale    {}", path.display());
+                            stale += 1;
+                        } else {
+                            if let Some(d) = path.parent() {
+                                std::fs::create_dir_all(d)
+                                    .map_err(|e| Error(format!("{}: {e}", d.display())))?;
+                            }
+                            write(&path.to_string_lossy(), text.as_bytes())?;
+                            println!("wrote    {}", path.display());
+                        }
+                    }
                 }
-                let mut files = patchkit::modgen::generate(&lib, &models, m.id())?;
-                files.extend(patchkit::devgen::generate(&lib, &facts, m.id())?);
-                for (rel, text) in files {
-                    let path = m.dir.join(&rel);
+                // A content module declares its machines in its objects (.dk.desc), so its gallery.json needs them: a second library loads
+                // (and builds when stale) the objects, after the files above are written, which the build reads.
+                let with_gallery: Vec<String> = lib
+                    .modules
+                    .iter()
+                    .filter(|m| patchkit::typed::has_typed(&m.manifest))
+                    .map(|m| m.id().to_string())
+                    .collect();
+                let content: Vec<String> = lib
+                    .modules
+                    .iter()
+                    .filter(|m| !with_gallery.iter().any(|g| g == m.id()))
+                    .filter(|m| only.is_empty() || only.iter().any(|o| o == m.id()))
+                    .map(|m| m.id().to_string())
+                    .collect();
+                if !content.is_empty() {
+                    let full = library_with(&a.root, rest, true, Some(&content))?;
+                    for (path, text) in patchkit::modgen::generate_many(&full, &models, &content)? {
+                        let have = std::fs::read_to_string(&path).ok();
+                        if have.as_deref() == Some(text.as_str()) {
+                            continue;
+                        }
+                        if check {
+                            println!("stale    {}", path.display());
+                            stale += 1;
+                        } else {
+                            if let Some(d) = path.parent() {
+                                std::fs::create_dir_all(d)
+                                    .map_err(|e| Error(format!("{}: {e}", d.display())))?;
+                            }
+                            write(&path.to_string_lossy(), text.as_bytes())?;
+                            println!("wrote    {}", path.display());
+                        }
+                    }
+                }
+            }
+            if scope.as_deref() != Some("modules") {
+                for (rel, text) in patchkit::sdkgen::generate(&a.root)? {
+                    let path = a.root.join(&rel);
                     let have = std::fs::read_to_string(&path).ok();
                     if have.as_deref() == Some(text.as_str()) {
                         continue;
@@ -350,25 +432,8 @@ fn run(a: Args) -> Result<()> {
                         println!("wrote    {}", path.display());
                     }
                 }
-            }
-            // A content module declares its machines in its objects (.dk.desc), so its gallery.json needs them: a second library loads
-            // (and builds when stale) the objects, after the files above are written, which the build reads.
-            let with_gallery: Vec<String> = lib
-                .modules
-                .iter()
-                .filter(|m| patchkit::typed::has_typed(&m.manifest))
-                .map(|m| m.id().to_string())
-                .collect();
-            let content: Vec<String> = lib
-                .modules
-                .iter()
-                .filter(|m| !with_gallery.iter().any(|g| g == m.id()))
-                .filter(|m| only.is_empty() || only.iter().any(|o| o == m.id()))
-                .map(|m| m.id().to_string())
-                .collect();
-            if !content.is_empty() {
-                let full = library_with(&a.root, rest, true, Some(&content))?;
-                for (path, text) in patchkit::modgen::generate_many(&full, &models, &content)? {
+                for (rel, text) in patchkit::fwgen::generate_with_ports(&a.root)? {
+                    let path = a.root.join(&rel);
                     let have = std::fs::read_to_string(&path).ok();
                     if have.as_deref() == Some(text.as_str()) {
                         continue;
@@ -384,42 +449,6 @@ fn run(a: Args) -> Result<()> {
                         write(&path.to_string_lossy(), text.as_bytes())?;
                         println!("wrote    {}", path.display());
                     }
-                }
-            }
-            for (rel, text) in patchkit::sdkgen::generate(&a.root)? {
-                let path = a.root.join(&rel);
-                let have = std::fs::read_to_string(&path).ok();
-                if have.as_deref() == Some(text.as_str()) {
-                    continue;
-                }
-                if check {
-                    println!("stale    {}", path.display());
-                    stale += 1;
-                } else {
-                    if let Some(d) = path.parent() {
-                        std::fs::create_dir_all(d)
-                            .map_err(|e| Error(format!("{}: {e}", d.display())))?;
-                    }
-                    write(&path.to_string_lossy(), text.as_bytes())?;
-                    println!("wrote    {}", path.display());
-                }
-            }
-            for (rel, text) in patchkit::fwgen::generate_with_ports(&a.root)? {
-                let path = a.root.join(&rel);
-                let have = std::fs::read_to_string(&path).ok();
-                if have.as_deref() == Some(text.as_str()) {
-                    continue;
-                }
-                if check {
-                    println!("stale    {}", path.display());
-                    stale += 1;
-                } else {
-                    if let Some(d) = path.parent() {
-                        std::fs::create_dir_all(d)
-                            .map_err(|e| Error(format!("{}: {e}", d.display())))?;
-                    }
-                    write(&path.to_string_lossy(), text.as_bytes())?;
-                    println!("wrote    {}", path.display());
                 }
             }
             if stale > 0 {
@@ -1000,5 +1029,238 @@ fn main() {
     if let Err(e) = run(a) {
         eprintln!("patchkit: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use patchkit::build::{cache_dir, toolchain::Env};
+
+    fn copy_tree(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let dest = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &dest);
+            } else {
+                std::fs::copy(entry.path(), dest).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn scoped_generation_checks_detect_stale_outputs_without_writing() {
+        let fixture = ApplyRoot::new("generation");
+        // Replace the build fixture's SDK link with a private copy: stale checks never touch the repository.
+        std::fs::remove_file(fixture.0.join("sdk")).unwrap();
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for dir in ["sdk", "devices", "modules/core/adapters/machines"] {
+            copy_tree(&real.join(dir), &fixture.0.join(dir));
+        }
+        std::fs::create_dir_all(fixture.0.join("modules/core/runtime")).unwrap();
+        std::fs::copy(
+            real.join(patchkit::abigen::SOURCE),
+            fixture.0.join(patchkit::abigen::SOURCE),
+        )
+        .unwrap();
+        let module_dir = fixture.0.join("modules/fixture");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        std::fs::write(
+            module_dir.join("module.toml"),
+            r#"
+[module]
+id = "test/generation"
+version = "0.1.0"
+name = "Generation fixture"
+category = "test"
+type = "raw"
+author = "test"
+status = "experimental"
+summary = "Scoped generation check"
+[[gen]]
+kind = "gas"
+path = "build/gen/device-{dev}.inc"
+"#,
+        )
+        .unwrap();
+        let args = |scope: &str| Args {
+            root: fixture.0.clone(),
+            rest: [
+                "gen",
+                "--check",
+                "--scope",
+                scope,
+                "--modules",
+                "test/generation",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        };
+        let lib = library_with(&fixture.0, &[], true, Some(&[])).unwrap();
+        let facts = patchkit::devgen::Facts::from_dir(&fixture.0.join("devices")).unwrap();
+        let module_files = patchkit::devgen::generate(&lib, &facts, "test/generation").unwrap();
+        assert!(!module_files.is_empty());
+        let mut files = patchkit::sdkgen::generate(&fixture.0).unwrap();
+        files.extend(patchkit::fwgen::generate_with_ports(&fixture.0).unwrap());
+        files.extend(
+            module_files
+                .into_iter()
+                .map(|(p, t)| (format!("modules/fixture/{p}"), t)),
+        );
+        for (rel, text) in &files {
+            let path = fixture.0.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        let snapshot = || {
+            files
+                .iter()
+                .map(|(rel, _)| {
+                    let path = fixture.0.join(rel);
+                    (
+                        std::fs::read(&path).unwrap(),
+                        std::fs::metadata(path).unwrap().modified().unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let baseline = snapshot();
+        for scope in ["shared", "modules", "all"] {
+            run(args(scope)).unwrap();
+        }
+        let default_args = || {
+            let mut a = args("all");
+            a.rest.drain(2..4);
+            a
+        };
+        run(default_args()).unwrap();
+        assert_eq!(baseline, snapshot());
+        for (rel, scope, other) in [
+            (patchkit::sdkgen::RUST_OUT, "shared", "modules"),
+            (patchkit::fwgen::RUST_OUT, "shared", "modules"),
+            (
+                "modules/fixture/build/gen/device-dt2.inc",
+                "modules",
+                "shared",
+            ),
+        ] {
+            let path = fixture.0.join(rel);
+            let original = std::fs::read(&path).unwrap();
+            std::fs::write(&path, "stale fixture\n").unwrap();
+            let stale = snapshot();
+            assert!(
+                run(args(scope))
+                    .unwrap_err()
+                    .0
+                    .contains("generated file(s) are stale")
+            );
+            run(args(other)).unwrap();
+            assert!(run(args("all")).is_err());
+            assert!(run(default_args()).is_err());
+            assert_eq!(stale, snapshot(), "check rewrote {rel}");
+            std::fs::write(path, original).unwrap();
+        }
+        for rest in [
+            vec!["gen", "--scope", "shared"],
+            vec!["gen", "--check", "--scope", "bogus"],
+            vec!["gen", "--check", "--scope"],
+        ] {
+            assert!(
+                run(Args {
+                    root: fixture.0.clone(),
+                    rest: rest.into_iter().map(String::from).collect()
+                })
+                .unwrap_err()
+                .0
+                .contains("gen --scope requires")
+            );
+        }
+    }
+
+    struct ApplyRoot(PathBuf);
+
+    impl ApplyRoot {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("pk-apply-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(dir.join("out")).unwrap();
+            std::fs::create_dir_all(dir.join("devices")).unwrap();
+            let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+            std::os::unix::fs::symlink(Env::new(&real).tools, dir.join("out/tools")).unwrap();
+            std::os::unix::fs::symlink(real.join("sdk"), dir.join("sdk")).unwrap();
+            Self(dir)
+        }
+
+        fn module(&self, base: &str, id: &str, requires: &[&str], source: bool) {
+            let dir = self.0.join(base).join(id);
+            std::fs::create_dir_all(dir.join("src")).unwrap();
+            std::fs::write(
+                dir.join("module.toml"),
+                format!(
+                    "[module]\nid = {id:?}\nversion = \"0.1.0\"\nname = \"fixture\"\ncategory = \"test\"\ntype = \"raw\"\nauthor = \"test\"\nstatus = \"experimental\"\nsummary = \"apply selection fixture\"\nrequires = {requires:?}\n\n[[object]]\npath = \"build/tiny.dko.json\"\nplace = \"cf.expansion\"\nsources = [\"src/t.c\"]\n"
+                ),
+            )
+            .unwrap();
+            if source {
+                std::fs::write(dir.join("src/t.c"), "int twice(int x) { return x + x; }\n")
+                    .unwrap();
+            }
+        }
+    }
+
+    impl Drop for ApplyRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn apply_builds_selected_content_and_requires_but_not_unrelated_sources() {
+        let root = ApplyRoot::new("selection");
+        assert!(
+            Env::new(&root.0).m68k("gcc").is_ok(),
+            "this build regression needs the public m68k-elf toolchain"
+        );
+        root.module("modules", "test/selected", &["test/dependency"], true);
+        root.module("extra", "test/dependency", &[], true);
+        root.module("modules", "test/unrelated", &[], false);
+        let rest = vec![
+            "--modules-dir".into(),
+            root.0.join("extra").display().to_string(),
+        ];
+        let (lib, ids) = library_for_apply(&root.0, &rest, vec!["test/selected".into()]).unwrap();
+        assert_eq!(ids.len(), 2);
+        for id in ["test/selected", "test/dependency"] {
+            assert!(ids.iter().any(|selected| selected == id));
+            assert_eq!(lib.get(id).unwrap().objects.len(), 1);
+            assert!(
+                cache_dir(&root.0)
+                    .join(id)
+                    .join("build/tiny.dko.json")
+                    .is_file()
+            );
+        }
+        assert!(lib.get("test/unrelated").unwrap().objects.is_empty());
+        assert!(!cache_dir(&root.0).join("test/unrelated").exists());
+    }
+
+    #[test]
+    fn apply_refuses_missing_requires_before_building_content() {
+        let root = ApplyRoot::new("missing");
+        root.module("modules", "test/selected", &["test/missing"], false);
+        assert!(library_for_apply(&root.0, &[], vec!["test/selected".into()]).is_err());
+        assert!(!cache_dir(&root.0).exists());
+    }
+
+    #[test]
+    fn apply_refuses_requires_cycles_before_building_content() {
+        let root = ApplyRoot::new("cycle");
+        root.module("modules", "test/selected", &["test/dependency"], false);
+        root.module("modules", "test/dependency", &["test/selected"], false);
+        assert!(library_for_apply(&root.0, &[], vec!["test/selected".into()]).is_err());
+        assert!(!cache_dir(&root.0).exists());
     }
 }
