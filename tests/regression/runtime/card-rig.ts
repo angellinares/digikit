@@ -70,8 +70,8 @@ export interface CardRigOptions {
   roots?: string[];
   /** Plan symbols besides `DKRT_BOOT`. */
   symbols?: string[];
-  /** Daemon environment besides the write watch. */
-  env?: Record<string, string>;
+  /** Daemon environment besides the write watch; it overrides the watch's variables. A function gets the prepared runtime plan when the daemon starts. */
+  env?: Record<string, string> | ((prepared: PreparedRuntimePlan) => Record<string, string>);
   /** ColdFire-only daemon ('zero'; 'cold': also without a snapshot) or with the SHARC (default). */
   dsp?: 'zero' | 'sharc' | 'cold';
   /** The first card: a function that gives its spec (default a blank store card) or `small`, a blank 1 MiB file (a test sets `DIGI_CARD_IDENTITY=small`). */
@@ -252,7 +252,11 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         watchOutput = path.join(artifacts, 'writewatch.jsonl');
         const env = runtimeWatchEnv(prepared.planFile, watchOutput);
         record(artifacts, 'watch-environment', env);
-        return { ...env, ...(o.relaxFs ? { DIGI_COLD_RELAX_FS: '1' } : {}), ...o.env };
+        return {
+          ...env,
+          ...(o.relaxFs ? { DIGI_COLD_RELAX_FS: '1' } : {}),
+          ...(typeof o.env === 'function' ? o.env(prepared) : o.env),
+        };
       },
     },
     {

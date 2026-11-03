@@ -226,3 +226,20 @@ Differences that apply to many lines:
 
 - The Python `capacity` cases booted in threads, one rig per case, ColdFire-only. In TS one daemon per describe block boots the cases one after the other; the full set, files and arena run on a ColdFire-only daemon (`dsp: 'zero'`), the coupled full set and the needs on a coupled daemon with `hold: true`.
 - The full set has no reference module on the ColdFire-only daemon: a DSP reference's registry rows come after the DSP acknowledges, so machine types and rows would not add up there.
+
+## memaudit (dt2 and dn2, quick; D `run_memaudit`; clean and stray ported, `-full` stays Python)
+
+Status: proven on DT2 and DN2 (full tier, 2026-11-03). The scenarios `memaudit-{dt2,dn2}` and `memaudit-{dt2,dn2}-stray` and `pk_modaudit.py` are deleted. `memaudit-{dt2,dn2}-full` and `pk_digikit_memaudit.py` remain for the full synthetic set (B2). The test is `modules/core/runtime/tests/memaudit.device.test.ts`; the helpers are `tests/regression/runtime/memaudit-kit.ts` (guard plan, writer names, module sets) and `memaudit-suite.ts` (the two daemons), and `project-kit.ts` (the panel drive).
+
+memaudit | D:run_memaudit | every module of the set loaded (ColdFire part), count, no safe mode | -> memaudit.device.test.ts: the set loads ... (`bootInfo`: safe 0, count, results 0 or LOADING)
+memaudit | D:run_memaudit | MODULES lists the loaded modules and every block lies inside the arena | -> memaudit.device.test.ts: the set loads ... (`dk.modules()`, `arenaBounds`)
+memaudit | D:run_memaudit | the full set uses the arena and the DSP area to the last byte | NOT PORTED: only the `-full` scenarios (still Python)
+memaudit | D:plan_guard, arm | protect the free cf regions minus the module blocks, arena labelled, allowed PCs = placed patch code | -> memaudit-kit.ts `guardPlan`, `patchCode` (the plan's `writes`); `guard.set` in the test
+memaudit | D:drive | DIGIKIT menu, MODULES, project save, machine on the track, p-lock, save, load | -> memaudit-kit.ts `driveAuditUi`, project-kit.ts `buildPanelProject`, `savePanelProject`, `loadPanelProject`, `selectDt2`
+memaudit | D:run_memaudit | the must_run module's block changed while the guard was armed | -> memaudit.device.test.ts: same test (`moduleBlocks`, `bytesChanged`)
+memaudit | D:run_memaudit | guard total 0 (clean set) | -> memaudit.device.test.ts: clean set > drive
+memaudit | D:run_memaudit | stray: exactly one store, by the code of test/dyn-demo-stray, in the label arena | -> memaudit.device.test.ts: stray store > drive (`whoWrote`); the session's guard fault is allowed for this case only
+memaudit | D:load_pass | second cold boot with the write watch on the protected ranges from the first cache enable, no CPU store | -> memaudit-suite.ts: load pass (second daemon, `loadWatchEnv`); the watch leaves out the runtime's DMA buffers (`dmaHoles`) and the daemon fails on any watch event at close
+memaudit | D:common_checks_upload | write watch, flush check, card writes in the store range and the project sectors | -> `cardRig` options `uploads`, `relaxFs`, `project` (the rig's close checks)
+memaudit | D:sweep | `module:audit`: each of the first 14 machine list entries chosen on track 1, page turned | -> project-kit.ts `sweepMachineList`; memaudit-module.device.test.ts
+memaudit | D:report | per-module words changed, hits list in the run report | DROPPED: the artifacts dir keeps `memaudit-plan.json` and `memaudit-result.json`; Python report fields have no reader

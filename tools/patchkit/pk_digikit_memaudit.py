@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""The ColdFire memory audit: the `debug` part `memaudit` of the digikit scenarios (docs/TESTING.md, `mise run module:audit`).
+"""The ColdFire memory audit: the `debug` part `memaudit` of the digikit scenarios (docs/TESTING.md).
+
+Only the scenarios `memaudit-{dt2,dn2}-full` still run it. The clean sets, the negative control and `mise run module:audit` are the TypeScript
+device tests `modules/core/runtime/tests/memaudit*.device.test.ts` (shared code: tests/regression/runtime/memaudit-kit.ts). Delete this file
+when the full set is a TypeScript test.
 
 A module set is loaded on a ColdFire-only rig, the emulator's write guard (`guard.set`, docs/CONTROL.md) is armed, the UI is driven for a
 bounded time (the DIGIKIT menu, a run-time machine on a track with parameter turns, a p-lock, one project save and load), and
@@ -122,20 +126,7 @@ def block_words(rig: Any, mods: list[dict]) -> dict[str, bytes]:
     return {m["name"]: block(m["cf_base"], m["cf_size"]) for m in mods}
 
 
-def sweep(rig: Any, positions: int) -> None:
-    """Choose each of the first POSITIONS entries of the machine list on track 1 and turn the encoders of its page: the run-time machines of
-    a set without a known list position are among them (`module:audit`)."""
-    s = rig.s
-    for k in range(positions):
-        rig.select(k, ups=positions + 2)
-        s.do_tap("SRC" if rig.device == "dt2" else "SYN")
-        s.run_ms(200)
-        for enc, by in (("ENC A", 5), ("ENC B", -3), ("ENC C", 4)):
-            s.do_turn(enc, by)
-            s.run_ms(80)
-
-
-def drive(c: Any, rig: Any, machines: list[dict], positions: int = 0) -> None:
+def drive(c: Any, rig: Any, machines: list[dict]) -> None:
     """The UI for a bounded time: the DIGIKIT menu and its MODULES page (looked at, nothing ticked), the run-time machines on their tracks with
     parameter turns, a p-lock and a sound lock on step 1, one project save, an edit, a second save and a load."""
     from tools.patchkit import pk_digikit_project as P
@@ -166,8 +157,6 @@ def drive(c: Any, rig: Any, machines: list[dict], positions: int = 0) -> None:
         ]
     }
     P.build_project(c, rig, spec)
-    if positions:
-        sweep(rig, positions)
     P.save_project(rig)
     P.load_project(rig)
     s.run_ms(1000)
@@ -241,7 +230,6 @@ def run_memaudit(c: Any) -> None:
             names.append(mod.name)
             wants.append(mod.want)
     card = c.card(list(files.values()))
-    expect = t.get("expect", [])  # hits the scenario must produce: [{module = ...}]
     loaded_names = [n for n, w in zip(names, wants, strict=True) if w == P.LOADED]
     with c.rig(img, card, "memaudit", cf_only=True) as rig:
         info = rig.boot_info()
@@ -288,7 +276,7 @@ def run_memaudit(c: Any) -> None:
         }
         before = block_words(rig, mods)
         arm(rig, prot, code)
-        drive(c, rig, t.get("machines", []), t.get("sweep", 0))
+        drive(c, rig, t.get("machines", []))
         rep = rig.emu.call("guard.report")
         after = block_words(rig, mods)
         hits = [
@@ -325,22 +313,11 @@ def run_memaudit(c: Any) -> None:
             f"pc {h['pc']:#x} ({h['writer']}) addr {h['addr']:#x} size {h['size']} in {h['label']}"
             for h in hits
         ]
-        if expect:
-            c.check(
-                "the audit reports exactly the expected stores, by the expected module's code, inside the protected arena",
-                rep["total"] == len(expect)
-                and all(
-                    h["writer"] == f"module {e['module']}" and h["label"] == "arena"
-                    for h, e in zip(hits, expect, strict=True)
-                ),
-                "; ".join(lines),
-            )
-        else:
-            c.check(
-                "no store outside the module blocks and the patch code while the UI was driven (guard total 0)",
-                rep["total"] == 0,
-                "; ".join(lines),
-            )
+        c.check(
+            "no store outside the module blocks and the patch code while the UI was driven (guard total 0)",
+            rep["total"] == 0,
+            "; ".join(lines),
+        )
         c.done(rig)
     late = load_pass(c, img, card, prot, code, mods)
     c.report["memaudit"]["load_hits"] = late

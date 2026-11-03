@@ -309,12 +309,17 @@ Both use the newest image of each device. Cards are cached by content in `out/ca
 Jobs: `DIGIKIT_JOBS` (default 3). `DIGIKIT_PROFILE=1` prints the phase table,
 `DIGIKIT_RUN_SALT=x` forces cold boots.
 
-The `memaudit` part (`tools/patchkit/pk_digikit_memaudit.py`) proves that a loaded module set writes
-no ColdFire memory outside what each module owns while the UI is driven. The rig is ColdFire-only. It
-protects the `cpu = "cf"` regions of `devices/ports/<image>.toml` minus each module's block, allows
-writes only from placed patch code, and expects `guard.report` total 0. DMA and host writes are not
-seen. Negative controls: `memaudit-dt2-stray`, `memaudit-dn2-stray`. `mise run module:audit NAME` runs
-it for one module (docs/MODULE-AUTHORING.md).
+The memory audit proves that a loaded module set writes no ColdFire memory outside what each module
+owns while the UI is driven. The clean sets and the negative control (`test/dyn-demo-stray` stores one
+word in the arena) are `modules/core/runtime/tests/memaudit.device.test.ts`; `mise run module:audit NAME`
+runs it for one module as `memaudit-module.device.test.ts` (docs/MODULE-AUTHORING.md). The shared code
+is `tests/regression/runtime/memaudit-kit.ts` and `memaudit-suite.ts`. The rig is ColdFire-only. The
+first daemon protects the `cpu = "cf"` regions of `devices/ports/<image>.toml` minus each module's
+block, allows writes only from placed patch code, drives the UI and expects `guard.report` total 0. A
+second daemon boots the same card with the write watch on the same ranges, so the load and `dkm_init`
+are audited too. DMA and host writes are not seen. Only the `memaudit-dt2-full` and `memaudit-dn2-full`
+scenarios still use `tools/patchkit/pk_digikit_memaudit.py`; they stay until the full synthetic set is a
+TypeScript fixture.
 
 The capacity tests are TypeScript device tests: `modules/core/runtime/tests/capacity.device.test.ts` fills every runtime limit with
 synthetic modules (`patchkit synth-dkm`, built by `tests/regression/runtime/synth.ts`; limits in `[limits]` of `devices/*.toml`), checks the refusal codes,

@@ -13,6 +13,8 @@ export interface RuntimePlan {
   base: { device: string; version: string; syx_sha256: string };
   modules: string[];
   symbols: Record<string, number>;
+  /** What the patchkit wrote into the image: patches and placed objects (`kind: 'place'`, `what` 'object in <region>' or 'hook tail'). */
+  writes?: { cpu: string; addr: number; len: number; kind: string; owner: string; what: string }[];
   output: { syx_sha256: string } | null;
 }
 

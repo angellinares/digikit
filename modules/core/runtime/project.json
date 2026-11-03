@@ -99,6 +99,16 @@
         "files": ["tests/debug-guard.device.test.ts"],
         "modules": ["digikit/debug", "test/dyn-guard-nan", "test/sine"],
         "plusdrive": true
+      },
+      {
+        "files": ["tests/memaudit.device.test.ts"],
+        "modules": ["test/c-demo", "test/dyn-demo", "test/dyn-demo-stray", "test/dyn-dn2", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/memaudit-module.device.test.ts"],
+        "modules": [],
+        "plusdrive": true
       }
     ]
   }

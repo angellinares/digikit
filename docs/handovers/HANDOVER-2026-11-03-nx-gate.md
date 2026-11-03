@@ -67,7 +67,10 @@ This PR (branch `test/watchdog-default`):
        overlapping ranges, reference DSP bytes unchanged. Inferred-needs. One fits case on the real
        MODULES page. The TypeScript synthetic-module helper is written so it can become a fixture-module
        library.
-     - B3: memaudit clean and stray, with `module:audit` as a vitest run (it uses pk_capacity.py today).
+     - B3: done on branch `test/memaudit-device`. memaudit clean and stray are
+       `modules/core/runtime/tests/memaudit.device.test.ts`; `module:audit` runs
+       `memaudit-module.device.test.ts` through `tools/devtools/module_audit.sh`. `memaudit-*-full` and
+       `pk_digikit_memaudit.py` stay until B2's generator lands.
      - Dropped: menu-open and the isolation PCM comparison.
    - Future: capacity tests through a committed set of fixture modules uploaded into a running
      emulator (one per limit, arena-fill and expansion variants). This could replace B2's generator and

@@ -269,8 +269,8 @@ run = "uv run python -m tools.patchkit.pk_modcheck"
 description = "Check one module: module:check ID [--device dt2|dn2] [--trace]. Machine/effect conformance and own Python tests, then any module-owned Nx test-device target; may build or emulate. Modules without tests retain source/size checks; not an all-module patched load proof. Size/fit follows only after all owned stages pass"
 
 [tasks."module:audit"]
-run = "uv run python -m tools.patchkit.pk_modaudit"
-description = "ColdFire memory audit of one run-time module in the emulator: `module:audit NAME [--device dt2|dn2]`. Loads the module (and the run-time modules it requires) on a ColdFire-only rig, drives the UI for a bounded time (DIGIKIT menu, machine list, parameter turns, project save and load) and reports every store into the free regions outside the module blocks by code that is not a patch object (pc, address, size, the code it belongs to). About 10 to 30 s per device"
+run = "sh tools/devtools/module_audit.sh"
+description = "ColdFire memory audit of one run-time module in the emulator: `module:audit NAME [--device dt2|dn2]`. Loads the module (and the run-time modules it requires) on a ColdFire-only rig, drives the UI for a bounded time (DIGIKIT menu, machine list, parameter turns, project save and load) and reports every store into the free regions outside the module blocks by code that is not a patch object (pc, address, size, the code it belongs to). Runs a Vitest device test (modules/core/runtime/tests/memaudit-module.device.test.ts) with DIGI_AUDIT_MODULE=NAME. About 1 to 2 minutes per device"
 
 [tasks."module:pack-all"]
 run = "uv run python -m tools.device.dkpackall"
