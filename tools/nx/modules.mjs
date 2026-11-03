@@ -23,6 +23,7 @@ const isUploadable = (root, m) => root.startsWith('modules/') && !!(m.dynamic ||
 // tests/ and docs; for regression only the harness files, see tests/regression/project.json), the outputs of
 // the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
 // ready dirs via device-inputs.mjs.
+// Image core sources/objects are explicit production inputs, without acceptance-fixture graph edges.
 // Also named explicitly: the harness packages (test-support, control-client, dk-session), every module.toml
 // (the conformance suite scans manifests to select modules) and tools/emulator/fast_regions.json (sets SHARC_* env).
 const DEVICE_INPUTS = [
@@ -45,6 +46,7 @@ const DEVICE_INPUTS = [
   '{workspaceRoot}/packages/control-client/**/*',
   '{workspaceRoot}/packages/dk-session/**/*',
   '{workspaceRoot}/modules/**/module.toml',
+  '{workspaceRoot}/tools/nx/device-inputs.mjs',
   '{workspaceRoot}/tools/emulator/fast_regions.json',
 ];
 const leaf = (id) => id.split('/').at(-1);
@@ -54,7 +56,7 @@ const records = (root) => {
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
 };
 
-const deviceTarget = (root, tests, recs, uploadable = false) => {
+const deviceTarget = (root, tests, recs, imageInput, uploadable = false) => {
   const dependsOn = ['patchkit:cli', 'digi-control:daemons'];
   if (uploadable) dependsOn.push('pack');
   for (const rec of recs) {
@@ -67,6 +69,7 @@ const deviceTarget = (root, tests, recs, uploadable = false) => {
     cache: true,
     inputs: [
       ...DEVICE_INPUTS,
+      imageInput,
       ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
     ],
     dependsOn: [...new Set(dependsOn)],
@@ -91,6 +94,21 @@ export const createNodesV2 = [
     const byId = new Map(
       files.map((f) => [read(ctx.workspaceRoot, f).module.id, { manifest: read(ctx.workspaceRoot, f).module }]),
     );
+    // Patch image composition follows module.requires, not acceptance-fixture graph edges.
+    const imageModules = new Set();
+    const includeImageModule = (id) => {
+      if (imageModules.has(id)) return;
+      const manifest = byId.get(id)?.manifest;
+      if (!manifest) throw new Error(`Unknown acceptance patch-set module ${id}`);
+      imageModules.add(id);
+      for (const required of manifest.requires ?? []) includeImageModule(required);
+    };
+    // The supported acceptance image sets; arbitrary overrides need separate input review.
+    for (const profile of globSync('devices/*.toml', { cwd: ctx.workspaceRoot }).sort()) {
+      const sets = read(ctx.workspaceRoot, profile).patch_sets ?? {};
+      for (const set of ['emulator', 'sample-tracks']) for (const id of sets[set] ?? []) includeImageModule(id);
+    }
+    const imageInput = { input: 'production', projects: [...imageModules].sort() };
     // Only the modules the gate packs get a pack target: patched-in core modules and static fixtures
     // (several ColdFire objects, no dkm_ symbols) cannot be packed as .dkm.
     const packable = new Set(['digikit/debug']);
@@ -176,13 +194,14 @@ export const createNodesV2 = [
             cwd: '.',
           },
         };
-      if (shipped && deviceTests.length) targets['test-device'] = deviceTarget(root, deviceTests, recs, uploadable);
+      if (shipped && deviceTests.length)
+        targets['test-device'] = deviceTarget(root, deviceTests, recs, imageInput, uploadable);
       // The rule is `isUploadable` in this file: the shared conformance suite loads these.
       if (uploadable)
         targets['test-conformance'] = {
           executor: 'nx:run-commands',
           cache: true,
-          inputs: DEVICE_INPUTS,
+          inputs: [...DEVICE_INPUTS, imageInput],
           dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons'],
           outputs: [],
           options: {
@@ -201,7 +220,7 @@ export const createNodesV2 = [
       const recs = records(join(ctx.workspaceRoot, root));
       if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
         throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
-      const target = deviceTarget(root, tests, recs);
+      const target = deviceTarget(root, tests, recs, imageInput);
       // This new target identity awaits input/output and cache-behavior evidence.
       target.cache = false;
       target.description =

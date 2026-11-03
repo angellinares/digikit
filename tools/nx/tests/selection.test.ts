@@ -28,8 +28,7 @@ type ProjectGraph = {
   dependencies: Record<string, { target: string }[]>;
 };
 
-function plan(args: string[], outputFlag = '--graph'): { tasks: TaskGraph; graph: ProjectGraph } {
-  const output = join(scratch, 'tasks.json');
+function nx(args: string[]): string {
   const env: Record<string, string | undefined> = {
     ...process.env,
     NX_DAEMON: 'false',
@@ -38,12 +37,18 @@ function plan(args: string[], outputFlag = '--graph'): { tasks: TaskGraph; graph
     NX_WORKSPACE_DATA_DIRECTORY: join(scratch, 'workspace-data'),
   };
   delete env.NX_LEGACY_AFFECTED;
-  execFileSync('pnpm', ['exec', 'nx', ...args, `${outputFlag}=${output}`], {
+  return execFileSync('pnpm', ['exec', 'nx', ...args], {
     cwd: root,
     env,
     timeout: 30_000,
     stdio: 'pipe',
+    encoding: 'utf8',
   });
+}
+
+function plan(args: string[], outputFlag = '--graph'): { tasks: TaskGraph; graph: ProjectGraph } {
+  const output = join(scratch, 'tasks.json');
+  nx([...args, `${outputFlag}=${output}`]);
   return JSON.parse(readFileSync(output, 'utf8'));
 }
 
@@ -53,6 +58,46 @@ let workspace: ProjectGraph;
 beforeAll(() => {
   workspace = plan(['graph'], '--file').graph;
 });
+
+function imageConsumer(): string {
+  return Object.entries(workspace.nodes).find(
+    ([, node]) => node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'],
+  )![0];
+}
+
+it('declares patch-image sources and objects without consumer acceptance files', () => {
+  const conformance = JSON.parse(nx(['show', 'target', 'inputs', `${imageConsumer()}:test-conformance`, '--json']));
+  const acceptance = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
+  for (const file of [
+    'modules/core/apps/digikit-menu/src/menu.c',
+    'modules/core/apps/digikit-menu/build/digikit-menu.dko.json',
+    'modules/core/adapters/ui/src/ui.c',
+    'modules/core/adapters/ui/build/ui.dko.json',
+    // DSP-link is a transitive requirement, not an emulator-set root.
+    'modules/core/adapters/dsp-link/src/cf/dsp-link.c',
+    'modules/core/adapters/dsp-link/build/dsp-link-cf.dko.json',
+  ]) {
+    expect(conformance.files, file).toContain(file);
+    expect(acceptance.files, file).toContain(file);
+  }
+  expect(conformance.files).not.toContain('modules/core/runtime/tests/capacity.device.test.ts');
+  expect(conformance.files).not.toContain('tests/fixtures/modules/dyn-demo-stray/src/rs/src/lib.rs');
+}, 30_000);
+
+it('declares patchkit external compile sources in the native input plan', () => {
+  const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'patchkit:rust-tests', '--json']));
+  for (const file of [
+    'sdk/sdk.toml',
+    'sdk/vectors/fit-vectors.json',
+    'sdk/vectors/settings-vectors.json',
+    'devices/digitakt-ii.toml',
+    'devices/digitone-ii.toml',
+    'tools/patchkit/toolchain/pins.toml',
+    'tools/patchkit/toolchain/m68k-cf-none-elf-a2.json',
+    'tools/patchkit/pk_toolchains.py',
+  ])
+    expect(inputs.files, file).toContain(file);
+}, 30_000);
 
 it('keeps runtime and shipped content outside dependency cycles', () => {
   const reaches = (from: string, target: string, seen = new Set<string>()): boolean => {
@@ -86,6 +131,44 @@ it('keeps every runtime device file in the new owner command', () => {
 });
 
 describe('workspace selection', () => {
+  it.each(['modules/core/apps/digikit-menu/src/menu.c', 'modules/core/adapters/ui/src/ui.c'])(
+    'selects image consumers when %s changes',
+    (file) => {
+      const graph = selected(file, 'test-device,test-conformance');
+      expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+      expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+    },
+    30_000,
+  );
+
+  it('selects a Rust dependency’s own and consumer tests', () => {
+    const graph = selected('packages/dksample/src/lib.rs', 'rust-tests');
+    expect(graph.tasks['dksample:rust-tests']).toBeDefined();
+    expect(graph.tasks['plusdrive-format:rust-tests']).toBeDefined();
+    expect(graph.tasks['patchkit:rust-tests']).toBeDefined();
+  }, 30_000);
+
+  it.each(['sdk/sdk.toml', 'devices/digitakt-ii.toml', 'tools/patchkit/toolchain/pins.toml'])(
+    'selects patchkit Rust tests for external compile source %s',
+    (file) => {
+      expect(selected(file, 'rust-tests').tasks['patchkit:rust-tests']).toBeDefined();
+    },
+    30_000,
+  );
+
+  it('selects cached device consumers when the device digest recipe changes', () => {
+    const graph = selected('tools/nx/device-inputs.mjs', 'test-device,test-conformance,stock');
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+    expect(graph.tasks['gate-stock:stock']).toBeDefined();
+  }, 30_000);
+
+  it('keeps an acceptance-only fixture out of unrelated conformance', () => {
+    const graph = selected('tests/fixtures/modules/dyn-demo-stray/src/rs/src/lib.rs', 'test-device,test-conformance');
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
+  }, 30_000);
+
   it('runs the standalone runtime unit tests without build or daemon prerequisites', () => {
     const graph = selected('modules/core/runtime/src/rs/src/lib.rs', 'rust-tests,test-device');
     expect(graph.tasks['core/runtime:rust-tests']).toBeDefined();

@@ -1,7 +1,6 @@
 # Test and build workflow
 
-Objective: fast, accurate Nx selection with explicit build and cache boundaries, while retaining
-coverage. Nx owns scheduling; mise remains a thin entry point rather than a second router.
+Objective: fast, accurate Nx selection with explicit build and cache boundaries, retaining coverage. Nx owns scheduling; mise remains a thin entry point.
 
 ## Sequence and checkpoints
 
@@ -40,12 +39,13 @@ coverage. Nx owns scheduling; mise remains a thin entry point rather than a seco
    preflight tasks pass. No device/native builds or full gate were run for this checkpoint.
    The relocated acceptance target remains uncached. No device suite was run. Earlier custom-audit
    passes did not prove subprocess closure or runtime-digest provenance; helper-source inputs are triggers only.
-2. **Active: prove build-cache boundaries.** Checkpoint A deletes the custom Nx input auditor,
+2. **Active: prove build-cache boundaries.** Checkpoint A (`daf7f3a0`) deletes the custom Nx input auditor,
    tracer and dedicated tests (four preflight checks pass): no operational callers beyond manual policy/docs/tests.
    Use native Nx declared-input inspection plus scoped invalidation/restoration evidence; no replacement tracer.
-   Next fix missing runtime patch-set menu/UI sources and Rust dependency/toolchain/recipe inputs.
-   Review patchkit's setup scan/build of unrelated content before restricting applied roots, and
-   account for `PATCHKIT_MODULES` / `DIGI_PK_ROOT` overrides. Native inspection does not prove observed closure.
+   Checkpoint B adds explicit production inputs for the 16-core-module requires closure of profile `emulator`/`sample-tracks` sets.
+   Native inspection covers menu/UI/transitive sources and committed objects, excluding consumer acceptance files; 19 selection cases and four preflight tasks pass.
+   Nonhermetic Rust tests include dependencies and patchkit's external compile inputs; device digest source changes select consumers.
+   Next: core-object preparation (source selection does not rebuild core objects), patchkit over-scan, toolchain/daemon overrides and `PATCHKIT_MODULES` / `DIGI_PK_ROOT`.
    Early win `16594f8b` excludes task definitions from the daemon key while hashing the Rust pin
    and actual compiler identity. Six focused tests, mypy, Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.
    The new scheme causes one initial daemon-store miss. Next audit module-pack and daemon

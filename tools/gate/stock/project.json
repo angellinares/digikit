@@ -24,6 +24,7 @@
         "{workspaceRoot}/packages/control-client/**/*",
         "{workspaceRoot}/packages/dk-session/**/*",
         "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/tools/nx/device-inputs.mjs",
         "{workspaceRoot}/devices/**/*",
         "jsToolchain",
         { "dependentTasksOutputFiles": "**/*", "transitive": true },
