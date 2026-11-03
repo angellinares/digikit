@@ -230,6 +230,24 @@ proposes only canonical SDK and mirror versions (0.5.4 to 0.6.0); no builds or p
 
 ## Limits of current evidence
 
+Patchkit UI checkpoint (2026-11-04): the merge gate's smoke task passed 14/16 cells;
+only the patched-pluck UI frames failed (`.nx/cache/terminalOutputs/13348367458569934345`).
+Named DT2 1.17/DN2 1.12 cells with `--tests quick --jobs 2` reproduced all four
+frame hashes and pixel bounds exactly; all other quick assertions and DSP budgets passed.
+DT2's faders became encoders intentionally in `7549a4f5`; DN2's parameter positions
+became B, C, E, F intentionally in `1c572bf3`. The DN2 scenario still turned C
+(now PICK), so corrected its BRIGHT step to E and its layout comment. The named
+DN2 rerun visually confirms `Brightness=102`; its corrected moved-frame hash is
+`ccd412f8` (the old action produced `787ecba3`). Reproduction logs:
+`out/runs/patchkit/pluck-ui-reproduce.log` and `out/runs/patchkit/pluck-ui-dn2-corrected.log`.
+Only the four affected UI expectations are refreshed; PCM pins, non-UI assertions
+and all other cells remain unchanged. Recording and a separate comparison run of
+both named quick cells pass: DT2 18 checks, DN2 14 checks, including DSP budgets
+(projected high 45.8%/67.1%, below 85%). Comparison took 32 s;
+`out/runs/patchkit/pluck-ui-validate.log` and the `20261104-022220-*patched-pluck.jsonl`
+logs retain the checks. Prettier and `git diff --check` pass. Full smoke and the
+merge gate are not rerun at this checkpoint.
+
 No measured speedup or full gate is claimed. Task-level affected selection is the default after
 matrix review; the repository workflow no longer maintains legacy-mode compatibility branches.
 No device coverage has been removed, and no new device-test cache boundary has been established by
