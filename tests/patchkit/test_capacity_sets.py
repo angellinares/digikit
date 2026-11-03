@@ -1,5 +1,5 @@
 """The module sets of the capacity tests (tools/patchkit/pk_capacity.py) pack, and their sizes add up to the limits they claim to fill.
-No emulator: the scenario `capacity-*` boots them (tests/digikit)."""
+No emulator: the `memaudit-*-full` scenarios boot the full set (tests/digikit)."""
 
 import dataclasses
 import re

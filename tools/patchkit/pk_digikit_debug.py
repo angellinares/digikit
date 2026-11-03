@@ -74,26 +74,6 @@ def about_rows(rig: Any, plan: Any) -> list[str]:
 def run_debug(c: Any) -> None:
     if c.table().get("part") == "guard":
         return run_guard(c)
-    if c.table().get("part") == "capacity":
-        from tools.patchkit import pk_digikit_capacity as CAP
-
-        return CAP.run_capacity(c)
-    if c.table().get("part") == "inferred-needs":
-        from tools.patchkit import pk_digikit_capacity as CAP
-
-        return CAP.run_inferred_needs(c)
-    if c.table().get("part") == "menu-open":
-        from tools.patchkit import pk_digikit_capacity as CAP
-
-        return CAP.run_menu_open(c)
-    if c.table().get("part") == "fits":
-        from tools.patchkit import pk_digikit_capacity as CAP
-
-        return CAP.run_fits(c)
-    if c.table().get("part") == "isolation":
-        from tools.patchkit import pk_digikit_capacity as CAP
-
-        return CAP.run_isolation(c)
     if c.table().get("part") == "memaudit":
         from tools.patchkit import pk_digikit_memaudit as MA
 

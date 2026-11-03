@@ -63,7 +63,7 @@ This PR (branch `test/watchdog-default`):
      choice) moved into `dkrt-sdk` (`sticky`, `capacity`, `sel`) with host unit tests; the runtime calls
      them. The `sticky-types` scenario and `run_sticky` are deleted (ledger: debug-card-safe.md).
    - debug parts still to do, revised plan:
-     - B2: one device boundary test per device. A full synthetic module set: every refusal code, no
+     - B2 (done on branch `test/capacity-device`; ledger sections in debug-card-safe.md): one device boundary test per device. A full synthetic module set: every refusal code, no
        overlapping ranges, reference DSP bytes unchanged. Inferred-needs. One fits case on the real
        MODULES page. The TypeScript synthetic-module helper is written so it can become a fixture-module
        library.

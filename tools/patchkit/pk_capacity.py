@@ -371,8 +371,8 @@ def cases(g: Geometry) -> list[Case]:
 
 @dataclass(frozen=True)
 class Usage:
-    """What a packed module takes of each resource: the needs `dkneeds` infers from its file (docs/design/digikit-dkm.md; the scenario
-    `inferred-needs-*` proves they are what the loader takes)."""
+    """What a packed module takes of each resource: the needs `dkneeds` infers from its file (docs/design/digikit-dkm.md; the `inferred needs`
+    tests of `capacity.device.test.ts` prove they are what the loader takes)."""
 
     name: str
     arena: int  # the module's arena block

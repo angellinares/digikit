@@ -301,7 +301,7 @@ and a table named like the kind. Kinds:
 | `upload` | Module upload over USB SysEx: only `rust` is Python. The other parts are in `modules/core/runtime/tests/upload.device.test.ts` and `upload-faults.device.test.ts`. |
 | `menu` | Ticking a set in SETTINGS > DIGIKIT > MODULES and restarting loads the set; PCM equals the patched-in set. |
 | `safe` | Safe mode after a module resets the machine. The card states after a power cut are in `modules/core/runtime/tests/safe-mode.device.test.ts`. |
-| `debug` | Parts `memaudit`, `capacity`, `isolation` (below). |
+| `debug` | Part `memaudit` (below). |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)
 and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default; `gate:full` sets `full`.
@@ -316,9 +316,10 @@ writes only from placed patch code, and expects `guard.report` total 0. DMA and 
 seen. Negative controls: `memaudit-dt2-stray`, `memaudit-dn2-stray`. `mise run module:audit NAME` runs
 it for one module (docs/MODULE-AUTHORING.md).
 
-The `capacity` and `isolation` parts fill every runtime limit with synthetic modules
-(`patchkit synth-dkm`; limits in `[limits]` of `devices/*.toml`) and check the refusal codes.
-`tests/patchkit/test_capacity_sets.py` checks the set sizes without an emulator;
+The capacity tests are TypeScript device tests: `modules/core/runtime/tests/capacity.device.test.ts` fills every runtime limit with
+synthetic modules (`patchkit synth-dkm`, built by `tests/regression/runtime/synth.ts`; limits in `[limits]` of `devices/*.toml`), checks the refusal codes,
+the reference module's DSP bytes and the needs that `patchkit needs` infers (full tier); `modules/core/apps/digikit-menu/tests/fits.device.test.ts` checks the
+MODULES page. `tests/patchkit/test_capacity_sets.py` checks the set sizes of `pk_capacity.py` (used by `memaudit`) without an emulator;
 `tests/patchkit/test_limits.py` keeps tools from repeating a limit as a number.
 
 ### Machine and FX conformance (`tests/modules`)
