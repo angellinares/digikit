@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, globSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { parse } from 'smol-toml';
+import { createDependencies } from '../modules.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
@@ -213,7 +215,49 @@ it('keeps every runtime device file in exactly one owner command', () => {
   expect(actual).toEqual(expected);
 });
 
+it('derives content runtime edges from the unique runtime role', () => {
+  const fixture = mkdtempSync(join(scratch, 'runtime-role-'));
+  const projects = Object.fromEntries(
+    [
+      ['renamed/runtime', 'modules/core/renamed', 'runtime'],
+      ['example/content', 'modules/tools/content', undefined],
+    ].map(([name, dir, role]) => {
+      mkdirSync(join(fixture, dir!), { recursive: true });
+      writeFileSync(
+        join(fixture, dir!, 'module.toml'),
+        `[module]\nid = "${name}"\ntype = "service"\n${role ? `role = "${role}"\n` : ''}`,
+      );
+      return [name, { name, root: dir, tags: ['module'] }];
+    }),
+  );
+  const dependencies = createDependencies({}, { workspaceRoot: fixture, projects });
+  expect(dependencies.filter((dep) => dep.source === 'example/content').map((dep) => dep.target)).toEqual([
+    'renamed/runtime',
+  ]);
+  writeFileSync(
+    join(fixture, 'modules/tools/content/module.toml'),
+    '[module]\nid = "example/content"\nrole = "runtime"\n',
+  );
+  expect(() => createDependencies({}, { workspaceRoot: fixture, projects })).toThrow(
+    'Expected one module with role=runtime, found 2',
+  );
+});
+
 describe('workspace selection', () => {
+  it('packs affected modules without device tests through the default gate', () => {
+    const gate = parse(readFileSync(join(root, 'mise.toml'), 'utf8')).tasks as Record<string, { run: string }>;
+    const targets = gate.test.run.match(/ -t ([^' ]+)/)![1];
+    const [owner, node] = Object.entries(workspace.nodes).find(
+      ([, node]) =>
+        node.data.targets.pack && !node.data.targets['test-device'] && !node.data.targets['test-conformance'],
+    )!;
+    const source = globSync('src/**/*.{c,rs}', { cwd: join(root, node.data.root) }).sort()[0];
+    expect(source).toBeDefined();
+    const graph = selected(`${node.data.root}/${source}`, targets);
+    expect(graph.tasks[`${owner}:pack`]).toBeDefined();
+    expect(node.data.targets.pack.cache).toBe(false);
+  }, 30_000);
+
   it('selects only the importing suites for the card rig helper', () => {
     const graph = selected('tests/regression/runtime/card-rig.ts', 'test-device,test-conformance');
     expect(
@@ -245,6 +289,9 @@ describe('workspace selection', () => {
         'tests/regression/package.json',
         'tests/regression/support.ts',
         'tools/nx/modules.mjs',
+        'tools/nx/module-manifests.mjs',
+        'tools/nx/module-targets.mjs',
+        'tools/nx/module-dependencies.mjs',
         'tools/nx/test-imports.mjs',
         'pnpm-lock.yaml',
       ])

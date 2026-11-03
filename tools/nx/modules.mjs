@@ -2,115 +2,13 @@
 // that resolve into another module directory. tools/devtools/nx_graph.py reads them from the graph.
 // Targets: pack (build stale objects and pack to dist/modules/<dev>/<leaf>.dkm), pack-aliases (renamed copies named by
 // metadata.runtimeAcceptance), test-host, test-device and test-conformance (vitest directly, after the packs).
-import { existsSync, globSync, readFileSync } from 'node:fs';
-import { dirname, join, normalize } from 'node:path';
-import { DependencyType } from '@nx/devkit';
-import { parse } from 'smol-toml';
+import { globSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { read, records, packDevices, isUploadable, dkm } from './module-manifests.mjs';
+import { PK, IMAGE_BUILD, BUILD_INPUTS, DEVICE_INPUTS, deviceTarget } from './module-targets.mjs';
 import { testImportInputs } from './test-imports.mjs';
 
-const read = (root, toml) => parse(readFileSync(join(root, toml), 'utf8'));
-// Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
-const PK = 'dist/patchkit/patchkit --root .';
-const IMAGE_BUILD = { target: 'build-objects', projects: ['tag:acceptance-image'] };
-// Build/pack producers do not read acceptance tests. Nx's implicit ^default input would
-// otherwise turn a harness-only edit into a changed image output for every consumer.
-const BUILD_INPUTS = [
-  'production',
-  '^production',
-  'jsToolchain',
-  { dependentTasksOutputFiles: '**/*', transitive: true },
-  '{workspaceRoot}/tools/nx/modules.mjs',
-  // gen reads the library manifests and device facts; builders read shared SDK headers and pins.
-  '{workspaceRoot}/modules/**/module.toml',
-  '{workspaceRoot}/tests/fixtures/modules/**/module.toml',
-  '{workspaceRoot}/devices/**/*',
-  '{workspaceRoot}/sdk/**/*',
-  '{workspaceRoot}/tools/patchkit/**/*',
-  '{workspaceRoot}/Cargo.toml',
-  '{workspaceRoot}/Cargo.lock',
-  '{workspaceRoot}/.cargo/**/*',
-  '{workspaceRoot}/rust-toolchain*',
-  '{workspaceRoot}/mise.toml',
-  '{workspaceRoot}/pyproject.toml',
-  '{workspaceRoot}/uv.lock',
-  '{workspaceRoot}/tools/__init__.py',
-  '{workspaceRoot}/tools/devtools/benchlock.py',
-  '{workspaceRoot}/tools/devtools/portable_flock.py',
-];
-
-// The devices a module packs for: no ports means both devices.
-const packDevices = (m) => {
-  if (!m.ports?.length) return ['dt2', 'dn2'];
-  return ['dt2', 'dn2'].filter((d) => m.ports.some((p) => p.startsWith(`${d}-`)));
-};
-// Shipped module that is loaded at run time: it gets test-conformance.
-const isUploadable = (root, m) => root.startsWith('modules/') && !!(m.dynamic || m.host || m.type === 'service');
-// Cache inputs of test-device and test-conformance: the module and its graph deps (core modules, harness via
-// regression/conformance, daemon and patchkit crate sources) with their `production` files (sources without
-// tests/ and docs; regression's runtime helpers come from each suite's import closure), the outputs of
-// the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
-// ready dirs via device-inputs.mjs.
-// Image core sources/objects are explicit production inputs, without acceptance-fixture graph edges.
-// Also named explicitly: the harness packages (test-support, control-client, dk-session), every module.toml
-// (the conformance suite scans manifests to select modules) and tools/emulator/fast_regions.json (sets SHARC_* env).
-const DEVICE_INPUTS = [
-  'default',
-  '^production',
-  'jsToolchain',
-  { dependentTasksOutputFiles: '**/*', transitive: true },
-  { runtime: 'node tools/nx/device-inputs.mjs' },
-  { env: 'DIGI_EMU_FAST' },
-  { env: 'DIGI_NO_PROGRESS_MS' },
-  // quick or full tier (tests/regression/runtime/devices.ts FULL_TIER): selects which tests run.
-  { env: 'DIGIKIT_TIER' },
-  { env: 'DIGI_PK_READY_DT2_117' },
-  { env: 'DIGI_PK_READY_DN2_112' },
-  { env: 'SHARC_FAST_REGIONS' },
-  { env: 'SHARC_BLOCKTRANS' },
-  { env: 'SHARC_FAST_FALLBACK_REGIONS' },
-  { env: 'SHARC_FAST_AUTO' },
-  '{workspaceRoot}/packages/test-support/**/*',
-  '{workspaceRoot}/packages/control-client/**/*',
-  '{workspaceRoot}/packages/dk-session/**/*',
-  '{workspaceRoot}/modules/**/module.toml',
-  '{workspaceRoot}/tools/nx/device-inputs.mjs',
-  '{workspaceRoot}/tools/nx/modules.mjs',
-  '{workspaceRoot}/tools/nx/test-imports.mjs',
-  '{workspaceRoot}/tools/emulator/fast_regions.json',
-];
-const leaf = (id) => id.split('/').at(-1);
-const dkm = (dev, id) => `dist/modules/${dev}/${leaf(id)}.dkm`;
-const records = (root) => {
-  const file = join(root, 'project.json');
-  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
-};
-
-const deviceTarget = (root, tests, recs, imageInput, importInputs, uploadable = false) => {
-  const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD];
-  if (uploadable) dependsOn.push('pack');
-  for (const rec of recs) {
-    for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
-    if (Object.keys(rec.aliases ?? {}).length) dependsOn.push('pack-aliases');
-    if (rec.plusdrive) dependsOn.push('plusdrive-format:cli');
-  }
-  return {
-    executor: 'nx:run-commands',
-    cache: true,
-    inputs: [
-      ...DEVICE_INPUTS,
-      imageInput,
-      ...importInputs(tests.map((test) => join(root, test))),
-      ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
-    ],
-    dependsOn: [...new Set(dependsOn)],
-    outputs: [],
-    options: {
-      env: { REGRESSION_JOBS: '2' },
-      command: `pnpm --filter @digi/regression test:runtime ${tests.map((t) => `../../${root}/${t}`).join(' ')}`,
-      cwd: '.',
-    },
-  };
-};
+export { createDependencies } from './module-dependencies.mjs';
 
 export const createNodesV2 = [
   '{modules,tests/fixtures/modules,tests/regression}/**/{module.toml,project.json}',
@@ -329,56 +227,3 @@ export const createNodesV2 = [
     return nodes;
   },
 ];
-
-export const createDependencies = (_opts, ctx) => {
-  const mods = Object.values(ctx.projects).filter((p) => p.tags?.includes('module'));
-  const owner = (path) =>
-    mods
-      .filter((p) => path === p.root || path.startsWith(p.root + '/'))
-      .sort((a, b) => b.root.length - a.root.length)[0]?.name;
-  // Shipped content modules (not core/*, not fixtures) need the runtime and the adapters of their type.
-  const implicit = (p, type) =>
-    !p.root.startsWith('modules/') || p.root.startsWith('modules/core/')
-      ? []
-      : [
-          'core/runtime',
-          ...(type === 'machine' ? ['core/dynreg', 'core/dsp-voice'] : []),
-          ...(type === 'fx' ? ['core/dynfx', 'core/fxpages'] : []),
-        ];
-  const all = Object.values(ctx.projects);
-  return all
-    .filter((p) => p.tags?.includes('module') || p.tags?.includes('test-only'))
-    .flatMap((p) => {
-      const isModule = p.tags?.includes('module');
-      const t = isModule ? read(ctx.workspaceRoot, join(p.root, 'module.toml')) : { module: {} };
-      const deps = isModule ? [...(t.module.requires ?? []), ...implicit(p, t.module.type)] : [];
-      for (const o of t.object ?? [])
-        for (const s of o.sources ?? []) deps.push(owner(normalize(join(p.root, s))) ?? '');
-      const statics = [...new Set(deps)]
-        .filter((d) => d && d !== p.name)
-        .map((target) => ({
-          source: p.name,
-          target,
-          sourceFile: join(p.root, 'module.toml'),
-          type: DependencyType.static,
-        }));
-      // Implicit edges: a module with device tests depends on the harness, the daemon and the packs;
-      // only a module with test-conformance also depends on the conformance suite.
-      const hasDeviceTests = !!(p.targets?.['test-device']?.options?.command || p.targets?.['test-conformance']);
-      const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
-      // Runtime acceptance records name the fixture/content modules loaded by device tests.
-      // Their source changes must invalidate the consumer's device-test cache.
-      for (const rec of records(join(ctx.workspaceRoot, p.root))) {
-        implicitDeps.push(...(rec.modules ?? []), ...Object.values(rec.aliases ?? {}));
-      }
-      if (p.targets?.['test-conformance']) implicitDeps.push('conformance');
-      // Projects that live inside the module directory (for example core/ui and dkui-host).
-      for (const q of all)
-        if (q.name !== p.name && q.root.startsWith(p.root + '/') && !q.tags?.includes('test-only'))
-          implicitDeps.push(q.name);
-      const implicits = [...new Set(implicitDeps)]
-        .filter((d) => d !== p.name && ctx.projects[d])
-        .map((target) => ({ source: p.name, target, type: DependencyType.implicit }));
-      return [...statics, ...implicits];
-    });
-};
