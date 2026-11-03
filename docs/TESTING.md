@@ -357,7 +357,7 @@ are audited too. DMA and host writes are not seen. The full-tier variant loads t
 of the capacity tests behind `test/dyn-demo` (`fullSet` in `synth.ts`) and also expects no free arena byte and
 no whole free DSP granule.
 
-The capacity tests are TypeScript device tests: `modules/core/runtime/tests/capacity.device.test.ts` fills every runtime limit with
+The capacity tests are TypeScript device tests: `modules/core/runtime/tests/capacity/capacity.device.test.ts` fills every runtime limit with
 synthetic modules (`patchkit synth-dkm`, built by `tests/regression/runtime/synth.ts`; limits in `[limits]` of `devices/*.toml`), checks the refusal codes,
 the reference module's DSP bytes and the needs that `patchkit needs` infers (full tier); `modules/core/apps/digikit-menu/tests/fits.device.test.ts` checks the
 MODULES page. `tests/patchkit/test_limits.py` keeps tools from repeating a limit as a number.

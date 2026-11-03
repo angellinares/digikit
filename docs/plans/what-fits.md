@@ -14,7 +14,7 @@ selecting or installing. Em's brief for the runtime UI: load and unload, health,
    (docs/design/digikit-dkm.md, "Needs are inferred from the contents"). It reads through a byte source: the device feeds it from store sector reads (header, `register` records, DSP header
    and voice table; nothing is staged), a host from a slice. Malformed input is an error, never a panic. The `.dkm` format stays at 1. Callers: the DIGIKIT menu, patchkit
    (`patchkit needs`), patchkit.wasm (`pk_needs`, for the Transfer page), the Python tools through the command line. No other copy of the arithmetic.
-   Test: the `inferred needs` tests of `modules/core/runtime/tests/capacity.device.test.ts` load a set of run-time modules and fixtures alone (coupled) and compare CAPACITY and MODULES
+   Test: the `inferred needs` tests of `modules/core/runtime/tests/capacity/capacity.device.test.ts` load a set of run-time modules and fixtures alone (coupled) and compare CAPACITY and MODULES
    with `needs_of` of the file; Rust tests of `dkneeds` cover malformed files.
 2. **One rule.** `fits_now(needs, capacity)`: each need is at most the free amount of its resource (the arena and the DSP area against the largest free
    block, rows and slots against limit - used, a module record and a selection path free, the file within the staging buffer). The compare is written in Rust (`dkrt_fit`, the menu),
