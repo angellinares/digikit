@@ -12,76 +12,21 @@ import { DEBUG_MODULE, installWithDebug, moduleArtifact } from '@digi/regression
 import { expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
 import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
-export interface RuntimeModule {
-  id: string;
-  /** SDK contract slot the module fills: 1 machine, 2 effect, 3 service. */
-  contract: 1 | 2 | 3;
-  /** Whether the module carries a DSP image (a dynamic machine or effect). */
-  dsp: boolean;
-  type: 'machine' | 'fx' | 'service';
-}
+import { loadRuntimeModules, scanRuntimeModules as scanManifests, supportsDevice, type RuntimeModule } from './manifests.ts';
 
-/** The `[module]` table of a module.toml as flat key -> raw value text (only the keys read below). */
-function moduleTable(text: string): Map<string, string> {
-  const out = new Map<string, string>();
-  let inModule = false;
-  for (const line of text.split('\n')) {
-    const header = /^\s*\[+([^\]]+)\]+/.exec(line);
-    if (header) {
-      inModule = header[1] === 'module';
-      continue;
-    }
-    const pair = inModule ? /^(\w+)\s*=\s*(.*?)\s*(?:#.*)?$/.exec(line) : null;
-    if (pair) out.set(pair[1]!, pair[2]!);
-  }
-  return out;
-}
-
-/** Production upload candidates: the shipped modules (`modules/<kind>/<name>`) that are `dynamic`, a service or a
- * `host` module. Same rule as `isUploadable` in tools/nx/modules.mjs. Framework/static modules are
- * firmware prerequisites. */
+export type { RuntimeModule } from './manifests.ts';
 export function scanRuntimeModules(root = path.join(repoRoot(), 'modules')): RuntimeModule[] {
-  const found: RuntimeModule[] = [];
-  for (const kind of fs.readdirSync(root).sort()) {
-    const kindDir = path.join(root, kind);
-    if (!fs.statSync(kindDir).isDirectory()) continue;
-    for (const name of fs.readdirSync(kindDir).sort()) {
-      const manifest = path.join(kindDir, name, 'module.toml');
-      if (!fs.existsSync(manifest)) continue;
-      const table = moduleTable(fs.readFileSync(manifest, 'utf8'));
-      const type = table.get('type')?.replaceAll('"', '');
-      const dynamic = table.get('dynamic') === 'true';
-      if (!(dynamic || table.get('host') === 'true' || type === 'service')) continue;
-      if (type !== 'machine' && type !== 'fx' && type !== 'service') continue;
-      found.push({
-        id: table.get('id')!.replaceAll('"', ''),
-        type,
-        contract: type === 'machine' ? 1 : type === 'fx' ? 2 : 3,
-        dsp: dynamic && type !== 'service',
-      });
-    }
-  }
-  return found;
+  return scanManifests(root);
 }
-
-export const runtimeModules: readonly RuntimeModule[] = scanRuntimeModules();
-
-/** `DIGI_CONFORMANCE_MODULES`: comma-separated module ids; unset or empty runs every run-time module. */
-function selectedModules(): readonly RuntimeModule[] {
-  const ids = (process.env.DIGI_CONFORMANCE_MODULES ?? '')
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
-  if (ids.length === 0) return runtimeModules;
-  const unknown = ids.filter((id) => !runtimeModules.some((module) => module.id === id));
-  if (unknown.length > 0) throw new Error(`DIGI_CONFORMANCE_MODULES: unknown run-time module ${unknown.join(', ')}`);
-  return runtimeModules.filter((module) => ids.includes(module.id));
-}
+export const runtimeModules: readonly RuntimeModule[] = loadRuntimeModules(repoRoot(), {
+  manifest: process.env.DIGI_CONFORMANCE_MANIFEST,
+  ids: process.env.DIGI_CONFORMANCE_MODULES,
+});
 
 // Each cell starts its own daemon. Sessions of a worker reuse one cached run dir (fast boot);
 // the store starts empty in every cell.
 export function conformanceSuite(device: Device): void {
-  for (const module of selectedModules()) {
+  for (const module of runtimeModules.filter((module) => supportsDevice(module, device))) {
     const name = `${device} ${FIRMWARE[device]} loads and registers ${module.id} through USB without runtime faults`;
     test(name, async () => {
       const options = liveOptions(device);
