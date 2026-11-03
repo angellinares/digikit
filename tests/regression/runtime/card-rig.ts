@@ -266,7 +266,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     {
       prepareBaseline: async (session) => {
         // A cold daemon (no firmware at spawn) has no emulator, so no watch summary, for its first epoch.
-        if (o.initial !== 'small') epochs.add((await session.status()).epoch as number);
+        if (o.initial !== 'small' && o.dsp !== 'cold') epochs.add((await session.status()).epoch as number);
         if (o.initial === 'small') {
           image = path.join(freshDir(session), 'small-card.img');
           fs.writeFileSync(image, Buffer.alloc(1 << 20)); // blank; the identity, not the file, sets the capacity
