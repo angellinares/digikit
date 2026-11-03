@@ -19,6 +19,12 @@ and the device profiles (`devices/*.toml`).
 `patchkit gen` writes every generated file. `patchkit gen --check` fails when one is stale
 (`mise run gen:modules -- --check`).
 
+`pnpm nx:pilot run sdk:test-host` compiles the machine and effect fixture
+declarations with the host `cc` compiler and checks their public-header records:
+machine parameter units, effect parameter values, DSP symbols and routing.
+It needs no firmware or DSP toolchain. Each shipped module still owns its device
+conformance checks; this fast SDK check does not replace them.
+
 ## Include paths
 
 The build passes these search paths, in this order:
