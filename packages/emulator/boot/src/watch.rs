@@ -3,6 +3,8 @@
 //! * write-watch: every write into configured guest ranges, from CPU stores and from the DMA
 //!   engines (eSDHC, DSPI), with the guest instruction count, the PC (or DMA source), address,
 //!   size and value; PC ranges may be allowed (the runtime's own code);
+//! * read-watch: every CPU load from configured guest ranges, with the PC and the instruction
+//!   count, and per byte how many loads read it and from which PCs (`DIGI_READ_WATCH`);
 //! * flush check: an instruction fetch from a 16-byte line that was written after the caches
 //!   were enabled and has not been pushed or invalidated since. The ColdFire V4 caches are not
 //!   coherent on hardware; the emulator is, so a missing flush is invisible there.
@@ -81,6 +83,8 @@ pub struct WatchConfig {
     pub stacks: Vec<(u32, u32)>,
     /// A store into one of these ranges ends a stack epoch (`DIGI_STACK_WATCH_EPOCH`): the low-water mark is kept per epoch.
     pub epochs: Vec<(u32, u32)>,
+    /// `[lo, hi)` read-watch ranges (`DIGI_READ_WATCH`): CPU loads, folded onto DDR like the write ranges.
+    pub reads: Vec<(u32, u32)>,
 }
 
 impl Default for WatchConfig {
@@ -94,6 +98,7 @@ impl Default for WatchConfig {
             limit: 100_000,
             stacks: Vec::new(),
             epochs: Vec::new(),
+            reads: Vec::new(),
         }
     }
 }
@@ -135,7 +140,8 @@ impl WatchConfig {
     /// `DIGI_WRITE_WATCH_AFTER=cacr|ICOUNT`, `DIGI_FLUSH_CHECK=1`,
     /// `DIGI_WRITE_WATCH_OUT=PATH` (default `$DIGI_DIAG_DIR/writewatch.jsonl`, else stderr),
     /// `DIGI_WRITE_WATCH_LIMIT=N`, `DIGI_STACK_WATCH=LO-HI[,..]` (task stack ranges: lowest store, new lows and per-epoch
-    /// lows in the log and summary), `DIGI_STACK_WATCH_EPOCH=LO-HI[,..]` (a store there ends an epoch).
+    /// lows in the log and summary), `DIGI_STACK_WATCH_EPOCH=LO-HI[,..]` (a store there ends an epoch),
+    /// `DIGI_READ_WATCH=LO-HI[,..]` (CPU loads from these ranges: events in the log, per byte counts and PCs in the summary).
     /// `Ok(None)` when no instrument is switched on.
     pub fn from_env() -> Result<Option<Self>, String> {
         fn non_empty(v: Result<String, std::env::VarError>) -> Option<String> {
@@ -152,7 +158,10 @@ impl WatchConfig {
         if let Some(v) = non_empty(std::env::var("DIGI_STACK_WATCH_EPOCH")) {
             cfg.epochs = parse_ranges(&v).map_err(|e| format!("DIGI_STACK_WATCH_EPOCH: {e}"))?;
         }
-        if cfg.ranges.is_empty() && !cfg.flush_check && cfg.stacks.is_empty() {
+        if let Some(v) = non_empty(std::env::var("DIGI_READ_WATCH")) {
+            cfg.reads = parse_ranges(&v).map_err(|e| format!("DIGI_READ_WATCH: {e}"))?;
+        }
+        if cfg.ranges.is_empty() && !cfg.flush_check && cfg.stacks.is_empty() && cfg.reads.is_empty() {
             return Ok(None);
         }
         if let Some(v) = non_empty(std::env::var("DIGI_WRITE_WATCH_ALLOW_PC")) {
@@ -393,7 +402,15 @@ pub(crate) struct Watch {
     /// Work counters for the summary: CACR writes, flush-check stores and DMA ranges tracked,
     /// instruction fetches checked, CPUSHLs seen.
     seen: [u64; 5],
+    /// Read-watch, per byte (normalised address): loads that read it, and the first PCs (at most `READ_PCS`).
+    read_bytes: BTreeMap<u32, (u64, Vec<u32>)>,
+    read_events: u64,
+    /// Loads the read-watch was offered (all of them, in range or not).
+    loads_checked: u64,
 }
+
+/// PCs kept per read-watched byte.
+const READ_PCS: usize = 8;
 
 impl Watch {
     pub(crate) fn new(cfg: WatchConfig) -> Self {
@@ -419,6 +436,9 @@ impl Watch {
             epoch_rows: Vec::new(),
             summary_done: false,
             seen: [0; 5],
+            read_bytes: BTreeMap::new(),
+            read_events: 0,
+            loads_checked: 0,
         }
     }
 
@@ -537,6 +557,39 @@ impl Watch {
                 }
             }
         }
+    }
+
+    /// A CPU load of `size` bytes at `addr` from `pc` (the read-watch).
+    pub(crate) fn load(&mut self, pc: u32, addr: u32, size: u8, icount: u64) {
+        self.tick(icount);
+        self.loads_checked += 1;
+        if !self.started || self.cfg.reads.is_empty() {
+            return;
+        }
+        let lo = normalise(addr);
+        let mut hit = false;
+        for b in lo..lo.saturating_add(u32::from(size)) {
+            if !self.cfg.reads.iter().any(|&(rlo, rhi)| (rlo..rhi).contains(&b)) {
+                continue;
+            }
+            hit = true;
+            let e = self.read_bytes.entry(b).or_default();
+            e.0 += 1;
+            if e.1.len() < READ_PCS && !e.1.contains(&pc) {
+                e.1.push(pc);
+            }
+        }
+        if hit {
+            self.read_events += 1;
+            self.report(format!(
+                "{{\"t\":\"r\",\"ic\":{icount},\"pc\":\"{pc:#010x}\",\"addr\":\"{addr:#010x}\",\"size\":{size}}}"
+            ));
+        }
+    }
+
+    /// Read-watch per byte: (normalised address, loads, first PCs), in address order.
+    pub(crate) fn read_bytes(&self) -> Vec<(u32, u64, Vec<u32>)> {
+        self.read_bytes.iter().map(|(&a, (n, pcs))| (a, *n, pcs.clone())).collect()
     }
 
     pub(crate) fn dma(&mut self, src: &'static str, addr: u32, len: usize, icount: u64) {
@@ -704,8 +757,16 @@ impl Watch {
                 )
             })
             .collect();
+        let reads: Vec<String> = self
+            .read_bytes()
+            .iter()
+            .map(|(a, n, pcs)| {
+                let pcs: Vec<String> = pcs.iter().map(|p| format!("\"{p:#010x}\"")).collect();
+                format!("{{\"addr\":\"{a:#010x}\",\"loads\":{n},\"pcs\":[{}]}}", pcs.join(","))
+            })
+            .collect();
         let text = format!(
-            "{{\"stacks\":[{}],\"stack_epochs\":[{}],\"events\":{},\"logged\":{},\"cacr_writes\":{},\"flush_stores_tracked\":{},\"flush_fetches_checked\":{},\"cpushl\":{},\"per_pc\":[{}],\"per_dma\":[{}],\"flush_hits\":[{}]}}",
+            "{{\"stacks\":[{}],\"stack_epochs\":[{}],\"events\":{},\"logged\":{},\"cacr_writes\":{},\"flush_stores_tracked\":{},\"flush_fetches_checked\":{},\"cpushl\":{},\"per_pc\":[{}],\"per_dma\":[{}],\"flush_hits\":[{}],\"read_events\":{},\"loads_checked\":{},\"reads\":[{}]}}",
             stacks.join(","),
             self.epoch_rows.join(","),
             self.events,
@@ -716,7 +777,10 @@ impl Watch {
             self.seen[3],
             per_pc.join(","),
             per_dma.join(","),
-            flush.join(",")
+            flush.join(","),
+            self.read_events,
+            self.loads_checked,
+            reads.join(",")
         );
         if let Some(out) = &self.cfg.out {
             let path = out.with_extension("summary.json");
@@ -1047,5 +1111,41 @@ mod guest_tests {
         );
         assert!(bus.guards.is_empty());
         assert!(bus.guards.watch_mut().is_none());
+    }
+
+    #[test]
+    fn read_watch_counts_each_byte_and_its_pcs() {
+        let mut w = Watch::new(WatchConfig {
+            reads: vec![(0x8000_53a4, 0x8000_53a4 + 0xabc)],
+            ..WatchConfig::default()
+        });
+        w.load(0x4002_0000, 0x8000_53a4 + 0xa9c, 2, 1);
+        w.load(0x4002_0010, 0x8000_53a4 + 0xa9d, 1, 2);
+        w.load(0x4002_0020, 0x8000_53a0, 4, 3);      // 0x800053a0..a3: outside
+        w.load(0x4002_0030, 0x8000_53a2, 4, 4);      // straddles the start: two bytes inside
+        let got = w.read_bytes();
+        assert_eq!(
+            got,
+            vec![
+                (0x8000_53a4, 1, vec![0x4002_0030]),
+                (0x8000_53a5, 1, vec![0x4002_0030]),
+                (0x8000_5e40, 1, vec![0x4002_0000]),
+                (0x8000_5e41, 2, vec![0x4002_0000, 0x4002_0010]),
+            ]
+        );
+        assert_eq!(w.read_events, 3);
+    }
+
+    #[test]
+    fn read_watch_folds_the_uncached_alias_and_waits_for_its_start() {
+        let mut w = Watch::new(WatchConfig {
+            reads: vec![(0x4670_0000, 0x4670_0010)],
+            after: After::Icount(10),
+            ..WatchConfig::default()
+        });
+        w.load(0x4000_0000, 0x4670_0000, 4, 5);       // before the start: not counted
+        w.load(0x4000_0002, 0x4e70_0004, 4, 11);      // the alias of 0x46700004
+        assert_eq!(w.read_bytes().iter().map(|r| r.0).collect::<Vec<_>>(),
+                   vec![0x4670_0004, 0x4670_0005, 0x4670_0006, 0x4670_0007]);
     }
 }

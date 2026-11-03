@@ -742,6 +742,9 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, false);
+        if !self.guards.is_empty() {
+            self.guards.note_load(self.current_pc, addr, 1, self.current_icount);
+        }
         let r = self.board.read8(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
             // zero_page() is false and log() a no-op: the board's result.
@@ -753,6 +756,9 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, false);
+        if !self.guards.is_empty() {
+            self.guards.note_load(self.current_pc, addr, 2, self.current_icount);
+        }
         let r = self.board.read16(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
             // zero_page() is false and log() a no-op: the board's result.
@@ -764,6 +770,9 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, false);
+        if !self.guards.is_empty() {
+            self.guards.note_load(self.current_pc, addr, 4, self.current_icount);
+        }
         let r = self.board.read32(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
             // zero_page() is false and log() a no-op: the board's result.
