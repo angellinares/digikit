@@ -67,6 +67,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          device's OS UPGRADE receiver does, then send it (USB MIDI) and read INFO after the restart;
                                          --restore sends the stock file itself; --dry-run only checks (docs/PATCHING.md, \"Flashing\")
   list                                   modules under modules/ and ports under devices/ports/
+  catalog-check                          validate all modules/ and tests/fixtures/modules/ manifests and requires;
+                                         host only: no objects, builds, device models or firmware are read
   gen [--check [--scope all|modules|shared]] [--modules a,b] [--manifest PATH]...
                                          write (or check) generated module, SDK and firmware files
                                          --manifest PATH (repeatable, needs --modules, incompatible with --scope shared): explicit library including requires;
@@ -256,6 +258,15 @@ fn run(a: Args) -> Result<()> {
         &a.rest[1..]
     };
     match cmd {
+        "catalog-check" => {
+            if !rest.is_empty() {
+                return Err(Error(
+                    "catalog-check takes no arguments (use --root DIR before the command)".into(),
+                ));
+            }
+            let count = Library::catalog_check(&a.root)?;
+            println!("catalog ok: {count} module manifests");
+        }
         "inspect" => {
             let raw = read(need(rest)?)?;
             let fw = Firmware::parse(&raw)?;
@@ -1330,6 +1341,61 @@ path = "build/gen/device-{dev}.inc"
     }
 
     #[test]
+    fn catalog_check_validates_all_headers_and_requires_without_objects() {
+        let root = ApplyRoot::new("catalog");
+        root.module("modules", "test/selected", &["test/dependency"], false);
+        root.module("tests/fixtures/modules", "test/dependency", &[], false);
+        // Device models and declared objects/sources are deliberately unusable: catalog validation never reads them.
+        std::fs::write(root.0.join("devices/broken.toml"), "malformed = [").unwrap();
+        let check = || Library::catalog_check(&root.0);
+        assert_eq!(check().unwrap(), 2);
+        run(Args {
+            root: root.0.clone(),
+            rest: vec!["catalog-check".into()],
+        })
+        .unwrap();
+        assert!(!cache_dir(&root.0).exists());
+        let path = root
+            .0
+            .join("tests/fixtures/modules/test/dependency/module.toml");
+        let original = std::fs::read_to_string(&path).unwrap();
+        for (text, error) in [
+            ("malformed = [".to_string(), "module.toml"),
+            (
+                original.replace("sources = [\"src/t.c\"]", "sources = false"),
+                "invalid type",
+            ),
+            (
+                original.replace("version = \"0.1.0\"\n", ""),
+                "missing field `version`",
+            ),
+            (
+                original.replace("test/dependency", "test/selected"),
+                "duplicate module id",
+            ),
+            (
+                original.replace("requires = []", "requires = [\"test/missing\"]"),
+                "requires test/missing",
+            ),
+            (
+                original.replace("requires = []", "requires = [\"test/selected\"]"),
+                "requires cycle",
+            ),
+            (
+                original.replace("category = \"test\"", "category = \"core\""),
+                "a core module needs",
+            ),
+            (format!("{original}\n[[op]]\nop = \"unknown\"\n"), "unknown"),
+        ] {
+            std::fs::write(&path, text).unwrap();
+            assert!(check().unwrap_err().0.contains(error), "expected {error}");
+        }
+        std::fs::write(path, original).unwrap();
+        assert_eq!(check().unwrap(), 2);
+        assert!(!cache_dir(&root.0).exists());
+    }
+
+    #[test]
     fn explicit_pack_matches_legacy_and_ignores_unrelated_bad_manifest() {
         let root = ApplyRoot::new("explicit-pack");
         root.module("modules", "test/selected", &[], true);
@@ -1366,6 +1432,13 @@ path = "build/gen/device-{dev}.inc"
             "malformed = [",
         )
         .unwrap();
+        assert!(
+            run(Args {
+                root: root.0.clone(),
+                rest: vec!["catalog-check".into()]
+            })
+            .is_err()
+        );
         pack(&explicit, true).unwrap();
         assert_eq!(
             std::fs::read(&legacy).unwrap(),

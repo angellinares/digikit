@@ -64,6 +64,36 @@ pub struct Manifest {
     pub voice_state: BTreeMap<String, crate::typed::VoiceState>,
 }
 
+impl Manifest {
+    /// Checks independent of objects, allocation tables, device models and firmware.
+    fn validate_header(&self) -> Result<()> {
+        if self.module.category == "core" && self.module.role.is_none() {
+            return Err(err!(
+                "{}: a core module needs `role = \"runtime\" | \"installer\" | \"adapter\" | \"app\"` in [module]",
+                self.module.id
+            ));
+        }
+        if self.fx.is_some() {
+            return Err(err!(
+                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
+            ));
+        }
+        for (name, old) in [
+            ("machine", &self.machine_old),
+            ("param", &self.param_old),
+            ("page", &self.page_old),
+            ("voice", &self.voice_old),
+        ] {
+            if old.is_some() {
+                return Err(err!(
+                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine.h)"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// One generated file of device data: `kind` is `rust` (constants every device agrees on, one file), `gas-shared` (the same as `.equ` lines), `gas` (a ColdFire assembler
 /// include, `.equ` lines, one file per device), `sharc` (a SHARC+ include, `#define` lines, one file per device) `sharc-adapter` (the `ADM_*` defines of `[adapter.machine]`, one file per device), `gas-sample-pool` or `sharc-sample-pool` (the `SP_*` numbers of `[adapter.sample_pool]` for ColdFire and SHARC+ assembly, one file per device). `path` is relative
 /// to the module; `{dev}` stands for the device's short name in a per-device path.
@@ -505,29 +535,7 @@ impl Module {
         lenient: bool,
     ) -> Result<Module> {
         let mut manifest: Manifest = toml::from_str(manifest_text)?;
-        if manifest.module.category == "core" && manifest.module.role.is_none() {
-            return Err(err!(
-                "{}: a core module needs `role = \"runtime\" | \"installer\" | \"adapter\" | \"app\"` in [module]",
-                manifest.module.id
-            ));
-        }
-        if manifest.fx.is_some() {
-            return Err(err!(
-                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
-            ));
-        }
-        for (name, old) in [
-            ("machine", &manifest.machine_old),
-            ("param", &manifest.param_old),
-            ("page", &manifest.page_old),
-            ("voice", &manifest.voice_old),
-        ] {
-            if old.is_some() {
-                return Err(err!(
-                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine.h)"
-                ));
-            }
-        }
+        manifest.validate_header()?;
         let mut objects = vec![];
         let mut all = manifest_text.to_string();
         for o in &manifest.object {
@@ -761,19 +769,13 @@ impl Library {
         Ok(modules)
     }
 
-    /// An explicit manifest library, without discovery or lowering. The caller supplies all required modules; the selection
-    /// and dependency closure are validated before loading objects. Paths are used as given (relative to the working directory).
-    pub fn from_manifests(
-        build: Build,
-        paths: &[std::path::PathBuf],
-        lenient: bool,
-        selected: &[String],
-    ) -> Result<Library> {
-        // Validate the complete explicit selection before any objects are read or built.
+    /// Manifest metadata only: never read objects, source files or allocation tables.
+    fn read_headers(paths: &[std::path::PathBuf]) -> Result<Library> {
         let mut headers = Library::default();
         for path in paths {
             let text =
                 std::fs::read_to_string(path).map_err(|e| err!("{}: {e}", path.display()))?;
+            crate::build::ModuleToml::parse(&text).map_err(|e| err!("{}: {e}", path.display()))?;
             let manifest = toml::from_str(&text).map_err(|e| err!("{}: {e}", path.display()))?;
             headers.extend_unique(vec![Module {
                 manifest,
@@ -783,6 +785,57 @@ impl Library {
                 dir: path.parent().unwrap().to_path_buf(),
             }])?;
         }
+        Ok(headers)
+    }
+
+    /// Validate every repository and test-fixture manifest and its requires graph without reading
+    /// objects or lowering. Model, descriptor, allocation and firmware checks stay with pack/gen/apply.
+    pub fn catalog_check(root: &std::path::Path) -> Result<usize> {
+        fn walk(dir: &std::path::Path, paths: &mut Vec<std::path::PathBuf>) -> Result<()> {
+            let rd = match std::fs::read_dir(dir) {
+                Ok(rd) => rd,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(e) => return Err(err!("{}: {e}", dir.display())),
+            };
+            let mut entries = rd
+                .map(|e| e.map(|e| e.path()))
+                .collect::<std::io::Result<Vec<_>>>()
+                .map_err(|e| err!("{}: {e}", dir.display()))?;
+            entries.sort();
+            for path in entries {
+                if path.is_dir() {
+                    walk(&path, paths)?;
+                } else if path.file_name().is_some_and(|n| n == "module.toml") {
+                    paths.push(path);
+                }
+            }
+            Ok(())
+        }
+        let mut paths = vec![];
+        walk(&root.join("modules"), &mut paths)?;
+        walk(&root.join("tests/fixtures/modules"), &mut paths)?;
+        let headers = Self::read_headers(&paths)?;
+        for m in &headers.modules {
+            m.manifest
+                .validate_header()
+                .and_then(|()| crate::prim::validate_manifest(&m.manifest))
+                .map_err(|e| err!("{}: {e}", m.dir.join("module.toml").display()))?;
+        }
+        let ids: Vec<_> = headers.modules.iter().map(|m| m.id().to_string()).collect();
+        headers.with_requires(&ids)?;
+        Ok(headers.modules.len())
+    }
+
+    /// An explicit manifest library, without discovery or lowering. The caller supplies all required modules; the selection
+    /// and dependency closure are validated before loading objects. Paths are used as given (relative to the working directory).
+    pub fn from_manifests(
+        build: Build,
+        paths: &[std::path::PathBuf],
+        lenient: bool,
+        selected: &[String],
+    ) -> Result<Library> {
+        // Validate the complete explicit selection before any objects are read or built.
+        let headers = Self::read_headers(paths)?;
         headers.with_requires(selected)?;
         // Support manifests (for example core/machines allocations) are explicit inputs too;
         // validate their requirements rather than silently accepting a partial library.
