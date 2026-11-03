@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "targets": {
+    "rust-tests": {
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/Cargo.toml",
+        "{workspaceRoot}/Cargo.lock",
+        "{workspaceRoot}/modules/core/apps/digikit-menu/src/menu.c"
+      ]
+    }
+  }
+}

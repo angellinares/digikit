@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
 import { manifestClosure } from '../module-manifests.mjs';
+import { changedFiles, gateCommands, menuOnly, MENU_SOURCE } from '../gate.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
@@ -88,6 +89,88 @@ function otherImageConsumer(): string {
 }
 
 const manifestOf = (id: string) => `${workspace.nodes[id].data.root}/module.toml`;
+
+describe('default gate menu scheduling policy', () => {
+  const targets = 'pack,test-device,test-conformance,rust-tests';
+  const commandsFor = (files: string[]) =>
+    gateCommands(
+      [`--files=${files.join(',')}`, '-t', targets],
+      files.map((file) => ({ file, status: 'M' })),
+    );
+  const gatePlan = (files: string[]) => commandsFor(files).map((command: string[]) => plan(command).tasks);
+
+  it('keeps the four device owners and host menu fixtures while omitting unchanged conformance', () => {
+    const graphs = gatePlan([MENU_SOURCE]);
+    const tasks: TaskGraph['tasks'] = Object.assign({}, ...graphs.map((graph) => graph.tasks));
+    for (const id of [
+      'core/digikit-menu-zero-tests:test-device',
+      'core/digikit-menu:test-device',
+      'core/runtime-fixture-tests:test-device',
+      'core/runtime-service-tests:test-device',
+      'dkui-host:rust-tests',
+    ])
+      expect(tasks[id], id).toBeDefined();
+    expect(Object.values(tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
+    const named = plan(['run', `${imageConsumer()}:test-conformance`]).tasks;
+    expect(named.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+  }, 30_000);
+
+  it('keeps normal affected selection for source, manifest, SDK, loader, mixed and unknown changes', () => {
+    const owner = imageConsumer();
+    const ownerRoot = workspace.nodes[owner].data.root;
+    const source = `${ownerRoot}/${globSync('src/**/*.{c,rs}', { cwd: join(root, ownerRoot) }).sort()[0]}`;
+    expect(existsSync(join(root, source))).toBe(true);
+    for (const files of [
+      [source],
+      [manifestOf(imageConsumer())],
+      ['sdk/include/dk/api.h'],
+      ['modules/core/runtime/src/rs/src/loader.rs'],
+      [MENU_SOURCE, manifestOf(imageConsumer())],
+      ['unknown-file'],
+    ]) {
+      const graphs = gatePlan(files);
+      expect(graphs).toHaveLength(1);
+      expect(graphs[0]).toEqual(selectedPlan(files));
+      if (files.length === 1 && [source, manifestOf(owner)].includes(files[0])) {
+        expect(graphs[0].tasks[`${owner}:pack`]).toBeDefined();
+        if (workspace.nodes[owner].data.targets['test-device'])
+          expect(graphs[0].tasks[`${owner}:test-device`]).toBeDefined();
+      }
+      if (files[0] !== 'unknown-file')
+        expect(Object.keys(graphs[0].tasks)).toContain(`${imageConsumer()}:test-conformance`);
+    }
+    function selectedPlan(files: string[]) {
+      return plan(['affected', `--files=${files.join(',')}`, '-t', targets]).tasks;
+    }
+  }, 60_000);
+
+  it('rejects rename, deletion and uncertain change metadata', () => {
+    for (const status of ['A', 'D', 'R100', '?']) expect(menuOnly([{ file: MENU_SOURCE, status }])).toBe(false);
+    expect(menuOnly([])).toBe(false);
+  });
+
+  it('uses Git status to distinguish modifications from renames, deletions and mixed edits', () => {
+    const repo = join(scratch, 'git-policy');
+    mkdirSync(join(repo, 'modules/core/apps/digikit-menu/src'), { recursive: true });
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+    git('init', '-b', 'main');
+    writeFileSync(join(repo, MENU_SOURCE), 'original');
+    git('add', '.');
+    git('-c', 'user.name=Gate Test', '-c', 'user.email=gate@example.invalid', 'commit', '-m', 'fixture');
+    const changes = () => changedFiles(['--base=main'], repo);
+    writeFileSync(join(repo, MENU_SOURCE), 'modified');
+    expect(menuOnly(changes())).toBe(true);
+    writeFileSync(join(repo, 'unknown'), 'new');
+    expect(menuOnly(changes())).toBe(false);
+    rmSync(join(repo, 'unknown'));
+    git('mv', MENU_SOURCE, 'renamed.c');
+    expect(menuOnly(changes())).toBe(false);
+    expect(menuOnly(changedFiles([`--files=${MENU_SOURCE}`], repo))).toBe(false);
+    git('reset', '--hard', 'HEAD');
+    rmSync(join(repo, MENU_SOURCE));
+    expect(menuOnly(changes())).toBe(false);
+  });
+});
 
 it('prepares precisely the declared image core objects before patched-image consumers', () => {
   const consumers = [

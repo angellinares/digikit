@@ -112,7 +112,7 @@ run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; node tools/nx/remote-cac
 description = "Cheap preflight only: affected lint, format, types, host tests and Python checks; no builds or devices; use test for complete affected verification"
 
 [tasks.test]
-run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot affected --base "$DIGI_GATE_BASE" -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,catalog-check,pack,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone'
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- node tools/nx/gate.mjs --base "$DIGI_GATE_BASE" -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,catalog-check,pack,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone'
 description = "Default affected verification and merge gate against DIGI_GATE_BASE (default main); three Nx tasks by default with two Vitest workers per device target; runs at nice 10"
 
 [tasks."test:plan"]
