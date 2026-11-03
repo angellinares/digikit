@@ -8,7 +8,7 @@ use std::vec::Vec;
 static LOCK: Mutex<()> = Mutex::new(());
 const CF: u32 = 0x8000;
 const IMAGE: u32 = 0xd000;
-const STEPS: u32 = 0xc000;
+const PUB_PC: u32 = 0xc000;
 static VOICE_INFO: [u32; 12] = [0x4459_4e49, 0, 1, 0x20000000, 4096, 0, 4, 8, 0, 0, 0, 0];
 static FX_INFO: [u32; 8] = [0x4446_5849, 0, 1, 0, 0, 4, 0, 24];
 
@@ -137,16 +137,16 @@ unsafe fn seed(completion: Completion, fx: bool, published: bool, queued: bool) 
     d.pending.send_buf = if published { 0 } else { IMAGE };
     d.word = 0x11223344;
     d.mod_len[0] = 256;
-    d.step_list[0] = STEPS;
-    d.step_n[0] = 1;
     d.transfers = 1;
     if fx {
+        d.fx_pc[0] = PUB_PC;
         d.fx_owner[0] = 1;
         d.fx_pub[0] = u8::from(published);
         d.fx_owner[1] = 1; // later row whose transfer fails
         d.mod_fx[0] = 3;
         d.step = 18;
     } else {
+        d.row_pc[0] = PUB_PC;
         d.row_owner[0] = 1;
         d.row_pub[0] = u8::from(published);
         d.row_owner[1] = 1;
@@ -170,7 +170,8 @@ unsafe fn assert_retained(fx: bool, pending_buf: u32) {
     assert_eq!(d.pending.send_buf, pending_buf);
     assert_eq!(d.mod_len[0], 256);
     assert_eq!(d.mod_len[1], 256);
-    assert_eq!(d.step_list[0], STEPS);
+    // Publication metadata is inline now, rather than an arena-allocated step list.
+    assert_eq!(if fx { d.fx_pc[0] } else { d.row_pc[0] }, PUB_PC);
     assert_eq!(d.nwait, 1);
     assert_eq!(d.waiting[0].send_buf, 0xe000);
     assert_eq!(d.transfers, 1);
@@ -313,7 +314,7 @@ unsafe fn successful_case(fx: bool, published: bool) {
     assert!(LINK.events.contains(&Event::Fini));
     assert!(LINK.events.contains(&Event::Registry));
     assert!(LINK.events.contains(&Event::Free(CF)));
-    assert!(LINK.events.contains(&Event::Free(STEPS)));
+    assert_eq!(if fx { dsp::ds().fx_pc[0] } else { dsp::ds().row_pc[0] }, 0);
     assert_eq!(LINK.events.contains(&Event::Free(IMAGE)), !published);
     assert_eq!(dsp::ds().phase, dsp::PH_SEND);
     assert_eq!(dsp::ds().pending.rec, 1);
@@ -385,3 +386,30 @@ pub extern "C" fn dkpool_free_frames() -> u32 {
 }
 #[no_mangle]
 pub extern "C" fn dkpool_tick() {}
+
+#[no_mangle]
+pub extern "C" fn dkpool_cancel(_: u32) {
+    panic!("host cleanup tests have no pending sample-pool requests")
+}
+
+// No firmware file systems or DSP tick callback are installed in this host fixture.
+#[no_mangle]
+pub static dkrt_device_id: u32 = 0;
+#[no_mangle]
+pub static dkrt_sample_fs: [u32; 4] = [0; 4];
+#[no_mangle]
+pub static dkrt_files_fs: [u32; 3] = [0; 3];
+#[no_mangle]
+pub static dkrt_store_first: u32 = 0;
+#[no_mangle]
+pub static dkrt_store_sectors: u32 = 0;
+#[no_mangle]
+pub extern "C" fn dl_tick_cb_drop(start: u32, end: u32) {
+    assert_eq!((start, end), (CF, CF + 256));
+    unsafe { assert!(LINK.events.contains(&Event::Fini)); }
+}
+
+#[export_name = "cf.storage.fn.block.read"]
+pub extern "C" fn block_read(_: u32, _: u32, _: *mut u8) -> i32 {
+    panic!("host cleanup tests must not read firmware storage")
+}

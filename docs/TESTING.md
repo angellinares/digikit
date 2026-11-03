@@ -3,7 +3,8 @@
 Reference for the test levels, commands, inputs and gate. The gate is `mise run gate`. Other docs
 link here. Results of runs belong in `docs/findings/`, not here. Planned changes:
 [docs/plans/test-architecture.md](plans/test-architecture.md); gate speed:
-[docs/plans/gate-speed.md](plans/gate-speed.md).
+[docs/plans/gate-speed.md](plans/gate-speed.md). Current implementation sequence and evidence:
+[test/build workflow](plans/test-build-workflow.md).
 
 ## Test levels
 

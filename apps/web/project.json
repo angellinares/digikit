@@ -20,7 +20,14 @@
       }
     },
     "test": {
-      "dependsOn": ["patchkit-wasm"]
+      "dependsOn": ["patchkit-wasm"],
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/apps/desktop/ui/src/card-core.ts",
+        "{workspaceRoot}/apps/desktop/ui/src/samples-core.ts"
+      ]
     },
     "check": {
       "cache": true,

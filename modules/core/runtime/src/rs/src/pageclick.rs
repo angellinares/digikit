@@ -269,6 +269,17 @@ pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
     paramapi::set(&PageFw, (*addr_of!(HELD)).ctx(), owners, registry::param_first(), track, word, raw)
 }
 
+// Host tests exercise the parameter rules through paramapi::Fw, never firmware pointers.
+#[cfg(test)]
+pub unsafe fn param_get(_: u32, _: u32) -> i32 {
+    panic!("firmware parameter access requires a paramapi::Fw host fixture")
+}
+
+#[cfg(test)]
+pub unsafe fn param_set(_: u32, _: u32, _: i32) -> i32 {
+    panic!("firmware parameter access requires a paramapi::Fw host fixture")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

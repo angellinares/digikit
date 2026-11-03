@@ -1,6 +1,35 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "core/runtime",
+  "implicitDependencies": ["dkrt-sdk", "dkrt-fit", "dkneeds", "dkfw"],
+  "targets": {
+    "rust-tests": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "{projectRoot}/src/rs/**/*",
+        { "input": "production", "projects": ["dkrt-sdk", "dkrt-fit", "dkneeds", "dkfw"] },
+        "{workspaceRoot}/.cargo/**/*",
+        "{workspaceRoot}/rust-toolchain*",
+        "{workspaceRoot}/mise.toml",
+        "{workspaceRoot}/pyproject.toml",
+        "{workspaceRoot}/uv.lock",
+        "{workspaceRoot}/tools/__init__.py",
+        "{workspaceRoot}/tools/devtools/rust_ws.py",
+        "{workspaceRoot}/tools/devtools/benchlock.py",
+        "{workspaceRoot}/tools/devtools/portable_flock.py",
+        "{workspaceRoot}/tools/emulator/digi_env.py",
+        "{workspaceRoot}/tools/emulator/native_target.py",
+        "{workspaceRoot}/tools/emulator/ready_inputs.json",
+        "{workspaceRoot}/tools/firmware/config.py"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "uv run python -m tools.devtools.benchlock run --shared --label runtime-unit -- uv run python -m tools.devtools.rust_ws test --packages dkrt",
+        "cwd": "."
+      }
+    }
+  },
   "metadata": {
     "runtimeAcceptance": [
       {

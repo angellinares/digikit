@@ -51,7 +51,7 @@
         "{workspaceRoot}/devices/*.toml",
         "{workspaceRoot}/sdk/vectors/**/*",
         {
-          "runtime": "shasum -a 256 out/native/target/nogen/release/plusdrive 2>/dev/null || echo no-plusdrive"
+          "runtime": "shasum -a 256 dist/plusdrive/plusdrive 2>/dev/null || echo no-plusdrive"
         }
       ],
       "outputs": [],
