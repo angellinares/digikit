@@ -311,6 +311,16 @@ pub struct Mailbox {
 /// The module and sample store, version 3 (docs/design/digikit-store.md).
 pub mod store;
 
+/// Bounded native sample validation and integer-only PCM decoding.
+pub mod sample;
+pub mod sample_job;
+pub mod sample_tracks;
+
+/// Internal fixed-memory listing work/notification lifecycle model.
+pub mod files_job;
+pub mod files;
+pub mod sample_stream;
+
 /// The sticky machine type assignment (docs/design/module-sdk.md 11.5 D7) as a pure function, tested on the host; the runtime's `assign` calls it.
 pub mod sticky;
 

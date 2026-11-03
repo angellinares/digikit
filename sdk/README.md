@@ -68,6 +68,17 @@ Parameter values are knob units 0 to 127. The stored word is the value times 256
 A machine has at most 4 parameters, in word order, and one page with `DK_KNOB` only. The adapter places word w on a fixed knob.
 The rules are in [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), sections 5.2 and 5.3.
 
+`DK_PARAM_GLYPH(machine, word, GLYPH)` (in `<dk/page.h>`) sets the knob look of a parameter. Without it the glyph is `DK_GLYPH_ENCODER`:
+
+| Glyph | Range |
+| --- | --- |
+| `DK_GLYPH_ENCODER` (default) | 0 .. 127 |
+| `DK_GLYPH_FADER` | 0 .. 127 |
+| `DK_GLYPH_PAN` | 0 .. 127 (centre 64, shows L/R) |
+| `DK_GLYPH_ONOFF` | 0 .. 1 |
+| `DK_GLYPH_TUNE` | 4 .. 124 (centre 64, one unit = one semitone) |
+| `DK_GLYPH_PLAY` | 0 .. 3 (REV, REV.L, FWD.L, FWD; the Digitone II shows 0 .. 3) |
+
 ## Tracing
 
 Trace marks tell you where a module was when it faulted or hung. They are opt-in and cost nothing when off.

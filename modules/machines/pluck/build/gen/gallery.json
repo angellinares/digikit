@@ -5,21 +5,23 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "pluck_decay",
-              "slot": 25
-            },
-            {
-              "param": "pluck_pick",
               "slot": 26
             },
             {
-              "param": "pluck_bright",
+              "param": "pluck_pick",
               "slot": 27
+            },
+            null,
+            {
+              "param": "pluck_bright",
+              "slot": 29
             },
             {
               "param": "pluck_color",
-              "slot": 28
+              "slot": 30
             }
           ],
           "level": 10,
@@ -87,7 +89,7 @@
         "min": 0,
         "name": "Decay",
         "short": "DECAY",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -97,7 +99,7 @@
         "min": 0,
         "name": "Pick position",
         "short": "PICK",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -107,7 +109,7 @@
         "min": 0,
         "name": "Brightness",
         "short": "BRIGHT",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -117,7 +119,7 @@
         "min": 0,
         "name": "Excitation colour",
         "short": "COLOR",
-        "slot": 28,
+        "slot": 30,
         "template": 213
       }
     ],
@@ -130,7 +132,7 @@
         "name": "Decay",
         "short": "DECAY",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 8192,
@@ -140,7 +142,7 @@
         "name": "Pick position",
         "short": "PICK",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 20480,
@@ -150,7 +152,7 @@
         "name": "Brightness",
         "short": "BRIGHT",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 10240,
@@ -160,7 +162,7 @@
         "name": "Excitation colour",
         "short": "COLOR",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

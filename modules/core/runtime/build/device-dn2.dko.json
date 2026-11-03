@@ -4,14 +4,14 @@
  "relocs": [],
  "sections": [
   {
-   "align": 2,
-   "hex": "00000002646e32000000000240000000466c00004671200047fe100000000000000000000000000000000000008000000261a000444b494d474944310000000000000000",
+   "align": 4,
+   "hex": "00000002646e32000000000240000000466c00004671200047fe100000000000000000000000000000000000008000000261a000444b494d47494431000000000000000000000000000000000000000000000000000000000000000000000000",
    "kind": "data",
    "name": ".rodata",
-   "size": 68
+   "size": 96
   }
  ],
- "source_sha256": "198b901ff8ed23c6815b8a6095b01aca2e8b54128c6eabdf66ef3b318e2e48f0",
+ "source_sha256": "adf9711313f0a98c7f3d30f6db6076b18175d3e6d4ce9e2145155cf052be27f9",
  "symbols": [
   {
    "global": true,
@@ -24,6 +24,12 @@
    "name": "dkrt_device_name",
    "section": ".rodata",
    "value": 4
+  },
+  {
+   "global": true,
+   "name": "dkrt_files_fs",
+   "section": ".rodata",
+   "value": 84
   },
   {
    "global": true,
@@ -45,6 +51,12 @@
   },
   {
    "global": true,
+   "name": "dkrt_sample_fs",
+   "section": ".rodata",
+   "value": 68
+  },
+  {
+   "global": true,
    "name": "dkrt_store_first",
    "section": ".rodata",
    "value": 44
@@ -61,7 +73,7 @@
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "0",
-  "isa_check": "4f68b6d2fca776cea7ed8258ca08e190c38ecbd72127adafb4efc00032a9e6d5",
+  "isa_check": "36f64ceffd4aaed7ded4be443bbe032cc105378dc2d2606f5c09baced4b6517f",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

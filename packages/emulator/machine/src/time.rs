@@ -6,7 +6,7 @@
 //! and `SrTracker` is updated by `PitBank::service` when an interrupt is taken.
 
 use periph::{
-    dtim::DtimBank,
+    dtim::{DeviceReferenceError, DtimBank},
     intc::IntcBank,
     machine::{HostWrite, Timers},
     pit::PitBank,
@@ -24,7 +24,7 @@ pub enum TimerPolicy {
     /// Match the existing trace-oracle PIT and INTC models.
     #[default]
     Oracle,
-    /// Reserved for validated hardware timer delivery semantics.
+    /// Bounded explicit Device PIT events; automatic timer delivery is unsupported.
     Device,
 }
 
@@ -33,6 +33,40 @@ pub enum TimerPolicy {
 pub enum TimeError {
     /// Device-mode timer interrupt delivery has no validated implementation.
     DeviceInterruptDeliveryUnsupported,
+}
+
+/// Invalid use of the explicit Device PIT event/request component.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DevicePitError {
+    /// Explicit Device PIT APIs require Device timer policy.
+    DevicePolicyRequired,
+    /// PIT physical channels are numbered 0 through 3.
+    InvalidChannel { channel: usize },
+}
+
+/// Invalid use of the bounded Device DTIM reference-event component.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeviceDtimError {
+    DevicePolicyRequired,
+    InvalidChannel { channel: usize },
+    UnsupportedMode { channel: usize },
+    CounterOutOfRange {
+        channel: usize,
+        counter: u32,
+        reference: u32,
+    },
+}
+
+impl From<DeviceReferenceError> for DeviceDtimError {
+    fn from(error: DeviceReferenceError) -> Self {
+        match error {
+            DeviceReferenceError::InvalidChannel { channel } => Self::InvalidChannel { channel },
+            DeviceReferenceError::UnsupportedMode { channel } => Self::UnsupportedMode { channel },
+            DeviceReferenceError::CounterOutOfRange { channel, counter, reference } => {
+                Self::CounterOutOfRange { channel, counter, reference }
+            }
+        }
+    }
 }
 
 /// INTC1 source 63: forced by the guest too, but delivered by the SSI model.
@@ -78,7 +112,10 @@ impl Time {
     ) -> Self {
         Self {
             pit: PitBank::new(pit_channels, ips, false),
-            dtim: DtimBank::new(dtim_channels, ips, false),
+            dtim: match policy {
+                TimerPolicy::Oracle => DtimBank::new(dtim_channels, ips, false),
+                TimerPolicy::Device => DtimBank::new_device(dtim_channels, ips, false),
+            },
             // Fresh unknown MMIO is zero-mapped by the Python oracle. Keep
             // the hardware-reset IntcBank default for Device construction.
             intc: match policy {
@@ -207,9 +244,12 @@ impl Time {
         addr & !0x3fff == end & !0x3fff && Self::owns(addr)
     }
 
-    /// Read an oracle PIT or INTC register, if this seam owns the complete,
-    /// slot-local access.
+    /// Read an owned, slot-local register. Device SIMR/CIMR byte reads return
+    /// zero; unsupported accesses overlapping those commands reject.
     pub fn read(&self, addr: u32, size: u8) -> Option<u32> {
+        if self.policy == TimerPolicy::Device && IntcBank::hw_touches_simr_cimr(addr, size) {
+            return (size == 1).then_some(0);
+        }
         Self::owns_access(addr, size).then(|| {
             self.pit
                 .read(addr, size)
@@ -218,8 +258,155 @@ impl Time {
         })?
     }
 
-    /// Write an oracle PIT or INTC register. PIT handles PCSR PIF clearing.
+    /// Read the shared INTC mask/ICR eligibility of eSDHC (INTC2 source 31).
+    /// CPU IPL is checked separately by the isolated machine delivery path.
+    pub fn esdhc_interrupt_level(&self) -> Option<u8> {
+        self.intc.level_for_vector(223)
+    }
+
+    /// Eligibility of INTC2 source 0 (eDMA channels 56..63).
+    pub fn storage_dma_interrupt_level(&self) -> Option<u8> {
+        self.intc.level_for_vector(192)
+    }
+
+    /// The explicit storage/force seam does not model controller level masks
+    /// or automatic IACK mask updates. CLMASK 0 and 15 disable level masking.
+    pub fn storage_forced_config_supported(&self) -> bool {
+        self.intc.iconfig() & (1 << 5) == 0 && matches!(self.intc.clmask(), 0 | 15)
+    }
+
+    /// Storage lines plus every software-forced source, using the shared bank.
+    /// Independent of the Oracle force-delivery knob; no timer or SSI service.
+    pub fn storage_with_forced_candidate(&self, esdhc: bool, dma: bool) -> Option<(u16, u8)> {
+        let low = (u32::from(esdhc) << 31) | u32::from(dma);
+        self.intc.hw_candidate([(0, 0), (0, 0), (low, 0)])
+    }
+
+    /// Select once across supplied Device PIT/DTIM reference events, storage,
+    /// eDMA SSI50 and all software-force sources. Requires Device timer policy and
+    /// supported DTIM reference modes. No clock advancement, SR mutation or
+    /// acknowledgement occurs. No automatic SSI service, DSPI or host input.
+    pub fn device_event_candidate(
+        &self,
+        esdhc: bool,
+        dma: bool,
+        ssi50: bool,
+    ) -> Result<Option<(u16, u8)>, DeviceDtimError> {
+        let dtim = self.device_dtim_reference_requests()?;
+        // SSI50 is INTC1 source 42/vector 170, not software-force source 63.
+        let mut asserted = [
+            (0, 0),
+            (0, u32::from(ssi50) << 10),
+            ((u32::from(esdhc) << 31) | u32::from(dma), 0),
+        ];
+        // DTIM0..3 vectors 96..99 are INTC0 high sources 32..35.
+        for vector in dtim {
+            asserted[0].1 |= 1 << (vector - 96);
+        }
+        // PIT0..3 vectors 205..208 are INTC2 low sources 13..16.
+        // hw_candidate ORs INTFRC with these masks, deduplicating aliases.
+        for vector in self.pit.device_pending_vectors() {
+            asserted[2].0 |= 1 << (vector - 192);
+        }
+        Ok(self.intc.hw_candidate(asserted))
+    }
+
+    /// Supply a Device PIT timeout event without clock advancement or delivery.
+    /// PIF latches independently of EN/PIE. Invalid policy/channel rejects before
+    /// register or cache mutation. The supplied status participates only when
+    /// Machine::step_device_events is selected; storage-only routes exclude it.
+    pub fn device_pit_timeout(&mut self, channel: usize) -> Result<(), DevicePitError> {
+        if self.policy != TimerPolicy::Device {
+            return Err(DevicePitError::DevicePolicyRequired);
+        }
+        if !self.pit.device_latch_timeout(channel) {
+            return Err(DevicePitError::InvalidChannel { channel });
+        }
+        self.service_not_before = None;
+        self.blocked = None;
+        Ok(())
+    }
+
+    /// Raw register-backed Device PIT requests, independent of INTC/CPU masks.
+    /// No acknowledgement, timing, SR mutation or delivery occurs.
+    pub fn device_pit_requests(&self) -> Result<Vec<u16>, DevicePitError> {
+        if self.policy != TimerPolicy::Device {
+            return Err(DevicePitError::DevicePolicyRequired);
+        }
+        Ok(self.pit.device_pending_vectors())
+    }
+
+    /// Supply a Device DTIM reference event, without timing or delivery.
+    /// Policy/channel/unsupported-mode errors precede register/cache mutation.
+    pub fn device_dtim_reference(&mut self, channel: usize) -> Result<(), DeviceDtimError> {
+        if self.policy != TimerPolicy::Device {
+            return Err(DeviceDtimError::DevicePolicyRequired);
+        }
+        self.dtim.device_latch_reference(channel)?;
+        self.service_not_before = None;
+        self.blocked = None;
+        Ok(())
+    }
+
+    /// Supply completed post-prescaler ticks to an ordinary Device DTIM.
+    /// Updates existing DTCN/REF registers only; no delivery, SR changes, host
+    /// writes, clock conversion or automatic scheduling. Errors precede mutation.
+    pub fn device_dtim_advance_ticks(
+        &mut self,
+        channel: usize,
+        ticks: u64,
+    ) -> Result<(), DeviceDtimError> {
+        if self.policy != TimerPolicy::Device {
+            return Err(DeviceDtimError::DevicePolicyRequired);
+        }
+        self.dtim.device_advance_ticks(channel, ticks)?;
+        self.service_not_before = None;
+        self.blocked = None;
+        Ok(())
+    }
+
+    /// Raw Device DTIM reference-only CPU requests; capture delivery, DMA
+    /// execution and timing remain outside this component. The supplied requests
+    /// participate in Machine::step_device_events, not storage-only routes.
+    pub fn device_dtim_reference_requests(&self) -> Result<Vec<u16>, DeviceDtimError> {
+        if self.policy != TimerPolicy::Device {
+            return Err(DeviceDtimError::DevicePolicyRequired);
+        }
+        Ok(self.dtim.device_reference_vectors()?)
+    }
+
+    /// Write a PIT or INTC register. Device PIT supports aligned 16-bit
+    /// PCSR/PMR writes only, with PIF acknowledgement; Oracle stays passthrough.
+    /// Device DTIM accepts only its bounded reference-mode configuration and W1C.
+    /// Device SIMR/CIMR byte commands support all three banks and sources;
+    /// reserved-bit, wrong-width and overlapping accesses reject before mutation.
+    /// Other INTC accesses retain existing passthrough behavior; this does not
+    /// add controller level masking or a whole-machine arbiter.
     pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
+        if self.policy == TimerPolicy::Device && DtimBank::owns(addr) {
+            if !self.dtim.device_write(addr, size, value) {
+                return false;
+            }
+            self.service_not_before = None;
+            self.blocked = None;
+            return true;
+        }
+        if self.policy == TimerPolicy::Device && PitBank::owns(addr) {
+            if !self.pit.device_write(addr, size, value) {
+                return false;
+            }
+            self.service_not_before = None;
+            self.blocked = None;
+            return true;
+        }
+        if self.policy == TimerPolicy::Device && IntcBank::hw_touches_simr_cimr(addr, size) {
+            if size != 1 || !self.intc.hw_apply_simr_cimr(addr, value as u8) {
+                return false;
+            }
+            self.service_not_before = None;
+            self.blocked = None;
+            return true;
+        }
         self.service_not_before = None;
         self.blocked = None;
         Self::owns_access(addr, size)
@@ -306,6 +493,29 @@ impl Time {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         }
+    }
+
+    /// Advance both Oracle timer banks and collect raw pending vectors, without
+    /// delivery, INTC/CPU masking, SR changes or consumption. PIT vectors precede
+    /// DTIM vectors in each bank's configured order; this is not arbitration.
+    /// DTIM REF host writes remain queued for the CPU owner. This preserves the
+    /// Oracle scheduling model, not validated Device PIF/REF semantics.
+    pub fn collect_oracle_timer_requests(&mut self, done: u64) -> Result<Vec<u16>, TimeError> {
+        if self.policy == TimerPolicy::Device {
+            return Err(TimeError::DeviceInterruptDeliveryUnsupported);
+        }
+        self.service_not_before = None;
+        self.blocked = None;
+        self.pit.advance_pending(done);
+        let writes = self.dtim.advance_pending(done);
+        self.host_writes.extend(
+            writes
+                .into_iter()
+                .map(|(addr, byte)| HostWrite { addr, byte }),
+        );
+        let mut requests = self.pit.pending_vectors();
+        requests.extend(self.dtim.pending_vectors());
+        Ok(requests)
     }
 
     /// Service PIT at the exact guest instruction boundary `done`.
@@ -413,6 +623,20 @@ mod tests {
     fn level(time: &mut Time, vector: u16, value: u32) {
         let base = intc::BASES[usize::from(vector / 64 - 1)];
         time.write(base + 0x40 + u32::from(vector % 64), 1, value);
+    }
+
+    #[test]
+    fn rejected_device_mask_access_preserves_service_caches() {
+        let mut time = Time::new(TimerPolicy::Device, vec![], pit::F_BUS);
+        time.service_not_before = Some(123.0);
+        time.blocked = Some((456.0, 3));
+        for base in intc::BASES {
+            for (offset, size, value) in [(0x1c, 1, 0x80), (0x1d, 2, 0), (0x1b, 4, 0)] {
+                assert!(!time.write(base + offset, size, value));
+                assert_eq!(time.service_not_before, Some(123.0));
+                assert_eq!(time.blocked, Some((456.0, 3)));
+            }
+        }
     }
 
     #[test]

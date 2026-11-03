@@ -174,3 +174,45 @@ fn off_channel_is_plain_ram() {
     bank.write(BASES[1], 2, 0x841b);
     assert_eq!(bank.read(BASES[1], 2), Some(0x841b));
 }
+
+#[test]
+fn oracle_collection_retains_requests_until_accepted_or_guest_cleared() {
+    let mut bank = DtimBank::new(vec![0], F_BUS, false);
+    write_dtmr_dtrr(&mut bank, 0, 0x1b, 0, 131);
+    bank.advance_pending(0);
+    assert_eq!(bank.advance_pending(132), vec![(BASES[0] + 3, 2)]);
+    assert_eq!(bank.pending_vectors(), vec![VECTORS[0]]);
+    assert!(bank.advance_pending(132).is_empty());
+    assert_eq!(bank.missed(0), 0);
+    assert_eq!(bank.fired(0), 0);
+    let intc = intc_with_level(VECTORS[0], 2);
+    let mut sr = SrTracker::new();
+    assert!(bank.service_with(132, &intc, &mut sr, |_, _| false).0.is_empty());
+    assert_eq!(sr.ipl(), 0);
+    assert_eq!(bank.pending_vectors(), vec![VECTORS[0]]);
+    assert_eq!(bank.service(132, &intc, &mut sr).0, vec![(VECTORS[0], 2)]);
+    assert_eq!(bank.fired(0), 1);
+    assert!(bank.pending_vectors().is_empty());
+    bank.advance_pending(264);
+    assert_eq!(bank.pending_vectors(), vec![VECTORS[0]]);
+    bank.write(BASES[0] + 3, 1, 2);
+    assert!(bank.pending_vectors().is_empty());
+    assert_eq!(bank.cleared(0), 1);
+    bank.advance_pending(396);
+    bank.write(BASES[0], 2, 0);
+    bank.advance_pending(396);
+    assert!(bank.pending_vectors().is_empty());
+    assert_eq!(bank.next_deadline(0), None);
+    // Held state suppresses even checkpointed pending requests.
+    bank.load_checkpoint(
+        &[Some(1.0), None, None, None],
+        &[true, false, false, false],
+        true,
+    );
+    bank.advance_pending(1000);
+    assert!(bank.pending_vectors().is_empty());
+    assert_eq!(bank.next_deadline(0), Some(1.0));
+    assert!(bank.pending(0));
+    bank.release();
+    assert_eq!(bank.pending_vectors(), vec![VECTORS[0]]);
+}

@@ -23,6 +23,8 @@
 //    per-sample scratch: F0 F1 F2 F3
 // =====================================================================
 #include "dk_machine.inc"
+#include "dsp/oscillator.inc"
+#include "dsp/noise.inc"
 
 .SECTION/PM seg_pmco;
 .GLOBAL _bd_render;
@@ -155,22 +157,7 @@ _bd_render:
     F2 = F2 + F2;
     F0 = F2 - F0;
     NOP;
-    F1 = F0 * F0;
-    R2 = 0x42283c1a;                      // a9
-    F2 = F2 * F1;
-    R3 = 0xc2996966;                      // a7
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x42a335e3;                      // a5
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0xc2255de7;                      // a3
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x40c90fdb;                      // a1
-    F2 = F2 + F3;
-    F2 = F2 * F0;
-    F2 = -F2;
+    DK_SINE_POLY_STEP(F2, F0, F1, F3, R2, R3);
     R0 = F2;
     NOP;
     DM(4, I3) = R0;                       // the modulator value
@@ -200,32 +187,11 @@ _bd_render:
     F2 = F2 + F2;
     F0 = F2 - F0;
     NOP;
-    F1 = F0 * F0;
-    R2 = 0x42283c1a;
-    F2 = F2 * F1;
-    R3 = 0xc2996966;
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x42a335e3;
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0xc2255de7;
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x40c90fdb;
-    F2 = F2 + F3;
-    F2 = F2 * F0;
-    F2 = -F2;                             // the output
+    DK_SINE_POLY_STEP(F2, F0, F1, F3, R2, R3);
 
     // ---- noise layer: xorshift, long envelope ----
     R0 = DM(5, I3);
-    R1 = LSHIFT R0 BY 13;
-    R0 = R0 XOR R1;
-    R1 = -17;
-    R1 = LSHIFT R0 BY R1;
-    R0 = R0 XOR R1;
-    R1 = LSHIFT R0 BY 5;
-    R0 = R0 XOR R1;
+    DK_XORSHIFT32_LOAD_STEP(R0, R1);
     DM(5, I3) = R0;
     F3 = FLOAT R0;
     R1 = 0x30000000;                      // 2^-31

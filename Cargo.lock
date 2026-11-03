@@ -1072,6 +1072,7 @@ dependencies = [
  "device-profile",
  "digi-control",
  "digi-coupled",
+ "dkmidi",
  "elektron-native-boot",
  "emmc-card",
  "midir",
@@ -1132,6 +1133,13 @@ dependencies = [
 [[package]]
 name = "dkfw"
 version = "0.1.0"
+
+[[package]]
+name = "dkmidi"
+version = "0.1.0"
+dependencies = [
+ "midir",
+]
 
 [[package]]
 name = "dkneeds"
@@ -3094,6 +3102,7 @@ dependencies = [
  "dkupload",
  "dt2-firmware-loader",
  "emmc-card",
+ "machine",
  "midir",
  "object",
  "plusdrive-format",

@@ -42,6 +42,10 @@ pub const CERQ: u32 = EDMA_BASE + 0x19;
 pub const SEEI: u32 = EDMA_BASE + 0x1A;
 pub const CEEI: u32 = EDMA_BASE + 0x1B;
 pub const CINT: u32 = EDMA_BASE + 0x1C;
+/// Interrupt request latches (RM 19.4.13, p.380). Device Board supplies
+/// W1C and CINT acknowledgement; Oracle keeps raw register passthrough.
+pub const INTH: u32 = EDMA_BASE + 0x20;
+pub const INTL: u32 = EDMA_BASE + 0x24;
 pub const CERR: u32 = EDMA_BASE + 0x1D;
 pub const SSRT: u32 = EDMA_BASE + 0x1E;
 pub const CDNE: u32 = EDMA_BASE + 0x1F;

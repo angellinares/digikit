@@ -22,6 +22,15 @@ mark = "D"
 users = ["core/input"]
 doc = "The button decoder `void f(u32 channel, u32 new_mask)`: compares the channel's new mask with the previous one, updates it and queues the events (key down and up, chords, repeat)."
 
+[[fn]]
+name = "cf.input.fn.key_down"
+cpu = "cf"
+sig = "u32 (u32 key)"
+rule = { kind = "cf_func", hash = "1ffd7e389bfa418309caabcfbe980b9f", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Key state by logical key index: 1 while the key is held, else 0. The stock parameter page tests 0x10, 0x11 and 0x16 (turn modes that change what a parameter write does). DT2 0x4011e150, DN2 0x4011fac4."
+
 [[site]]
 name = "cf.input.site.key_decoder.prev_mask_lit"
 was = ["cf.input.site.key_mask_lit", "input.fw.key_mask_lit"]

@@ -71,6 +71,10 @@ def test_context_key_changes(world):
     base = _key(world)
     assert _key(world) == base
     assert _key(world, env={"SHARC_AOT": "1"}) != base
+    assert _key(world, env={"PATCHKIT_MODULES": "/modules/a"}) != base
+    assert _key(world, env={"PATCHKIT_MODULES": "/modules/a"}) != _key(
+        world, env={"PATCHKIT_MODULES": "/modules/b"}
+    )
     assert _key(world, peeks=("b",)) != base
     assert _key(world, device="dn2") != base
     _bump(inp, b"input-2")

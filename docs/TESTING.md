@@ -18,7 +18,7 @@ execution requirements, not levels. A successful boot proves only what the run a
 | Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `pnpm test:host` |
 | Unit (web) | Web app Node suites in `apps/web/tests` | `pnpm --filter @digi/web test` |
 | Unit (Python) | RE, firmware and dev tools | pytest on named files under `tests/<owner>/`; `mise run test:pypy` for the PyPy subset |
-| Unit (Rust) | Crates | `cargo nextest` through the gate target `rust-tests` |
+| Unit (Rust) | Workspace and standalone dkrt | Gate target `rust-tests` or `mise run test`; runtime-only: `mise run test:runtime:unit` |
 | Component | Module DSP conformance on the SHARC core | `mise run module:check ID` |
 | Device: stock UI | DT2 stock pages and transport goldens (zero DSP) | `mise run test:stock` |
 | Device: FX | Stock FX oracles | `mise run test:fx`, `mise run test:fx:dt2` |

@@ -1356,6 +1356,13 @@ pub fn _dm_read_full(
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(None);
     };
+    if matches!(width, 1 | 2 | 4 | 8) && (0..=u32::MAX as Int).contains(&concrete) {
+        s.mem.note_ddr_access(
+            concrete as u32,
+            width as u32,
+            crate::mem::DdrAccessKind::CpuRead,
+        );
+    }
     if !s.cfg.has_concrete || !matches!(width, 1 | 2 | 4 | 8) {
         return Ok(None);
     }
@@ -1543,6 +1550,13 @@ pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V, normal_word
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(false);
     };
+    if matches!(width, 1 | 2 | 4) && (0..=u32::MAX as Int).contains(&concrete) {
+        s.mem.note_ddr_access(
+            concrete as u32,
+            width as u32,
+            crate::mem::DdrAccessKind::CpuWrite,
+        );
+    }
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
     }
@@ -1605,6 +1619,13 @@ fn _dm_write_nolog_full(
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(false);
     };
+    if matches!(width, 1 | 2 | 4) && (0..=u32::MAX as Int).contains(&concrete) {
+        s.mem.note_ddr_access(
+            concrete as u32,
+            width as u32,
+            crate::mem::DdrAccessKind::CpuWrite,
+        );
+    }
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
     }

@@ -1,18 +1,110 @@
 {
  "arch": "cf",
  "format": 1,
- "relocs": [],
- "sections": [
+ "relocs": [
   {
-   "align": 2,
-   "hex": "0000000164743200000000024000000047e3000047e8b00047fe10000000000000000000000000000000000002df100000029000444b494d474944310000000000000000",
-   "kind": "data",
-   "name": ".rodata",
-   "size": 68
+   "addend": 0,
+   "offset": 68,
+   "section": ".rodata",
+   "symbol": "cf.storage.fn.path.open",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 72,
+   "section": ".rodata",
+   "symbol": "cf.storage.fn.path.read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 76,
+   "section": ".rodata",
+   "symbol": "cf.storage.fn.path.close",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 80,
+   "section": ".rodata",
+   "symbol": "cf.storage.fn.path.size",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 84,
+   "section": ".rodata",
+   "symbol": "cf.storage.fn.directory.open",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 88,
+   "section": ".rodata",
+   "symbol": "cf.storage.fn.directory.next",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 92,
+   "section": ".rodata",
+   "symbol": "cf.storage.fn.directory.metadata",
+   "type": "cf.32"
   }
  ],
- "source_sha256": "ff84f5a8871edb891f1df4aad09eb80b63888b99c6ebde74a9ba7f6e71dced84",
+ "sections": [
+  {
+   "align": 4,
+   "hex": "0000000164743200000000024000000047e3000047e8b00047fe10000000000000000000000000000000000002df100000029000444b494d47494431000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": ".rodata",
+   "size": 96
+  }
+ ],
+ "source_sha256": "814c98a50ab1c2a5522ad8cc9687b5728d9cedf99c85d9409cbc6df93ffa86be",
  "symbols": [
+  {
+   "global": true,
+   "name": "cf.storage.fn.directory.metadata",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.storage.fn.directory.next",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.storage.fn.directory.open",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.storage.fn.path.close",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.storage.fn.path.open",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.storage.fn.path.read",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "cf.storage.fn.path.size",
+   "section": null,
+   "value": 0
+  },
   {
    "global": true,
    "name": "dkrt_device_id",
@@ -24,6 +116,12 @@
    "name": "dkrt_device_name",
    "section": ".rodata",
    "value": 4
+  },
+  {
+   "global": true,
+   "name": "dkrt_files_fs",
+   "section": ".rodata",
+   "value": 84
   },
   {
    "global": true,
@@ -45,6 +143,12 @@
   },
   {
    "global": true,
+   "name": "dkrt_sample_fs",
+   "section": ".rodata",
+   "value": 68
+  },
+  {
+   "global": true,
    "name": "dkrt_store_first",
    "section": ".rodata",
    "value": 44
@@ -61,7 +165,7 @@
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "0",
-  "isa_check": "7e57be6316fadb79e90531e031d895b1874c39a0febffee485aa086267403448",
+  "isa_check": "e61c624742c5d8e27f29cb8ce79e08c0376780fb855d63a11a2026028c310f9a",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

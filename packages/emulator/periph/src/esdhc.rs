@@ -22,6 +22,13 @@ pub const DATPORT: u32 = 0x20;
 pub const PRSSTAT: u32 = 0x24;
 pub const SYSCTL: u32 = 0x2C;
 pub const IRQSTAT: u32 = 0x30;
+pub const IRQSTATEN: u32 = 0x34;
+pub const IRQSIGEN: u32 = 0x38;
+
+/// Command/transfer completion, buffer readiness, command/data timeout and
+/// data CRC events accepted by the host input. Other event families are excluded.
+pub const DEVICE_EVENT_BITS: u32 = 0x0031_0033;
+const IRQ_BITS: u32 = 0x117F_01FF;
 
 const DPSEL: u32 = 1 << 21;
 const DTDSEL: u32 = 1 << 4;
@@ -224,8 +231,16 @@ pub enum RegisterPolicy {
     /// Match `unicorn-reference-final:emu/esdhc.py`'s `Esdhc`: guest writes store directly in IRQSTAT.
     #[default]
     Oracle,
-    /// Apply the RM's device behavior: IRQSTAT guest writes are W1C.
+    /// Bounded device interrupt behavior: status enables, W1C and line gating.
+    /// This does not implement full controller reset or physical event timing.
     Device,
+}
+
+/// Why an immediate host-supplied Device event was rejected.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeviceEventError {
+    DevicePolicyRequired,
+    UnsupportedStatusBits(u32),
 }
 
 /// Pure register model.  Command completion is synchronous, as in the
@@ -254,7 +269,7 @@ impl<P: CardPort> Esdhc<P> {
             (PRSSTAT, 0xFF89_00F8),
             (0x28, 0x0000_0020),
             (SYSCTL, 0x0000_8008),
-            (0x34, 0x117F_013F),
+            (IRQSTATEN, 0x117F_013F),
             (0x40, 0x07F3_0000),
             (0x44, 0x0810_0810),
             (0xC0, 1),
@@ -318,19 +333,69 @@ impl<P: CardPort> Esdhc<P> {
             .push_back((BASE + off, value.to_be_bytes()));
     }
 
+    /// Device interrupt-register semantics support 1/2/4-byte accesses contained
+    /// within one register. Crossing accesses are rejected before mutation;
+    /// this is a model boundary, not a hardware alignment assertion.
     pub fn write(&mut self, addr: u32, size: u8, value: u32) -> bool {
         if !Self::owns(addr) {
             return false;
         }
         let off = addr - BASE;
-        if off == IRQSTAT && size == 4 && self.policy == RegisterPolicy::Device {
-            // RM Table 25-2: hardware IRQSTAT is write-one-to-clear. The
-            // Python oracle deliberately does not hook this guest write.
-            let current = self.regs.u32_at(IRQSTAT as usize);
-            self.regs.set_u32_at(IRQSTAT as usize, current & !value);
-            return true;
+        if self.policy == RegisterPolicy::Device {
+            if [SYSCTL, IRQSTAT, IRQSTATEN, IRQSIGEN]
+                .into_iter()
+                .any(|register| {
+                    off < register + 4
+                        && off + u32::from(size) > register
+                        && Self::register_lane(register, off, size, value).is_none()
+                })
+            {
+                return false;
+            }
+            // RegFile exposes big-endian byte, halfword and word accesses.
+            // Apply status semantics to each contained lane, not only words.
+            if let Some(bits) = Self::register_lane(IRQSTAT, off, size, value) {
+                let current = self.regs.u32_at(IRQSTAT as usize);
+                self.regs.set_u32_at(IRQSTAT as usize, current & !bits);
+                return true;
+            }
+            if Self::register_lane(IRQSTATEN, off, size, value).is_some() {
+                self.regs.write(off, size, value);
+                let enabled = self.regs.u32_at(IRQSTATEN as usize);
+                let current = self.regs.u32_at(IRQSTAT as usize);
+                self.put(IRQSTAT, current & enabled);
+                return true;
+            }
         }
         self.regs.write(off, size, value);
+        if self.policy == RegisterPolicy::Device {
+            if let Some(bits) = Self::register_lane(SYSCTL, off, size, value) {
+                // RM Table 25-13: only the bounded interrupt-state effects
+                // of command/data reset are modeled here. Other reset fields
+                // and data-path reset behavior remain outside this model.
+                // RSTA sets IRQSTATEN to its reset value 0x117F_013F (RM
+                // p0621). The manual's "RW bits are cleared" wording (p0637)
+                // would zero it, but the firmware polls IRQSTAT CC/TC right
+                // after RSTA without writing IRQSTATEN, so those enables must
+                // be set. The exact full value is not proven. Other registers
+                // keep the legacy self-clear-only behavior; no further RSTA
+                // fidelity is claimed.
+                if bits & (1 << 24) != 0 {
+                    self.regs.set_u32_at(IRQSTATEN as usize, 0x117F_013F);
+                }
+                let mut clear = 0;
+                if bits & (1 << 24) == 0 && bits & (1 << 25) != 0 {
+                    clear |= CC;
+                }
+                if bits & (1 << 24) == 0 && bits & (1 << 26) != 0 {
+                    clear |= TC | BWR | BRR | (1 << 2) | (1 << 3);
+                }
+                if clear != 0 {
+                    let current = self.regs.u32_at(IRQSTAT as usize);
+                    self.put(IRQSTAT, current & !clear);
+                }
+            }
+        }
         if off == DATPORT && size == 4 {
             self.pattern = value;
         } else if off == XFERTYP && size == 4 {
@@ -347,6 +412,49 @@ impl<P: CardPort> Esdhc<P> {
         true
     }
 
+    /// Apply one immediate host-side event under Device policy. This is not
+    /// a guest register write, a queued fault, or an error-severity classifier.
+    /// Combined bits latch independently; in particular TC does not erase DTOE
+    /// (RM Table 25-16 assigns TC precedence when interpreting those raw bits).
+    /// No data movement, DMA quiescence or physical error timing is implied.
+    pub fn device_event(&mut self, bits: u32) -> Result<(), DeviceEventError> {
+        if self.policy != RegisterPolicy::Device {
+            return Err(DeviceEventError::DevicePolicyRequired);
+        }
+        let unsupported = bits & !DEVICE_EVENT_BITS;
+        if unsupported != 0 {
+            return Err(DeviceEventError::UnsupportedStatusBits(unsupported));
+        }
+        self.latch_device_status(bits);
+        Ok(())
+    }
+
+    /// Shared controller interrupt line, without CPU delivery. Derived from
+    /// register state so mask changes and restored pages take effect immediately.
+    /// All defined IRQ bits participate, including those from restored pages;
+    /// this does not add generation of unsupported event families. Oracle policy
+    /// never drives this Device-only line.
+    pub fn interrupt_pending(&self) -> bool {
+        self.policy == RegisterPolicy::Device
+            && self.regs.u32_at(IRQSTAT as usize) & self.regs.u32_at(IRQSIGEN as usize) & IRQ_BITS
+                != 0
+    }
+
+    fn register_lane(register: u32, off: u32, size: u8, value: u32) -> Option<u32> {
+        if !matches!(size, 1 | 2 | 4) || off < register || off + u32::from(size) > register + 4 {
+            return None;
+        }
+        let shift = (register + 4 - off - u32::from(size)) * 8;
+        let mask = u32::MAX >> (32 - u32::from(size) * 8);
+        Some((value & mask) << shift)
+    }
+
+    fn latch_device_status(&mut self, bits: u32) {
+        let enabled = self.regs.u32_at(IRQSTATEN as usize);
+        let current = self.regs.u32_at(IRQSTAT as usize);
+        self.put(IRQSTAT, current | (bits & enabled));
+    }
+
     fn issue_command(&mut self, xfer: u32) {
         let idx = ((xfer >> 24) & 0x3F) as u8;
         let arg = self.regs.u32_at(CMDARG as usize);
@@ -360,21 +468,35 @@ impl<P: CardPort> Esdhc<P> {
         let mut status = self.regs.u32_at(PRSSTAT as usize) & !0x7;
         self.put(PRSSTAT, status);
         let mut irq = self.regs.u32_at(IRQSTAT as usize) | CC | TC;
-        self.put(IRQSTAT, irq);
+        if self.policy == RegisterPolicy::Oracle {
+            self.put(IRQSTAT, irq);
+        } else {
+            // Response and buffer readiness remain synchronous. Transfer/busy
+            // completion is a separate explicit event, not every command.
+            self.latch_device_status(CC);
+        }
         if xfer & DPSEL != 0 {
             if xfer & DTDSEL != 0 {
                 status |= BREN;
                 irq |= BRR;
                 self.put(PRSSTAT, status);
                 irq |= BRR;
-                self.put(IRQSTAT, irq);
+                if self.policy == RegisterPolicy::Oracle {
+                    self.put(IRQSTAT, irq);
+                } else {
+                    self.latch_device_status(BRR);
+                }
                 let word = self.card.read_word(idx, self.pattern);
                 self.put(DATPORT, word);
             } else {
                 status |= BWEN;
                 irq |= BWR;
                 self.put(PRSSTAT, status);
-                self.put(IRQSTAT, irq);
+                if self.policy == RegisterPolicy::Oracle {
+                    self.put(IRQSTAT, irq);
+                } else {
+                    self.latch_device_status(BWR);
+                }
             }
         }
     }

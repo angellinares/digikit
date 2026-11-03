@@ -75,6 +75,7 @@ DENYLIST: frozenset[str] = frozenset(
         "SHARC_GEN_DIR",
         "DIGI_ALLOW_STALE_GEN",
         "DIGI_COUPLED_FEATURES",
+        "PATH",  # patchkit toolchain lookup; built artifacts are covered by the binary/input digests
     }
 )
 
@@ -98,6 +99,7 @@ DENY_PREFIXES: tuple[str, ...] = (
 # key's prefixes need no entry here; anything else read by that code must be listed.
 IGNORED_ENV: dict[str, str] = {
     "WASM_HELPER_OUT": "read only by a sharc-fast-wasm unit test (debug output)",
+    "WASM_FLAT_OUT": "read only by a SHARC flat-access unit test (fixture output)",
     "DT2_SYX": "read only by a plusdrive unit test to find firmware for fixtures",
     "LIVE_AUDIO_DEVICE_TESTS": "gate of an ignored live-audio unit test",
 }
@@ -144,7 +146,10 @@ def _sha(text: str) -> str:
 def semantic_env(env: Mapping[str, str]) -> dict[str, str]:
     out: dict[str, str] = {}
     for name in sorted(env):
-        if not (name.startswith(_KEEP_PREFIXES) or name == "DN2_PROFILE_LINK"):
+        if not (
+            name.startswith(_KEEP_PREFIXES)
+            or name in {"DN2_PROFILE_LINK", "PATCHKIT_MODULES"}
+        ):
             continue
         if name in DENYLIST or name.startswith(DENY_PREFIXES):
             continue

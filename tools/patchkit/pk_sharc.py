@@ -25,6 +25,10 @@ import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tools.sharc_dev.sharcldr import LoadedMemory
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -313,13 +317,17 @@ class CallSession:
     ``call`` starts a routine at a symbol the way ``run_call`` does: the registers given, a return address that stops the
     run, and all registers it does not name as the last call left them. DM written by a call stays (a delay line, a
     routine's state); ``poke`` and ``peek`` read and write DM words in normal-word addresses. A rig that calls a routine
-    block after block uses this instead of copying its state in and out of every call."""
+    block after block uses this instead of copying its state in and out of every call.
+
+    ``base_memory`` optionally supplies an immutable original image. Linked code overlays it last; sessions with a base image
+    retain the Runner-local decode cache so that different images cannot share decoded instructions."""
 
     def __init__(
         self,
         linked: list[Linked],
         return_sw: int,
         breaks: tuple[int, ...] = (),
+        base_memory: LoadedMemory | None = None,
     ) -> None:
         from tools.sharc_dev import sharc_run
         from tools.sharc_dev.sharcldr import LoadedMemory
@@ -327,8 +335,11 @@ class CallSession:
         self._st = sharc_run.st
         self._run = sharc_run
         self.return_sw = return_sw
-        blocks, data = [], b""
-        for i, obj in enumerate(linked):
+        # Keep the original image's block metadata and payload offsets intact;
+        # linked code is appended last, following LoadedMemory's overlay order.
+        blocks = list(base_memory.blocks) if base_memory is not None else []
+        data = base_memory.data if base_memory is not None else b""
+        for obj in linked:
             blocks.append(
                 {
                     "target_address": SW_ALIAS_BASE + 2 * obj.base_sw,
@@ -336,7 +347,7 @@ class CallSession:
                     "fill": False,
                     "payload_offset": len(data),
                     "payload_len": len(obj.code_boot),
-                    "index": i,
+                    "index": len(blocks),
                 }
             )
             data += obj.code_boot
@@ -351,7 +362,8 @@ class CallSession:
             regs={},
             breakpoints=[return_sw, *breaks],
         )
-        self.runner._cache = _DECODE_CACHES.setdefault(cache_key, {})
+        if base_memory is None:
+            self.runner._cache = _DECODE_CACHES.setdefault(cache_key, {})
         self.symbols: dict[str, int] = {}
         for obj in linked:
             self.symbols.update(obj.symbols)

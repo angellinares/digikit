@@ -3,7 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport, frame, parseReply } from '@digi/dk-session';
-import { resolveInputs, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
+import {
+  resolveInputs,
+  withinRuntimeDeadline,
+  type Device,
+  type RuntimeBaseline,
+  type Session,
+} from '@digi/test-support';
 import { describe, expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type RuntimeCase } from '../support.ts';
 import {
@@ -400,7 +406,8 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       runtime.dk.cancelPending();
       const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
       try {
-        await bounded(() => dk.waitForBoot());
+        // DN2 cold restarts take about 45 s; retain the protocol's 90 s boot budget.
+        await withinRuntimeDeadline(Date.now() + 90_000, () => dk.waitForBoot());
       } finally {
         dk.cancelPending();
       }

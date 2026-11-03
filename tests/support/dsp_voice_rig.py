@@ -26,6 +26,7 @@ TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK, DIAG = (
     0x2009C000,
     0x2009D000,
 )
+PARAM_REC = 0x2506EC  # DT2 1.17 param record base (the stock literal; the rig keeps the stock address)
 SV_L4 = DIAG + 0x100  # the wrapper's data symbols (the build places them in free L2)
 SV3, SV5, BCW, REC_PTRS = DIAG + 0x104, DIAG + 0x108, DIAG + 0x10C, DIAG + 0x110
 STEP_WORD = (
@@ -35,13 +36,15 @@ MASK = (
     DIAG + 0x11C
 )  # `_dv_mask`: the registered types, rebuilt by voice 0 from the table
 GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
-# the contract adapter's data (`_dv_in` 16 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64): zero, and not used by a row of the old form
+# the contract adapter's data (`_dv_in` 24 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64, `_dv_st` 64): zero, and not used by a row of the old form
 ADAPTER = {
     "_dv_in": DIAG + 0x300,
     "_dv_params": DIAG + 0x320,
     "_dv_blk": DIAG + 0x360,
     "_dv_c": DIAG + 0x3A0,
     "_dv_slots": DIAG + 0x3E0,
+    "_dv_st": DIAG
+    + 0x400,  # 16 words: the per-track stereo flag (machine contract 1.2)
 }
 ROW = 24  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields, the contract fields (words 16 to 19)
 RING_A, RING_B = (
@@ -61,6 +64,7 @@ def core_externs() -> dict[str, int]:
         "_fw_type_cache": TYPE_CACHE,
         "_fw_render_next": STOCK_BP,
         "_fw_frame": FRAME,
+        "_fw_param_rec": PARAM_REC,
         "_dv_table": TABLE,
         "_dv_diag": DIAG,
         "_dv_sv_l4": SV_L4,
@@ -191,6 +195,10 @@ class Rig:
             self.dm[nw(DIAG) + k] = 0
         for k in range(32):
             self.dm[nw(GUARD) + k] = 0
+        for k in range(16):
+            self.dm[nw(ADAPTER["_dv_st"]) + k] = (
+                0  # no track has written R (machine contract 1.2)
+            )
         for k, w in enumerate((1, 2, 4, 5, 255, 255, 255, 255)):
             self.dm[nw(ADAPTER["_dv_slots"]) + k] = (
                 w  # the Digitakt II's knob positions of the parameters (ADM_PARAM_SLOT*)

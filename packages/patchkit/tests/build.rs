@@ -604,3 +604,160 @@ fn sharc_sources_given_as_texts_make_the_object_of_the_files() {
     let e = sharc::sharc_object(".SECTION/PM seg_pmco;\nDM(15, I4) = I0;\n").unwrap_err();
     assert!(e.0.contains("the ISA does not allow"), "{e}");
 }
+
+/// Exercise endian conversions compiled by the actual ColdFire Rust backend.
+/// The weak compiler_builtins bswap used to call itself, overflowing the guest
+/// stack; host-endian tests could not detect that target-only recursion.
+#[test]
+fn coldfire_rust_endian_conversions_return_without_recursive_helpers() {
+    use coldfire::{Bus, BusError, Cpu};
+    let Some(env) = toolchain() else { return };
+    if !env.codegen_gcc_ready() {
+        return;
+    }
+    let dir = patchkit::build::toolchain::TempDir::new("pk-rust-endian-test-").unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    let manifest = dir.path().join("Cargo.toml");
+    std::fs::write(
+        &manifest,
+        r#"
+[package]
+name = "cf-endian-proof"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["staticlib"]
+[workspace]
+[profile.release]
+panic = "abort"
+opt-level = "s"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("src/lib.rs"),
+        r#"
+#![no_std]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
+#[no_mangle]
+pub unsafe extern "C" fn endian_read(p: *const u8) -> u32 {
+    u32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
+}
+#[no_mangle]
+pub unsafe extern "C" fn endian_write(value: u32, p: *mut u32) {
+    core::ptr::write_unaligned(p, value.to_le());
+}
+"#,
+    )
+    .unwrap();
+    let (proto, hash, info) = rust::object_proto(&env, &manifest).unwrap();
+    let helper = proto
+        .symbols
+        .iter()
+        .find(|s| s.name == "__bswapsi2")
+        .unwrap();
+    assert!(
+        !helper.global,
+        "compiler helpers remain private to each object"
+    );
+    assert!(
+        proto
+            .relocs
+            .iter()
+            .all(|r| Some(&r.section) != helper.section.as_ref()),
+        "the target helper must have no calls, including self recursion"
+    );
+    let object = cf::dko_from_proto(&proto, hash, info).unwrap();
+    let linked = patchkit::link::link(&object, 0x1000, &Default::default()).unwrap();
+    assert!(linked.image.len() < 0x6000);
+
+    struct Ram(Vec<u8>);
+    impl Bus for Ram {
+        fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
+            self.0
+                .get(addr as usize)
+                .copied()
+                .ok_or(BusError { addr, write: false })
+        }
+        fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
+            Ok(u16::from_be_bytes([
+                self.read8(addr)?,
+                self.read8(addr + 1)?,
+            ]))
+        }
+        fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
+            Ok(u32::from_be_bytes([
+                self.read8(addr)?,
+                self.read8(addr + 1)?,
+                self.read8(addr + 2)?,
+                self.read8(addr + 3)?,
+            ]))
+        }
+        fn write8(&mut self, addr: u32, value: u8) -> Result<(), BusError> {
+            *self
+                .0
+                .get_mut(addr as usize)
+                .ok_or(BusError { addr, write: true })? = value;
+            Ok(())
+        }
+        fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
+            for (i, byte) in value.to_be_bytes().iter().enumerate() {
+                self.write8(addr + i as u32, *byte)?;
+            }
+            Ok(())
+        }
+        fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
+            for (i, byte) in value.to_be_bytes().iter().enumerate() {
+                self.write8(addr + i as u32, *byte)?;
+            }
+            Ok(())
+        }
+    }
+    for value in [0u32, 0x01234567, 0x00200000, 0x80000001, u32::MAX] {
+        for entry in ["endian_read", "endian_write"] {
+            let mut ram = Ram(vec![0; 0x10000]);
+            ram.0[0x1000..0x1000 + linked.image.len()].copy_from_slice(&linked.image);
+            ram.0[0x8000..0x8004].copy_from_slice(&value.to_le_bytes());
+            let mut cpu = Cpu::new();
+            cpu.pc = linked.symbols[entry] as u32;
+            cpu.sr = 0x2700;
+            cpu.a[7] = 0xf000;
+            for i in 2..8 {
+                cpu.d[i] = 0x12340000 + i as u32;
+            }
+            for i in 2..7 {
+                cpu.a[i] = 0x56780000 + i as u32;
+            }
+            let before_d = cpu.d;
+            let before_a = cpu.a;
+            ram.write32(0xf000, 0x9000).unwrap();
+            ram.write32(
+                0xf004,
+                if entry == "endian_read" {
+                    0x8000
+                } else {
+                    value
+                },
+            )
+            .unwrap();
+            ram.write32(0xf008, 0x8100).unwrap();
+            for _ in 0..100 {
+                if cpu.pc == 0x9000 {
+                    break;
+                }
+                cpu.step(&mut ram).unwrap();
+                assert_eq!(cpu.last_exception, None);
+            }
+            assert_eq!(cpu.pc, 0x9000, "{entry} must return, value {value:#x}");
+            assert_eq!(cpu.a[7], 0xf004, "cdecl stack restored");
+            assert_eq!(&cpu.d[2..], &before_d[2..]);
+            assert_eq!(&cpu.a[2..7], &before_a[2..7]);
+            if entry == "endian_read" {
+                assert_eq!(cpu.d[0], value);
+            } else {
+                assert_eq!(&ram.0[0x8100..0x8104], &value.to_le_bytes());
+            }
+        }
+    }
+}

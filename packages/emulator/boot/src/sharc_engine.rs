@@ -2,6 +2,48 @@
 // sharc_peer.rs once per core (module `engine_dn2`, and `second` with the `second-core` feature), so a
 // binary can run either device's DSP; the types they return come from sharc-stats and are shared.
 
+fn ddr_monitor_command(
+    engine: &mut sharc_native::Engine,
+    command: DdrMonitorCommand,
+) -> Result<DdrMonitorStatus, String> {
+    use crate::ddr_monitor::{DdrMonitorHit, DdrMonitorKind, DdrMonitorRange};
+    use sharc_native::mem::DdrAccessKind;
+    command.validate()?;
+    match command {
+        DdrMonitorCommand::Arm(range) => engine.set_ddr_monitor(Some((range.start, range.end))),
+        DdrMonitorCommand::Disarm => engine.set_ddr_monitor(None),
+        DdrMonitorCommand::Clear => {
+            engine.s.mem.clear_ddr_access();
+            Ok(())
+        }
+        DdrMonitorCommand::Status => Ok(()),
+    }
+    .map_err(|_| "invalid DDR monitor range".to_string())?;
+    // Metadata only: peeking at memory here would latch the diagnostic itself.
+    let range = engine
+        .s
+        .mem
+        .ddr_monitor_range()
+        .map(|(start, end)| DdrMonitorRange { start, end });
+    let first = engine.s.mem.first_ddr_access().map(|hit| DdrMonitorHit {
+        address: hit.address,
+        width: hit.width,
+        kind: match hit.kind {
+            DdrAccessKind::CpuRead => DdrMonitorKind::CpuRead,
+            DdrAccessKind::CpuWrite => DdrMonitorKind::CpuWrite,
+            DdrAccessKind::StorageRead => DdrMonitorKind::StorageRead,
+            DdrAccessKind::StorageWrite => DdrMonitorKind::StorageWrite,
+        },
+    });
+    Ok(DdrMonitorStatus {
+        active_core_profile: sharc_native::gen_image_name().to_string(),
+        dsp_icount: engine.s.icount,
+        armed: range.is_some(),
+        range,
+        first,
+    })
+}
+
 /// The native engine as a [`DspEngine`].
 pub struct NativeDsp(pub sharc_native::Engine);
 
@@ -71,6 +113,9 @@ impl DspEngine for NativeDsp {
     }
     fn set_execution_profile(&mut self, enabled: bool) -> bool {
         self.0.set_option(26, enabled as i64) == 0
+    }
+    fn ddr_monitor(&mut self, command: DdrMonitorCommand) -> Result<DdrMonitorStatus, String> {
+        ddr_monitor_command(&mut self.0, command)
     }
     fn peek_word(&self, addr: u32) -> Option<u32> {
         self.0.peek(addr as u64, 4).ok().flatten()
@@ -170,6 +215,9 @@ impl DspEngine for SharedDsp {
     }
     fn set_execution_profile(&mut self, enabled: bool) -> bool {
         self.0.borrow_mut().set_option(26, enabled as i64) == 0
+    }
+    fn ddr_monitor(&mut self, command: DdrMonitorCommand) -> Result<DdrMonitorStatus, String> {
+        ddr_monitor_command(&mut self.0.borrow_mut(), command)
     }
     fn peek_word(&self, addr: u32) -> Option<u32> {
         self.0.borrow().peek(addr as u64, 4).ok().flatten()

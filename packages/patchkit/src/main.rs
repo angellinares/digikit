@@ -596,7 +596,7 @@ plan.json {}",
                     cf.len()
                 )));
             }
-            let opts = patchkit::dkm::Options {
+            let mut opts = patchkit::dkm::Options {
                 name: flag(rest, "--name").unwrap_or_else(|| id.clone()),
                 version: patchkit::dkm::parse_version(&m.manifest.module.version)?,
                 runtime_min: match flag(rest, "--runtime-min") {
@@ -606,6 +606,14 @@ plan.json {}",
                     None => patchkit::dkm::runtime_version(),
                 },
                 trace: rest.iter().any(|a| a == "--trace"),
+                stereo: false,
+                api_minor: {
+                    let mut newest = 0;
+                    for name in &m.manifest.module.uses_api {
+                        newest = newest.max(patchkit::sdkgen::api_since(name)?);
+                    }
+                    newest
+                },
             };
             // a run-time module: its typed sections, lowered for one device, are the `register` records
             let mut dsp: Vec<u8> = vec![];
@@ -654,9 +662,12 @@ plan.json {}",
                         render: v.entry.clone(),
                         note_on: v.note_on.clone(),
                         desc: v.desc.clone(),
+                        stereo: v.stereo,
                         ranges,
                     });
                 }
+                // machine contract 1.2 only for a stereo machine: a mono one stays loadable by a runtime of 1.1
+                opts.stereo = voices.iter().any(|v| v.stereo);
                 // the effects of the device (the `DK_FX` records of the ColdFire object): process routine and descriptor in the DSP object;
                 // a page's knobs set the first words of the row
                 let all_fx = patchkit::desc::module_fx(m)?;
@@ -681,14 +692,20 @@ plan.json {}",
                 }
                 match sharc.first() {
                     Some((o, _)) => {
-                        dsp = patchkit::dkmdsp::pack(
+                        dsp = patchkit::dkmdsp::pack_with_samples(
                             o,
                             patchkit::register::device_id(&dev)?,
                             &voices,
                             &fxs,
+                            m.manifest.sample_bank.as_ref(),
+                            m.manifest.sample_tracks.as_ref(),
                         )?
                     }
-                    None if !voices.is_empty() || !fxs.is_empty() => {
+                    None if !voices.is_empty()
+                        || !fxs.is_empty()
+                        || m.manifest.sample_bank.is_some()
+                        || m.manifest.sample_tracks.is_some() =>
+                    {
                         return Err(Error(format!(
                             "{id}: a voice or an effect needs a DSP object for {dev}"
                         )));
@@ -700,6 +717,18 @@ plan.json {}",
                     None if !dsp.is_empty() => None,
                     None => return Err(Error(format!("{id}: nothing for device {dev}"))),
                 };
+                // the click callbacks of the parameters (`DK_PARAM_ACTION`): their offsets in the image of the object that is packed
+                if let (Some(r), Some(reg)) = (resolved, regs.as_mut())
+                    && r.params.iter().any(|p| p.action.is_some())
+                {
+                    let obj = cf
+                        .first()
+                        .and_then(|c| patchkit::desc::strip(c.0))
+                        .ok_or_else(|| {
+                            Error(format!("{id}: a click action needs a ColdFire object"))
+                        })?;
+                    reg.set_actions(r, &patchkit::dkm::image_symbols(&obj)?)?;
+                }
                 if !pages.is_empty() {
                     let r = regs.get_or_insert_with(|| patchkit::register::Register {
                         device: patchkit::register::device_id(&dev).unwrap_or(0),
@@ -745,6 +774,8 @@ plan.json {}",
                     "params": mf.param,
                     "pages": mf.page,
                     "voices": mf.voice,
+                    "sample_bank": mf.sample_bank,
+                    "sample_tracks": mf.sample_tracks,
                 }))?
             );
         }

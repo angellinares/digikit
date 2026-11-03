@@ -1029,6 +1029,13 @@ impl Emulator {
         (self.cpu.d, self.cpu.a, self.cpu.pc, self.cpu.sr)
     }
 
+    /// Last execution/bus PC recorded by the run loop, including accelerated
+    /// paths. This is not a full instruction trace or necessarily the CPU's
+    /// current PC; an unsupported-PC fault leaves the previous value intact.
+    pub fn last_bus_pc(&self) -> u32 {
+        self.bus.current_pc
+    }
+
     /// What the guest wrote to the container area of the flash (the OS upgrade): erases, page programs and bytes. All zero until it does.
     pub fn flash_writes(&self) -> FlashWrites {
         self.flash_writes
@@ -3169,11 +3176,33 @@ fn load_opt_bytes(r: &mut periph::snap::Reader) -> Result<Option<Vec<u8>>, Strin
 }
 
 impl Emulator {
+    /// DT2SNP01 carries register backing, not storage/timer policy identity.
+    /// Until a Device snapshot contract exists, both directions are restricted
+    /// to the Oracle construction that produced the legacy format.
+    fn validate_legacy_snapshot_policy(&self) -> Result<(), String> {
+        if self.bus.board.completion_policy() != CompletionPolicy::Oracle {
+            return Err("DT2SNP01 snapshots require Oracle completion policy; Device snapshots are unsupported".into());
+        }
+        let time = self
+            .bus
+            .board
+            .time()
+            .ok_or("DT2SNP01 snapshots require attached Oracle Time")?;
+        if time.policy() != TimerPolicy::Oracle {
+            return Err(
+                "DT2SNP01 snapshots require Oracle timer policy; Device snapshots are unsupported"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
     /// Serialize the machine state (see `SNAPSHOT_MAGIC`). Call between
     /// `step_chunk` calls. Fails if the machine is faulted or holds state
     /// the format does not carry (FPU, unimplemented-form marker).
     pub fn save_state(&mut self) -> Result<Vec<u8>, String> {
         use periph::snap::Writer;
+        self.validate_legacy_snapshot_policy()?;
         if self.error.is_some() {
             return Err("cannot snapshot a faulted emulator".into());
         }
@@ -3344,6 +3373,7 @@ impl Emulator {
     /// Restore a `save_state` blob into this freshly built emulator.
     pub fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
         use periph::snap::Reader;
+        self.validate_legacy_snapshot_policy()?;
         if self.cpu.icount != 0 || self.interpreted_instructions != 0 {
             return Err("load_state needs an emulator that has not executed".into());
         }
@@ -3869,6 +3899,183 @@ mod tests {
         assert!(restored.snapshot().frame.is_none());
         assert_eq!(restored.frame_revision, 42);
         assert_eq!(restored.frame_source.as_deref(), Some("main"));
+    }
+
+    fn with_legacy_snapshot_firmware(mut check: impl FnMut(&[u8])) {
+        for (env, sha) in [
+            (
+                "DIGI_LEGACY_SNAPSHOT_DT2_SYX",
+                "26c22f6652625ac2cfd47f7ee970d388ed8b6427dae3563c0a6a2f2d334350d5",
+            ),
+            (
+                "DIGI_LEGACY_SNAPSHOT_DN2_SYX",
+                "7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35",
+            ),
+        ] {
+            let Some(path) = std::env::var_os(env) else {
+                eprintln!(
+                    "SKIP legacy snapshot policy proof: set {env} to the exact current stock image"
+                );
+                continue;
+            };
+            let syx = std::fs::read(path)
+                .unwrap_or_else(|error| panic!("configured {env} must be readable: {error}"));
+            assert_eq!(
+                digest(&syx),
+                sha,
+                "{env} requires exact current stock firmware"
+            );
+            check(&syx);
+        }
+    }
+
+    #[test]
+    fn legacy_snapshot_oracle_roundtrip_keeps_format_and_bytes() {
+        with_legacy_snapshot_firmware(|syx| {
+            let mut saved = Emulator::new(syx, None).unwrap();
+            saved.cpu.d[7] = 0x51a7_0017;
+            saved
+                .write_ram(0x4400_0000, &0xaabb_ccddu32.to_be_bytes())
+                .unwrap();
+            saved.bus.board.write8(0xfc05_004d, 3).unwrap();
+            let state = saved.save_state().unwrap();
+            assert_eq!(&state[..8], b"DT2SNP01");
+            let mut restored = Emulator::new(syx, None).unwrap();
+            restored.load_state(&state).unwrap();
+            assert_eq!(restored.cpu, saved.cpu);
+            assert_eq!(
+                restored.peek_ram(0x4400_0000, 4),
+                0xaabb_ccddu32.to_be_bytes()
+            );
+            assert_eq!(restored.bus.board.read8(0xfc05_004d).unwrap(), 3);
+            assert_eq!(restored.save_state().unwrap(), state);
+        });
+    }
+
+    fn legacy_snapshot_board_bytes(runtime: &Emulator) -> Vec<u8> {
+        let mut writer = periph::snap::Writer::new();
+        runtime.bus.board.snap_save(&mut writer).unwrap();
+        writer.buf
+    }
+
+    #[test]
+    fn legacy_snapshot_unsupported_policies_reject_before_mutation() {
+        with_legacy_snapshot_firmware(|syx| {
+            let mut source = Emulator::new(syx, None).unwrap();
+            source.cpu.d[7] = 0x7777_7777;
+            source.write_ram(0x4400_0000, &[0x55; 8]).unwrap();
+            let state = source.save_state().unwrap();
+            for mode in 0..3 {
+                let mut runtime = Emulator::new(syx, None).unwrap();
+                let expected_error = match mode {
+                    0 => {
+                        runtime.bus.board = Board::new(
+                            Card::default(),
+                            Default::default(),
+                            CompletionPolicy::Device,
+                        );
+                        runtime.bus.board.attach_time(Time::new(
+                            TimerPolicy::Oracle,
+                            vec![0],
+                            66_000_000.0,
+                        ));
+                        "Oracle completion policy"
+                    }
+                    1 => {
+                        runtime.bus.board.attach_time(Time::new(
+                            TimerPolicy::Device,
+                            vec![0],
+                            66_000_000.0,
+                        ));
+                        "Oracle timer policy"
+                    }
+                    2 => {
+                        runtime.bus.board.take_time();
+                        "attached Oracle Time"
+                    }
+                    _ => unreachable!(),
+                };
+                // A deferred flag update makes an accidental resolve_nzv on
+                // failed save observable through the complete CPU comparison.
+                runtime.cpu = Cpu::new();
+                runtime.cpu.pc = 0x4400_0000;
+                runtime.cpu.sr = 0x2010;
+                runtime
+                    .write_ram(0x4400_0000, &[0x70, 0xff, 0xa5, 0x5a])
+                    .unwrap(); // MOVEQ #-1,D0
+                runtime.cpu.step(&mut runtime.bus.board).unwrap();
+                runtime.cpu.icount = 0; // fresh-state load prerequisite, with flags still deferred
+                runtime.cpu.d[7] = 0x1234_5678;
+                runtime.bus.current_icount = 1234;
+                runtime.bus.current_pc = runtime.cpu.pc;
+                runtime.idle_passes = 37;
+                if let Some(time) = runtime.bus.board.time_mut() {
+                    time.write(0xfc05_004d, 1, 5);
+                    time.write(0xfc08_0002, 2, 9); // PIT0 PMR
+                    time.write(0xfc08_0000, 2, 0x000b);
+                    assert!(time.deadline(1234).is_some());
+                }
+                let before_cpu = runtime.cpu.clone();
+                let mut resolved_cpu = before_cpu.clone();
+                resolved_cpu.resolve_nzv();
+                assert_ne!(before_cpu, resolved_cpu, "fixture must hold deferred flags");
+                let before_board = legacy_snapshot_board_bytes(&runtime);
+                let before_policy = (
+                    runtime.bus.board.completion_policy(),
+                    runtime.bus.board.time().map(Time::policy),
+                );
+                let before_counters = (
+                    runtime.bus.current_icount,
+                    runtime.bus.current_pc,
+                    runtime.idle_passes,
+                    runtime.interpreted_instructions,
+                );
+                let error = runtime.save_state().unwrap_err();
+                assert!(error.contains(expected_error), "{error}");
+                assert_eq!(
+                    runtime.cpu, before_cpu,
+                    "save rejection leaves deferred flags intact"
+                );
+                assert_eq!(legacy_snapshot_board_bytes(&runtime), before_board);
+                // A valid Oracle blob must not deserialize into this unsupported
+                // construction, even though its CPU execution count is zero.
+                let error = runtime.load_state(&state).unwrap_err();
+                assert!(error.contains(expected_error), "{error}");
+                assert_eq!(
+                    runtime.cpu, before_cpu,
+                    "restore rejection preserves the constructed CPU"
+                );
+                assert_eq!(
+                    legacy_snapshot_board_bytes(&runtime),
+                    before_board,
+                    "restore rejection preserves RAM, registers and timer deadlines"
+                );
+                assert_eq!(
+                    (
+                        runtime.bus.board.completion_policy(),
+                        runtime.bus.board.time().map(Time::policy)
+                    ),
+                    before_policy
+                );
+                assert_eq!(
+                    (
+                        runtime.bus.current_icount,
+                        runtime.bus.current_pc,
+                        runtime.idle_passes,
+                        runtime.interpreted_instructions
+                    ),
+                    before_counters
+                );
+                // Policy rejection also precedes parsing a malformed input.
+                assert!(
+                    runtime
+                        .load_state(b"invalid")
+                        .unwrap_err()
+                        .contains(expected_error)
+                );
+                assert_eq!(runtime.cpu, before_cpu);
+            }
+        });
     }
 
     #[test]

@@ -12,6 +12,16 @@ users = ["core/health"]
 doc = "The function that creates the main-OS task, the target of the boot thread's last `jsr`; core/health calls it from its idle hook before it starts counting."
 
 [[fn]]
+name = "cf.rtos.fn.sleep_us"
+cpu = "cf"
+sig = "void (u32 us)"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "113f4261cb994d31a918bb90032ffe45", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/sample-pool"]
+doc = "DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it."
+
+[[fn]]
 name = "cf.rtos.fn.queue_pop"
 was = ["dkrt.fw.queue_pop"]
 cpu = "cf"

@@ -69,6 +69,15 @@ description = "Headless Chrome throughput bench of the coupled browser core (nee
 run = "node tools/devtools/wasm_parity.mjs --scenario"
 description = "Check the browser core renders a scenario's PCM byte-identical to native: mise run web:parity trig1-tap-release"
 
+[tasks."dkmidi:build"]
+run = "cargo build -p dkmidi --release --offline --target-dir \"$(SHARC_GEN_DIR= uv run python -m tools.emulator.native_target dir)\""
+description = "Build the dkmidi MIDI bridge (the workbench's MIDI port code on stdin and stdout) into the nogen target dir, where tools/devtools/wb.mjs looks"
+
+[tasks.wb]
+depends = ["dkmidi:build"]
+run = "node tools/devtools/wb.mjs"
+description = "Workbench actions from the command line through the workbench's own code: mise run wb -- samples put FILE... --folder F | samples ls | info | ports"
+
 # --- scenarios (tests/scenarios/README.md) ---
 
 [tasks."scenario:build"]
@@ -115,6 +124,10 @@ description = "Full gate: every gate target on every project, plus the tier swee
 [tasks."clean:runs"]
 run = "uv run python -m tools.devtools.clean_runs"
 description = "Dry run: list old digi-* run directories in the temp dir and orphan digi-emud processes; -- --yes deletes the directories (never kills), -- --hours N sets the minimum age (default 24)"
+
+[tasks."test:runtime:unit"]
+run = "uv run python -m tools.devtools.benchlock run --shared --label runtime-unit -- uv run python -m tools.devtools.rust_ws test --packages dkrt"
+description = "Standalone runtime host cleanup tests with pinned toolchain; no generated SHARC core, device or native fixture build"
 
 [tasks."test:stock"]
 run = "pnpm --filter @digi/regression test:stock"
@@ -348,6 +361,10 @@ description = "The digikit runtime's debug log over USB: mise run dk:log -- --po
 [tasks."dk:screen"]
 run = "uv run --with python-rtmidi python -m tools.device.dkscreen"
 description = "Screenshot of the device or emulator display as PNG: mise run dk:screen -- --port Digitakt out/runs/shots/screen.png [--every S --count N] (or --emu; the target is --emu or --port NAME)"
+
+[tasks."device:probe"]
+run = "uv run --with python-rtmidi --with sounddevice python -m tools.device.devprobe"
+description = "Press keys through the digikit remote, record the device's USB audio and analyse each hit: mise run device:probe -- --list-audio | --steps 'trig1*10@500' [--device dt2|dn2] [--no-remote] [--analyse WAV]"
 
 [tasks.transfer]
 run = "uv run --with python-rtmidi python -m tools.device.dktransfer"

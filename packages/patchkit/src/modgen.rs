@@ -148,6 +148,7 @@ mod tests {
                 id: "t".into(),
                 name: "T".into(),
                 short: "T".into(),
+                stereo: false,
             }];
             m.manifest.param = (0..2)
                 .map(|w| ParamDef {
@@ -159,6 +160,8 @@ mod tests {
                     min: 0,
                     max: 100,
                     default: 50,
+                    action: None,
+                    glyph: None,
                 })
                 .collect();
             m.manifest.page = vec![PageDef {
@@ -176,6 +179,7 @@ mod tests {
                 render: "_r".into(),
                 note_on: "_n".into(),
                 desc: "_d".into(),
+                stereo: false,
             }];
         }
         let models = models();
@@ -192,7 +196,10 @@ mod tests {
         let g: serde_json::Value = serde_json::from_str(&files[0].1).unwrap();
         assert_eq!(g["machines"][0]["devices"]["dt2"]["knobs"][2]["param"], "t_1");
         assert_eq!(g["machines"][0]["devices"]["dn2"]["page"]["title"], "T");
-        assert_eq!(g["params"]["dn2"][1]["slot"], 26);
+        // a parameter's slot is the device's slot base plus its knob position from `param_slots`: words 0 and 1 sit on B and C
+        assert_eq!(g["params"]["dn2"][0]["slot"], 26);
+        assert_eq!(g["params"]["dn2"][1]["slot"], 27);
+        assert_eq!(g["params"]["dt2"][1]["slot"], 2);
     }
 
     #[test]

@@ -23,6 +23,9 @@ last = 23
 dynamic_first = 16
 
 [dt2.alloc]
+# 10 is retired (test/twin-xslice:xslice_d, removed): gap row, never reused.
+# Isolated patched-in DDR diagnostic only; absent from all default module sets.
+"core/dsp-ddr-proof:ddr_proof" = 11
 # 13, 14 and 15 are retired (analog, pd and bd are run-time modules now): gap rows, never reused.
 "test/machine-clone:xclone" = 8
 "test/patched-pluck:pluck" = 9
@@ -41,6 +44,10 @@ last = 23
 dynamic_first = 16
 
 [dn2.alloc]
+# Private opt-in LP0 two-track diagnostic; DN2 only.
+"core/dsp-lp0-proof:lp_sampler" = 12
+# Isolated patched-in DDR diagnostic only; absent from all default module sets.
+"core/dsp-ddr-proof:ddr_proof" = 11
 # 13, 14 and 15 are retired (analog, pd and bd are run-time modules now): gap rows, never reused.
 "test/dn2-clone:fmclone" = 5
 "test/dn2-pages:pages" = 6

@@ -14,6 +14,9 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
+/// Target helpers are source-hashed so fixes invalidate cached ColdFire objects.
+const CF_HELPERS: &str = include_str!("cf_rust_helpers.s");
+
 /// Emitted into the object, so identical on every machine: no source paths in panic locations.
 const RUSTFLAGS_EXTRA: &str = "-Zlocation-detail=none -Zfmt-debug=none";
 const CARGO_ARGS: [&str; 3] = [
@@ -152,6 +155,7 @@ pub fn source_sha256(manifest: &Path) -> Result<String> {
         .as_bytes(),
     );
     h.update(tc::RUST_TARGET_JSON);
+    h.update(CF_HELPERS.as_bytes());
     Ok(hex(&h.finalize()))
 }
 
@@ -514,6 +518,23 @@ fn build_object(env: &Env, manifest: &Path, out: &Path) -> Result<Vec<String>> {
         args.push("-u".into());
         args.push(e.clone());
     }
+    // Strong ISA_C implementations override compiler_builtins' weak helpers.
+    // They are not export roots: --gc-sections retains only referenced helpers,
+    // and the usual localization pass below keeps them private to this object.
+    let helper_src = work.path().join("cf-rust-helpers.s");
+    let helper_obj = work.path().join("cf-rust-helpers.o");
+    std::fs::write(&helper_src, CF_HELPERS).map_err(|e| err!("{e}"))?;
+    tc::run(
+        &env.m68k("as")?,
+        &[
+            "-mcpu=54418".into(),
+            "-o".into(),
+            helper_obj.display().to_string(),
+            helper_src.display().to_string(),
+        ],
+        None,
+    )?;
+    args.push(helper_obj.display().to_string());
     args.push(tc::canon(&lib).display().to_string());
     tc::run(&env.m68k("ld")?, &args, None)?;
     let objcopy = env.m68k("objcopy")?;

@@ -94,3 +94,64 @@ def test_a_declared_wider_range_lets_it_through_to_the_guard(device):
     assert b.faults == 1  # 0xffff * 2^-12 = 16.0 is above the bound of 8.0
     assert all(x == 0.0 for x in b.samples)
     assert math.isfinite(sum(b.samples))
+
+
+def observed(r: MachineRig, name: str) -> int:
+    return r.sess.peek(nw(r.built.data[f"_tk_{name}"])) or 0
+
+
+def test_dn2_source_track_latches_at_delayed_note_on_and_retrigger():
+    r = rig("dn2", "track", "tk")
+    r.select(3)  # physical voice 3, with an independently assigned source track
+    r.set_owner(7)
+    r.trigger()
+    edge = r.block("friendly")
+    assert edge.returned and all(x == 0 for x in edge.samples)
+    assert observed(r, "notes") == observed(r, "renders") == 0
+    r.set_owner(11)  # owner is read at actual note_on, after the edge block
+    b = r.block("friendly")
+    assert b.returned and not b.context_bad and b.faults == 0
+    assert all(x == 11 / 16 for x in b.samples)
+    assert observed(r, "note_track") == observed(r, "render_track") == 11
+    r.set_owner(0xFFFF)  # no edge: retain the latched owner, even if current is invalid
+    b = r.block("friendly")
+    assert b.returned and all(x == 11 / 16 for x in b.samples)
+    assert observed(r, "notes") == 1 and observed(r, "renders") == 2
+    r.set_owner(15)
+    b = note(r)
+    assert all(x == 15 / 16 for x in b.samples)
+    assert observed(r, "notes") == 2 and observed(r, "renders") == 3
+    assert observed(r, "note_track") == observed(r, "render_track") == 15
+
+
+@pytest.mark.parametrize("owner", [16, 17, 0x7FFF, 0x8000, 0xFFFF])
+def test_dn2_invalid_source_owner_ends_only_the_slot_without_callbacks(owner):
+    r = rig("dn2", "track", "tk")
+    r.select(3)
+    r.set_owner(owner)
+    for _ in range(9):  # would disable a type if treated as a module fault
+        b = note(r)
+        assert b.returned and not b.context_bad and b.faults == 0
+        assert all(x == 0 for x in b.samples)
+    r.set_owner(4)  # changing owner without a new edge cannot revive the ended slot
+    assert all(x == 0 for x in r.block("friendly").samples)
+    assert observed(r, "notes") == observed(r, "renders") == 0
+    assert not r.sess.peek(nw(dv.TABLE) + 10)
+    r.select(5)
+    r.set_owner(9)
+    assert all(x == 9 / 16 for x in note(r).samples)
+    r.use(3)
+    r.set_owner(2)
+    assert all(x == 2 / 16 for x in note(r).samples)
+    assert observed(r, "notes") == observed(r, "renders") == 2
+
+
+@pytest.mark.parametrize("track", [0, 3, 15])
+def test_dt2_source_track_is_the_actual_track(track):
+    r = rig("dt2", "track", "tk")
+    r.select(track)
+    b = note(r)
+    assert b.returned and not b.context_bad and b.faults == 0
+    assert all(x == track / 16 for x in b.samples)
+    assert observed(r, "note_track") == observed(r, "render_track") == track
+    assert all(x == track / 16 for x in r.block("friendly").samples)

@@ -5,21 +5,23 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "dn_a",
-              "slot": 25
-            },
-            {
-              "param": "dn_b",
               "slot": 26
             },
             {
-              "param": "dn_c",
+              "param": "dn_b",
               "slot": 27
+            },
+            null,
+            {
+              "param": "dn_c",
+              "slot": 29
             },
             {
               "param": "dn_d",
-              "slot": 28
+              "slot": 30
             }
           ],
           "level": 10,
@@ -87,7 +89,7 @@
         "min": 0,
         "name": "Dyn Alpha",
         "short": "ALPH",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -97,7 +99,7 @@
         "min": 0,
         "name": "Dyn Beta",
         "short": "BETA",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -107,7 +109,7 @@
         "min": 256,
         "name": "Dyn Gamma",
         "short": "GAMA",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -117,7 +119,7 @@
         "min": 0,
         "name": "Dyn Delta",
         "short": "DELT",
-        "slot": 28,
+        "slot": 30,
         "template": 213
       }
     ],
@@ -130,7 +132,7 @@
         "name": "Dyn Alpha",
         "short": "ALPH",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 4096,
@@ -140,7 +142,7 @@
         "name": "Dyn Beta",
         "short": "BETA",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 28672,
@@ -150,7 +152,7 @@
         "name": "Dyn Gamma",
         "short": "GAMA",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 16384,
@@ -160,7 +162,7 @@
         "name": "Dyn Delta",
         "short": "DELT",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

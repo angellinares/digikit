@@ -23,6 +23,8 @@
 #include <stddef.h>
 #include <dk/ui.h>
 #include "dk_ui_core.h"
+#include "tick.h"
+#include "dkrt.h"
 #include "dk_fw_mem.h"
 #include "dk_fw_string.h"
 #include "dk_fw_view.h"
@@ -607,7 +609,7 @@ fail:
 
 int dk_ui_has(int cap)
 {
-    return cap >= DK_UI_CAP_MENU && cap <= DK_UI_CAP_TOAST;
+    return cap >= DK_UI_CAP_MENU && cap <= DK_UI_CAP_TICK;
 }
 
 dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d)
@@ -675,6 +677,15 @@ int dk_ui_open(dk_ui_menu *m)
 void dk_ui_refresh(dk_ui_menu *m)
 {
     if (m && m->obj && m->d && m->kind != K_PANEL)
+        refill(m, 0);
+}
+
+void dk_ui_select(dk_ui_menu *m, int row_)
+{
+    if (!m || !m->obj || !m->d || m->kind == K_PANEL || row_ < 0)
+        return;
+    ((CompactVerticalMenuView *)m->obj)->selected = (uint32_t)row_; /* the next fill puts the cursor there (clamped to the rows) */
+    if (dk_ui_is_open(m))
         refill(m, 0);
 }
 
@@ -835,4 +846,47 @@ int dk_ui_toast(const char *text)
     cut(buf, sizeof buf, text);
     dk_fw_window_toast(dk_fw_window_ui_states(), "%s", buf);
     return 0;
+}
+
+/* ---- dk_ui_tick ------------------------------------------------------------------------------------------------------- */
+
+/* The timers (tick.h). One function, ui_poll, is on the runtime's per-pass list (dkrt_poll_add) while any timer runs: the UI loop calls it
+   in the UI task, the task of every UI callback. The runtime's block clock (1500 per second) times the periods; without one the passes
+   of the UI loop (about 120 per second) do. */
+static ui_ticks g_ticks;
+static uint32_t g_passes;
+static int g_polling;
+
+static uint32_t tick_clock(uint32_t *per_s)
+{
+    uint32_t now = dkrt_blocks();
+    if (now) {
+        *per_s = 1500;
+        return now;
+    }
+    *per_s = 120;
+    return ++g_passes;
+}
+
+static void ui_poll(void)
+{
+    uint32_t per_s, now = tick_clock(&per_s);
+    if (ui_ticks_run(&g_ticks, now, per_s) == 0 && g_polling) {
+        dkrt_poll_remove((uintptr_t)ui_poll);
+        g_polling = 0;
+    }
+}
+
+int dk_ui_tick(dk_ui_tick_fn *fn, void *ctx, uint32_t period_ms)
+{
+    uint32_t per_s, now = tick_clock(&per_s);
+    int r = ui_ticks_set(&g_ticks, fn, ctx, period_ms, now);
+    if (r == 0 && !g_polling && ui_ticks_active(&g_ticks)) {
+        if (dkrt_poll_add((uintptr_t)ui_poll) != 0) {
+            ui_ticks_set(&g_ticks, fn, ctx, 0, now);
+            return -1;
+        }
+        g_polling = 1;
+    }
+    return r;
 }

@@ -25,6 +25,12 @@ pub fn depth() -> usize {
     with(|s| s.stack.len())
 }
 
+/// The row the cursor is on in the top view (`dk_ui_select` and `press_yes` set it).
+pub fn cursor() -> usize {
+    let id = top();
+    with(|s| s.menus[id].selected)
+}
+
 /// The title of the top view; empty for a panel.
 pub fn title() -> String {
     let id = top();
@@ -160,6 +166,10 @@ pub fn press_right(row: usize) {
         s.menus.len() - 1
     });
     panel(handle(pid), row as c_int, d.ctx);
+    // core/ui shows no panel when the callback added no rows
+    if with(|s| s.menus[pid].rows.is_empty()) {
+        with(|s| s.stack.retain(|&x| x != pid));
+    }
 }
 
 /// YES on a row of the open side panel: the panel closes, then the row acts.
@@ -222,4 +232,36 @@ pub fn pick_choice(index: usize) {
     if let Some(f) = dlg.confirm_done {
         f(dlg.ctx, index as c_int)
     }
+}
+
+/// Moves the clock of the model by `ms` milliseconds, one millisecond at a time, and runs every timer of `dk_ui_tick` when its period is
+/// over (in the order set). A timer that an earlier callback stopped does not run.
+pub fn advance_ms(ms: u32) {
+    for _ in 0..ms {
+        with(|s| s.now_ms += 1);
+        let mut i = 0;
+        loop {
+            let due = with(|s| {
+                let now = s.now_ms;
+                let t = s.ticks.get_mut(i)?;
+                if now - t.last >= t.ms as u64 {
+                    t.last = now;
+                    Some(Some((t.f, t.ctx)))
+                } else {
+                    Some(None)
+                }
+            });
+            match due {
+                None => break,
+                Some(Some((f, ctx))) => f(ctx),
+                Some(None) => {}
+            }
+            i += 1;
+        }
+    }
+}
+
+/// The periods (ms) of the running timers, in the order set.
+pub fn tick_periods() -> Vec<u32> {
+    with(|s| s.ticks.iter().map(|t| t.ms).collect())
 }

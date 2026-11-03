@@ -337,6 +337,10 @@ struct Pending {
 }
 
 pub struct Lower {
+    /// Test-only simulation of the pointer-table layout used by wasm32. The
+    /// production lowering always selects the compiling target's pointer size.
+    #[cfg(test)]
+    flat_ptr64: Option<bool>,
     pub env: Env,
     pub plan: Plan,
     pub pass: u8,
@@ -508,6 +512,8 @@ pub struct CfgX {
 impl Lower {
     pub fn new(env: Env, plan: Plan, pass: u8) -> Lower {
         let mut l = Lower {
+            #[cfg(test)]
+            flat_ptr64: None,
             env,
             plan,
             pass,
@@ -2166,8 +2172,13 @@ mod tests {
         }
     }
 
-    fn flat_test_kernels(bytes: u8, write: bool) -> Vec<Box<dyn CompiledKernel>> {
+    fn flat_test_ir(bytes: u8, write: bool) -> Kernel {
+        flat_test_ir_for_layout(bytes, write, None)
+    }
+
+    fn flat_test_ir_for_layout(bytes: u8, write: bool, ptr64: Option<bool>) -> Kernel {
         let mut l = Lower::new(env(), Plan::default(), 2);
+        l.flat_ptr64 = ptr64;
         let addr = l.emit(Ty::I32, Op::Ctx32(CTX_REGS_IN));
         let (p, o) = l.flat_access(addr, bytes, write).unwrap();
         if write {
@@ -2198,7 +2209,83 @@ mod tests {
                 v,
             });
         }
-        let k = l.finish().unwrap().kernel;
+        l.finish().unwrap().kernel
+    }
+
+    /// Real Lower output with a simulated wasm32 pointer table, not a
+    /// target-native build. WASM_FLAT_OUT optionally exports the serialized
+    /// kernels and layout metadata for wasmgen and the V8 flat-access check.
+    #[test]
+    fn flat_access_wasm32_fixture() {
+        use crate::mem::{PAGE_BITS, PAGE_DIRTY_OFF, PAGE_PRESENT_OFF, PAGE_SIZE, Page};
+        // Page contains only fixed-size byte and u64 arrays; reject any change
+        // that would make this host layout unsuitable for the simulation.
+        assert_eq!(std::mem::offset_of!(Page, data), 0);
+        assert_eq!(PAGE_PRESENT_OFF as usize, PAGE_SIZE);
+        assert_eq!(PAGE_DIRTY_OFF as usize, PAGE_SIZE + PAGE_SIZE / 8);
+        assert_eq!(std::mem::size_of::<Page>(), PAGE_SIZE + PAGE_SIZE / 4);
+        let out = std::env::var_os("WASM_FLAT_OUT").map(std::path::PathBuf::from);
+        if let Some(out) = &out {
+            std::fs::create_dir_all(out).unwrap();
+        }
+        let mut entries = Vec::new();
+        for bytes in [1, 2, 4] {
+            for write in [false, true] {
+                let k = flat_test_ir_for_layout(bytes, write, Some(false));
+                k.validate().unwrap();
+                for inst in k.pre.iter().chain(&k.body).chain(&k.post) {
+                    assert!(
+                        !matches!(
+                            inst,
+                            Inst::Def(_, Op::Load64 { .. } | Op::St32(_) | Op::Helper(_))
+                                | Inst::StSt32 { .. }
+                        ),
+                        "fixture must not depend on host pointers or engine-state layout"
+                    );
+                    if let Inst::Guard { k, .. } = inst {
+                        assert_eq!(*k, 0, "fixture requires default guard-index encoding");
+                    }
+                }
+                let name = format!("kernel-{}-{bytes}", if write { "write" } else { "read" });
+                if let Some(out) = &out {
+                    let data: Vec<u8> = k.encode().iter().flat_map(|w| w.to_le_bytes()).collect();
+                    std::fs::write(out.join(format!("{name}.bin")), data).unwrap();
+                }
+                entries.push(format!(
+                    "{{\"name\":\"{name}\",\"bytes\":{bytes},\"write\":{write}}}"
+                ));
+            }
+        }
+        if let Some(out) = out {
+            let metadata = format!(
+                concat!(
+                    "{{\"layout\":\"simulated_wasm32\",\"pointer_bytes\":4,",
+                    "\"page_bits\":{},\"page_size\":{},\"page_present_off\":{},\"page_dirty_off\":{},",
+                    "\"ctx\":{{\"size\":{},\"iters\":{},\"done\":{},\"exit_k\":{},",
+                    "\"regs_in\":{},\"regs_out\":{},\"flat_eff\":{},\"flat_watch\":{}}},",
+                    "\"exit_k\":0,\"store_value\":{},\"kernels\":[{}]}}\n"
+                ),
+                PAGE_BITS,
+                PAGE_SIZE,
+                PAGE_PRESENT_OFF,
+                PAGE_DIRTY_OFF,
+                CTX_SIZE,
+                CTX_ITERS,
+                CTX_DONE,
+                CTX_EXIT_K,
+                CTX_REGS_IN,
+                CTX_REGS_OUT,
+                CTX_FLAT_EFF,
+                CTX_FLAT_WATCH,
+                0xa17c_39e5u32,
+                entries.join(",")
+            );
+            std::fs::write(out.join("layout.json"), metadata).unwrap();
+        }
+    }
+
+    fn flat_test_kernels(bytes: u8, write: bool) -> Vec<Box<dyn CompiledKernel>> {
+        let k = flat_test_ir(bytes, write);
         let mut kernels = vec![super::super::interp::InterpBackend.compile(&k).unwrap()];
         #[cfg(not(target_family = "wasm"))]
         {
@@ -2234,6 +2321,62 @@ mod tests {
         // are guarded, and this kernel never accesses engine state.
         let result = unsafe { k.run(ctx.ptr(), std::ptr::null_mut()) };
         (result, ctx.get32(CTX_REGS_OUT))
+    }
+
+    #[test]
+    fn ddr_monitor_flat_access_declines_before_load_or_store() {
+        use crate::mem::{DdrAccessKind, Mem};
+        use crate::rt::{Int, St, V, VI, bnd};
+        const A: u32 = 0x8001_0000;
+        for bytes in [1, 2, 4] {
+            for write in [false, true] {
+                for k in flat_test_kernels(bytes, write) {
+                    let mut mem = Mem::new();
+                    for i in 0..4 {
+                        mem.write_byte(A + i, 0x55);
+                    }
+                    // Compile and run before attachment, then reuse the same
+                    // kernel with changed page policy.
+                    assert_eq!(flat_test_run(&*k, &mut mem, A).0, 0);
+                    let old = mem.read_le(A, bytes as u32);
+                    mem.set_ddr_monitor(Some((A, A + 4))).unwrap();
+                    assert_eq!(flat_test_run(&*k, &mut mem, A), (1, 0xdead_beef));
+                    assert_eq!(mem.first_ddr_access(), None);
+                    let mut s = St::new(mem);
+                    // Simulate the normal instruction fallback after the
+                    // kernel exits before its data access.
+                    if write {
+                        assert!(
+                            bnd::_dm_write_b(
+                                &mut s,
+                                VI::I(A as Int),
+                                bytes as Int,
+                                V::c(old as Int),
+                                false
+                            )
+                            .unwrap()
+                        );
+                        assert_eq!(
+                            s.mem.first_ddr_access().unwrap().kind,
+                            DdrAccessKind::CpuWrite
+                        );
+                    } else {
+                        assert_eq!(
+                            bnd::_dm_read_b(&s, VI::I(A as Int), bytes as Int, false, false)
+                                .unwrap(),
+                            Some(V::c(old as Int))
+                        );
+                        assert_eq!(
+                            s.mem.first_ddr_access().unwrap().kind,
+                            DdrAccessKind::CpuRead
+                        );
+                    }
+                    assert_eq!(s.mem.read_le(A, bytes as u32), old);
+                    s.mem.set_ddr_monitor(None).unwrap();
+                    assert_eq!(flat_test_run(&*k, &mut s.mem, A).0, 0);
+                }
+            }
+        }
     }
 
     #[test]

@@ -16,6 +16,7 @@ call is a generated anchor (`modules/core/fw/include/dk_fw_*.h`). The host fake 
 - Dialogs are `make_shared` blocks built by hand and pushed on the Brain's view manager; the firmware frees them. One at a time.
 - `dk_ui_stock_row(stock_menu, text, fn, ctx)` is for other core modules (`include/dk_ui_core.h`, not part of the SDK): a row among the rows of a stock menu (SETTINGS), with its icon. `core/digikit-menu` and `test/ui-demo` use it.
 - The one firmware hook of the module is the end of the SETTINGS item list rebuild (`cf.menu.hook.settings_list.tail`, `src/shim.s` `dk_hook`). It calls the optional symbol `dk_app_settings_rows(settings_menu)` (`include/dk_ui_core.h`) that an app implements: patchkit resolves it to 0 when no app is in the image, and the hook then does nothing. `core/digikit-menu` and `test/ui-demo` implement it (they conflict: one DIGIKIT row). The layers are in [docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md).
+- `dk_ui_tick(fn, ctx, period_ms)` is a table of four timers (`src/tick.h`, no firmware, tested in `host/tests/tick.rs`) behind one function on the runtime's `dkrt_poll_add` list; it is on the list only while a timer runs. The block clock times the periods (the UI-loop pass when there is none).
 - An empty list paints the same inverted title bar as a list with rows, then its `empty` text. A text page opens at its first row; a menu or list keeps its selected row.
 
 Proof and demo: `tests/fixtures/modules/ui-demo`, driven by `uv run python -m tools.patchkit.pk_uidemo shots|leak --device dt2|dn2`.

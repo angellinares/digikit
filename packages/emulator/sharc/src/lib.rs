@@ -280,6 +280,7 @@ pub struct Engine {
     pub idle_lo: u32,
     pub idle_hi: u32,
     idle_snap: Option<Box<IdleSnap>>,
+    ddr_monitor_gen: u64,
     pub idle_stats: IdleStats,
     /// Counters for the run-time gate that lets model-safe blocks run with
     /// the bank, stack, timer, peripheral, clock and interrupt models on.
@@ -658,6 +659,7 @@ impl Engine {
             idle_lo: 0,
             idle_hi: 0x00ff_ffff,
             idle_snap: None,
+            ddr_monitor_gen: 0,
             idle_stats: IdleStats::default(),
             model_stats: ModelStats::default(),
             code_checked: 0,
@@ -2284,9 +2286,32 @@ impl Engine {
         })
     }
 
+    /// Configure the bounded DDR diagnostic and discard idle-loop evidence
+    /// across either activation or removal. No CLI/daemon ABI is exposed.
+    pub fn set_ddr_monitor(
+        &mut self,
+        range: Option<(u32, u32)>,
+    ) -> Result<(), mem::InvalidDdrRange> {
+        self.s.mem.set_ddr_monitor(range)?;
+        self.ddr_monitor_gen = self.s.mem.ddr_monitor_gen;
+        self.idle_snap = None;
+        self.s.probe = None;
+        Ok(())
+    }
+
     /// At an instruction boundary with the idle skip armed: at the loop head
     /// verify one iteration was a fixed point and replay the rest.
     fn idle_visit(&mut self, head: u32, limit: u64) {
+        if self.ddr_monitor_gen != self.s.mem.ddr_monitor_gen {
+            self.ddr_monitor_gen = self.s.mem.ddr_monitor_gen;
+            self.idle_snap = None;
+            self.s.probe = None;
+        }
+        if self.s.mem.ddr_monitor_active() {
+            self.idle_snap = None;
+            self.s.probe = None;
+            return;
+        }
         let pc = self.s.pc_sw;
         if pc < self.idle_lo as Int || pc > self.idle_hi as Int {
             if self.idle_snap.is_some() {

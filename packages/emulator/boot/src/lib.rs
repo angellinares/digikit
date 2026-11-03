@@ -12,6 +12,7 @@ mod common;
 mod cputime;
 mod guard;
 pub mod midi;
+pub mod ddr_monitor;
 pub mod dsp_patch;
 pub mod dsp_stream;
 pub mod panel_leds;

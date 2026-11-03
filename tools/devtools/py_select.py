@@ -496,6 +496,20 @@ def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
     suites a changed file triggers (all of them when FULL), changed test files, then
     the tests that import a changed tests/support/ module."""
     plan_: list[tuple[str, str]] = [(path, "gate") for path in PY_GATE]
+    # Python tests owned by content modules are selected by edits to that module's
+    # implementation or manifest. Keep this scoped to the changed module directory.
+    module_roots = {
+        "/".join(f.split("/")[:3])
+        for f in files
+        if f.startswith("modules/")
+        and len(f.split("/")) > 3
+        and f.split("/")[3] != "tests"
+    }
+    for root in sorted(module_roots):
+        plan_ += [
+            (path, "module-source")
+            for path in resolve_tests((f"{root}/tests/test_*.py",))
+        ]
     # A changed Python module selects the tests that reach it in the import graph; the suites that
     # name a test directory trigger only on the other files (and on a module the root conftest reaches).
     graph_tests, conftest_broad = gate_tests([f for f in files if is_python_source(f)])

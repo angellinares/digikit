@@ -60,6 +60,18 @@ export default defineConfig({
         },
       },
       {
+        // Named sampler and DSP proofs (tests/regression/runtime/*.test.ts). Not part of `runtime`: run one by name,
+        // `pnpm exec vitest run --project proofs runtime/FILE.test.ts`. New device tests live in their module (`*.device.test.ts`).
+        extends: true,
+        test: {
+          name: 'proofs',
+          include: ['runtime/**/*.test.ts'],
+          pool: 'forks',
+          testTimeout: 300_000,
+          hookTimeout: 150_000,
+        },
+      },
+      {
         extends: true,
         test: {
           name: 'conformance',

@@ -94,6 +94,9 @@ export const LOAD_STATUS: [number, string, string][] = [
   [-12, 'E_BUSY', 'a task is still inside the module'],
   [-13, 'E_TOO_BIG', 'larger than the staging buffer'],
   [-14, 'E_TABLE_FULL', 'no free module record'],
+  [-15, 'E_LOST', 'the sample backing was lost and the reload failed'],
+  [-16, 'E_POOL', 'the sample pool is full'],
+  [-17, 'E_CHANGED', 'the sample file differs from the selection snapshot'],
   [-20, 'E_NO_REGISTRY', 'register records, but the image has no registry'],
   [-21, 'E_REG_DEVICE', 'the records are for another device'],
   [-22, 'E_TYPE_RANGE', 'machine type outside the range, or bad clone_of'],
@@ -199,6 +202,10 @@ export const LOG_KIND = {
   FX_FAULT: 34,
   FX_DISABLED: 35,
   FAULT_FOUND: 36,
+  POOL_LOAD: 37,
+  POOL_PUBLISH: 38,
+  POOL_LOST: 39,
+  POOL_INVALID: 40,
 } as const;
 
 /** The kind of a LOG event by id: its name and the names of its five arguments ("-": not used). */
@@ -239,6 +246,10 @@ export const LOG_KINDS: Record<number, [string, [string, string, string, string,
   34: ['FX_FAULT', ['row', 'faults', '-', '-', '-']],
   35: ['FX_DISABLED', ['row', 'faults', '-', '-', '-']],
   36: ['FAULT_FOUND', ['kind_site_stage', 'id', 'step', 'at', 'module']],
+  37: ['POOL_LOAD', ['entry', 'result', 'frames', 'base_l', 'token']],
+  38: ['POOL_PUBLISH', ['entry', 'token', 'frames', 'base_l', 'base_r']],
+  39: ['POOL_LOST', ['count', '-', '-', '-', '-']],
+  40: ['POOL_INVALID', ['entry', 'reason', 'token', 'count', '-']],
 };
 
 /** `MACHINE_FAULT` argument 1, low byte: what the DSP guard found. */

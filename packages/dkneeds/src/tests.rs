@@ -49,6 +49,8 @@ fn register(kinds: &[u32]) -> Vec<u8> {
             LEN_MACHINE
         } else if k == KIND_EFFECT {
             LEN_EFFECT
+        } else if k == KIND_ACTION {
+            LEN_ACTION
         } else {
             LEN_PAGE
         } as usize;
@@ -129,6 +131,10 @@ fn register_records_are_counted_by_kind() {
     assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (3, 1, 1));
     // an effect's page takes no row of its own
     let reg = register(&[KIND_EFFECT, KIND_PARAM]);
+    let n = of(&dkm(4, 0, &reg, &[])).unwrap();
+    assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (1, 0, 0));
+    // a click action takes no row either
+    let reg = register(&[KIND_PARAM, KIND_ACTION]);
     let n = of(&dkm(4, 0, &reg, &[])).unwrap();
     assert_eq!((n.param_rows, n.machine_rows, n.page_rows), (1, 0, 0));
     // an empty table (a header only) counts nothing
@@ -481,4 +487,38 @@ fn the_reads_stay_in_the_tables_the_loader_reads() {
         l.reads
     );
     assert!(l.reads.len() < 60, "{} reads", l.reads.len());
+}
+
+#[test]
+fn sample_bank_v5_counts_owned_bss_and_rejects_bad_records() {
+    let mut dsp = dsp_section_v4(16, 32, &[8]);
+    let bank_off = DSP_HEADER as usize + FX_LEN as usize;
+    dsp.splice(bank_off..bank_off, [0u8; 32]);
+    put(&mut dsp, 4, 5);
+    put(&mut dsp, 0x18, bank_off as u32 + 32);
+    put(&mut dsp, 0x3c, bank_off as u32);
+    for (i, w) in [1u32, 7, 16, 8, 0, 0, 0, 0].iter().enumerate() {
+        dsp[bank_off + i * 4..bank_off + i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+    }
+    let n = of(&dkm(4, 0, &[], &dsp)).unwrap();
+    assert_eq!((n.fx_slots, n.dsp_area), (1, 64));
+    for (word, value) in [
+        (0, 2u32),
+        (2, 0),
+        (2, u32::MAX - 3),
+        (3, 0),
+        (3, 9),
+        (4, 4),
+        (5, 1),
+    ] {
+        let mut bad = dsp.clone();
+        bad[bank_off + word * 4..bank_off + word * 4 + 4].copy_from_slice(&value.to_le_bytes());
+        assert_eq!(of(&dkm(4, 0, &[], &bad)), Err(Error::Dsp));
+    }
+    let mut bad = dsp.clone();
+    put(&mut bad, 0x3c, DSP_HEADER);
+    assert_eq!(of(&dkm(4, 0, &[], &bad)), Err(Error::Dsp));
+    let image_off = bank_off + 32;
+    dsp[image_off] = 1;
+    assert_eq!(of(&dkm(4, 0, &[], &dsp)), Err(Error::Dsp));
 }

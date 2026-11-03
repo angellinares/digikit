@@ -14,12 +14,14 @@ typedef struct dk_voice_in {
     int32_t velocity;                   /* 0 .. 127 << 8 */
     uint32_t block;                     /* blocks since note-on, 0 on the note-on block */
     float *out;                         /* render writes DK_BLOCK floats here */
+    uint32_t track;                     /* source track 0 .. 15, latched at note_on; machine contract 1.1 */
+    float *out_r;                       /* machine contract 1.2: a stereo machine writes the right channel, DK_BLOCK floats, and returns DK_STEREO; a mono machine never touches it */
 } dk_voice_in;
 
 /* One per module in read-only data, found by the manifest's symbol. No function pointers: the manifest names the entry symbols. */
 typedef struct dk_machine_desc {
     uint32_t magic;                     /* DK_MAGIC */
-    uint32_t contract;                  /* DK_MACHINE_V1 */
+    uint32_t contract;                  /* DK_MACHINE_V1 (low byte); a stereo machine (contract 1.2) or-s in DK_MACHINE_STEREO */
     uint32_t n_params;                  /* 0 .. DK_MAX_PARAMS, the manifest's `params` order */
     uint32_t voices;                    /* 1 .. DK_MAX_VOICES the module supports */
     uint32_t state_bytes;               /* per voice, a multiple of 4 */

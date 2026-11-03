@@ -295,6 +295,17 @@ fn write_object(path: &Path, text: &str) -> Result<()> {
     std::fs::rename(&tmp, path).map_err(|e| err!("{}: {e}", path.display()))
 }
 
+/// Read an existing object without hashing sources or starting a build. Generation
+/// uses cached declarations to bootstrap headers that the next build may need.
+pub fn read_cached_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -> Result<String> {
+    let o = m
+        .object
+        .iter()
+        .find(|o| o.path == rel)
+        .ok_or_else(|| err!("{rel}: not an object of the module"))?;
+    toolchain::read_text(&object_file(env, moddir, m, o))
+}
+
 /// The text of the object `rel` of the content module in `moddir`, for the module library: the stored object when its `source_sha256`
 /// is the hash of the sources now, else a fresh build, which is also stored. The error names the missing toolchain when there is one.
 pub fn load_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -> Result<String> {

@@ -428,6 +428,17 @@ pub fn embedded() -> ContractVersions {
     }
 }
 
+/// The Api minor that appended the entry `name` (0 for an entry of the first table), from the `sdk/sdk.toml` this crate was built with.
+pub fn api_since(name: &str) -> Result<u8> {
+    let sdk = parse(include_str!("../../../sdk/sdk.toml")).expect("sdk/sdk.toml parses");
+    sdk.api
+        .fields
+        .iter()
+        .find(|f| f.name == name)
+        .map(|f| f.since.unwrap_or(0))
+        .ok_or_else(|| err!("uses_api: the Api has no entry named {name:?}"))
+}
+
 /// The runtime version of a parsed file as (major, minor, patch).
 fn runtime_parts(sdk: &Sdk) -> Result<(u8, u8, u8)> {
     let s = &sdk.runtime.version;

@@ -58,7 +58,8 @@ sources = ["src/dsp/dn2.s"]
 place = "dsp.l2"
 devices = ["dn2"]
 # window 1 (the voices registry of core/dsp-voice) and window 2 (the effect rows of core/fx); 0 when that module is not in the image
-optional = ["_dl_vrows", "_dl_vcount", "_dl_frows", "_dl_fcount", "_dv_diag", "_dv_rec", "_fx_diag", "_fx_rec"]
+# `_sp_tail`: the block work of core/sample-pool (the LP0 page receiver's acknowledgement), called at the end of the tail; 0 without that module
+optional = ["_dl_vrows", "_dl_vcount", "_dl_frows", "_dl_fcount", "_dv_diag", "_dv_rec", "_fx_diag", "_fx_rec", "_sp_tail"]
 
 [object.externs]
 _dl_back = "hook.dsp.link.site.block_tail.tail"

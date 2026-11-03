@@ -34,3 +34,138 @@ rule.dn2 = { kind = "cf_func", hash = "f2ab3c0214b6212848a6300a70dd6129", offset
 mark = "D"
 users = ["core/runtime"]
 doc = "The firmware's normal writer of the boot record (finding 36 section 2; DT2 1.16 FUN_400f044a, 1.17 0x400f05ae; DN2 1.11 FUN_400f1e26, 1.12 FUN_400f1f8a): writes the arena to the next of the two record slots, invalidates the other, one shot per boot."
+
+# Read-only sample-source adapter; DT2 1.17 hashes and signatures inspected in
+# finding 105. No DN2 path filesystem is declared.
+[[fn]]
+name = "cf.storage.fn.path.open"
+cpu = "cf"
+sig = "i32 (const u8 *path, const u8 *mode, u32 *handle)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "f642319babf0cc8f26a18a17356a25df", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime", "core/sample-pool"]
+doc = "Path open; 0 succeeds. Handle is four words (entry id, position, write mode, open). The sample adapter passes only mode r; task context, internal filesystem locking (finding 105)."
+
+[[fn]]
+name = "cf.storage.fn.path.read"
+cpu = "cf"
+sig = "i32 (u8 *buf, u32 bytes, u32 *handle)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "c791af18f208eb18539a112ba7339fa3", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Read at the handle position and advance it; byte count, zero at EOF, negative on failure. Task context; takes the filesystem mutex internally (finding 105)."
+
+[[fn]]
+name = "cf.storage.fn.path.close"
+cpu = "cf"
+sig = "i32 (u32 *handle)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "ad3982007ea053f7f633f28b1f0e5f59", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime", "core/sample-pool"]
+doc = "Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105)."
+
+[[fn]]
+name = "cf.storage.fn.path.size"
+cpu = "cf"
+sig = "u32 (u32 entry_id)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "b37e8567dc53892b5fe3ddba277e1a9c", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105)."
+
+# Private DT2 UI-task directory diagnostic; plain caller-owned data, finding 93.
+[[fn]]
+name = "cf.storage.fn.directory.open"
+cpu = "cf"
+sig = "i32 (const u8 *path, u32 *state)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "570eb9f42d27913a3ea63d6043d901bd", offset = 0, len = 4 }
+mark = "D"
+users = ["core/file-catalog-proof", "core/runtime"]
+doc = "DT2 1.17 read-only path directory open, 0 success/-1 failure; caller-owned four-word state. Task context; may block under filesystem locking (finding 93)."
+
+[[fn]]
+name = "cf.storage.fn.directory.next"
+cpu = "cf"
+sig = "i32 (u32 *state, u8 *output)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "3541efc67bfb00c8131ae96c343288d3", offset = 0, len = 4 }
+mark = "D"
+users = ["core/file-catalog-proof", "core/runtime"]
+doc = "DT2 1.17 read-only directory next, 1 entry/0 EOF/-1 failure. Caller zeros private 0x114-byte output; ID +0, u16 type +4, directory ID +8, page/offset +12/+16, NUL name[256] +20. Task context; no latency bound (finding 93)."
+
+[[fn]]
+name = "cf.storage.fn.directory.metadata"
+cpu = "cf"
+sig = "i32 (u32 entry_id, u32 *output)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "56566ccf1985a1fe2868df8f8d909661", offset = 0, len = 4 }
+mark = "D"
+users = ["core/runtime", "core/sample-pool"]
+doc = "DT2 1.17 locked stored metadata getter: 0 success/-1 failure, output unchanged on failure. Four words: id, stored odd hash, physical byte size, node word. No hash recomputation or source lease (finding 93)."
+
+# Optional private DT2 1.17 storage error observer: one displaced MMIO load per site.
+
+[[site]]
+name = "cf.storage.site.fault_irqstat_a"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "eda4898863f1144ab5b5a619f8d8468b", offset = 0x8, len = 6 }
+mark = "D"
+users = ["core/storage-fault-proof"]
+doc = "DT2 1.17 storage ISR IRQSTAT-to-D0 six-byte MOVE.L; private observer replaces exactly this read and resumes at site+6."
+
+[[hook]]
+name = "cf.storage.hook.fault_irqstat_a"
+site = "cf.storage.site.fault_irqstat_a"
+cpu = "cf"
+devices = ["dt2"]
+mode = "replace"
+regs = { in = [], clobbers = ["d0", "ccr"] }
+mark = "D"
+users = ["core/storage-fault-proof"]
+doc = "Replay one original IRQSTAT load; retain its D0/CCR result while latching audited error bits. Jump site+6, never the displaced-code tail; no complete storage-fault coverage claim."
+
+[[site]]
+name = "cf.storage.site.fault_irqstat_b"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "eda4898863f1144ab5b5a619f8d8468b", offset = 0x5c, len = 6 }
+mark = "D"
+users = ["core/storage-fault-proof"]
+doc = "DT2 1.17 storage ISR IRQSTAT-to-D0 six-byte MOVE.L; private observer replaces exactly this read and resumes at site+6."
+
+[[hook]]
+name = "cf.storage.hook.fault_irqstat_b"
+site = "cf.storage.site.fault_irqstat_b"
+cpu = "cf"
+devices = ["dt2"]
+mode = "replace"
+regs = { in = [], clobbers = ["d0", "ccr"] }
+mark = "D"
+users = ["core/storage-fault-proof"]
+doc = "Replay one original IRQSTAT load; retain its D0/CCR result while latching audited error bits. Jump site+6, never the displaced-code tail; no complete storage-fault coverage claim."
+
+[[site]]
+name = "cf.storage.site.fault_irqstat_c"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "eda4898863f1144ab5b5a619f8d8468b", offset = 0x88, len = 6 }
+mark = "D"
+users = ["core/storage-fault-proof"]
+doc = "DT2 1.17 storage ISR IRQSTAT-to-D0 six-byte MOVE.L; private observer replaces exactly this read and resumes at site+6."
+
+[[hook]]
+name = "cf.storage.hook.fault_irqstat_c"
+site = "cf.storage.site.fault_irqstat_c"
+cpu = "cf"
+devices = ["dt2"]
+mode = "replace"
+regs = { in = [], clobbers = ["d0", "ccr"] }
+mark = "D"
+users = ["core/storage-fault-proof"]
+doc = "Replay one original IRQSTAT load; retain its D0/CCR result while latching audited error bits. Jump site+6, never the displaced-code tail; no complete storage-fault coverage claim."

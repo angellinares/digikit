@@ -83,6 +83,22 @@ pub const FLAG_TRACE: u32 = 1 << 31;
 /// The runtime version that loads a DSP section (`dkrt_sdk::RUNTIME_VERSION` is at least this).
 pub const RUNTIME_DSP: u32 = 5; // DSP sections of version 2 (voices with knob ranges, finding 51); a runtime 2 to 4 loads version 1 only
 
+/// The newest minor of the machine contract that has no stereo machines (1.1: `track` appended to `voice_in`).
+pub const MACHINE_MONO_MINOR: u8 = 1;
+/// The newest minor of the Api contract before the per-track sample table (1.5). A module declares 1.5 only when its DSP section holds a
+/// track table (`DK_SAMPLE_TRACKS`); every other module declares 1.4, so a runtime of Api 1.4 still accepts it.
+pub const API_PRE_TRACKS_MINOR: u8 = 4;
+/// The Api minor of the per-track sample table (1.5).
+pub const API_TRACKS_MINOR: u8 = 5;
+
+/// The Api minor a module declares: the lowest that has everything it needs. 1.4 for a module that needs nothing newer; 1.5 when its DSP
+/// section holds a track table; the newest `since` of the entries its manifest lists in `uses_api` (`Options::api_minor`) when that is
+/// higher. Never above the Api of the SDK this packer was built with.
+pub fn api_minor(sdk_minor: u8, uses_tracks: bool, listed: u8) -> u8 {
+    let base = if uses_tracks { API_TRACKS_MINOR } else { API_PRE_TRACKS_MINOR };
+    base.max(listed).min(sdk_minor)
+}
+
 pub struct Options {
     pub name: String,
     /// major << 16 | minor << 8 | patch
@@ -90,6 +106,11 @@ pub struct Options {
     pub runtime_min: u32,
     /// A traced build (`patchkit pack --trace`, DK_TRACE defined): sets [`FLAG_TRACE`].
     pub trace: bool,
+    /// A stereo machine (`DK_MACHINE_STEREO`): the file declares machine contract 1.2. A mono machine declares 1.1, so a runtime of
+    /// machine contract 1.1 still accepts it.
+    pub stereo: bool,
+    /// The newest Api minor of the entries the manifest lists in `uses_api` (0: none); see [`api_minor`].
+    pub api_minor: u8,
 }
 
 /// "1.2.3" -> 0x010203
@@ -162,6 +183,33 @@ fn has_machine_record(reg: &[u8]) -> bool {
         at += len;
     }
     false
+}
+
+/// The global symbols of a ColdFire object with their offsets in the loaded image (the offsets `pack` writes for `dkm_init` and the slots). The
+/// register records that name a function (the click callbacks) need them before the file is packed.
+pub fn image_symbols(obj: &Dko) -> Result<BTreeMap<String, u32>> {
+    let defined: BTreeSet<&str> = obj
+        .symbols
+        .iter()
+        .filter(|s| s.section.is_some())
+        .map(|s| s.name.as_str())
+        .collect();
+    let externs: BTreeMap<String, u64> = obj
+        .relocs
+        .iter()
+        .filter(|r| !defined.contains(r.symbol.as_str()))
+        .map(|r| (r.symbol.clone(), 0))
+        .collect();
+    let linked = link::link(obj, 0, &externs)?;
+    let len = linked.image.len() as u64;
+    Ok(linked
+        .globals
+        .iter()
+        .filter_map(|n| {
+            let v = *linked.symbols.get(n)?;
+            (v < len).then_some((n.clone(), v as u32))
+        })
+        .collect())
 }
 
 /// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
@@ -359,14 +407,22 @@ pub fn pack_full_max(
         dsp.get(off..off + 4)
             .map_or(0, |b| u32::from_be_bytes(b.try_into().unwrap()))
     };
-    let has_fx = word(4) == crate::dkmdsp::VERSION_4 && word(0x38) > 0;
+    let has_fx = matches!(word(4), crate::dkmdsp::VERSION_4 | crate::dkmdsp::VERSION_5) && word(0x38) > 0;
     let fx_only = has_fx && word(0x30) == 0;
+    // a version 5 DSP section whose record has kind 2 holds the per-track sample table: the module uses Api 1.5
+    let uses_tracks = word(4) == crate::dkmdsp::VERSION_5
+        && dsp
+            .get(word(0x3c) as usize..)
+            .and_then(|b| b.get(..4))
+            .is_some_and(|b| u32::from_le_bytes(b.try_into().unwrap()) == crate::dkmdsp::SAMPLE_TRACKS_KIND);
     let pairs = [
-        sdk.api,
+        (sdk.api.0, api_minor(sdk.api.1, uses_tracks, o.api_minor)),
         if (dsp.is_empty() || fx_only) && !has_machine_record(reg) {
             none
-        } else {
+        } else if o.stereo {
             sdk.machine
+        } else {
+            (sdk.machine.0, sdk.machine.1.min(MACHINE_MONO_MINOR))
         },
         if has_fx { sdk.fx } else { none },
         if has_service { sdk.service } else { none },
@@ -634,7 +690,24 @@ mod tests {
             version: 0x010203,
             runtime_min: 1,
             trace: false,
+            stereo: false,
+            api_minor: 0,
         }
+    }
+
+    #[test]
+    fn image_symbols_are_the_offsets_the_packer_writes_for_global_symbols() {
+        let mut o = unstamped();
+        let mut local = sym("local_fn", Some(".text"), 0);
+        local.global = false;
+        o.symbols.push(local);
+        o.stamp_isa();
+        let syms = image_symbols(&o).unwrap();
+        let d = Dkm::parse(&pack(&o, &opts()).unwrap()).unwrap();
+        assert_eq!(syms["dkm_init"], d.init.unwrap());
+        assert_eq!(syms["dkm_slot_0"], d.slots[0].1);
+        assert!(!syms.contains_key("local_fn"), "a static function has no symbol to call by");
+        assert!(!syms.contains_key("fw_thing"), "an import is not in the image");
     }
 
     #[test]
@@ -688,21 +761,67 @@ mod tests {
     }
 
     #[test]
+    fn the_api_minor_is_the_lowest_that_has_what_the_module_needs() {
+        // (sdk minor, track table, newest listed entry) -> declared minor
+        assert_eq!(api_minor(6, false, 0), 4);
+        assert_eq!(api_minor(6, true, 0), 5);
+        assert_eq!(api_minor(6, false, 6), 6);
+        assert_eq!(api_minor(6, true, 6), 6);
+        assert_eq!(api_minor(6, false, 3), 4, "an old entry never lowers the floor");
+        assert_eq!(api_minor(6, false, 5), 5);
+        assert_eq!(api_minor(5, false, 6), 5, "never above the SDK this packer was built with");
+        // the entries of the Api: the table of sdk.toml says when each came
+        assert_eq!(crate::sdkgen::api_since("sample_pool_path").unwrap(), 6);
+        assert_eq!(crate::sdkgen::api_since("sample_pool_add").unwrap(), 5);
+        assert_eq!(crate::sdkgen::api_since("store_read").unwrap(), 0);
+        assert!(crate::sdkgen::api_since("no_such_entry").is_err());
+    }
+
+    #[test]
     fn the_header_carries_the_contract_versions() {
         // 0x38..0x40: api, machine, fx, service as (major, minor)
         let c = |f: &[u8]| f[H_CONTRACT..H_CONTRACT + 8].to_vec();
         // ColdFire code with slots and init, no DSP section: api and service
         let f = pack(&object(), &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 1, 0]);
+        assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 1, 0]);
         // with a DSP section: machine too (the section's bytes are not parsed by pack)
         let f = pack_full(Some(&object()), &[], &[0u8; 16], &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 1, 0]);
+        assert_eq!(c(&f), vec![1, 4, 1, 1, 0, 0, 1, 0]);
+        // a stereo machine: contract 1.2
+        let stereo = Options { stereo: true, ..opts() };
+        let f = pack_full(Some(&object()), &[], &[0u8; 16], &stereo).unwrap();
+        assert_eq!(c(&f), vec![1, 4, 1, 2, 0, 0, 1, 0]);
+        // a DSP section with a track table: Api 1.5, and nothing else changes
+        let tracks = crate::dkmdsp::DspSection {
+            sample_bank: None,
+            sample_tracks: Some(crate::dkmdsp::SampleTracks { local_id: 0, records_byte_offset: 0, control_byte_offset: 512 }),
+            device: 1,
+            image: vec![0; 768],
+            bss: 0,
+            align: 16,
+            imports: vec![],
+            relocs: vec![],
+            voices: vec![],
+            fxs: vec![],
+        };
+        let f = pack_full(Some(&object()), &[], &tracks.encode(), &stereo).unwrap();
+        assert_eq!(c(&f), vec![1, 5, 1, 2, 0, 0, 1, 0]);
+        needs(&f).expect("dkneeds accepts the kind 2 record the packer wrote");
+        // a manifest that lists an Api entry of 1.6 (`uses_api`): 1.6, with or without a table; a module of 1.4 stays 1.4 without it
+        let uses6 = Options { api_minor: 6, ..opts() };
+        let f = pack(&object(), &uses6).unwrap();
+        assert_eq!(c(&f), vec![1, 6, 0, 0, 0, 0, 1, 0]);
+        let f = pack_full(Some(&object()), &[], &tracks.encode(), &Options { api_minor: 6, ..stereo }).unwrap();
+        assert_eq!(c(&f), vec![1, 6, 1, 2, 0, 0, 1, 0]);
+        // an entry of 1.3 does not lower what the table needs
+        let f = pack_full(Some(&object()), &[], &tracks.encode(), &Options { api_minor: 3, stereo: true, ..opts() }).unwrap();
+        assert_eq!(c(&f), vec![1, 5, 1, 2, 0, 0, 1, 0]);
         // a data-only module with a DSP section: machine, no service
         let f = pack_full(None, &[], &[0u8; 16], &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 1, 1, 0, 0, 0, 0]);
         // a data-only module without DSP code: api only
         let f = pack_with(None, &[], &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 0, 0]);
         // register records that hold a machine: machine too (a data-only machine module); param and page records alone: not
         let rec = |kind: u32, len: usize| {
             let mut r = kind.to_be_bytes().to_vec();
@@ -720,14 +839,16 @@ mod tests {
         let param = rec(crate::register::KIND_PARAM, crate::register::LEN_PARAM);
         let machine = rec(crate::register::KIND_MACHINE, crate::register::LEN_MACHINE);
         let f = pack_with(None, &table(&[param.clone(), machine]), &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 1, 1, 0, 0, 0, 0]);
         let f = pack_with(None, &table(&[param]), &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 0, 0]);
     }
 
     /// A DSP section of an 8-byte image with BSS bytes of bss and one version 3 voice with `voices` states of 20 bytes (0: version 2).
     fn dsp_section(bss: u32, voices: u32) -> Vec<u8> {
         crate::dkmdsp::DspSection {
+            sample_bank: None,
+            sample_tracks: None,
             device: 1,
             image: vec![0; 8],
             bss,

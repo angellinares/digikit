@@ -111,6 +111,9 @@
 #define DKRT_E_BUSY (-12)                /* a task is still inside the module */
 #define DKRT_E_TOO_BIG (-13)             /* larger than the staging buffer */
 #define DKRT_E_TABLE_FULL (-14)          /* no free module record */
+#define DKRT_E_LOST (-15)                /* the sample backing was lost and the reload failed */
+#define DKRT_E_POOL (-16)                /* the sample pool is full */
+#define DKRT_E_CHANGED (-17)             /* the sample file differs from the selection snapshot */
 #define DKRT_E_NO_REGISTRY (-20)         /* register records, but the image has no registry */
 #define DKRT_E_REG_DEVICE (-21)          /* the records are for another device */
 #define DKRT_E_TYPE_RANGE (-22)          /* machine type outside the range, or bad clone_of */
@@ -218,6 +221,13 @@ typedef struct DkrtStoreEntry {
     uint32_t first;
     uint32_t size;
 } DkrtStoreEntry;
+
+/* A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the sha256 of the table entry. The file's sectors are contiguous: sector n of the file is store sector first + n. */
+typedef struct DkrtStoreFile {
+    uint32_t first;
+    uint32_t size;
+    uint8_t sha[32];
+} DkrtStoreFile;
 
 /* dkrt_module result: one loaded module. */
 typedef struct DkrtModule {
@@ -386,6 +396,10 @@ _Static_assert(sizeof(DkrtStoreEntry) == 72, "DkrtStoreEntry size");
 _Static_assert(offsetof(DkrtStoreEntry, path) == 0, "DkrtStoreEntry.path");
 _Static_assert(offsetof(DkrtStoreEntry, first) == 64, "DkrtStoreEntry.first");
 _Static_assert(offsetof(DkrtStoreEntry, size) == 68, "DkrtStoreEntry.size");
+_Static_assert(sizeof(DkrtStoreFile) == 40, "DkrtStoreFile size");
+_Static_assert(offsetof(DkrtStoreFile, first) == 0, "DkrtStoreFile.first");
+_Static_assert(offsetof(DkrtStoreFile, size) == 4, "DkrtStoreFile.size");
+_Static_assert(offsetof(DkrtStoreFile, sha) == 8, "DkrtStoreFile.sha");
 _Static_assert(sizeof(DkrtModule) == 124, "DkrtModule size");
 _Static_assert(offsetof(DkrtModule, name) == 0, "DkrtModule.name");
 _Static_assert(offsetof(DkrtModule, version) == 32, "DkrtModule.version");
@@ -505,6 +519,18 @@ void dkrt_diag(DkrtDiag *out);
 /* The files of the module store whose path starts with prefix (NUL-terminated), sorted by path, at most max into out: the count, or a negative code (E_NOT_FOUND: no store). */
 int32_t dkrt_store_list(const uint8_t *prefix, DkrtStoreEntry *out, uint32_t max);
 
+/* Add a function that the UI loop calls once per pass, in the UI task, next to the one of dkrt_poll_set (room for 4). Adding a function that is in the table is OK. E_NOMEM when the table is full. core/ui uses it for dk_ui_tick. */
+int32_t dkrt_poll_add(uintptr_t f);
+
+/* Remove a function added with dkrt_poll_add; no effect when it is not in the table. */
+void dkrt_poll_remove(uintptr_t f);
+
+/* Look a store file up by path (NUL-terminated) and fill out: OK, E_NOT_FOUND (no store, no such file, a folder), or a card error. It reads the store headers and scans the table through the runtime's staging buffer, so call it only at the start of a load, not while a staged module read is in progress. A file of size 0 is found. */
+int32_t dkrt_store_stat(const uint8_t *path, DkrtStoreFile *out);
+
+/* Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ. */
+int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count, uint8_t *dst);
+
 /* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
 int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);
 
@@ -534,5 +560,14 @@ uint32_t dkrt_scan_reads(void);
 
 /* Which modules fit. The ticked set loads at the next boot into an empty runtime: start from the limits (nothing used) and take in the ticked entries (ticked[i] != 0) in list order; a ticked one that does not fit is flagged and not taken. Then each unticked entry is checked against what the ticked ones leave. An entry without SCAN_COMPAT or without SCAN_NEEDS has no verdict (wont 0). n is at most SCAN_MAX. OK. */
 int32_t dkrt_fit(const DkrtScan *entries, uint32_t n, const uint8_t *ticked, DkrtFitOut *out);
+
+/* Adapter to runtime: the load `req` of dkpool_load finished. result is OK (the handle `out` is filled), E_POOL, E_READ or E_FORMAT. Only from dkpool_tick. */
+void dkrt_pool_done(uint32_t req, int32_t result);
+
+/* Adapter to runtime: the backing was lost (a stock reset), every handle is invalid. Only from dkpool_tick. */
+void dkrt_pool_lost(void);
+
+/* Adapter to runtime: the current project slot changed. The runtime never reads the byte. */
+void dkrt_project_changed(uint32_t slot);
 
 #endif /* DKRT_H */

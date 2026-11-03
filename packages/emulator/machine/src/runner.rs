@@ -11,7 +11,7 @@ use crate::{
     Board, CompletionEvent, CompletionPolicy, MachineState,
     host_state::{self, HostStateError},
     state::{MAX_MAPPED_PAGES, PAGE_SIZE},
-    time::{TimeError, TimerPolicy},
+    time::{DeviceDtimError, TimeError, TimerPolicy},
     timer_state::TimerStateError,
 };
 
@@ -54,6 +54,46 @@ pub enum TimedStepError {
     InterruptDeliveryPoisoned {
         stop: Stop,
     },
+}
+
+/// Why an isolated eSDHC instruction-boundary step could not run.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EsdhcStepError {
+    DeviceCompletionRequired,
+    TimerNotAttached,
+    DeviceTimerRequired,
+    LegacyDmaIrqConfigured,
+    LegacyDmaIrqPending,
+    Stop(Stop),
+    /// Exception entry failed after it may have mutated CPU/board state.
+    /// Discard the machine rather than retrying delivery.
+    InterruptDeliveryPoisoned {
+        stop: Stop,
+    },
+}
+
+/// Why an explicit storage interrupt step could not execute a boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StorageStepError {
+    DeviceCompletionRequired,
+    TimerNotAttached,
+    DeviceTimerRequired,
+    LegacyDmaIrqConfigured,
+    LegacyDmaIrqPending,
+    UnsupportedDmaGroupSources { pending: u32 },
+    UnsupportedControllerLevelMasking,
+    UnsupportedLevel7,
+    /// Invalid or unsupported supplied Device timer request configuration.
+    DeviceTimerRequests(DeviceDtimError),
+    Stop(Stop),
+    InterruptDeliveryPoisoned { stop: Stop },
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum StorageSources {
+    Pair,
+    Forced,
+    DeviceEvents,
 }
 
 pub struct Machine {
@@ -236,7 +276,12 @@ impl Machine {
     /// Execute at most one guest instruction. Return effects to the caller,
     /// rather than silently discarding data/command completion events.
     pub fn step(&mut self) -> Result<Vec<CompletionEvent>, Stop> {
-        if self.pending_dma_irq
+        self.step_internal(true)
+    }
+
+    fn step_internal(&mut self, legacy_dma: bool) -> Result<Vec<CompletionEvent>, Stop> {
+        if legacy_dma
+            && self.pending_dma_irq
             && let Some((vector, level)) = self.dma_irq
             && ((self.cpu.sr >> 8) & 7) < u16::from(level)
             && self.cpu.take_interrupt(
@@ -253,6 +298,8 @@ impl Machine {
         for (addr, len) in self.board.take_dma_written_ranges() {
             self.cpu.invalidate_external_write(addr, len);
         }
+        // Machine owns this invalidation pass; consume its paired diagnostic tags.
+        let _ = self.board.take_dma_sources();
         let mut new_events = self.board.take_completion_events();
         for event in &new_events {
             if let CompletionEvent::Dma59 {
@@ -261,6 +308,7 @@ impl Machine {
             } = event
                 && completion.done
                 && completion.major_interrupt
+                && legacy_dma
             {
                 self.pending_dma_irq = true;
             }
@@ -273,6 +321,165 @@ impl Machine {
         events.append(&mut new_events);
         self.clock += 1;
         Ok(events)
+    }
+
+    /// Opt in to isolated eSDHC delivery from explicitly initialized registers.
+    ///
+    /// This offers only INTC2 source 31 (vector 223), using the attached Time's
+    /// IMR/ICR and the live CPU IPL, then executes one instruction. It does not
+    /// service timers or arbitrate against DMA or any other interrupt source.
+    /// Configured or pending legacy DMA delivery is rejected before mutation.
+    /// The line is derived from eSDHC registers each boundary: only guest
+    /// acknowledgement/masking deasserts it, so an unacknowledged IRQ can recur
+    /// after RTE. No new mode or pending-line state is serialized, and callers
+    /// must explicitly choose this method on every step; daemons are unchanged.
+    pub fn step_esdhc(&mut self) -> Result<Vec<CompletionEvent>, EsdhcStepError> {
+        if self.board.completion_policy() != CompletionPolicy::Device {
+            return Err(EsdhcStepError::DeviceCompletionRequired);
+        }
+        let time = self.board.time().ok_or(EsdhcStepError::TimerNotAttached)?;
+        if time.policy() != TimerPolicy::Device {
+            return Err(EsdhcStepError::DeviceTimerRequired);
+        }
+        if self.dma_irq.is_some() {
+            return Err(EsdhcStepError::LegacyDmaIrqConfigured);
+        }
+        let pending_dma_event = |event: &CompletionEvent| {
+            matches!(event, CompletionEvent::Dma59 {
+                policy: CompletionPolicy::Device,
+                completion,
+            } if completion.done && completion.major_interrupt)
+        };
+        if self.pending_dma_irq
+            || self.board.storage_dma_pending() != 0
+            || self.board.completion_events().iter().any(pending_dma_event)
+            || self.held_events.iter().any(pending_dma_event)
+        {
+            return Err(EsdhcStepError::LegacyDmaIrqPending);
+        }
+        if self.board.esdhc.interrupt_pending()
+            && let Some(level) = time.esdhc_interrupt_level()
+            && ((self.cpu.sr >> 8) & 7) < u16::from(level)
+            && self
+                .cpu
+                .take_interrupt(&mut self.board, 223, Some(level), InterruptPolicy::Device)
+                .map_err(|stop| EsdhcStepError::InterruptDeliveryPoisoned { stop })?
+        {
+            self.irqs_delivered += 1;
+        }
+        self.step().map_err(EsdhcStepError::Stop)
+    }
+
+    /// Execute one boundary with only INTC2 eSDHC source 31 and eDMA59's
+    /// source 0 eligible. Higher level wins, then higher source number.
+    /// Pending lines remain latched until guest acknowledgement. This is not
+    /// a global arbiter and models no DMA errors, abort timing or card recovery.
+    /// Existing step/step_esdhc contracts and daemon defaults are unchanged.
+    pub fn step_storage(&mut self) -> Result<Vec<CompletionEvent>, StorageStepError> {
+        self.step_storage_internal(StorageSources::Pair)
+    }
+
+    /// Offer the actual storage lines together with all INTFRC sources across
+    /// all three controllers, then execute one instruction. Highest level wins,
+    /// then INTC0 before INTC1 before INTC2, then higher source within a bank.
+    /// Uses IMR, nonzero ICR and live CPU IPL; guest force bits persist until
+    /// cleared. Does not synthesize timer/physical SSI requests or schedule
+    /// tasks on the host, and ignores the Oracle force-delivery knob. Same
+    /// preflight and poisoned-entry
+    /// contract as step_storage; callers explicitly select this on each step.
+    pub fn step_storage_with_forced(&mut self) -> Result<Vec<CompletionEvent>, StorageStepError> {
+        self.step_storage_internal(StorageSources::Forced)
+    }
+
+    /// Select one interrupt from supplied Device PIT/DTIM reference events,
+    /// actual storage lines, SSI50 and all software-force bits, then execute one
+    /// instruction. Sources persist until guest acknowledgement. This explicit
+    /// supported subset advances no timers or SSI service and includes no DSPI,
+    /// host input or native runtime integration. Same storage guards and poisoned
+    /// entry contract; invalid timer modes reject before queued effects mutate.
+    pub fn step_device_events(&mut self) -> Result<Vec<CompletionEvent>, StorageStepError> {
+        self.step_storage_internal(StorageSources::DeviceEvents)
+    }
+
+    fn step_storage_internal(
+        &mut self,
+        sources: StorageSources,
+    ) -> Result<Vec<CompletionEvent>, StorageStepError> {
+        if self.board.completion_policy() != CompletionPolicy::Device {
+            return Err(StorageStepError::DeviceCompletionRequired);
+        }
+        let time = self
+            .board
+            .time()
+            .ok_or(StorageStepError::TimerNotAttached)?;
+        if time.policy() != TimerPolicy::Device {
+            return Err(StorageStepError::DeviceTimerRequired);
+        }
+        if self.dma_irq.is_some() {
+            return Err(StorageStepError::LegacyDmaIrqConfigured);
+        }
+        if self.pending_dma_irq {
+            return Err(StorageStepError::LegacyDmaIrqPending);
+        }
+        let pending = self.board.storage_dma_pending();
+        let unsupported = pending & !(1 << 27);
+        if unsupported != 0 {
+            return Err(StorageStepError::UnsupportedDmaGroupSources {
+                pending: unsupported,
+            });
+        }
+        let include_forced = sources != StorageSources::Pair;
+        if include_forced && !time.storage_forced_config_supported() {
+            return Err(StorageStepError::UnsupportedControllerLevelMasking);
+        }
+        let esdhc = self.board.esdhc.interrupt_pending();
+        let candidate = if sources == StorageSources::DeviceEvents {
+            time.device_event_candidate(esdhc, pending != 0, self.board.device_ssi50_pending())
+                .map_err(StorageStepError::DeviceTimerRequests)?
+                .map(|(vector, level)| (vector as u8, level))
+        } else if include_forced {
+            time.storage_with_forced_candidate(esdhc, pending != 0)
+                .map(|(vector, level)| (vector as u8, level))
+        } else {
+            let esdhc = esdhc
+                .then(|| time.esdhc_interrupt_level())
+                .flatten()
+                .map(|level| (level, 31_u8, 223_u8));
+            let dma = (pending != 0)
+                .then(|| time.storage_dma_interrupt_level())
+                .flatten()
+                .map(|level| (level, 0_u8, 192_u8));
+            esdhc
+                .into_iter()
+                .chain(dma)
+                .max()
+                .map(|(level, _, vector)| (vector, level))
+        };
+        if include_forced && candidate.is_some_and(|(_, level)| level == 7) {
+            return Err(StorageStepError::UnsupportedLevel7);
+        }
+        // All route preflight above is read-only. Invalidate queued external
+        // writes before either exception entry or the next decoded instruction.
+        for (addr, len) in self.board.take_dma_written_ranges() {
+            self.cpu.invalidate_external_write(addr, len);
+        }
+        // Machine owns this invalidation pass; consume its paired diagnostic tags.
+        let _ = self.board.take_dma_sources();
+        if let Some((vector, level)) = candidate
+            && ((self.cpu.sr >> 8) & 7) < u16::from(level)
+            && self
+                .cpu
+                .take_interrupt(
+                    &mut self.board,
+                    vector,
+                    Some(level),
+                    InterruptPolicy::Device,
+                )
+                .map_err(|stop| StorageStepError::InterruptDeliveryPoisoned { stop })?
+        {
+            self.irqs_delivered += 1;
+        }
+        self.step_internal(false).map_err(StorageStepError::Stop)
     }
 
     /// Arm the PIT at the current boundary, execute one instruction, then

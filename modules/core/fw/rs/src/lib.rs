@@ -33,12 +33,30 @@ pub mod input {
     // cf.input.fn.enc_decoder: no sig yet
 
     // cf.input.fn.key_decoder: no sig yet
+
+    unsafe extern "C" {
+        /// Key state by logical key index: 1 while the key is held, else 0. The stock parameter page tests 0x10, 0x11 and 0x16 (turn modes that change what a parameter write does). DT2 0x4011e150, DN2 0x4011fac4.
+        #[link_name = "cf.input.fn.key_down"]
+        pub fn key_down(key: u32) -> u32;
+    }
 }
 
 pub mod link {
     // cf.link.fn.block_isr: no sig yet
 
+    unsafe extern "C" {
+        /// DN2 1.12 native LP0 tag plus 1024-word sender (finding 92). Locks the boot-initialized mutex; unbounded hardware-readiness wait. Emulator-only diagnostic use, format 1 sends numeric source words least-significant byte first.
+        #[link_name = "cf.link.fn.bulk_send"]
+        pub fn bulk_send(tag: u32, source: *const u32, format: u32);
+    }
+
     // cf.link.fn.frame: no sig yet
+
+    unsafe extern "C" {
+        /// Original DN2 reply memcpy, returning destination in D0; retained by the private extension wrapper.
+        #[link_name = "cf.link.fn.reply_copy"]
+        pub fn reply_copy(destination: *mut u8, source: *const u8, length: u32) -> *mut u8;
+    }
 
     unsafe extern "C" {
         /// The 4-byte address literal of `addq.l #1,<counter>` in the block interrupt handler's tail: the firmware's DSP block counter, 1500 per second from boot. core/runtime reads it.
@@ -51,6 +69,12 @@ pub mod link {
 
     /// The jsr abs.l with which the block interrupt handler calls the stock frame driver (four arguments on the stack); the hook point for the DSP link's per-block sender.
     pub type BlockIsrFrameCallHook = unsafe extern "C" fn(len: i32, src: *const u16, reclen: i32, rec: *const u16);
+
+    /// Private boot-only replacement for the wire-length getter call.
+    pub type BootWireSizeHook = unsafe extern "C" fn() -> u32;
+
+    /// Private wrapper preserves the original copy and return value, then copies the isolated extension before DMA rearming.
+    pub type ReplyCopyHook = unsafe extern "C" fn(destination: *mut u8, source: *const u8, length: u32) -> *mut u8;
 }
 
 pub mod machine {
@@ -400,6 +424,16 @@ pub mod midi {
 pub mod page {
     // cf.page.fn.page_desc: no sig yet
 
+    // cf.page.fn.source_key: no sig yet
+
+    // cf.page.fn.source_turn: no sig yet
+
+    unsafe extern "C" {
+        /// The track of a parameter page: called with the page's reference at view+0x74, it returns the track number (the stock code clamps it to 0 to 15 and uses it as the track index into the project's sound array, FUN_40035cca on the Digitakt II). Same function body on both devices (DT2 0x4004abb8, DN2 0x40046bfe).
+        #[link_name = "cf.page.fn.view_track"]
+        pub fn view_track(track_ref: *const u8) -> u32;
+    }
+
     unsafe extern "C" {
         /// The pointer operand (4 bytes) of `move.l #list,D0` in the FX view builder: the rodata list {12} of the track FX key's one-page view. core/fxpages substitutes its own list.
         #[link_name = "cf.page.data.fx_key_list"]
@@ -414,6 +448,12 @@ pub mod page {
 }
 
 pub mod param {
+    unsafe extern "C" {
+        /// The absolute parameter setter the stock page uses after a turn and the sample list uses after a pick: (obj, code, raw, track, 1, 1, 1). Clamps raw to the row range, stores it in the sound, notifies the project and the observers. obj is the parameter object of the page (view vtable 0xc4 (view, code, track)). DT2 0x4003b570, DN2 0x40037326.
+        #[link_name = "cf.param.fn.set_value"]
+        pub fn set_value(obj: *const u8, code: u32, raw: i32, track: u32, notify: u32, record: u32, redraw: u32) -> u32;
+    }
+
     // cf.param.fn.value_class: no sig yet
 
     unsafe extern "C" {
@@ -463,6 +503,12 @@ pub mod rtos {
     // cf.rtos.fn.reset.init_calls: no sig yet
 
     unsafe extern "C" {
+        /// DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it.
+        #[link_name = "cf.rtos.fn.sleep_us"]
+        pub fn sleep_us(us: u32);
+    }
+
+    unsafe extern "C" {
         /// The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`.
         #[link_name = "cf.rtos.site.exc_hook_lit"]
         pub static EXC_HOOK_LIT: u8;
@@ -484,6 +530,56 @@ pub mod rtos {
     pub type MainOsTaskHook = unsafe extern "C" fn();
 }
 
+pub mod samples {
+    unsafe extern "C" {
+        /// The stock sample loader (finding 109 section 2): slot <= 0x3ff and (slot & 0x7f) != 0; releases the slot's old block, deduplicates by the 16-byte key, appends to the pool, 0 = ok, -1 = pool full. Writes RAM tables only; never the project settings. Call it on the SampleLoaderBgWorker.
+        #[link_name = "cf.samples.fn.loader.load"]
+        pub fn loader_load(key: *const u32, slot: u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Release one slot (finding 109 section 2; the loader calls it first): drops the slot from its record, frees the record when no slot shares it, rebuilds the slot map, resets the slot's key to -1. Moves only 0x34-byte records, never PCM. Same locking as the loader: call it on the SampleLoaderBgWorker.
+        #[link_name = "cf.samples.fn.slot.release"]
+        pub fn slot_release(slot: u32);
+    }
+
+    unsafe extern "C" {
+        /// Getter of the SampleLoaderBgWorker singleton (finding 109 section 3); its task id is the word at +0x20.
+        #[link_name = "cf.samples.fn.worker.get"]
+        pub fn worker_get() -> u32;
+    }
+
+    unsafe extern "C" {
+        /// Queue a job on a worker: `job` and `done` are std::function objects (storage, manager, invoker), as ReloadAllSamples passes them. The job runs in the worker task.
+        #[link_name = "cf.samples.fn.worker.queue"]
+        pub fn worker_queue(worker: u32, name: *const u8, job: *mut core::ffi::c_void, done: *mut core::ffi::c_void) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte address literal of the record vector (the pointer pair: begin and end); record stride 0x34: +0x10 pool block offset, +0x14 rounded extent, +0x30 count of sharing slots (finding 109 section 1).
+        #[link_name = "cf.samples.site.record.vector"]
+        pub static RECORD_VECTOR: u8;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte address literal of the key array of the loader, 16 bytes per slot (0x400 slots). Word 0 is 0xffffffff after a slot is released or the pool is reset (finding 109 section 3).
+        #[link_name = "cf.samples.site.slot.keys"]
+        pub static SLOT_KEYS: u8;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte address literal of the slot to record index map, one i32 per slot. Valid only while the slot is loaded: it reads 0 (not -1) after a reset, so loss is not detected with it.
+        #[link_name = "cf.samples.site.slot.map"]
+        pub static SLOT_MAP: u8;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte address literal of the stereo flags of loaded slots, one byte per slot (the stock accessor reads it).
+        #[link_name = "cf.samples.site.slot.stereo"]
+        pub static SLOT_STEREO: u8;
+    }
+}
+
 pub mod storage {
     unsafe extern "C" {
         /// The firmware's eMMC block read: int f(u32 sector, u32 bytes, void *buf), 0 = ok (finding 23 S6).
@@ -501,6 +597,48 @@ pub mod storage {
         /// The firmware's normal writer of the boot record (finding 36 section 2; DT2 1.16 FUN_400f044a, 1.17 0x400f05ae; DN2 1.11 FUN_400f1e26, 1.12 FUN_400f1f8a): writes the arena to the next of the two record slots, invalidates the other, one shot per boot.
         #[link_name = "cf.storage.fn.boot_record_write"]
         pub fn boot_record_write();
+    }
+
+    unsafe extern "C" {
+        /// DT2 1.17 locked stored metadata getter: 0 success/-1 failure, output unchanged on failure. Four words: id, stored odd hash, physical byte size, node word. No hash recomputation or source lease (finding 93).
+        #[link_name = "cf.storage.fn.directory.metadata"]
+        pub fn directory_metadata(entry_id: u32, output: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// DT2 1.17 read-only directory next, 1 entry/0 EOF/-1 failure. Caller zeros private 0x114-byte output; ID +0, u16 type +4, directory ID +8, page/offset +12/+16, NUL name[256] +20. Task context; no latency bound (finding 93).
+        #[link_name = "cf.storage.fn.directory.next"]
+        pub fn directory_next(state: *mut u32, output: *mut u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// DT2 1.17 read-only path directory open, 0 success/-1 failure; caller-owned four-word state. Task context; may block under filesystem locking (finding 93).
+        #[link_name = "cf.storage.fn.directory.open"]
+        pub fn directory_open(path: *const u8, state: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105).
+        #[link_name = "cf.storage.fn.path.close"]
+        pub fn path_close(handle: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Path open; 0 succeeds. Handle is four words (entry id, position, write mode, open). The sample adapter passes only mode r; task context, internal filesystem locking (finding 105).
+        #[link_name = "cf.storage.fn.path.open"]
+        pub fn path_open(path: *const u8, mode: *const u8, handle: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Read at the handle position and advance it; byte count, zero at EOF, negative on failure. Task context; takes the filesystem mutex internally (finding 105).
+        #[link_name = "cf.storage.fn.path.read"]
+        pub fn path_read(buf: *mut u8, bytes: u32, handle: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105).
+        #[link_name = "cf.storage.fn.path.size"]
+        pub fn path_size(entry_id: u32) -> u32;
     }
 }
 

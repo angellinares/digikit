@@ -282,3 +282,57 @@ single worker. The JSON has `mode` (`single`/`split`) and, in split mode,
 and `missing_blocks` check that audio is produced. Exactness of the split:
 `node tools/devtools/wasm_parity.mjs --scenario NAME --split 1` (two instances in two
 threads) must print the same PCM hash as without `--split`.
+
+
+## Read-only SHARC recorded-store inventory
+
+The existing firmware query surface can report explicit-root CALL reachability
+and recorded store operands as deterministic, uncapped JSON:
+
+```sh
+uv run python -m tools.coldfire.fw stores 0x1c9fe7 -i dn2-1.12 \
+  --expected-image-sha256 336e340aa0cdcd34e314cfa44849f709a3134f6bd4cd57dfc7e15702c83115e2 \
+  --image-blob out/sections/dn2-1.12/section_7_BLOB.bin \
+  > out/runs/dn2-store-inventory/report.json
+```
+
+Supply one or more root PCs; each requested PC and its containing function remain
+separate. CALL targets retain actual target PCs and recorded/containing functions,
+including interior targets. Reach covers whole containing functions, not proven
+execution from that PC. Known unfollowed jumps, indirects and metadata gaps stay
+in the report. It uses a fresh in-memory NetworkX graph without graph-cache writes.
+
+SQLite opens read-only and report queries share one read transaction. Missing or
+stale schema/provenance fails without rebuilding. The expected hash checks database
+metadata; `--image-blob` additionally verifies the supplied bytes. Without it the
+report is explicitly metadata-only and does not follow the recorded blob path.
+Database-file SHA is main-file identity, not a WAL/transaction snapshot or proof
+against concurrent replacement; journal mode and metadata are recorded separately.
+
+Every selected recorded store row remains an operand, including stack candidates,
+PM and dual stores. Raw instruction, memory-access and pointer-site evidence is
+retained; competing/base/width mismatches stay unknown. Pointer values are limited
+constant-propagation/loop-first-arrival estimates, never runtime bounds. Width
+stays a raw token: no byte footprint, SIMD or alias mapping is inferred. This is
+neither decoder-complete store coverage nor ownership/reservation proof.
+
+
+## Device probe (USB audio + remote)
+
+`tools/device/devprobe.py` presses keys on a real device through the digikit remote module, records its USB audio with PortAudio (the `sounddevice` package) and measures each hit (pitch, length, level). The capture does not use ffmpeg: its avfoundation input dropped about 13% of the samples from the Digitakt II (a gap every ~70 ms), which made sweeps look too fast. The probe prints the captured seconds, the wall-clock seconds and the overflow count, and prints a warning when the captured length differs from wall time by more than 1% or an overflow happened.
+
+Setup:
+
+- On the device: SETTINGS > SYSTEM > USB CONFIG = USB AUDIO/MIDI; USB OUT = MAIN (or one track); tick `digikit/remote` in DIGIKIT > MODULES and restart.
+- On the Mac: nothing to install; `mise run device:probe` fetches `python-rtmidi` and `sounddevice` through `uv`. `--list-audio` shows the input devices; `--audio NAME` picks the first input whose name contains NAME (default Digitakt or Digitone).
+
+```sh
+mise run device:probe -- --list-audio
+mise run device:probe -- --steps 'trig1*10@500'
+```
+
+Results are in `out/runs/devprobe/<time>/`: `capture.wav`, `events.json`, `hits.json` and screenshots. The table shows one line per hit and whether the hits are consistent.
+
+- The remote presses keys only. It does not restart the device.
+- On hardware the panel scan may override remote keys (finding 58). The first run shows it.
+- `--analyse WAV` analyses any WAV, for example an emulator capture, to compare device and emulator.

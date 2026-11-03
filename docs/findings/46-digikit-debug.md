@@ -86,6 +86,10 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 26 | MACHINE_CHANGE | track (0 based; `dklog` shows 1 based), old machine type, new type (0xffffffff: none) | |
 | 27 | MACHINE_FAULT | type \| voice << 16, kind (1 Inf or NaN, 2 over the level bound) \| faults << 8, knobs 0 to 5 of the call in pairs (runtime 5, finding 51) | yes |
 | 28 | MACHINE_DISABLED | type, machine types disabled so far, faults so far (runtime 5, finding 51) | yes |
+| 37 | POOL_LOAD | client << 8 \| pool index, result (0 usable), frames, base_l, token | |
+| 38 | POOL_PUBLISH | client << 8 \| track, token, frames, base_l, base_r | |
+| 39 | POOL_LOST | calls of `dkrt_pool_lost` since the start (warning level) | |
+| 40 | POOL_INVALID | client << 8 \| pool index (client 0xff: periodic check), reason (1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed; check result in the high 16 bits), token, drops so far (first 64, then every 64th) | |
 
 **Periodic work** (`watch::tick`, once per UI pass, reads the block counter): the DSP poll once a second (1500 blocks), a HEALTH snapshot every ten seconds
 (the heap walk only in every fourth, because it takes the heap's mutex: the snapshot uses `dkrt_health_light`, which skips the store figures and, when asked,

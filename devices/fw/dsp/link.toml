@@ -22,3 +22,48 @@ devices = ["dt2", "dn2"]
 mark = "D"
 users = ["core/dsp-link"]
 doc = "Second last instruction of the block handler's common tail, after the record is built; the hook point for the code channel's receiver and acknowledgement."
+
+[[fn]]
+name = "dsp.link.fn.lp0_open"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_func", reloc_hash = "40e00ec6446327c2784bd7beb7652d454dd33a080823fa40617cc961222dfe4e", offset = 0x0, len = 6 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 generic link-port open (finding 92): R4=0, R8=1, R12=aligned private state (128 bytes); stack state size and handle output. Requires task context and an unowned, inactive port before invocation."
+
+[[fn]]
+name = "dsp.link.fn.lp0_set_callback"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_func", reloc_hash = "b3c370ae7e185435d03cb302869c00111a6bdc07f2bcb0141ddc9a2ae845a997", offset = 0x0, len = 6 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 link-port callback setter: R4=handle, R8=callback, R12=context (finding 92)."
+
+[[fn]]
+name = "dsp.link.fn.lp0_submit"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_func", reloc_hash = "18be03a0e7918786dde02ce39db1c98745611630fc04b9e6098f83cfd27187ba", offset = 0x0, len = 6 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 nonblocking descriptor submit: R4=handle, R8=descriptor, R12=1, stack extra configuration 0. Descriptor is mutable; zero return is success (finding 92)."
+
+[[value]]
+name = "dsp.link.value.lp0_record"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_literal", reloc_hash = "40e00ec6446327c2784bd7beb7652d454dd33a080823fa40617cc961222dfe4e", offset = 0x21 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 LP0 record literal in open. Owner pointer is byte offset 0x14 and must be zero before open; live LP0_CTL and DMA30_CFG must also be inactive (finding 92)."
+
+[[site]]
+name = "dsp.link.site.boot_wire_size"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_func", reloc_hash = "a95cb4e7dc05e772358467386ca46cac960ca34168dccce3afa7c8834de8087d", offset = 0xa7, len = 4 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 R4=0xabc before SPI2 descriptor construction. Private boot-only wire-size change; never resize armed descriptors."

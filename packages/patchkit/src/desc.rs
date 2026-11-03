@@ -15,6 +15,8 @@ use crate::typed::{FxDef, FxKnob, MachineDef, PageDef, PageKnob, ParamDef, Voice
 /// The declarations of a set of objects.
 #[derive(Debug)]
 pub struct Desc {
+    pub sample_bank: Option<crate::typed::SampleBankDef>,
+    pub sample_tracks: Option<crate::typed::SampleTracksDef>,
     /// The effects, sorted by id.
     pub fx: Vec<FxDef>,
     /// The machines, sorted by id.
@@ -29,6 +31,8 @@ pub struct Desc {
 
 /// One record as it was read, before the records are put together.
 enum Rec {
+    SampleBank(crate::typed::SampleBankDef),
+    SampleTracks(crate::typed::SampleTracksDef),
     Fx {
         what: String,
         def: FxDef,
@@ -46,6 +50,18 @@ enum Rec {
     Param {
         what: String,
         def: ParamDef,
+    },
+    ParamAction {
+        what: String,
+        machine: String,
+        word: u32,
+        func: String,
+    },
+    ParamGlyph {
+        what: String,
+        owner: String,
+        word: u32,
+        glyph: u32,
     },
     Page {
         what: String,
@@ -189,17 +205,24 @@ fn fx_def(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<Rec
 
 fn machine_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
     let id = req(what, b, rec, "id")?;
+    let stereo = match word(b, rec, "stereo")? {
+        0 => false,
+        1 => true,
+        n => return Err(err!("{what}: stereo {n} is not 0 or 1")),
+    };
     Ok(Rec::Machine {
         def: MachineDef {
             id: id.clone(),
             name: req(what, b, rec, "name")?,
             short: req(what, b, rec, "short_name")?,
+            stereo,
         },
         voice: VoiceDef {
             machine: id,
             render: req(what, b, rec, "render")?,
             note_on: req(what, b, rec, "note_on")?,
             desc: req(what, b, rec, "desc")?,
+            stereo,
         },
     })
 }
@@ -216,7 +239,27 @@ fn param_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
             min: sword(b, rec, "min")?,
             max: sword(b, rec, "max")?,
             default: sword(b, rec, "def")?,
+            action: None,
+            glyph: None,
         },
+    })
+}
+
+fn param_glyph(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    Ok(Rec::ParamGlyph {
+        what: what.to_string(),
+        owner: req(what, b, rec, "owner")?,
+        word: word(b, rec, "word")?,
+        glyph: word(b, rec, "glyph")?,
+    })
+}
+
+fn param_action(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    Ok(Rec::ParamAction {
+        what: what.to_string(),
+        machine: req(what, b, rec, "machine")?,
+        word: word(b, rec, "word")?,
+        func: req(what, b, rec, "fn")?,
     })
 }
 
@@ -310,7 +353,9 @@ fn records(obj: &Dko, spec: &DescSpec) -> Result<Vec<Rec>> {
                 .iter()
                 .find(|r| r.kind == Some(kind))
                 .ok_or_else(|| err!("{what}: unknown record kind {kind}"))?;
-            if size != rec.size {
+            // A machine record of contract 1.1 ends before `stereo`: mono.
+            let legacy = rec.name == "dk_desc_machine" && size + 4 == rec.size;
+            if size != rec.size && !legacy {
                 return Err(err!(
                     "{what}: size {size} is not the {} bytes of {}",
                     rec.size,
@@ -324,12 +369,32 @@ fn records(obj: &Dko, spec: &DescSpec) -> Result<Vec<Rec>> {
                     b.len() - at
                 ));
             }
-            let rb = &b[at..at + size];
+            let mut padded;
+            let rb = if legacy {
+                padded = b[at..at + size].to_vec();
+                padded.resize(rec.size, 0);
+                &padded[..]
+            } else {
+                &b[at..at + size]
+            };
             out.push(match rec.name.as_str() {
+                "dk_desc_sample_bank" => Rec::SampleBank(crate::typed::SampleBankDef {
+                    local_id: word(rb, rec, "local_id")?,
+                    bank: req(&what, rb, rec, "bank")?,
+                    descriptor: req(&what, rb, rec, "descriptor")?,
+                    capacity_frames: word(rb, rec, "capacity_frames")?,
+                }),
+                "dk_desc_sample_tracks" => Rec::SampleTracks(crate::typed::SampleTracksDef {
+                    local_id: word(rb, rec, "local_id")?,
+                    records: req(&what, rb, rec, "records")?,
+                    control: req(&what, rb, rec, "control")?,
+                }),
                 "dk_desc_fx" => fx_def(&what, spec, rb, rec)?,
                 "dk_desc_fx_param" => fx_param(&what, spec, rb, rec)?,
                 "dk_desc_machine" => machine_def(&what, rb, rec)?,
                 "dk_desc_param" => param_def(&what, rb, rec)?,
+                "dk_desc_param_action" => param_action(&what, rb, rec)?,
+                "dk_desc_param_glyph" => param_glyph(&what, rb, rec)?,
                 "dk_desc_page" => page_def(&what, spec, rb, rec)?,
                 _ => return Err(err!("{what}: no reader for {}", rec.name)),
             });
@@ -384,13 +449,35 @@ fn positions(what: &str, entries: &[PageKnob]) -> Result<Vec<u32>> {
 
 /// Put the records together: ids, owners and words are checked here.
 fn assemble(recs: Vec<Rec>) -> Result<Desc> {
+    let mut sample_bank = None;
+    let mut sample_tracks = None;
     let mut fxs: Vec<(String, FxDef)> = vec![];
     let mut fx_params: Vec<(String, String, u32, FxKnob)> = vec![];
     let mut machines: Vec<(MachineDef, VoiceDef)> = vec![];
     let mut params: Vec<(String, ParamDef)> = vec![];
+    let mut actions: Vec<(String, String, u32, String)> = vec![];
+    let mut glyphs: Vec<(String, String, u32, u32)> = vec![];
     let mut pages: Vec<(String, String, String, String, Vec<PageKnob>)> = vec![];
     for r in recs {
         match r {
+            Rec::SampleBank(b) => {
+                if sample_bank.is_some() {
+                    return Err(err!("at most one sample bank per module"));
+                }
+                if !(1..=8192).contains(&b.capacity_frames) {
+                    return Err(err!("sample bank capacity must be 1 .. 8192 frames"));
+                }
+                sample_bank = Some(b);
+            }
+            Rec::SampleTracks(t) => {
+                if sample_tracks.is_some() {
+                    return Err(err!("at most one sample track table per module"));
+                }
+                if sample_bank.is_some() {
+                    return Err(err!("a module declares a sample bank or a sample track table, not both"));
+                }
+                sample_tracks = Some(t);
+            }
             Rec::Fx { what, def } => fxs.push((what, def)),
             Rec::FxParam {
                 what,
@@ -400,6 +487,18 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
             } => fx_params.push((what, fx, word, knob)),
             Rec::Machine { def, voice } => machines.push((def, voice)),
             Rec::Param { what, def } => params.push((what, def)),
+            Rec::ParamAction {
+                what,
+                machine,
+                word,
+                func,
+            } => actions.push((what, machine, word, func)),
+            Rec::ParamGlyph {
+                what,
+                owner,
+                word,
+                glyph,
+            } => glyphs.push((what, owner, word, glyph)),
             Rec::Page {
                 what,
                 owner,
@@ -435,6 +534,50 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
             return Err(err!("{what}: param {} is declared twice", p.id));
         }
         ids.push(&p.id);
+    }
+    for (what, machine, word, func) in actions {
+        let Some((_, p)) = params
+            .iter_mut()
+            .find(|(_, p)| p.machine == machine && p.word == word)
+        else {
+            return Err(err!(
+                "{what}: machine {machine} has no param at word {word} for a click action"
+            ));
+        };
+        if p.action.is_some() {
+            return Err(err!(
+                "{what}: param {} (word {word}) has two click actions",
+                p.id
+            ));
+        }
+        p.action = Some(func);
+    }
+    for (what, owner, word, glyph) in glyphs {
+        if glyph > 5 {
+            return Err(err!(
+                "{what}: unknown glyph {glyph} (DK_GLYPH_ENCODER .. DK_GLYPH_PLAY is 0 to 5)"
+            ));
+        }
+        if fxs.iter().any(|(_, f)| f.id == owner) {
+            return Err(err!(
+                "{what}: effect {owner}: glyphs on effect parameters are not supported yet"
+            ));
+        }
+        let Some((_, p)) = params
+            .iter_mut()
+            .find(|(_, p)| p.machine == owner && p.word == word)
+        else {
+            return Err(err!(
+                "{what}: machine {owner} has no param at word {word} for a glyph"
+            ));
+        };
+        if p.glyph.is_some() {
+            return Err(err!(
+                "{what}: param {} (word {word}) has two glyphs",
+                p.id
+            ));
+        }
+        p.glyph = Some(glyph);
     }
     for (m, _) in &machines {
         let mut words: Vec<u32> = params
@@ -507,7 +650,11 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
                 mine.len()
             ));
         }
-        gapless(&who, "param", &mut mine.iter().map(|m| m.0).collect::<Vec<_>>())?;
+        gapless(
+            &who,
+            "param",
+            &mut mine.iter().map(|m| m.0).collect::<Vec<_>>(),
+        )?;
         mine.sort_by_key(|m| m.0);
         match fx_pages.iter().find(|p| p.0 == f.id) {
             Some((_, name, title, knobs)) => {
@@ -552,6 +699,8 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
         fx_out.push(f);
     }
     Ok(Desc {
+        sample_bank,
+        sample_tracks,
         fx: fx_out,
         params: params.into_iter().map(|p| p.1).collect(),
         pages: machine_pages,
@@ -648,6 +797,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sample_bank_declarations_are_numeric_single_and_capacity_bounded() {
+        let mut r = Rb::new("dk_desc_sample_bank");
+        r.num("local_id", 17)
+            .text("bank", "_bank")
+            .text("descriptor", "_sample")
+            .num("capacity_frames", 8192);
+        let d = read(&obj(&r.done())).unwrap();
+        let b = d.sample_bank.unwrap();
+        assert_eq!((b.local_id, b.capacity_frames), (17, 8192));
+        assert_eq!(
+            (b.bank.as_str(), b.descriptor.as_str()),
+            ("_bank", "_sample")
+        );
+        assert!(err_of(&[&r, &r]).contains("one sample bank"));
+        for n in [0, 8193, u32::MAX] {
+            r.num("capacity_frames", n);
+            assert!(err_of(&[&r]).contains("capacity"));
+        }
+        r.num("capacity_frames", 1).text("bank", "");
+        assert!(err_of(&[&r]).contains("bank is empty"));
+    }
+
     const AUTO: u32 = 255;
 
     fn fx(id: &str) -> Rb {
@@ -681,7 +853,8 @@ mod tests {
             .text("short_name", "PLK")
             .text("render", "_pk_render")
             .text("note_on", "_pk_note_on")
-            .text("desc", "_pk_desc");
+            .text("desc", "_pk_desc")
+            .num("stereo", 0);
         r
     }
 
@@ -695,6 +868,18 @@ mod tests {
             .num("def", 0x4000)
             .text("name", "Decay")
             .text("short_name", "DECAY");
+        r
+    }
+
+    fn action(machine: &str, word: u32, func: &str) -> Rb {
+        let mut r = Rb::new("dk_desc_param_action");
+        r.text("machine", machine).num("word", word).text("fn", func);
+        r
+    }
+
+    fn glyph(owner: &str, word: u32, glyph: u32) -> Rb {
+        let mut r = Rb::new("dk_desc_param_glyph");
+        r.text("owner", owner).num("word", word).num("glyph", glyph);
         r
     }
 
@@ -775,7 +960,12 @@ mod tests {
     fn an_effect_without_a_page_keeps_the_defaults_of_its_params() {
         let mut p1 = fx_param("fshift", 1, "Other");
         p1.num("def", 2.0f32.to_bits()).num("max", 3.0f32.to_bits());
-        let d = read(&obj(&all(&[&fx("fshift"), &p1, &fx_param("fshift", 0, "A")]))).unwrap();
+        let d = read(&obj(&all(&[
+            &fx("fshift"),
+            &p1,
+            &fx_param("fshift", 0, "A"),
+        ])))
+        .unwrap();
         let f = &d.fx[0];
         assert!(f.tab.is_none() && f.title.is_none() && f.knob.is_empty());
         assert_eq!(f.defaults, [0.0f32.to_bits(), 2.0f32.to_bits()]);
@@ -785,7 +975,13 @@ mod tests {
     fn auto_positions_take_the_lowest_free_one_in_entry_order() {
         let mut g = page("fshift");
         g.knob(0, 0, AUTO).knob(1, 1, 0).knob(2, 2, AUTO);
-        let recs = [&fx("fshift"), &fx_param("fshift", 0, "A"), &fx_param("fshift", 1, "B"), &fx_param("fshift", 2, "C"), &g];
+        let recs = [
+            &fx("fshift"),
+            &fx_param("fshift", 0, "A"),
+            &fx_param("fshift", 1, "B"),
+            &fx_param("fshift", 2, "C"),
+            &g,
+        ];
         let d = read(&obj(&all(&recs))).unwrap();
         let pos: Vec<_> = d.fx[0].knob.iter().map(|k| k.position).collect();
         assert_eq!(pos, [Some(1), Some(0), Some(2)]);
@@ -804,7 +1000,12 @@ mod tests {
     fn machine_records_read_to_machines_params_pages_and_voices() {
         let mut g = page("pluck");
         g.knob(0, 1, AUTO).knob(1, 0, 3);
-        let recs = [&machine("pluck"), &param("pluck", "pk_b", 1), &param("pluck", "pk_a", 0), &g];
+        let recs = [
+            &machine("pluck"),
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &g,
+        ];
         let d = read(&obj(&all(&recs))).unwrap();
         assert_eq!(d.machines.len(), 1);
         assert_eq!((d.machines[0].name.as_str(), d.machines[0].short.as_str()), ("Pluck", "PLK"));
@@ -821,6 +1022,53 @@ mod tests {
         assert_eq!(pg.knobs[0].word, 1);
         assert_eq!(pg.knobs[0].position, None);
         assert_eq!(pg.knobs[1].position, Some(3));
+    }
+
+    #[test]
+    fn a_click_action_joins_the_param_at_its_word() {
+        let m = machine("pluck");
+        let recs = [
+            &m,
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &action("pluck", 1, "_pk_click"),
+        ];
+        let d = read(&obj(&all(&recs))).unwrap();
+        assert_eq!(d.params[0].action, None);
+        assert_eq!(d.params[1].action.as_deref(), Some("_pk_click"));
+        // no param at that word, and two actions on one
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("pluck", 1, "f")]);
+        assert!(e.contains("no param at word 1"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("nope", 0, "f")]);
+        assert!(e.contains("no param at word 0"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("pluck", 0, "f"), &action("pluck", 0, "g")]);
+        assert!(e.contains("two click actions"), "{e}");
+        let mut empty = action("pluck", 0, "");
+        empty.text("fn", "");
+        assert!(err_of(&[&m, &param("pluck", "a", 0), &empty]).contains("fn is empty"));
+    }
+
+    #[test]
+    fn a_glyph_joins_the_param_at_its_word() {
+        let m = machine("pluck");
+        let recs = [
+            &m,
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &glyph("pluck", 1, 4),
+        ];
+        let d = read(&obj(&all(&recs))).unwrap();
+        assert_eq!(d.params[0].glyph, None);
+        assert_eq!(d.params[1].glyph, Some(4));
+        // an effect owner, no param at that word, two glyphs on one, a value that is no glyph
+        let e = err_of(&[&m, &fx("fshift"), &param("pluck", "a", 0), &glyph("fshift", 0, 1)]);
+        assert!(e.contains("not supported yet"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 1, 1)]);
+        assert!(e.contains("no param at word 1"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 0, 1), &glyph("pluck", 0, 2)]);
+        assert!(e.contains("two glyphs"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 0, 9)]);
+        assert!(e.contains("unknown glyph 9"), "{e}");
     }
 
     #[test]

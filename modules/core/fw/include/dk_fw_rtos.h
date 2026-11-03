@@ -9,6 +9,8 @@
 /* cf.rtos.fn.create_main: no sig yet */
 /* cf.rtos.fn.queue_pop: no sig yet */
 /* cf.rtos.fn.reset.init_calls: no sig yet */
+/* DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it. */
+void dk_fw_rtos_sleep_us(uint32_t us) __asm__("cf.rtos.fn.sleep_us");
 /* The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`. */
 extern const uint8_t dk_fw_rtos_exc_hook_lit __asm__("cf.rtos.site.exc_hook_lit");
 /* Address of the reset code's bss clear helper, the second call of cf.rtos.fn.reset.init_calls; the expansion loader calls it after it copies its segments. */

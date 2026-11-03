@@ -1,0 +1,196 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            null,
+            {
+              "param": "shot_smp",
+              "slot": 26
+            },
+            {
+              "param": "shot_start",
+              "slot": 27
+            },
+            null,
+            {
+              "param": "shot_end",
+              "slot": 29
+            },
+            {
+              "param": "shot_play",
+              "slot": 30
+            },
+            {
+              "param": "shot_pitch",
+              "slot": 31
+            }
+          ],
+          "level": 10,
+          "name": "SHOT",
+          "own_dsp": true,
+          "page": {
+            "name": "SPK",
+            "title": "SHOT"
+          },
+          "position": null,
+          "short": "SPK",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "shot_smp",
+              "slot": 1
+            },
+            {
+              "param": "shot_start",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "shot_end",
+              "slot": 4
+            },
+            {
+              "param": "shot_play",
+              "slot": 5
+            },
+            {
+              "param": "shot_pitch",
+              "slot": 6
+            },
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "SHOT",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "SPK",
+          "type": null
+        }
+      },
+      "id": "shot",
+      "name": "SHOT",
+      "short": "SPK"
+    }
+  ],
+  "module": "digikit/shot",
+  "params": {
+    "dn2": [
+      {
+        "default": 0,
+        "id": "shot_smp",
+        "max": 3840,
+        "min": 0,
+        "name": "Sample",
+        "short": "SMP",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 0,
+        "id": "shot_start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 27,
+        "template": 213
+      },
+      {
+        "default": 32512,
+        "id": "shot_end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 29,
+        "template": 213
+      },
+      {
+        "default": 768,
+        "id": "shot_play",
+        "max": 768,
+        "min": 0,
+        "name": "Play",
+        "short": "PLAY",
+        "slot": 30,
+        "template": 213
+      },
+      {
+        "default": 16384,
+        "id": "shot_pitch",
+        "max": 32512,
+        "min": 0,
+        "name": "Pitch",
+        "short": "PITCH",
+        "slot": 31,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 0,
+        "id": "shot_smp",
+        "max": 3840,
+        "min": 0,
+        "name": "Sample",
+        "short": "SMP",
+        "slot": 1,
+        "template": 204
+      },
+      {
+        "default": 0,
+        "id": "shot_start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 2,
+        "template": 204
+      },
+      {
+        "default": 32512,
+        "id": "shot_end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 4,
+        "template": 204
+      },
+      {
+        "default": 768,
+        "id": "shot_play",
+        "max": 768,
+        "min": 0,
+        "name": "Play",
+        "short": "PLAY",
+        "slot": 5,
+        "template": 203
+      },
+      {
+        "default": 16384,
+        "id": "shot_pitch",
+        "max": 32512,
+        "min": 0,
+        "name": "Pitch",
+        "short": "PITCH",
+        "slot": 6,
+        "template": 204
+      }
+    ]
+  }
+}

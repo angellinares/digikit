@@ -80,6 +80,8 @@ const NO_TESTS = new Set([
   'sharc-stats',
   'sharc-gen',
   'sharc-gen-2',
+  'sharc-native-2',
+  'dkfw',
   'sharc-fast-cl',
   'sharc-fast-cl-2',
   'bootstrap-emu',

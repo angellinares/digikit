@@ -687,7 +687,8 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
         data = dsp.stream.read(addr, int(width))
         return {
             "kind": "value",
-            "addr": int(rows[0][0]),
+            # a literal is a 32-bit immediate: the DSP's DDR addresses (0x8422b9c8) read as negative in the database
+            "addr": int(rows[0][0]) & 0xFFFF_FFFF,
             "src": addr,
             "len": int(width),
             "sha256": sha(data),

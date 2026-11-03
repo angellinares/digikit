@@ -12,5 +12,19 @@ int32_t dk_fw_storage_block_read(uint32_t sector, uint32_t bytes, uint8_t *buf) 
 int32_t dk_fw_storage_block_write(uint32_t sector, uint32_t bytes, const uint8_t *buf) __asm__("cf.storage.fn.block.write");
 /* The firmware's normal writer of the boot record (finding 36 section 2; DT2 1.16 FUN_400f044a, 1.17 0x400f05ae; DN2 1.11 FUN_400f1e26, 1.12 FUN_400f1f8a): writes the arena to the next of the two record slots, invalidates the other, one shot per boot. */
 void dk_fw_storage_boot_record_write(void) __asm__("cf.storage.fn.boot_record_write");
+/* DT2 1.17 locked stored metadata getter: 0 success/-1 failure, output unchanged on failure. Four words: id, stored odd hash, physical byte size, node word. No hash recomputation or source lease (finding 93). */
+int32_t dk_fw_storage_directory_metadata(uint32_t entry_id, uint32_t *output) __asm__("cf.storage.fn.directory.metadata");
+/* DT2 1.17 read-only directory next, 1 entry/0 EOF/-1 failure. Caller zeros private 0x114-byte output; ID +0, u16 type +4, directory ID +8, page/offset +12/+16, NUL name[256] +20. Task context; no latency bound (finding 93). */
+int32_t dk_fw_storage_directory_next(uint32_t *state, uint8_t *output) __asm__("cf.storage.fn.directory.next");
+/* DT2 1.17 read-only path directory open, 0 success/-1 failure; caller-owned four-word state. Task context; may block under filesystem locking (finding 93). */
+int32_t dk_fw_storage_directory_open(const uint8_t *path, uint32_t *state) __asm__("cf.storage.fn.directory.open");
+/* Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105). */
+int32_t dk_fw_storage_path_close(uint32_t *handle) __asm__("cf.storage.fn.path.close");
+/* Path open; 0 succeeds. Handle is four words (entry id, position, write mode, open). The sample adapter passes only mode r; task context, internal filesystem locking (finding 105). */
+int32_t dk_fw_storage_path_open(const uint8_t *path, const uint8_t *mode, uint32_t *handle) __asm__("cf.storage.fn.path.open");
+/* Read at the handle position and advance it; byte count, zero at EOF, negative on failure. Task context; takes the filesystem mutex internally (finding 105). */
+int32_t dk_fw_storage_path_read(uint8_t *buf, uint32_t bytes, uint32_t *handle) __asm__("cf.storage.fn.path.read");
+/* File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105). */
+uint32_t dk_fw_storage_path_size(uint32_t entry_id) __asm__("cf.storage.fn.path.size");
 
 #endif

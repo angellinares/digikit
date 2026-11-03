@@ -212,6 +212,8 @@ pub struct MachineDef {
     pub id: String,
     pub name: String,
     pub short: String,
+    /// Declared stereo (`.stereo = 1`, machine contract 1.2).
+    pub stereo: bool,
 }
 
 /// A parameter of a machine (a `DK_PARAM` record). `min`, `max` and `default` are raw: the knob unit times 256.
@@ -227,6 +229,23 @@ pub struct ParamDef {
     pub min: i64,
     pub max: i64,
     pub default: i64,
+    /// The symbol of the click callback (a `DK_PARAM_ACTION` record), `void fn(u32 track)`.
+    pub action: Option<String>,
+    /// The glyph (a `DK_PARAM_GLYPH` record, `dk_glyph`); `None`: the encoder.
+    pub glyph: Option<u32>,
+}
+
+/// The template name and the allowed knob range (min, max) of a `dk_glyph` value.
+fn glyph_info(glyph: Option<u32>) -> Option<(&'static str, i64, i64)> {
+    Some(match glyph.unwrap_or(0) {
+        0 => ("encoder", 0, 127),
+        1 => ("fader", 0, 127),
+        2 => ("pan", 0, 127),
+        3 => ("onoff", 0, 1),
+        4 => ("tune", 4, 124),
+        5 => ("play", 0, 3),
+        _ => return None,
+    })
 }
 
 /// One encoder of a machine page (a `DK_KNOB` or `DK_KNOB_AT` entry of a `DK_PAGE` record).
@@ -256,6 +275,8 @@ pub struct VoiceDef {
     pub render: String,
     pub note_on: String,
     pub desc: String,
+    /// Declared stereo; the packer checks it against `DK_MACHINE_STEREO` in the `dk_machine_desc`.
+    pub stereo: bool,
 }
 
 /// A run-time effect (a `DK_FX` record, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
@@ -350,6 +371,8 @@ pub struct RParam {
     pub slot: i64,
     pub frame_off: i64,
     pub mirror: i64,
+    /// The symbol of the click callback of the knob.
+    pub action: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -369,6 +392,7 @@ pub struct RVoice {
     pub entry: String,
     pub note_on: Option<String>,
     pub desc: Option<String>,
+    pub stereo: bool,
     /// A patched-in contract voice: the state block `Library::lower` reserved for it (`desc` read from the object).
     pub state: Option<VoiceState>,
 }
@@ -505,10 +529,6 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 kn.to
             ));
         }
-        let plain = *model
-            .templates
-            .get("plain")
-            .ok_or_else(|| err!("{who}: devices/{dev}.toml has no `plain` template"))?;
         let mut machines = vec![];
         let mut params = vec![];
         let mut pages = vec![];
@@ -565,11 +585,25 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 level: kn.level_default,
             });
             for (p, &at) in mine.iter().zip(&placed.pos) {
+                let Some((gname, gmin, gmax)) = glyph_info(p.glyph) else {
+                    return Err(err!("{who}: param {}: unknown glyph {:?}", p.id, p.glyph));
+                };
+                if p.min < gmin * 256 || p.max > gmax * 256 {
+                    return Err(err!(
+                        "{who}: param {}: glyph {gname} needs knob values {gmin} .. {gmax}, the param has {} .. {}",
+                        p.id,
+                        p.min as f64 / 256.0,
+                        p.max as f64 / 256.0
+                    ));
+                }
+                let template = *model.templates.get(gname).ok_or_else(|| {
+                    err!("{who}: devices/{dev}.toml has no `{gname}` template")
+                })?;
                 params.push(RParam {
                     id: p.id.clone(),
                     name: p.name.clone(),
                     short: p.short.clone(),
-                    template: plain,
+                    template,
                     min: p.min,
                     max: p.max,
                     default: p.default,
@@ -577,6 +611,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                     slot: kn.slot_base + at as i64,
                     frame_off: model.frame_offset(at),
                     mirror: model.frame.mirror_base + model.frame_offset(at),
+                    action: p.action.clone(),
                 });
             }
             for (k, (name, title, list)) in placed.pages.iter().enumerate() {
@@ -607,6 +642,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 entry: v.render.clone(),
                 note_on: Some(v.note_on.clone()),
                 desc: Some(v.desc.clone()),
+                stereo: v.stereo,
                 state: m.voice_state.get(&v.machine).cloned(),
             })
             .collect();
@@ -777,6 +813,13 @@ pub fn lower(m: &mut Manifest, models: &Models) -> Result<()> {
         m.lowered = true;
         return Ok(());
     }
+    if let Some(p) = m.param.iter().find(|p| p.action.is_some()) {
+        return Err(err!(
+            "{}: param {} has a click action (DK_PARAM_ACTION); only a run-time module (dynamic = true) can declare one",
+            m.module.id,
+            p.id
+        ));
+    }
     if models.by_device.is_empty() {
         return Err(err!(
             "{}: has machine records, but no device file with [modules] is available",
@@ -808,7 +851,12 @@ tune = 0xca
 level = 0xd1
 level_knob = 7
 [modules.templates]
-plain = 0xd1
+encoder = 0xcc
+fader = 0xd1
+pan = 0x47
+onoff = 0x32
+tune = 0xca
+play = 0xcb
 [[modules.knobs.reserved]]
 clone_of = 0
 name = "SAMPLE"
@@ -839,7 +887,12 @@ level_field = "c8"
 level_default = 10
 own_dsp = true
 [modules.templates]
-plain = 0xd5
+encoder = 0xd5
+fader = 0xd7
+pan = 0x47
+onoff = 0xdd
+tune = 0xee
+play = 0xd5
 [modules.frame]
 base = 0x6d
 stride = 0x49
@@ -869,6 +922,7 @@ summary = "t."
             id: "t".into(),
             name: "Tee".into(),
             short: "T".into(),
+            stereo: false,
         }];
         m.param = (0..n)
             .map(|w| ParamDef {
@@ -880,6 +934,8 @@ summary = "t."
                 min: 0,
                 max: 100,
                 default: 50,
+                action: None,
+                glyph: None,
             })
             .collect();
         m.page = pages
@@ -901,6 +957,7 @@ summary = "t."
             render: "_t_render".into(),
             note_on: "_t_note_on".into(),
             desc: "_t_desc".into(),
+            stereo: false,
         }];
         m
     }
@@ -940,7 +997,7 @@ summary = "t."
         // slots are the knob positions
         let q = on("dt2", "params");
         assert_eq!(field(q[0], "slot"), Some(&int(1)));
-        assert_eq!(field(q[0], "template"), Some(&int(0xd1)));
+        assert_eq!(field(q[0], "template"), Some(&int(0xcc)));
         assert_eq!(field(q[1], "slot"), Some(&int(2)));
         assert!(on("dt2", "pages").is_empty());
         // the runtime guard's ranges: knobs 1 and 2 are params (0 .. 100 = 100 << 16)
@@ -1076,6 +1133,62 @@ summary = "t."
     }
 
     #[test]
+    fn a_click_action_reaches_the_register_record_of_a_run_time_module_only() {
+        let mut m = manifest(3, &[]);
+        m.param[1].action = Some("_t_click".into());
+        // a patched-in module has no registry rows for it
+        let e = lower(&mut m.clone(), &models()).unwrap_err().0;
+        assert!(e.contains("click action") && e.contains("t_1"), "{e}");
+        // a run-time one: the resolved parameter carries the symbol and the register record the image offset
+        let res = resolve(&m, &models()).unwrap();
+        for r in &res {
+            assert_eq!(
+                r.params.iter().map(|p| p.action.as_deref()).collect::<Vec<_>>(),
+                [None, Some("_t_click"), None]
+            );
+            let mut reg = crate::register::Register::lower(r, "machines/t").unwrap();
+            let syms = std::collections::BTreeMap::from([("_t_click".to_string(), 0x40u32)]);
+            reg.set_actions(r, &syms).unwrap();
+            assert_eq!(reg.actions, [(1, 0x40)]);
+            let e = reg.set_actions(r, &Default::default()).unwrap_err().0;
+            assert!(e.contains("_t_click") && e.contains("static"), "{e}");
+        }
+    }
+
+    #[test]
+    fn a_glyph_selects_the_template_row_of_the_device() {
+        let templates = |m: &Manifest, dev: &str| -> Vec<i64> {
+            let r = resolve(m, &models()).unwrap();
+            r.iter().find(|x| x.dev == dev).unwrap().params.iter().map(|q| q.template).collect()
+        };
+        let mut m = manifest(2, &[]);
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0xcc]);
+        assert_eq!(templates(&m, "dn2"), [0xd5, 0xd5]);
+        m.param[1].glyph = Some(1);
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0xd1]);
+        assert_eq!(templates(&m, "dn2"), [0xd5, 0xd7]);
+        // the range of the glyph: ONOFF is 0 .. 1, the param is 0 .. 127
+        m.param[1].glyph = Some(3);
+        m.param[1].max = 127 * 256;
+        let e = bad(&m);
+        assert!(e.contains("t_1") && e.contains("onoff"), "{e}");
+        m.param[1].max = 256;
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0x32]);
+        // TUNE is 4 .. 124
+        m.param[1].glyph = Some(4);
+        let e = bad(&m);
+        assert!(e.contains("t_1") && e.contains("tune"), "{e}");
+        // PLAY is 0 .. 3: DT2 has the PLAY row, DN2 falls back to the encoder row
+        m.param[1].glyph = Some(5);
+        m.param[1].max = 127 * 256;
+        let e = bad(&m);
+        assert!(e.contains("t_1") && e.contains("play"), "{e}");
+        m.param[1].max = 3 * 256;
+        assert_eq!(templates(&m, "dt2"), [0xcc, 0xcb]);
+        assert_eq!(templates(&m, "dn2"), [0xd5, 0xd5]);
+    }
+
+    #[test]
     fn lowering_runs_once_and_needs_models() {
         let mut m = manifest(2, &[]);
         assert!(lower(&mut m, &Models::default()).is_err());
@@ -1084,4 +1197,22 @@ summary = "t."
         lower(&mut m, &models()).unwrap();
         assert_eq!(m.entry.len(), n);
     }
+}
+
+/// A module-owned table of 16 per-track sample records, declared by DK_SAMPLE_TRACKS (<dk/sample_track.h>, API 1.5): the symbols of the
+/// records and of the control sets in the module's DSP data.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SampleTracksDef {
+    pub local_id: u32,
+    pub records: String,
+    pub control: String,
+}
+
+/// A module-owned sample bank, declared by DK_SAMPLE_BANK.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SampleBankDef {
+    pub local_id: u32,
+    pub bank: String,
+    pub descriptor: String,
+    pub capacity_frames: u32,
 }

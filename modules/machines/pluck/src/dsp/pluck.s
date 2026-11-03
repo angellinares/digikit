@@ -26,6 +26,7 @@
 // continues the sequence of the last).
 
 #include "dk_machine.inc"
+#include "dsp/noise.inc"
 #define PK_LINE 128
 #define PK_STATE 16512
 #define PK_VOICES 16
@@ -238,12 +239,7 @@ _pk_note_on:
     R8 = 0;                               // sum
     R0 = R0 + 1;
     LCNTR = R0, DO _pk_fill UNTIL LCE;
-        R1 = LSHIFT R9 BY 13;
-        R9 = R9 XOR R1;
-        R1 = LSHIFT R9 BY R10;
-        R9 = R9 XOR R1;
-        R1 = LSHIFT R9 BY 5;
-        R9 = R9 XOR R1;
+        DK_XORSHIFT32_STEP(R9, R1, R10);
         F1 = FLOAT R9 BY R11;             // noise in [-1, 1)
         F1 = F1 * F14;
         F2 = F12 * F13;

@@ -99,6 +99,23 @@ pub unsafe fn find(path: *const u8) -> Result<File, i32> {
     }
 }
 
+/// The first 64 bytes of the file `f` (a native sample header), through the peek sector. Task context, like every store read.
+pub unsafe fn read_head(f: &File, head: &mut [u8; 64]) -> Result<(), i32> {
+    if f.size == 0 {
+        return Err(E_FORMAT);
+    }
+    let r = read_sector(f.first, scratch());
+    if r != OK {
+        return Err(r);
+    }
+    let mut i = 0;
+    while i < 64 {
+        head[i] = *scratch().add(i);
+        i += 1;
+    }
+    Ok(())
+}
+
 /// Read the file `f` into the staging buffer and check the table's sha256. The file is then at `stage()`.
 pub unsafe fn load_to_stage(f: &File) -> i32 {
     let r = capacity::stage_fit(f.size, STAGE_BYTES as u32);
@@ -258,4 +275,43 @@ pub unsafe fn read_sector(rel: u32, out: *mut u8) -> i32 {
         return E_NOT_FOUND;
     }
     store::read_sectors(&reader(), &layout(), rel, 1, out, 512)
+}
+
+/// `dkrt_store_stat(path, out)`: where a store file is, for an adapter that streams it. `E_NOT_FOUND` for no store, no such file and a folder.
+/// Leaves garbage in the staging buffer (the table is scanned through it), so only call it at the start of a load.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_stat(path: *const u8, out: *mut DkrtStoreFile) -> i32 {
+    if path.is_null() || out.is_null() {
+        return E_CONTRACT;
+    }
+    crate::init_once();
+    match find(path) {
+        Ok(f) => {
+            let o = &mut *out;
+            o.first = f.first;
+            o.size = f.size;
+            o.sha = f.sha;
+            OK
+        }
+        Err(e) => e,
+    }
+}
+
+/// `dkrt_store_read(f, sector, count, dst)`: `count` sectors of the file `f` from its sector `sector` into `dst` (16-byte aligned, 512 bytes a
+/// sector). No sha check and no staging buffer. Run in the task that owns the card reads (the UI loop).
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_read(f: *const DkrtStoreFile, sector: u32, count: u32, dst: *mut u8) -> i32 {
+    if f.is_null() || dst.is_null() || (dst as usize) & 15 != 0 {
+        return E_CONTRACT;
+    }
+    crate::init_once();
+    if crate::card::state() == CARD_TOO_SMALL {
+        return E_NOT_FOUND;
+    }
+    let f = &*f;
+    let rel = match store::file_span(f.first, f.size, sector, count) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    store::read_sectors(&reader(), &layout(), rel, count, dst, count as usize * 512)
 }

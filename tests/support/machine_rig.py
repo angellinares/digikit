@@ -30,9 +30,10 @@ import support.dsp_voice_rig as dv
 from tools.patchkit import pk_conform, pk_sharc
 
 ROOT = pk_conform.ROOT
-WRAPPER = {
-    "dt2": ROOT / "modules/core/adapters/dsp-voice/src/dsp/dsp-voice.s",
-    "dn2": ROOT / "modules/core/adapters/dsp-voice/src/dsp/dsp-voice-dn2.s",
+_DSP = ROOT / "modules/core/adapters/dsp-voice/src/dsp"
+WRAPPER = {  # the adapter's sources of a device, assembled as separate objects that see each other's data symbols
+    "dt2": (_DSP / "dsp-voice.s",),
+    "dn2": (_DSP / "dsp-voice-dn2.s", _DSP / "dsp-voice-dn2-stereo.s"),
 }
 CODE_BASE = 0xB90000
 CODE_END = dv.STOCK_BP  # code must end below the stand-ins at STOCK_BP / RETURN_SW
@@ -44,9 +45,11 @@ OUT_DN2 = (
 )  # DN2 voice buffers (low 7 bits of the address are 0x10: the wrapper checks)
 ROW_WORDS = 24  # words of a registry row of core/dsp-voice
 nw = dv.nw
-# I7 is the data stack pointer and grows downward; the adapter lowers it by its frame before the call (dsp-voice.s:176 `MODIFY(I7, -40)`, dsp-voice-dn2.s:269 `-18`),
-# so the module's stack is [I7 at entry - stack_bytes, I7 at entry).
-ADAPTER_FRAME_WORDS = {"dt2": 40, "dn2": 18}
+# The module stack grows below I7 at entry, exclusive. DT2 lowers I7 by
+# 40 words before entering the module (dsp-voice.s); DN2 saves context in
+# static _dv_ctx and enters without lowering I7. DN2's MODIFY(I7, -18)
+# runs only AFTER module return, as the displaced stock-helper instruction.
+ADAPTER_FRAME_WORDS = {"dt2": 40, "dn2": 0}
 DEFAULT_STACK_BYTES = 256  # a raw routine (no dk_machine_desc) declares no stack
 
 
@@ -64,6 +67,9 @@ class Block:
     foreign: list[str] = field(
         default_factory=list
     )  # stores of the module's code outside the memory it may write (rig with record_stores), one text each
+    right: tuple[
+        float, ...
+    ] = ()  # DT2: the odd voice's block after the call (a stereo machine's R; NaN when nothing wrote it)
 
 
 @dataclass
@@ -97,13 +103,47 @@ def _assemble(path: Path, moddir: Path) -> pk_sharc.SharcObject:
     return pk_sharc.assemble(pk_sharc.expand_includes(path.read_text(), dirs))
 
 
+# The stock functions and sites the stereo hooks of the DN2 adapter name (dsp-voice-dn2-stereo.s). The machine rig does not run them: the stand-ins
+# only have to link.
+STEREO_STANDINS = (
+    "_gs_fo_stock",
+    "_gs_fo_reset_stock",
+    "_gs_uy_stock",
+    "_gs_uy_reset_stock",
+    "_gs_gain_stock",
+    "_gs_c5_stock",
+    "_gs_held_stock",
+    "_gs_shaper_stock",
+    "_gs_case1_stock",
+    "_gs_case2_stock",
+    "_gs_case3_stock",
+    "_gs_ring_stock",
+    "_gs_held_reset_stock",
+    "_gs_case1_reset_stock",
+    "_gs_case2_reset_stock",
+    "_gs_case3_reset_stock",
+    "_gs_ring_reset_stock",
+    "_gs_case5_reset_stock",
+    "_gs_engine_base",
+    "_gs_pan_cont",
+    "_gs_pan_end",
+    "_gs_pre_cont",
+)
+
+
 def _externs_fixed(device: str, spec: pk_conform.MachineSpec) -> dict[str, int]:
-    return {
+    fixed = {
         "_fw_type_cache": dv.TYPE_CACHE,
         "_fw_render_next": dv.STOCK_BP,
         "_fw_frame": dv.FRAME,
+        "_fw_param_rec": dv.PARAM_REC,
         "_dv_table": dv.TABLE,
     }
+    if device == "dn2":
+        fixed.update(
+            {n: dv.STOCK_BP + 0x10 + 4 * i for i, n in enumerate(STEREO_STANDINS)}
+        )
+    return fixed
 
 
 def build(module: str, device: str) -> _Built:
@@ -129,7 +169,8 @@ def build_spec(sp: pk_conform.MachineSpec) -> _Built:
 
 def _build(sp: pk_conform.MachineSpec) -> _Built:
     module, device = sp.module, sp.device
-    objs = [_assemble(WRAPPER[device], WRAPPER[device].parents[2])]
+    nwrap = len(WRAPPER[device])
+    objs = [_assemble(w, w.parents[2]) for w in WRAPPER[device]]
     objs += [_assemble(Path(s), sp.moddir) for s in sp.sources]
     # data symbols: one 4-byte aligned run per section, in L2 above the stand-ins
     addr = DATA_BASE
@@ -184,7 +225,8 @@ def _build(sp: pk_conform.MachineSpec) -> _Built:
     ext = {**externs, **syms}
     linked = [pk_sharc.link(o, b, ext) for o, b in zip(objs, bases, strict=True)]
     code = tuple(
-        (b, b + len(o.section) // 2) for o, b in zip(objs[1:], bases[1:], strict=True)
+        (b, b + len(o.section) // 2)
+        for o, b in zip(objs[nwrap:], bases[nwrap:], strict=True)
     )
     return _Built(
         objs,
@@ -197,8 +239,8 @@ def _build(sp: pk_conform.MachineSpec) -> _Built:
         clear,
         desc,
         module_code=code,
-        module_data=tuple(r for rs in own[1:] for r in rs),
-        wrapper_data=tuple(own[0]),
+        module_data=tuple(r for rs in own[nwrap:] for r in rs),
+        wrapper_data=tuple(r for rs in own[:nwrap] for r in rs),
     )
 
 
@@ -274,6 +316,7 @@ class MachineRig:
             self._set_type_dt2(t, self.spec.machine_type)
         else:
             self.hw(74 + v, self.spec.machine_type)
+            self.set_owner(t)
         for p in self.spec.params:
             self.set_param(p.id, p.default)
         self.set_note(60, 100)
@@ -293,6 +336,7 @@ class MachineRig:
             self._set_type_dt2(track, self.spec.machine_type)
         else:
             self.hw(74 + self.voice, self.spec.machine_type)
+            self.set_owner(track)
         for p in self.spec.params:
             self.set_param(p.id, p.default)
         self.set_note(60, 100)
@@ -318,6 +362,12 @@ class MachineRig:
         return self.sess.peek(nw(dv.RECORDS + v * dv.REC + off)) or 0
 
     # -- the engine's inputs -----------------------------------------------------------------------------------------------
+    def set_owner(self, track: int) -> None:
+        """Set DN2's current frame owner independently of the physical voice slot."""
+        if self.device != "dn2":
+            raise ValueError("only DN2 slots have a separate frame owner")
+        self.hw(0x52D + self.voice, track)
+
     def set_param(self, pid: str, word: int) -> None:
         p = self.by_id[pid]
         self.hw(
@@ -383,6 +433,8 @@ class MachineRig:
         regs, out_addr = self._regs(ctx)
         for k in range(32):
             self.sess.poke(nw(out_addr) + k, NAN)
+            if self.device == "dt2":
+                self.sess.poke(nw(out_addr + 0x80) + k, NAN)
         self.sess.poke(nw(dv.STACK) - 1, dv.RETURN_SW - 1)
         self.sess.poke(nw(dv.STACK), 0x20000FF0)
         # the mask of the registered types, as voice 0 of an earlier block leaves it (the table holds the one row)
@@ -405,6 +457,12 @@ class MachineRig:
         samples = struct.unpack(
             "<32f", struct.pack("<32I", *[NAN if w is None else w for w in words])
         )
+        right = ()
+        if self.device == "dt2":
+            rw = [self.sess.peek(nw(out_addr + 0x80) + k) for k in range(32)]
+            right = struct.unpack(
+                "<32f", struct.pack("<32I", *[NAN if w is None else w for w in rw])
+            )
         bad = [
             n
             for n in dv.CONTEXT_REGS
@@ -421,15 +479,51 @@ class MachineRig:
             res,
             faults & 0xFFFF,
             foreign,
+            right,
+        )
+
+    def odd_block(self, ctx: dict | str | None = "friendly") -> tuple[float, ...]:
+        """DT2: the odd voice of the pair, called after `block` the way the engine does: it copies the even voice's block unless
+        the even voice wrote R. Returns the odd voice's 32 floats (NaN where nothing wrote)."""
+        if self.device != "dt2":
+            raise ValueError("only the Digitakt II has a voice pair")
+        ctx = dict(dv.FRIENDLY) if ctx == "friendly" else {**dv.FRIENDLY, **(ctx or {})}
+        v = 2 * self.track + 1
+        regs = {
+            **self._regs(ctx)[0],
+            "R4": dv.RECORDS + v * dv.REC,
+            "R8": dv.OUT + v * 0x80,
+            "R14": 32 - v,
+        }
+        self.sess.poke(nw(dv.STACK) - 1, dv.RETURN_SW - 1)
+        self.sess.poke(nw(dv.STACK), 0x20000FF0)
+        res = self.sess.call(
+            "_dv_entry", regs, max_steps=self.step_limit, read_regs=("I6", "I7")
+        )
+        assert res["halt"]["reason"] == "breakpoint", res["halt"]
+        words = [self.sess.peek(nw(dv.OUT + v * 0x80) + k) for k in range(32)]
+        return struct.unpack(
+            "<32f", struct.pack("<32I", *[NAN if w is None else w for w in words])
         )
 
     # -- the write set -----------------------------------------------------------------------------------------------------
     def _allowed(self, out_addr: int) -> list[tuple[int, int, str]]:
         """The DM a routine of the module may store to in a call of the current voice (docs/design/module-sdk.md 11.5 D6, <dk/machine.h>):
-        the output block, the voice's own state block (base + stride * track, `state_bytes`), its data stack and its own data and bss (shared by all voices) (`stack_bytes` words' worth, below the adapter's frame: the adapter lowers I7 by its frame before it calls the
-        module). A routine without a description (the raw form) has no state; it gets DEFAULT_STACK_BYTES of stack."""
+        the output block, the voice's own state block (base + stride * track, `state_bytes`), its data stack and its own data and bss (shared by all voices) (`stack_bytes` bytes below the device's actual module-entry I7). A routine without a description (the raw form) has no state; it gets DEFAULT_STACK_BYTES of stack."""
         b = self.built
         out = [(out_addr, 4 * 32, "output block")]
+        if self.device == "dt2":  # a stereo machine writes R into the odd voice's block
+            out.append((out_addr + 0x80, 4 * 32, "right output block"))
+        elif (
+            "_gs_rbuf" in self.built.data
+        ):  # DN2: the slot's R buffer (a stereo machine's R, dsp-voice-dn2-stereo.s)
+            out.append(
+                (
+                    self.built.data["_gs_rbuf"] + 128 * self.voice,
+                    4 * 32,
+                    "right output block",
+                )
+            )
         if b.desc:
             out.append(
                 (

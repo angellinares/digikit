@@ -10,6 +10,7 @@
 //!   kind 1 PARAM   (0x50): u32 index, template, slot; i32 min, max, default; name[32]; short[16]
 //!   kind 2 MACHINE (0x6c): u32 key, clone_of, position, own_dsp, level; i32 knobs[8]; name[24]; short[24]
 //!   kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II)
+//!   kind 5 ACTION  (0x10): u32 param (the index of a PARAM record of the same file), image offset of the click callback `void fn(u32 track)`
 //!   kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, id; tab[8]; title[24]; 7 knobs of (u32 position, display, f32 min, max, default; name[24]; short[8])
 //!                           (the page of a run-time effect, Digitakt II; `fx` is the index of the effect record in the DSP section; `id` is the
 //!                           effect's 16-bit ID, `effect_id`: the kit stores it with the effect's values, so a kit load restores values only to the effect they came from)
@@ -37,6 +38,9 @@ pub const LEN_MACHINE: usize = 0x6c;
 pub const LEN_PAGE: usize = 0x60;
 pub const KIND_EFFECT: u32 = 4;
 pub const LEN_EFFECT: usize = 0x1a4;
+/// kind 5 ACTION (0x10): u32 param, offset. The click callback of the file's PARAM record `param`: `offset` is its image offset (the runtime adds the load address).
+pub const KIND_ACTION: u32 = 5;
+pub const LEN_ACTION: usize = 0x10;
 /// Knobs of an effect page (the 8th word of its parameters is MIX), the text fields, and the MIX default's range (the knob's raw 0 .. 127).
 pub const EFFECT_KNOBS: usize = 7;
 pub const EFFECT_TAB: usize = 8;
@@ -161,6 +165,8 @@ pub struct EffectPage {
 pub struct Register {
     pub device: u32,
     pub params: Vec<Param>,
+    /// Click callbacks: (the PARAM record's index, the image offset of the function), by parameter.
+    pub actions: Vec<(u32, u32)>,
     pub machines: Vec<Machine>,
     pub pages: Vec<Page>,
     pub effects: Vec<EffectPage>,
@@ -452,6 +458,27 @@ impl Register {
         Ok(reg)
     }
 
+    /// The click callbacks of the module's parameters (`DK_PARAM_ACTION`): the image offset of each one's symbol. `symbols` are the
+    /// module's global ColdFire symbols with their offsets in the loaded image (`dkm::image_symbols`).
+    pub fn set_actions(
+        &mut self,
+        r: &DevResolved,
+        symbols: &std::collections::BTreeMap<String, u32>,
+    ) -> Result<()> {
+        self.actions.clear();
+        for (i, p) in r.params.iter().enumerate() {
+            let Some(func) = &p.action else { continue };
+            let off = symbols.get(func).ok_or_else(|| {
+                err!(
+                    "param {}: the click callback {func} is not a global function of the module (a static function has no symbol)",
+                    p.id
+                )
+            })?;
+            self.actions.push((i as u32, *off));
+        }
+        self.check()
+    }
+
     /// The checks the runtime repeats on the file.
     pub fn check(&self) -> Result<()> {
         let max = crate::sdkgen::limits_max();
@@ -489,9 +516,25 @@ impl Register {
                 }
             }
         }
+        let mut acted = vec![];
+        for &(param, off) in &self.actions {
+            if param as usize >= self.params.len() || acted.contains(&param) {
+                return Err(err!(
+                    "click action of param {param}: no such param in the file, or two actions"
+                ));
+            }
+            if off == u32::MAX {
+                return Err(err!("click action of param {param}: no callback offset"));
+            }
+            acted.push(param);
+        }
         let max_effects = max.fx_slots as usize;
         if self.effects.len() > max_effects
-            || self.params.len() + self.machines.len() + self.pages.len() + self.effects.len()
+            || self.params.len()
+                + self.actions.len()
+                + self.machines.len()
+                + self.pages.len()
+                + self.effects.len()
                 > MAX_RECORDS
         {
             return Err(err!(
@@ -534,8 +577,11 @@ impl Register {
         p32(&mut o, self.device);
         p32(
             &mut o,
-            (self.params.len() + self.machines.len() + self.pages.len() + self.effects.len())
-                as u32,
+            (self.params.len()
+                + self.actions.len()
+                + self.machines.len()
+                + self.pages.len()
+                + self.effects.len()) as u32,
         );
         for p in &self.params {
             p32(&mut o, KIND_PARAM);
@@ -548,6 +594,12 @@ impl Register {
             p32(&mut o, p.default as u32);
             put_text(&mut o, &p.name, PARAM_NAME);
             put_text(&mut o, &p.short, PARAM_SHORT);
+        }
+        for &(param, off) in &self.actions {
+            p32(&mut o, KIND_ACTION);
+            p32(&mut o, LEN_ACTION as u32);
+            p32(&mut o, param);
+            p32(&mut o, off);
         }
         for m in &self.machines {
             p32(&mut o, KIND_MACHINE);
@@ -635,6 +687,7 @@ impl Register {
                     name: txt(rec + 24, PARAM_NAME)?,
                     short: txt(rec + 24 + PARAM_NAME, PARAM_SHORT)?,
                 }),
+                (KIND_ACTION, LEN_ACTION) => reg.actions.push((g(rec)?, g(rec + 4)?)),
                 (KIND_MACHINE, LEN_MACHINE) => {
                     let mut knobs = [0u32; KNOBS];
                     for (j, k) in knobs.iter_mut().enumerate() {
@@ -727,6 +780,7 @@ mod tests {
                 name: "Decay".into(),
                 short: "DECAY".into(),
             }],
+            actions: vec![],
             machines: vec![Machine {
                 type_no: 16,
                 clone_of: 6,
@@ -964,6 +1018,24 @@ mod tests {
         assert!(ok(&|e| e.id = 0x1_0000));
         let big: Vec<_> = (0..8).map(|_| effect().knobs[0].clone()).collect();
         assert!(ok(&|e| e.knobs = big.clone()));
+    }
+
+    #[test]
+    fn click_actions_round_trip_and_are_checked() {
+        let mut r = sample();
+        r.actions = vec![(0, 0x1c4)];
+        r.check().unwrap();
+        let b = r.encode();
+        assert_eq!(Register::parse(&b).unwrap(), r);
+        // the record is 0x10 bytes: kind, length, param, offset
+        let at = b.len() - 0x10 - (LEN_MACHINE);
+        assert_eq!(&b[at..at + 16], &[0, 0, 0, 5, 0, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 1, 0xc4]);
+        // a param the file has not, two actions on one param, no offset
+        for bad in [vec![(1, 4)], vec![(0, 4), (0, 8)], vec![(0, u32::MAX)]] {
+            let mut r = sample();
+            r.actions = bad;
+            assert!(r.check().is_err());
+        }
     }
 
     #[test]

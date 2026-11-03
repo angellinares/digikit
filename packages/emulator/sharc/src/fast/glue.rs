@@ -1311,6 +1311,37 @@ mod tests {
     use crate::mem::Mem;
 
     #[test]
+    fn ddr_monitor_invalidates_cached_static_and_dynamic_windows() {
+        let mut s = St::new(Mem::new());
+        let a = 0x8001_0000;
+        for k in 0..64 {
+            s.mem.write_byte(a + k, 0);
+        }
+        s.r[18] = V::c(a as Int);
+        let mut spec = super::super::WinSpec {
+            base: Base::None,
+            lo: 0,
+            hi: 0,
+            ts: 0,
+            nf: 0,
+            read: true,
+            write: true,
+            dynamic_anchor: None,
+        };
+        let cache = std::cell::Cell::new(WinCache::NONE);
+        assert!(window_ptr(&mut s.mem, &cache, &spec, a, a as u64 + 4).is_some());
+        s.mem.set_ddr_monitor(Some((a, a + 4))).unwrap();
+        assert!(window_ptr(&mut s.mem, &cache, &spec, a, a as u64 + 4).is_none());
+        assert_eq!(s.mem.first_ddr_access(), None);
+        s.mem.set_ddr_monitor(None).unwrap();
+        spec.dynamic_anchor = Some(18);
+        assert!(dynamic_window_ptr(&mut s, &cache, &spec, 18).is_some());
+        s.mem.set_ddr_monitor(Some((a, a + 4))).unwrap();
+        assert!(dynamic_window_ptr(&mut s, &cache, &spec, 18).is_none());
+        assert_eq!(s.mem.first_ddr_access(), None);
+    }
+
+    #[test]
     fn dynamic_window_uses_alias_subspan_and_invalidates_cache() {
         let mut s = St::new(Mem::new());
         s.r[18] = V::c(0x24_ebb0);

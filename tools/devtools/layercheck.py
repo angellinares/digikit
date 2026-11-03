@@ -506,6 +506,10 @@ SC_ALLOWED_PREFIXES = (
     ".agents/",
     "tests/fixtures/modules/",
 )
+# Runtime integration acceptance uses shipped modules as fixtures. Only this test
+# and the runtimeAcceptance metadata may name them; runtime implementation may not.
+SC_RUNTIME_TEST = "modules/core/runtime/tests/capacity.device.test.ts"
+SC_RUNTIME_PROJECT = "modules/core/runtime/project.json"
 SC_SKIP_DIRS = {".git", "out", "node_modules", "target", "firmware", ".venv", "dist"}
 SC_HINT = (
     "move the test or model into the module's tests/ directory, use a fixture module (tests/fixtures/modules), "
@@ -563,12 +567,25 @@ def sc_hits(root: Path, mods: list[Module]) -> list[tuple[str, int, Module, str]
         )
     out = []
     for f in tracked_files(root):
-        if f.endswith(".md") or f.startswith(SC_ALLOWED_PREFIXES):
+        if (
+            f.endswith(".md")
+            or f.startswith(SC_ALLOWED_PREFIXES)
+            or f == SC_RUNTIME_TEST
+        ):
             continue
         data = (root / f).read_bytes()
         if b"\0" in data[:4096]:
             continue
         text = data.decode("utf-8", "replace")
+        if f == SC_RUNTIME_PROJECT:
+            acceptance = re.search(r'"runtimeAcceptance"\s*:\s*', text)
+            if acceptance:
+                start = acceptance.end()
+                _, end = json.JSONDecoder().raw_decode(text, start)
+                # Preserve line numbers and check all fields outside acceptance.
+                text = (
+                    text[:start] + re.sub(r"[^\n]", " ", text[start:end]) + text[end:]
+                )
         for m, d, pat in pats:
             if f.startswith(d + "/"):
                 continue

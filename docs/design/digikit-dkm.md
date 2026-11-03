@@ -145,7 +145,7 @@ All integers are big endian. Offsets are from the start of the section.
 | 0x2c | 4 | `voice_off`; 0x30: `voice_count` (at most 8) |
 | 0x34 | 4 | `fx_off`: offset of the effect records (version 4; 0 before) |
 | 0x38 | 4 | `fx_count`: effect records, at most 4 (`DK_FX_MAX`) (version 4; 0 before) |
-| 0x3c | 4 | reserved (0) |
+| 0x3c | 4 | `sample_off` (version 5): offset of a 32-byte record of little-endian words, 0 before. Word 0 is the kind: 1 a sample bank (local id, bank byte offset, capacity frames, descriptor byte offset), 2 the per-track sample table of API 1.5 (local id, byte offsets of the 16 `dk_strack` records, 512 bytes, and of the 16 control sets, 256 bytes; four zero words). The blocks lie in the initialized image, are zero and have no relocations in them. Version 5 keeps the voices and effects of version 4 |
 
 - **Imports**: 32-byte NUL padded names of DSP symbols the object references and does not define: today the helpers of `core/dsp-voice`
   (`_dv_exp2`, `_dv_frame_hw`, `_dv_frame_sw`). The runtime resolves them in `dyndsp_info` (module `core/dyndsp`): a name it does not

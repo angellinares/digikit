@@ -4,13 +4,13 @@
 # sdk/include/dk/gen/machine_consts.h, fx_consts.h, machine.h, fx.h and api.h from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
-version = "0.5.3"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
+version = "0.5.4"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
-api = [1, 2]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended
-machine = [1, 0]
+api = [1, 6]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path appended
+machine = [1, 2]    # minor 1: source track appended to voice_in, latched at note_on; minor 2: stereo machines (out_r appended to voice_in, DK_MACHINE_STEREO, DK_STEREO)
 fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
 
@@ -37,6 +37,22 @@ fields = [
     { name = "umoddi3", type = "addr", doc = "Address of the runtime's __umoddi3." },
     { name = "log_lv", type = "void (u32 level, const u8 *msg, u32 value)", doc = "Like `log`, with a level: 0 error, 1 warn, 2 info, 3 debug, 4 trace (above 4: 4).", since = 1 },
     { name = "register_cmds", type = "i32 (u32 first, u32 count, service_cmd handler)", doc = "Register the SysEx commands `first .. first + count` with `handler` (docs/design/module-sdk.md, \"Service commands\"). The range must lie inside one of the ranges sdk/sdk.toml `[protocol.ranges]` reserves and overlap no registered one; else it returns `proto::E_CMD_RANGE`. Call it from `init`; the range is released when the module's `fini` has run. Returns 0.", since = 2 },
+    { name = "sample_bank", type = "i32 (u32 local_id)", doc = "In init, resolve the module-owned sample bank to a positive opaque handle, or a negative DK_SAMPLE_E_* error.", since = 3 },
+    { name = "sample_load", type = "i32 (u32 handle, const u8 *path)", doc = "Queue one load from a NUL-terminated device sample path using a handle resolved in init. May be called from init or a service callback; copies the path without file IO. Returns 0 or a negative DK_SAMPLE_E_* error. The bank is retained once delivery starts.", since = 3 },
+    { name = "sample_status", type = "i32 (u32 handle)", doc = "Return DK_SAMPLE_UNUSED, QUEUED, LOADING, READY or a negative DK_SAMPLE_E_* error.", since = 3 },
+    { name = "files_client", type = "i32 ()", doc = "Init-only: acquire this module's listing client; positive handle or negative error. Retired before teardown/failed-init free.", since = 4 },
+    { name = "files_list", type = "i32 (u32 client, u32 root, const u8 *path, file_event notify, u8 *context)", doc = "Copy a canonical root-relative directory request; positive ticket or negative error. Supersedes prior results. Optional deferred UI-task notify/context remain module-owned until retirement quiesces. No I/O here.", since = 4 },
+    { name = "files_poll", type = "i32 (u32 client, u32 ticket, u8 *out, u32 capacity)", doc = "No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. Validate output/capacity before consumption; output unchanged unless 1. Stored metadata is not content validation or a lease.", since = 4 },
+    { name = "files_cancel", type = "i32 (u32 client, u32 ticket)", doc = "Invalidate matching request/results/queued notification without waiting for active work or callback. Does not free the module-owned client.", since = 4 },
+    { name = "sample_tracks", type = "i32 (u32 local_id)", doc = "In init, resolve the module's 16-entry sample pool table (DK_SAMPLE_TRACKS) to a positive opaque handle, or a negative DK_SAMPLE_E_* error. A module that also declares a bank gets DK_SAMPLE_E_CONTRACT.", since = 5 },
+    { name = "sample_pool_add", type = "i32 (u32 handle, const u8 *path)", doc = "Add a stereo-capable sample file to the module's 16-entry pool (copies the path, no file IO here; the load runs later). Returns the pool index 0..15: the first free entry, or the entry that already holds this path (a file added twice is one entry; one with a sticky error is selected again). Indexes are stable: clearing an entry leaves a hole and never moves another. DK_SAMPLE_E_POOL when all 16 are in use (-16); DK_SAMPLE_E_SEL_PATH for an empty or too long path; no sample backing in the image: DK_SAMPLE_E_CONTRACT.", since = 5 },
+    { name = "sample_pool_clear", type = "i32 (u32 handle, u32 index)", doc = "Close the entry's generation (its notes end), drop its reference and set it UNUSED, a hole in the pool. Returns 0 or a negative DK_SAMPLE_E_* error (index >= 16: DK_SAMPLE_E_CONTRACT).", since = 5 },
+    { name = "sample_pool_status", type = "i32 (u32 handle, u32 index)", doc = "Return DK_SAMPLE_UNUSED, QUEUED, LOADING, READY or a negative DK_SAMPLE_E_* error; an error is sticky until the entry is added again or cleared.", since = 5 },
+    { name = "sample_pool_info", type = "i32 (u32 handle, u32 index, u8 *out)", doc = "Copy a 16-byte dk_sample_info (frames, rate, channels, token; <dk/sample_track.h>) of a READY entry; otherwise a negative error and `out` is untouched.", since = 5 },
+    { name = "sample_pool_path", type = "i32 (u32 handle, u32 index, u8 *buf, u32 cap)", doc = "Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the entry into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched.", since = 6 },
+    { name = "param_get", type = "i32 (u32 track, u32 word)", doc = "Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). UI task only, and only in the flow of a click: from the DK_PARAM_ACTION callback until the page gets its next key or turn (so a list the callback opened may call it), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows.", since = 6 },
+    { name = "param_set", type = "i32 (u32 track, u32 word, i32 raw)", doc = "Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).", since = 6 },
+    { name = "sample_pool_set", type = "i32 (u32 handle, u32 index, const u8 *path)", doc = "Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path.", since = 6 },
 ]
 
 # Function types by name. As a parameter or field a name is a nullable pointer to the function (`Option<ServiceCmd>` in Rust, `dk_service_cmd *` in C).
@@ -45,6 +61,7 @@ fields = [
 # (`len` bytes, at most 160); the reply body goes to `out` (at most 879 bytes). Returns the number of reply bytes (0 or more: status ok), or a
 # negative status (a `proto::E_*` code or its own: sent as the reply's status with no body).
 service_cmd = "i32 (u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)"
+file_event = "void (u32 client, u32 request, i32 state, u8 *context)"
 
 # The machine contract's numbers (sdk/include/dk/gen/machine.h is the generated C view; it includes the generated sdk/include/dk/gen/machine_consts.h).
 # `patchkit gen` writes sdk/asm/dk_machine.inc and sdk/include/dk/gen/machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
@@ -56,6 +73,8 @@ consts = [
     { name = "DK_MAX_VOICES", value = 16, doc = "Voices a machine runs at once on any device." },
     { name = "DK_OK", value = 0, doc = "Returned by render: block written, voice continues." },
     { name = "DK_DONE", value = 1, doc = "Returned by render: block written (may be silence), voice has ended." },
+    { name = "DK_STEREO", value = 2, doc = "Or-ed into the status of render by a stereo machine (contract 1.2): `out_r` was written this block. DK_OK | DK_STEREO and DK_DONE | DK_STEREO. Without it the adapter treats the block as mono (L copied to R)." },
+    { name = "DK_MACHINE_STEREO", value = 256, doc = "Or-ed into dk_machine_desc.contract by a stereo machine (contract 1.2): the major number is the low byte (DK_MACHINE_V1)." },
     { name = "DK_P_PERCENT", value = 0, doc = "Word 0 .. 0x7f00, UI 0 .. 127." },
     { name = "DK_P_BIPOLAR", value = 1, doc = "0x4000 at rest, UI -64 .. +63." },
     { name = "DK_P_ENUM", value = 2, doc = "n steps, word = step * 256." },
@@ -63,7 +82,7 @@ consts = [
     { name = "DK_LEVEL_BOUND_BITS", value = 1090519040, doc = "|sample| above DK_LEVEL_BOUND is a fault (+18 dB over full scale)." },  # 8.0f
     { name = "DK_MAGIC", value = 1145785665, doc = "'DKMA', the first word of dk_machine_desc." },             # 'DKMA' = 0x444b4d41
 ]
-voice_in = ["pitch", "velocity", "block", "out"]           # struct dk_voice_in, DK_IN_*
+voice_in = ["pitch", "velocity", "block", "out", "track", "out_r"]           # struct dk_voice_in, DK_IN_*
 desc = [
     "magic", "contract", "n_params", "voices", "state_bytes",
     "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
@@ -83,10 +102,12 @@ voice_in = [
     "i32 velocity // 0 .. 127 << 8",
     "u32 block // blocks since note-on, 0 on the note-on block",
     "float *out // render writes DK_BLOCK floats here",
+    "u32 track // source track 0 .. 15, latched at note_on; machine contract 1.1",
+    "float *out_r // machine contract 1.2: a stereo machine writes the right channel, DK_BLOCK floats, and returns DK_STEREO; a mono machine never touches it",
 ]
 desc = [
     "u32 magic // DK_MAGIC",
-    "u32 contract // DK_MACHINE_V1",
+    "u32 contract // DK_MACHINE_V1 (low byte); a stereo machine (contract 1.2) or-s in DK_MACHINE_STEREO",
     "u32 n_params // 0 .. DK_MAX_PARAMS, the manifest's `params` order",
     "u32 voices // 1 .. DK_MAX_VOICES the module supports",
     "u32 state_bytes // per voice, a multiple of 4",
@@ -156,17 +177,52 @@ fns = [
 [desc]
 section = ".dk.desc"
 consts = [
+    { name = "DK_DESC_SAMPLE_BANK", value = 6, doc = "Record kind of dk_desc_sample_bank." },
+    { name = "DK_DESC_SAMPLE_TRACKS", value = 7, doc = "Record kind of dk_desc_sample_tracks." },
     { name = "DK_DESC_FX", value = 1, doc = "Record kind of dk_desc_fx." },
     { name = "DK_DESC_MACHINE", value = 2, doc = "Record kind of dk_desc_machine." },
     { name = "DK_DESC_PARAM", value = 3, doc = "Record kind of dk_desc_param." },
     { name = "DK_DESC_PAGE", value = 4, doc = "Record kind of dk_desc_page." },
     { name = "DK_DESC_FX_PARAM", value = 5, doc = "Record kind of dk_desc_fx_param." },
+    { name = "DK_DESC_PARAM_ACTION", value = 8, doc = "Record kind of dk_desc_param_action." },
+    { name = "DK_DESC_PARAM_GLYPH", value = 9, doc = "Record kind of dk_desc_param_glyph." },
+    { name = "DK_GLYPH_ENCODER", value = 0, doc = "Glyph (the dk_glyph values): a plain encoder knob, values 0 .. 127 (the default)." },
+    { name = "DK_GLYPH_FADER", value = 1, doc = "Glyph: a fader, values 0 .. 127." },
+    { name = "DK_GLYPH_PAN", value = 2, doc = "Glyph: a pan knob, values 0 .. 127 (centre 64, shows L/R)." },
+    { name = "DK_GLYPH_ONOFF", value = 3, doc = "Glyph: an on/off switch, values 0 .. 1." },
+    { name = "DK_GLYPH_TUNE", value = 4, doc = "Glyph: a tune knob, values 4 .. 124 (centre 64, one unit = one semitone)." },
+    { name = "DK_GLYPH_PLAY", value = 5, doc = "Glyph: a play-mode knob, values 0 .. 3 (REV, REV.L, FWD.L, FWD on the Digitakt II; the Digitone II shows 0 .. 3)." },
     { name = "DK_PAGE_KNOBS", value = 8, doc = "Encoders on a page." },
     { name = "DK_POS_AUTO", value = 255, doc = "The knob takes the lowest free position." },
     { name = "DK_PERCENT", value = 1, doc = "A knob shown as 0 .. 127 (the default)." },
     { name = "DK_BIPOLAR", value = 2, doc = "A knob shown as -64 .. +63." },
     { name = "DK_ROUTE_MASTER", value = 1, doc = "The effect runs on the master block." },
     { name = "DK_ROUTE_SEND", value = 2, doc = "The effect runs on a send bus (one amount per track)." },
+]
+
+[[desc.record]]
+name = "dk_desc_sample_bank"
+kind = "DK_DESC_SAMPLE_BANK"
+doc = "One module-owned DSP BSS sample bank and initialized zero descriptor. At most one per module."
+fields = [
+    "u32 kind // DK_DESC_SAMPLE_BANK",
+    "u32 size // sizeof(dk_desc_sample_bank)",
+    "u32 local_id // module-local numeric id",
+    "char bank[32] // module DSP BSS symbol",
+    "char descriptor[32] // module DSP initialized data symbol, four zero words",
+    "u32 capacity_frames // mono float frames, 1 .. 8192",
+]
+
+[[desc.record]]
+name = "dk_desc_sample_tracks"
+kind = "DK_DESC_SAMPLE_TRACKS"
+doc = "Per-track stereo sample table (API 1.5): 16 initially zero dk_strack records and one control set per track. At most one per module; not with a sample bank."
+fields = [
+    "u32 kind // DK_DESC_SAMPLE_TRACKS",
+    "u32 size // sizeof(dk_desc_sample_tracks)",
+    "u32 local_id // module-local numeric id",
+    "char records[32] // module DSP data symbol: 16 dk_strack records, 8 words each, zero",
+    "char control[32] // module DSP data symbol: 16 control sets of 4 words (closed, count, fault, reserved), zero",
 ]
 
 [[desc.record]]
@@ -214,6 +270,7 @@ fields = [
     "char render[32] // the SHARC+ symbol of the render routine",
     "char note_on[32] // the SHARC+ symbol of the note-on routine",
     "char desc[32] // the SHARC+ symbol of the dk_machine_desc",
+    "u32 stereo // 0 mono, 1 stereo (contract 1.2); must agree with DK_MACHINE_STEREO in the dk_machine_desc",
 ]
 
 [[desc.record]]
@@ -231,6 +288,30 @@ fields = [
     "i32 def // the default, raw",
     "char name[32] // 1 to 31 characters, shown while the knob turns",
     "char short_name[16] // 1 to 15 characters, under the knob",
+]
+
+[[desc.record]]
+name = "dk_desc_param_action"
+kind = "DK_DESC_PARAM_ACTION"
+doc = "A click on the knob of one parameter word of a machine calls a function of the module (docs/design/machine-page-click.md). At most one per parameter."
+fields = [
+    "u32 kind // DK_DESC_PARAM_ACTION",
+    "u32 size // sizeof(dk_desc_param_action)",
+    "char machine[16] // the id of the machine",
+    "u32 word // 0 .. 7, the parameter word of the machine whose knob is clicked; the machine declares it with DK_PARAM",
+    "char fn[32] // the ColdFire symbol of the callback, `void fn(u32 track)`: a global function of the module, called in the UI task",
+]
+
+[[desc.record]]
+name = "dk_desc_param_glyph"
+kind = "DK_DESC_PARAM_GLYPH"
+doc = "The look of one parameter word of a machine: its glyph (a dk_glyph value) selects the stock row whose knob picture, value text and step behaviour the parameter copies. At most one per parameter; without it the glyph is DK_GLYPH_ENCODER. Glyphs on effect parameters are not supported yet."
+fields = [
+    "u32 kind // DK_DESC_PARAM_GLYPH",
+    "u32 size // sizeof(dk_desc_param_glyph)",
+    "char owner[16] // the id of the machine (an effect id is refused for now)",
+    "u32 word // 0 .. 7, the parameter word of the machine; the machine declares it with DK_PARAM",
+    "u32 glyph // DK_GLYPH_ENCODER .. DK_GLYPH_PLAY",
 ]
 
 [[desc.record]]
@@ -356,6 +437,14 @@ requires = "core/ui"
 absent = "void"
 
 [[import]]
+name = "dk_ui_select"
+sig = "void (u8 *menu, i32 row)"
+doc = "Put the cursor of a menu or list on a row (clamped); call before dk_ui_open to start on the current choice. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "void"
+
+[[import]]
 name = "dk_ui_is_open"
 sig = "i32 (const u8 *menu)"
 doc = "1 when the menu is open. See <dk/ui.h>."
@@ -447,6 +536,14 @@ absent = "-1"
 name = "dk_ui_toast"
 sig = "i32 (const char *text)"
 doc = "A short message on the main screen; -1 when it cannot be shown. See <dk/ui.h>."
+kind = "helper"
+requires = "core/ui"
+absent = "-1"
+
+[[import]]
+name = "dk_ui_tick"
+sig = "i32 (u8 *cb, u8 *ctx, u32 period_ms)"
+doc = "Call `cb(ctx)` about every `period_ms` in the UI task (period 0 removes it); 0 when set, -1 when it cannot be (no core/ui, table full). See <dk/ui.h>."
 kind = "helper"
 requires = "core/ui"
 absent = "-1"
@@ -697,6 +794,30 @@ id = 36
 name = "FAULT_FOUND"
 args = ["kind_site_stage", "id", "step", "at", "module"]
 
+# a sample load finished and its handle was seen first; `entry` is client << 8 | pool index, `result` 0 for a usable handle
+[[log.kind]]
+id = 37
+name = "POOL_LOAD"
+args = ["entry", "result", "frames", "base_l", "token"]
+
+# a track record went to the DSP; `entry` is client << 8 | track
+[[log.kind]]
+id = 38
+name = "POOL_PUBLISH"
+args = ["entry", "token", "frames", "base_l", "base_r"]
+
+# the pool backing reported that every handle is lost; `count` counts these calls since the start
+[[log.kind]]
+id = 39
+name = "POOL_LOST"
+args = ["count", "-", "-", "-", "-"]
+
+# a handle was dropped as invalid (`entry` is client << 8 | pool index, client 0xff in the periodic check); `reason` 1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed (the check's result in the high 16 bits); the first 64 drops and then every 64th are logged
+[[log.kind]]
+id = 40
+name = "POOL_INVALID"
+args = ["entry", "reason", "token", "count", "-"]
+
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
 
@@ -855,6 +976,9 @@ E_SLOT = { code = -11, text = "a slot it binds is taken" }
 E_BUSY = { code = -12, text = "a task is still inside the module" }
 E_TOO_BIG = { code = -13, text = "larger than the staging buffer" }
 E_TABLE_FULL = { code = -14, text = "no free module record" }
+E_LOST = { code = -15, text = "the sample backing was lost and the reload failed" }
+E_POOL = { code = -16, text = "the sample pool is full" }
+E_CHANGED = { code = -17, text = "the sample file differs from the selection snapshot" }
 E_NO_REGISTRY = { code = -20, text = "register records, but the image has no registry" }
 E_REG_DEVICE = { code = -21, text = "the records are for another device" }
 E_TYPE_RANGE = { code = -22, text = "machine type outside the range, or bad clone_of" }

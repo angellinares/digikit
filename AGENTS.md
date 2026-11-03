@@ -62,13 +62,13 @@ Use the owner's command while iterating. Full command details, preparation and r
 
 Test levels: unit tests run without a device. Device tests are TypeScript (Vitest) and live with their subject: `modules/<kind>/<name>/tests/*.device.test.ts` in the module project they test, `core/*` included, registered in that project's `runtimeAcceptance` metadata, which `modules.mjs` reads (modules, aliases, plusdrive). Only stock-firmware oracles (`tests/regression/dt2`, `tests/regression/scenarios`) and the shared harness stay in `tests/regression`; `tests/regression/runtime` holds only shared harness helpers. Device tests share their steps through the harness helpers (`expectRuntimeReady`, `waitEmulated`, `tap`, `captureNote`, `drainInputs`, `runtime/fixtures.ts`) instead of local copies. Waits are in emulated time or on firmware state; wall time only guards against a hang. Python tests test Python tools. Python device scenarios remain for module equivalence (`modules/machines/*/tests/scenarios/equiv-*.toml`), the two pluck menu flows and `pages-dyn-pluck` (same folder), and `tests/digikit/scenarios/upload-rust.toml`; the patchkit smoke matrix stays Python (`gate-smoke`, `tools/patchkit/pk_harness.py`). A Python scenario is deleted once its TypeScript port passes on both devices ([ledgers](docs/plans/ledgers/)). Tests must test our behaviour: no tests of third-party behaviour, of constants against themselves, or of exact command argv. Gate checks are commands, not test files.
 
-Before merging, run `mise run gate` once (`DIGI_GATE_BASE` sets another base); selection and targets are in [testing](docs/TESTING.md) "The gate". Iteration checks do not replace it. The coordinator owns the gate and integration. Do not repeat passed checks without a new change or unresolved concern. Run only the tests that the changed files select. When the selection is wider than the change can reach, fix the project inputs and edges (`tools/nx/*.mjs`, `project.json`) instead of running the wide set.
+Before merging, run `mise run gate` once (`DIGI_GATE_BASE` sets another base); selection and targets are in [testing](docs/TESTING.md) "The gate". Iteration checks do not replace it. Do not repeat passed checks without a new change or unresolved concern. Run only the tests that the changed files select. When the selection is wider than the change can reach, fix the project inputs and edges (`tools/nx/*.mjs`, `project.json`) instead of running the wide set.
 
 The local `.nx/` cache is per worktree. Module `test-device` and `test-conformance` (and other cached targets) also use the clone's shared remote cache (`tools/nx/remote-cache.mjs`; `mise run gate` writes, `test:changed` reads). A target may set `cache: true` only while `uv run python -m tools.devtools.nx_input_audit PROJECT:TARGET` passes (for cargo targets also `node tools/nx/cargo-depfiles.mjs`); see [testing](docs/TESTING.md) "Nx cache". The `digi-emud` daemons are not Nx targets: `verify_build daemons` keeps them in a store shared by all worktrees.
 
 Do not run test directories, full tier sweeps, or smoke `--update` across all cells while iterating. Use quick proof modes; the gate owns smoke coverage. Reserve `mise run gate:full` for generated-core changes before merging to `main`. Preserve SHARC golden hashes for refactors; explain intentional updates. PCM pins in `tests/scenarios/*.json` require Em's approval.
 
-The gate manages one CPU budget. Do not start another gate or Cargo build while it runs. Put long runs in the background; poll with an exit condition and at most 60 seconds per call. Never use `tail -f`.
+Put long runs in the background; poll with an exit condition and at most 60 seconds per call. Never use `tail -f`.
 
 ## Development and analysis
 
@@ -82,8 +82,6 @@ SHARC instruction semantics belong only in `tools/sharc_dev/sharc_core/`; trace/
 
 Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py`, `sharc_regionbench.py`, `pk_modcheck` and the scenario runner already take the lock; do not wrap them again (it deadlocks). Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
 
-## Delegation
-
-Follow the user's delegation policy and configured roles. Keep one writer per worktree; read-only agents do not edit. Hand off evidence, validation and residual risks; the coordinator reviews diffs and integrates.
+## Worktrees
 
 Use warm lanes (`tools/devtools/lane.sh NAME [BASE]`) for parallel native edits or long measurements; small edits and reading stay in the main tree. Lanes share artifacts and the virtualenv: do not change Python dependencies there. Use a separate dev-server port per lane.

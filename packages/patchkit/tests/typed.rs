@@ -34,17 +34,17 @@ fn digest_without_dsp(syx: &[u8]) -> String {
     sha256_hex(&buf)
 }
 
-/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a) and 2026-10-21 with the move of a plucked-string machine to test/patched-pluck (P3e-1): patch record only
+/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a) and 2026-10-21 with the move of a plucked-string machine to test/patched-pluck (P3e-1): patch record only; DN2 pin moved 2026-11-02 with the shared knob map (param_slots [1, 2, 4, 5, 6, 0, 3, 7]): the page knobs sit on B C E F
 const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "test/patched-pluck",
-        "5c4a69710cc8ca3012e251c1c50380b11b4856bafe6597de75aa500b5c5e7c3e",
+        "936b551870c40b71b04a5a2c5cf59ba651c1fdcfe185ce9668a06799db3b490b",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "test/patched-pluck",
-        "01e1d441c6e9bdfd5bb82eb5d3f2f39493d6ce4f16c61d121622dfc0da74ea40",
+        "da143c2d67df5358cbc597c9a219509f70bef17fc534b70b6cfad8aa09880f6f",
     ),
 ];
 
@@ -97,7 +97,7 @@ fn generated_files_are_current() {
 }
 
 /// What pluck's DSP sources hard-code must be what the device models say (finding 04: frame words of the machine
-/// slots; pluck.s: `0x6d + 48 t`, offsets 1, 2, 6, 7; pluck_dn2.s: `0x6d + 0x49 v`, offsets 0 .. 3).
+/// slots; pluck.s: `0x6d + 48 t`, offsets 1, 2, 6, 7; pluck_dn2.s: `0x6d + 0x49 v`, offsets 1, 2, 4, 5).
 #[test]
 fn device_models_match_the_hard_coded_frame_layout_of_pluck() {
     let Some(lib) = library() else {
@@ -130,8 +130,8 @@ fn device_models_match_the_hard_coded_frame_layout_of_pluck() {
     assert_eq!((p[0].2, p[3].2), (26, 32));
     let (_, stride, p) = layout("dn2");
     assert_eq!(stride, 73);
-    assert_eq!((p[0].1, p[3].1), (0, 3));
-    assert_eq!((p[0].3, p[3].3), (25, 28));
+    assert_eq!((p[0].1, p[3].1), (1, 5)); // knobs B and F: `param_slots` [1, 2, 4, 5, ...]
+    assert_eq!((p[0].3, p[3].3), (26, 30));
     let files = modgen::generate(&lib, &models, "test/patched-pluck").unwrap();
     let g: serde_json::Value = serde_json::from_str(&files[0].1).unwrap();
     let dt2 = &g["machines"][0]["devices"]["dt2"];

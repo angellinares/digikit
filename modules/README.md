@@ -333,7 +333,7 @@ The declarations are lowered per device into the rows of `core/machines`, `core/
 
 - You write parameters and knobs. The device profile places them (`[modules.knobs]`, `[modules.templates]` and `[modules.frame]` in
   `devices/<device>.toml`). A device file that has no `[modules]` section takes no machine declarations, and a new device is a new TOML file.
-- A `DK_PARAM` takes the profile's `plain` template. The knobs of a `DK_PAGE` (`DK_KNOB(n)`) name parameters of the module.
+- A `DK_PARAM` takes the profile's `encoder` template unless a `DK_PARAM_GLYPH` record picks `fader`, `pan`, `onoff` or `tune`. The knobs of a `DK_PAGE` (`DK_KNOB(n)`) name parameters of the module.
 - Parameter codes follow the order of the `DK_PARAM` records (`params.<id>.index`). Type numbers stay permanent
   (`modules/core/adapters/machines/types.toml`); the lowering needs none.
 - Lowered rows, per device: `voices` (`type = machines.<id>.index`, `pc = render`), `machines`, `params`, `pages`.
@@ -348,7 +348,7 @@ The device model, from `devices/digitakt-ii.toml` (comments in the files):
 
 ```toml
 [modules.knobs]   # count, slot_base, to = "machine" | "page", knob_field, slot_field, level_field, level_default, own_dsp
-[modules.templates] # template names for [[param]] (`plain`, ...) and their stock codes
+[modules.templates] # template names for [[param]] (`encoder`, `fader`, `pan`, `onoff`, `tune`: the glyphs) and their stock codes
 [modules.frame]   # base, stride, group, gap, mirror_base: where the DSP finds knob j of track t
 ```
 

@@ -10,6 +10,10 @@
 #define DK_MAX_PARAMS 8
 /* Voices a machine runs at once on any device. */
 #define DK_MAX_VOICES 16
+/* Or-ed into the status of render by a stereo machine (contract 1.2): `out_r` was written this block. DK_OK | DK_STEREO and DK_DONE | DK_STEREO. Without it the adapter treats the block as mono (L copied to R). */
+#define DK_STEREO 2
+/* Or-ed into dk_machine_desc.contract by a stereo machine (contract 1.2): the major number is the low byte (DK_MACHINE_V1). */
+#define DK_MACHINE_STEREO 256
 /* |sample| above DK_LEVEL_BOUND is a fault (+18 dB over full scale). */
 #define DK_LEVEL_BOUND_BITS 1090519040
 #define DK_LEVEL_BOUND 8.0f
@@ -38,12 +42,16 @@ typedef enum {
 #define DK_IN_VELOCITY 4
 #define DK_IN_BLOCK 8
 #define DK_IN_OUT 12
-#define DK_IN_BYTES 16
+#define DK_IN_TRACK 16
+#define DK_IN_OUT_R 20
+#define DK_IN_BYTES 24
 #define DK_IN_W_PITCH 0
 #define DK_IN_W_VELOCITY 1
 #define DK_IN_W_BLOCK 2
 #define DK_IN_W_OUT 3
-#define DK_IN_WORDS 4
+#define DK_IN_W_TRACK 4
+#define DK_IN_W_OUT_R 5
+#define DK_IN_WORDS 6
 #define DK_DESC_MAGIC 0
 #define DK_DESC_CONTRACT 4
 #define DK_DESC_N_PARAMS 8

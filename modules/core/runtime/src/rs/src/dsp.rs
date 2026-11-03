@@ -96,6 +96,12 @@ const SPIN: u32 = 4_000_000;
 pub const PH_IDLE: u32 = 0;
 pub const PH_SEND: u32 = 1;
 pub const PH_ROWS: u32 = 2;
+const PH_QUARANTINE: u32 = 3;
+// Cleanup could not establish row invalidation/CF drain. Keep every allocation
+// and transfer source untouched until reboot; unlike PH_QUARANTINE, never poll.
+const PH_RETAINED: u32 = 4;
+
+pub unsafe fn retained() -> bool { ds().phase == PH_RETAINED }
 
 // words of `dyndsp_info` (byte offset / 4)
 const I_MAGIC: usize = 0;
@@ -234,15 +240,18 @@ fn fn_addr(f: unsafe extern "C" fn()) -> usize {
 
 /// The info table of `core/dyndsp`, or null.
 unsafe fn info() -> *const u32 {
-    let a = fn_addr(dyndsp_info);
-    if a == 0 {
-        return core::ptr::null();
+    #[cfg(test)] { return crate::cleanup_tests::voice_info(); }
+    #[cfg(not(test))] {
+        let a = fn_addr(dyndsp_info);
+        if a == 0 {
+            return core::ptr::null();
+        }
+        let p = a as *const u32;
+        if read_volatile(p.add(I_MAGIC)) != INFO_MAGIC {
+            return core::ptr::null();
+        }
+        p
     }
-    let p = a as *const u32;
-    if read_volatile(p.add(I_MAGIC)) != INFO_MAGIC {
-        return core::ptr::null();
-    }
-    p
 }
 
 unsafe fn iw(k: usize) -> u32 {
@@ -251,18 +260,21 @@ unsafe fn iw(k: usize) -> u32 {
 
 /// The table of `core/dynfx`, or null (also when it is for another device or has another row size than the runtime knows).
 unsafe fn finfo() -> *const u32 {
-    let a = fn_addr(dynfx_info);
-    if a == 0 || info().is_null() {
-        return core::ptr::null();
+    #[cfg(test)] { return crate::cleanup_tests::fx_info(); }
+    #[cfg(not(test))] {
+        let a = fn_addr(dynfx_info);
+        if a == 0 || info().is_null() {
+            return core::ptr::null();
+        }
+        let p = a as *const u32;
+        if read_volatile(p.add(F_MAGIC)) != FX_INFO_MAGIC
+            || read_volatile(p.add(F_DEVICE)) != iw(I_DEVICE)
+            || read_volatile(p.add(F_WORDS)) != FX_ROW_WORDS
+        {
+            return core::ptr::null();
+        }
+        p
     }
-    let p = a as *const u32;
-    if read_volatile(p.add(F_MAGIC)) != FX_INFO_MAGIC
-        || read_volatile(p.add(F_DEVICE)) != iw(I_DEVICE)
-        || read_volatile(p.add(F_WORDS)) != FX_ROW_WORDS
-    {
-        return core::ptr::null();
-    }
-    p
 }
 
 unsafe fn fiw(k: usize) -> u32 {
@@ -346,7 +358,7 @@ pub unsafe fn fx_set_route(k: usize, route: u32, amt: [u32; 4]) {
 /// An effect row whose words are in the DSP: claimed, published and no load in progress, so a one-word write can go out.
 pub unsafe fn fx_live(k: usize) -> bool {
     let d = ds();
-    k < MAX_FX && d.fx_owner[k] != 0 && d.fx_pub[k] != 0 && d.phase == PH_IDLE && d.nwait == 0
+    k < MAX_FX && d.fx_owner[k] != 0 && d.fx_pub[k] != 0 && d.phase == PH_IDLE && d.nwait == 0 && !crate::sample::busy() && !crate::tracks::busy()
 }
 
 /// The effect row's words in the chain: word `w` of row `k` (a one-word write through window 2).
@@ -367,19 +379,34 @@ unsafe fn have_link() -> bool {
 }
 
 unsafe fn call_send(dst: u32, buf: *const u8, len: u32) -> i32 {
-    let f: unsafe extern "C" fn(u32, *const u8, u32) -> i32 = core::mem::transmute(fn_addr(dl_send));
-    f(dst, buf, len)
+    if retained() { return -2; }
+    #[cfg(test)] { return crate::cleanup_tests::send_image(dst, buf, len); }
+    #[cfg(not(test))] {
+        let f: unsafe extern "C" fn(u32, *const u8, u32) -> i32 = core::mem::transmute(fn_addr(dl_send));
+        f(dst, buf, len)
+    }
 }
 
 unsafe fn call_send_win(win: u32, dst: u32, buf: *const u32, len: u32) -> i32 {
-    let f: unsafe extern "C" fn(u32, u32, *const u32, u32) -> i32 =
-        core::mem::transmute(fn_addr(dl_send_win));
-    f(win, dst, buf, len)
+    #[cfg(test)] { return crate::cleanup_tests::send_word(win, dst, buf, len); }
+    #[cfg(not(test))] {
+        let f: unsafe extern "C" fn(u32, u32, *const u32, u32) -> i32 =
+            core::mem::transmute(fn_addr(dl_send_win));
+        f(win, dst, buf, len)
+    }
 }
 
 unsafe fn call_poll(s: *mut DlStatus) -> i32 {
-    let f: unsafe extern "C" fn(*mut DlStatus) -> i32 = core::mem::transmute(fn_addr(dl_poll));
-    f(s)
+    #[cfg(test)] {
+        let (state, err) = crate::cleanup_tests::poll_state();
+        (*s).state = state;
+        (*s).err = err;
+        return 0;
+    }
+    #[cfg(not(test))] {
+        let f: unsafe extern "C" fn(*mut DlStatus) -> i32 = core::mem::transmute(fn_addr(dl_poll));
+        f(s)
+    }
 }
 
 pub unsafe fn init_once() {
@@ -483,6 +510,7 @@ pub struct Job {
     /// The effect records (version 4), `FX_REC` bytes each.
     pub fxs: *const u8,
     pub nfx: u32,
+    pub bank: *const u8,
     import_vals: [u32; MAX_IMPORTS as usize],
 }
 
@@ -502,6 +530,7 @@ impl Job {
             vstride: VOICE_V2,
             fxs: core::ptr::null(),
             nfx: 0,
+            bank: core::ptr::null(),
             import_vals: [0; MAX_IMPORTS as usize],
         }
     }
@@ -559,7 +588,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     }
     let s = f.add(off as usize);
     let version = rd32(s.add(4));
-    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2 && version != 3 && version != 4) {
+    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2 && version != 3 && version != 4 && version != 5) {
         return E_DSP_FORMAT;
     }
     if !have_link() {
@@ -575,13 +604,15 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     let (import_off, nimport) = (rd32(s.add(0x24)), rd32(s.add(0x28)));
     let (voice_off, nvoice) = (rd32(s.add(0x2c)), rd32(s.add(0x30)));
     // version 4: the effect records (0x34 offset, 0x38 count)
-    let (fx_off, nfx) = if version == 4 { (rd32(s.add(0x34)), rd32(s.add(0x38))) } else { (0, 0) };
+    let (fx_off, nfx) = if version >= 4 { (rd32(s.add(0x34)), rd32(s.add(0x38))) } else { (0, 0) };
     let vstride = match version {
         1 => VOICE_V1,
         2 => VOICE_V2,
         _ => VOICE_V3,
     };
-    if image_size == 0
+    if image_size > iw(I_AREA_BYTES)
+        || bss > iw(I_AREA_BYTES)
+        || image_size == 0
         || image_size & 3 != 0
         || bss & 3 != 0
         || !(8..=GRANULE).contains(&align)
@@ -597,6 +628,72 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         || !in_sec(voice_off, nvoice * vstride, size)
     {
         return E_DSP_FORMAT;
+    }
+    let bank_off = if version == 5 { rd32(s.add(0x3c)) } else { 0 };
+    if version == 5 {
+        if bank_off < 64 || bank_off & 3 != 0 || !in_sec(bank_off, 32, size) {
+            return E_DSP_FORMAT;
+        }
+        // The record must not alias another section table or the initialized image.
+        for (o, n) in [
+            (image_off, image_size),
+            (reloc_off, nreloc * 8),
+            (import_off, nimport * 32),
+            (voice_off, nvoice * vstride),
+            (fx_off, nfx * FX_REC),
+        ] {
+            if n != 0 && bank_off < o + n && o < bank_off + 32 {
+                return E_DSP_FORMAT;
+            }
+        }
+        let regions = [
+            (image_off, image_size),
+            (reloc_off, nreloc * 8),
+            (import_off, nimport * 32),
+            (voice_off, nvoice * vstride),
+            (fx_off, nfx * FX_REC),
+        ];
+        for (i, &(o, n)) in regions.iter().enumerate() {
+            if n != 0 && o < 64 {
+                return E_DSP_FORMAT;
+            }
+            for &(p, m) in &regions[..i] {
+                if n != 0 && m != 0 && o < p + m && p < o + n {
+                    return E_DSP_FORMAT;
+                }
+            }
+        }
+        let b = s.add(bank_off as usize);
+        let record = core::slice::from_raw_parts(b, 32);
+        let image = core::slice::from_raw_parts(s.add(image_off as usize), image_size as usize);
+        // The record is a bank (kind 1) with its descriptor, or a per-track table (kind 2) with its two blocks.
+        if rd32le(b) == 2 {
+            if !dkrt_sdk::sample_job::valid_tracks(record, image) {
+                return E_DSP_FORMAT;
+            }
+            // Relocations cannot turn the initially empty table into a published one.
+            let (records, control) = (rd32le(b.add(8)), rd32le(b.add(12)));
+            for k in 0..nreloc {
+                let at = rd32(s.add((reloc_off + k * 8) as usize));
+                if (at < records + dkrt_sdk::sample_job::TRACK_RECORDS_BYTES && records < at.saturating_add(6))
+                    || (at < control + dkrt_sdk::sample_job::TRACK_CONTROL_BYTES && control < at.saturating_add(6))
+                {
+                    return E_DSP_FORMAT;
+                }
+            }
+        } else {
+            if !dkrt_sdk::sample_job::valid_bank(record, image, bss) {
+                return E_DSP_FORMAT;
+            }
+            let desc = rd32le(b.add(16));
+            // Relocations cannot turn the initially empty descriptor into a published one.
+            for k in 0..nreloc {
+                let at = rd32(s.add((reloc_off + k * 8) as usize));
+                if at < desc + 16 && desc < at.saturating_add(6) {
+                    return E_DSP_FORMAT;
+                }
+            }
+        }
     }
     // version 3 voices: the state counts must be sane before the range is computed from them
     if vstride == VOICE_V3 {
@@ -661,8 +758,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         let o = rd32(e);
         let w = rd32(e.add(4));
         let (kind, class, imp) = (w >> 28, (w >> 24) & 15, w & 0xffff);
-        if o > image_size - 6 || kind > 1 || class > 2 || (class == 2 && imp >= nimport) || (kind == 0 && class == 1)
-        {
+        if o > image_size - 6 || kind > 1 || class > 2 || (class == 2 && imp >= nimport) || (kind == 0 && class == 1) {
             return E_DSP_FORMAT;
         }
         i += 1;
@@ -721,6 +817,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     job.vstride = vstride;
     job.fxs = s.add(fx_off as usize);
     job.nfx = nfx;
+    job.bank = if version == 5 { s.add(bank_off as usize) } else { core::ptr::null() };
     OK
 }
 
@@ -738,6 +835,11 @@ unsafe fn put_le16(p: *mut u8, v: u32) {
 /// Reserve everything a module's DSP part needs: a range in the area, an arena block with the relocated image, the voice rows.
 /// Nothing is sent yet. On an error nothing is left reserved.
 pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
+    if retained() { return E_BUSY; }
+    // a track table needs a free client slot: refuse before anything is reserved
+    if !job.bank.is_null() && rd32le(job.bank) == 2 && !crate::tracks::can_reserve() {
+        return E_TABLE_FULL;
+    }
     let d = ds();
     let len = (extent(job.image_size, job.bss, job.voices, job.nvoice, job.vstride, job.fxs, job.nfx) + GRANULE - 1) & !(GRANULE - 1);
     let off = match alloc_range(len, job.align) {
@@ -855,6 +957,20 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
         frow += 1;
         f += 1;
     }
+    if !job.bank.is_null() {
+        if rd32le(job.bank) == 2 {
+            // a client slot was checked free at the start of this function
+            crate::tracks::reserve(rec, rd32le(job.bank.add(4)), base + rd32le(job.bank.add(8)), base + rd32le(job.bank.add(12)));
+        } else {
+            crate::sample::reserve(
+                rec,
+                rd32le(job.bank.add(4)),
+                base + rd32le(job.bank.add(8)),
+                rd32le(job.bank.add(12)),
+                base + rd32le(job.bank.add(16)),
+            );
+        }
+    }
     d.mod_fx[rec] = fclaimed;
     d.mod_off[rec] = off;
     d.mod_len[rec] = len;
@@ -867,6 +983,8 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
 
 /// Give back what `reserve` took for module record `rec` (the rows must have been cleared first).
 unsafe fn unreserve(rec: usize) {
+    crate::sample::remove(rec);
+    crate::tracks::remove(rec);
     let d = ds();
     let mut k = 0;
     while k < MAX_ROWS {
@@ -937,6 +1055,7 @@ pub unsafe fn module_of_fx_table_row(r: u32) -> Option<usize> {
 
 /// Undo a `reserve` that was never started (the CF side failed after it).
 pub unsafe fn cancel(rec: usize) {
+    if retained() { return; }
     let d = ds();
     if d.send_buf != 0 {
         arena::free(d.send_buf as *mut u8);
@@ -949,6 +1068,7 @@ pub unsafe fn cancel(rec: usize) {
 
 /// Start writing `value` into word `word` of window `win` (1 the voice rows, 2 the effect rows); false when the link refused (busy: try again).
 unsafe fn start_word(win: u32, word: u32, value: u32) -> bool {
+    if retained() { return false; }
     let d = ds();
     // the link sends the bytes of the buffer as little-endian DSP words; this is a big-endian ColdFire long
     d.word = (value << 24) | ((value & 0xff00) << 8) | ((value >> 8) & 0xff00) | (value >> 24); // byte swap by hand: no libgcc here
@@ -957,7 +1077,15 @@ unsafe fn start_word(win: u32, word: u32, value: u32) -> bool {
 
 /// `Some(true)` done, `Some(false)` failed, `None` still running.
 unsafe fn poll_done() -> Option<bool> {
-    let mut s = DlStatus { state: 0, err: 0, nchunks: 0, acked: 0, sent: 0, resent: 0, nerr: 0 };
+    let mut s = DlStatus {
+        state: 0,
+        err: 0,
+        nchunks: 0,
+        acked: 0,
+        sent: 0,
+        resent: 0,
+        nerr: 0,
+    };
     call_poll(&mut s);
     match s.state {
         DL_DONE => Some(true),
@@ -996,65 +1124,82 @@ unsafe fn write_word_blocking(win: u32, word: u32, value: u32) -> bool {
 }
 
 /// Free the rows module record `rec` published: the type word first, so the scan skips the row at once.
-unsafe fn clear_rows(rec: usize) {
+unsafe fn clear_rows(rec: usize) -> bool {
     let d = ds();
     let first = iw(I_VFIRST);
     let mut k = 0;
     while k < MAX_ROWS {
         if d.row_owner[k] == rec as u8 + 1 && d.row_pub[k] != 0 {
-            write_word_blocking(WIN_VOICES, ROW_WORDS * (first + k as u32), FREE_TYPE);
+            if !write_word_blocking(WIN_VOICES, ROW_WORDS * (first + k as u32), FREE_TYPE) { return false; }
             d.row_pub[k] = 0;
         }
         k += 1;
     }
+    true
 }
 
 /// Free the effect rows module record `rec` published: the pc first, so the chain skips the row at once; then the adapter's words (`was`, `dis`, the fault
 /// window and its count) back to 0, so the next effect on the row starts clean.
-unsafe fn clear_fx_rows(rec: usize) {
+unsafe fn clear_fx_rows(rec: usize) -> bool {
     let d = ds();
     if finfo().is_null() {
-        return;
+        // Missing info is harmless only when no owned row was published.
+        let mut k = 0;
+        while k < MAX_FX {
+            if d.fx_owner[k] == rec as u8 + 1 && d.fx_pub[k] != 0 { return false; }
+            k += 1;
+        }
+        return true;
     }
     let first = fiw(F_FIRST);
     let mut k = 0;
     while k < MAX_FX {
         if d.fx_owner[k] == rec as u8 + 1 && d.fx_pub[k] != 0 {
             let at = FX_ROW_WORDS * (first + k as u32);
-            write_word_blocking(WIN_FX, at + FXW_PC, FX_FREE_PC);
+            if !write_word_blocking(WIN_FX, at + FXW_PC, FX_FREE_PC) { return false; }
             // the next effect on the row starts on the master route with no amounts (finding 62)
-            write_word_blocking(WIN_FX, at + FXW_ROUTE, 0);
+            if !write_word_blocking(WIN_FX, at + FXW_ROUTE, 0) { return false; }
             let mut w = 0;
             while w < 4 {
-                write_word_blocking(WIN_FX, at + FXW_AMT0 + w, 0);
+                if !write_word_blocking(WIN_FX, at + FXW_AMT0 + w, 0) { return false; }
                 w += 1;
             }
-            write_word_blocking(WIN_FX, at + FXW_WAS, 0);
-            write_word_blocking(WIN_FX, at + FXW_MIX, MIX_ONE);
-            write_word_blocking(WIN_FX, at + FXW_DIS, 0);
-            write_word_blocking(WIN_FX, at + FXW_WSTART, 0);
-            write_word_blocking(WIN_FX, at + FXW_WCOUNT, 0);
+            if !write_word_blocking(WIN_FX, at + FXW_WAS, 0) { return false; }
+            if !write_word_blocking(WIN_FX, at + FXW_MIX, MIX_ONE) { return false; }
+            if !write_word_blocking(WIN_FX, at + FXW_DIS, 0) { return false; }
+            if !write_word_blocking(WIN_FX, at + FXW_WSTART, 0) { return false; }
+            if !write_word_blocking(WIN_FX, at + FXW_WCOUNT, 0) { return false; }
             d.fx_pub[k] = 0;
         }
         k += 1;
     }
+    true
 }
 
-/// Take the DSP part of module record `rec` down (a failed boot-time load): its voice rows, then its range. (The machine row is already gone.)
-pub unsafe fn release(rec: usize) {
-    let d = ds();
-    if d.mod_len[rec] == 0 {
-        return;
-    }
-    clear_rows(rec);
-    clear_fx_rows(rec);
-    unreserve(rec);
+/// Invalidate published DSP rows; does not release code/state or transfer sources.
+pub unsafe fn quiesce(rec: usize) -> bool {
+    if retained() { return false; }
+    if ds().mod_len[rec] == 0 { return true; }
+    clear_rows(rec) && clear_fx_rows(rec)
+}
+
+/// Release only after the caller has confirmed invalidation and CF admission/drain.
+pub unsafe fn release_range(rec: usize) {
+    if !retained() { unreserve(rec); }
+}
+
+pub unsafe fn release(rec: usize) -> bool {
+    if !quiesce(rec) { ds().phase = PH_RETAINED; return false; }
+    release_range(rec);
+    true
 }
 
 // ---- the state machine --------------------------------------------------------------------------------------------------------
 
 /// Hand a load over to the state machine: the CF side is complete and described by `p`; `reserve` has run for `p.rec`.
 pub unsafe fn launch(mut p: Pending) {
+    // A prepared reservation, if any, must remain owned after global retention.
+    if retained() { return; }
     let d = ds();
     p.send_base = d.send_base;
     p.send_len = d.send_len;
@@ -1080,6 +1225,7 @@ unsafe fn start(p: Pending) {
 
 /// The load in progress is over: start the next waiting one, or go idle.
 unsafe fn next_job() {
+    if retained() { return; }
     let d = ds();
     if d.nwait > 0 {
         let p = d.waiting[0];
@@ -1098,17 +1244,19 @@ unsafe fn next_job() {
 unsafe fn fail(code: i32) {
     let d = ds();
     let rec = d.pending.rec as usize;
-    clear_rows(rec);
-    clear_fx_rows(rec);
+    // Teardown invalidates once, after closing/waiting CF slots, before any fini/free.
+    let reclaimed = crate::loader::undo_early(rec) == OK;
+    crate::boot::note_result(d.pending.boot_idx, code);
+    d.failures += 1;
+    crate::st().last_result = code;
+    if !reclaimed {
+        d.phase = PH_RETAINED;
+        return;
+    }
     if d.pending.send_buf != 0 {
         arena::free(d.pending.send_buf as *mut u8);
         d.pending.send_buf = 0;
     }
-    // the machine was published at boot: take it down again (rows, `fini`, memory)
-    crate::loader::undo_early(rec);
-    crate::boot::note_result(d.pending.boot_idx, code);
-    d.failures += 1;
-    crate::st().last_result = code;
     next_job();
 }
 
@@ -1118,11 +1266,22 @@ pub unsafe fn step() {
     if d.magic != STATE_MAGIC {
         return;
     }
-    if d.phase == PH_IDLE {
+    if d.phase == PH_IDLE || d.phase == PH_RETAINED {
         return;
     }
-    d.ticks += 1;
+    d.ticks = d.ticks.saturating_add(1);
+    if d.phase == PH_QUARANTINE {
+        if poll_done().is_some() {
+            d.started = 0;
+            fail(E_DSP_XFER);
+        }
+        return;
+    }
     if d.ticks > GUARD_TICKS {
+        if d.started != 0 && poll_done().is_none() {
+            d.phase = PH_QUARANTINE;
+            return;
+        }
         fail(E_DSP_XFER);
         return;
     }
@@ -1191,6 +1350,8 @@ pub unsafe fn step() {
                 }
                 if row == MAX_ROWS && frow == MAX_FX {
                     // every row is in: list the machine, run init, publish the slots
+                    crate::sample::ready(rec);
+                    crate::tracks::ready(rec);
                     crate::boot::note_result(d.pending.boot_idx, OK);
                     crate::st().last_result = OK;
                     next_job();
@@ -1276,4 +1437,20 @@ pub unsafe fn state() -> u32 {
     } else {
         STATE_IDLE
     }
+}
+
+/// Serialized window-zero transfer for an owned sample job.
+pub unsafe fn sample_send(dst: u32, src: *const u8, len: u32) -> i32 {
+    call_send(dst, src, len)
+}
+pub unsafe fn sample_poll() -> Option<bool> {
+    poll_done()
+}
+pub unsafe fn sample_idle() -> bool {
+    ds().phase == PH_IDLE && ds().nwait == 0
+}
+
+#[cfg(test)]
+pub(super) unsafe fn cleanup_test_first_fit(len: u32, align: u32) -> Option<u32> {
+    alloc_range(len, align)
 }

@@ -132,15 +132,21 @@ impl Emit<'_, '_> {
     }
 
     /// The block a failing guard of instruction K with fix-up list EXIT goes
-    /// to: update the variables, record K, leave through `post`.
-    fn fail_block(&mut self, k: u32, exit: u32) -> ir::Block {
+    /// to. A new block must be filled only after the caller terminates its
+    /// current block; FunctionBuilder cannot switch away from an open block.
+    fn fail_block(&mut self, k: u32, exit: u32) -> (ir::Block, bool) {
         if let Some(b) = self.fails.get(&(k, exit)) {
-            return *b;
+            return (*b, false);
         }
-        let cur = self.b.current_block();
         let blk = self.b.create_block();
-        // Rarely taken: laid out after the loop so the guards fall through.
         self.b.set_cold_block(blk);
+        self.fails.insert((k, exit), blk);
+        (blk, true)
+    }
+
+    /// Update the variables, record K and leave through `post`. The caller's
+    /// branch already targets BLK, and its continuation is selected afterwards.
+    fn fill_fail_block(&mut self, blk: ir::Block, k: u32, exit: u32) {
         self.b.switch_to_block(blk);
         // A 0/1 word made from a comparison here lives in this block only:
         // the cache must not hand it to the code after the guard.
@@ -162,11 +168,6 @@ impl Emit<'_, '_> {
             .store(mem_flags(), kv, self.ctx, CTX_EXIT_K as i32);
         let one = self.b.ins().iconst(types::I32, 1);
         self.b.ins().jump(self.post, &[one.into()]);
-        if let Some(c) = cur {
-            self.b.switch_to_block(c);
-        }
-        self.fails.insert((k, exit), blk);
-        blk
     }
 
     fn insts(&mut self, insts: &[Inst]) {
@@ -213,8 +214,11 @@ impl Emit<'_, '_> {
                 Inst::Guard { ok, k, exit } => {
                     let ok = self.truth(ok);
                     let cont = self.b.create_block();
-                    let fail = self.fail_block(k, exit);
+                    let (fail, fresh) = self.fail_block(k, exit);
                     self.b.ins().brif(ok, cont, &[], fail, &[]);
+                    if fresh {
+                        self.fill_fail_block(fail, k, exit);
+                    }
                     self.b.switch_to_block(cont);
                 }
                 Inst::Label(l) => {
@@ -238,8 +242,11 @@ impl Emit<'_, '_> {
                     self.b.switch_to_block(cont);
                 }
                 Inst::Leave { k, exit } => {
-                    let fail = self.fail_block(k, exit);
+                    let (fail, fresh) = self.fail_block(k, exit);
                     self.b.ins().jump(fail, &[]);
+                    if fresh {
+                        self.fill_fail_block(fail, k, exit);
+                    }
                     self.terminated = true;
                 }
                 Inst::GuardAny { a, b, k, exit } => {
@@ -247,10 +254,13 @@ impl Emit<'_, '_> {
                     let cont = self.b.create_block();
                     let second = self.b.create_block();
                     self.b.set_cold_block(second);
-                    let fail = self.fail_block(k, exit);
+                    let (fail, fresh) = self.fail_block(k, exit);
                     self.b.ins().brif(a, cont, &[], second, &[]);
                     self.b.switch_to_block(second);
                     self.b.ins().brif(b, cont, &[], fail, &[]);
+                    if fresh {
+                        self.fill_fail_block(fail, k, exit);
+                    }
                     self.b.switch_to_block(cont);
                 }
             }
@@ -731,4 +741,161 @@ pub unsafe extern "C" fn sharc_fast_run2(
 #[cfg_attr(not(sharc_second), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_fast_free(h: *mut std::ffi::c_void) {
     drop(unsafe { Box::from_raw(h as *mut Box<dyn CompiledKernel>) });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sharc_native::fast::{glue::Ctx, interp::InterpBackend};
+
+    #[test]
+    fn guards_share_failure_blocks_without_leaking_boolean_fixups() {
+        let k = Kernel {
+            vars: vec![Ty::I32],
+            val_ty: vec![Ty::I32; 11],
+            pre: vec![
+                Inst::Def(0, Op::Ctx32(CTX_REGS_IN)),
+                Inst::Def(1, Op::CI32(1)),
+                Inst::Def(2, Op::CI32(2)),
+                Inst::Def(3, Op::CI32(4)),
+                Inst::Def(4, Op::CI32(0x44)),
+                Inst::Set(Var(0), 4),
+            ],
+            body: vec![
+                Inst::Def(5, Op::Bin(Bin::And, 0, 1)),
+                Inst::Def(6, Op::Bin(Bin::And, 0, 2)),
+                Inst::Def(7, Op::Bin(Bin::Ne, 0, 1)),
+                Inst::Guard {
+                    ok: 5,
+                    k: 7,
+                    exit: 0,
+                },
+                // The first failure block materializes comparison 7 as a
+                // word. The continuation must materialize its own copy.
+                Inst::Def(8, Op::Bin(Bin::Add, 7, 1)),
+                Inst::Guard {
+                    ok: 6,
+                    k: 7,
+                    exit: 0,
+                },
+                Inst::Def(9, Op::Bin(Bin::And, 0, 3)),
+                Inst::Guard {
+                    ok: 9,
+                    k: 9,
+                    exit: 1,
+                },
+                Inst::Set(Var(0), 4),
+            ],
+            post: vec![
+                Inst::Def(10, Op::GetVar(Var(0))),
+                Inst::StCtx32 {
+                    off: CTX_REGS_OUT,
+                    v: 10,
+                },
+            ],
+            exits: vec![vec![(Var(0), 7)], vec![(Var(0), 8)]],
+            ..Kernel::default()
+        };
+        let mut backend = ClBackend {
+            opt: "none",
+            verify: true,
+        };
+        let kernels = [
+            InterpBackend.compile(&k).unwrap(),
+            backend.compile(&k).unwrap(),
+        ];
+        for kernel in kernels {
+            for (input, expected) in [
+                (0, (1, 7, 0, 1)),
+                (1, (1, 7, 0, 0)),
+                (2, (1, 7, 0, 1)),
+                (3, (1, 9, 0, 2)),
+                (7, (0, 0xbad, 1, 0x44)),
+            ] {
+                let mut ctx = Ctx::default();
+                ctx.set32(CTX_ITERS, 1);
+                ctx.set32(CTX_REGS_IN, input);
+                ctx.set32(CTX_EXIT_K, 0xbad);
+                // SAFETY: this kernel accesses only the live context buffer.
+                let result = unsafe { kernel.run(ctx.ptr(), std::ptr::null_mut()) };
+                assert_eq!(
+                    (
+                        result,
+                        ctx.get32(CTX_EXIT_K),
+                        ctx.get32(CTX_DONE),
+                        ctx.get32(CTX_REGS_OUT)
+                    ),
+                    expected,
+                    "input {input}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn guard_any_and_leave_fill_failure_blocks_after_terminating_the_predecessor() {
+        let k = Kernel {
+            vars: vec![Ty::F32],
+            val_ty: vec![Ty::I32, Ty::I32, Ty::I32, Ty::I32, Ty::F32, Ty::I32],
+            pre: vec![
+                Inst::Def(0, Op::Ctx32(CTX_REGS_IN)),
+                Inst::Def(1, Op::Ctx32(CTX_REGS_IN + 4)),
+                Inst::Def(2, Op::CI32(0x3f80_0000)),
+                Inst::Def(3, Op::CI32(0x4000_0000)),
+                Inst::Set(Var(0), 3),
+            ],
+            body: vec![
+                Inst::GuardAny {
+                    a: 0,
+                    b: 1,
+                    k: 5,
+                    exit: 0,
+                },
+                Inst::Leave { k: 6, exit: 1 },
+            ],
+            post: vec![
+                Inst::Def(4, Op::GetVar(Var(0))),
+                Inst::Def(5, Op::Un(Un::FToBits, 4)),
+                Inst::StCtx32 {
+                    off: CTX_REGS_OUT,
+                    v: 5,
+                },
+            ],
+            exits: vec![vec![(Var(0), 2)], vec![(Var(0), 3)]],
+            cfg: true,
+            ..Kernel::default()
+        };
+        let mut backend = ClBackend {
+            opt: "none",
+            verify: true,
+        };
+        let kernels = [
+            InterpBackend.compile(&k).unwrap(),
+            backend.compile(&k).unwrap(),
+        ];
+        for kernel in kernels {
+            for (a, b, exit, bits) in [
+                (0, 0, 5, 0x3f80_0000),
+                (0, 2, 6, 0x4000_0000),
+                (2, 0, 6, 0x4000_0000),
+                (3, 4, 6, 0x4000_0000),
+            ] {
+                let mut ctx = Ctx::default();
+                ctx.set32(CTX_REGS_IN, a);
+                ctx.set32(CTX_REGS_IN + 4, b);
+                // SAFETY: this kernel accesses only the live context buffer.
+                let result = unsafe { kernel.run(ctx.ptr(), std::ptr::null_mut()) };
+                assert_eq!(
+                    (
+                        result,
+                        ctx.get32(CTX_EXIT_K),
+                        ctx.get32(CTX_DONE),
+                        ctx.get32(CTX_REGS_OUT)
+                    ),
+                    (1, exit, 0, bits),
+                    "inputs {a}, {b}"
+                );
+            }
+        }
+    }
 }

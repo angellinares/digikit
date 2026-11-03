@@ -1,0 +1,21 @@
+[module]
+id = "test/track-select"
+version = "0.1.0"
+name = "Track select"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: adds a sample to the pool of another module's table (Api 1.5) through SysEx commands 0x3e and 0x3f"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# C, built by `patchkit build`; `patchkit pack test/track-select --device dt2`. It owns no table: it calls the runtime with the handle of the module that does.
+[[object]]
+path = "build/track-select.dko.json"
+sources = ["src/c/track_select.c"]
+place = "cf.expansion"

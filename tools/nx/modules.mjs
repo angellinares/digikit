@@ -217,6 +217,11 @@ export const createDependencies = (_opts, ctx) => {
     // only a module with test-conformance also depends on the conformance suite.
     const hasDeviceTests = !!(p.targets?.['test-device'] || p.targets?.['test-conformance']);
     const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
+    // Runtime acceptance records name the fixture/content modules loaded by device tests.
+    // Their source changes must invalidate the consumer's device-test cache.
+    for (const rec of records(join(ctx.workspaceRoot, p.root))) {
+      implicitDeps.push(...(rec.modules ?? []), ...Object.values(rec.aliases ?? {}));
+    }
     if (p.targets?.['test-conformance']) implicitDeps.push('conformance');
     // Projects that live inside the module directory (for example core/ui and dkui-host).
     for (const q of all) if (q.name !== p.name && q.root.startsWith(p.root + '/')) implicitDeps.push(q.name);

@@ -170,7 +170,7 @@ for (const device of DEVICES) {
         const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
         const reboot = { session, dk, close: runtime.close };
         try {
-          await expectRuntimeUi(session, plan, artifacts, { afterEpoch: Number(before) });
+          await expectRuntimeUi(session, plan, artifacts, { afterEpoch: Number(before), timeout: 120_000 });
           await bounded(() => session.client.guardSet(context.baseline(tag).guard));
           await inspect(reboot, `${tag}-restarted`, true, Number(before));
           await expectRoute(reboot, send);
@@ -210,6 +210,6 @@ for (const device of DEVICES) {
       await compareRoutePcm(dry, send0, 1, artifacts, 'send0');
       await compareRoutePcm(dry, master, 0.5, artifacts, 'master');
       await compareRoutePcm(dry, send1, 1, artifacts, 'send1');
-    }, 300_000);
+    });
   });
 }

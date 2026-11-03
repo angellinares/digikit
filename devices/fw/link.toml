@@ -94,3 +94,65 @@ devices = ["dt2", "dn2"]
 mark = "D"
 users = ["core/dsp-link"]
 doc = "The jsr abs.l with which the block interrupt handler calls the stock frame driver (four arguments on the stack); the hook point for the DSP link's per-block sender."
+
+[[fn]]
+name = "cf.link.fn.bulk_send"
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "9a4120e12f9b5eb84887e090794f55b7", offset = 0x0, len = 4 }
+sig = "void (u32 tag, const u32 *source, u32 format)"
+mark = "D"
+users = ["core/dsp-lp0-proof"]
+doc = "DN2 1.12 native LP0 tag plus 1024-word sender (finding 92). Locks the boot-initialized mutex; unbounded hardware-readiness wait. Emulator-only diagnostic use, format 1 sends numeric source words least-significant byte first."
+
+[[site]]
+name = "cf.link.site.boot_wire_size"
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "ca0006cf073207083d26359db1321886", offset = 0x290, len = 6 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 boot-only size getter CALL, before the transfer size setter and DMA arming. Retargeting this call leaves the original getter and stock 0xabc reply copy unchanged. Private diagnostic only."
+
+[[hook]]
+name = "cf.link.hook.boot_wire_size"
+site = "cf.link.site.boot_wire_size"
+cpu = "cf"
+mode = "retarget"
+regs = { in = [], clobbers = ["ccr"] }
+handler = { sig = "u32 ()", args = [] }
+devices = ["dn2"]
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "Private boot-only replacement for the wire-length getter call."
+
+[[site]]
+name = "cf.link.site.reply_copy"
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "321c6b90f1d02ec2acbb38e45d7f6940", offset = 0x34, len = 6 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 stock reply memcpy CALL inside the frame driver, before DMA rearming. Keep its 0xabc length: destination+0xabc is the stock TX buffer."
+
+[[hook]]
+name = "cf.link.hook.reply_copy"
+site = "cf.link.site.reply_copy"
+cpu = "cf"
+mode = "retarget"
+regs = { in = [], clobbers = ["ccr"] }
+handler = { sig = "u8 *(u8 *destination, const u8 *source, u32 length)", args = ["sp+4", "sp+8", "sp+12"] }
+devices = ["dn2"]
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "Private wrapper preserves the original copy and return value, then copies the isolated extension before DMA rearming."
+
+[[fn]]
+name = "cf.link.fn.reply_copy"
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "15dd6d0fca20a82c6d39d15a7971a3af", offset = 0x0, len = 2 }
+sig = "u8 *(u8 *destination, const u8 *source, u32 length)"
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "Original DN2 reply memcpy, returning destination in D0; retained by the private extension wrapper."

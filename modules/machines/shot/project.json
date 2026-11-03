@@ -1,0 +1,23 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "digikit/shot",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/shot-dt2.device.test.ts"],
+        "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/shot-dn2.device.test.ts"],
+        "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/shot-picker.device.test.ts"],
+        "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
+        "plusdrive": true
+      }
+    ]
+  }
+}

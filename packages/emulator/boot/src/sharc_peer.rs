@@ -24,6 +24,7 @@ use std::{
     time::Instant,
 };
 
+use crate::ddr_monitor::{DdrMonitorCommand, DdrMonitorStatus};
 use periph::dspi::Peer;
 
 /// DN2 RTOS idle loop, short-word PCs (inclusive start, exclusive end).
@@ -149,9 +150,6 @@ pub trait DspEngine {
     fn execution_profile(&self) -> Option<ExecutionProfile> {
         None
     }
-    /// One 32-bit word of DSP data memory at `addr`, a byte address as the
-    /// findings write them (e.g. 0x25f180; consecutive words are 4 apart).
-    /// None: unknown or unmodeled, or not supported by the engine.
     /// Memory bytes from `addr` (`None`: unknown to the engine), read through
     /// the aligned words of `peek_word`.
     fn peek_bytes(&self, addr: u32, n: usize) -> Vec<Option<u8>> {
@@ -172,6 +170,13 @@ pub trait DspEngine {
             })
             .collect()
     }
+    /// Ordered host diagnostic, unsupported by engines without a monitor.
+    fn ddr_monitor(&mut self, _command: DdrMonitorCommand) -> Result<DdrMonitorStatus, String> {
+        Err("this DSP engine does not support the DDR monitor".into())
+    }
+    /// One 32-bit word at the exact DSP data address, including compact MMR
+    /// addresses that need not be byte-aligned. None means unknown,
+    /// unmodeled, or unsupported by the engine.
     fn peek_word(&self, _addr: u32) -> Option<u32> {
         None
     }
@@ -1008,6 +1013,10 @@ impl<E: DspEngine> RemoteDsp<E> {
 }
 
 enum Msg {
+    DdrMonitor {
+        command: DdrMonitorCommand,
+        ack: mpsc::Sender<Result<DdrMonitorStatus, String>>,
+    },
     Frame {
         tx: Vec<u8>,
         /// Link port 0 bytes sent by the ColdFire since the previous frame.
@@ -1034,6 +1043,11 @@ enum Msg {
         addr: u32,
         len: usize,
         ack: mpsc::Sender<Vec<Option<u8>>>,
+    },
+    /// Read one exact DSP word address without byte alignment.
+    PeekWord {
+        addr: u32,
+        ack: mpsc::Sender<Option<u32>>,
     },
 }
 
@@ -1312,8 +1326,14 @@ impl ThreadedPeer {
                         Msg::ExecutionProfileReport => {
                             let _ = execution_profile_tx.send(core.engine.execution_profile());
                         }
+                        Msg::DdrMonitor { command, ack } => {
+                            let _ = ack.send(core.engine.ddr_monitor(command));
+                        }
                         Msg::Peek { addr, len, ack } => {
                             let _ = ack.send(core.engine.peek_bytes(addr, len));
+                        }
+                        Msg::PeekWord { addr, ack } => {
+                            let _ = ack.send(core.engine.peek_word(addr));
                         }
                         Msg::Patch { patch, ack } => {
                             let result = core
@@ -1478,6 +1498,41 @@ impl ThreadedHandle {
             .map_err(|_| "DSP worker stopped while reading".to_string())
     }
 
+    /// Apply a monitor command after queued frames and acknowledge the exact
+    /// resulting metadata. Status does not inspect the watched data memory.
+    pub fn ddr_monitor(&self, command: DdrMonitorCommand) -> Result<DdrMonitorStatus, String> {
+        let (ack, reply) = mpsc::channel();
+        let sent = self
+            .link
+            .borrow()
+            .tx
+            .as_ref()
+            .is_some_and(|tx| tx.send(Msg::DdrMonitor { command, ack }).is_ok());
+        if !sent {
+            return Err("DSP worker has stopped".into());
+        }
+        reply
+            .recv()
+            .map_err(|_| "DSP worker stopped during DDR monitor command".to_string())?
+    }
+
+    /// Read one exact DSP word address between frames, retaining unknowns.
+    pub fn peek_word(&self, addr: u32) -> Result<Option<u32>, String> {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        let sent = self
+            .link
+            .borrow()
+            .tx
+            .as_ref()
+            .is_some_and(|c| c.send(Msg::PeekWord { addr, ack: ack_tx }).is_ok());
+        if !sent {
+            return Err("DSP worker has stopped".into());
+        }
+        ack_rx
+            .recv()
+            .map_err(|_| "DSP worker stopped while reading word".to_string())
+    }
+
     /// Commit completed frames without waiting; streaming hosts use this between steps.
     /// Call `sync` instead before reading final totals or exporting state.
     pub fn poll(&self) {
@@ -1612,6 +1667,174 @@ pub mod second {
 mod tests {
     use super::*;
 
+    fn ddr_monitor_worker_contract<E, F>(make: F)
+    where
+        E: DspEngine + 'static,
+        F: FnOnce() -> Result<E, String> + Send + 'static,
+    {
+        use crate::ddr_monitor::{DdrMonitorHit, DdrMonitorKind, DdrMonitorRange};
+        let (_peer, handle, _) = ThreadedPeer::spawn(make, 5000, DN2_IDLE_RANGE).unwrap();
+        let range = DdrMonitorRange {
+            start: 0x8001_0000,
+            end: 0x8001_0004,
+        };
+        let initial = handle.ddr_monitor(DdrMonitorCommand::Status).unwrap();
+        assert!(!initial.armed);
+        assert_eq!(
+            (initial.range, initial.first, initial.dsp_icount),
+            (None, None, 73)
+        );
+        assert!(!initial.active_core_profile.is_empty());
+        let armed = handle.ddr_monitor(DdrMonitorCommand::Arm(range)).unwrap();
+        assert!(armed.armed);
+        assert_eq!((armed.range, armed.first), (Some(range), None));
+        assert_eq!(
+            handle.ddr_monitor(DdrMonitorCommand::Status).unwrap(),
+            armed
+        );
+        // Queue a deliberate host peek without waiting for its acknowledgement.
+        // The subsequent monitor reply must reflect that earlier worker message.
+        let (ack, peeked) = mpsc::channel();
+        handle
+            .link
+            .borrow()
+            .tx
+            .as_ref()
+            .unwrap()
+            .send(Msg::PeekWord {
+                addr: range.start,
+                ack,
+            })
+            .unwrap();
+        let hit = handle.ddr_monitor(DdrMonitorCommand::Status).unwrap();
+        assert_eq!(peeked.try_recv().unwrap(), Some(0x0403_0201));
+        assert_eq!(
+            hit.first,
+            Some(DdrMonitorHit {
+                address: range.start,
+                width: 4,
+                kind: DdrMonitorKind::CpuRead
+            })
+        );
+        assert_eq!(handle.ddr_monitor(DdrMonitorCommand::Status).unwrap(), hit);
+        assert!(
+            handle
+                .ddr_monitor(DdrMonitorCommand::Arm(DdrMonitorRange {
+                    start: range.start,
+                    end: range.start
+                }))
+                .is_err()
+        );
+        assert_eq!(handle.ddr_monitor(DdrMonitorCommand::Status).unwrap(), hit);
+        let cleared = handle.ddr_monitor(DdrMonitorCommand::Clear).unwrap();
+        assert!(cleared.armed);
+        assert_eq!((cleared.range, cleared.first), (Some(range), None));
+        handle.peek_word(range.start).unwrap();
+        assert!(
+            handle
+                .ddr_monitor(DdrMonitorCommand::Status)
+                .unwrap()
+                .first
+                .is_some()
+        );
+        let replaced = handle
+            .ddr_monitor(DdrMonitorCommand::Arm(DdrMonitorRange {
+                start: range.start + 4,
+                end: range.end + 4,
+            }))
+            .unwrap();
+        assert_eq!(replaced.first, None);
+        assert_eq!(replaced.range.unwrap().start, range.start + 4);
+        let disarmed = handle.ddr_monitor(DdrMonitorCommand::Disarm).unwrap();
+        assert!(!disarmed.armed);
+        assert_eq!((disarmed.range, disarmed.first), (None, None));
+        handle.link.borrow_mut().tx.take();
+        assert!(
+            handle
+                .ddr_monitor(DdrMonitorCommand::Status)
+                .unwrap_err()
+                .contains("stopped")
+        );
+    }
+
+    #[test]
+    fn ddr_monitor_ordered_worker_lifecycle() {
+        ddr_monitor_worker_contract(|| {
+            let mut mem = sharc_native::mem::Mem::new();
+            mem.load(0x8001_0000, &[1, 2, 3, 4]);
+            mem.reset();
+            let mut engine = sharc_native::Engine::new(mem);
+            engine.s.icount = 73;
+            Ok(NativeDsp(engine))
+        });
+    }
+
+    #[cfg(feature = "second-core")]
+    #[test]
+    fn ddr_monitor_second_core_worker_lifecycle() {
+        ddr_monitor_worker_contract(|| {
+            let mut mem = sharc_native_2::mem::Mem::new();
+            mem.load(0x8001_0000, &[1, 2, 3, 4]);
+            mem.reset();
+            let mut engine = sharc_native_2::Engine::new(mem);
+            engine.s.icount = 73;
+            Ok(second::NativeDsp(engine))
+        });
+    }
+
+    #[test]
+    fn ddr_monitor_unsupported_engine_acknowledges_error() {
+        let (_peer, handle, _) = ThreadedPeer::spawn(|| Ok(WordProbe), 5000, DN2_IDLE_RANGE).unwrap();
+        assert!(
+            handle
+                .ddr_monitor(DdrMonitorCommand::Status)
+                .unwrap_err()
+                .contains("does not support")
+        );
+        assert_eq!(handle.peek_word(0x3e002).unwrap(), Some(0x55667788));
+    }
+
+    struct WordProbe;
+
+    impl DspEngine for WordProbe {
+        fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, String> {
+            Ok(frame.to_vec())
+        }
+        fn step(&mut self, n: u32) -> u32 {
+            n
+        }
+        fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
+            Ok(None)
+        }
+        fn pc(&self) -> u32 {
+            DN2_IDLE_RANGE.0
+        }
+        fn halt_reason(&self) -> Option<String> {
+            None
+        }
+        fn peek_word(&self, addr: u32) -> Option<u32> {
+            match addr {
+                0x3e000 => Some(0x11223344),
+                0x3e002 => Some(0x55667788),
+                _ => None,
+            }
+        }
+    }
+
+    #[test]
+    fn exact_word_probe_keeps_unaligned_addresses_and_unknowns() {
+        let (_peer, handle, _shared) =
+            ThreadedPeer::spawn(|| Ok(WordProbe), 5000, DN2_IDLE_RANGE).unwrap();
+        assert_eq!(handle.peek_word(0x3e002).unwrap(), Some(0x55667788));
+        assert_eq!(handle.peek_word(0x3e003).unwrap(), None);
+        // The existing byte view still aligns each word and slices its bytes;
+        // it must not acquire compact-register semantics from the new API.
+        assert_eq!(
+            handle.peek_bytes(0x3e002, 4).unwrap(),
+            vec![Some(0x22), Some(0x11), None, None]
+        );
+    }
+
     struct Mock {
         pc: u32,
         idle_after: u32,
@@ -1665,6 +1888,159 @@ mod tests {
             frames: 0,
             reply_byte: 0xab,
         }
+    }
+
+    /// Firmware-free receiver: a transfer disarms DMA until the simulated
+    /// callback has run. Audio still uses the ordinary frame mock above.
+    struct LinkMock {
+        audio: Mock,
+        ready: bool,
+        received: Vec<Vec<u8>>,
+        rearm_after: Option<u32>,
+        rearm_ran: u32,
+        in_transfer: bool,
+    }
+
+    impl DspEngine for LinkMock {
+        fn spi2_exchange(&mut self, frame: &[u8]) -> Result<Vec<u8>, String> {
+            self.in_transfer = false;
+            self.audio.spi2_exchange(frame)
+        }
+        fn lp0_ready(&self) -> bool {
+            self.ready
+        }
+        fn lp0_transfer(&mut self, bytes: &[u8]) -> Result<(), String> {
+            assert!(self.ready);
+            self.received.push(bytes.to_vec());
+            self.ready = false;
+            self.in_transfer = true;
+            self.rearm_ran = 0;
+            Ok(())
+        }
+        fn step(&mut self, n: u32) -> u32 {
+            if self.in_transfer {
+                self.rearm_ran += n;
+                if self
+                    .rearm_after
+                    .is_some_and(|after| self.rearm_ran >= after)
+                {
+                    self.ready = true;
+                }
+            }
+            self.audio.step(n)
+        }
+        fn sport_block(&mut self) -> Result<Option<Vec<u8>>, String> {
+            self.audio.sport_block()
+        }
+        fn pc(&self) -> u32 {
+            self.audio.pc()
+        }
+        fn halt_reason(&self) -> Option<String> {
+            self.audio.halt_reason()
+        }
+    }
+
+    fn profiled_link_peer(
+        device: &str,
+        version: &str,
+    ) -> (SharcPeer<LinkMock>, Rc<RefCell<Shared>>) {
+        let registry = device_profile::Registry::embedded().unwrap();
+        let profile = registry.dsp_for(device, version).unwrap();
+        let (mut peer, shared) = SharcPeer::new(
+            LinkMock {
+                audio: mock(None),
+                ready: false,
+                received: Vec::new(),
+                rearm_after: Some(4000),
+                rearm_ran: 0,
+                in_transfer: false,
+            },
+            20_000,
+        );
+        peer.set_idle_range((profile.idle_start, profile.idle_end));
+        // Use the embedded firmware's route selection, as the coupled and cold
+        // constructors do. Removing DN2 1.12's capability must break delivery.
+        if profile.sample_link == Some(device_profile::SampleLink::Lp0) {
+            peer.enable_sample_link();
+        }
+        (peer, shared)
+    }
+
+    #[test]
+    fn profiled_lp0_waits_for_complete_units_and_armed_dma_while_audio_continues() {
+        for (device, version) in [("dn2", "1.12"), ("dt2", "1.17")] {
+            let (mut peer, shared) = profiled_link_peer(device, version);
+            let unit: Vec<u8> = (0..LP0_UNIT_BYTES).map(|i| (i % 251) as u8).collect();
+            let frame = [0x12, 0x34, 0x56, 0x78];
+            peer.core.engine.ready = true;
+            peer.link_bytes(&unit[..LP0_UNIT_BYTES - 1]);
+            assert_eq!(peer.exchange(&frame), vec![0xab; frame.len()]);
+            assert!(
+                peer.core.engine.received.is_empty(),
+                "partial unit: {device}"
+            );
+            assert_eq!(shared.borrow().lp0_pending as usize, LP0_UNIT_BYTES - 1);
+            peer.core.engine.ready = false;
+            peer.link_bytes(&unit[LP0_UNIT_BYTES - 1..]);
+            assert_eq!(peer.exchange(&frame), vec![0xab; frame.len()]);
+            assert!(
+                peer.core.engine.received.is_empty(),
+                "unarmed DMA: {device}"
+            );
+            assert_eq!(shared.borrow().lp0_pending as usize, LP0_UNIT_BYTES);
+            peer.core.engine.ready = true;
+            assert_eq!(peer.exchange(&frame), vec![0xab; frame.len()]);
+            assert_eq!(
+                peer.core.engine.received,
+                vec![unit],
+                "wire bytes: {device}"
+            );
+            assert!(peer.core.engine.ready);
+            assert_eq!(peer.core.engine.rearm_ran, 4000);
+            let shared = shared.borrow();
+            assert_eq!((shared.lp0_units, shared.lp0_pending), (1, 0));
+            assert_eq!(peer.core.engine.audio.frames, 3);
+            assert_eq!(shared.pcm.len(), 3 * BLOCK_WORDS);
+            assert!(
+                shared
+                    .pcm
+                    .chunks_exact(BLOCK_WORDS)
+                    .all(|block| block[0] == 0.5 && block[1] == -0.5)
+            );
+            assert_eq!(shared.frames[2].executed, 20_000);
+            assert!(shared.halted.is_none());
+        }
+    }
+
+    #[test]
+    fn dn2_lp0_rearm_and_units_have_per_frame_budgets() {
+        let (mut peer, shared) = profiled_link_peer("dn2", "1.12");
+        let units = vec![0x5a; (LP0_UNITS_PER_FRAME + 1) * LP0_UNIT_BYTES];
+        peer.core.engine.ready = true;
+        peer.link_bytes(&units);
+        peer.exchange(&[1, 2]);
+        assert_eq!(peer.core.engine.received.len(), LP0_UNITS_PER_FRAME);
+        assert!(
+            peer.core
+                .engine
+                .received
+                .iter()
+                .all(|unit| unit == &units[..LP0_UNIT_BYTES])
+        );
+        assert_eq!(shared.borrow().lp0_pending as usize, LP0_UNIT_BYTES);
+        // A receiver whose callback never rearms must not hang the audio frame.
+        peer.core.engine.rearm_after = None;
+        assert_eq!(peer.exchange(&[3, 4]), vec![0xab; 2]);
+        assert_eq!(peer.core.engine.rearm_ran, LP0_REARM_BUDGET);
+        assert!(!peer.core.engine.ready);
+        assert_eq!(shared.borrow().lp0_units as usize, LP0_UNITS_PER_FRAME + 1);
+        peer.link_bytes(&units[..LP0_UNIT_BYTES]);
+        assert_eq!(peer.exchange(&[5, 6]), vec![0xab; 2]);
+        let shared = shared.borrow();
+        assert_eq!(shared.lp0_pending as usize, LP0_UNIT_BYTES);
+        assert_eq!(shared.lp0_units as usize, LP0_UNITS_PER_FRAME + 1);
+        assert_eq!(shared.pcm.len(), 3 * BLOCK_WORDS);
+        assert!(shared.halted.is_none());
     }
 
     /// A PC that is in the idle range exactly while the instruction count

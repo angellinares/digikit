@@ -279,7 +279,8 @@ export async function compare(
   expect(metrics.rms_db).not.toBeNull();
   expect(Math.abs(metrics.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
   expect(metrics.shift).not.toBeNull();
-  expect(Math.abs(metrics.shift!)).toBeLessThanOrEqual(128);
+  // hook_ab counts interleaved stereo samples; the onset tolerance is 128 audio frames.
+  expect(Math.abs(metrics.shift!) / 2).toBeLessThanOrEqual(128);
   if (identical) expect(metrics.identical, 'dry PCM is bit-identical from onset').toBe(true);
 }
 

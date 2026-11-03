@@ -153,7 +153,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
         device,
         ..Default::default()
     };
-    let template = if dev == "dn2" { 0xd5 } else { 0xd1 };
+    let template = if dev == "dn2" { 0xd5 } else { 0xcc };
     let slots = model.knobs.count.max(1) as i64;
     for i in 0..spec.params {
         reg.params.push(Param {
@@ -236,6 +236,8 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
                 });
             }
             DspSection {
+                sample_bank: None,
+                sample_tracks: None,
                 device,
                 image: vec![spec.fill; d.image as usize],
                 bss: d.bss,
@@ -253,6 +255,8 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
         version: 0x00_01_00,
         runtime_min: dkm::runtime_version(),
         trace: false,
+        stereo: false,
+        api_minor: 0,
     };
     let max = if spec.oversize {
         usize::MAX

@@ -2648,3 +2648,102 @@ fn profile_writer_emits_one_file_set_only_when_maps_are_on() {
     assert!(files.iter().any(|f| f.ends_with(".trans")));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn ddr_monitor_captures_cpu_attempts_before_synthesis_and_journal() {
+    use crate::mem::DdrAccessKind;
+    let a = 0x8001_0000;
+    let mut s = St::new(Mem::new());
+    s.cfg.explicit_memory_model = true;
+    s.mem.set_ddr_monitor(Some((a, a + 4))).unwrap();
+    assert_eq!(
+        bnd::_dm_read(&s, VI::I(a as Int), 4, false, false).unwrap(),
+        Some(V::c(0))
+    );
+    assert_eq!(
+        s.mem.first_ddr_access().unwrap().kind,
+        DdrAccessKind::CpuRead
+    );
+    for k in 0..4 {
+        s.mem.write_byte(a + k, 0);
+    }
+    for nolog in [false, true] {
+        s.mem.clear_ddr_access();
+        let result = if nolog {
+            bnd::_dm_write_nolog_b(&mut s, VI::I(a as Int), 4, V::c(0), false)
+        } else {
+            bnd::_dm_write_b(&mut s, VI::I(a as Int), 4, V::c(0), false)
+        };
+        assert_eq!(result.unwrap(), true);
+        assert_eq!(
+            s.mem.first_ddr_access().unwrap().kind,
+            DdrAccessKind::CpuWrite
+        );
+        assert_eq!(s.mem.read_le(a, 4), 0);
+    }
+    s.mem.clear_ddr_access();
+    assert_eq!(
+        bnd::_dm_read_b(&s, VI::I(a as Int), 4, false, false).unwrap(),
+        Some(V::c(0))
+    );
+    assert_eq!(
+        s.mem.first_ddr_access().unwrap().kind,
+        DdrAccessKind::CpuRead
+    );
+}
+
+#[test]
+fn ddr_monitor_known_attempts_survive_symbolic_value_and_model_declines() {
+    use crate::mem::DdrAccessKind;
+    let a = 0x8001_0000;
+    let mut s = St::new(Mem::new());
+    s.mem.set_ddr_monitor(Some((a, a + 4))).unwrap();
+    assert!(!bnd::_dm_write(&mut s, VI::I(a as Int), 4, V::UNK, false).unwrap());
+    assert_eq!(
+        s.mem.first_ddr_access().unwrap().kind,
+        DdrAccessKind::CpuWrite
+    );
+    assert!(!s.mem.present(a));
+    s.mem.clear_ddr_access();
+    s.cfg.has_concrete = false;
+    assert_eq!(
+        bnd::_dm_read_full(&s, VI::I(a as Int), 4, false, false).unwrap(),
+        None
+    );
+    assert_eq!(
+        s.mem.first_ddr_access().unwrap().kind,
+        DdrAccessKind::CpuRead
+    );
+    s.mem.clear_ddr_access();
+    assert!(!bnd::_dm_write_full(&mut s, VI::I(a as Int), 3, V::c(1), false).unwrap());
+    assert_eq!(s.mem.first_ddr_access(), None);
+    assert!(!bnd::_dm_write_full(&mut s, VI::V(V::UNK), 4, V::c(1), false).unwrap());
+    assert_eq!(s.mem.first_ddr_access(), None);
+}
+
+#[test]
+fn ddr_monitor_disables_idle_skip_and_discards_transition_evidence() {
+    let mut e = crate::Engine::new(Mem::new());
+    e.s.pc_sw = 100;
+    e.idle_visit(100, 1000);
+    assert!(e.idle_snap.is_some());
+    assert!(e.s.probe.is_some());
+    e.set_ddr_monitor(Some((0x8000_0000, 0x8000_0004))).unwrap();
+    assert!(e.idle_snap.is_none());
+    assert!(e.s.probe.is_none());
+    e.idle_visit(100, 1000);
+    assert!(e.idle_snap.is_none());
+    assert_eq!(e.idle_stats.skips, 0);
+    e.set_ddr_monitor(None).unwrap();
+    assert!(e.idle_snap.is_none());
+    e.idle_visit(100, 1000);
+    assert!(e.idle_snap.is_some());
+    // Direct memory configuration is also detected at the next idle visit,
+    // even when activation and removal happen between visits.
+    e.s.mem
+        .set_ddr_monitor(Some((0x8000_0000, 0x8000_0004)))
+        .unwrap();
+    e.s.mem.set_ddr_monitor(None).unwrap();
+    e.idle_visit(100, 1000);
+    assert_eq!(e.idle_stats.skips, 0);
+}

@@ -99,6 +99,16 @@ mark = "D"
 rule = "fw/input:cf_func"
 
 [[anchor]]
+name = "cf.input.fn.key_down"
+cpu = "cf"
+kind = "code"
+addr = 0x4011e150
+len = 4
+sha256 = "722ca8039c8eebdf90cbebf597b0c144a2c7979c379def4f7d87b953df4f5b50"
+mark = "D"
+rule = "fw/input:cf_func"
+
+[[anchor]]
 name = "cf.input.site.key_decoder.prev_mask_lit"
 cpu = "cf"
 kind = "code"
@@ -967,6 +977,36 @@ mark = "D"
 rule = "fw/page:cf_func"
 
 [[anchor]]
+name = "cf.page.fn.source_key"
+cpu = "cf"
+kind = "code"
+addr = 0x400181fe
+len = 8
+sha256 = "827861b302ed505387505067bb5b4cf19942024b298a8a14dd9659b7285048b9"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_turn"
+cpu = "cf"
+kind = "code"
+addr = 0x400184ea
+len = 8
+sha256 = "210e23c2057834e444559ed4e37156fcac7eef2f115c828d4eb9ffff14d72e05"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.view_track"
+cpu = "cf"
+kind = "code"
+addr = 0x4004abb8
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
 name = "cf.page.site.filter_graph_test"
 cpu = "cf"
 kind = "code"
@@ -1075,6 +1115,16 @@ len = 60
 sha256 = "f103497eeac02712980d73744c3e5e437e4708713cda144b48cf3998827240db"
 mark = "D"
 rule = "fw/param:cf_words"
+
+[[anchor]]
+name = "cf.param.fn.set_value"
+cpu = "cf"
+kind = "code"
+addr = 0x4003b570
+len = 4
+sha256 = "3f2a7a23497cd06e30629c3e1ea8ba643f614ea616aba5feafae54b013ae9750"
+mark = "D"
+rule = "fw/param:cf_func"
 
 [[anchor]]
 name = "cf.param.fn.value_class"
@@ -2310,6 +2360,86 @@ mark = "D"
 rule = "fw/rtos:cf_reset_helper"
 
 [[anchor]]
+name = "cf.samples.fn.loader.load"
+cpu = "cf"
+kind = "code"
+addr = 0x4015481c
+len = 4
+sha256 = "ee832eb93ec9a5ac6f575127ff38cdc7d7865962c8211c2f0b0294310dae9d2f"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
+name = "cf.samples.fn.slot.release"
+cpu = "cf"
+kind = "code"
+addr = 0x401543a2
+len = 4
+sha256 = "7694646addf9bf72b639ece8ba990d8e101955de2d4cecd4d9e1bd66b670ef41"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
+name = "cf.samples.fn.worker.get"
+cpu = "cf"
+kind = "code"
+addr = 0x4019e65c
+len = 4
+sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
+name = "cf.samples.fn.worker.queue"
+cpu = "cf"
+kind = "code"
+addr = 0x400f0c1c
+len = 4
+sha256 = "9b452917d2c5d39ac109b9847aa1b7a6b43f3a292c343ce5867673dc6ac5e67f"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
+name = "cf.samples.site.record.vector"
+cpu = "cf"
+kind = "code"
+addr = 0x40153b44
+len = 4
+sha256 = "41e8bf9d793c1710c2a4dff9a38748efcd44de37c87038ca3452f7b5e8fdff43"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
+name = "cf.samples.site.slot.keys"
+cpu = "cf"
+kind = "code"
+addr = 0x40153f04
+len = 4
+sha256 = "3d5b5b5efa8bb33fc6f2a3d59f0392883204f4cf64274a61b63d1209b272b5a1"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
+name = "cf.samples.site.slot.map"
+cpu = "cf"
+kind = "code"
+addr = 0x40153b2e
+len = 4
+sha256 = "af2918a68e85c555b5d92232e47c91e702e19faa47c3779d0effbcdee7862dab"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
+name = "cf.samples.site.slot.stereo"
+cpu = "cf"
+kind = "code"
+addr = 0x40153ab2
+len = 4
+sha256 = "d584d7ed7425401390637b4a69ae9697bc60ad8ef83ac63dd7563ec0a62586bd"
+mark = "D"
+rule = "fw/samples:cf_func"
+
+[[anchor]]
 name = "cf.storage.fn.block.read"
 cpu = "cf"
 kind = "code"
@@ -2336,6 +2466,106 @@ kind = "code"
 addr = 0x400f05ae
 len = 2
 sha256 = "8780ea8a436f0cddf90a0078faa7d2b88546db279383a92a020a3bbe51279cb7"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.directory.metadata"
+cpu = "cf"
+kind = "code"
+addr = 0x4015aec2
+len = 4
+sha256 = "e55cb9eb6848781ac430a42dab0c41908a214ea6edea999929995e5df4c3a358"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.directory.next"
+cpu = "cf"
+kind = "code"
+addr = 0x4015734e
+len = 4
+sha256 = "e6752da589244235a571742b2dee4d2a6fa6ebd021048ad3b93613e00213360d"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.directory.open"
+cpu = "cf"
+kind = "code"
+addr = 0x401572a0
+len = 4
+sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.path.close"
+cpu = "cf"
+kind = "code"
+addr = 0x401588c0
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.path.open"
+cpu = "cf"
+kind = "code"
+addr = 0x40158902
+len = 4
+sha256 = "7a1c490d00932ce398c257d1f645f970b387600df35a794ab50d686950accd99"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.path.read"
+cpu = "cf"
+kind = "code"
+addr = 0x4015860a
+len = 4
+sha256 = "22fa7fb41970cac158504ca01c7a417ded71b60ff0d8466961d19ff2332567a7"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.path.size"
+cpu = "cf"
+kind = "code"
+addr = 0x4015bcfe
+len = 4
+sha256 = "22fa7fb41970cac158504ca01c7a417ded71b60ff0d8466961d19ff2332567a7"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.fault_irqstat_a"
+cpu = "cf"
+kind = "code"
+addr = 0x4012d5c2
+len = 6
+sha256 = "ecda53f8ded4ab291974386fad6a07fc3d8672509f611233aff4a9c2560b15f9"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.fault_irqstat_b"
+cpu = "cf"
+kind = "code"
+addr = 0x4012d616
+len = 6
+sha256 = "ecda53f8ded4ab291974386fad6a07fc3d8672509f611233aff4a9c2560b15f9"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.fault_irqstat_c"
+cpu = "cf"
+kind = "code"
+addr = 0x4012d642
+len = 6
+sha256 = "ecda53f8ded4ab291974386fad6a07fc3d8672509f611233aff4a9c2560b15f9"
 mark = "D"
 rule = "fw/storage:cf_func"
 
@@ -2782,6 +3012,39 @@ mark = "D"
 rule = "fw/dsp/voice:sharc_literal"
 
 [[anchor]]
+name = "dsp.voice.value.param_record_base"
+cpu = "sharc"
+kind = "value"
+addr = 0x2506ec
+src = 0x283859c6
+len = 6
+sha256 = "5e50c45d3c686f2f462d9db895675d94fa7b1029b2d7664ac3020713985f6503"
+mark = "D"
+rule = "fw/dsp/voice:sharc_literal"
+
+[[anchor]]
+name = "dsp.voice.value.sample.pool_base"
+cpu = "sharc"
+kind = "value"
+addr = 0x8422b9c8
+src = 0x28387f8c
+len = 6
+sha256 = "d5b13bfc7e8e2eef4119f95da2405c1509c9737bf98a39886232d3f7a3af3c75"
+mark = "D"
+rule = "fw/dsp/voice:sharc_literal"
+
+[[anchor]]
+name = "dsp.voice.value.sample.slot_table"
+cpu = "sharc"
+kind = "value"
+addr = 0x257810
+src = 0x28387f70
+len = 6
+sha256 = "807bf0a5349c2eccc39499df25c030b56fe0c20886e85187ee6e1c0c3a6f8440"
+mark = "D"
+rule = "fw/dsp/voice:sharc_literal"
+
+[[anchor]]
 name = "dsp.voice.value.type_cache"
 cpu = "sharc"
 kind = "value"
@@ -2918,6 +3181,16 @@ site = "cf.page.site.sound_load_exit"
 mode = "replace"
 
 [[hook]]
+name = "cf.page.hook.source_key"
+site = "cf.page.fn.source_key"
+mode = "before"
+
+[[hook]]
+name = "cf.page.hook.source_turn"
+site = "cf.page.fn.source_turn"
+mode = "before"
+
+[[hook]]
 name = "cf.page.hook.tab_label_test"
 site = "cf.page.site.tab_label_test"
 mode = "replace"
@@ -2937,6 +3210,21 @@ mode = "replace"
 name = "cf.rtos.hook.main_os_task"
 site = "cf.rtos.site.main_os_task"
 mode = "before"
+
+[[hook]]
+name = "cf.storage.hook.fault_irqstat_a"
+site = "cf.storage.site.fault_irqstat_a"
+mode = "replace"
+
+[[hook]]
+name = "cf.storage.hook.fault_irqstat_b"
+site = "cf.storage.site.fault_irqstat_b"
+mode = "replace"
+
+[[hook]]
+name = "cf.storage.hook.fault_irqstat_c"
+site = "cf.storage.site.fault_irqstat_c"
+mode = "replace"
 
 [[hook]]
 name = "cf.test.hook.kit_vfunc_12"

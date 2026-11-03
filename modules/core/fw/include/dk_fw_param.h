@@ -6,6 +6,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* The absolute parameter setter the stock page uses after a turn and the sample list uses after a pick: (obj, code, raw, track, 1, 1, 1). Clamps raw to the row range, stores it in the sound, notifies the project and the observers. obj is the parameter object of the page (view vtable 0xc4 (view, code, track)). DT2 0x4003b570, DN2 0x40037326. */
+uint32_t dk_fw_param_set_value(const uint8_t *obj, uint32_t code, int32_t raw, uint32_t track, uint32_t notify, uint32_t record, uint32_t redraw) __asm__("cf.param.fn.set_value");
 /* cf.param.fn.value_class: no sig yet */
 /* the parameter table (60-byte rows), by the signature of its reader */
 extern const uint8_t dk_fw_param_descriptor_table __asm__("cf.param.data.descriptor_table");

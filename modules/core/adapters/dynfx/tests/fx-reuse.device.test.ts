@@ -1,9 +1,11 @@
 import path from 'node:path';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
+import { withinRuntimeDeadline } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
+import { timePhase, timingContext } from '@digi/regression/timing.ts';
 import {
   bounded,
   rpc,
@@ -55,17 +57,26 @@ for (const device of DEVICES) {
 
       // This restart deliberately retains guest writes; it is not an independent-case clean load.
       await rpc(dirty.session, 'run.mode', { mode: 'free' });
-      await bounded(() => dirty.dk.select(['modules/sine.dkm']));
+      await timePhase(
+        'protocol.select',
+        () => bounded(() => dirty.dk.select(['modules/sine.dkm'])),
+        timingContext(dirty.session),
+      );
       const epoch = (await bounded(() => dirty.session.status())).epoch;
       expect(typeof epoch).toBe('number');
-      await bounded(() => dirty.dk.restart());
+      await timePhase('protocol.restart', () => bounded(() => dirty.dk.restart()), timingContext(dirty.session));
       dirty.dk.cancelPending();
       const rebootDk = new DkSession(
         new EmuUsbTransport((method, params) => dirty.session.client.call(method, params)),
       );
       const reboot = { session: dirty.session, dk: rebootDk, close: dirty.close };
       try {
-        await bounded(() => rebootDk.waitForBoot());
+        await timePhase(
+          'protocol.waitForBoot',
+          // DN2 cold restarts take about 45 s; retain the protocol's 90 s boot budget.
+          () => withinRuntimeDeadline(Date.now() + 90_000, () => rebootDk.waitForBoot()),
+          timingContext(dirty.session),
+        );
         await expectRuntimeUi(dirty.session, plan, artifacts, { afterEpoch: Number(epoch) });
         await bounded(() => dirty.session.client.guardSet(wet.guard));
         const deselected = await inspect(reboot, plan, slots, false, artifacts, 'deselected', Number(epoch));

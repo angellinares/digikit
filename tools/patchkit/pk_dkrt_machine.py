@@ -103,14 +103,14 @@ def parse_dsp_section(dkm: bytes) -> dict[str, Any]:
         o, w = struct.unpack_from(">II", s, reloc_off + 8 * i)
         relocs.append((o, w >> 28, (w >> 24) & 15, w & 0xFFFF))
     version = be32(s, 4)
-    # version 1: type, entry; version 2 adds the eight knob ranges; versions 3 and 4 have voices of 64 bytes
+    # version 1: type, entry; version 2 adds the eight knob ranges; versions 3 to 5 have voices of 64 bytes
     stride = 16 if version == 1 else 48 if version == 2 else 64
     voices = [
         struct.unpack_from(">II", s, voice_off + stride * i) for i in range(nvoice)
     ]
     # version 4: effect records of 64 bytes (docs/design/digikit-dkm.md): process, desc, state_bytes, n_params, flags, p0 .. p7
     fxs = []
-    if version == 4:
+    if version in (4, 5):
         for i in range(be32(s, 0x38)):
             at = be32(s, 0x34) + 64 * i
             fxs.append(

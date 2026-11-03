@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run cargo over the whole native workspace with the pinned toolchain.
+"""Run cargo over the native workspace and standalone dkrt host tests with the pinned toolchain.
 
     uv run python -m tools.devtools.rust_ws test [-- CARGO_ARGS...]   cargo nextest run --workspace --release
     uv run python -m tools.devtools.rust_ws test --packages A,B       cargo nextest run -p A -p B --release (verify's affected crates)
@@ -7,20 +7,24 @@
     uv run python -m tools.devtools.rust_ws gates                     the ignored coupled gate (needs the private DN2 ready inputs)
     uv run python -m tools.devtools.rust_ws fmt                       cargo fmt --check on the clean crates
 
-``test`` and ``check`` use the generated core of ``tools/emulator/digi_env.py`` and its
+Workspace ``test`` and ``check`` use the generated core of ``tools/emulator/digi_env.py`` and its
 target dir (``tools/emulator/native_target.py``), so they reuse the compiled
 ``sharc-gen``. The desktop crate (digiemu-desktop) is left out of ``test``: it embeds
 ``apps/desktop/ui/dist`` and links the generated core into its own test binary, and verify's
 ``desktop`` step builds and tests it (its own target dir). ``check`` still covers it when the
 console has been built. ``fmt`` covers only ``CLEAN_CRATES``:
 add a crate once ``cargo fmt -p CRATE --check`` passes; the list should only
-grow.
+grow. Standalone dkrt tests run sequentially after workspace tests;
+``test --packages dkrt`` needs no generated core or native build. Extra test
+arguments go only to nextest when workspace tests run; standalone-only selection
+forwards them to cargo test instead.
 """
 
 from __future__ import annotations
 
 import functools
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -47,7 +51,7 @@ CLEAN_CRATES = [
 
 
 # ---------------------------------------------------------------------------
-# Test selection: which workspace packages a set of changed files can affect.
+# Test selection: which workspace/standalone packages a set of changed files can affect.
 # ---------------------------------------------------------------------------
 
 # Files whose change can affect any crate: the whole workspace runs.
@@ -124,9 +128,20 @@ NO_RUST = re.compile(
 
 
 @functools.cache
-def _metadata() -> dict:
+def _metadata(manifest: str | None = None) -> dict:
     out = subprocess.run(
-        ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+        [
+            "rustup",
+            "run",
+            digi_env.TOOLCHAIN,
+            "cargo",
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--offline",
+            *(["--manifest-path", manifest] if manifest else []),
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -135,23 +150,31 @@ def _metadata() -> dict:
     return json.loads(out)
 
 
+STANDALONE = {"dkrt": "modules/core/runtime/src/rs/Cargo.toml"}
+
+
 def _graph() -> tuple[dict[str, str], dict[str, set[str]]]:
-    """(package name -> manifest dir relative to ROOT, package name -> its workspace dependents)."""
-    packages = _metadata()["packages"]
+    """(package name -> manifest dir relative to ROOT, package name -> its local dependents)."""
+    packages = list(_metadata()["packages"])
+    for manifest in STANDALONE.values():
+        packages.extend(_metadata(manifest)["packages"])
     dirs = {
         p["name"]: pathlib.Path(p["manifest_path"]).parent.relative_to(ROOT).as_posix()
         for p in packages
     }
     dependents: dict[str, set[str]] = {name: set() for name in dirs}
+    by_path = {(ROOT / directory).resolve(): name for name, directory in dirs.items()}
     for p in packages:
         for dep in p["dependencies"]:  # normal, dev and build dependencies
-            if dep["name"] in dirs and dep.get("path"):
-                dependents[dep["name"]].add(p["name"])
+            if dep.get("path") and (
+                owner := by_path.get(pathlib.Path(dep["path"]).resolve())
+            ):
+                dependents[owner].add(p["name"])
     return dirs, dependents
 
 
 def affected_packages(changed: list[str]) -> list[str] | None:
-    """Workspace packages whose tests the changed files (repo-relative) can affect.
+    """Workspace/standalone packages whose tests the changed files (repo-relative) can affect.
 
     Returns a sorted list of package names (empty: nothing Rust is affected), or None when the
     whole workspace must run: root Cargo.toml / Cargo.lock / rust-toolchain* / .cargo/*, or a
@@ -169,11 +192,16 @@ def affected_packages(changed: list[str]) -> list[str] | None:
         owners = [n for n, d in dirs.items() if path.startswith(d + "/")]
         if owners:
             seeds.add(max(owners, key=lambda n: len(dirs[n])))
-            continue
-        rows = [(pkgs, closure) for rx, pkgs, closure in READS if re.search(rx, path)]
+        # Preserve existing workspace ownership rules. A newly owned standalone
+        # source must also retain its prior run-time readers (patchkit/boot).
+        rows = (
+            [(pkgs, closure) for rx, pkgs, closure in READS if re.search(rx, path)]
+            if not owners or any(n in STANDALONE for n in owners)
+            else []
+        )
         for pkgs, closure in rows:
             (seeds if closure else readers).update(pkgs)
-        if not rows and not NO_RUST.search(path):
+        if not owners and not rows and not NO_RUST.search(path):
             return None
     todo, closure = list(seeds), set(seeds)
     while todo:
@@ -201,17 +229,88 @@ def cargo(sub: list[str], env: dict[str, str]) -> int:
     return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
 
 
+def test_packages(packages: list[str] | None, extra: list[str]) -> int:
+    """Run the selected workspace and standalone tests sequentially in one job."""
+    workspace = (
+        None
+        if packages is None
+        else [p for p in packages if p != DESKTOP and p not in STANDALONE]
+    )
+    standalone = (
+        list(STANDALONE)
+        if packages is None
+        else [p for p in STANDALONE if p in packages]
+    )
+    if workspace is None or workspace:
+        env = digi_env.rust_env()
+        gen = digi_env.generated_dir()
+        if not gen.is_dir():
+            raise SystemExit(f"rust_ws: generated core dir is missing: {gen}")
+        digi_env.check_generated(gen)
+        env["SHARC_GEN_DIR"] = str(gen)
+        selection = (
+            workspace_args("test")
+            if workspace is None
+            else [x for p in workspace for x in ("-p", p)]
+        )
+        result = cargo(
+            [
+                "nextest",
+                "run",
+                *selection,
+                "--release",
+                "--target-dir",
+                str(native_target.target_dir(gen)),
+                "--locked",
+                *extra,
+            ],
+            env,
+        )
+        if result:
+            return result
+    for package in standalone:
+        # Keep this host-only path independent of generated-core configuration.
+        env = digi_env.rust_env(
+            {
+                k: v
+                for k, v in os.environ.items()
+                if k not in ("SHARC_GEN_DIR", "SHARC_GEN_DIR_2")
+            }
+        )
+        result = cargo(
+            [
+                "test",
+                "--manifest-path",
+                STANDALONE[package],
+                "--lib",
+                "--offline",
+                "--target-dir",
+                str(native_target.target_dir("", f"host-{package}")),
+                "--locked",
+                *(extra if workspace == [] else []),
+            ],
+            env,
+        )
+        if result:
+            return result
+    if workspace == [] and not standalone:
+        print("rust_ws: no selected packages (desktop tests run in the desktop step)")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if not argv or argv[0] not in ("test", "check", "gates", "fmt"):
         print(__doc__)
         return 2
     mode, extra = argv[0], argv[1:]
-    packages: list[str] = []
+    packages: list[str] | None = None
     if extra[:1] == ["--packages"] and len(extra) > 1:
         packages = [p for p in extra[1].split(",") if p]
         extra = extra[2:]
     if extra[:1] == ["--"]:
         extra = extra[1:]
+    if mode == "test":
+        return test_packages(packages, extra)
     env = digi_env.rust_env()
     if mode == "fmt":
         crates = [x for name in CLEAN_CRATES for x in ("-p", name)]
@@ -242,22 +341,6 @@ def main(argv: list[str]) -> int:
         return cargo(sub, env)
     if mode == "check":
         sub = ["check", *workspace_args(), "--all-targets", *target]
-    elif packages:
-        packages = [p for p in packages if p != DESKTOP]
-        if not packages:  # only the desktop crate was affected: its tests run in verify's desktop step
-            print(
-                f"rust_ws: only {DESKTOP} is affected; it is tested by the desktop step"
-            )
-            return 0
-        sub = [
-            "nextest",
-            "run",
-            *(x for p in packages for x in ("-p", p)),
-            "--release",
-            *target,
-        ]
-    else:
-        sub = ["nextest", "run", *workspace_args("test"), "--release", *target]
     return cargo([*sub, *extra], env)
 
 

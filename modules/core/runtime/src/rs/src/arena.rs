@@ -61,6 +61,9 @@ pub unsafe fn alloc(n: u32) -> *mut u8 {
 
 /// Return a block. A pointer that is not a live block of this arena is ignored; returns whether it was freed.
 pub unsafe fn free(p: *mut u8) -> bool {
+    #[cfg(test)] { return crate::cleanup_tests::arena_free(p); }
+    #[cfg(not(test))]
+    {
     let s = st();
     let a = p as u32;
     if a < s.arena_lo + HDR || a >= s.arena_hi || a & 15 != 0 {
@@ -93,6 +96,7 @@ pub unsafe fn free(p: *mut u8) -> bool {
         *prev.add(1) = h as u32;
     }
     true
+    }
 }
 
 /// (total free bytes, largest free block) in payload bytes.

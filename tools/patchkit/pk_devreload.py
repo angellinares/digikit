@@ -201,6 +201,17 @@ def store_card(device: str, ids: list[str], run_dir: Path, trace: bool = False) 
         )  # a trailing * puts the module in the card's saved selection (it loads at the boot)
         mid = mid.rstrip("*")
         if mid.startswith(
+            "file:"
+        ):  # file:SRC=DEST, a host file or folder copied to digikit/DEST of the store (samples/...)
+            src, _, dest = mid[5:].partition("=")
+            to = folder / "digikit" / dest
+            to.parent.mkdir(parents=True, exist_ok=True)
+            if Path(src).is_dir():
+                shutil.copytree(src, to, dirs_exist_ok=True)
+            else:
+                shutil.copyfile(src, to)
+            continue
+        if mid.startswith(
             "synth:"
         ):  # synth:NAME:BSS, a module that only needs BSS bytes of arena (dkmsynth)
             _, name, bss = mid.split(":")
@@ -375,7 +386,7 @@ def main(argv: list[str]) -> int:
     )
     ap.add_argument(
         "--store",
-        help="module ids separated by commas: packed into the module store of the card the daemon boots with; an id ending in * is also in the saved selection, synth:NAME:BSS is a module that needs BSS bytes of arena (a kept daemon keeps its card; each list has its own daemon)",
+        help="module ids separated by commas: packed into the module store of the card the daemon boots with; an id ending in * is also in the saved selection, synth:NAME:BSS is a module that needs BSS bytes of arena, file:SRC=DEST puts a host file or folder at digikit/DEST of the store, e.g. out/smp=samples (a kept daemon keeps its card; each list has its own daemon)",
     )
     ap.add_argument(
         "--trace",

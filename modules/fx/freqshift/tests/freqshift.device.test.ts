@@ -3,17 +3,11 @@ import path from 'node:path';
 import { encoder } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { createFxKitUi } from '@digi/regression/runtime/fx-kit-ui.ts';
-import { advance, analysisJson, bounded, frames, rows, word } from '@digi/regression/runtime/fx-live.ts';
+import { advance, analysisJson, bounded, captureNote, frames, rows, word } from '@digi/regression/runtime/fx-live.ts';
 import { SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { bits, cstring, mainPage, openPages, pageKit } from '@digi/regression/runtime/fx-pages-ui.ts';
-import {
-  inspectFxBoot,
-  selectSine,
-  shot,
-  tap,
-  withPreparedFxSession,
-} from '@digi/regression/runtime/fx-session.ts';
-import { selectTrack, setAmount, trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
+import { inspectFxBoot, selectSine, shot, tap, withPreparedFxSession } from '@digi/regression/runtime/fx-session.ts';
+import { selectTrack, setAmount } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
@@ -96,7 +90,8 @@ for (const device of DEVICES) {
         const trigger = initial ? triggerFrame(device) : current + 300;
         record(artifacts, `${tag}-timing`, { currentFrame: current, triggerFrame: trigger });
         const file = path.join(artifacts, `${tag}.wav`);
-        await trackNote(runtime, file, trigger);
+        // The boundary offset can shorten a 1500-block capture below the analyzer's full second.
+        await captureNote(runtime.session, { file, trigger, tag: 'frequency shifter note', length: 1600 });
         pcm[tag] = file;
       };
       const noFault = async () => expect((await row())[17]).toBe(0);

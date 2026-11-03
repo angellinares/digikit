@@ -216,6 +216,8 @@ impl Lower {
     pub fn flat_access(&mut self, addr: Val, bytes: u8, write: bool) -> LR<(Val, Val)> {
         use crate::mem::{PAGE_BITS, PAGE_DIRTY_OFF, PAGE_PRESENT_OFF, PAGE_SIZE};
         let ptr64 = std::mem::size_of::<usize>() == 8;
+        #[cfg(test)]
+        let ptr64 = self.flat_ptr64.unwrap_or(ptr64);
         let eff = self.emit(Ty::I64, Op::Ctx64(CTX_FLAT_EFF));
         let bits = self.ci(PAGE_BITS);
         let idx = self.bin(Bin::ShrU, addr, bits);

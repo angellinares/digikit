@@ -1,0 +1,132 @@
+[module]
+id = "core/sample-pool"
+version = "0.1.0"
+name = "Sample pool"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "The sample backing behind the runtime's per-track samples (dkrt_pool.h, version 1): DT2 borrows the stock sample pool; DN2 owns a DDR range and streams samples into it over LP0"
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = ["core/runtime"]
+conflicts = ["core/dsp-lp0-proof"]
+
+[targets]
+"dt2-1.17" = "untested"
+"dn2-1.12" = "untested"
+
+# One adapter, one object per device (docs/design/sample-api-1.5.md 2.3 and recommendation 9). Both export the same symbols of
+# src/dkrt_pool.h: dkpool_version, dkpool_load, dkpool_release, dkpool_check, dkpool_free_frames and dkpool_tick, and the optional dkpool_cancel. The runtime lists them as
+# optional imports; without this module they resolve to 0 and `sample_pool_add` returns E_CONTRACT.
+#
+# DT2 (src/cf/dt2): borrows the stock pool through the stock loader, queued on the SampleLoaderBgWorker (finding 109). No hook: the runtime
+# calls dkpool_tick from its UI loop pass, which delivers the completions and finds a stock reset.
+#
+# DN2 (src/cf/dn2, src/dsp/dn2; docs/design/dn2-sample-pool.md): an allocator over [adapter.sample_pool] ddr_base and ddr_bytes of
+# devices/digitone-ii.toml (4 KiB pages, first fit, identity sharing, released blocks cached, no reset, so no dkrt_pool_lost), and the LP0 page
+# transport of core/dsp-lp0-proof made permanent: the ColdFire reads the store file in ranges (dkrt_store_stat, dkrt_store_read), sends 4 KiB pages with
+# its own bounded LP0 sender from a job on the stock SampleLoader worker task (design section 2), and the DSP copies each page into DDR in the LP0 callback and acknowledges it in a 16-byte extension of the reply record.
+# The extension needs the wire 16 bytes longer (0xabc to 0xacc), a boot-only change that the proof proved in the emulator; moving the
+# acknowledgement into the dsp-link diagnostic record is a decision for before any hardware step (design section 7).
+# core/dsp-link must be in a DN2 image with this module: its block tail has the one claim on dsp.link.site.block_tail and calls `_sp_tail` of
+# the DSP object (an optional import of dsp-link), and `_sp_back` below is the end of that tail.
+# core/dsp-lp0-proof claims the same sites (it is the private diagnostic of the same transport): the two never go into one image.
+# The shared logic that does not touch the firmware is src/cf/pool_core.h (the DT2 stock slot model), pool_nw32.h (address helpers),
+# pool_alloc.h (the DN2 allocator) and pool_wire.h (page tag, acknowledgement and the page state machine); tests/patchkit/test_sample_pool_*.py
+# compile them on the host.
+
+# The device's slot floor and reserved DDR range, from [adapter.sample_pool] of the device files (`patchkit gen`).
+[[gen]]
+kind = "gas-sample-pool"
+path = "build/gen/sample-pool-{dev}.inc"
+
+# The same range as the DSP receiver sees it (NW32 base and page count); written for devices that own a range only.
+[[gen]]
+kind = "sharc-sample-pool"
+path = "build/gen/sample-pool-dsp-{dev}.inc"
+
+[[object]]
+path = "build/sample-pool-dt2.dko.json"
+sources = ["src/cf/dt2/pool.c", "src/cf/dt2/device.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[object.externs]
+sp_dsp_pool_base = "dsp.voice.value.sample.pool_base"
+
+# The stock reply copy (LP0, DN2 1.12), the stock short sleep and the SampleLoader worker's getter and queue. The pages go out through our own
+# sender (src/cf/dn2/send.c): the stock sender is not used.
+[[object]]
+path = "build/sample-pool-dn2.dko.json"
+sources = ["src/cf/dn2/pool.c", "src/cf/dn2/xfer.c", "src/cf/dn2/send.c", "src/cf/dn2/device.s"]
+place = "cf.expansion"
+devices = ["dn2"]
+
+[object.externs]
+sp_stock_copy = "cf.link.fn.reply_copy"
+sp_stock_sleep = "cf.rtos.fn.sleep_us"
+sp_worker_get = "cf.samples.fn.worker.get"
+sp_worker_queue = "cf.samples.fn.worker.queue"
+
+[[object]]
+path = "build/sample-pool-dsp-dn2.dko.json"
+sources = ["src/dsp/dn2/boot-window.s", "src/dsp/dn2/sample-pool.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[object.externs]
+_sp_boot_back = "hook.dsp.cache.site.cache_enable.return"
+_sp_cache_range = "dsp.cache.fn.cache_range"
+_sp_back = "hook.dsp.link.site.block_tail.tail"
+_sp_open = "dsp.link.fn.lp0_open"
+_sp_set_callback = "dsp.link.fn.lp0_set_callback"
+_sp_submit = "dsp.link.fn.lp0_submit"
+_sp_port_record = "dsp.link.value.lp0_record"
+
+# Both wire counts change at boot only (0xabc to 0xacc: the extension is 16 bytes). The stock caller's 0xabc copy stays intact; the hook on
+# the reply copy reads the extension after it.
+[[op]]
+op = "hook"
+hook = "cf.link.hook.boot_wire_size"
+to = "sp_wire_size"
+devices = ["dn2"]
+
+[[op]]
+op = "hook"
+hook = "cf.link.hook.reply_copy"
+to = "sp_copy_reply"
+devices = ["dn2"]
+
+[[op]]
+op = "write"
+anchor = "dsp.link.site.boot_wire_size"
+hex = "840fcc0a"
+devices = ["dn2"]
+
+# The boot-only noncacheable window of the receive buffer (finding 95).
+[[op]]
+op = "hook"
+hook = "dsp.cache.hook.cache_enable"
+to = "_sp_boot_hook"
+devices = ["dn2"]
+
+[[claim]]
+resource = "cf.link.site.boot_wire_size"
+devices = ["dn2"]
+
+[[claim]]
+resource = "cf.link.site.reply_copy"
+devices = ["dn2"]
+
+[[claim]]
+resource = "dsp.link.site.boot_wire_size"
+devices = ["dn2"]
+
+[[claim]]
+resource = "dsp.cache.site.cache_enable"
+devices = ["dn2"]
+
+[[claim]]
+resource = "dsp.cache.rr4"
+devices = ["dn2"]

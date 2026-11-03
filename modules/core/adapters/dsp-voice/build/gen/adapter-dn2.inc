@@ -19,22 +19,24 @@
 // [modules.frame] gap (halfwords between groups)
 #define ADM_PARAM_GAP 0
 // [adapter.machine] param_slots: number of knob positions for module parameters
-#define ADM_NPARAM_SLOTS 4
+#define ADM_NPARAM_SLOTS 8
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT0 0
+#define ADM_PARAM_SLOT0 1
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT1 1
+#define ADM_PARAM_SLOT1 2
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT2 2
+#define ADM_PARAM_SLOT2 4
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT3 3
+#define ADM_PARAM_SLOT3 5
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT4 255
+#define ADM_PARAM_SLOT4 6
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT5 255
+#define ADM_PARAM_SLOT5 0
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT6 255
+#define ADM_PARAM_SLOT6 3
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT7 255
+#define ADM_PARAM_SLOT7 7
 // [board] dsp_clock_hz / dsp_blocks_per_second, rounded (DSP_BLOCK_CYCLES)
 #define ADM_BLOCK_CYCLES 666667
+// [adapter.sample_pool] ring_r_base (byte address of the 16 R rings of 32 KiB, one per slot)
+#define ADM_RING_R_BASE 2420838400

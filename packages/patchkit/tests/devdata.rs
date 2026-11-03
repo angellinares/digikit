@@ -466,6 +466,10 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             want.extend(["core/dynfx", "core/fx", "core/fxpages"]);
             // the DIGIKIT menu is written on <dk/ui.h>: core/digikit-menu requires core/ui
             want.push("core/ui");
+            // the sample pool: both Digitakt II sets have it; the Digitone II flashes without it until the SPI wire-size decision
+            if dev.short == "dt2" || set == "emulator" {
+                want.push("core/sample-pool");
+            }
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }
@@ -556,7 +560,8 @@ fn an_unknown_backend_or_a_bad_panel_exception_is_refused() {
 fn a_content_modules_gallery_needs_its_objects() {
     let id = vec!["test/dyn-params".to_string()];
     let models = Models::from_dir(&root().join("devices")).unwrap();
-    let light = Library::scan_repo_for(&root(), true, Some(&[])).unwrap();
+    // the fixture root read without a build: its objects are files of the module folder, which has none (the object cache is not read)
+    let light = Library::scan_in(None, &root().join("tests/fixtures/modules"), true).unwrap();
     assert!(
         modgen::generate_many(&light, &models, &id).unwrap().is_empty(),
         "without objects the module has no typed sections"
@@ -569,4 +574,55 @@ fn a_content_modules_gallery_needs_its_objects() {
     let (path, text) = &files[0];
     assert!(path.ends_with("build/gen/gallery.json"));
     assert_eq!(&std::fs::read_to_string(path).unwrap(), text, "{} is stale", path.display());
+}
+
+#[test]
+fn the_sample_pool_facts_are_checked() {
+    let (dt2, dn2) = device_texts();
+    // the committed files: DT2 borrows stock slots, DN2 owns a DDR range of the DSP
+    Facts::from_texts([dt2.as_str(), dn2.as_str()]).unwrap();
+    let on_dt2 = |from: &str, to: &str| (dt2.replace(from, to), dn2.clone());
+    let on_dn2 = |from: &str, to: &str| (dt2.clone(), dn2.replace(from, to));
+    for (what, (a, b)) in [
+        (
+            "a slot floor that is a multiple of 0x80 (the loader refuses those slots)",
+            on_dt2("slot_floor = 0x3f0", "slot_floor = 0x380"),
+        ),
+        (
+            "a slot floor above the last stock slot",
+            on_dt2("slot_floor = 0x3f0", "slot_floor = 0x400"),
+        ),
+        (
+            "a range with a base and no size",
+            on_dn2("ddr_bytes  = 0x0ff80000", "ddr_bytes  = 0"),
+        ),
+        (
+            "a range below the DSP's DDR",
+            on_dn2("ddr_base   = 0x80531000", "ddr_base   = 0x40531000"),
+        ),
+        (
+            "an unaligned range",
+            on_dn2("ddr_base   = 0x80531000", "ddr_base   = 0x80531800"),
+        ),
+        (
+            "a range past 4 GiB",
+            on_dn2("ddr_bytes  = 0x0ff80000", "ddr_bytes  = 0x90000000"),
+        ),
+        (
+            "R rings inside the pool range",
+            on_dn2("ring_r_base = 0x904b1000", "ring_r_base = 0x90000000"),
+        ),
+        (
+            "R rings below the stock writes",
+            on_dn2("ring_r_base = 0x904b1000", "ring_r_base = 0x80530000"),
+        ),
+        (
+            "a stock floor and an own range together",
+            on_dn2("slot_floor = 0", "slot_floor = 0x3f0"),
+        ),
+    ] {
+        assert!(a != dt2 || b != dn2, "{what}: the test text did not change");
+        let e = Facts::from_texts([a.as_str(), b.as_str()]).unwrap_err().0;
+        assert!(e.contains("sample_pool"), "{what}: {e}");
+    }
 }
