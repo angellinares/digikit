@@ -235,12 +235,13 @@ test('route diagnostic text decodes big endian words and panel chords release on
   expect(session.client.inputButton).toHaveBeenLastCalledWith(expect.any(Number), false);
 });
 
-for (const { afterEpoch, loaderResult } of [
-  { afterEpoch: undefined, loaderResult: 0 },
-  { afterEpoch: 2, loaderResult: 0 },
-  { afterEpoch: undefined, loaderResult: -34 },
+for (const { afterEpoch, loaderResult, dsp } of [
+  { afterEpoch: undefined, loaderResult: 0, dsp: undefined },
+  { afterEpoch: undefined, loaderResult: 0, dsp: 'zero' as const },
+  { afterEpoch: 2, loaderResult: 0, dsp: undefined },
+  { afterEpoch: undefined, loaderResult: -34, dsp: undefined },
 ]) {
-  test(`route boot drains input and returns paused with ${afterEpoch === undefined ? 'strict fresh' : 'explicit restart'} readiness and loader result ${loaderResult}`, async () => {
+  test(`route boot (${dsp ?? 'sharc'}) drains input and returns paused with ${afterEpoch === undefined ? 'strict fresh' : 'explicit restart'} readiness and loader result ${loaderResult}`, async () => {
     const artifacts = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-route-inspect-'));
     directories.push(artifacts);
     const order: string[] = [];
@@ -261,7 +262,7 @@ for (const { afterEpoch, loaderResult } of [
     });
     const session = {
       expectNoFault: vi.fn(),
-      options: { device: 'dt2', firmware: '1.17' },
+      options: { device: 'dt2', firmware: '1.17', dsp },
       loadResult: { syx_sha256: plan.output!.syx_sha256 },
       preparedRuntimeImage: {
         syx: '/prepared.syx',
@@ -291,7 +292,7 @@ for (const { afterEpoch, loaderResult } of [
         const pending = observations++ === 0 ? 1 : 0;
         order.push(pending ? 'pending' : 'drained');
         if (pending) expect(mode).toBe('free');
-        return { epoch: 3, mode, cf: { input_pending: pending }, scheduled_inputs: pending };
+        return { epoch: 3, mode, dsp: dsp ?? 'sharc', cf: { input_pending: pending }, scheduled_inputs: pending };
       }),
     } as unknown as Session;
     const dk = {
@@ -320,14 +321,32 @@ for (const { afterEpoch, loaderResult } of [
       artifacts,
       afterEpoch === undefined ? {} : { afterEpoch },
     );
-    expect(order).toEqual(['pcm:start', 'free', 'ready', 'capacity', 'pending', 'drained', 'paused', 'drained']);
+    expect(order).toEqual([
+      ...(dsp === 'zero' ? [] : ['pcm:start']),
+      'free',
+      'ready',
+      'capacity',
+      'pending',
+      'drained',
+      'paused',
+      'drained',
+    ]);
     expect(mode).toBe('paused');
     expect(inspected.epoch).toBe(3);
     expect(inspected.results).toEqual([loaderResult]);
-    const { evidence } = await vi.importActual<typeof import('../runtime/fx-live.ts')>('../runtime/fx-live.ts');
-    await expect(evidence({ session } as PatchedSession, artifacts, 'closing', [], false)).resolves.toBeUndefined();
-    expect(order.indexOf('pcm:start')).toBeLessThan(order.indexOf('ready'));
-    expect(order.indexOf('pcm:report')).toBeGreaterThan(order.indexOf('paused'));
+    const { evidence, zeroDspEvidence } =
+      await vi.importActual<typeof import('../runtime/fx-live.ts')>('../runtime/fx-live.ts');
+    if (dsp === 'zero') {
+      await zeroDspEvidence({ session } as PatchedSession, artifacts, 'closing', []);
+      expect(order.some((call) => call.startsWith('pcm:'))).toBe(false);
+      const closing = JSON.parse(fs.readFileSync(path.join(artifacts, 'closing-closing.json'), 'utf8'));
+      expect(closing.audio).toBe('not-collected-zero-dsp');
+      expect(closing).not.toHaveProperty('pcm');
+    } else {
+      await expect(evidence({ session } as PatchedSession, artifacts, 'closing', [], false)).resolves.toBeUndefined();
+      expect(order.indexOf('pcm:start')).toBeLessThan(order.indexOf('ready'));
+      expect(order.indexOf('pcm:report')).toBeGreaterThan(order.indexOf('paused'));
+    }
     expect(session.expectNoFault).toHaveBeenCalledWith('closing');
   });
 }
@@ -378,4 +397,18 @@ test('prepared FX fixtures require an explicit safety policy', () => {
   expect(() =>
     withPreparedFxSession('dt2', 'missing policy', config as unknown as Parameters<typeof withPreparedFxSession>[2]),
   ).toThrow('explicit safety policy');
+});
+
+test('zero-DSP prepared fixtures reject requests for PCM evidence', () => {
+  const config = {
+    image: 'routes' as const,
+    execution: { dsp: 'zero' as const },
+    initial: 'none',
+    presets: { none: { selection: [] } },
+  };
+  withRouteFxSession('dt2', 'panel', config);
+  expect(fake.fixture.mock.lastCall![0].dsp).toBe('zero');
+  expect(() => withRouteFxSession('dt2', 'panel', { ...config, requireAudible: false })).toThrow(
+    'cannot request audio evidence',
+  );
 });

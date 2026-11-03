@@ -450,24 +450,56 @@ export async function inspect(
   return { semantic, chain, oracle, epoch: status.epoch };
 }
 
-export async function evidence(
+async function closingEvidence(
   runtime: PatchedSession,
   artifacts: string,
   tag: string,
   overlays: string[],
-  requireAudible = true,
+  audio: { requireAudible: boolean } | undefined,
 ): Promise<void> {
   const { session } = runtime;
   const guard = await bounded(() => session.client.guardReport());
   const file = path.join(artifacts, `${tag}.overlay.bin`);
   const overlay = await rpc(session, 'card.overlay', { path: file });
   overlays.push(file);
-  const pcm = await rpc<{ non_finite: number; peak: number }>(session, 'pcm.tap', { action: 'report' });
-  record(artifacts, `${tag}-closing`, { guard, overlay, pcm, status: await bounded(() => session.status()) });
+  const pcm = audio
+    ? await rpc<{ non_finite: number; peak: number }>(session, 'pcm.tap', { action: 'report' })
+    : undefined;
+  const status = await bounded(() => session.status());
+  record(artifacts, `${tag}-closing`, {
+    guard,
+    overlay,
+    ...(audio ? { pcm } : { audio: 'not-collected-zero-dsp' }),
+    status,
+  });
+  if (!audio) expect(status.dsp, 'UI-only evidence requires zero DSP').toBe('zero');
   await bounded(() => expectNoGuardHits(session));
-  expect(pcm.non_finite).toBe(0);
-  if (requireAudible) expect(pcm.peak, 'input is audible').toBeGreaterThan(0.01);
+  if (audio) {
+    expect(pcm!.non_finite).toBe(0);
+    if (audio.requireAudible) expect(pcm!.peak, 'input is audible').toBeGreaterThan(0.01);
+  }
   await bounded(() => session.expectNoFault(tag));
+}
+
+/** Coupled evidence always checks finite PCM, including cases permitted to be silent. */
+export function evidence(
+  runtime: PatchedSession,
+  artifacts: string,
+  tag: string,
+  overlays: string[],
+  requireAudible = true,
+): Promise<void> {
+  return closingEvidence(runtime, artifacts, tag, overlays, { requireAudible });
+}
+
+/** UI-only zero-DSP evidence still owns guard, overlay and fault checks. */
+export function zeroDspEvidence(
+  runtime: PatchedSession,
+  artifacts: string,
+  tag: string,
+  overlays: string[],
+): Promise<void> {
+  return closingEvidence(runtime, artifacts, tag, overlays, undefined);
 }
 
 export interface GainFxSessionOptions {

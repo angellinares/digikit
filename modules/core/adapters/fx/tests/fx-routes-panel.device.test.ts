@@ -16,7 +16,7 @@ for (const device of DEVICES) {
     const context = withRouteFxSession(device, 'FX routes panel', {
       image: 'routes',
       initial: 'none',
-      requireAudible: false,
+      execution: { dsp: 'zero' },
       presets: {
         none: { selection: [] },
         list: { selection: selection(0, 1, 2) },
