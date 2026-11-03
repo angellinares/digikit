@@ -10,6 +10,7 @@ Status: in progress on `test/module-sdk-iteration` (2026-11-04). This plan follo
 - A separate empty-store menu fixture passed two zero-DSP cells, including explicit zero-peer/no-audio assertions, through its named Nx target in 24.6s. The DSP-dependent menu-capacity test remains coupled and unchanged.
 - `sdk-ui-zero-tests:test-device` now covers the `test/ui-demo` UI primitives on both devices without DSP; its named target passed in 1m 59s. The fixture has its own patch roots and does not load the conflicting built-in DIGIKIT menu.
 - `dk:dev` now chooses zero DSP for the menu's `emulator` patch set and ColdFire-only modules, but selects coupled SHARC when a stored module requires DSP. Kept zero-DSP reloads measured 4.10s on DN2 and 4.31s on DT2, with screenshots and safe daemon shutdown.
+- No-argument `mise run dk:menu` and `mise run dk:ui-demo` previews passed on DN2 in zero-DSP mode; their screenshots showed the real DIGIKIT menu and SDK UI demo.
 - The first reviewed fixture-first gate exception covers only an isolated edit to `modules/core/apps/digikit-menu/src/menu.c`. A hypothetical plan keeps the menu/runtime fixture owners and the real menu host test while omitting nine unchanged shipped conformance targets. Mixed and compatibility-affecting changes retain normal broad selection.
 - The whole branch plans more than 80 requested tasks because it changes Nx plugin and gate files. The already agreed broad-suite exception is being used during implementation; no full device gate has run on this branch.
 
