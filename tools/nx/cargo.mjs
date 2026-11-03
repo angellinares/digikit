@@ -147,6 +147,8 @@ export const createNodesV2 = [
         '{workspaceRoot}/Cargo.lock',
         ...(existsSync(join(ctx.workspaceRoot, 'rust-toolchain.toml')) ? ['{workspaceRoot}/rust-toolchain.toml'] : []),
         { runtime: `rustup run ${rust} rustc -vV` },
+        { runtime: 'node tools/nx/cargo-profile-env.mjs' },
+        '{workspaceRoot}/tools/nx/cargo-profile-env.mjs',
         { env: 'RUSTFLAGS' },
         { env: 'CARGO_ENCODED_RUSTFLAGS' },
         { env: 'CARGO_BUILD_TARGET' },

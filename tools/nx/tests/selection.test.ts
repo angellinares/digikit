@@ -301,6 +301,13 @@ describe('workspace selection', () => {
     expect(graph.tasks['gate-stock:stock']).toBeDefined();
   }, 30_000);
 
+  it('selects hermetic Rust tests when the release profile digest recipe changes', () => {
+    const graph = selected('tools/nx/cargo-profile-env.mjs', 'rust-tests');
+    expect(graph.tasks['dkneeds:rust-tests']).toBeDefined();
+    expect(graph.tasks['device-profile:rust-tests']).toBeDefined();
+    expect(graph.tasks['patchkit:rust-tests']).toBeUndefined();
+  }, 30_000);
+
   it('keeps an acceptance-only fixture out of unrelated conformance', () => {
     const graph = selected('tests/fixtures/modules/dyn-demo-stray/src/rs/src/lib.rs', 'test-device,test-conformance');
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();

@@ -306,7 +306,18 @@ Cached targets: module `test-device` and `test-conformance`. Inputs: the module 
 the outputs of the pack, CLI and daemon targets, the toolchain, the emulator env switches, the harness
 packages (`test-support`, `control-client`, `dk-session`), every `module.toml`,
 `tools/emulator/fast_regions.json`, and the firmware, ready dirs and DT2 sample card (hashed by
-`tools/nx/device-inputs.mjs`). Not in the key on purpose: `dist/session-cache` (boot cache, cannot
+`tools/nx/device-inputs.mjs`). That digest also hashes path, contents and file permissions of
+`DIGI_EMUD`, device-specific/proof daemon overrides, `DIGI_PATCHKIT`, `DIGI_PATCHKIT_BIN` and
+`DIGI_PLUSDRIVE` (following binary symlinks). Nonempty `PATCHKIT_MODULES` or `DIGI_PK_ROOT`, or any
+explicit `DIGI_RUNTIME_MODULES` (including empty), deliberately prevent cache reuse with a fresh runtime nonce: arbitrary
+sources/includes, variant toolchains and mutable object caches have no proven bounded input closure.
+Overrides remain supported; these rare runs can write entries that will never be reused in local/remote
+caches. Default runs retain a deterministic digest and do not scan override trees.
+Specialized catalogue/files/LP0 card, patched-image, plan and boot-fixture overrides also prevent
+reuse, because provenance can name further external files. LP0 case-selection flags are in the key.
+Ignored/external edits alone do not trigger Git affected selection: invoke the owning Nx target
+directly after changing an override binary/root or ignored firmware/ready/card input.
+Not in the key on purpose: `dist/session-cache` (boot cache, cannot
 change a result) and directory scans such as `modules/README.md`. Failed tasks are not cached.
 
 ### Digikit boot scenarios
@@ -470,6 +481,9 @@ module's device tests), `@digi/web:check`, `@digi/desktop:build:ui` and `check:u
 host tests, and `rust-tests` of the crates in `HERMETIC` in `tools/nx/cargo.mjs`
 (coldfire, periph, emmc-card, dkneeds, dkrt-sdk, dkrt-fit, device-profile, dkupload, dksample). Those run
 `rustup run <mise rust> cargo nextest run -p NAME --release --locked --offline --target-dir dist/cargo-tests`.
+Their runtime key includes the sorted present `CARGO_PROFILE_RELEASE_*` names and values, including
+build-override options; changing these environment settings requires a direct target invocation when
+there is no tracked change selecting the crate.
 Other crates run uncached through `tools/devtools/rust_ws.py`. Crates without tests have no `rust-tests`
 target. `workspace:fmt-check` is not cached: prettier also opens files it never formats (`.py`, `.rs`),
 and nested `.gitignore` and `.editorconfig` files change its result.

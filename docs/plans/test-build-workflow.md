@@ -106,6 +106,31 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    as well as hash invalidation for Rust/Node/toolchain pin changes and ignored firmware/generated
    input changes: runtime hashes alone do not cause Git affected selection. Any new
    cached device target requires input/output review, scoped cache-behavior and coverage-parity evidence before enabling cache.
+   Override-input checkpoint (2026-11-04): the device runtime digest now includes the path,
+   contents and file permissions of general/device/proof daemon overrides, `DIGI_PATCHKIT`,
+   `DIGI_PATCHKIT_BIN` and `DIGI_PLUSDRIVE`. Binary symlinks are followed; missing/nonregular
+   paths are recorded without opening FIFOs/devices. Nonempty `PATCHKIT_MODULES` / `DIGI_PK_ROOT`
+   and explicitly set `DIGI_RUNTIME_MODULES` deliberately miss the cache through a fresh nonce.
+   Arbitrary source/include roots and variant `out/tools` / `out/cache/dko` have no proven bounded
+   read closure; no override-tree scan or complete variant-root closure is claimed. Specialized
+   catalogue/files/LP0 card, patched-image, plan and provenance overrides also prevent reuse;
+   LP0 case-selection flags are hashed. Default mode remains deterministic. Override-mode runs
+   can create local/remote entries that are never reused. External/ignored-only edits and
+   environment changes still require direct owner-target invocation: runtime hashes do not
+   trigger Git affected selection.
+   HERMETIC `rust-tests` now includes a runtime input over sorted present
+   `CARGO_PROFILE_RELEASE_*` names/values, including build-override options, and its recipe source.
+   Evidence: 31 focused runtime-input tests pass (same-path binary replacement, symlink target
+   replacement/removal, unrelated-file stability, override nonreuse and profile normalization).
+   A real device-digest probe confirms deterministic default input, same-path binary byte
+   invalidation, unchanged digest after an unrelated sibling edit, byte-restoration equivalence
+   and missing-root override nonreuse. Native Nx `inputs --json` / `--check` confirm the runtime
+   digests on `digikit/remote:test-conformance`, `core/runtime-tests:test-device` and
+   `dkneeds:rust-tests`, retaining remote source/device-model inputs. All 28 selection cases pass,
+   including the new profile-recipe selection and existing module/model isolation cases.
+   Four final affected preflight tasks pass (`DIGI_GATE_BASE=HEAD mise run test:changed`), as do
+   Prettier and `git diff --check`. These are declared-input and runtime-digest proofs; no device
+   rerun, actual Nx result-cache restoration, Cargo compilation or full merge gate was run.
 3. **Active pilot: separate execution boundaries.** Provide independent unit, component, ColdFire-only,
    coupled and device targets. Establish SDK contract fixtures and retain each module's own
    conformance. Runtime edits may skip consumer conformance only when contract evidence proves
