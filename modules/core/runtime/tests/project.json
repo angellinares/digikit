@@ -74,11 +74,6 @@
         "plusdrive": true
       },
       {
-        "files": ["settings.device.test.ts"],
-        "modules": ["test/c-demo"],
-        "plusdrive": true
-      },
-      {
         "files": ["card-safety.device.test.ts"],
         "modules": ["test/c-demo"],
         "plusdrive": true

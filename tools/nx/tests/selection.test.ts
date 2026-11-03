@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { globSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, globSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +56,10 @@ function plan(args: string[], outputFlag = '--graph'): { tasks: TaskGraph; graph
   return JSON.parse(readFileSync(output, 'utf8'));
 }
 
-const selected = (file: string, targets: string) => plan(['affected', `--files=${file}`, `--targets=${targets}`]).tasks;
+const selected = (file: string, targets: string) => {
+  expect(existsSync(join(root, file)), `selection fixture exists: ${file}`).toBe(true);
+  return plan(['affected', `--files=${file}`, `--targets=${targets}`]).tasks;
+};
 
 let workspace: ProjectGraph;
 beforeAll(() => {
@@ -73,6 +76,7 @@ it('prepares precisely the declared image core objects before patched-image cons
   const consumers = [
     'core/runtime-tests:test-device',
     'core/runtime-service-tests:test-device',
+    'core/runtime-settings-tests:test-device',
     `${imageConsumer()}:test-conformance`,
     'regression:test-device',
   ];
@@ -205,6 +209,30 @@ it('keeps every runtime device file in exactly one owner command', () => {
 });
 
 describe('workspace selection', () => {
+  it('selects only the settings owner for a settings acceptance edit', () => {
+    const graph = selected(
+      'modules/core/runtime/tests/settings/settings.device.test.ts',
+      'test-device,test-conformance',
+    );
+    expect(
+      Object.values(graph.tasks)
+        .filter((task) => task.target.target === 'test-device')
+        .map((task) => task.target.project),
+    ).toEqual(['core/runtime-settings-tests']);
+    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
+  }, 30_000);
+
+  it('keeps every actual consumer of the shared settings fixture selected', () => {
+    const graph = selected('tests/fixtures/modules/c-demo/src/c/c_demo.c', 'test-device,test-conformance');
+    expect(
+      Object.values(graph.tasks)
+        .filter((task) => task.target.target === 'test-device')
+        .map((task) => task.target.project)
+        .sort(),
+    ).toEqual(['core/runtime-settings-tests', 'core/runtime-tests']);
+    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
+  }, 30_000);
+
   it.each([
     'modules/core/runtime/tests/service-commands/service-commands.device.test.ts',
     'tests/fixtures/modules/svc-echo/src/c/svc_echo.c',
@@ -280,6 +308,7 @@ describe('workspace selection', () => {
     expect(graph.dependencies['core/runtime:rust-tests']).toEqual([]);
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
     expect(graph.tasks['core/runtime-service-tests:test-device']).toBeDefined();
+    expect(graph.tasks['core/runtime-settings-tests:test-device']).toBeDefined();
   }, 30_000);
 
   it('keeps desktop source edits out of unrelated host suites', () => {

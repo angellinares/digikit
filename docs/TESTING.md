@@ -51,7 +51,7 @@ iteration checks do not replace this gate. `mise run test:plan` explains task se
 | Device tests of one module | `pnpm nx:pilot run <module-id>:test-device` |
 | One device test file | `pnpm nx:pilot run <module-id>:pack`, then `pnpm --filter @digi/regression test:runtime <path filter>` |
 | Loading one module | `pnpm nx:pilot run <module-id>:test-conformance` |
-| Framework module, runtime | `core/runtime:rust-tests` for runtime units; the owning project's `test-device` for acceptance (`core/runtime-tests` for runtime). Use `test:plan` for affected consumers; default `test` retains their coverage until SDK fixtures prove a narrower contract. |
+| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers; default `test` retains their coverage until SDK fixtures prove a narrower contract. |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval |
@@ -245,9 +245,10 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 - `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`pnpm test:host`), found recursively under `modules/`.
 - `*.device.test.ts`: device tests, registered in the owner's `project.json` (`metadata.runtimeAcceptance`, files relative to that
   project root) and run by Vitest's `runtime` project. Runtime acceptance is owned by `core/runtime-tests`
-  (`modules/core/runtime/tests/project.json`) with CF-only service commands in nested
-  `core/runtime-service-tests` (`service-commands/project.json`). Each owner's `test-device` runs its files;
-  `mise run module:check core/runtime` discovers and runs both owners serially.
+  (`modules/core/runtime/tests/project.json`) with CF-only service commands and settings in nested
+  `core/runtime-service-tests` and `core/runtime-settings-tests` (`service-commands/project.json` and
+  `settings/project.json`). Each owner's `test-device` runs its files;
+  `mise run module:check core/runtime` discovers and runs all owners serially.
   `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
   loads the module through the shared conformance suite.
 - `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them in `tests/digikit/scenarios/` and `modules/*/*/tests/scenarios/`.
@@ -345,9 +346,9 @@ MODULES page. `tests/patchkit/test_limits.py` keeps tools from repeating a limit
 
 `mise run module:check NAME [--device dt2|dn2]` (NAME: `<author/name>` or the name alone) selects the suite by
 module type and runs the module's own Python tests. A module with `tests/**/*.device.test.ts` files gets
-an uncached Nx `test-device` target (inferred by `tools/nx/modules.mjs`, read from the Nx graph); `module:check` runs it only after Python success, propagates a
+Nx `test-device` targets (inferred by `tools/nx/modules.mjs`, read from the Nx graph); `module:check` runs all owners serially after Python success, propagates a
 failure, and reports size/fit only after both stages pass. With no Python tests, the existing source
-check still precedes an owned target. Frequency shifter owns the exact existing TypeScript shifter
+check still precedes the owned targets. Frequency shifter owns the exact existing TypeScript shifter
 suite on both devices, including when `--device` limits other checks. Its daemons and ready inputs
 use the existing harness resolution/overrides; only resolution holds a shared benchlock, released
 before the target. The target does not run the broad gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
