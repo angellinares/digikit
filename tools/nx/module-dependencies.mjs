@@ -41,7 +41,11 @@ export const createDependencies = (_opts, ctx) => {
         }));
       // Implicit edges: a module with device tests depends on the harness, the daemon and the packs;
       // only a module with test-conformance also depends on the conformance suite.
-      const hasDeviceTests = !!(p.targets?.['test-device']?.options?.command || p.targets?.['test-conformance']);
+      const hasDeviceTests = !!(
+        p.targets?.['test-device']?.options?.command ||
+        p.targets?.['test-device-full']?.options?.command ||
+        p.targets?.['test-conformance']
+      );
       const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
       // Runtime acceptance records name the fixture/content modules loaded by device tests.
       // Their source changes must invalidate the consumer's device-test cache.

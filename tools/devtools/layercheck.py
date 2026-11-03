@@ -508,8 +508,8 @@ SC_ALLOWED_PREFIXES = (
 )
 # Runtime integration acceptance uses shipped modules as fixtures. Only this test
 # and the runtimeAcceptance metadata may name them; runtime implementation may not.
-SC_RUNTIME_TEST = "modules/core/runtime/tests/capacity/capacity.device.test.ts"
-SC_RUNTIME_PROJECT = "modules/core/runtime/tests/capacity/project.json"
+SC_RUNTIME_TEST = "modules/core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts"
+SC_RUNTIME_PROJECT = "modules/core/runtime/tests/capacity/inferred/project.json"
 SC_SKIP_DIRS = {".git", "out", "node_modules", "target", "firmware", ".venv", "dist"}
 SC_HINT = (
     "move the test or model into the module's tests/ directory, use a fixture module (tests/fixtures/modules), "

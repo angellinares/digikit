@@ -120,7 +120,7 @@ run = "mise run test -- --explain"
 description = "Explain the default test selection without running tasks; DIGI_GATE_BASE sets the shared comparison base"
 
 [tasks."test:full"]
-run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot run-many -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,catalog-check,pack,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone,tier-sweep,dt2-tier-sweep'
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot run-many -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,catalog-check,pack,test-device,test-device-full,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone,tier-sweep,dt2-tier-sweep'
 description = "Full gate: every gate target on every project, plus the tier sweeps"
 
 # --- tests ---

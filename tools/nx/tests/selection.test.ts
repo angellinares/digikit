@@ -214,12 +214,13 @@ it('keeps every gated runtime device file in exactly one owner command', () => {
     );
   const actual = owners
     .flatMap((owner) => {
-      const command = owner.targets['test-device'].options?.command ?? '';
+      const target = owner.targets['test-device'] ?? owner.targets['test-device-full'];
+      const command = target.options?.command ?? '';
       const files = (command.match(/\S+\.device\.test\.ts/g) ?? []).map((file) =>
         resolve(root, 'tests/regression', file),
       );
       const sources = new Set((owner.metadata?.runtimeAcceptance ?? []).flatMap((rec) => rec.sources ?? []));
-      for (const source of sources) expect(owner.targets['test-device'].inputs).toContain(`{workspaceRoot}/${source}`);
+      for (const source of sources) expect(target.inputs).toContain(`{workspaceRoot}/${source}`);
       for (const rec of owner.metadata?.runtimeAcceptance ?? [])
         for (const file of rec.files ?? []) expect(files).toContain(join(root, owner.root, file));
       return files;
@@ -332,21 +333,35 @@ describe('workspace selection', () => {
     );
   }, 30_000);
 
-  it('selects only actual device consumers of a shipped machine manifest', () => {
-    const graph = selected(manifestOf(otherImageConsumer()), 'test-device');
+  it('keeps full-only module fixtures out of quick capacity selection', () => {
+    const manifest = manifestOf(otherImageConsumer());
     expect(
-      Object.values(graph.tasks)
-        .filter((task) => task.target.target === 'test-device')
-        .map((task) => task.target.project),
-    ).toEqual(['core/runtime-capacity-tests']);
-    const consumer = workspace.nodes['core/runtime-capacity-tests'];
-    expect(workspace.dependencies['core/runtime-capacity-tests'].map((dep) => dep.target)).toContain(
-      otherImageConsumer(),
+      Object.values(selected(manifest, 'test-device').tasks).filter((task) => task.target.target === 'test-device'),
+    ).toEqual([]);
+    const full = selected(manifest, 'test-device-full');
+    expect(full.tasks['core/runtime-inferred-needs-tests:test-device-full']).toBeDefined();
+    expect(full.tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
+    const quick = selected('tests/fixtures/modules/dyn-fx-gain/src/module.c', 'test-device');
+    expect(quick.tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
+  }, 30_000);
+
+  it('runs the complete inferred-needs owner only through the full gate', () => {
+    const project = workspace.nodes['core/runtime-inferred-needs-tests'].data;
+    expect(project.targets['test-device']).toBeUndefined();
+    const target = project.targets['test-device-full'];
+    expect(target.options?.env?.DIGIKIT_TIER).toBe('full');
+    expect(target.cache).toBe(false);
+    const graph = plan(['run', 'core/runtime-inferred-needs-tests:test-device-full']).tasks;
+    const prerequisites = graph.dependencies['core/runtime-inferred-needs-tests:test-device-full'].map(
+      (task) => task.id,
     );
-    expect(workspace.dependencies['core/runtime-tests'].map((dep) => dep.target)).not.toContain(otherImageConsumer());
-    expect(
-      consumer.data.metadata?.runtimeAcceptance?.find((rec) => rec.files?.includes('capacity.device.test.ts'))?.modules,
-    ).toContain(otherImageConsumer());
+    const modules = project.metadata!.runtimeAcceptance![0].modules!;
+    expect(modules).toHaveLength(12);
+    for (const id of modules) expect(prerequisites).toContain(`${id}:pack`);
+    expect(prerequisites).toContain('plusdrive-format:cli');
+    const gate = parse(readFileSync(join(root, 'mise.toml'), 'utf8')).tasks as Record<string, { run: string }>;
+    expect(gate.test.run.match(/ -t ([^' ]+)/)![1].split(',')).not.toContain('test-device-full');
+    expect(gate['test:full'].run.match(/ -t ([^' ]+)/)![1].split(',')).toContain('test-device-full');
   }, 30_000);
 
   it('leaves manual device audits out of inferred gate commands', () => {
@@ -503,7 +518,7 @@ describe('workspace selection', () => {
         .filter((task) => task.target.target === 'test-device')
         .map((task) => task.target.project)
         .sort(),
-    ).toEqual(['core/runtime-capacity-tests', 'core/runtime-settings-tests', 'core/runtime-tests']);
+    ).toEqual(['core/runtime-settings-tests', 'core/runtime-tests']);
     expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
   }, 30_000);
 
@@ -608,7 +623,7 @@ describe('workspace selection', () => {
   );
 
   it('retains a leaf module’s own conformance and pack prerequisites', () => {
-    const fixtures = new Set(workspace.dependencies['core/runtime-capacity-tests'].map((dep) => dep.target));
+    const fixtures = new Set(workspace.dependencies['core/runtime-inferred-needs-tests'].map((dep) => dep.target));
     const [owner, node] = Object.entries(workspace.nodes)
       .filter(
         ([name, node]) =>
@@ -618,10 +633,11 @@ describe('workspace selection', () => {
     const source = globSync('src/**/*.{c,rs}', { cwd: join(root, node.data.root) }).sort()[0];
     expect(source).toBeDefined();
     const file = `${node.data.root}/${source}`;
-    const graph = selected(file, 'test-conformance,test-device');
+    const graph = selected(file, 'test-conformance,test-device,test-device-full');
     expect(graph.tasks[`${owner}:test-conformance`]).toBeDefined();
     expect(graph.dependencies[`${owner}:test-conformance`].map((dep) => dep.id)).toContain(`${owner}:pack`);
-    expect(graph.tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
+    expect(graph.tasks['core/runtime-inferred-needs-tests:test-device-full']).toBeDefined();
+    expect(graph.tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
     expect(
       Object.values(graph.tasks)
         .filter((task) => task.target.target === 'test-conformance')

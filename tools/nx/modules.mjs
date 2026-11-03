@@ -223,13 +223,15 @@ export const createNodesV2 = [
       if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
         throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
       const target = deviceTarget(root, tests, recs, imageInput, importInputs);
+      const targetName = config.tags.includes('tier:full') ? 'test-device-full' : 'test-device';
+      if (targetName === 'test-device-full') target.options.env.DIGIKIT_TIER = 'full';
       // This new target identity awaits input/output and cache-behavior evidence.
       target.cache = false;
       target.description =
         'Runtime acceptance; cache temporarily disabled pending input/output and invalidation/restoration evidence.';
       nodes.push([
         file,
-        { projects: { [root]: { name: config.name, root, tags: config.tags, targets: { 'test-device': target } } } },
+        { projects: { [root]: { name: config.name, root, tags: config.tags, targets: { [targetName]: target } } } },
       ]);
     }
     if (matched.includes('tests/regression/project.json'))
