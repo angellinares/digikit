@@ -17,9 +17,9 @@
     "verify:host": "oxlint && pnpm fmt:check && pnpm test:host && pnpm -r run typecheck"
   },
   "devDependencies": {
-    "@nx/devkit": "22.7.12",
+    "@nx/devkit": "24.0.3",
     "eslint-plugin-solid": "0.18.1",
-    "nx": "22.7.12",
+    "nx": "24.0.3",
     "oxlint": "1.87.0",
     "prettier": "3.9.9",
     "prettier-plugin-astro": "1.1.1",
