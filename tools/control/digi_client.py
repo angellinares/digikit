@@ -233,6 +233,23 @@ class Emu:
             **kwargs,
         )
 
+    @classmethod
+    def spawn_zero(
+        cls,
+        syx: str | os.PathLike[str],
+        ready_dir: str | os.PathLike[str],
+        **kwargs: Any,
+    ) -> Emu:
+        """Spawn a ColdFire-only daemon using the ready ColdFire snapshot."""
+        return cls.spawn(
+            str(pathlib.Path(syx).resolve()),
+            "--dsp",
+            "zero",
+            "--cf-snapshot",
+            str(pathlib.Path(ready_dir).resolve() / "digi-audio-m5.snap"),
+            **kwargs,
+        )
+
     def close(self) -> None:
         try:
             self._file.close()

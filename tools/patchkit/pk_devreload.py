@@ -7,7 +7,7 @@ MODULE_OR_SET is a patch set of devices/<device>.toml (`emulator`), or module id
 they require are added. Per device the tool
 
 1. builds the objects of every module in the set whose sources changed (`patchkit build`: unchanged objects cost nothing),
-2. keeps one daemon per device and module set alive between runs (run directory out/runs/patchkit/run-devreload-<device>-<set>; the first run
+2. keeps one daemon per device and module set alive between runs (run directory out/runs/patchkit/run-devreload-<device>-<set>-<dsp>; the first run
    starts it and boots the patched image, `--stop` ends it) and calls `dev.reload` (docs/CONTROL.md): the daemon applies the
    modules again, compares the image with the running one and either swaps the module bytes into a restored main-screen state
    (`swap`: UI layer modules, about a second) or loads the new image (`boot`: the runtime or any other module changed; a cold
@@ -70,6 +70,67 @@ def closure(roots: list[str]) -> list[str]:
         manifest = tomllib.loads((modroots.module_dir(mid) / "module.toml").read_text())
         todo += manifest["module"].get("requires", [])
     return seen
+
+
+def dsp_mode(
+    modules: list[str], store: list[str], *, zero_framework: bool = False
+) -> str:
+    """Classify both closures; a zero-safe base may have core DSP adapters.
+
+    Store files can contain arbitrary packed modules, so their DSP needs are unknown.
+    Synthetic BSS-only modules contain no DSP code. Store closures never inherit the
+    base set's permission to run its framework adapters with a zero peer.
+    """
+    stored = []
+    for entry in store:
+        mid = entry.rstrip("*")
+        if mid.startswith("file:"):
+            return "sharc"
+        if not mid.startswith("synth:"):
+            stored.append(mid)
+    try:
+        for roots, allow_adapters in ((modules, zero_framework), (stored, False)):
+            for mid in closure(roots):
+                manifest = tomllib.loads(
+                    (modroots.module_dir(mid) / "module.toml").read_text()
+                )
+                kind = manifest["module"].get("type")
+                if kind in ("machine", "fx"):
+                    return "sharc"
+                for obj in manifest.get("object", []):
+                    place = obj.get("place")
+                    if place in ("cf.expansion", "cf.flash_cave"):
+                        continue
+                    if (
+                        allow_adapters
+                        and mid.startswith("core/")
+                        and kind == "framework"
+                        and place == "dsp.l2"
+                    ):
+                        continue
+                    return "sharc"
+    except (OSError, ValueError, KeyError, SystemExit):
+        return "sharc"
+    return "zero"
+
+
+def target_dsp_mode(target: str, device: str, store: list[str]) -> str:
+    """Declared zero-safe patch sets may contain optional core DSP adapters."""
+    data = tomllib.loads((ROOT / "devices" / DEVICE_FILE[device]).read_text())
+    policy = tomllib.loads((HERE / "pk_devreload.toml").read_text())
+    hinted = target in policy.get("zero_dsp_patch_sets", []) and target in data.get(
+        "patch_sets", {}
+    )
+    return dsp_mode(resolve_modules(target, device), store, zero_framework=hinted)
+
+
+def assert_mode(emu: Emu, dsp: str) -> None:
+    status = emu.status()
+    audio = status.get("audio")
+    if status.get("dsp") != dsp or (audio is not None) != (dsp == "sharc"):
+        raise H.HarnessError(
+            f"expected DSP {dsp}, got dsp={status.get('dsp')!r}, audio={audio is not None}"
+        )
 
 
 def build(modules: list[str]) -> tuple[float, list[str]]:
@@ -158,7 +219,11 @@ def contact_sheet(frames: list[tuple[str, bytes]], dest: Path) -> None:
 
 
 def run_dir_of(
-    device: str, target: str, store: list[str] | None = None, trace: bool = False
+    device: str,
+    target: str,
+    store: list[str] | None = None,
+    trace: bool = False,
+    dsp: str = "sharc",
 ) -> Path:
     slug = re.sub(
         r"[^A-Za-z0-9.+-]+",
@@ -167,7 +232,7 @@ def run_dir_of(
         + ("+store-" + ",".join(store) if store else "")
         + ("+trace" if trace else ""),
     )
-    return H.OUT / f"run-devreload-{device}-{slug}"
+    return H.OUT / f"run-devreload-{device}-{slug}-{dsp}"
 
 
 def connect(run_dir: Path) -> Emu | None:
@@ -241,7 +306,11 @@ def store_card(device: str, ids: list[str], run_dir: Path, trace: bool = False) 
 
 
 def start(
-    cell: H.Cell, run_dir: Path, store: list[str] | None = None, trace: bool = False
+    cell: H.Cell,
+    run_dir: Path,
+    store: list[str] | None = None,
+    trace: bool = False,
+    dsp: str = "sharc",
 ) -> tuple[Emu, H.Session]:
     """A new daemon that outlives this process: it boots the patched image of the cell (cached by image)."""
     session = H.Session(
@@ -250,6 +319,7 @@ def start(
         cache_dir=H.SHARED_CACHE,
         run_name=f"devreload-{cell.device}",
         run_dir=run_dir,
+        dsp=dsp,
     )
     if store:
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -268,8 +338,10 @@ def release(emu: Emu) -> None:
     emu.close()
 
 
-def session_on(emu: Emu, cell: H.Cell, run_dir: Path) -> H.Session:
-    session = H.Session(cell, H.Goldens(), cache_dir=H.SHARED_CACHE, run_dir=run_dir)
+def session_on(emu: Emu, cell: H.Cell, run_dir: Path, dsp: str = "sharc") -> H.Session:
+    session = H.Session(
+        cell, H.Goldens(), cache_dir=H.SHARED_CACHE, run_dir=run_dir, dsp=dsp
+    )
     session.emu = emu
     card = run_dir / "card.txt"
     session.card = card.read_text() if card.is_file() else None
@@ -279,15 +351,19 @@ def session_on(emu: Emu, cell: H.Cell, run_dir: Path) -> H.Session:
 def stop(
     device: str, target: str, store: list[str] | None = None, trace: bool = False
 ) -> None:
-    run_dir = run_dir_of(device, target, store, trace)
-    emu = connect(run_dir)
-    if emu is None:
-        print(f"{device}: no daemon in {run_dir}")
-        return
-    with contextlib.suppress(OSError, EmuError):
-        emu.quit()
-    emu.close()
-    print(f"{device}: daemon stopped")
+    stopped = False
+    for dsp in ("zero", "sharc"):
+        run_dir = run_dir_of(device, target, store, trace, dsp)
+        emu = connect(run_dir)
+        if emu is None:
+            continue
+        with contextlib.suppress(OSError, EmuError):
+            emu.quit()
+        emu.close()
+        stopped = True
+        print(f"{device}: {dsp} daemon stopped")
+    if not stopped:
+        print(f"{device}: no daemon for {target}")
 
 
 def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
@@ -298,27 +374,32 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
     cell = H.Cell(device, FIRMWARE[device], modules)
     t_build, rebuilt = build(closure(modules))
     store = [m for m in (a.store or "").split(",") if m]
-    run_dir = run_dir_of(device, a.target, store, a.trace)
+    dsp = target_dsp_mode(a.target, device, store)
+    print(f"{device}: auto DSP {dsp}", file=sys.stderr, flush=True)
+    run_dir = run_dir_of(device, a.target, store, a.trace, dsp)
     emu = connect(run_dir)
     started = False
     t_start = 0.0
     if emu is None:
         t = time.monotonic()
-        emu, session = start(cell, run_dir, store, a.trace)
+        emu, session = start(cell, run_dir, store, a.trace, dsp)
         t_start, started = time.monotonic() - t, True
     else:
-        session = session_on(emu, cell, run_dir)
+        session = session_on(emu, cell, run_dir, dsp)
     try:
+        assert_mode(emu, dsp)
         t = time.monotonic()
         # auto_no: the DT2's FILE SYSTEM OK modal is closed once the state is restored, as the harness does after a restart.
         report = emu.call("dev.reload", auto_no=True)
+        assert_mode(emu, dsp)
         t_reload = time.monotonic() - t
         out = Path(a.out) / device
         out.mkdir(parents=True, exist_ok=True)
         t = time.monotonic()
         frames: list[tuple[str, bytes]] = []
         session.run_ms(300)
-        emu.pcm_start()  # the harness' key actions mark the PCM window
+        if dsp == "sharc":
+            emu.pcm_start()  # the harness' key actions mark the PCM window
         session.pcm_mark = 0
         for step in load_keys(a.keys):
             if "shot" in step:
@@ -335,6 +416,7 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
         release(emu)
     return {
         "device": device,
+        "dsp": dsp,
         "path": report.get("path"),
         "reason": report.get("reason"),
         "report": report,
@@ -366,7 +448,7 @@ def describe(r: dict[str, Any]) -> str:
         )
     s = r["seconds"]
     return (
-        f"{r['device']}: {path}{detail}\n"
+        f"{r['device']}: DSP {r['dsp']} (auto); {path}{detail}\n"
         f"    rebuilt {', '.join(r['rebuilt']) or 'nothing'}; daemon {'started' if r['started_daemon'] else 'kept'};"
         f" build {s['build']} s, start {s['daemon_start']} s, reload {s['reload']} s, keys {s['keys']} s,"
         f" total {s['total']} s\n    frames {r['out']}/"

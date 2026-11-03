@@ -144,6 +144,13 @@ modules button (⇧⌘R), with `build: true`: it builds the stale objects of the
 and reloads without `build`.
 `--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
 
+`dk:dev` automatically reports and selects DSP `zero` for ColdFire-only module closures (such as `test/ui-demo`), skipping PCM
+capture. `tools/patchkit/pk_devreload.toml` lists base patch sets whose menu/runtime supports a zero DSP
+peer despite optional DSP adapters (`emulator` on both devices). Store module closures are always checked independently: adding
+`--store digikit/pluck` selects coupled SHARC, as do content DSP objects, unknown object placements and arbitrary `file:` store content.
+Other patch sets, including `sample-tracks`, use the conservative object check. Each DSP mode has its own kept daemon directory;
+the mode and audio status are checked after connecting and reloading. No additional flag is needed.
+
 The daemon method is `dev.reload` (docs/CONTROL.md). It applies the modules again and compares the result with the running image:
 
 | Path | When | What runs | Measured (PGO daemon, warm) |
