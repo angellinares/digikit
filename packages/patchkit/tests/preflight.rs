@@ -44,9 +44,13 @@ fn rig() -> Option<Rig> {
 
 fn run(r: &Rig, image: &[u8], have_stock: bool) -> Outcome {
     let stock = r.stock.clone();
-    preflight(image, &r.reg, &r.known, &move |_| {
-        have_stock.then(|| stock.clone())
-    })
+    preflight(
+        image,
+        &r.reg,
+        &r.known,
+        &move |_| have_stock.then(|| stock.clone()),
+        None,
+    )
 }
 
 fn failed(o: &Outcome) -> String {
@@ -105,7 +109,7 @@ fn a_missing_stock_file_or_an_unknown_base_is_refused() {
     let Some(r) = rig() else { return };
     let o = run(&r, &r.patched, false);
     assert!(failed(&o).contains("not in firmware/"), "{}", failed(&o));
-    let o = preflight(&r.patched, &r.reg, &[], &|_| None);
+    let o = preflight(&r.patched, &r.reg, &[], &|_| None, None);
     assert!(
         failed(&o).contains("not a known stock firmware"),
         "{}",
