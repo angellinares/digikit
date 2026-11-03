@@ -30,6 +30,7 @@ const DEVICE_INPUTS = [
   { dependentTasksOutputFiles: '**/*', transitive: true },
   { runtime: 'node tools/nx/device-inputs.mjs' },
   { env: 'DIGI_EMU_FAST' },
+  { env: 'DIGI_NO_PROGRESS_MS' },
   { env: 'DIGI_PK_READY_DT2_117' },
   { env: 'DIGI_PK_READY_DN2_112' },
   { env: 'SHARC_FAST_REGIONS' },

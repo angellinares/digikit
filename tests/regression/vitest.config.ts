@@ -53,8 +53,10 @@ export default defineConfig({
           name: 'runtime',
           include: ['emulator/**/*.test.ts', '../../modules/**/tests/**/*.device.test.ts'],
           pool: 'forks',
-          testTimeout: 300_000,
-          hookTimeout: 150_000,
+          // Hang detection is the no-progress watchdog (DIGI_NO_PROGRESS_MS, default 120 s). These limits are
+          // backstops, so host load cannot fail a slow but healthy test.
+          testTimeout: 1_800_000,
+          hookTimeout: 600_000,
         },
       },
       {
@@ -63,8 +65,9 @@ export default defineConfig({
           name: 'conformance',
           include: ['../conformance/**/*.device.test.ts'],
           pool: 'forks',
-          testTimeout: 300_000,
-          hookTimeout: 150_000,
+          // Backstops; see the runtime project.
+          testTimeout: 1_800_000,
+          hookTimeout: 600_000,
         },
       },
       {

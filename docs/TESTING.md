@@ -106,7 +106,7 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 
 - `mise run gate` runs `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`), under the shared benchlock at nice 10.
 - `mise run gate:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Run it only after generated-core changes.
-- Gate projects `gate-smoke`, `gate-stock`, `gate-fx` and `gate-card` carry their triggers as `{workspaceRoot}` inputs. `gate-stock` has the target `stock`; `gate-fx` has `pins`, `tier-quick`, `tier-sweep`, `dt2-tier-quick`, `dt2-tier-sweep`, `dt2-tone`, `fx`, `fx-no-aot` and `fx-dt2`. The Vitest suites behind `stock`, `fx` and `fx-dt2` are still the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. Module projects depend on the harness (`regression`, `conformance`), the daemon (`digi-control`) and the packs (`patchkit`). `python-checks` and `python-tests` run on any change and filter by diff.
+- Gate projects `gate-smoke`, `gate-stock`, `gate-fx`, `gate-tier` and `gate-card` carry their triggers as `{workspaceRoot}` inputs. `gate-stock` has the target `stock`; `gate-fx` holds the Vitest FX suites `fx`, `fx-no-aot` and `fx-dt2`; `gate-tier` holds `pins`, `tier-quick`, `tier-sweep`, `dt2-tier-quick`, `dt2-tier-sweep` and `dt2-tone`. The Vitest suites behind `stock`, `fx` and `fx-dt2` are still the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. Module projects depend on the harness (`regression`, `conformance`), the daemon (`digi-control`) and the packs (`patchkit`). `python-checks` and `python-tests` run on any change and filter by diff.
 - Emulator targets run one at a time.
 - Nx prints the output of each task; there is no run directory or `--rerun-failed`.
 
@@ -371,9 +371,10 @@ The gate limits CPU use through Nx and the shared benchlock.
   sweeps), `DIGI_PK_JOBS` (patchkit smoke cells), `DIGI_JOBS`, `DIGIKIT_JOBS`, `DIGI_CONFORM_JOBS`,
   `DIGIKIT_PART_JOBS`. One coupled emulator process keeps 2 cores busy.
 - `DIGI_RUNTIME_JOBS=N` sets the number of coupled daemons of the runtime acceptance run (1 is the
-  serial run). A no-progress watchdog (`tests/regression/watchdog.ts`) closes a daemon whose
-  DSP frames, main loop hits and audio frames stay the same for `DIGI_NO_PROGRESS_MS` (default 120000)
-  of wall time, so the test fails at once; a paused daemon without a job is idle and not counted.
+  serial run). A no-progress watchdog (`tests/regression/watchdog.ts`) is on by default. It closes a
+  daemon whose DSP frames, main loop hits and audio frames stay the same for 120 s of wall time
+  (`DIGI_NO_PROGRESS_MS`, in ms; 0 turns it off), so the test fails at once; a paused daemon without a
+  job is idle and not counted. The runtime and conformance wall timeouts are 30 min backstops.
 - `pnpm nx:pilot run digi-control:daemons` builds the daemons and writes `dist/daemons.json`; helpers
   read it when `DIGI_EMUD_*` is unset. The builds use the daemon store (`<git common dir>/emud-cache`,
   `tools/devtools/verify_build.py`).
@@ -456,6 +457,8 @@ Memory panel.
 
 ## Known issues
 
+- fx-reuse: the onset shift varies by +-64 samples between identical runs (free-running coupled
+  emulator); the tolerance is 128.
 - DN2 chorus-width sweep assertion (full `fx-dn2` tier): an open question whether the oracle or the
   DSP is wrong. See [tests/regression/scenarios/README.md](../tests/regression/scenarios/README.md).
 - `tests/sharc/generation/test_sharc_pcode_language.py::test_temporary_artifacts_match_in_tree_when_present`
