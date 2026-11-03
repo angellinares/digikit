@@ -17,3 +17,18 @@ export const records = (root) => {
   const file = join(root, 'project.json');
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
 };
+
+// Explicit patchkit libraries include only selected modules and their declared requirements.
+export const manifestClosure = (byId, ids) => {
+  const files = new Set();
+  const visit = (id) => {
+    const module = byId.get(id);
+    if (!module) throw new Error(`Unknown scoped module ${id}`);
+    if (files.has(module.file)) return;
+    files.add(module.file);
+    for (const required of module.manifest.requires ?? []) visit(required);
+  };
+  for (const id of ids) visit(id);
+  return [...files].sort();
+};
+export const manifestArgs = (files) => files.map((file) => `--manifest ${file}`).join(' ');

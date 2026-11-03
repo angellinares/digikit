@@ -33,14 +33,25 @@ export const BUILD_INPUTS = [
   '{workspaceRoot}/tools/devtools/portable_flock.py',
 ];
 
+// These commands receive an explicit library; shared devices, SDK and tool inputs stay conservative.
+const ALL_MANIFESTS = new Set([
+  '{workspaceRoot}/modules/**/module.toml',
+  '{workspaceRoot}/tests/fixtures/modules/**/module.toml',
+]);
+export const scopedManifestInputs = (inputs, manifests) => [
+  ...inputs.filter((input) => !ALL_MANIFESTS.has(input)),
+  ...manifests.map((file) => `{workspaceRoot}/${file}`),
+];
+
 // Cache inputs of test-device and test-conformance: the module and its graph deps (core modules, harness via
 // regression/conformance, daemon and patchkit crate sources) with their `production` files (sources without
 // tests/ and docs; regression's runtime helpers come from each suite's import closure), the outputs of
 // the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
 // ready dirs via device-inputs.mjs.
 // Image core sources/objects are explicit production inputs, without acceptance-fixture graph edges.
-// Also named explicitly: the harness packages (test-support, control-client, dk-session), every module.toml
-// (the conformance suite scans manifests to select modules) and tools/emulator/fast_regions.json (sets SHARC_* env).
+// Also named explicitly: the harness packages (test-support, control-client, dk-session), every shipped
+// module.toml for general device tests, and tools/emulator/fast_regions.json (sets SHARC_* env).
+// Scoped conformance replaces the manifest glob with the selected manifest.
 export const DEVICE_INPUTS = [
   'default',
   '^production',

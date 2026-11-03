@@ -4,8 +4,8 @@
 // metadata.runtimeAcceptance), test-host, test-device and test-conformance (vitest directly, after the packs).
 import { globSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { read, records, packDevices, isUploadable, dkm } from './module-manifests.mjs';
-import { PK, IMAGE_BUILD, BUILD_INPUTS, DEVICE_INPUTS, deviceTarget } from './module-targets.mjs';
+import { read, records, packDevices, isUploadable, dkm, manifestClosure, manifestArgs } from './module-manifests.mjs';
+import { PK, IMAGE_BUILD, BUILD_INPUTS, DEVICE_INPUTS, deviceTarget, scopedManifestInputs } from './module-targets.mjs';
 import { testImportInputs } from './test-imports.mjs';
 
 export { createDependencies } from './module-dependencies.mjs';
@@ -25,7 +25,7 @@ export const createNodesV2 = [
     const byId = new Map(
       files.map((f) => {
         const parsed = read(ctx.workspaceRoot, f);
-        return [parsed.module.id, { manifest: parsed.module, objects: parsed.object ?? [] }];
+        return [parsed.module.id, { file: f, manifest: parsed.module, objects: parsed.object ?? [] }];
       }),
     );
     const coreBuilds = new Set(
@@ -103,22 +103,24 @@ export const createNodesV2 = [
             cwd: '.',
           },
         };
-      if (devices.length && packable.has(m.id))
+      if (devices.length && packable.has(m.id)) {
+        const manifests = manifestClosure(byId, [m.id]);
         targets.pack = {
           executor: 'nx:run-commands',
           cache: false,
-          inputs: BUILD_INPUTS,
+          inputs: scopedManifestInputs(BUILD_INPUTS, manifests),
           dependsOn: ['patchkit:cli'],
           outputs: devices.map((d) => `{workspaceRoot}/${dkm(d, m.id)}`),
           options: {
             commands: [
               'mkdir -p dist/modules/dt2 dist/modules/dn2',
-              ...devices.map((d) => `${PK} pack ${m.id} --device ${d} -o ${dkm(d, m.id)}`),
+              ...devices.map((d) => `${PK} pack ${m.id} ${manifestArgs(manifests)} --device ${d} -o ${dkm(d, m.id)}`),
             ],
             parallel: false,
             cwd: '.',
           },
         };
+      }
       const aliasCmds = [];
       const aliasOutputs = [];
       const aliasSources = new Set();
@@ -129,7 +131,9 @@ export const createNodesV2 = [
           if (!src) continue;
           aliasSources.add(source);
           for (const d of packDevices(src.manifest)) {
-            aliasCmds.push(`${PK} pack ${source} --device ${d} --name ${alias} -o ${dkm(d, alias)}`);
+            aliasCmds.push(
+              `${PK} pack ${source} ${manifestArgs(manifestClosure(byId, [source]))} --device ${d} --name ${alias} -o ${dkm(d, alias)}`,
+            );
             aliasOutputs.push(`{workspaceRoot}/${dkm(d, alias)}`);
           }
         }
@@ -137,7 +141,7 @@ export const createNodesV2 = [
         targets['pack-aliases'] = {
           executor: 'nx:run-commands',
           cache: false,
-          inputs: BUILD_INPUTS,
+          inputs: scopedManifestInputs(BUILD_INPUTS, manifestClosure(byId, [...aliasSources])),
           dependsOn: ['patchkit:cli', ...[...aliasSources].map((s) => `${s}:pack`)],
           outputs: aliasOutputs,
           options: {
@@ -165,7 +169,7 @@ export const createNodesV2 = [
           executor: 'nx:run-commands',
           cache: true,
           inputs: [
-            ...DEVICE_INPUTS,
+            ...scopedManifestInputs(DEVICE_INPUTS, [f]),
             imageInput,
             ...importInputs(globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot })),
           ],
@@ -173,7 +177,7 @@ export const createNodesV2 = [
           outputs: [],
           options: {
             command: 'pnpm --filter @digi/regression test:conformance',
-            env: { DIGI_CONFORMANCE_MODULES: m.id, REGRESSION_JOBS: '2' },
+            env: { DIGI_CONFORMANCE_MODULES: m.id, DIGI_CONFORMANCE_MANIFEST: f, REGRESSION_JOBS: '2' },
             cwd: '.',
           },
         };

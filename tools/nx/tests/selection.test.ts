@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
+import { manifestClosure } from '../module-manifests.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
@@ -25,7 +26,12 @@ type ProjectGraph = {
         tags?: string[];
         targets: Record<
           string,
-          { options?: { command?: string }; inputs?: unknown[]; outputs?: string[]; cache?: boolean }
+          {
+            options?: { command?: string; env?: Record<string, string> };
+            inputs?: unknown[];
+            outputs?: string[];
+            cache?: boolean;
+          }
         >;
         metadata?: { runtimeAcceptance?: { files?: string[]; sources?: string[] }[] };
       };
@@ -243,7 +249,50 @@ it('derives content runtime edges from the unique runtime role', () => {
   );
 });
 
+it('forms explicit manifest libraries from selected modules and transitive requirements only', () => {
+  const manifest = (id: string, requires: string[] = []) =>
+    [id, { file: `modules/${id}/module.toml`, manifest: { requires } }] as const;
+  const modules = new Map([
+    manifest('example/content', ['example/adapter']),
+    manifest('example/adapter', ['example/runtime']),
+    manifest('example/runtime'),
+    manifest('example/unrelated'),
+  ]);
+  expect(manifestClosure(modules, ['example/content', 'example/adapter'])).toEqual([
+    'modules/example/adapter/module.toml',
+    'modules/example/content/module.toml',
+    'modules/example/runtime/module.toml',
+  ]);
+  expect(() => manifestClosure(modules, ['example/missing'])).toThrow('Unknown scoped module example/missing');
+});
+
 describe('workspace selection', () => {
+  it('limits pack and conformance manifest inputs to their scoped reads', () => {
+    const own = 'modules/machines/pluck/module.toml';
+    const unrelated = 'modules/machines/analog/module.toml';
+    for (const target of ['digikit/pluck:pack', 'digikit/pluck:test-conformance']) {
+      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
+      expect(inputs.files).toContain(own);
+      expect(inputs.files).not.toContain(unrelated);
+    }
+    const remote = JSON.parse(nx(['show', 'target', 'inputs', 'digikit/remote:pack', '--json']));
+    expect(remote.files).toContain('modules/core/adapters/input/module.toml');
+    const conformance = workspace.nodes['digikit/pluck'].data.targets['test-conformance'];
+    expect(conformance.options?.env?.DIGI_CONFORMANCE_MANIFEST).toBe(own);
+    const general = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
+    expect(general.files).toContain(unrelated);
+  }, 30_000);
+
+  it('selects scoped packs for owned and required manifests while excluding unrelated packs', () => {
+    expect(selected('modules/machines/analog/module.toml', 'pack').tasks['digikit/pluck:pack']).toBeUndefined();
+    const own = selected('modules/machines/pluck/module.toml', 'pack,test-conformance');
+    expect(own.tasks['digikit/pluck:pack']).toBeDefined();
+    expect(own.tasks['digikit/pluck:test-conformance']).toBeDefined();
+    const required = selected('modules/core/adapters/input/module.toml', 'pack,test-conformance');
+    expect(required.tasks['digikit/remote:pack']).toBeDefined();
+    expect(required.tasks['digikit/remote:test-conformance']).toBeDefined();
+  }, 30_000);
+
   it('packs affected modules without device tests through the default gate', () => {
     const gate = parse(readFileSync(join(root, 'mise.toml'), 'utf8')).tasks as Record<string, { run: string }>;
     const targets = gate.test.run.match(/ -t ([^' ]+)/)![1];
