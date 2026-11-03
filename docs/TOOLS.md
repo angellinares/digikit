@@ -157,7 +157,7 @@ each has a module docstring with its full command line.
 | `tools/devtools/sharc_regionbench.py` | One-region microbenchmark for generated block code (about 50 s per variant). |
 | `tools/devtools/benchlock.py` | Shared lock for builds and exclusive lock for timed runs (`status` shows holders). |
 | `tools/devtools/upload_bench.py` | `uv run python -m tools.devtools.upload_bench [--device dn2\|dt2] -- --bytes N`: one free-running daemon, then `upload_bench.mjs` (digikit BEGIN/DATA/END and ranged VERIFY, DN2) or `upload_bench_rpc.mjs` (stock +Drive MidiRpc write, DT2): wall MB/s, guest instructions per byte (`work_insn_per_byte` less the firmware's own load), the real-time factor, controller CPU seconds. |
-| `tools/devtools/rust_ws.py` | `mise run test` / `test:slow` / `lint:rust` helper: cargo over the whole workspace with the pinned toolchain. |
+| `tools/devtools/rust_ws.py` | `test:slow` / `lint:rust` helper: cargo over the whole workspace with the pinned toolchain. |
 | `tools/emulator/digi_env.py` | Paths, firmware lookup, ready-input lookup, the generated-core registry and fast-region tables (`tools/emulator/fast_regions.json`). |
 | `tools/devtools/wasm_parity.mjs` | `mise run web:parity NAME`: check the browser core renders a scenario's PCM byte-identical to native. |
 | `tools/devtools/worktree-setup.sh` | Link `out/`, `.venv`, each `firmware/*.syx` and generated language files into an agent worktree. |

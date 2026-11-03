@@ -18,13 +18,13 @@ execution requirements, not levels. A successful boot proves only what the run a
 | Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `pnpm test:host` |
 | Unit (web) | Web app Node suites in `apps/web/tests` | `pnpm --filter @digi/web test` |
 | Unit (Python) | RE, firmware and dev tools | pytest on named files under `tests/<owner>/`; `mise run test:pypy` for the PyPy subset |
-| Unit (Rust) | Crates | `cargo nextest` through the gate target `rust-tests` or `mise run test` |
+| Unit (Rust) | Crates | `cargo nextest` through the gate target `rust-tests` |
 | Component | Module DSP conformance on the SHARC core | `mise run module:check ID` |
 | Device: stock UI | DT2 stock pages and transport goldens (zero DSP) | `mise run test:stock` |
 | Device: FX | Stock FX oracles | `mise run test:fx`, `mise run test:fx:dt2` |
 | Device: runtime | Emulator oracles (`tests/regression/emulator`) and module-owned device tests (`modules/**/tests/*.device.test.ts`) | `pnpm nx:pilot run <module-id>:test-device` |
 | Device: module loads | One shared conformance suite (`tests/conformance`) loads every shipped upload | `pnpm nx:pilot run-many -t test-conformance` |
-| Device: Python | Digikit boot scenarios, patchkit smoke matrix, patched-boot pytest files | owner pytest files; `mise run patch:test` |
+| Device: Python | Module equivalence, pluck menu and pages scenarios, `upload-rust`, patchkit smoke matrix, patched-boot pytest files | owner pytest files; `mise run patch:test` |
 | App E2E | None yet | none |
 
 A mocked UI test, a preview or a daemon scenario is not app E2E coverage.
@@ -95,8 +95,7 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run dev:plusdrive-check` | The firmware's own view of an image built from a folder (about 1 min). |
 | `mise run scenario NAME` | Replays one headless scenario. |
 | `mise run scenario:all` | Every DN2 scenario; fails when a pinned PCM hash differs. |
-| `mise run test` | `test_outcomes run --check` over `tests` (one process per file), then `rust_ws test`, `pnpm test:host`, `pnpm test`, the DN2 pins. Excludes slow gates and runtime acceptance. |
-| `mise run test:slow` | The same runner with `--slow` and a one-hour per-file timeout, then `rust_ws gates`. |
+| `mise run test:slow` | `test_outcomes run --check` over `tests` with `--slow` and a one-hour per-file timeout, then `rust_ws gates`. |
 | `mise run test:quick` | Launcher, PGO, target and coupled-tool tests, then `coupled test-quick`. |
 | `mise run gate` | The merge gate: `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`). |
 | `mise run gate:full` | Every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Only after generated-core changes. |
@@ -194,7 +193,7 @@ under `modules/` and `tests/conformance/`.
 | `tests/firmware` | `.syx` container, device profiles, snapshots, +Drive format |
 | `tests/dsp` | DSP maps, FX scenario generators, audio checks |
 | `tests/devtools` | Benchlock, agent guard, render-cache audit, test outcomes |
-| `tests/digikit` | Digikit boot scenarios (below); data in `scenarios/*.toml` |
+| `tests/digikit` | Digikit boot scenarios (below); data in `scenarios/*.toml`, plus `modules/*/*/tests/scenarios/` |
 | `tests/regression` | Native Vitest: `dt2/` (stock), `emulator/` (emulator oracles), `runtime/` (helpers only), `scenarios/` (FX), `host/` (no device) |
 | `tests/conformance` | The shared module-load suite (`load-dt2.device.test.ts`, `load-dn2.device.test.ts`, `load.ts`) |
 | `tests/scenarios` | Stock scenario inputs and PCM pins |
@@ -234,7 +233,7 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 - `*.device.test.ts`: device tests, registered in the module's `project.json` (`metadata.runtimeAcceptance`, files relative to the module
   root) and run by the `runtime` project. `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
   loads the module through the shared conformance suite.
-- `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them next to `tests/digikit/scenarios/`.
+- `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them in `tests/digikit/scenarios/` and `modules/*/*/tests/scenarios/`.
 - `module:check ID`, `gate` and `test:changed` select them. A change in the module selects its tests and those of the modules that depend
   on it; a change only in `tests/` runs python-tests (and `host` for `.ts`), no Rust or web step.
 - A scenario that pins the PCM of a module lives with that module. A shared test needs "a module" only: it uses a fixture of
@@ -290,7 +289,7 @@ change a result) and directory scans such as `modules/README.md`. Failed tasks a
 
 ### Digikit boot scenarios
 
-The runtime loads its module set at boot. A TOML file in `tests/digikit/scenarios/` names the device,
+The runtime loads its module set at boot. A TOML file in `tests/digikit/scenarios/` or `modules/*/*/tests/scenarios/` names the device,
 the module sets and the expectations. `uv run python -m tools.patchkit.pk_digikit_scen list|run [NAME ...] [--image IMG] [--tier quick|full]`
 boots the patched firmware through `pk_dkrt_boot` and checks. A scenario file has `[scenario] name, kind, devices, tier`
 and a table named like the kind. Kinds:
@@ -300,9 +299,10 @@ and a table named like the kind. Kinds:
 | `equiv` | Machine, parameter, page and voice rows of a boot with set S equal those of the image patchkit builds with S's static twin; PCM of a note equal, or pinned by `pcm_sha256` (Em approves a new value). |
 | `upload` | Module upload over USB SysEx: only `rust` is Python. The other parts are in `modules/core/runtime/tests/upload.device.test.ts` and `upload-faults.device.test.ts`. |
 | `menu` | Ticking a set in SETTINGS > DIGIKIT > MODULES and restarting loads the set; PCM equals the patched-in set. |
+| `pages` | Parameter pages of a machine on track 1: the run-time module's frames equal the patched-in twin's. |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)
-and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default; `gate:full` sets `full`.
+and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default. No gate sets `full`: full-tier tests (Python scenarios and TypeScript device tests with `full: true`) run only when `DIGIKIT_TIER=full` is set by hand. `mise run module:check` sets it for a module's own scenarios.
 Both use the newest image of each device. Cards are cached by content in `out/cache/digikit/cards/`.
 Jobs: `DIGIKIT_JOBS` (default 3). `DIGIKIT_PROFILE=1` prints the phase table,
 `DIGIKIT_RUN_SALT=x` forces cold boots.
@@ -412,8 +412,8 @@ Set `DIGI_RENDER_CACHE=0` for release and publication gates.
 
 ## Nx cache
 
-`pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The cache is
-per worktree: Nx 22's database cache does not restore entries that another worktree recorded. A hit
+`pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The local cache is
+per worktree: Nx 22's database cache does not restore entries that another worktree recorded. The "Remote cache" section covers sharing across worktrees. A hit
 replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
 
 A target may be cached only when `uv run python -m tools.devtools.nx_input_audit PROJECT:TARGET`

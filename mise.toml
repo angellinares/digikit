@@ -1,6 +1,6 @@
 # Toolchains for the native SHARC core (native/). Python stays on uv.
-# Task groups: setup, workbench and emu:*, web:*, scenario:*, gate*, test:*, lint:*, perf:*, gen:*,
-# dev:*, module:*, patch:*, dk:*. `mise run TASK -- --help` prints a tool's options.
+# Task groups: setup, workbench and emu:*, ui:*, web:*, wasm:*, scenario:*, check:*, gate*, clean:*, test:*, lint:*,
+# perf:*, gen:*, dev:*, module:*, patch:*, dk:*. `mise run TASK -- --help` prints a tool's options.
 
 [settings]
 activate_aggressive = true
@@ -134,16 +134,6 @@ run = [
   "uv run python -m tools.emulator.coupled test-quick",
 ]
 description = "Fast checks for the tooling, the audio sink and the coupled runtime"
-
-[tasks.test]
-run = [
-  "uv run python -m tools.devtools.test_outcomes run --check --out out/runs/tests/latest tests",
-  "uv run python -m tools.devtools.rust_ws test",
-  "pnpm test:host",
-  "pnpm --filter @digi/web test",
-  "uv run python -m tools.emulator.coupled scenario --all",
-]
-description = "Broad tests: Python tests (tools/devtools/test_outcomes.py run: one process per file, in parallel, see docs/TESTING.md), workspace Rust tests, host Vitest projects, web tests, every DN2 scenario pin; excludes slow gates and the Vitest device suites (test:stock and the Nx test-device and test-conformance targets)"
 
 [tasks."test:slow"]
 run = [
