@@ -968,6 +968,69 @@ mod cache_generation_tests {
     use super::*;
 
     #[test]
+    fn core_generation_matches_explicit_core_manifest_catalog() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let started = std::time::Instant::now();
+        // Match gen's first pass: read existing cache declarations, never check freshness or build.
+        let legacy = Library::scan_repo_defined(&root, true, Some(&[]), &[]).unwrap();
+        let core: Vec<_> = legacy
+            .modules
+            .iter()
+            .filter(|m| m.dir.starts_with(root.join("modules/core")))
+            .collect();
+        assert!(!core.is_empty());
+        let paths: Vec<_> = core.iter().map(|m| m.dir.join("module.toml")).collect();
+        let ids: Vec<_> = core.iter().map(|m| m.id().to_string()).collect();
+        // This also verifies every required module is included in the explicit core set.
+        let mut explicit = Library::from_manifests(
+            Build {
+                root: &root,
+                only: Some(&[]),
+                defines: &[],
+            },
+            &paths,
+            true,
+            &ids,
+        )
+        .unwrap();
+        let models = crate::typed::Models::from_dir(&root.join("devices")).unwrap();
+        let facts = crate::devgen::Facts::from_dir(&root.join("devices")).unwrap();
+        explicit.lower(&models).unwrap();
+        let generate = |lib: &Library, id: &str| {
+            let mut files = crate::modgen::generate(lib, &models, id).unwrap();
+            files.extend(crate::devgen::generate(lib, &facts, id).unwrap());
+            files.sort();
+            files
+        };
+        let mut count = 0;
+        for id in &ids {
+            let baseline = generate(&legacy, id);
+            assert_eq!(
+                baseline,
+                generate(&explicit, id),
+                "core generation differs for {id}"
+            );
+            count += baseline.len();
+            println!(
+                "{id}: {}",
+                baseline
+                    .iter()
+                    .map(|(path, _)| path.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        // The content pass cannot add a gallery for these core modules: all their objects were
+        // already read in both libraries above, because Build::only filters content modules only.
+        assert!(count > 0);
+        println!(
+            "compared {} core modules, {count} generated files in {:?}",
+            ids.len(),
+            started.elapsed()
+        );
+    }
+
+    #[test]
     fn generation_reads_cached_declarations_without_building_and_tolerates_missing_cache() {
         let root = std::env::temp_dir().join(format!("digikit-cached-gen-{}", std::process::id()));
         let dir = root.join("modules").join("new-machine");
