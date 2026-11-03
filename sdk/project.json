@@ -2,6 +2,22 @@
   "$schema": "../node_modules/nx/schemas/project-schema.json",
   "name": "sdk",
   "targets": {
+    "test-host": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "hostTests",
+        "{workspaceRoot}/tools/nx/tests/sdk-contract.test.ts",
+        "{workspaceRoot}/tests/fixtures/modules/sine/src/module.c",
+        "{workspaceRoot}/tests/fixtures/modules/dyn-fx-gain-both/src/module.c"
+      ],
+      "outputs": [],
+      "options": {
+        "forwardAllArgs": false,
+        "command": "pnpm exec vitest run --config vitest.host.config.ts --project nx-host tools/nx/tests/sdk-contract.test.ts",
+        "cwd": "."
+      }
+    },
     "check-generated": {
       "executor": "nx:run-commands",
       "cache": false,

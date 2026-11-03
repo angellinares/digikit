@@ -38,6 +38,7 @@ cardRigs(
   'card safety',
   {
     devices: ['dt2'],
+    dsp: 'zero',
     uploads: true,
     relaxFs: true, // the card after the cut upload carries the firmware's own writes: no filesystem check on the next boot
     roots: RT,
@@ -232,7 +233,7 @@ cardRigs(
   },
 );
 
-cardRigs('card safety: torn sectors', { uploads: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
+cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
   const { first, selA } = cardStore(h.device);
   const headerB = deviceProfile(h.device).card.store.header_b_sector;
   const claim = claimHeader(h.device);

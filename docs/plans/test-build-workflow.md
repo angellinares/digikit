@@ -2,6 +2,40 @@
 
 Objective: fast, accurate Nx selection with explicit build and cache boundaries, retaining coverage. Nx owns scheduling; mise remains a thin entry point.
 
+## New-branch checkpoint (2026-11-04)
+
+PR #285 merged at `fe906662`; follow-up work is on `test/sdk-session-boundaries` from
+that main commit. The historical checkpoints below remain evidence for their recorded trees.
+The plan remains active; current priorities and limits are:
+
+1. **SDK contract baseline added (`e1af872b`).** Host fixtures compile real machine and FX
+   declarations through the public headers. Five native Nx selection tests, `sdk:test-host` and
+   cheap preflight pass. These additive contracts do not replace each module's device conformance
+   or establish that runtime changes may skip it.
+2. **Card-safety mode boundary proved (`96314667`).** General and torn-card rigs use zero DSP;
+   the foreign-card rig stays coupled because its UI wait advances through DSP frames, and the
+   small-card rig stays cold. The exact named run passed 15/15 tests across DT2 1.17 and DN2 1.12
+   in 275.31 s. Independent review found no issues. This is acceptance evidence, without a paired
+   speedup claim. The FX-panel zero-DSP pilot (`a051e453`) failed on both devices with
+   `E_DSP_XFER=-35` for three DSP fixtures and was reverted in `e8d63341`; keep that owner coupled.
+   Transfer-live also stays coupled because its `test/sine` fixture carries a DSP payload.
+3. **Session infrastructure audit complete; no pooling change justified.** Existing per-file
+   reusable sessions already reload the fixture-owned card, require a new epoch and protocol
+   session, and discard dirty daemons. The existing `fx-reuse` device proof covers reuse. No safe
+   remaining fixed wait or high-confidence speed prerequisite was identified; avoid duplicating
+   that lifecycle or introducing a global pool without a new isolation contract.
+4. **Next: review selection before broader verification.**
+   `DIGI_GATE_BASE=main mise run test:plan` currently selects 30 requested tasks out of 81 because
+   the SDK project-configuration change has broad reach. This is planning evidence only; broad
+   tests were not run at the user's direction. Keep iteration scoped to owners and retain the
+   merge-gate requirement unless the user approves an exception. Actual Nx cache
+   invalidation/output-restoration proof remains deferred; moving runtime directories is optional
+   and has no demonstrated speed prerequisite.
+
+Documentation checks: Prettier, `git diff --check` and
+`DIGI_GATE_BASE=HEAD mise run test:changed` pass (zero selected tasks). No device run or full
+gate was repeated for this checkpoint.
+
 ## Sequence and checkpoints
 
 0. **Done: upgrade Nx first.** `80135ab5` pins Nx/devkit 24.0.3. All 120 project definitions and
@@ -203,10 +237,11 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    within that target to amortize. Sharing boots across targets would need an explicit scheduling
    and pristine-card/reset contract; no batching change or speedup is claimed. SDK contract fixtures
    are additive; loader compatibility changes remain deferred by the user.
-4. **Next: share session infrastructure.** Consolidate TypeScript fixtures, reset and event
-   helpers; use bounded concurrency after session isolation is proven. ColdFire waits cannot
-   depend on DSP-frame progress. Define a fresh card baseline, epoch/protocol checks and a rule
-   to discard dirty daemons before reuse.
+4. **Audited: retain existing session infrastructure.** Per-file reusable sessions already
+   enforce fixture-owned card reload, fresh epoch/protocol sessions and dirty-daemon discard,
+   with existing `fx-reuse` device evidence. No additional safe fixed wait was identified.
+   A global pool or further concurrency needs a new isolation contract; ColdFire-only waits
+   cannot depend on DSP-frame progress.
 5. **Optional, last: move directories.** Consider runtime outside content after dependency and
    execution boundaries work. Create a raw folder only for an actual contract or module.
 
@@ -243,8 +278,10 @@ proposes only canonical SDK and mirror versions (0.5.4 to 0.6.0); no builds or p
   selects its four device-test owners and no conformance targets, while selected patched-image
   tests retain `IMAGE_BUILD`. Continue auditing real source reads and cache behavior;
   selection counts alone do not establish a performance improvement.
-- Decide the minimum SDK contract fixtures before reducing cross-module conformance.
-- Decide the fresh-card/reset/epoch contract and ColdFire progress signal before pooling sessions.
+- Build on the additive public-header SDK fixtures; prove any proposed reduction in cross-module
+  conformance separately before changing selection.
+- Retain the existing per-file fresh-card/reset/epoch contract; require new isolation evidence
+  and a suitable ColdFire progress signal before pooling sessions.
 - Preserve coverage on DT2 OS 1.17 and DN2 OS 1.12. Delete scenarios only after both-device parity.
 - Iterate with scoped owner checks, never full suites. Run the merge gate before merging unless
   the user explicitly approves an exception. Record checkpoint commits and actual checks here.
