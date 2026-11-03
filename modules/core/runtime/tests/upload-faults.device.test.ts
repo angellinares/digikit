@@ -107,7 +107,6 @@ uploadTests(
     }
   },
   {
-    skip: 'open: the exported overlay of a zero-DSP session blanks the store header (python-test-triage.md)',
     full: true,
     symbols: ['DKRT_UPLOAD_CUT'],
   },
@@ -168,7 +167,6 @@ uploadTests(
     );
   },
   {
-    skip: 'open: the exported overlay of a zero-DSP session blanks the store header (python-test-triage.md)',
     full: true,
     symbols: ['DKRT_UPLOAD_CUT', 'DKRT_UPLOAD_TEAR'],
   },

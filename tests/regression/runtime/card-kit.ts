@@ -119,6 +119,16 @@ export function recordsIn(cardFile: string, device: Device, overlay?: Buffer): (
   return [selA, selB].map((s) => decodeRecord(readSectors(cardFile, s, 1, overlay)));
 }
 
+/** The header sector the claim writes: an empty store, seq 1 (card.rs `claim`; earlier source: pk_digikit_debug.py `run_card_torn`). */
+export function claimHeader(device: Device): Buffer {
+  const { first, end } = cardStore(device);
+  const b = Buffer.alloc(SECTOR);
+  b.write('DKST', 0, 'latin1');
+  [3, 0, 0, 1, 0, 1, 1, end - first].forEach((v, i) => b.writeUInt32BE(v >>> 0, 4 + 4 * i));
+  b.writeUInt32BE(zlib.crc32(b.subarray(0, 508)), 508);
+  return b;
+}
+
 // ---- the card image ----------------------------------------------------------------------------------------------------------------
 
 export interface CardOptions extends Partial<Omit<SelRecord, 'paths'>> {
@@ -295,6 +305,19 @@ export async function bootInfo(session: Session, plan: RuntimePlan) {
     stable: tail[SEL_MAX + 1]!,
     reasonName: SAFE_NAMES[d.reason] ?? '?',
   };
+}
+
+/**
+ * `bootInfo` once no selected module is still LOADING (1): the DSP part of a module follows its ColdFire part over the first UI-loop
+ * passes. Steps 100 emulated ms at a time, up to `ms` (Python `wait_dsp`); the session must be paused.
+ */
+export async function bootInfoLoaded(session: Session, plan: RuntimePlan, ms = 5000) {
+  for (let i = 0; i < ms / 100; i++) {
+    const info = await bootInfo(session, plan);
+    if (!info.results.includes(1)) return info;
+    await advance(session, 100);
+  }
+  return bootInfo(session, plan);
 }
 
 /** `DKRT_CARD`: state, the first non-blank sector, its crc32, writes refused and done. */

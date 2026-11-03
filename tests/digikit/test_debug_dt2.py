@@ -4,6 +4,6 @@ import pytest
 from scen_cases import cases, run
 
 
-@pytest.mark.parametrize(("scen", "image"), cases(("card", "debug", "crash"), "dt2"))
+@pytest.mark.parametrize(("scen", "image"), cases(("debug", "crash"), "dt2"))
 def test_scenario(scen, image, tmp_path_factory, request):
     run(scen, image, tmp_path_factory, request)

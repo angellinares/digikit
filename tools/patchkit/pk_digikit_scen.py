@@ -9,7 +9,7 @@ globbing; no list names them; the names are unique across both places):
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx"
+    kind = "equiv" | "safe" | "menu" | "upload" | "debug" | "crash" | "pages" | "fx"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -34,7 +34,6 @@ Kinds:
              counter: early leads to safe mode at the third boot, late never does (finding 37).
   menu       a set checked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with NO and YES on APPLY & RESTART? is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
-  cut        the card states a power cut leaves between the two copies of the selection record.
   card       `[card] part = "torn"` only: a power cut inside the first writes to a blank card (finding 46, residual risk). The other card-safety
              cases are the TypeScript card-safety test.
   debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
@@ -44,7 +43,7 @@ Kinds:
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
-  upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
+  upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = rust, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
 Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
@@ -933,68 +932,6 @@ def run_safe(c: Ctx) -> None:
     c.common_checks()
 
 
-def run_cut(c: Ctx) -> None:
-    t = c.table()
-    mods = [c.pack(m, f"m{i}.dkm") for i, m in enumerate(t["modules"])]
-    img = c.image_for(RT, "run")
-    new, old = B.make_record(mods, seq=2), B.make_record([], seq=1)
-    torn = bytearray(new)
-    torn[100] ^= 0xFF
-    named = {"new": new, "old": old, "torn": bytes(torn)}
-    cases = t["case"]
-    if c.tier == "quick":  # the first cases only
-        cases = cases[: t.get("quick_cases", len(cases))]
-
-    def one_case(case: dict[str, Any], k: int) -> Callable[[], None]:
-        a, b = named[case["a"]], named[case["b"]]
-        card = c.card(None, recs=(a, b))
-
-        def run() -> None:
-            with c.rig(img, card, f"cut{k}") as rig:
-                info = rig.boot_info()
-                want = case["want"]
-                n = len(mods) if want["loaded"] == "all" else want["loaded"]
-                c.check(
-                    f"power cut, A {case['a']} / B {case['b']}: the boot uses the valid copy with the higher sequence number",
-                    info["loaded"] == n
-                    and info["seq"] == want["seq"]
-                    and info["copy"] == want["copy"]
-                    and info["safe"] == 0,
-                    f"loaded {info['loaded']} seq {info['seq']} copy {info['copy']}",
-                )
-                c.done(rig)
-
-        return run
-
-    def runtime_cut() -> None:
-        with c.rig(img, c.card(None), "cut-rt") as rig:
-            r = rig.post(B.CMD_SELECT_ONE, "\0" + "\0".join(mods) + "\0\0")
-            recs = rig.sel_records()
-            c.check(
-                "one copy written by the runtime: A new, B still empty",
-                r == 0
-                and recs[0] is not None
-                and recs[0]["seq"] == 1
-                and recs[1] is None,
-                str(recs),
-            )
-            rig.restart()
-            info = rig.boot_info()
-            c.check(
-                "the restart after the cut loads the new copy",
-                info["loaded"] == len(mods) and info["copy"] == 0,
-                str(info["results"]),
-            )
-            c.done(rig)
-
-    # every boot is its own daemon on its own card: they run side by side
-    c.parallel(
-        *[one_case(case, k) for k, case in enumerate(cases)],
-        *([runtime_cut] if t.get("runtime_cut", True) else []),
-    )
-    c.common_checks()
-
-
 def run_dkrun(
     c: Ctx, rig: B.BootRig, D: Any, blobs: dict[str, bytes], files: dict[str, str]
 ) -> None:
@@ -1321,12 +1258,6 @@ def run_upload(c: Ctx) -> None:
     U.run_upload(c)
 
 
-def run_card(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_card(c)
-
-
 def run_debug(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_debug as DBG
 
@@ -1347,14 +1278,12 @@ def run_pages(c: Ctx) -> None:
 
 KINDS = {
     "pages": run_pages,
-    "card": run_card,
     "debug": run_debug,
     "crash": run_crash,
     "equiv": run_equiv,
     "upload": run_upload,
     "menu": run_menu,
     "safe": run_safe,
-    "cut": run_cut,
 }
 
 
@@ -1453,9 +1382,7 @@ def _run_pairs(
     base.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     rank = {
-        "cut": 1,
         "upload": 1,
-        "card": 1,
         "debug": 1,
         "safe": 3,
         "crash": 3,

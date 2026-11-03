@@ -298,9 +298,9 @@ and a table named like the kind. Kinds:
 | Kind | Checks |
 | --- | --- |
 | `equiv` | Machine, parameter, page and voice rows of a boot with set S equal those of the image patchkit builds with S's static twin; PCM of a note equal, or pinned by `pcm_sha256` (Em approves a new value). |
-| `upload` | Module upload over USB SysEx: `ops`, `cut`, `stock`, `playback`, `rust`, `screenshot`, `quick`. |
+| `upload` | Module upload over USB SysEx: only `rust` is Python. The other parts are in `modules/core/runtime/tests/upload.device.test.ts` and `upload-faults.device.test.ts`. |
 | `menu` | Ticking a set in SETTINGS > DIGIKIT > MODULES and restarting loads the set; PCM equals the patched-in set. |
-| `safe`, `cut` | Safe mode after a module resets the machine; card states after a power cut. |
+| `safe` | Safe mode after a module resets the machine. The card states after a power cut are in `modules/core/runtime/tests/safe-mode.device.test.ts`. |
 | `debug` | Parts `memaudit`, `capacity`, `isolation` (below). |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)

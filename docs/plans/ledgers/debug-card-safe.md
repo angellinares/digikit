@@ -6,7 +6,13 @@ Local helpers: `card-rig.ts` (`cardRigs`, `waitReset`), `debug-kit.ts` (`crashRe
 
 card-safety and card-small: Python deleted; the store-range write check is ported to card-rig.ts (afterClose, uploads). `debug_on` is obsolete (the debug switch is gone); the saved-selection flag bit belongs to debug-log.
 
-card-torn (`tests/digikit/scenarios/card-torn.toml`, added 2026-11-02): stays Python (`run_card_torn`) until it is ported to card-safety.test.ts.
+card-torn (`tests/digikit/scenarios/card-torn.toml`, added 2026-11-02; D `run_card_torn`):
+
+card-torn | D:111 | torn_b: header B torn, A blank: card blank, upload E_NOSTORE and no writes, CLEAR recovers, next upload commits | -> card-safety.test.ts: card safety: torn sectors (both devices)
+card-torn | D:136 | torn_a: header A torn, B whole: ours, upload commits | -> card-safety.test.ts: card safety: torn sectors (both devices)
+card-torn | D:147 | torn_a_only: header A torn, B blank: foreign at sector 0, BEGIN and CLEAR E_INUSE, nothing written | -> card-safety.test.ts: card safety: torn sectors (both devices)
+card-torn | D:173 | torn_sel: selection copy A torn: blank, next selection writes both copies | -> card-safety.test.ts: card safety: torn sectors (both devices)
+card-torn | D:188 | stray_b: bytes in header B only, state reported | DROPPED: report data only, no check
 
 Differences that apply to many lines:
 
@@ -146,7 +152,7 @@ safe-late-fault | S:772 | fault-after.bin in the store (`cfg/`) | -> `h.cfg` and
 
 ## cut-selection (dt2 and dn2, full; S `run_cut`)
 
-Ported, skipped on DN2 (`safe-mode.test.ts` ~:130, handover open item 6); Python keeps that device.
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
 
 cut-selection | S:959 | A new / B old, A torn / B old, A old / B new, A torn / B torn: valid copy with the higher seq | -> safe-mode.test.ts: power cut, A x / B y ... (four tests from one table)
 cut-selection | S:947 | the quick tier runs the first two cases (`quick_cases`) | DROPPED: the scenario is full tier, so all four cases run

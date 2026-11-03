@@ -54,10 +54,13 @@ This PR (branch `test/watchdog-default`):
    `build:ui` and `check:ui`, lint, host tests) and the hermetic rust-tests are cached.
 3. Port the Python scenarios to TypeScript. Prove each family on both devices, then delete its Python
    runner code:
-   - card-torn to `card-safety.device.test.ts`.
+   - Done on branch `test/card-upload-ports`: card-torn in `card-safety.device.test.ts`.
+   - Done on branch `test/card-upload-ports`: the upload full tier; matching Python upload scenarios deleted.
+   - Done on branch `test/card-upload-ports`: upload-cut and clear-cut.
+   - Done on branch `test/card-upload-ports`: cut-selection in `safe-mode.device.test.ts`, both devices.
    - debug parts: capacity, fits, inferred-needs, isolation, memaudit, sticky-types, menu-open.
-   - the upload full tier once, then delete the matching Python upload scenarios.
-   - upload-cut and clear-cut.
+     Design agreed in principle: a Rust `patchkit capacity-set` subcommand replaces
+     tools/patchkit/pk_capacity.py; memaudit moves last because `mise run module:audit` uses it.
 4. Smaller items:
    - fx-reuse onset jitter: +-64 samples between identical runs, tolerance 128.
    - dkneeds lists broad inputs (`pyproject.toml`, `nx.json`, every `Cargo.toml`).

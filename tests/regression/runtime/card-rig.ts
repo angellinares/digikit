@@ -8,6 +8,7 @@ import { describe, expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type RuntimeCase } from '../support.ts';
 import {
   bootInfo,
+  bootInfoLoaded,
   buildCard,
   cardView,
   pokeKnob,
@@ -313,8 +314,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     if (o.hold) {
       // Python `settle_ms` (SETTLE_MS, 300 emulated ms), then `wait_dsp`: up to 5 s until no module is still LOADING (its DSP part follows the ColdFire part)
       await advance(runtime.session, 300);
-      for (let i = 0; i < 50 && (await bootInfo(runtime.session, prepared.plan)).results.includes(1); i++)
-        await advance(runtime.session, 100);
+      await bootInfoLoaded(runtime.session, prepared.plan);
     }
     await expectRuntimeUi(runtime.session, prepared.plan, artifacts, { afterEpoch, paused: o.hold });
     await rpc(runtime.session, 'run.mode', { mode: 'paused' });

@@ -30,27 +30,26 @@ broke every run once (`unknown module core/sample-pool`).
 | Family | Quick tier | Full tier |
 | --- | --- | --- |
 | settings, roundtrip, equiv | 18 pass | 20 of 20 pass; equiv keeps the approved PCM pin |
-| upload | 3 pass | 11 of 16 pass before fixes; upload-folders fixed (10 s stall allowance), not rerun; upload-cut and upload-clear-cut skipped (open item 1) |
+| upload | 3 pass | 11 of 16 pass before fixes; upload-folders fixed (10 s stall allowance), not rerun; upload-cut and upload-clear-cut fixed on `test/card-upload-ports` (open item 1) |
 | card-safety, card-small, debug-module, safe-mode, crash-capture, debug-guard | 14 pass | 24 pass, 13 fail; the failing groups are skipped (open item 6) |
 
 ## Open items
 
-1. upload-cut and upload-clear-cut: after a power cut, the exported overlay of the first session holds a
-   freshly formatted empty store header (66 records near sector 48 173 056 on DT2), while the guest's
-   next boot lists the old file. Hypothesis: a `dsp: 'zero'` session restores a ColdFire snapshot taken
-   with another card, so the runtime's RAM picture of the store does not match the card. First
-   experiment: run the case with `dsp: 'sharc'` or `'cold'`. Python keeps these two scenarios until fixed.
+1. Resolved on branch `test/card-upload-ports`: the daemon cached the ColdFire-only patched boot state
+   per firmware, not per card (`card_snapshot_key` in packages/emulator/control/src/controller.rs), so
+   every later zero-DSP boot in one daemon restored the first card's RAM picture of the store and wrote
+   it back over the new card. upload-cut and upload-clear-cut now run on both devices.
 2. The daemon's `card.overlay` exports its whole overlay, including the loaded `overlay.bin`; card-rig
    drops records that repeat the card's own overlay (`withoutOwn`), so a guest write of identical bytes
    is not seen. Fix in the daemon: export only this session's writes.
 3. Not ported yet: kind `debug` parts capacity, fits, inferred-needs, isolation, memaudit, sticky-types,
    menu-open; kind `menu` (pluck module scenarios); module equiv TOMLs; upload-rust (Rust host parity).
 4. `mise run test:runtime` builds plusdrive and fails offline when cargo needs downloads; use verify.
-6. Debug-family full tier, skipped per device until fixed (Python still covers them): DT2 crash-capture
+6. DN2 cut-selection is resolved on branch `test/card-upload-ports`: the test read boot info while the
+   DSP part of the modules was still LOADING. The helper `bootInfoLoaded` (card-kit.ts) now waits for it.
+   Debug-family full tier, skipped per device until fixed (Python still covers them): DT2 crash-capture
    early and late ("registers: expected [] to have a length of 16"); DT2 safe-mode, 4 cases ("expected
-   [ 1, +0 ] to deeply equal [ +0, +0 ]" and similar boot-counter checks); DN2 cut-selection, 5 cases
-   ("loaded 0 seq 2 copy 0" where loaded 2 was expected; also "card writes in the store range" in the
-   close check); DN2 debug-guard; DT2 periodic debug events ("a full set (24 words, six events)":
+   [ 1, +0 ] to deeply equal [ +0, +0 ]" and similar boot-counter checks); DN2 debug-guard; DT2 periodic debug events ("a full set (24 words, six events)":
    got 32). The failure logs are in `out/runs/verify/20261102-032104` of the integration lane.
 5. Daemons from other sessions and lanes stay alive for days (`mise run clean:runs` lists orphans).
 
@@ -71,9 +70,7 @@ conformance suite over all 8 shipped modules; one Nx cache for all worktrees, gu
    against cargo's `digi-emud.d`); a fresh lane restores both in under a second. The Nx cache is per worktree
    (Nx 22's database cache does not restore entries of another worktree). Next: device-result caching with a
    self-hosted Nx remote cache server (`NX_SELF_HOSTED_REMOTE_CACHE_SERVER`, OpenAPI spec), starting with conformance.
-5. Upload full tier once, then delete the matching Python upload scenarios. Fix open item 1, then delete
-   upload-cut and upload-clear-cut. Port the remaining debug parts (item 3), then measure the Python tool
-   graph again (finding 104).
+5. Port the remaining debug parts (item 3), then measure the Python tool graph again (finding 104).
 6. Stage D: `nx affected` selects device tests; delete verify_route's hand tables.
 
 ## Process notes

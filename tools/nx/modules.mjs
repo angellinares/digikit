@@ -33,6 +33,8 @@ const DEVICE_INPUTS = [
   { runtime: 'node tools/nx/device-inputs.mjs' },
   { env: 'DIGI_EMU_FAST' },
   { env: 'DIGI_NO_PROGRESS_MS' },
+  // quick or full tier (tests/regression/runtime/devices.ts FULL_TIER): selects which tests run.
+  { env: 'DIGIKIT_TIER' },
   { env: 'DIGI_PK_READY_DT2_117' },
   { env: 'DIGI_PK_READY_DN2_112' },
   { env: 'SHARC_FAST_REGIONS' },

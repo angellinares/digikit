@@ -120,6 +120,7 @@ export function uploadTests(
           dsp: opts.sharc ? 'sharc' : 'zero',
           project: true,
           uploads: true,
+          relaxFs: true,
           stallMs: opts.stallMs,
           onClose: (r, report) => {
             expect(report.emulators).toBeGreaterThan(0);

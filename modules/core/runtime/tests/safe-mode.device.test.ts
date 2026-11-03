@@ -1,14 +1,14 @@
 import { be32 } from '@digi/dk-session';
 import type { Device } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import { bootInfo, CMD as MAILBOX, currentRecord, encodeRecord, postRaw } from '@digi/regression/runtime/card-kit.ts';
+import { bootInfo, bootInfoLoaded, CMD as MAILBOX, currentRecord, encodeRecord, postRaw } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 import { CARD_TIMEOUT, settleHang } from '@digi/regression/runtime/debug-kit.ts';
 import { rpc } from '@digi/regression/runtime/fx-live.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 /**
- * Safe mode and power cuts (Python `run_safe`, `run_safe_late`, `run_cut` of pk_digikit_scen.py; scenarios safe-fault, safe-late-fault and cut-selection, all full
+ * Safe mode and power cuts (Python `run_safe`, `run_safe_late` of pk_digikit_scen.py and `run_cut`, deleted: c608bbf5:tests/digikit/scenarios/cut-selection.toml; scenarios safe-fault, safe-late-fault and cut-selection, all full
  * tier): the boot counter, the safe-once flag, a stable period that clears the counter, and the card states a power cut can leave between the two
  * selection record copies. A boot is one card image; the next boot runs on the card the last one left.
  */
@@ -127,7 +127,7 @@ cardRigs('safe mode', { full: true, skip: { dt2: OPEN }, roots: RT, symbols: CAR
 
 cardRigs(
   'power cut between the selection record copies',
-  { full: true, skip: { dn2: OPEN }, roots: RT, symbols: CARD_SYMBOLS },
+  { full: true, roots: RT, symbols: CARD_SYMBOLS },
   (h) => {
     const modules = () => CUT_MODULES[h.device].map((id, i) => h.mod(id, `m${i}`));
 
@@ -143,8 +143,8 @@ cardRigs(
           const named = { new: fresh, old: encodeRecord({ paths: [], seq: 1 }), torn };
           const { session } = await h.boot(await h.card({ modules: mods, recs: [named[a], named[b]] }));
           await h.ready();
-          const info = await bootInfo(session, h.plan);
-          expect(info, `loaded ${info.loaded} seq ${info.seq} copy ${info.copy}`).toMatchObject({
+          const info = await bootInfoLoaded(session, h.plan);
+          expect(info, `loaded ${info.loaded} of ${info.count} (results ${info.results.join(",")}) seq ${info.seq} copy ${info.copy}`).toMatchObject({
             loaded: want.loaded === 'all' ? mods.length : want.loaded,
             seq: want.seq,
             copy: want.copy,
@@ -175,7 +175,7 @@ cardRigs(
         await dk.restart();
         await dk.waitForBoot();
         await h.ready();
-        expect(await bootInfo(session, h.plan), 'the restart loads the new copy').toMatchObject({
+        expect(await bootInfoLoaded(session, h.plan), 'the restart loads the new copy').toMatchObject({
           loaded: mods.length,
           copy: 0,
         });

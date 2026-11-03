@@ -51,9 +51,9 @@ All in the emulator (coupled or ColdFire-only daemons; `mise run verify` routes 
 | Claim | Scenario (tier, devices) |
 | --- | --- |
 | Module install over USB, SELECT, RESTART, MODULES lists it after the boot, the file is in `modules/` of the new area, the mirror folder gets it with the card's sha256, delete, `card.sync` removes it from the folder, the next boot skips the missing path and reaches the UI | `modules/core/runtime/tests/transfer-live.device.test.ts` (explicit/full-only runtime acceptance, DT2 and DN2; originally Python quick-tier `transfer-live`, with historical step results DN2 46 s, DT2 82 s) |
-| Install, replace, delete, every error code, +Drive round trip of the store area | `upload-ops` (full, both), `upload-quick` (quick, DT2) |
-| Folders, prefix paging, MKDIR, 6 MiB streamed upload, reuse of freed space, ranged VERIFY, CAPACITY STORE | `upload-folders` (full, both) |
-| Power cut during an upload, during the table write, between the two headers | `upload-cut`, `upload-clear-cut`, `cut-selection` (full) |
+| Install, replace, delete, every error code, +Drive round trip of the store area | `upload-ops` (full, both), `upload-quick` (quick, DT2) in `modules/core/runtime/tests/upload.device.test.ts` |
+| Folders, prefix paging, MKDIR, 6 MiB streamed upload, reuse of freed space, ranged VERIFY, CAPACITY STORE | `upload-folders` (full, both) in `modules/core/runtime/tests/upload.device.test.ts` |
+| Power cut during an upload, during the table write, between the two headers | `upload-cut` and `upload-clear-cut` in `modules/core/runtime/tests/upload-faults.device.test.ts`, the selection copies in `modules/core/runtime/tests/safe-mode.device.test.ts` (full) |
 | Foreign data in the area makes the card read-only, a blank card is claimed by the first write, a store of ours keeps working, no write outside the area | `card-safety` (quick, DT2) |
 | A card smaller than the area: no store, a log line, the boot goes on | `card-small` (quick, both) |
 | DT2 sample over the stock MidiRpc file commands, verified by the firmware's hash | `samples-live` (full, DT2) |

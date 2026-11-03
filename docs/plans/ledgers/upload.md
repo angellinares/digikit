@@ -1,7 +1,7 @@
 # Ledger: the `upload` device scenarios (tools/patchkit/pk_digikit_upload.py)
 
 One line per Python check: `scenario | U:line | what | -> TS file:test name | or COVERED / DROPPED / NOT PORTED`.
-Files are under `modules/core/runtime/tests/`. Names: `U` = `upload.device.test.ts`, `F` = `upload-faults.device.test.ts`, `K` = `upload-kit.ts` (protocol bodies, `uploadTests`, `roundtrip`; the rig is `card-rig.ts`).
+Files are under `modules/core/runtime/tests/`. Names: `U` = `upload.device.test.ts`, `F` = `upload-faults.device.test.ts`, `K` = `tests/regression/runtime/upload-kit.ts` (protocol bodies, `uploadTests`, `roundtrip`; the rig is `card-rig.ts`).
 Tests: Q = `upload-quick: one upload, a replace and a delete` (DT2, always), O = `upload-ops: the commands, errors and CLEAR` (full),
 FO = `upload-folders: folders, ranges, a streamed upload, first fit and paging` (full), ST = `upload-stock: ...` (full), TX = `upload-txfull: ...` (full),
 SC = `upload-screenshot: ...` (always), CUT = `upload-cut: ...` (full), CC = `upload-clear-cut: ...` (full), PB = `upload-playback: ...` (DT2, full).
@@ -12,6 +12,8 @@ The Python `common_checks_upload` is `UploadRig.finish`: write-watch events 0, f
 Python `c.parallel` cases run one after the other in one daemon.
 
 ## quick (U:154-196, 243-253), DT2
+
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
@@ -41,6 +43,8 @@ Python `c.parallel` cases run one after the other in one daemon.
 | ops | 230 | READ: missing file -59, offset at the end -54, length 0 -55 | U:Q, O |
 
 ## ops (U:256-371, 374-418, 421), full tier, DT2 and DN2
+
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
@@ -84,6 +88,8 @@ Python `c.parallel` cases run one after the other in one daemon.
 | ops | put+verify of small modules, LIST after reboot, CLI delete/persistence | | COVERED by live.ts installModules, tests/conformance/load.ts, transfer-live.device.test.ts (the ops file puts are the protocol-level cases, kept) |
 
 ## folders (U:458-697), full tier, DT2 and DN2
+
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
@@ -133,7 +139,7 @@ Folders compares the card by `plusdrive store ls` size and sha256 (as Python `ca
 
 Five cases (cuts after write 1, 3, 4, 5, 6), each on two cold boots (the cut card, then the card as the cut leaves it).
 
-Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-faults.device.test.ts` ~:101, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-cut`.
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
@@ -145,6 +151,8 @@ Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-f
 
 ## stock (U:795-846), full tier
 
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
+
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
 | stock | 835 | the stock firmware answered the five MidiRpc requests | U:ST |
@@ -154,6 +162,8 @@ Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-f
 Difference: the stock reference is the unpatched firmware started from the CF snapshot (`Session.start`, no runtime), not booted on the same card image.
 
 ## playback (U:1095-1162), DT2, full tier, coupled DSP
+
+Status: proven on DT2 (DT2 only; full tier, 2026-11-03); Python scenario deleted.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
@@ -167,7 +177,7 @@ Differences: the two runs are two cold boots in one daemon (not two parallel dae
 
 ## clear-cut (U:1194-1307), full tier, DT2 and DN2
 
-Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-faults.device.test.ts` ~:162, open item 1 of `docs/handovers/HANDOVER-2026-11-02-scenario-migration.md`); Python keeps `upload-clear-cut`.
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
@@ -182,6 +192,8 @@ Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-f
 
 ## txfull (U:1336-1402), full tier, DT2 and DN2
 
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
+
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
 | txfull | 1349 | the in-flight word (anchor `cf.midi.site.tx_inflight_lit` of the port file) is a DDR address | U:TX |
@@ -195,6 +207,8 @@ Status: ported but skipped on both devices (`modules/core/runtime/tests/upload-f
 Raw USB delivery uses the control methods `midi.usb.in` and `midi.usb.out` directly (the same calls `EmuUsbTransport` makes); no new infrastructure.
 
 ## screenshot (U:1405-1430), DT2 and DN2, always
+
+Status: proven on DT2 and DN2 (full tier, 2026-11-03); Python scenario deleted.
 
 | scenario | U | what | TS |
 | --- | --- | --- | --- |
