@@ -222,6 +222,11 @@ proposes only canonical SDK and mirror versions (0.5.4 to 0.6.0); no builds or p
   coverage and unwanted selection. Leaf changes retain their own conformance.
 - Audit narrowed inputs against meaningful tests. Cached outputs must restore correctly and
   invalidate for source, dependency, toolchain and device-identity changes.
+- Audit regression helper source reads before narrowing selection. A `card-rig.ts` edit currently
+  selects 81 tasks including prerequisites (15 device and nine conformance targets), through broad
+  regression production / `IMAGE_BUILD` inputs and uncached producers. No narrowing experiment
+  is committed. Preserve coverage while separating helper consumers and image-build prerequisites;
+  selection counts alone do not establish a performance improvement.
 - Decide the minimum SDK contract fixtures before reducing cross-module conformance.
 - Decide the fresh-card/reset/epoch contract and ColdFire progress signal before pooling sessions.
 - Preserve coverage on DT2 OS 1.17 and DN2 OS 1.12. Delete scenarios only after both-device parity.
@@ -248,10 +253,9 @@ six files: `test_dyn_fx.py`, `test_dsp_guard_contract.py`, `test_pk_params.py`,
 `tests/patchkit/`; log: `/tmp/digikit-py-gate-fix.log`. The capacity lane reports
 the named file passing on both devices: eight active tests passed and 23
 tier-gated tests skipped. Independent reviewers reported no issues with the
-repairs. No second full merge gate has run after these repairs; focused passes
-do not establish a green full gate or a measured speedup. The next merge
-checkpoint remains `mise run test` on the repaired tree.
-This documentation checkpoint passes Prettier, `git diff --check` and
+repairs. The subsequent repair gate is recorded below; these focused passes
+alone did not establish a green full gate or a measured speedup.
+That documentation checkpoint passed Prettier, `git diff --check` and
 `DIGI_GATE_BASE=HEAD mise run test:changed` (zero selected tasks).
 
 Patchkit UI checkpoint (2026-11-04): the merge gate's smoke task passed 14/16 cells;
@@ -270,9 +274,27 @@ both named quick cells pass: DT2 18 checks, DN2 14 checks, including DSP budgets
 (projected high 45.8%/67.1%, below 85%). Comparison took 32 s;
 `out/runs/patchkit/pluck-ui-validate.log` and the `20261104-022220-*patched-pluck.jsonl`
 logs retain the checks. Prettier and `git diff --check` pass. Full smoke and the
-merge gate are not rerun at this checkpoint.
+merge gate were not rerun at that checkpoint.
 
-No measured speedup or full gate is claimed. Task-level affected selection is the default after
+Repair-gate checkpoint (2026-11-04): `DIGI_GATE_BASE=1fa13547 mise run test`
+completed 90 tasks: 89 passed and one failed, `core/fxpages:test-device`, in
+63m 20s with zero cache hits. Runtime capacity, Python selection and all 16/16
+smoke cells passed. Log: `/tmp/digikit-nx24-repair-gate.log`. Nx reported a
+19m 51s critical path and 43m 29s recoverable time. These are scheduling
+observations, not a measured speedup or a fully green gate. Source/input and
+prerequisite audits remain necessary before changing selection or cache boundaries.
+
+Focused FX correction (`e68b8f20`): the original named DN2 case reproduced an
+alignment shift of 192 against a raw bound of 128. The shared comparator reports
+interleaved stereo samples, so that shift is 96 frames. Both assertions now divide
+the reported shift by two, retaining the existing 128-frame bound. The same named
+DN2 case then passed with shift 192 in 193.84 s. Lint, Prettier, regression
+typecheck and `git diff --check` passed. DT2 and the affected merge gate have not
+been rerun after this fix; a green gate remains unproven. The next merge
+checkpoint remains `mise run test` on the repaired tree.
+This documentation checkpoint passes Prettier, `git diff --check` and
+`DIGI_GATE_BASE=HEAD mise run test:changed` (zero selected tasks).
+
+No measured speedup or green full gate is claimed. Task-level affected selection is the default after
 matrix review; the repository workflow no longer maintains legacy-mode compatibility branches.
-No device coverage has been removed, and no new device-test cache boundary has been established by
-these host-only checks.
+No device coverage has been removed, and no new device-test cache boundary has been established.
