@@ -4,7 +4,7 @@ import path from 'node:path';
 import { button, type Session } from '@digi/test-support';
 import { expect, test, vi } from 'vitest';
 import type { PatchedSession } from '../support.ts';
-import { evidence, zeroDspEvidence, pickSine } from '../runtime/fx-live.ts';
+import { evidence, pickSine } from '../runtime/fx-live.ts';
 
 test('numeric input hint controls list movement and a failed chord still releases FUNC', async () => {
   const client = { inputButton: vi.fn(), inputTap: vi.fn(), step: vi.fn() };
@@ -63,39 +63,6 @@ test('silent evidence preserves mandatory finite, guard and no-fault checks; def
     hits = 0;
     expectNoFault.mockRejectedValueOnce(new Error('DSP halt'));
     await expect(evidence(runtime, directory, 'fault', overlays, false)).rejects.toThrow('DSP halt');
-  } finally {
-    fs.rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test('zero-DSP evidence requires that mode and retains overlay, guard and fault checks without PCM', async () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-fx-zero-evidence-'));
-  let dsp = 'zero';
-  let hits = 0;
-  const session = {
-    client: {
-      guardReport: vi.fn(async () => ({ total: hits, hits: [] })),
-      call: vi.fn(async (method: string) => {
-        if (method !== 'card.overlay') throw new Error(`unexpected ${method}`);
-        return { sectors: 0 };
-      }),
-    },
-    status: vi.fn(async () => ({ mode: 'paused', dsp })),
-    expectNoFault: vi.fn(),
-  } as unknown as Session;
-  const runtime = { session } as PatchedSession;
-  const overlays: string[] = [];
-  try {
-    await zeroDspEvidence(runtime, directory, 'panel', overlays);
-    expect(overlays).toEqual([path.join(directory, 'panel.overlay.bin')]);
-    expect(session.expectNoFault).toHaveBeenCalledWith('panel');
-    hits = 1;
-    await expect(zeroDspEvidence(runtime, directory, 'guard', overlays)).rejects.toThrow('guard:');
-    hits = 0;
-    vi.mocked(session.expectNoFault).mockRejectedValueOnce(new Error('runtime fault'));
-    await expect(zeroDspEvidence(runtime, directory, 'fault', overlays)).rejects.toThrow('runtime fault');
-    dsp = 'sharc';
-    await expect(zeroDspEvidence(runtime, directory, 'coupled', overlays)).rejects.toThrow('requires zero DSP');
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

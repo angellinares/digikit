@@ -19,7 +19,7 @@ import { record } from './artifacts.ts';
 import { FIRMWARE } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
-import { advance, analysisJson, bounded, evidence, zeroDspEvidence, options, pickSine, word } from './fx-live.ts';
+import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
 import {
   planSymbol,
   prepareRuntimePlanOffline,
@@ -74,8 +74,6 @@ export interface PreparedFxSessionOptions {
   };
   initial: string;
   presets: Record<string, FxCardPreset>;
-  /** UI-only fixtures explicitly omit PCM evidence; coupled fixtures retain it even when silent. */
-  execution?: { dsp: 'zero' | 'sharc' };
   requireAudible?: boolean | ((runtime: PatchedSession) => boolean);
 }
 
@@ -175,7 +173,7 @@ export async function inspectFxBoot(
 ) {
   const { session, dk } = runtime;
   validateRuntimePlan(plan, session);
-  if (session.options.dsp !== 'zero') await bounded(() => session.client.call('pcm.tap', { action: 'start' }));
+  await bounded(() => session.client.call('pcm.tap', { action: 'start' }));
   await bounded(() => session.client.call('run.mode', { mode: 'free' }));
   await expectRuntimeUi(session, plan, artifacts, readiness);
   const boot = planSymbol(plan, 'DKRT_BOOT');
@@ -226,8 +224,6 @@ export async function selectSine(runtime: PatchedSession, profile: FxProfile): P
 
 /** One exact image/plan/write-watch policy per owned fixture. Independent cards reload in the same daemon. */
 export function withPreparedFxSession(device: Device, scope: string, config: PreparedFxSessionOptions) {
-  if (config.execution?.dsp === 'zero' && config.requireAudible !== undefined)
-    throw new Error('zero-DSP FX fixtures cannot request audio evidence');
   if (!Object.hasOwn(config.presets, config.initial)) throw new Error(`unknown initial route preset ${config.initial}`);
   const { name, inventory, modules, symbols, policy } = config.image;
   if (policy !== 'default' && policy !== 'fx-kit' && policy !== 'fx-routes')
@@ -246,10 +242,6 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
   };
   const collectEvidence = async (runtime: PatchedSession, tag: string, requireAudible?: boolean) => {
     rememberEpoch((await bounded(() => runtime.session.status())).epoch);
-    if (config.execution?.dsp === 'zero') {
-      if (requireAudible !== undefined) throw new Error('zero-DSP FX fixtures cannot request audio evidence');
-      return zeroDspEvidence(runtime, artifacts, tag, overlays);
-    }
     const required =
       requireAudible ??
       (typeof config.requireAudible === 'function' ? config.requireAudible(runtime) : (config.requireAudible ?? true));
@@ -258,7 +250,6 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
-      dsp: config.execution?.dsp,
       env: async () => {
         artifacts = fs.mkdtempSync(path.join(os.tmpdir(), `digi-fx-${name}-${device}-`));
         console.info('FX route safety artifacts:', artifacts);
