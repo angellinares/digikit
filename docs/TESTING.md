@@ -54,7 +54,8 @@ iteration checks do not replace this gate. `mise run test:plan` explains task se
 | Loading one module | `pnpm nx:pilot run <module-id>:test-conformance` |
 | Runtime loader fixtures | `pnpm nx:pilot run core/runtime-fixture-tests:test-device` checks a machine and FX on both coupled devices; `core/runtime-service-tests:test-device` covers a zero-DSP service. |
 | Empty-store menu fixture | `pnpm nx:pilot run core/digikit-menu-zero-tests:test-device` checks common menu navigation on both devices with zero DSP; the existing `core/digikit-menu:test-device` keeps coupled capacity checks. |
-| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers; the default gate still selects shipped conformance until the fixture-first scheduling policy is agreed and implemented. |
+| SDK UI fixture | `pnpm nx:pilot run sdk-ui-zero-tests:test-device` exercises the `test/ui-demo` SDK UI controls on both devices with zero DSP. |
+| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers. The default gate uses fixtures instead of unchanged shipped conformance only for an isolated `digikit-menu/src/menu.c` edit; other runtime and public SDK edits retain broad selection. |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval |
@@ -308,6 +309,7 @@ without running it.
   `mise.toml`, so task edits in `mise.toml` do not select every project.
 - If the selection is wider or narrower than the change can reach, fix the inputs and edges in
   `tools/nx/*.mjs` or the `project.json` files.
+- The default `mise run test` and `test:plan` use `tools/nx/gate.mjs` for one reviewed exception: when the only change is a modification to `modules/core/apps/digikit-menu/src/menu.c`, Nx runs its affected targets without unchanged shipped-module `test-conformance`. The menu's zero-DSP and coupled owners, runtime fixtures, and `dkui-host:rust-tests` remain selected. Its host test declares the real `menu.c` input in `modules/core/adapters/ui/host/project.json`. Mixed, deleted, renamed, unknown, loader, SDK and explicit-file selections use normal broad Nx affected selection. Named conformance targets and their full cache keys are unchanged.
 
 ### Remote cache
 
