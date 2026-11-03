@@ -230,6 +230,30 @@ proposes only canonical SDK and mirror versions (0.5.4 to 0.6.0); no builds or p
 
 ## Limits of current evidence
 
+Affected merge-gate checkpoint (2026-11-04): one `mise run test` run before the
+repairs selected 140 tasks: 137 succeeded (10 cached), three failed, in 97m 36s.
+Log: `/tmp/digikit-nx24-merge-gate.log`. Failures were
+`core/runtime-tests:test-device` (only the capacity file; the other eight files
+passed and five were skipped), `gate-smoke:smoke` (patched-pluck UI frames), and
+`tools:python-tests` (five named patchkit files).
+
+Focused repairs are committed as `24a1da49` (UI expectations and DN2 BRIGHT
+action), `bdec3a98` (Python fixtures aligned with current module contracts), and
+`45d9a399` (capacity uses cold DSP mode to keep transfers pending without SSI
+timing; CardRig avoids reading a nonexistent initial cold-emulator epoch).
+The named patched-pluck quick checks pass on DT2 1.17 (18 checks) and DN2 1.12
+(14 checks), as detailed below. The gate's per-file Python runner passes all
+six files: `test_dyn_fx.py`, `test_dsp_guard_contract.py`, `test_pk_params.py`,
+`test_digikit_menu.py`, `test_pk_conform.py` and `test_pk_current.py`, under
+`tests/patchkit/`; log: `/tmp/digikit-py-gate-fix.log`. The capacity lane reports
+the named file passing on both devices: eight active tests passed and 23
+tier-gated tests skipped. Independent reviewers reported no issues with the
+repairs. No second full merge gate has run after these repairs; focused passes
+do not establish a green full gate or a measured speedup. The next merge
+checkpoint remains `mise run test` on the repaired tree.
+This documentation checkpoint passes Prettier, `git diff --check` and
+`DIGI_GATE_BASE=HEAD mise run test:changed` (zero selected tasks).
+
 Patchkit UI checkpoint (2026-11-04): the merge gate's smoke task passed 14/16 cells;
 only the patched-pluck UI frames failed (`.nx/cache/terminalOutputs/13348367458569934345`).
 Named DT2 1.17/DN2 1.12 cells with `--tests quick --jobs 2` reproduced all four
