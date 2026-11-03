@@ -58,9 +58,20 @@ This PR (branch `test/watchdog-default`):
    - Done on branch `test/card-upload-ports`: the upload full tier; matching Python upload scenarios deleted.
    - Done on branch `test/card-upload-ports`: upload-cut and clear-cut.
    - Done on branch `test/card-upload-ports`: cut-selection in `safe-mode.device.test.ts`, both devices.
-   - debug parts: capacity, fits, inferred-needs, isolation, memaudit, sticky-types, menu-open.
-     Design agreed in principle: a Rust `patchkit capacity-set` subcommand replaces
-     tools/patchkit/pk_capacity.py; memaudit moves last because `mise run module:audit` uses it.
+   - Done on branch `test/runtime-pure-cores` (B1): the pure decisions of the runtime (sticky machine
+     types, first-fit DSP placement, row counting, registry, selection and stage limits, module record
+     choice) moved into `dkrt-sdk` (`sticky`, `capacity`, `sel`) with host unit tests; the runtime calls
+     them. The `sticky-types` scenario and `run_sticky` are deleted (ledger: debug-card-safe.md).
+   - debug parts still to do, revised plan:
+     - B2: one device boundary test per device. A full synthetic module set: every refusal code, no
+       overlapping ranges, reference DSP bytes unchanged. Inferred-needs. One fits case on the real
+       MODULES page. The TypeScript synthetic-module helper is written so it can become a fixture-module
+       library.
+     - B3: memaudit clean and stray, with `module:audit` as a vitest run (it uses pk_capacity.py today).
+     - Dropped: menu-open and the isolation PCM comparison.
+   - Future: capacity tests through a committed set of fixture modules uploaded into a running
+     emulator (one per limit, arena-fill and expansion variants). This could replace B2's generator and
+     much of B1.
 4. Smaller items:
    - fx-reuse onset jitter: +-64 samples between identical runs, tolerance 128.
    - dkneeds lists broad inputs (`pyproject.toml`, `nx.json`, every `Cargo.toml`).

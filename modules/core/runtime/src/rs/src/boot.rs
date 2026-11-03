@@ -142,8 +142,9 @@ pub unsafe fn selection_get(out: *mut DkrtSelection) -> i32 {
 /// `dkrt_selection_set`: both copies, A then B, with the next sequence number. The boot counter carries over.
 pub unsafe fn selection_set(s: *const DkrtSelection) -> i32 {
     let s = &*s;
-    if s.count as usize > SEL_MAX {
-        return E_SEL_COUNT;
+    let r = sel::check_count(s.count);
+    if r != OK {
+        return r;
     }
     let mut k = 0;
     while k < s.count as usize {
@@ -154,18 +155,7 @@ pub unsafe fn selection_set(s: *const DkrtSelection) -> i32 {
     }
     let (cur, _) = current();
     let cur = cur.unwrap_or(Record::empty());
-    let mut r = Record::empty();
-    r.seq = cur.seq.wrapping_add(1);
-    r.boot_counter = cur.boot_counter;
-    r.stable_blocks = cur.stable_blocks;
-    r.map = cur.map; // the sticky machine types survive a new selection
-    r.flags = s.flags & sel::FLAG_SAFE_ONCE;
-    r.count = s.count;
-    k = 0;
-    while k < s.count as usize {
-        r.paths[k] = s.paths[k];
-        k += 1;
-    }
+    let r = sel::next_record(&cur, s.flags, s.count, &s.paths);
     dlog::ev(logk::MENU, dlog::INFO, [logk::MENU_SELECT, s.count, 0, 0, 0]);
     let e = write_copy(0, &r);
     if e != OK {
@@ -177,23 +167,13 @@ pub unsafe fn selection_set(s: *const DkrtSelection) -> i32 {
 /// `CMD_SELECT_ONE`: write copy `i` only, with `seq + 1` (the state of a power cut between the two writes).
 pub unsafe fn selection_set_one(i: u32, s: *const DkrtSelection) -> i32 {
     let s = &*s;
-    if s.count as usize > SEL_MAX || i > 1 {
-        return E_SEL_COUNT;
+    let e = sel::check_one(s.count, i);
+    if e != OK {
+        return e;
     }
     let (cur, _) = current();
     let cur = cur.unwrap_or(Record::empty());
-    let mut r = Record::empty();
-    r.seq = cur.seq.wrapping_add(1);
-    r.boot_counter = cur.boot_counter;
-    r.stable_blocks = cur.stable_blocks;
-    r.map = cur.map; // the sticky machine types survive a new selection
-    r.flags = s.flags & sel::FLAG_SAFE_ONCE;
-    r.count = s.count;
-    let mut k = 0;
-    while k < s.count as usize {
-        r.paths[k] = s.paths[k];
-        k += 1;
-    }
+    let r = sel::next_record(&cur, s.flags, s.count, &s.paths);
     write_copy(i, &r)
 }
 

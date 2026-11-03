@@ -454,44 +454,14 @@ pub unsafe fn rows_counts() -> (u32, u32) {
     if info().is_null() {
         return (0, 0);
     }
-    let d = ds();
-    let mut used = 0;
-    let mut k = 0;
-    while k < MAX_ROWS {
-        if d.row_owner[k] != 0 {
-            used += 1;
-        }
-        k += 1;
-    }
+    let used = capacity::used_rows(&ds().row_owner);
     (iw(I_VFREE).min(MAX_ROWS as u32), used)
 }
 
 /// First fit: the lowest offset whose byte address is `align`-aligned and whose `len` bytes touch no other range.
 unsafe fn alloc_range(len: u32, align: u32) -> Option<u32> {
-    let total = iw(I_AREA_BYTES);
-    let base = iw(I_AREA);
     let d = ds();
-    let mut cand = 0u32;
-    loop {
-        let b = (base + cand + align - 1) & !(align - 1);
-        cand = b - base;
-        if len > total || cand > total - len {
-            return None;
-        }
-        let mut moved = false;
-        let mut i = 0;
-        while i < crate::MAX_MODULES {
-            let (o, l) = (d.mod_off[i], d.mod_len[i]);
-            if l != 0 && cand < o + l && o < cand + len {
-                cand = o + l;
-                moved = true;
-            }
-            i += 1;
-        }
-        if !moved {
-            return Some(cand);
-        }
-    }
+    capacity::first_fit(iw(I_AREA), iw(I_AREA_BYTES), &d.mod_off, &d.mod_len, len, align)
 }
 
 // ---- checking a section --------------------------------------------------------------------------------------------------
@@ -699,30 +669,18 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     }
     // voices: types in the run-time range, entries inside the image, rows available
     let d = ds();
-    let (mut free_rows, mut k) = (0, 0);
-    while k < MAX_ROWS {
-        if d.row_owner[k] == 0 && (k as u32) < iw(I_VFREE) {
-            free_rows += 1;
-        }
-        k += 1;
-    }
-    if nvoice > free_rows {
-        return E_DSP_ROWS;
+    let r = capacity::dsp_rows(nvoice, capacity::free_rows(&d.row_owner, iw(I_VFREE)));
+    if r != OK {
+        return r;
     }
     // effect rows: the image must have the chain's table, and a free row for each record
     if nfx > 0 {
         if finfo().is_null() {
             return E_NO_DSP;
         }
-        let (mut free_fx, mut f) = (0, 0);
-        while f < MAX_FX {
-            if d.fx_owner[f] == 0 && (f as u32) < fx_free_rows() {
-                free_fx += 1;
-            }
-            f += 1;
-        }
-        if nfx > free_fx {
-            return E_DSP_ROWS;
+        let r = capacity::dsp_rows(nfx, capacity::free_rows(&d.fx_owner, fx_free_rows()));
+        if r != OK {
+            return r;
         }
     }
     i = 0;
@@ -734,7 +692,7 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         if !(TYPE_FIRST..=TYPE_LAST).contains(&t) || entry >= image_size || entry & 1 != 0 {
             return E_DSP_TYPE;
         }
-        k = 0;
+        let mut k = 0;
         while k < MAX_ROWS {
             if d.row_owner[k] != 0 && d.row_type[k] == t {
                 return E_DSP_TYPE; // used by a module that is loaded or loading

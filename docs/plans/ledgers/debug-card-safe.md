@@ -158,3 +158,23 @@ cut-selection | S:959 | A new / B old, A torn / B old, A old / B new, A torn / B
 cut-selection | S:947 | the quick tier runs the first two cases (`quick_cases`) | DROPPED: the scenario is full tier, so all four cases run
 cut-selection | S:974 | one copy written by the runtime: A new, B empty | -> safe-mode.test.ts: one copy written by the runtime ...
 cut-selection | S:984 | restart after the cut loads the new copy | -> safe-mode.test.ts: one copy written by the runtime ... (`dk.restart` + `waitForBoot`)
+
+## sticky-types (dt2, quick; D `run_sticky`; Python deleted)
+
+The assignment is now the pure function `dkrt_sdk::sticky::assign`, which the runtime's `assign::plan` calls. The 9 boots are unit tests in `modules/core/runtime/sdk/src/sticky/tests.rs` (run by `dkrt-sdk:rust-tests`). The device roundtrip (`modules/core/adapters/dynreg/tests/roundtrip.device.test.ts`) still covers the card and boot integration.
+
+sticky-types | D:run_sticky boot 1 | fresh card, nan and sine: 16 and 17 in load order, rule 0, both entries written, dirty | -> sticky/tests.rs: fresh_card_gives_the_lowest_numbers_in_load_order_and_writes_the_map
+sticky-types | D:run_sticky boot 2 | sine only: keeps its number, map unchanged, not rewritten | -> sticky/tests.rs: a_machine_keeps_its_number_when_other_modules_are_absent_and_nothing_is_rewritten
+sticky-types | D:run_sticky boot 3 | sine and params: params takes 18, not the absent nan machine's 16 | -> sticky/tests.rs: a_new_machine_does_not_take_the_number_of_an_absent_machine
+sticky-types | D:run_sticky boot 4 | same set again in another load order: every number as remembered, nothing rewritten | -> sticky/tests.rs: load_order_does_not_change_the_numbers_the_map_remembers
+sticky-types | D:run_sticky boot 5 | full map: sine keeps 18; nan evicts the lowest foreign entry (slot 0), error event, dirty | -> sticky/tests.rs: a_full_map_evicts_the_lowest_foreign_entry_and_logs_it_as_an_error
+sticky-types | D:run_sticky boot 6 | full map, sine in slot 0: a machine of the boot is not evicted, slot 1 goes, nan takes 17 | -> sticky/tests.rs: an_entry_of_a_machine_in_the_boot_is_never_the_one_evicted_even_in_slot_0
+sticky-types | D:run_sticky boot 7 | fresh card, nan alone: 16, entry written | -> sticky/tests.rs: fresh_card_with_one_machine_gets_16_and_the_entry_is_written
+sticky-types | D:run_sticky boot 8 | another machine's entry holds 16: nan takes 17, that entry stays | -> sticky/tests.rs: another_machines_entry_holds_16_so_the_new_machine_takes_17_and_that_entry_stays
+sticky-types | D:run_sticky boot 9 | own entry (20) beats the lowest free number, nothing rewritten | -> sticky/tests.rs: a_machines_own_entry_beats_the_lowest_free_number_and_nothing_is_rewritten
+sticky-types | D:run_sticky each boot | SELECT keeps the map bytes | -> sticky/tests.rs: a_selection_keeps_the_map_bytes (`sel::next_record`, the record both selection commands write)
+sticky-types | D:run_sticky each boot | every module loaded (ColdFire part) | DROPPED: a load result, not an assignment; the dynreg roundtrip and modules-capacity device tests check results
+sticky-types | D:run_sticky end | `common_checks_upload` (write watch, flush) | DROPPED: the card policy is asserted by the TypeScript card tests; the unit tests write no card
+sticky-types | D:run_sticky | the map persists on the card between boots | COVERED by the `sel` encode and decode tests in sdk/src/lib.rs (the map bytes round-trip); the roundtrip device test checks that run-time types stay stable across boots
+
+New unit tests with no Python counterpart: a full map whose entries are all in the boot evicts nothing and gives no number (the 9th machine gets 0); pinned keys take no number; a repeated key takes a fresh number and is not recorded; `clean` drops duplicate hashes, duplicate numbers, out-of-range types and entries without a hash.

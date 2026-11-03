@@ -37,7 +37,7 @@ Kinds:
   card       `[card] part = "torn"` only: a power cut inside the first writes to a blank card (finding 46, residual risk). The other card-safety
              cases are the TypeScript card-safety test.
   debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
-             `[debug] part = "sticky"`: sticky machine type numbers (assigned at the boot load, kept in the selection record's map, eviction); the plain part also checks MODULES.
+             The plain part also checks MODULES.
              `part = "guard"` (both images): the runtime guard on a NaN fixture.
   crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
