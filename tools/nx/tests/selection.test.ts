@@ -94,10 +94,29 @@ describe('default gate menu scheduling policy', () => {
   const targets = 'pack,test-device,test-conformance,rust-tests';
   const commandsFor = (files: string[]) =>
     gateCommands(
-      [`--files=${files.join(',')}`, '-t', targets],
+      ['-t', targets],
       files.map((file) => ({ file, status: 'M' })),
     );
-  const gatePlan = (files: string[]) => commandsFor(files).map((command: string[]) => plan(command).tasks);
+  // Supply hypothetical changed files to Nx only after the gate classifies the default comparison.
+  const gatePlan = (files: string[]) =>
+    commandsFor(files).map((command: string[]) => plan([...command, `--files=${files.join(',')}`]).tasks);
+
+  it('keeps alternate file and stdin selectors on the broad path', () => {
+    for (const selector of [['--stdin'], ['--stdin=true']]) expect(menuOnly(changedFiles(selector))).toBe(false);
+    for (const selector of [
+      ['--files', MENU_SOURCE, 'sdk/include/dk/api.h'],
+      ['--files', MENU_SOURCE, '--files', 'sdk/include/dk/api.h'],
+      [`--files=${MENU_SOURCE}`, '--files=sdk/include/dk/api.h'],
+      [`--files=${MENU_SOURCE},sdk/include/dk/api.h`],
+      [`--files=${MENU_SOURCE}`],
+    ]) {
+      expect(changedFiles(selector)).toEqual([]);
+      // Even a supplied menu-only classification cannot override an alternate selector.
+      const commands = gateCommands([...selector, '-t', targets], [{ file: MENU_SOURCE, status: 'M' }]);
+      const graph = plan(commands[0]).tasks;
+      expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+    }
+  }, 30_000);
 
   it('keeps the four device owners and host menu fixtures while omitting unchanged conformance', () => {
     const graphs = gatePlan([MENU_SOURCE]);

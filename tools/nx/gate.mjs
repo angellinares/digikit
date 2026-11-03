@@ -1,6 +1,5 @@
 // Scheduling policy only: native Nx still owns task dependencies and cache inputs.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,10 +18,19 @@ function option(args, names) {
   }
 }
 
+// Only the default base/head comparison has a supported scheduling policy.
+// Let Nx parse alternate selectors, including multi-value and repeated --files.
+const alternateSelection = (args) =>
+  args.some((arg) => ['--files', '--stdin', '--uncommitted', '--untracked', '--all'].includes(arg.split('=')[0]));
+
 export function gateCommands(args, changes) {
   const targets = option(args, ['-t', '--targets', '--target']);
   const required = ['pack', 'test-device', 'test-conformance', 'rust-tests'];
-  if (!menuOnly(changes) || !required.every((target) => targets?.split(',').includes(target)))
+  if (
+    alternateSelection(args) ||
+    !menuOnly(changes) ||
+    !required.every((target) => targets?.split(',').includes(target))
+  )
     return [['affected', ...args]];
   const affected = [...args];
   for (let i = 0; i < affected.length; i++) {
@@ -42,9 +50,8 @@ export function gateCommands(args, changes) {
 
 export function changedFiles(args, cwd = process.cwd()) {
   const git = (...argv) => execFileSync('git', argv, { cwd, encoding: 'utf8' }).trimEnd();
-  const files = option(args, ['--files']);
   // Unsupported selection modes fail closed to ordinary Nx selection.
-  if (args.some((arg) => ['--stdin', '--uncommitted', '--untracked', '--all'].includes(arg.split('=')[0]))) return [];
+  if (alternateSelection(args)) return [];
   const head = option(args, ['--head']);
   const base = git('merge-base', option(args, ['--base']) || process.env.DIGI_GATE_BASE || 'main', head || 'HEAD');
   const statuses = [git('diff', '--name-status', '--no-renames', base, head || 'HEAD', '--')];
@@ -65,22 +72,6 @@ export function changedFiles(args, cwd = process.cwd()) {
       const [status, file] = line.split('\t');
       return { status, file };
     });
-  if (files !== undefined) {
-    return files
-      .split(/[ ,]+/)
-      .filter(Boolean)
-      .flatMap((file) => {
-        const actual = changes.filter((change) => change.file === file);
-        return actual.length
-          ? actual
-          : [
-              {
-                file,
-                status: existsSync(resolve(cwd, file)) && git('ls-files', '--', file) === file ? 'M' : '?',
-              },
-            ];
-      });
-  }
   return changes;
 }
 
