@@ -300,8 +300,7 @@ and a table named like the kind. Kinds:
 | `equiv` | Machine, parameter, page and voice rows of a boot with set S equal those of the image patchkit builds with S's static twin; PCM of a note equal, or pinned by `pcm_sha256` (Em approves a new value). |
 | `upload` | Module upload over USB SysEx: only `rust` is Python. The other parts are in `modules/core/runtime/tests/upload.device.test.ts` and `upload-faults.device.test.ts`. |
 | `menu` | Ticking a set in SETTINGS > DIGIKIT > MODULES and restarting loads the set; PCM equals the patched-in set. |
-| `safe` | Safe mode after a module resets the machine. The card states after a power cut are in `modules/core/runtime/tests/safe-mode.device.test.ts`. |
-| `debug` | Part `memaudit` (below). |
+| `debug` | Part `memaudit` (below). The log, guard, crash and safe-mode scenarios are TypeScript device tests: `modules/tools/debug/tests/debug-module.device.test.ts` and `modules/core/runtime/tests/{debug-guard,crash-capture,safe-mode}.device.test.ts`. |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)
 and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default; `gate:full` sets `full`.

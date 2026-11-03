@@ -49,8 +49,8 @@ export function crashRecord(events: DkLogEvent[]) {
   ]);
   const rest: DkLogEvent[] = [];
   for (const e of events.slice(at + 1)) {
-    if (!parts.has(e.kind)) break;
-    rest.push(e);
+    if (e.kind === LOG_KIND.CRASH_FOUND) break;
+    if (parts.has(e.kind)) rest.push(e); // the small ring's events (FAULT_FOUND, SETTINGS_WRITE) lie between the record's parts
   }
   const kind = (k: number) => rest.filter((e) => e.kind === k);
   const mod = kind(LOG_KIND.CRASH_MOD).find((e) => e.args[0] !== 0x100);

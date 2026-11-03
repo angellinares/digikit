@@ -1,5 +1,5 @@
 """The host side of the debug log (tools/device/dklog.py): event decoding, the crash record from its events, `follow` with gaps and restarts,
-the output file. No emulator: a fake device answers LOG. The runtime's side is `tests/digikit/scenarios/debug-log.toml`."""
+the output file. No emulator: a fake device answers LOG. The runtime's side is modules/tools/debug/tests/debug-module.device.test.ts."""
 
 import json
 

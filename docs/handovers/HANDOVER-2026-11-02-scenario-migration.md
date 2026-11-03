@@ -47,10 +47,16 @@ broke every run once (`unknown module core/sample-pool`).
 4. `mise run test:runtime` builds plusdrive and fails offline when cargo needs downloads; use verify.
 6. DN2 cut-selection is resolved on branch `test/card-upload-ports`: the test read boot info while the
    DSP part of the modules was still LOADING. The helper `bootInfoLoaded` (card-kit.ts) now waits for it.
-   Debug-family full tier, skipped per device until fixed (Python still covers them): DT2 crash-capture
-   early and late ("registers: expected [] to have a length of 16"); DT2 safe-mode, 4 cases ("expected
-   [ 1, +0 ] to deeply equal [ +0, +0 ]" and similar boot-counter checks); DN2 debug-guard; DT2 periodic debug events ("a full set (24 words, six events)":
-   got 32). The failure logs are in `out/runs/verify/20261102-032104` of the integration lane.
+   The four debug-family skips are resolved on branch `test/full-tier-skips`:
+   - DT2 crash-capture ("registers: expected [] to have a length of 16"): the runtime logs FAULT_FOUND,
+     SETTINGS_WRITE and BOOT_RECORD between CRASH_MOD and the replayed detail (registers, stack, tail), and
+     `crashRecord` and `faultDetail` stopped at the first other event. They now skip events that are not parts
+     of the record. The test also allows the store writes of the fault record (`dk/fault`).
+   - DT2 safe-mode (4 cases): the card is soft-reset before the DT2 filesystem check ends, so the coupled
+     ready state never comes; the group needs `relaxFs` (Python waits for the main UI only).
+   - DN2 debug-guard ("[ 1, 0 ] to equal [ 0, 0 ]"): the test read boot info while the DSP part of a module was
+     LOADING; it pauses and uses `bootInfoLoaded`.
+   - DT2 periodic events: `watch::DIAG_WORDS` is 32 since the log sink change, so a set is eight events, not six.
 5. Daemons from other sessions and lanes stay alive for days (`mise run clean:runs` lists orphans).
 
 ## Next steps

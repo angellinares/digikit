@@ -3,7 +3,7 @@ import { runtimeEvent } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { button, encoder } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import { bootInfo } from '@digi/regression/runtime/card-kit.ts';
+import { bootInfoLoaded } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 import { CARD_TIMEOUT, pausedProtocol } from '@digi/regression/runtime/debug-kit.ts';
 import { advance, frames, pickSine, readFloatWav, rpc, windowRms } from '@digi/regression/runtime/fx-live.ts';
@@ -11,7 +11,7 @@ import { tap } from '@digi/regression/runtime/fx-session.ts';
 import { ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 
 /**
- * The runtime guard of core/dsp-voice (Python `run_guard` and `run_guard_dn2` of pk_digikit_debug.py; scenario debug-guard, full tier). The NaN fixture
+ * The runtime guard of core/dsp-voice (full tier; the Python scenario debug-guard is deleted). The NaN fixture
  * (test/dyn-guard-nan) outputs NaN while its voice is active. Ten presses in a second: the guard zeroes each block, counts it, logs MACHINE_FAULT and switches the
  * type off after the 8th (MACHINE_DISABLED); the master output holds no NaN or Inf.
  * DT2: the fixture is on track 2 with its delay send up, a run-time sine on track 1 stays audible. DN2: the fixture (an own_dsp machine) is on track 1.
@@ -21,9 +21,8 @@ import { ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 const HINT = { sine: 7, nan: 8, dn2: 5 };
 const FAULT_LIMIT = 8;
 
-const OPEN = 'open: fails in the full tier, see docs/handovers/HANDOVER-2026-11-02-scenario-migration.md';
 
-cardRigs('debug guard', { full: true, skip: { dn2: OPEN }, uploads: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
+cardRigs('debug guard', { full: true, uploads: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
   test(
     'the guard zeroes a faulting machine, switches its type off after 8 faults and the output stays finite',
     async () => {
@@ -33,11 +32,11 @@ cardRigs('debug guard', { full: true, skip: { dn2: OPEN }, uploads: true, roots:
       const mods = [...(dt2 ? [h.mod('test/sine', 'sine')] : []), nan, h.mod('digikit/debug', 'debug')];
       const runtime = await h.boot(await h.card({ modules: mods, selection: mods.map((m) => m.name) }));
       const { session } = runtime;
-      const info = await bootInfo(session, h.plan);
+      await rpc(session, 'run.mode', { mode: 'paused' });
+      const info = await bootInfoLoaded(session, h.plan); // the DSP part of a module follows its ColdFire part
       expect(info.count, 'every module and the debug module loaded at boot').toBe(mods.length);
       expect(info.results).toEqual(mods.map(() => 0));
 
-      await rpc(session, 'run.mode', { mode: 'paused' });
       const log = () => pausedProtocol(runtime, (dk) => dk.readLog());
       const uiFirst = ofKind(await log(), LOG_KIND.UI_FIRST)[0]!.args[0]!;
       for (let i = 0; i < 60 && (await frames(session)) < uiFirst + 3300; i++) await advance(session, 500);

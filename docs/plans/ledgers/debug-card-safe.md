@@ -55,17 +55,17 @@ debug-log | D:792 | CAPACITY lists every kind with the device file's limit | -> 
 debug-log | D:798 | CAPACITY use agrees with MODULES | -> debug-module.test.ts: MODULES and CAPACITY list ... (use counts; the debug module is a third module, so MODULES and SELECTION are 3). The arena and DSP use equalities are tautologies once free comes from CAPACITY: DROPPED
 debug-log | D:815 | MODULES pages by start index | -> debug-module.test.ts: MODULES and CAPACITY list ... (from 1: two records, from 9: none, total 3)
 debug-log | D:820 | MODULES is not logged as an UPLOAD event | -> debug-module.test.ts: MODULES and CAPACITY list ...
-The DT2 periodic events (the four lines below) are ported, skipped on DT2 (`debug-module.test.ts` ~:349-358, handover open item 6); Python keeps that device.
+The DT2 periodic events (the four lines below) are ported and pass; the Python scenario debug-log is deleted.
 
 debug-log | D:1233 | HEALTH snapshot every ten seconds (full) | -> debug-module.test.ts: the periodic events ... (`expectPeriodicEvents`)
 debug-log | D:1242 | stable period logged once (full) | -> debug-module.test.ts: the periodic events ...
-debug-log | D:1249 | DSP diagnostics quiet: six events a set, 3 to 5 sets, ten seconds apart (full) | -> debug-module.test.ts: the periodic events ...
+debug-log | D:1249 | DSP diagnostics quiet: eight events (32 words) a set, 3 to 5 sets, ten seconds apart (full) | -> debug-module.test.ts: the periodic events ...
 debug-log | D:1259 | a running DSP is never reported stopped (full) | -> debug-module.test.ts: the periodic events ...
 debug-log | D:1266 | without dl_diag the DSP poll logs DSP_ABSENT once | DROPPED: the image under test always has dl_diag
 
 ## debug-guard (dt2 and dn2, full; D `run_guard` and `run_guard_dn2`)
 
-Ported, skipped on DN2 (`debug-guard.test.ts` ~:26, handover open item 6); Python keeps that device.
+Ported and passing on both devices; the Python scenario debug-guard is deleted.
 
 debug-guard | D:1118 | DT2: both modules and the debug module loaded, two voice rows | -> debug-guard.test.ts: the guard zeroes a faulting machine ... (boot results; the voice-row count is NOT PORTED: `voice_rows` MISSING)
 debug-guard | D:1023 | DN2: fixture and debug module loaded, one voice row | -> debug-guard.test.ts: the guard zeroes ... (boot results; voice row count NOT PORTED as above)
@@ -85,7 +85,7 @@ debug-guard | D:1094 | common_checks_upload(project_writes_ok) | -> `cardTests` 
 
 ## crash-capture (dt2, full; D `run_crash`)
 
-Ported, skipped on DT2 (`crash-capture.test.ts` ~:42, handover open item 6). The TS test is DT2 only, so there is no TS coverage; Python keeps this scenario.
+Ported and passing (DT2 only); the Python scenario crash-capture is deleted.
 
 crash-capture | D:1340 | boot 1: no crash record, exception hook installed, RAM not kept, no record in log | -> crash-capture.test.ts: early/late
 crash-capture | D:1351 | boot 2: record found, PC equals the log's, vector 4 (early) or 5 (late), module index 1 with a name, RAM kept | -> crash-capture.test.ts: early/late
@@ -135,7 +135,7 @@ card-small | D:149 | write watch on cf.expansion and flush check | -> `cardTests
 
 ## safe-fault, safe-late-fault (dt2 and dn2, full; S `run_safe`, `run_safe_late`)
 
-Ported, skipped on DT2 (`safe-mode.test.ts` ~:36, handover open item 6); Python keeps that device.
+Ported and passing on both devices; the Python scenarios safe-fault and safe-late-fault are deleted.
 
 safe-fault | S:893 | two boots never reach the UI loop, the third is safe mode (counter 2) | -> safe-mode.test.ts: a module that resets the machine in its init ...
 safe-fault | S:898 | safe mode loaded no module and reported E_SAFE_MODE | -> safe-mode.test.ts: a module that resets ... (loaded 0, first result -44)

@@ -62,6 +62,9 @@ This PR (branch `test/watchdog-default`):
      types, first-fit DSP placement, row counting, registry, selection and stage limits, module record
      choice) moved into `dkrt-sdk` (`sticky`, `capacity`, `sel`) with host unit tests; the runtime calls
      them. The `sticky-types` scenario and `run_sticky` are deleted (ledger: debug-card-safe.md).
+   - Done on branch `test/full-tier-skips`: debug-log (periodic events), debug-guard, crash-capture, safe-fault
+     and safe-late-fault pass on every device they list, with no skips; the Python scenarios, `run_debug`
+     (except the memaudit part), `run_crash`, `run_safe*` and the `safe`/`crash` kinds are deleted.
    - debug parts still to do, revised plan:
      - B2 (done on branch `test/capacity-device`; ledger sections in debug-card-safe.md): one device boundary test per device. A full synthetic module set: every refusal code, no
        overlapping ranges, reference DSP bytes unchanged. Inferred-needs. One fits case on the real
