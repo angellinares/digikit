@@ -1,0 +1,21 @@
+{
+  "name": "patchkit",
+  "targets": {
+    "catalog-check": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "default",
+        "{workspaceRoot}/modules/**/module.toml",
+        "{workspaceRoot}/tests/fixtures/modules/**/module.toml",
+        { "dependentTasksOutputFiles": "**/*", "transitive": true }
+      ],
+      "dependsOn": ["cli"],
+      "outputs": [],
+      "options": {
+        "command": "dist/patchkit/patchkit --root . catalog-check",
+        "cwd": "."
+      }
+    }
+  }
+}

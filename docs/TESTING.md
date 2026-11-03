@@ -7,7 +7,8 @@ not complete verification. Other docs
 link here. Results of runs belong in `docs/findings/`, not here. Planned changes:
 [docs/plans/test-architecture.md](plans/test-architecture.md); gate speed:
 [docs/plans/gate-speed.md](plans/gate-speed.md). Current implementation sequence and evidence:
-[test/build workflow](plans/test-build-workflow.md).
+[test/build workflow](plans/test-build-workflow.md). The current module and SDK iteration follow-up is
+[fast module and SDK iteration](plans/module-sdk-iteration.md).
 
 ## Test levels
 
@@ -70,6 +71,10 @@ require those artifacts to exist already (see "Inputs").
 
 `test:changed` runs only affected lint, format, types, host tests and Python checks. `test` runs the
 complete affected target list, with `test:plan` adding Nx `--explain` to that same invocation.
+The default gate requests affected module `pack` targets directly, even when a module has no device-test
+target. A `module.toml` edit also selects the host-only `patchkit:catalog-check` target once to validate
+repository-wide manifest IDs and requirements; each module's pack and conformance read its own manifest
+and declared requirement closure.
 `DIGI_GATE_BASE` defaults to `main` and is exported so Nx and the Python selector compare the same base.
 Set `DIGI_GATE_BASE=HEAD mise run test:plan` to inspect only uncommitted work, or use
 `mise run test -- --explain=/tmp/test-plan.json` to save native Nx selection reasons.
