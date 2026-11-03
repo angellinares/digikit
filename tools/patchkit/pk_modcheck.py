@@ -87,14 +87,30 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
 
 
 def own_device_target(mid: str) -> str | None:
-    """A module's own Nx test-device target (inferred by tools/nx/modules.mjs from its *.device.test.ts files)
-    is its sole TypeScript acceptance declaration."""
+    """The module root or nested test-only project's Nx device acceptance target."""
     from tools.devtools import nx_graph
 
-    node = nx_graph.nx_graph()["nodes"].get(mid)
-    if node is None or "test-device" not in node["data"].get("targets", {}):
+    nodes = nx_graph.nx_graph()["nodes"]
+    node = nodes.get(mid)
+    if node is None:
         return None
-    return f"{mid}:test-device"
+    data = node["data"]
+    owners = [mid] if "test-device" in data.get("targets", {}) else []
+    root = data.get("root")
+    if root:
+        for name, candidate in nodes.items():
+            candidate = candidate["data"]
+            if (
+                "test-only" in candidate.get("tags", [])
+                and candidate.get("root", "").startswith(root + "/")
+                and "test-device" in candidate.get("targets", {})
+            ):
+                owners.append(name)
+    if len(owners) > 1:
+        raise SystemExit(
+            f"{mid}: ambiguous device acceptance owners: {', '.join(sorted(owners))}"
+        )
+    return f"{owners[0]}:test-device" if owners else None
 
 
 def run_device_target(mid: str, target: str) -> int:

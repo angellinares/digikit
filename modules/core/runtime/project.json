@@ -31,17 +31,6 @@
         "command": "uv run python -m tools.devtools.benchlock run --shared --label runtime-unit -- uv run python -m tools.devtools.rust_ws test --packages dkrt",
         "cwd": "."
       }
-    },
-    "test-device": {
-      "executor": "nx:noop",
-      "cache": false,
-      "dependsOn": [
-        {
-          "target": "test-device",
-          "projects": ["core/runtime-tests"],
-          "params": "forward"
-        }
-      ]
     }
   }
 }

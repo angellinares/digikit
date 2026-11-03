@@ -10,7 +10,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 type TaskGraph = {
-  tasks: Record<string, { target: { project: string; target: string }; overrides: Record<string, unknown> }>;
+  tasks: Record<string, { target: { project: string; target: string } }>;
   dependencies: Record<string, { id: string }[]>;
 };
 
@@ -28,30 +28,30 @@ type ProjectGraph = {
   dependencies: Record<string, { target: string }[]>;
 };
 
-function plan(args: string[], legacy = true, outputFlag = '--graph'): { tasks: TaskGraph; graph: ProjectGraph } {
+function plan(args: string[], outputFlag = '--graph'): { tasks: TaskGraph; graph: ProjectGraph } {
   const output = join(scratch, 'tasks.json');
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    NX_DAEMON: 'false',
+    NX_NO_CLOUD: 'true',
+    NX_ISOLATE_PLUGINS: 'false',
+    NX_WORKSPACE_DATA_DIRECTORY: join(scratch, 'workspace-data'),
+  };
+  delete env.NX_LEGACY_AFFECTED;
   execFileSync('pnpm', ['exec', 'nx', ...args, `${outputFlag}=${output}`], {
     cwd: root,
-    env: {
-      ...process.env,
-      NX_DAEMON: 'false',
-      NX_NO_CLOUD: 'true',
-      NX_ISOLATE_PLUGINS: 'false',
-      NX_WORKSPACE_DATA_DIRECTORY: join(scratch, 'workspace-data'),
-      NX_LEGACY_AFFECTED: String(legacy),
-    },
+    env,
     timeout: 30_000,
     stdio: 'pipe',
   });
   return JSON.parse(readFileSync(output, 'utf8'));
 }
 
-const selected = (file: string, targets: string, legacy: boolean) =>
-  plan(['affected', `--files=${file}`, `--targets=${targets}`], legacy).tasks;
+const selected = (file: string, targets: string) => plan(['affected', `--files=${file}`, `--targets=${targets}`]).tasks;
 
 let workspace: ProjectGraph;
 beforeAll(() => {
-  workspace = plan(['graph'], true, '--file').graph;
+  workspace = plan(['graph'], '--file').graph;
 });
 
 it('keeps runtime and shipped content outside dependency cycles', () => {
@@ -85,34 +85,23 @@ it('keeps every runtime device file in the new owner command', () => {
     for (const file of rec.files ?? []) expect(actual).toContain(join(root, owner.root, file));
 });
 
-it('forwards compatibility target filters to the executable acceptance task', () => {
-  const graph = plan(['run', 'core/runtime:test-device', '--testNamePattern=own-filter']).tasks;
-  expect(graph.dependencies['core/runtime:test-device'].map((dep) => dep.id)).toEqual([
-    'core/runtime-tests:test-device',
-  ]);
-  expect(graph.tasks['core/runtime-tests:test-device'].overrides.testNamePattern).toBe('own-filter');
-});
-
-describe.each([true, false])('workspace selection (legacy=%s)', (legacy) => {
+describe('workspace selection', () => {
   it('runs the standalone runtime unit tests without build or daemon prerequisites', () => {
-    const graph = selected('modules/core/runtime/src/rs/src/lib.rs', 'rust-tests,test-device', legacy);
+    const graph = selected('modules/core/runtime/src/rs/src/lib.rs', 'rust-tests,test-device');
     expect(graph.tasks['core/runtime:rust-tests']).toBeDefined();
     expect(graph.dependencies['core/runtime:rust-tests']).toEqual([]);
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
   }, 30_000);
 
   it('keeps desktop source edits out of unrelated host suites', () => {
-    const graph = selected('apps/desktop/ui/src/card-core.ts', 'test-host', legacy);
-    // Legacy selection also includes web's host suite because its check/Node targets read UI files.
-    expect(Object.keys(graph.tasks).sort()).toEqual(
-      legacy ? ['@digi/desktop:test-host', '@digi/web:test-host'] : ['@digi/desktop:test-host'],
-    );
+    const graph = selected('apps/desktop/ui/src/card-core.ts', 'test-host');
+    expect(Object.keys(graph.tasks)).toEqual(['@digi/desktop:test-host']);
   }, 30_000);
 
   it.each(['modules/core/runtime/sdk/src/lib.rs', 'modules/core/runtime/fit/src/lib.rs'])(
     'selects the runtime consumer unit tests when %s changes',
     (file) => {
-      const graph = selected(file, 'rust-tests', legacy);
+      const graph = selected(file, 'rust-tests');
       expect(graph.tasks['core/runtime:rust-tests']).toBeDefined();
       expect(graph.dependencies['core/runtime:rust-tests']).toEqual([]);
     },
@@ -130,7 +119,7 @@ describe.each([true, false])('workspace selection (legacy=%s)', (legacy) => {
     const source = globSync('src/**/*.{c,rs}', { cwd: join(root, node.data.root) }).sort()[0];
     expect(source).toBeDefined();
     const file = `${node.data.root}/${source}`;
-    const graph = selected(file, 'test-conformance,test-device', legacy);
+    const graph = selected(file, 'test-conformance,test-device');
     expect(graph.tasks[`${owner}:test-conformance`]).toBeDefined();
     expect(graph.dependencies[`${owner}:test-conformance`].map((dep) => dep.id)).toContain(`${owner}:pack`);
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
@@ -145,16 +134,14 @@ describe.each([true, false])('workspace selection (legacy=%s)', (legacy) => {
     const graph = selected(
       'modules/core/runtime/tests/capacity.device.test.ts',
       'rust-tests,test-device,test-conformance',
-      legacy,
     );
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
     expect(graph.tasks['core/runtime:rust-tests']).toBeUndefined();
-    expect(graph.tasks['core/runtime:test-device']).toBeUndefined();
     expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
   }, 30_000);
 
   it('selects acceptance for its declared Python helper source', () => {
-    const graph = selected('tools/device/dktransfer.py', 'test-device', legacy);
+    const graph = selected('tools/device/dktransfer.py', 'test-device');
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
   }, 30_000);
 });

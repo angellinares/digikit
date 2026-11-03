@@ -577,7 +577,7 @@ def python_jobs() -> int:
 
 def python_timeout() -> int:
     """Per-file timeout for python-tests: catches hangs, not slow files (test_pluck.py
-    takes ~450 s alone and more than 900 s under gate:full load)."""
+    takes ~450 s alone and more than 900 s under test:full load)."""
     env = os.environ.get("DIGI_PY_TIMEOUT")
     if env:
         seconds = int(env)

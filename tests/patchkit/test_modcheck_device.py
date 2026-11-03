@@ -35,6 +35,65 @@ def test_only_the_nx_graph_test_device_target_declares_device_acceptance(
     assert pk_modcheck.plan("owned/effect", "dt2") == ([], {})
 
 
+def test_nested_test_only_project_owns_module_device_acceptance(monkeypatch):
+    from tools.devtools import nx_graph
+
+    nested = {
+        "root": "modules/tools/example/tests",
+        "tags": ["test-only"],
+        "metadata": {"runtimeAcceptance": [{"files": ["acceptance.device.test.ts"]}]},
+        "targets": {"test-device": {}},
+    }
+    nodes = {
+        "owned/module": {"data": {"root": "modules/tools/example", "targets": {}}},
+        "owned/acceptance": {"data": nested},
+        "unrelated/acceptance": {
+            "data": {**nested, "root": "modules/tools/another/tests"}
+        },
+    }
+    monkeypatch.setattr(nx_graph, "nx_graph", lambda: {"nodes": nodes})
+    assert (
+        pk_modcheck.own_device_target("owned/module") == "owned/acceptance:test-device"
+    )
+    nested["tags"] = []
+    assert pk_modcheck.own_device_target("owned/module") is None
+    nested["tags"] = ["test-only"]
+    nested["metadata"] = {}
+    assert (
+        pk_modcheck.own_device_target("owned/module") == "owned/acceptance:test-device"
+    )
+    nested["targets"] = {}
+    assert pk_modcheck.own_device_target("owned/module") is None
+
+
+@pytest.mark.parametrize("root_has_target", [False, True])
+def test_multiple_device_acceptance_owners_fail_clearly(monkeypatch, root_has_target):
+    from tools.devtools import nx_graph
+
+    nested = {
+        "root": "modules/tools/example/tests",
+        "tags": ["test-only"],
+        "metadata": {"runtimeAcceptance": [{"files": ["acceptance.device.test.ts"]}]},
+        "targets": {"test-device": {}},
+    }
+    nodes = {
+        "owned/module": {
+            "data": {
+                "root": "modules/tools/example",
+                "targets": {"test-device": {}} if root_has_target else {},
+            }
+        },
+        "owned/acceptance": {"data": nested},
+    }
+    if not root_has_target:
+        nodes["owned/second-acceptance"] = {
+            "data": {**nested, "root": "modules/tools/example/other-tests"}
+        }
+    monkeypatch.setattr(nx_graph, "nx_graph", lambda: {"nodes": nodes})
+    with pytest.raises(SystemExit, match="ambiguous device acceptance owners"):
+        pk_modcheck.own_device_target("owned/module")
+
+
 @pytest.mark.parametrize(
     "python_tests, owned, python_result, device_result, expected, stages",
     [

@@ -105,7 +105,7 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Architecture](docs/ARCHITECTURE.md): the layers (module, SDK, runtime, adapters, firmware), what each may depend on, how a new device fits
 - [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules) (`dk:dev`, Reload modules), tests, analysis tools, repository layout
-- [Testing](docs/TESTING.md): which check for which change; run `mise run test:changed` before committing
+- [Testing](docs/TESTING.md): `mise run test` verifies affected work; `mise run test:plan` explains selection first. `test:changed` is cheap preflight.
 - [Results of the research](docs/FINDINGS.md)
 - [Contributing](CONTRIBUTING.md)
 

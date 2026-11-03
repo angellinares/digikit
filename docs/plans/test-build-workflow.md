@@ -9,7 +9,7 @@ coverage. Nx owns scheduling; mise remains a thin entry point rather than a seco
    edges match Nx 22; representative task selection matches. Frozen install, 15 preflight tasks,
    nine Nx audit unit tests and formatting passed. Native `summary` output works; `--graph` plans
    tasks and `--explain` reports task-selection reasons without execution.
-1. **Active: prove selection before changing defaults.** Completed sub-checkpoint: narrowed the
+1. **Done: prove selection and adopt the task-level default.** Completed sub-checkpoint: narrowed the
    global desktop UI host-test input, preserved actual web imports, registered standalone runtime
    unit tests, and added real Nx selection regression cases. These check runtime source/dependency
    changes, UI edits and leaf-module conformance under both affected modes. The first unit run exposed
@@ -22,18 +22,19 @@ coverage. Nx owns scheduling; mise remains a thin entry point rather than a seco
    without daemon prerequisites. All five cached host targets pass input audits with successful
    tests; 16/16 affected preflight tasks and formatting pass. No device runs or full gate were run.
    Legacy UI selection still includes web's host suite through web's other UI inputs; task-level
-   selection selects only desktop. Stage 1 remains active for the cycle fix and affected-mode decision.
-   Keep `affected.legacy=true` until the broader matrix is accepted.
-   **Current checkpoint: runtime acceptance cycle split.** Nested `modules/core/runtime/tests` project
+   selection selects only desktop. The accepted matrix now enables Nx 24 task-level selection by
+   default. The migration checkpoint's 19 tests compared both modes; the permanent suite now tests
+   only the real default with its inherited environment override cleared.
+   **Cycle split complete: `6b23946c`.** Nested `modules/core/runtime/tests` project
    `core/runtime-tests` owns acceptance metadata and depends on runtime plus its fixtures. The
    plugin avoids parent-to-child edges for tagged test-only projects, infers their targets and
-   includes their metadata when discovering packs. `core/runtime:test-device` is a supported no-op
-   task alias with argument forwarding; the layercheck exception follows the metadata owner.
+   includes their metadata when discovering packs. Module-check resolves the nested test-only owner
+   directly; the layercheck exception follows the metadata owner.
    Graph checks find no runtime/content cycle; old/new commands, file inventories and all pack
    targets agree (16 device files, 37 pack/alias targets, identical dependency-project closure).
    Saved PLUCK plans select 20 device/conformance tasks before and two after: its own conformance
    plus runtime acceptance. Total tasks including prerequisites fall from 58 to 29; this is
-   selection evidence, not a measured speedup. Seventeen real selection tests pass across both modes, including test-only edits,
+   selection evidence, not a measured speedup. At the split checkpoint, 17 real selection tests passed across both modes, including test-only edits,
    runtime source/units/acceptance, leaf conformance isolation and helper-source triggers.
    Twenty layercheck unit tests, direct layercheck, Python lint/mypy, formatting and seven affected
    preflight tasks pass. No device/native builds or full gate were run for this checkpoint.
@@ -46,7 +47,11 @@ coverage. Nx owns scheduling; mise remains a thin entry point rather than a seco
    daemon key while hashing the Rust pin and actual compiler identity. Six focused tests, mypy,
    Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.
    The new scheme causes one initial daemon-store miss. Next audit module-pack and daemon
-   outputs, dependency hashes, firmware/ready/card identity, and cache restore behavior. Any new
+   outputs, runtime patched-image preparation during test setup, dependency hashes,
+   firmware/ready/card identity, and cache restore behavior. Map setup reads before replacing
+   source-input hashing with artifact hashing. Upcoming verification must cover affected selection
+   as well as hash invalidation for Rust/Node/toolchain pin changes and ignored firmware/generated
+   input changes: runtime hashes alone do not cause Git affected selection. Any new
    cached device target requires input audit and coverage parity evidence before enabling cache.
 3. **Next: separate execution boundaries.** Provide independent unit, component, ColdFire-only,
    coupled and device targets. Establish SDK contract fixtures and retain each module's own
@@ -59,9 +64,19 @@ coverage. Nx owns scheduling; mise remains a thin entry point rather than a seco
 5. **Optional, last: move directories.** Consider runtime outside content after dependency and
    execution boundaries work. Create a raw folder only for an actual contract or module.
 
-After the task graph is correct, simplify commands and docs around one default test command,
-native Nx `--explain` planning and concise `summary` output. Current names are confusing; resolve
-them without introducing another selection router.
+Command/doc cleanup is implemented: `mise run test` is default affected verification,
+`test:plan` invokes the same task with native Nx `--explain`, and `test:full` is the full command.
+Per the user's deletion decision, the proposed `gate`/`gate:full` and runtime forwarding aliases
+are removed, active callers migrated, and alias-only/legacy-duplicate tests deleted. The repository
+guard applies the same full-suite restriction to `test:full`; personal hook/policy files are untouched.
+Existing main/full command bodies are unchanged; no second router or target list was added.
+Cheap preflight remains `test:changed`. `DIGI_GATE_BASE` coordinates Nx and the Python selector.
+Planning checks execute no tests/builds; default output remains native Nx `summary` for agents.
+Earlier checkpoint evidence: 19 selection tests, identical main/wrapper plans, formatting and 16/16
+cheap preflight tasks passed. The default and full command bodies match their previous versions.
+Deletion checkpoint: nine default-mode selection tests, 14 module-check ownership tests and 38
+guard tests pass, plus Python lint/mypy, formatting and 16/16 cheap preflight tasks. Canonical
+planning works; all 59 executable device/conformance and pack targets retain their configurations.
 
 ## Acceptance and remaining decisions
 
@@ -77,7 +92,7 @@ them without introducing another selection router.
 
 ## Limits of current evidence
 
-No measured speedup or full gate is claimed. The Nx upgrade preserves project-level affected
-semantics. Task-level selection is an explicit test override until its matrix is reviewed.
+No measured speedup or full gate is claimed. Task-level affected selection is the default after
+matrix review; the repository workflow no longer maintains legacy-mode compatibility branches.
 No device coverage has been removed, and no new device-test cache boundary has been established by
 these host-only checks.

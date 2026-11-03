@@ -17,7 +17,7 @@ time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4)
 Device tests for a module live in that module: `modules/**/tests/*.device.test.ts` (patched runtime on DT2 1.17
 and DN2 1.12). The owner's `project.json` lists them in `metadata.runtimeAcceptance`, with paths relative
 to that project. Runtime acceptance belongs to `modules/core/runtime/tests/project.json`
-(`core/runtime-tests`); `core/runtime:test-device` forwards to it. Checks that run over
+(`core/runtime-tests`); run `core/runtime-tests:test-device` directly. Checks that run over
 every shipped module live in `tests/conformance/`; its load cells (`load-dt2.device.test.ts`, `load-dn2.device.test.ts`) upload each run-time
 module and checks persistence, contract, registration and faults. `DIGI_CONFORMANCE_MODULES` (comma-separated
 module ids) limits it; unset runs all.

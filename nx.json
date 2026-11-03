@@ -54,8 +54,5 @@
       "outputs": []
     }
   },
-  "parallel": 3,
-  "affected": {
-    "legacy": true
-  }
+  "parallel": 3
 }

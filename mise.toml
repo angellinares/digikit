@@ -101,7 +101,7 @@ description = "Replay inputs recorded by the desktop app (Export diagnostics fil
 run = "uv run python -m tools.emulator.coupled bisect"
 description = "Find the DSP tier (fast region, cluster root, AOT) that changes a scenario's PCM"
 
-# --- gate ---
+# --- verification ---
 
 [tasks."check:layers"]
 run = "uv run python -m tools.devtools.layercheck"
@@ -109,13 +109,17 @@ description = "Check the module layering (docs/ARCHITECTURE.md): roles match fol
 
 [tasks."test:changed"]
 run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; node tools/nx/remote-cache.mjs exec --access ro -- pnpm nx:pilot affected --base "$DIGI_GATE_BASE" -t lint,fmt-check,typecheck,test-host,python-checks'
-description = "Fast preflight: lint, format, types, host tests and Python checks of the affected projects; no builds or devices"
+description = "Cheap preflight only: affected lint, format, types, host tests and Python checks; no builds or devices; use test for complete affected verification"
 
-[tasks.gate]
+[tasks.test]
 run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot affected --base "$DIGI_GATE_BASE" --parallel 2 -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone'
-description = "Merge gate: nx affected over the gate targets against DIGI_GATE_BASE (default main); emulator targets run one at a time (parallelism false); runs at nice 10"
+description = "Default affected verification and merge gate against DIGI_GATE_BASE (default main); two Nx tasks with two Vitest workers per device target; runs at nice 10"
 
-[tasks."gate:full"]
+[tasks."test:plan"]
+run = "mise run test -- --explain"
+description = "Explain the default test selection without running tasks; DIGI_GATE_BASE sets the shared comparison base"
+
+[tasks."test:full"]
 run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot run-many --parallel 2 -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone,tier-sweep,dt2-tier-sweep'
 description = "Full gate: every gate target on every project, plus the tier sweeps"
 
