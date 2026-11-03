@@ -18,16 +18,23 @@ function option(args, names) {
   }
 }
 
-// Only the default base/head comparison has a supported scheduling policy.
+// Only the explicit base comparison has a supported scheduling policy.
 // Let Nx parse alternate selectors, including multi-value and repeated --files.
 const alternateSelection = (args) =>
   args.some((arg) => ['--files', '--stdin', '--uncommitted', '--untracked', '--all'].includes(arg.split('=')[0]));
+
+// mise supplies one explicit base. Other comparisons may use Nx environment or configuration defaults.
+const supportedComparison = (args) =>
+  !alternateSelection(args) &&
+  args.filter((arg) => arg === '--base' || arg.startsWith('--base=')).length === 1 &&
+  Boolean(option(args, ['--base'])) &&
+  !args.some((arg) => arg === '--head' || arg.startsWith('--head='));
 
 export function gateCommands(args, changes) {
   const targets = option(args, ['-t', '--targets', '--target']);
   const required = ['pack', 'test-device', 'test-conformance', 'rust-tests'];
   if (
-    alternateSelection(args) ||
+    !supportedComparison(args) ||
     !menuOnly(changes) ||
     !required.every((target) => targets?.split(',').includes(target))
   )
@@ -51,7 +58,7 @@ export function gateCommands(args, changes) {
 export function changedFiles(args, cwd = process.cwd()) {
   const git = (...argv) => execFileSync('git', argv, { cwd, encoding: 'utf8' }).trimEnd();
   // Unsupported selection modes fail closed to ordinary Nx selection.
-  if (alternateSelection(args)) return [];
+  if (!supportedComparison(args)) return [];
   const head = option(args, ['--head']);
   const base = git('merge-base', option(args, ['--base']) || process.env.DIGI_GATE_BASE || 'main', head || 'HEAD');
   const statuses = [git('diff', '--name-status', '--no-renames', base, head || 'HEAD', '--')];

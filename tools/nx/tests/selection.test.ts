@@ -94,12 +94,24 @@ describe('default gate menu scheduling policy', () => {
   const targets = 'pack,test-device,test-conformance,rust-tests';
   const commandsFor = (files: string[]) =>
     gateCommands(
-      ['-t', targets],
+      ['--base=main', '-t', targets],
       files.map((file) => ({ file, status: 'M' })),
     );
   // Supply hypothetical changed files to Nx only after the gate classifies the default comparison.
   const gatePlan = (files: string[]) =>
-    commandsFor(files).map((command: string[]) => plan([...command, `--files=${files.join(',')}`]).tasks);
+    commandsFor(files).map(
+      (command: string[]) =>
+        plan([...command.filter((arg) => arg !== '--base=main'), `--files=${files.join(',')}`]).tasks,
+    );
+
+  it('keeps comparisons without one explicit nonempty base on the broad path', () => {
+    for (const comparison of [[], ['--base='], ['--base=main', '--base=HEAD'], ['--base=main', '--head=HEAD']]) {
+      expect(changedFiles(comparison)).toEqual([]);
+    }
+    const command = gateCommands(['-t', targets], [{ file: MENU_SOURCE, status: 'M' }])[0];
+    const graph = plan([...command, `--files=${MENU_SOURCE}`]).tasks;
+    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+  }, 30_000);
 
   it('keeps alternate file and stdin selectors on the broad path', () => {
     for (const selector of [['--stdin'], ['--stdin=true']]) expect(menuOnly(changedFiles(selector))).toBe(false);
