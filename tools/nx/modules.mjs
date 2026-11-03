@@ -191,6 +191,8 @@ export const createNodesV2 = [
               DEVICE_INPUTS.filter((input) => input !== '^production'),
               [f],
             ),
+            // The shared runner's Vitest, TypeScript and package configuration is not an import of a test file.
+            { input: 'production', projects: ['regression'] },
             imageInput,
             ...importInputs(globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot })),
           ],
