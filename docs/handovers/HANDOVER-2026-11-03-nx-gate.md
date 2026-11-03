@@ -27,10 +27,10 @@ This PR (branch `test/watchdog-default`):
 - `test:changed`: cheap targets only, cache read-only.
 - Selection is per Nx project. A project is touched when it owns a changed file, depends on a touched
   project, or has a target input `{workspaceRoot}/<glob>` that matches a changed file.
-- Gate projects in `tools/gate/` (smoke, fx, tier, card, stock, rust-modules) carry their triggers as
-  such inputs.
-- Module projects depend on regression, conformance, digi-control (daemon), patchkit (packs),
-  devices and sdk.
+- Gate projects in `tools/gate/` (smoke, card, stock, fx-dn2, fx-dt2, pins, dt2-tone, rust-modules)
+  carry their triggers as such inputs. Nx affected ignores negated (`!`) inputs.
+- Module projects depend on regression, digi-control (daemon), patchkit (packs), devices and sdk;
+  modules with `test-conformance` also on conformance.
 - Editing `nx.json` touches every project. Editing a `project.json` touches that project and its
   dependents (regression or a harness package: every module's device tests). Prefer plugin code
   (`tools/nx/*.mjs`) and new files for config changes.
@@ -47,11 +47,11 @@ This PR (branch `test/watchdog-default`):
 
 ## Next steps
 
-1. Waste review of the gate layout. For each gate project and target, list the triggers it needs.
-   Split or narrow where needed (as with gate-fx and gate-tier). One config PR.
-2. Cache the cheap targets: typecheck, `@digi/web` check, desktop `build:ui` and `check:ui`,
-   rust-tests (inputs from cargo depfiles). Bundle with step 1, so `nx.json` and `project.json`
-   change once.
+1. Done on branch `test/gate-waste`: waste review of the gate layout. Gate projects are split into
+   fx-dn2, fx-dt2, pins and dt2-tone with traced inputs; smoke and card use the store daemon; module
+   device targets use `production` cache keys.
+2. Done on branch `test/gate-waste`: cheap targets are cached (typecheck, web check, desktop
+   `build:ui` and `check:ui`, lint, host tests) and the hermetic rust-tests are cached.
 3. Port the Python scenarios to TypeScript. Prove each family on both devices, then delete its Python
    runner code:
    - card-torn to `card-safety.device.test.ts`.
@@ -62,6 +62,14 @@ This PR (branch `test/watchdog-default`):
    - fx-reuse onset jitter: +-64 samples between identical runs, tolerance 128.
    - dkneeds lists broad inputs (`pyproject.toml`, `nx.json`, every `Cargo.toml`).
    - Breaking the Python tools import cycle (finding 104) would allow finer Python test selection.
+   - nx_input_audit does not know what tools/nx/device-inputs.mjs and dependentTasksOutputFiles hash;
+     teach it or port it to TypeScript.
+   - rust-tests of the non-hermetic crates need hashes of the generated core and firmware before they
+     can be cached.
+   - Gate project Python inputs are hand-listed import closures; derive them from the import graph
+     (tools/nx plugin) if they drift.
+5. Overhaul AGENTS.md testing rules, check mise.toml for leftover Python gate tasks, and point
+   README.md to docs/TESTING.md.
 
 ## Process notes
 

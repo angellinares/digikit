@@ -87,7 +87,7 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run test:fx:dt2` | Project `fx-dt2`: 135 quick assertions; `DIGI_FX_SWEEP=1` runs 146 across 60 scenarios. `DIGI_DT2_CARD` selects a prepared card image. |
 | `pnpm nx:pilot run <module-id>:test-device` | The module's `*.device.test.ts` files (Vitest project `runtime`) after its packs, aliases and the plusdrive CLI are built into `dist/`. |
 | `pnpm nx:pilot run-many -t test-conformance` | Project `conformance`: `tests/conformance/load-{dt2,dn2}.device.test.ts` on DT2 1.17 and DN2 1.12, once per eligible module (`DIGI_CONFORMANCE_MODULES` is set per module). |
-| Other Nx gate targets | `digi-control:daemons` builds the daemons and writes `dist/daemons.json`; device helpers read it when `DIGI_EMUD_*` is unset. `digi-coupled:build` and `build-dt2` build the coupled emulator. `@digi/web:patchkit-wasm` builds the patchkit Wasm (the web `test` depends on it). `workspace:lint` and `workspace:fmt-check` run `pnpm lint` and `pnpm fmt:check`. Project `regression`: `test-device` runs `tests/regression/emulator/` after the packs of its runtime-acceptance records; `test:stock` depends on `daemons`, `test:fx` and `test:fx:dt2` on the coupled builds; `test:fx-no-aot` runs `test:fx` in the no-AOT configuration. Project `@digi/desktop`: `cargo-test` runs the app crate tests. Owner projects `tools`, `devices`, `sdk` and `tests` own the paths no other project owns; `tools` depends on what its scripts exercise and carries the Python gate targets `python-checks`, `python-tests`, `pins`, `tier-quick`, `tier-sweep`, `dt2-tier-quick`, `dt2-tier-sweep`, `card`, `smoke` and `dt2-tone`. `nx affected` selects by project, so a change under `tools/` selects all of them until caching lands. |
+| Other Nx gate targets | `digi-control:daemons` builds the daemons and writes `dist/daemons.json`; device helpers read it when `DIGI_EMUD_*` is unset. `digi-coupled:build` and `build-dt2` build the coupled emulator. `@digi/web:patchkit-wasm` builds the patchkit Wasm (the web `test` depends on it). `workspace:lint` and `workspace:fmt-check` run `pnpm lint` and `pnpm fmt:check`. Project `regression`: `test-device` runs `tests/regression/emulator/` after the packs of its runtime-acceptance records; `test:stock` depends on `daemons`, `test:fx` and `test:fx:dt2` on the coupled builds; `test:fx-no-aot` runs `test:fx` in the no-AOT configuration. Project `@digi/desktop`: `cargo-test` runs the app crate tests. Owner projects `tools`, `devices`, `sdk` and `tests` own the paths no other project owns; `tools` carries `python-checks` and `python-tests`. The emulator gate targets live in the gate projects under `tools/gate/` (see "Nx gate"). |
 | `mise run module:check ID` | Machine/effect conformance and own Python tests, then any module-owned Nx `test-device` target. May build or emulate; size/fit follows both. Not an all-module load proof. |
 | `mise run module:audit NAME` | ColdFire memory audit of one run-time module. |
 | `mise run patch:test` | Smoke tour over `tests/patchkit/smoke/matrix.toml` (`-- --cell dt2-1.17:core/fx`, `-- --update`). |
@@ -106,7 +106,7 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 
 - `mise run gate` runs `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`), under the shared benchlock at nice 10.
 - `mise run gate:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Run it only after generated-core changes.
-- Gate projects `gate-smoke`, `gate-stock`, `gate-fx`, `gate-tier` and `gate-card` carry their triggers as `{workspaceRoot}` inputs. `gate-stock` has the target `stock`; `gate-fx` holds the Vitest FX suites `fx`, `fx-no-aot` and `fx-dt2`; `gate-tier` holds `pins`, `tier-quick`, `tier-sweep`, `dt2-tier-quick`, `dt2-tier-sweep` and `dt2-tone`. The Vitest suites behind `stock`, `fx` and `fx-dt2` are still the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. Module projects depend on the harness (`regression`, `conformance`), the daemon (`digi-control`) and the packs (`patchkit`). `python-checks` and `python-tests` run on any change and filter by diff.
+- Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs), `devices` and `sdk`; only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
 - Emulator targets run one at a time.
 - Nx prints the output of each task; there is no run directory or `--rerun-failed`.
 
@@ -251,11 +251,19 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 Nx selects by project. `pnpm nx:pilot show projects --affected --base main` prints the selection
 without running it.
 
-- The gate projects `tools/gate/{smoke,fx,card,stock,rust-modules}` carry their trigger paths as
-  `{workspaceRoot}` globs in their target inputs.
-- Module projects depend on `regression` (harness), `conformance`, `digi-control` (daemons) and
-  `patchkit` (packs), so a change in one of them selects the modules that use it.
-- `tools:python-checks` and `tools:python-tests` run on any change. `python-checks` runs ruff, ruff
+- The gate projects `gate-smoke`, `gate-card`, `gate-stock`, `gate-fx-dn2`, `gate-fx-dt2`, `gate-pins`,
+  `gate-dt2-tone` and `gate-rust-modules` (in `tools/gate/`) carry their trigger paths as positive
+  `{workspaceRoot}` globs in their target inputs. Nx affected ignores negated (`!`) inputs, so inputs
+  that decide selection must be positive globs.
+- Module projects with device tests depend on `regression` (harness), `digi-control` (daemons),
+  `patchkit` (packs), `devices` and `sdk`; only modules with `test-conformance` also depend on
+  `conformance`. A change in a dependency selects the modules that use it. The module targets
+  `test-device` and `test-conformance` hash `^production` of their dependencies. `production` is the
+  named input in `nx.json` (default minus `{projectRoot}/tests/**` and Markdown); for `regression` it is
+  the harness only (see `tests/regression/project.json`). So a change to a stock test, a golden, an FX
+  scenario, a host test or another module's tests still selects the dependent modules, but their device
+  results replay from the cache. Packs still run (they are not cached).
+- `tools:python-checks` and `tools:python-tests` run on any change outside `docs/`. `python-checks` runs ruff, ruff
   format, mypy, layercheck and `patchkit gen --check`. `python-tests` first runs
   `tests/patchkit/test_pk_current.py` (module and port staleness), then the Python test files that
   `tools/devtools/py_select.py` selects by the diff: the gate test (`PY_GATE`), the `PY_SUITES` the
@@ -408,7 +416,28 @@ replays the stored output of a target with `cache: true`; the hash covers only t
 A target may be cached only when `uv run python -m tools.devtools.nx_input_audit PROJECT:TARGET`
 passes. The audit runs the command with `tools/devtools/fs_trace.mjs` preloaded and compares every
 file read with the expanded inputs. Run it after changing the inputs or the command of a cached
-target. `--all-cached` audits every cached target; `--json FILE` keeps the full result.
+target. `--all-cached` audits every cached target; `--json FILE` keeps the full result. The audit also
+resolves `nx:run-script` targets (it runs `pnpm run SCRIPT` in the project directory).
+
+The audit reports firmware, ready dirs and `dist/daemons.json` of device targets as "generated", because
+it does not know that `tools/nx/device-inputs.mjs` and `dependentTasksOutputFiles` hash them. Those
+findings are expected for device targets. Any "undeclared" finding is not.
+
+Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, `typecheck` (set in
+`nx.json` `targetDefaults`; the `typecheck` of `regression` is not cached because its tsconfig reads every
+module's device tests), `@digi/web:check`, `@digi/desktop:build:ui` and `check:ui`, `workspace:lint`, the
+host tests, and `rust-tests` of the crates in `HERMETIC` in `tools/nx/cargo.mjs`
+(coldfire, periph, emmc-card, dkneeds, dkrt-sdk, dkrt-fit, device-profile, dkupload, dksample). Those run
+`rustup run <mise rust> cargo nextest run -p NAME --release --locked --offline --target-dir dist/cargo-tests`.
+Other crates run uncached through `tools/devtools/rust_ws.py`. Crates without tests have no `rust-tests`
+target. `workspace:fmt-check` is not cached: prettier also opens files it never formats (`.py`, `.rs`),
+and nested `.gitignore` and `.editorconfig` files change its result.
+
+`nx_input_audit` cannot trace cargo. For the `HERMETIC` `rust-tests`, run
+`node tools/nx/cargo-depfiles.mjs` after the targets ran. It checks every repository file in cargo's
+dep-info files under `dist/cargo-tests` against the crate, its path dependencies and its extra inputs.
+Dep-info does not show run-time reads (`std::fs`), so a crate is `HERMETIC` only if its tests read no
+firmware, generated core or `out/` data.
 
 ### Daemon store
 

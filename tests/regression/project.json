@@ -9,7 +9,19 @@
     "digi-coupled",
     "dkui-host"
   ],
+  "namedInputs": {
+    "production": [
+      "{projectRoot}/support.ts",
+      "{projectRoot}/timing.ts",
+      "{projectRoot}/watchdog.ts",
+      "{projectRoot}/runtime/**/*",
+      "{projectRoot}/vitest.config.ts",
+      "{projectRoot}/tsconfig.json",
+      "{projectRoot}/package.json"
+    ]
+  },
   "targets": {
+    "typecheck": { "cache": false },
     "test-device": {
       "executor": "nx:run-commands",
       "cache": false,

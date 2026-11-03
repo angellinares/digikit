@@ -85,7 +85,7 @@ independently restores its ready snapshot. The existing native emulator binary i
 required. Card preparation invokes the small +Drive helper build/check, unless
 `DIGI_DT2_CARD` points to an existing compatible card image.
 Reports, measurements and logs are under `out/regression/dt2-fx/`; WAVs are
-removed after the run unless `DIGI_FX_KEEP_RUNS=1`. `mise run gate:full` (or `pnpm nx:pilot run gate-tier:dt2-tier-sweep`) also
+removed after the run unless `DIGI_FX_KEEP_RUNS=1`. `mise run gate:full` (or `pnpm nx:pilot run gate-fx-dt2:dt2-tier-sweep`) also
 compares DT2 FX PCM with and without AOT.
 
 Add cases and assertions to the corresponding DN2 or DT2 TypeScript sources in

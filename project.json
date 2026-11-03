@@ -4,15 +4,58 @@
   "targets": {
     "lint": {
       "executor": "nx:run-commands",
-      "cache": false,
-      "inputs": ["{workspaceRoot}/**/*"],
-      "options": { "command": "pnpm lint", "cwd": "." }
+      "cache": true,
+      "outputs": [],
+      "inputs": [
+        "{workspaceRoot}/**/*.js",
+        "{workspaceRoot}/**/*.mjs",
+        "{workspaceRoot}/**/*.cjs",
+        "{workspaceRoot}/**/*.jsx",
+        "{workspaceRoot}/**/*.ts",
+        "{workspaceRoot}/**/*.mts",
+        "{workspaceRoot}/**/*.cts",
+        "{workspaceRoot}/**/*.tsx",
+        "{workspaceRoot}/**/*.astro",
+        "{workspaceRoot}/**/*.vue",
+        "{workspaceRoot}/**/*.svelte",
+        "{workspaceRoot}/.oxlintrc.json",
+        "jsToolchain"
+      ],
+      "options": {
+        "command": "pnpm lint",
+        "cwd": "."
+      }
     },
     "fmt-check": {
       "executor": "nx:run-commands",
       "cache": false,
-      "inputs": ["{workspaceRoot}/**/*"],
-      "options": { "command": "pnpm fmt:check", "cwd": "." }
+      "inputs": [
+        "{workspaceRoot}/**/*.js",
+        "{workspaceRoot}/**/*.mjs",
+        "{workspaceRoot}/**/*.cjs",
+        "{workspaceRoot}/**/*.jsx",
+        "{workspaceRoot}/**/*.ts",
+        "{workspaceRoot}/**/*.mts",
+        "{workspaceRoot}/**/*.cts",
+        "{workspaceRoot}/**/*.tsx",
+        "{workspaceRoot}/**/*.astro",
+        "{workspaceRoot}/**/*.vue",
+        "{workspaceRoot}/**/*.svelte",
+        "{workspaceRoot}/**/*.json",
+        "{workspaceRoot}/**/*.css",
+        "{workspaceRoot}/**/*.html",
+        "{workspaceRoot}/**/*.yml",
+        "{workspaceRoot}/**/*.yaml",
+        "{workspaceRoot}/.prettierrc.json",
+        "{workspaceRoot}/.prettierignore",
+        "{workspaceRoot}/.oxlintrc.json",
+        "jsToolchain"
+      ],
+      "options": {
+        "command": "pnpm fmt:check",
+        "cwd": "."
+      },
+      "description": "Not cached: prettier also opens files it never formats (.py, .rs), and nested .gitignore and .editorconfig files change its result."
     }
   }
 }

@@ -22,6 +22,22 @@
     "test": {
       "dependsOn": ["patchkit-wasm"]
     },
+    "check": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/tools/emulator/ready_inputs.json",
+        "{workspaceRoot}/modules/**/module.toml",
+        "{workspaceRoot}/modules/**/gallery/icon.svg",
+        "{workspaceRoot}/apps/desktop/ui/src/**/*",
+        "{workspaceRoot}/apps/desktop/package.json"
+      ],
+      "outputs": ["{projectRoot}/.astro"],
+      "description": "astro check; it writes .astro/*.d.ts before it checks (the audit lists them as generated)."
+    },
     "test-host": {
       "executor": "nx:run-commands",
       "cache": false,
@@ -31,7 +47,9 @@
         "forwardAllArgs": false,
         "command": "pnpm exec vitest run --config vitest.host.config.ts --project web-transfer",
         "cwd": ".",
-        "env": { "DIGI_FW_EMU_SOCKET": "" }
+        "env": {
+          "DIGI_FW_EMU_SOCKET": ""
+        }
       }
     }
   }

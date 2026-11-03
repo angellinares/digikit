@@ -1,0 +1,54 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "gate-pins",
+  "description": "DN2 PCM pins: every scenario in tests/scenarios/dn2.json.",
+  "targets": {
+    "pins": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-coupled:build"],
+      "inputs": [
+        "{workspaceRoot}/tools/__init__.py",
+        "{workspaceRoot}/tools/emulator/coupled.py",
+        "{workspaceRoot}/tools/emulator/digi_env.py",
+        "{workspaceRoot}/tools/emulator/native_target.py",
+        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/tools/emulator/ready_inputs.json",
+        "{workspaceRoot}/tools/firmware/config.py",
+        "{workspaceRoot}/tools/firmware/device.py",
+        "{workspaceRoot}/tools/devtools/render_cache.py",
+        "{workspaceRoot}/tools/devtools/benchlock.py",
+        "{workspaceRoot}/tools/devtools/portable_flock.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_core/**/*.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_transpile/**/*.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_transpile_infer.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_rsgen.py",
+        "{workspaceRoot}/packages/emulator/coupled/**/*",
+        "{workspaceRoot}/packages/emulator/boot/**/*",
+        "{workspaceRoot}/packages/emulator/device-profile/**/*",
+        "{workspaceRoot}/packages/emulator/loader/**/*",
+        "{workspaceRoot}/packages/emulator/plusdrive/**/*",
+        "{workspaceRoot}/packages/emulator/card/**/*",
+        "{workspaceRoot}/packages/emulator/machine/**/*",
+        "{workspaceRoot}/packages/emulator/periph/**/*",
+        "{workspaceRoot}/packages/emulator/coldfire/**/*",
+        "{workspaceRoot}/packages/emulator/live/**/*",
+        "{workspaceRoot}/packages/emulator/sharc/**/*",
+        "{workspaceRoot}/packages/emulator/sharc-rt/**/*",
+        "{workspaceRoot}/packages/emulator/sharc-stats/**/*",
+        "{workspaceRoot}/packages/emulator/sharc-gen/**/*",
+        "{workspaceRoot}/packages/emulator/sharc-fast-cl/**/*",
+        "{workspaceRoot}/tests/scenarios/dn2.json",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/sdk/sdk.toml",
+        "{workspaceRoot}/Cargo.toml",
+        "{workspaceRoot}/Cargo.lock"
+      ],
+      "options": {
+        "command": "uv run python -m tools.emulator.coupled scenario --all --no-build --jobs ${DIGI_JOBS:-4}",
+        "cwd": "."
+      }
+    }
+  }
+}

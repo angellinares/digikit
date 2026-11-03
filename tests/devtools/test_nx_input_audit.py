@@ -119,3 +119,19 @@ def test_runtime_hash_declares_a_generated_file() -> None:
     assert not audit.runtime_hashed(other, "out/bin/other")
     assert not audit.runtime_hashed(["env: out/bin/tool"], "out/bin/tool")
     assert not audit.runtime_hashed(other, "")
+
+
+def test_target_command_run_script() -> None:
+    config = {
+        "root": "packages/p",
+        "targets": {
+            "typecheck": {
+                "executor": "nx:run-script",
+                "options": {"script": "typecheck"},
+            }
+        },
+    }
+    assert audit.target_command("p", config, "typecheck") == (
+        "pnpm run typecheck",
+        audit.ROOT / "packages/p",
+    )

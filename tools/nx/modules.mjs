@@ -19,13 +19,15 @@ const packDevices = (m) => {
 // Shipped module that is loaded at run time: it gets test-conformance.
 const isUploadable = (root, m) => root.startsWith('modules/') && !!(m.dynamic || m.host || m.type === 'service');
 // Cache inputs of test-device and test-conformance: the module and its graph deps (core modules, harness via
-// regression/conformance, daemon and patchkit crate sources), the outputs of the pack, CLI and daemons targets
-// (dist/daemons.json names the content-keyed daemon), and the firmware and ready dirs via device-inputs.mjs.
+// regression/conformance, daemon and patchkit crate sources) with their `production` files (sources without
+// tests/ and docs; for regression only the harness files, see tests/regression/project.json), the outputs of
+// the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
+// ready dirs via device-inputs.mjs.
 // Also named explicitly: the harness packages (test-support, control-client, dk-session), every module.toml
 // (the conformance suite scans manifests to select modules) and tools/emulator/fast_regions.json (sets SHARC_* env).
 const DEVICE_INPUTS = [
   'default',
-  '^default',
+  '^production',
   'jsToolchain',
   { dependentTasksOutputFiles: '**/*', transitive: true },
   { runtime: 'node tools/nx/device-inputs.mjs' },
@@ -209,11 +211,11 @@ export const createDependencies = (_opts, ctx) => {
         sourceFile: join(p.root, 'module.toml'),
         type: DependencyType.static,
       }));
-    // Implicit edges: a module with device or conformance tests depends on the harness, the daemon and the packs.
+    // Implicit edges: a module with device tests depends on the harness, the daemon and the packs;
+    // only a module with test-conformance also depends on the conformance suite.
     const hasDeviceTests = !!(p.targets?.['test-device'] || p.targets?.['test-conformance']);
-    const implicitDeps = hasDeviceTests
-      ? ['regression', 'conformance', 'digi-control', 'patchkit', 'devices', 'sdk']
-      : [];
+    const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
+    if (p.targets?.['test-conformance']) implicitDeps.push('conformance');
     // Projects that live inside the module directory (for example core/ui and dkui-host).
     for (const q of all) if (q.name !== p.name && q.root.startsWith(p.root + '/')) implicitDeps.push(q.name);
     const implicits = [...new Set(implicitDeps)]

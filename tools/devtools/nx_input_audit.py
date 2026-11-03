@@ -323,6 +323,9 @@ def target_command(project: str, config: dict, target: str) -> tuple[str, Path]:
         command = " && ".join(
             c if isinstance(c, str) else c["command"] for c in opts["commands"]
         )
+    if command is None and opts.get("script"):
+        # nx:run-script (a package.json script): pnpm runs it in the project directory.
+        return f"pnpm run {opts['script']}", ROOT / config.get("root", ".")
     if command is None:
         raise RuntimeError(f"{project}:{target} has no options.command")
     command = command.replace("{projectRoot}", config.get("root", ".")).replace(
