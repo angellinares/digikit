@@ -514,6 +514,11 @@ fn place(
     })
 }
 
+/// Whether a module of `ports` (empty: any) is for device `dev`.
+fn on_ports(ports: &[String], dev: &str) -> bool {
+    ports.is_empty() || ports.iter().any(|p| p.split('-').next() == Some(dev))
+}
+
 /// Resolve the typed sections against the device models: one [`DevResolved`] per device that has something.
 pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
     let who = m.module.id.as_str();
@@ -521,7 +526,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
     if m.machine.is_empty() {
         return Ok(out);
     }
-    for (dev, model) in &models.by_device {
+    'dev: for (dev, model) in &models.by_device {
         let kn = &model.knobs;
         if kn.to != "machine" && kn.to != "page" {
             return Err(err!(
@@ -536,7 +541,12 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             let what = format!("machine {}", d.id);
             let mine: Vec<&ParamDef> = m.param.iter().filter(|p| p.machine == d.id).collect();
             let mpages: Vec<&PageDef> = m.page.iter().filter(|p| p.machine == d.id).collect();
-            let placed = place(who, &what, dev, model, d, &mine, &mpages)?;
+            let placed = match place(who, &what, dev, model, d, &mine, &mpages) {
+                Ok(p) => p,
+                // a device outside the module's ports need not fit it (more parameters than its knobs, for one)
+                Err(_) if !on_ports(&m.module.ports, dev) => continue 'dev,
+                Err(e) => return Err(e),
+            };
             // the machine's knob list: positions to parameters, plus the stock rows of a machine-row device
             let mut knobs = vec![Knob::Code(0); kn.count];
             if kn.to == "machine" {
@@ -973,6 +983,26 @@ summary = "t."
     }
     fn bad(m: &Manifest) -> String {
         resolve(m, &models()).unwrap_err().0
+    }
+
+    #[test]
+    fn a_device_outside_the_ports_that_cannot_place_the_parameters_is_left_out() {
+        let six = DT2.replace(
+            "param_slots = [1, 2, 4, 5]",
+            "param_slots = [1, 2, 4, 5, 6, 7]",
+        );
+        let models = Models::from_texts([six.as_str(), DN2]).unwrap();
+        let mut m = manifest(6, &[]);
+        let e = resolve(&m, &models).unwrap_err().0;
+        assert!(e.contains("6 parameters, but dn2 has only 4"), "{e}");
+        m.module.ports = vec!["dt2-1.17".into()];
+        let r = resolve(&m, &models).unwrap();
+        assert_eq!(
+            r.iter().map(|x| x.dev.as_str()).collect::<Vec<_>>(),
+            ["dt2"]
+        );
+        assert_eq!(r[0].machines[0].knobs[6], p("t_4"));
+        assert_eq!(r[0].machines[0].knobs[7], p("t_5"));
     }
 
     #[test]

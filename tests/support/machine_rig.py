@@ -276,7 +276,9 @@ class MachineRig:
     def reset(self) -> None:
         """A fresh core: zeroed stand-ins, initialised data, params at their defaults, the voice idle."""
         b = self.built
-        self.sess = pk_sharc.CallSession(b.linked, dv.RETURN_SW, breaks=(dv.STOCK_BP,))
+        self.sess = pk_sharc.CallSession(
+            b.linked, dv.RETURN_SW, breaks=(dv.STOCK_BP, dv.UNPACK_BP)
+        )
         if b.base:  # the static memory is the same for every rig of this module: copy it instead of poking 64k words again
             self.sess.runner.state.overlay.update(b.base)
         else:
