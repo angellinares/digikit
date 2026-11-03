@@ -64,6 +64,18 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    the removed command. The focused module-builds host test, four affected preflight tasks
    (`DIGI_GATE_BASE=HEAD mise run test:changed`), Prettier and `git diff --check` pass. No new
    exact-command regression was added; the existing cache tests exercise the behavior.
+   Pack-cache audit decision: retain inferred `pack`'s `cache: false`. Its DT2/DN2 DKM outputs
+   are explicit, but complete input closure is unproven: packing scans all module manifests and
+   reads selected sources/includes, SDK definitions, device models and CLI/toolchain inputs.
+   `PATCHKIT_MODULES` permits unmodeled external roots, and ignored `out/cache/dko` is mutable
+   intermediate state. Nx 24 supports environment/runtime inputs, prerequisite-output inputs
+   (`dependentTasksOutputFiles`) and `includeIgnored`; these mechanisms alone do not prove closure.
+   Do not enable caching or add a broad all-modules input as a substitute. Revisit after constraining
+   external roots and closing selected-object plus CLI/toolchain inputs; verify affected selection
+   separately, then prove scoped invalidation and deletion/restoration of declared outputs on
+   representative ColdFire and DSP modules. No cache behavior or speedup is claimed by this audit.
+   Doc-only audit checks: Prettier and `git diff --check` pass;
+   `DIGI_GATE_BASE=HEAD mise run test:changed` succeeds with zero selected tasks.
    Follow up: manifest-driven dependency/type/category contracts; redundant debug pack seed removed after graph equivalence. Further modules.mjs splitting is intentionally deferred until a specific responsibility/schema contract benefits; no generic framework.
    Core freshness checkpoint: uncached category-core source-backed producers check scoped generation, then incrementally build tracked objects under shared benchlock; image consumers use the profile-derived acceptance-image tag. No actual core build or generated-output update run here.
    Evidence: 23 scoped Nx host tests and six affected preflight tasks pass; native graphs select exactly 16 producers for image consumers and none for stock/runtime units. Declared Rust source/output checks pass; no end-to-end freshness measurement claimed.
@@ -128,7 +140,11 @@ Objective: fast, accurate Nx selection with explicit build and cache boundaries,
    Focused remote-helper host file passes all 31 tests; regression typecheck, three affected preflight
    tasks (`DIGI_GATE_BASE=HEAD mise run test:changed`), Prettier and `git diff --check` pass. This is module
    load conformance, not an audio or coupled DSP correctness proof; no full suite or merge gate run.
-   Next highest-payoff candidate: batch conformance daemon boots with a proven pristine-card/reset contract before reducing runtime-to-module coverage edges. SDK contract fixtures are additive; loader compatibility changes remain deferred by the user.
+   Conformance batching deferred: each Nx conformance target already runs one module/device pair
+   per case and retains per-module result caching. Existing session reuse has no additional cases
+   within that target to amortize. Sharing boots across targets would need an explicit scheduling
+   and pristine-card/reset contract; no batching change or speedup is claimed. SDK contract fixtures
+   are additive; loader compatibility changes remain deferred by the user.
 4. **Next: share session infrastructure.** Consolidate TypeScript fixtures, reset and event
    helpers; use bounded concurrency after session isolation is proven. ColdFire waits cannot
    depend on DSP-frame progress. Define a fresh card baseline, epoch/protocol checks and a rule
