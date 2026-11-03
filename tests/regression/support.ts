@@ -57,7 +57,7 @@ export interface PatchedSession {
 
 /** A fresh runtime daemon; protocol cancellation precedes daemon shutdown. No remote module is assumed installed. */
 export async function startPatchedSession(
-  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: SessionOptions['dsp'] },
   scope = 'patched runtime',
 ): Promise<PatchedSession> {
   const context = { scope, device: opts.device, session: randomUUID() };
@@ -66,7 +66,7 @@ export async function startPatchedSession(
     () =>
       Session.start({
         ...opts,
-        dsp: 'sharc',
+        dsp: opts.dsp ?? 'sharc',
         runtime: { patchSet: opts.patchSet },
       }),
     context,
@@ -135,7 +135,7 @@ export async function expectRuntimeBoot({ session, dk }: PatchedSession): Promis
 /** No restart hook: every acceptance file owns a single fresh, free-running runtime. Vitest forbids `expect.poll` in
  * `beforeAll`, so each test calls `expectRuntimeBoot` itself. */
 export function withPatchedSession(
-  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: SessionOptions['dsp'] },
   scope?: string,
 ): {
   readonly runtime: PatchedSession;

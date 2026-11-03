@@ -1,4 +1,4 @@
-import type { Device, Session } from '@digi/test-support';
+import type { Device, Session, SessionOptions } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { expectRuntimeBoot, withPatchedSession, type PatchedSession } from '../support.ts';
 import { timePhase, timingContext } from '../timing.ts';
@@ -13,6 +13,7 @@ export function runtimeTests(
   body: (runtime: PatchedSession) => Promise<void>,
   opts: {
     patchSet?: string;
+    dsp?: SessionOptions['dsp'];
     mirror?: boolean;
     timeout?: number;
     devices?: readonly Device[];
@@ -24,7 +25,7 @@ export function runtimeTests(
     describe.skipIf((opts.full === true && !FULL_TIER) || opts.skip !== undefined)(
       `${device.toUpperCase()} ${FIRMWARE[device]}`,
       () => {
-        const handle = withPatchedSession(liveOptions(device, opts), name);
+        const handle = withPatchedSession({ ...liveOptions(device, opts), dsp: opts.dsp }, name);
         test(
           name,
           async () => {

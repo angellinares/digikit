@@ -85,6 +85,18 @@ test('zero-DSP runtime startup selects the firmware before applying the runtime 
   }
 });
 
+test('patched fixture preserves zero-DSP startup while loading the runtime firmware', async () => {
+  const runtime = await startPatchedSession({ device: 'dn2', firmware: '1.12', dsp: 'zero' });
+  try {
+    expect(fake.coupledEnv).not.toHaveBeenCalled();
+    expect(fake.client.firmwareLoad).toHaveBeenCalledWith(
+      expect.objectContaining({ runtime: true, syx: '/stock.syx' }),
+    );
+  } finally {
+    await runtime.close();
+  }
+});
+
 test('a mirrored runtime owns its mirror inside the temporary run directory', async () => {
   const runtime = await startPatchedSession({ device: 'dn2', firmware: '1.12', mirror: true, autoNo: false });
   const runDir = runtime.session.runDir;
