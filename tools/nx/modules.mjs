@@ -120,7 +120,7 @@ export const createNodesV2 = [
     const imageInput = { input: 'production', projects: [...imageModules].sort() };
     // Only the modules the gate packs get a pack target: patched-in core modules and static fixtures
     // (several ColdFire objects, no dkm_ symbols) cannot be packed as .dkm.
-    const packable = new Set(['digikit/debug']);
+    const packable = new Set();
     for (const [id, { manifest: m }] of byId) {
       const root = files.find((f) => read(ctx.workspaceRoot, f).module.id === id);
       if (root?.startsWith('modules/') && (m.dynamic || m.host || m.type === 'service')) packable.add(id);
