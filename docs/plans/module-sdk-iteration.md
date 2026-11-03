@@ -7,6 +7,7 @@ Status: in progress on `test/module-sdk-iteration` (2026-11-04). This plan follo
 - Scoped patchkit pack/gen and selected TypeScript conformance now read explicit manifests. The separate `patchkit:catalog-check` validates the repository catalog; its named Nx target passed on 69 manifests. Core generation with all 21 core manifests reproduced 24 generated files byte for byte against the former full scan.
 - A hypothetical Analog manifest edit now selects seven requested targets: its pack and conformance, the single-file runtime capacity owner, the catalog check, and three host/Rust checks. It selects no other shipped module conformance. Pluck C source selects four requested targets. These are selection proofs, not device run times.
 - A runtime-owned machine/FX fixture passed four coupled cells (DT2 1.17 and DN2 1.12) through its named Nx target: 23 prerequisite/test tasks in 3m 27s, with 2m 34s in the fixture target. The existing zero-DSP service fixture is a separate owner. Adding fixtures does not reduce gate time until their scheduling policy replaces repeated unchanged-module acceptance.
+- A separate empty-store menu fixture passed two zero-DSP cells, including explicit zero-peer/no-audio assertions, through its named Nx target in 24.6s. The DSP-dependent menu-capacity test remains coupled and unchanged.
 - The whole branch plans more than 80 requested tasks because it changes Nx plugin and gate files. The already agreed broad-suite exception is being used during implementation; no full device gate has run on this branch.
 
 ## Outcome
