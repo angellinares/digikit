@@ -230,6 +230,14 @@ impl CoupledRuntime {
         self.zero
     }
 
+    /// Pace the existing SSI/DMA zero peer without a SHARC engine. Call before guest execution
+    /// or snapshot restore; unlike `attach`, this does not load a stock firmware snapshot.
+    pub fn enable_zero_dsp_timing(&mut self) -> Result<(), String> {
+        self.emulator.enable_ssi_diagnostic(96_000)?;
+        self.zero = true;
+        Ok(())
+    }
+
     /// True when the queued output audio has reached the pace target; the
     /// controller's free running waits then. False without playback.
     pub fn audio_ahead(&self) -> bool {
@@ -316,9 +324,8 @@ impl CoupledRuntime {
             // The default DSPI2 peer answers zeros; no audio session.
             let snapshot =
                 std::fs::read(&options.snapshot).map_err(|e| format!("CF snapshot: {e}"))?;
-            self.emulator.enable_ssi_diagnostic(96_000)?;
+            self.enable_zero_dsp_timing()?;
             self.emulator.load_state(&snapshot)?;
-            self.zero = true;
             self.input_base = self.emulator.icount();
             return Ok(());
         }

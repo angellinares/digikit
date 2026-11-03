@@ -3297,10 +3297,12 @@ impl Actor {
         // The ColdFire-only ready state holds the runtime's picture of the card (its store header and table), so it belongs to
         // the card it booted on: a state restored onto another card would write that picture back.
         let card_key = card_snapshot_key(card.as_deref(), std::env::var_os("DIGI_COLD_RELAX_FS").is_some());
+        let zero = self.audio.as_ref().is_some_and(|audio| audio.zero);
+        let mode = if zero { "-zero" } else { "" };
         let cache = self
             .run_dir
             .join("patched")
-            .join(format!("{main_sha}{card_key}.snap"));
+            .join(format!("{main_sha}{card_key}{mode}.snap"));
         // With coupled audio inputs for the base: boot the ColdFire and the
         // DSP together (or restore the cached pair).
         match self.load_patched_coupled(
@@ -3329,6 +3331,9 @@ impl Actor {
                 .map_err(&rejected)?;
         }
         let mut runtime = Runtime::new_patched(&bytes, card_obj, &base_sha).map_err(&rejected)?;
+        if zero {
+            runtime.enable_zero_dsp_timing().map_err(&rejected)?;
+        }
         if resetting || std::env::var_os("DIGI_COLD_RELAX_FS").is_some() {
             // A used card may skip the boot-time filesystem check, as on the coupled reset path.
             runtime.relax_fs_check();
@@ -3369,6 +3374,9 @@ impl Actor {
                     let (card_obj, new_error) = card_for(card.clone()).map_err(&rejected)?;
                     runtime =
                         Runtime::new_patched(&bytes, card_obj, &base_sha).map_err(&rejected)?;
+                    if zero {
+                        runtime.enable_zero_dsp_timing().map_err(&rejected)?;
+                    }
                     report["cache_note"] = format!("cached snapshot unusable: {e}").into();
                     boot_job = true;
                     let _ = new_error;
