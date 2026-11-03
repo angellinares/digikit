@@ -76,10 +76,10 @@ Nx rejects `--files` together with the main command's `--base`.
 Control-client, test-support, dk-session, desktop-host and regression-host targets use local result
 caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). The gate runs two tasks concurrently; device targets set `REGRESSION_JOBS=2`. Other Nx targets: `pack` (patchkit build, then pack for each device into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
 generated WASM and optional inputs outside the cache boundary. Cache use assumes a frozen installation. New test helpers, environment
-reads or external inputs require an input audit before relying on cached results. The
+reads or external inputs require input/output review and scoped invalidation/restoration evidence before relying on cached results. The
 [bounded cache observations](findings/nx-pilot.md) include dependency failure/restoration probes;
 only the support/session pair was timed, not whole preflight. The standalone runtime unit target and
-relocated runtime acceptance target remain uncached; the latter awaits a bounded device-input audit.
+relocated runtime acceptance target remain uncached; the latter awaits device-input and cache-behavior evidence.
 
 | Command | What runs |
 | --- | --- |
@@ -424,18 +424,20 @@ Set `DIGI_RENDER_CACHE=0` for release and publication gates.
 ## Nx cache
 
 `pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The local cache is
-per worktree: Nx 22's database cache does not restore entries that another worktree recorded. The "Remote cache" section covers sharing across worktrees. A hit
+per worktree; the "Remote cache" section covers sharing across worktrees. A hit
 replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
 
-A target may be cached only when `uv run python -m tools.devtools.nx_input_audit PROJECT:TARGET`
-passes. The audit runs the command with `tools/devtools/fs_trace.mjs` preloaded and compares every
-file read with the expanded inputs. Run it after changing the inputs or the command of a cached
-target. `--all-cached` audits every cached target; `--json FILE` keeps the full result. The audit also
-resolves `nx:run-script` targets (it runs `pnpm run SCRIPT` in the project directory).
+Inspect declared inputs with `pnpm nx:pilot show target inputs PROJECT:TARGET --json`, or use
+`pnpm nx:pilot show target inputs PROJECT:TARGET --check PATH` for one file. Native Nx resolves
+nested ownership, dependency inputs and prerequisite outputs; inspection executes no target.
+This describes the declared hash plan, not every file a command or subprocess actually reads.
 
-The audit reports firmware, ready dirs and `dist/daemons.json` of device targets as "generated", because
-it does not know that `tools/nx/device-inputs.mjs` and `dependentTasksOutputFiles` hash them. Those
-findings are expected for device targets. Any "undeclared" finding is not.
+Before enabling or changing a cache, review source/dependency reads, outputs, toolchain and
+environment identities, including setup commands and runtime digests. Run scoped behavior checks
+appropriate to the change: invalidation for relevant inputs and restoration of declared outputs.
+Verify affected selection separately: a runtime hash does not select a task after an ignored input
+changes. The former custom auditor/tracer was removed; its historical passes did not prove
+subprocess closure or runtime-digest provenance. Unresolved coverage is not a cache-safety proof.
 
 Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, `typecheck` (set in
 `nx.json` `targetDefaults`; the `typecheck` of `regression` is not cached because its tsconfig reads every
@@ -447,7 +449,7 @@ Other crates run uncached through `tools/devtools/rust_ws.py`. Crates without te
 target. `workspace:fmt-check` is not cached: prettier also opens files it never formats (`.py`, `.rs`),
 and nested `.gitignore` and `.editorconfig` files change its result.
 
-`nx_input_audit` cannot trace cargo. For the `HERMETIC` `rust-tests`, run
+Compiler depfiles provide separate evidence. For the `HERMETIC` `rust-tests`, run
 `node tools/nx/cargo-depfiles.mjs` after the targets ran. It checks every repository file in cargo's
 dep-info files under `dist/cargo-tests` against the crate, its path dependencies and its extra inputs.
 Dep-info does not show run-time reads (`std::fs`), so a crate is `HERMETIC` only if its tests read no

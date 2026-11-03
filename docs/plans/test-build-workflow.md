@@ -38,21 +38,23 @@ coverage. Nx owns scheduling; mise remains a thin entry point rather than a seco
    runtime source/units/acceptance, leaf conformance isolation and helper-source triggers.
    Twenty layercheck unit tests, direct layercheck, Python lint/mypy, formatting and seven affected
    preflight tasks pass. No device/native builds or full gate were run for this checkpoint.
-   The relocated acceptance target is explicitly uncached pending a bounded input audit. No device
-   suite was run. The auditor cannot yet prove dependency-output/runtime-device hashes or Python
-   import closure; explicit helper-source inputs are triggers, not proof of complete cache closure.
-   Next: extend that audit, then trace one representative acceptance case per relevant path/device
-   with existing artifacts and verify cache invalidation/restoration before enabling the new cache.
-2. **Next: prove build-cache boundaries.** Early win `16594f8b` excludes task definitions from the
-   daemon key while hashing the Rust pin and actual compiler identity. Six focused tests, mypy,
-   Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.
+   The relocated acceptance target remains uncached. No device suite was run. Earlier custom-audit
+   passes did not prove subprocess closure or runtime-digest provenance; helper-source inputs are triggers only.
+2. **Active: prove build-cache boundaries.** Checkpoint A deletes the custom Nx input auditor,
+   tracer and dedicated tests (four preflight checks pass): no operational callers beyond manual policy/docs/tests.
+   Use native Nx declared-input inspection plus scoped invalidation/restoration evidence; no replacement tracer.
+   Next fix missing runtime patch-set menu/UI sources and Rust dependency/toolchain/recipe inputs.
+   Review patchkit's setup scan/build of unrelated content before restricting applied roots, and
+   account for `PATCHKIT_MODULES` / `DIGI_PK_ROOT` overrides. Native inspection does not prove observed closure.
+   Early win `16594f8b` excludes task definitions from the daemon key while hashing the Rust pin
+   and actual compiler identity. Six focused tests, mypy, Python lint and eight preflight tasks passed; 88 existing depfiles contain no mise input.
    The new scheme causes one initial daemon-store miss. Next audit module-pack and daemon
    outputs, runtime patched-image preparation during test setup, dependency hashes,
    firmware/ready/card identity, and cache restore behavior. Map setup reads before replacing
    source-input hashing with artifact hashing. Upcoming verification must cover affected selection
    as well as hash invalidation for Rust/Node/toolchain pin changes and ignored firmware/generated
    input changes: runtime hashes alone do not cause Git affected selection. Any new
-   cached device target requires input audit and coverage parity evidence before enabling cache.
+   cached device target requires input/output review, scoped cache-behavior and coverage-parity evidence before enabling cache.
 3. **Next: separate execution boundaries.** Provide independent unit, component, ColdFire-only,
    coupled and device targets. Establish SDK contract fixtures and retain each module's own
    conformance. Runtime edits may skip consumer conformance only when contract evidence proves

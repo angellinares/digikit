@@ -97,7 +97,6 @@ files = [
     "tests/dsp/test_audiocheck.py",
     "tools/sharc_dev/aot_fxprof.py",
     "tools/devtools/benchlock.py",
-    "tools/devtools/nx_input_audit.py",
     "tools/devtools/nx_graph.py",
     "tools/control/digi_client.py",
     "tools/sharc_dev/sharc_peer.py",

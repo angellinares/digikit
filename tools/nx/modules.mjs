@@ -202,10 +202,10 @@ export const createNodesV2 = [
       if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
         throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
       const target = deviceTarget(root, tests, recs);
-      // This new target identity awaits a bounded device-input audit before caching is enabled.
+      // This new target identity awaits input/output and cache-behavior evidence.
       target.cache = false;
       target.description =
-        'Runtime acceptance; cache temporarily disabled pending a bounded input audit of this new target identity.';
+        'Runtime acceptance; cache temporarily disabled pending input/output and invalidation/restoration evidence.';
       nodes.push([
         file,
         { projects: { [root]: { name: config.name, root, tags: config.tags, targets: { 'test-device': target } } } },
