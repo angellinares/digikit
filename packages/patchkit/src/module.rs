@@ -714,8 +714,17 @@ impl Library {
         }
         let mut found = vec![];
         walk(root, &mut found);
+        Self::read_paths(&found, lenient, build)
+    }
+
+    /// Read only the named manifests, without walking module roots or lowering.
+    fn read_paths(
+        paths: &[std::path::PathBuf],
+        lenient: bool,
+        build: Option<(&crate::build::toolchain::Env, Build)>,
+    ) -> Result<Vec<Module>> {
         let mut modules = vec![];
-        for p in found {
+        for p in paths {
             let dir = p.parent().unwrap().to_path_buf();
             let text = std::fs::read_to_string(&p).map_err(|e| err!("{}: {e}", p.display()))?;
             // a content module's objects come from the cache (built when stale); the others are files of the module
@@ -750,6 +759,47 @@ impl Library {
             modules.push(m);
         }
         Ok(modules)
+    }
+
+    /// An explicit manifest library, without discovery or lowering. The caller supplies all required modules; the selection
+    /// and dependency closure are validated before loading objects. Paths are used as given (relative to the working directory).
+    pub fn from_manifests(
+        build: Build,
+        paths: &[std::path::PathBuf],
+        lenient: bool,
+        selected: &[String],
+    ) -> Result<Library> {
+        // Validate the complete explicit selection before any objects are read or built.
+        let mut headers = Library::default();
+        for path in paths {
+            let text =
+                std::fs::read_to_string(path).map_err(|e| err!("{}: {e}", path.display()))?;
+            let manifest = toml::from_str(&text).map_err(|e| err!("{}: {e}", path.display()))?;
+            headers.extend_unique(vec![Module {
+                manifest,
+                objects: vec![],
+                alloc: BTreeMap::new(),
+                digest: String::new(),
+                dir: path.parent().unwrap().to_path_buf(),
+            }])?;
+        }
+        headers.with_requires(selected)?;
+        // Support manifests (for example core/machines allocations) are explicit inputs too;
+        // validate their requirements rather than silently accepting a partial library.
+        let ids: Vec<_> = headers.modules.iter().map(|m| m.id().to_string()).collect();
+        headers.with_requires(&ids)?;
+        let closure = build
+            .only
+            .map(|ids| headers.with_requires(ids).map(|(all, _)| all))
+            .transpose()?;
+        let build = Build {
+            only: closure.as_deref(),
+            ..build
+        };
+        let env = crate::build::toolchain::Env::new(build.root).with_defines(build.defines);
+        let mut lib = Library::default();
+        lib.extend_unique(Self::read_paths(paths, lenient, Some((&env, build)))?)?;
+        Ok(lib)
     }
 
     /// Add modules; refuses an id that is already there (the error names both directories).
@@ -860,7 +910,6 @@ impl Library {
         Ok(lib)
     }
 }
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod cache_generation_tests {
     use super::*;
@@ -923,6 +972,18 @@ place = "cf.expansion"
         let gallery: serde_json::Value = serde_json::from_str(&files[0].1).unwrap();
         assert_eq!(gallery["machines"][0]["id"], "new");
         assert_eq!(gallery["machines"][0]["name"], "New machine");
+        let mut explicit = Library::from_manifests(
+            build,
+            &[dir.join("module.toml")],
+            true,
+            &["test/new-machine".into()],
+        )
+        .unwrap();
+        explicit.lower(&models).unwrap();
+        assert_eq!(
+            crate::modgen::generate(&lib, &models, "test/new-machine").unwrap(),
+            crate::modgen::generate(&explicit, &models, "test/new-machine").unwrap(),
+        );
         assert_eq!(std::fs::read_to_string(&cache).unwrap(), object);
         // Excluded modules in a pack still omit objects even if cache exists.
         let excluded = Library::read_root(&root.join("modules"), false, Some((&env, build))).unwrap();

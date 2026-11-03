@@ -28,10 +28,12 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          exit 1 on any failure (stock files are looked up in firmware/ by sha256)
   isa-scan X.syx [--list]                stores in the DSP section (7) the SHARC+ ISA does not have, one per line; exit 1 when found
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
-  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT] [--trace]   the module's ColdFire object as a run-time .dkm;
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT] [--trace] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm;
                                          builds the objects that are stale first (content modules: cache out/cache/dko)
                                          (a `dynamic = true` module: its machine and param records for --device)
                                          (--trace: built with DK_TRACE defined, trace bit set in the header; objects cached apart)
+                                         --manifest PATH (repeatable, relative to cwd): explicit library instead of discovery; include the module and its requires closure
+                                         explicit manifests replace modules/, --modules-dir and PATCHKIT_MODULES
   desc    MODULE_ID                      the effects the module declares (the DK_FX records of its ColdFire object), as JSON
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
@@ -65,8 +67,10 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          device's OS UPGRADE receiver does, then send it (USB MIDI) and read INFO after the restart;
                                          --restore sends the stock file itself; --dry-run only checks (docs/PATCHING.md, \"Flashing\")
   list                                   modules under modules/ and ports under devices/ports/
-  gen [--check [--scope all|modules|shared]] [--modules a,b]
+  gen [--check [--scope all|modules|shared]] [--modules a,b] [--manifest PATH]...
                                          write (or check) generated module, SDK and firmware files
+                                         --manifest PATH (repeatable, needs --modules, incompatible with --scope shared): explicit library including requires;
+                                         include core/machines for machine galleries or [[gen]] device constants
                                          --scope restricts checks to module outputs or shared SDK/firmware outputs (default all)
   reference [-o OUT.html] [--fragment]   the searchable firmware reference page (default out/reference/fw.html) from
                                          modules/core/fw/reference.json (written by `gen`); --fragment writes the
@@ -143,6 +147,57 @@ fn library_with(
         }
     }
     lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
+    Ok(lib)
+}
+
+/// Explicit manifests replace all discovery roots, including PATCHKIT_MODULES. They must include
+/// the selected IDs, their requires closure and any allocation providers used by generation.
+fn selected_library(
+    root: &Path,
+    rest: &[String],
+    lenient: bool,
+    only: &[String],
+    selected: &[String],
+) -> Result<Library> {
+    let mut paths = vec![];
+    for (i, arg) in rest.iter().enumerate() {
+        if arg == "--manifest" {
+            let path = rest
+                .get(i + 1)
+                .filter(|p| !p.starts_with('-'))
+                .ok_or_else(|| Error("--manifest requires a path".into()))?;
+            paths.push(PathBuf::from(path));
+        }
+    }
+    if paths.is_empty() {
+        return library_with(root, rest, lenient, Some(only));
+    }
+    let defines = if rest.iter().any(|a| a == "--trace") {
+        vec!["DK_TRACE".to_string()]
+    } else {
+        vec![]
+    };
+    let mut lib = Library::from_manifests(
+        patchkit::module::Build {
+            root,
+            only: Some(only),
+            defines: &defines,
+        },
+        &paths,
+        lenient,
+        selected,
+    )?;
+    lib.lower(&patchkit::typed::Models::from_dir(&root.join("devices"))?)?;
+    if lenient && lib.get("core/machines").is_none() {
+        for id in selected {
+            let m = lib.get(id).unwrap();
+            if !m.manifest.gens.is_empty() || !m.manifest.machine.is_empty() {
+                return Err(Error(format!(
+                    "{id}: generation requires --manifest for core/machines (machine allocations)"
+                )));
+            }
+        }
+    }
     Ok(lib)
 }
 
@@ -340,18 +395,26 @@ fn run(a: Args) -> Result<()> {
                     "gen --scope requires --check and all, modules or shared".into(),
                 ));
             }
+            if scope.as_deref() == Some("shared") && rest.iter().any(|a| a == "--manifest") {
+                return Err(Error(
+                    "gen --manifest cannot be used with --scope shared".into(),
+                ));
+            }
             let mut stale = 0;
             if scope.as_deref() != Some("shared") {
                 // the generated files are inputs of the build: nothing is built here
-                let lib = library_with(&a.root, rest, true, Some(&[]))?;
-                let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
-                let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
                 let only: Vec<String> = flag(rest, "--modules")
                     .unwrap_or_default()
                     .split(',')
                     .filter(|s| !s.is_empty())
                     .map(String::from)
                     .collect();
+                if rest.iter().any(|a| a == "--manifest") && only.is_empty() {
+                    return Err(Error("gen --manifest requires --modules a,b".into()));
+                }
+                let lib = selected_library(&a.root, rest, true, &[], &only)?;
+                let models = patchkit::typed::Models::from_dir(&a.root.join("devices"))?;
+                let facts = patchkit::devgen::Facts::from_dir(&a.root.join("devices"))?;
                 for m in &lib.modules {
                     if !only.is_empty() && !only.iter().any(|o| o == m.id()) {
                         continue;
@@ -393,7 +456,7 @@ fn run(a: Args) -> Result<()> {
                     .map(|m| m.id().to_string())
                     .collect();
                 if !content.is_empty() {
-                    let full = library_with(&a.root, rest, true, Some(&content))?;
+                    let full = selected_library(&a.root, rest, true, &content, &only)?;
                     for (path, text) in patchkit::modgen::generate_many(&full, &models, &content)? {
                         let have = std::fs::read_to_string(&path).ok();
                         if have.as_deref() == Some(text.as_str()) {
@@ -465,10 +528,17 @@ fn run(a: Args) -> Result<()> {
             let page = if rest.iter().any(|x| x == "--fragment") {
                 frag
             } else {
-                format!("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n</head>\n<body>\n{frag}\n</body>\n</html>\n")
+                format!(
+                    "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n</head>\n<body>\n{frag}\n</body>\n</html>\n"
+                )
             };
-            let out = PathBuf::from(flag(rest, "-o").unwrap_or_else(|| "out/reference/fw.html".into()));
-            let out = if out.is_absolute() { out } else { a.root.join(out) };
+            let out =
+                PathBuf::from(flag(rest, "-o").unwrap_or_else(|| "out/reference/fw.html".into()));
+            let out = if out.is_absolute() {
+                out
+            } else {
+                a.root.join(out)
+            };
             if let Some(d) = out.parent() {
                 std::fs::create_dir_all(d).map_err(|e| Error(format!("{}: {e}", d.display())))?;
             }
@@ -608,7 +678,13 @@ plan.json {}",
             let id = need(rest)?;
             let out = flag(rest, "-o").ok_or_else(|| Error(USAGE.into()))?;
             // builds what is stale (the objects of this module only) and packs the objects as they are in memory
-            let lib = library_with(&a.root, rest, false, Some(std::slice::from_ref(id)))?;
+            let lib = selected_library(
+                &a.root,
+                rest,
+                false,
+                std::slice::from_ref(id),
+                std::slice::from_ref(id),
+            )?;
             let m = lib
                 .get(id)
                 .ok_or_else(|| Error(format!("no module {id}")))?;
@@ -655,7 +731,11 @@ plan.json {}",
                 })?;
                 // `ports` is the only device restriction of a module
                 let ports = &m.manifest.module.ports;
-                if !ports.is_empty() && !ports.iter().any(|p| p.split('-').next() == Some(dev.as_str())) {
+                if !ports.is_empty()
+                    && !ports
+                        .iter()
+                        .any(|p| p.split('-').next() == Some(dev.as_str()))
+                {
                     return Err(Error(format!(
                         "{id} is not built for {dev}: its ports are {}",
                         ports.join(", ")
@@ -903,7 +983,14 @@ plan.json {}",
                 d.version & 255
             );
             println!("runtime   >= {}", patchkit::dkm::fmt_runtime(d.runtime_min));
-            println!("trace     {}", if d.trace { "yes (built with DK_TRACE)" } else { "no" });
+            println!(
+                "trace     {}",
+                if d.trace {
+                    "yes (built with DK_TRACE)"
+                } else {
+                    "no"
+                }
+            );
             println!("sha256    {}", d.sha256);
             println!("size      {}", d.size_summary(file_len));
             println!(
@@ -1128,6 +1215,31 @@ path = "build/gen/device-{dev}.inc"
                 .collect::<Vec<_>>()
         };
         let baseline = snapshot();
+        let explicit_args = || {
+            let mut a = args("modules");
+            for path in [
+                module_dir.join("module.toml"),
+                fixture.0.join("modules/core/adapters/machines/module.toml"),
+            ] {
+                a.rest
+                    .extend(["--manifest".into(), path.display().to_string()]);
+            }
+            a
+        };
+        let mut missing_alloc = args("modules");
+        missing_alloc.rest.extend([
+            "--manifest".into(),
+            module_dir.join("module.toml").display().to_string(),
+        ]);
+        assert!(run(missing_alloc).unwrap_err().0.contains("core/machines"));
+        run(explicit_args()).unwrap();
+        assert_eq!(baseline, snapshot());
+        let unrelated = fixture.0.join("modules/unrelated/module.toml");
+        std::fs::create_dir_all(unrelated.parent().unwrap()).unwrap();
+        std::fs::write(&unrelated, "malformed = [").unwrap();
+        run(explicit_args()).unwrap();
+        assert!(run(args("modules")).is_err());
+        std::fs::remove_file(unrelated).unwrap();
         for scope in ["shared", "modules", "all"] {
             run(args(scope)).unwrap();
         }
@@ -1215,6 +1327,110 @@ path = "build/gen/device-{dev}.inc"
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn explicit_pack_matches_legacy_and_ignores_unrelated_bad_manifest() {
+        let root = ApplyRoot::new("explicit-pack");
+        root.module("modules", "test/selected", &[], true);
+        std::fs::write(
+            root.0.join("modules/test/selected/src/t.c"),
+            "int dkm_init(const void *api) { return api ? 0 : 1; }\n",
+        )
+        .unwrap();
+        let pack = |out: &str, explicit: bool| {
+            let mut rest: Vec<String> = ["pack", "test/selected", "-o", out]
+                .into_iter()
+                .map(String::from)
+                .collect();
+            if explicit {
+                rest.extend([
+                    "--manifest".into(),
+                    root.0
+                        .join("modules/test/selected/module.toml")
+                        .display()
+                        .to_string(),
+                ]);
+            }
+            run(Args {
+                root: root.0.clone(),
+                rest,
+            })
+        };
+        let legacy = root.0.join("legacy.dkm").display().to_string();
+        let explicit = root.0.join("explicit.dkm").display().to_string();
+        pack(&legacy, false).unwrap();
+        root.module("modules", "test/unrelated", &[], false);
+        std::fs::write(
+            root.0.join("modules/test/unrelated/module.toml"),
+            "malformed = [",
+        )
+        .unwrap();
+        pack(&explicit, true).unwrap();
+        assert_eq!(
+            std::fs::read(&legacy).unwrap(),
+            std::fs::read(&explicit).unwrap()
+        );
+        // Selected source/object failures must still fail rather than using a partial module.
+        std::fs::remove_file(root.0.join("modules/test/selected/src/t.c")).unwrap();
+        assert!(pack(&explicit, true).is_err());
+    }
+
+    #[test]
+    fn explicit_manifests_validate_selection_and_requirements_before_objects() {
+        let root = ApplyRoot::new("explicit-validation");
+        root.module("modules", "test/selected", &["test/dependency"], false);
+        root.module("modules", "test/dependency", &[], false);
+        root.module("modules", "test/unrelated", &[], false);
+        let selected = vec!["test/selected".into()];
+        let path = |id: &str| root.0.join("modules").join(id).join("module.toml");
+        let rest = |ids: &[&str]| {
+            ids.iter()
+                .flat_map(|id| ["--manifest".to_string(), path(id).display().to_string()])
+                .collect::<Vec<_>>()
+        };
+        let load = |r: &[String], ids: &[String]| selected_library(&root.0, r, false, &[], ids);
+        let both = rest(&["test/selected", "test/dependency"]);
+        assert!(
+            load(&both, &["test/unknown".into()])
+                .unwrap_err()
+                .0
+                .contains("unknown module")
+        );
+        assert!(
+            load(&rest(&["test/selected"]), &selected)
+                .unwrap_err()
+                .0
+                .contains("requires test/dependency")
+        );
+        std::fs::write(path("test/unrelated"), "malformed = [").unwrap();
+        let lib = load(&both, &selected).unwrap();
+        assert_eq!(lib.modules.len(), 2);
+        root.module("modules", "test/selected", &["test/dependency"], true);
+        let object_error =
+            selected_library(&root.0, &both, false, &selected, &selected).unwrap_err();
+        assert!(object_error.0.contains("src/t.c"));
+        assert!(
+            load(
+                &rest(&["test/selected", "test/dependency", "test/dependency"]),
+                &selected
+            )
+            .unwrap_err()
+            .0
+            .contains("duplicate module id")
+        );
+        root.module("modules", "test/dependency", &["test/selected"], false);
+        assert!(
+            load(&both, &selected)
+                .unwrap_err()
+                .0
+                .contains("requires cycle")
+        );
+        std::fs::write(path("test/dependency"), "malformed = [").unwrap();
+        assert!(load(&both, &selected).is_err());
+        std::fs::write(path("test/selected"), "malformed = [").unwrap();
+        assert!(load(&rest(&["test/selected"]), &selected).is_err());
+        assert!(!cache_dir(&root.0).join("test/dependency").exists());
     }
 
     #[test]
