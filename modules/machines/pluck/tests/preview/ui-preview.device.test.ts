@@ -6,9 +6,10 @@ import { expectRuntimeBoot, withReusablePatchedSession } from '@digi/regression/
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { bootInfoLoaded, buildCard } from '@digi/regression/runtime/card-kit.ts';
 import { DEVICES, liveOptions } from '@digi/regression/runtime/devices.ts';
-import { advance, pickSine } from '@digi/regression/runtime/fx-live.ts';
+import { advance, pickSine, word } from '@digi/regression/runtime/fx-live.ts';
 import { drainInputs, shot, tap } from '@digi/regression/runtime/fx-session.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
+import { trackType } from '@digi/regression/runtime/project-kit.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import {
   planSymbol,
@@ -76,9 +77,20 @@ for (const device of DEVICES) {
 
       await drainInputs(session);
       await session.client.call('run.mode', { mode: 'paused' });
+      // DN2 1.12's track-1 sound mirror keeps the real type in its first byte
+      // (pk_dn2_common.wire_type; finding 02). Check the transition as this mirror
+      // can retain an old value after a second selection; this case selects once.
+      const selectedType = () =>
+        device === 'dt2' ? trackType(session, 1) : word(session, 0x8000487c).then((value) => value >>> 24);
+      const pluckType = modules[0]!.types[0]!;
+      expect(await selectedType(), 'fresh track 1 starts on a stock machine').not.toBe(pluckType);
+      await tap(session, 'TRIG 1', 300, 'TRK');
       // This preview is the sole dynamic machine, after the stock machine rows.
       await pickSine(session, device === 'dt2' ? 7 : 5, 16);
       await tap(session, device === 'dt2' ? 'SRC' : 'SYN');
+      // A DN2 trig copies the selected sound into the ColdFire audio mirror.
+      if (device === 'dn2') await tap(session, 'TRIG 1');
+      expect(await selectedType(), 'track 1 uses the registered Pluck machine').toBe(pluckType);
       const before = await shot(session, artifacts, 'pluck-page-before');
       // Match the stock encoder acceleration: isolated detents can round to zero.
       for (let i = 0; i < 30; i++) {
