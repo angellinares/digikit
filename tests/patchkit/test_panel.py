@@ -247,22 +247,6 @@ def module_launch(monkeypatch, tmp_path, module_tree):
     staged.parent.mkdir(parents=True)
     staged.write_bytes(b"previous")
     tools = Mock()
-    tools.packed = []
-    pack_cli = argparse.ArgumentParser()
-    pack_cli.add_argument("command", choices=["pack"])
-    pack_cli.add_argument("module")
-    pack_cli.add_argument("--device")
-    pack_cli.add_argument("-o", type=panel.Path)
-    pack_cli.add_argument("--ui-preview", action="store_true")
-
-    def pack(*args):
-        request = pack_cli.parse_args([str(arg) for arg in args])
-        tools.packed.append(request)
-        # A candidate build must leave the daemon's staged baseline intact.
-        assert run_dir not in request.o.parents
-        request.o.write_bytes(b"candidate")
-
-    tools.patchkit_run.side_effect = pack
     monkeypatch.setattr(panel.pk_dkrt, "Tools", Mock(return_value=tools))
     directory = Mock(
         side_effect=lambda device, target, store, *, dsp: (
@@ -298,37 +282,26 @@ def module_launch(monkeypatch, tmp_path, module_tree):
 
 
 @pytest.mark.parametrize("device", ["dn2", "dt2"])
-@pytest.mark.parametrize("same", [False, True])
-def test_module_refreshes_changed_card_and_reuses_same_card(
-    module_launch, device, same
-):
+def test_module_delegates_store_refresh_to_devreload(module_launch, device):
     run_dir, staged, tools, directory, mode, stop, navigate, socket, serve = (
         module_launch
     )
-    if same:
-        staged.write_bytes(b"candidate")
     assert panel.main(["module", "preview", "--device", device]) == 0
     mode.assert_called_once_with("emulator", device, [])
     assert directory.call_args_list == [
         call(device, "emulator", ["example/preview*"], dsp=mode)
-        for mode in ("zero", "sharc", None)
+        for mode in ("sharc", None)
     ]
     stopped = [entry.args[0] for entry in stop.call_args_list]
     assert stopped[:2] == [run_dir.parent / "kept-sharc", run_dir.parent / "kept-None"]
-    if same:
-        assert run_dir not in stopped
-    else:
-        assert stopped[2:] == [run_dir]
+    assert run_dir not in stopped
     assert navigate.request.device == device
     assert navigate.request.target == "emulator"
     assert navigate.request.store == "example/preview*"
     socket.assert_called_once_with("emulator", device, ["example/preview*"], dsp="zero")
     assert navigate.request.store_ui_preview
     serve.assert_called_once_with("/tmp/module.sock")
-    (built,) = tools.packed
-    assert built.module == "example/preview"
-    assert built.device == device
-    assert built.ui_preview
+    tools.patchkit_run.assert_not_called()
 
 
 def test_module_missing_daemon_always_builds_fresh_card(monkeypatch, module_launch):
@@ -340,26 +313,30 @@ def test_module_missing_daemon_always_builds_fresh_card(monkeypatch, module_laun
     serve.assert_called_once()
 
 
-@pytest.mark.parametrize("failure", ["start", "staging", "pack"])
-def test_module_failed_build_or_start_does_not_serve(module_launch, failure, capsys):
-    _, _, tools, _, _, _, navigate, socket, serve = module_launch
-    if failure == "start":
-        navigate.side_effect = None
-        navigate.return_value = 7
-    elif failure == "staging":
-        navigate.side_effect = None
-        navigate.return_value = 0
-    else:
-        tools.patchkit_run.side_effect = panel.pk_dkrt.ProofError("pack failed")
-    assert panel.main(["module", "preview"]) == (7 if failure == "start" else 2)
-    output = capsys.readouterr()
-    if failure == "pack":
-        assert "UI preview:" not in output.out
-        assert "pack failed" in output.err
-    else:
-        assert "UI preview: zero DSP, no audio" in output.out
+def test_module_failed_navigation_leaves_other_modes_running(module_launch):
+    _, _, tools, _, _, stop, navigate, socket, serve = module_launch
+    navigate.side_effect = None
+    navigate.return_value = 7
+    assert panel.main(["module", "preview"]) == 7
+    stop.assert_not_called()
+    tools.patchkit_run.assert_not_called()
     socket.assert_not_called()
     serve.assert_not_called()
+
+
+def test_module_cleans_other_modes_after_navigation_before_serving(module_launch):
+    _, _, _, _, _, stop, navigate, _, serve = module_launch
+    events = Mock()
+    events.attach_mock(navigate, "navigate")
+    events.attach_mock(stop, "stop")
+    events.attach_mock(serve, "serve")
+    assert panel.main(["module", "preview"]) == 0
+    assert [entry[0] for entry in events.mock_calls] == [
+        "navigate",
+        "stop",
+        "stop",
+        "serve",
+    ]
 
 
 def test_module_stop_does_not_pack_navigate_or_serve(module_launch):
@@ -448,8 +425,8 @@ def test_module_mode_transition_cleans_only_matching_module_daemons(
     staged.write_bytes(b"candidate")
 
     def start(args):
-        assert previous not in active
-        assert legacy not in active
+        assert previous in active  # failed preparation must leave prior modes alive
+        assert legacy in active
         assert current in active  # identical current card stays alive
         return 0
 
@@ -527,8 +504,7 @@ def test_default_zero_service_uses_normal_pack(module_tree, module_launch, capsy
     module_tree("example/preview", "service")
     assert panel.main(["module", "preview"]) == 0
     mode.assert_called_once_with("emulator", "dn2", ["example/preview*"])
-    (built,) = tools.packed
-    assert not built.ui_preview
+    tools.patchkit_run.assert_not_called()
     assert not navigate.request.store_ui_preview
     assert "zero DSP, no audio" in capsys.readouterr().out
     socket.assert_called_once_with("emulator", "dn2", ["example/preview*"], dsp="zero")
@@ -544,7 +520,6 @@ def test_explicit_dsp_keeps_full_pack(module_tree, module_launch, kind):
     module_tree("example/preview", kind)
     assert panel.main(["module", "preview", "--dsp"]) == 0
     mode.assert_called_once_with("emulator", "dn2", ["example/preview*"])
-    (built,) = tools.packed
-    assert not built.ui_preview
+    tools.patchkit_run.assert_not_called()
     assert not navigate.request.store_ui_preview
     socket.assert_called_once_with("emulator", "dn2", ["example/preview*"], dsp="sharc")

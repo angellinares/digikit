@@ -10,7 +10,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 import tomllib
 from pathlib import Path
@@ -157,59 +156,35 @@ def module_preview(name: str, device: str, stop: bool, full_dsp: bool = False) -
     )
     if not full_dsp and dsp != "zero":
         raise dev.H.HarnessError(f"{mid}: module requires DSP; use --dsp")
-    run_dir = dev.run_dir_of(device, "emulator", store, dsp=dsp)
-    staged = (
-        run_dir / "plus_drive" / "digikit" / "modules" / f"{mid.rpartition('/')[2]}.dkm"
+    if not full_dsp:
+        print(
+            "UI preview: zero DSP, no audio. Use --dsp for the full module.",
+            flush=True,
+        )
+    keys = (
+        "tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,"
+        "tap:DOWN*3,tap:YES,wait:600,shot:module"
     )
-    # Packing directly into staging would hide a stale card on the kept daemon.
-    with tempfile.TemporaryDirectory(prefix="dk-module-") as tmp:
-        candidate = Path(tmp) / "module.dkm"
-        pk_dkrt.Tools().patchkit_run(
-            "pack",
-            mid,
+    # Generic devreload prepares and compares the store before touching its daemon.
+    result = navigate(
+        [
+            "emulator",
             "--device",
             device,
-            "-o",
-            candidate,
-            *(["--ui-preview"] if ui_preview else []),
-        )
-        packed = candidate.read_bytes()
-        if not full_dsp:
-            print(
-                "UI preview: zero DSP, no audio. Use --dsp for the full module.",
-                flush=True,
-            )
-        # A changed manifest can move the same module between DSP modes.
-        for mode in ("zero", "sharc", None):
-            if mode != dsp:
-                stop_exact(dev.run_dir_of(device, "emulator", store, dsp=mode))
-        emu = dev.connect(run_dir)
-        if emu is not None:
-            emu.close()
-            if not staged.is_file() or staged.read_bytes() != packed:
-                stop_exact(run_dir)
-        keys = (
-            "tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,"
-            "tap:DOWN*3,tap:YES,wait:600,shot:module"
-        )
-        result = navigate(
-            [
-                "emulator",
-                "--device",
-                device,
-                "--store",
-                store[0],
-                "--keys",
-                keys,
-                *(["--store-ui-preview"] if ui_preview else []),
-            ]
-        )
-        if result:
-            return result
-        if not staged.is_file() or staged.read_bytes() != packed:
-            raise dev.H.HarnessError(
-                "card-staged module differs from the preview build; retry"
-            )
+            "--store",
+            store[0],
+            "--keys",
+            keys,
+            *(["--store-ui-preview"] if ui_preview else []),
+        ]
+    )
+    if result:
+        return result
+    # A changed manifest can move the module between modes. Only clean up after
+    # navigation succeeds, so a failed candidate leaves existing daemons intact.
+    for mode in ("zero", "sharc", None):
+        if mode != dsp:
+            stop_exact(dev.run_dir_of(device, "emulator", store, dsp=mode))
     return serve(panel_socket("emulator", device, store, dsp=dsp))
 
 

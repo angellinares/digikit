@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 import tomllib
 from pathlib import Path
@@ -272,17 +274,15 @@ def connect(run_dir: Path) -> Emu | None:
     return emu
 
 
-def store_card(
+def prepare_store(
     device: str,
     ids: list[str],
     run_dir: Path,
     trace: bool = False,
     *,
     ui_preview: bool = False,
-) -> Path:
-    """A card image whose module store holds the modules `ids`, packed for the device (`<leaf>.dkm` under digikit/modules);
-    with `trace` they are built with DK_TRACE (`patchkit pack --trace`)."""
-    from tools.firmware import config
+) -> dict[str, Any]:
+    """Pack/copy requested content in isolated staging, without touching a mounted card."""
     from tools.patchkit import pk_dkrt
 
     tools = pk_dkrt.Tools()
@@ -328,12 +328,119 @@ def store_card(
             )
         if pick:
             selected.append(f"modules/{out.name}")
+    files = {}
+    for path in sorted(folder.rglob("*")):
+        if path.is_file():
+            with path.open("rb") as content:
+                files[path.relative_to(folder).as_posix()] = hashlib.file_digest(
+                    content, "sha256"
+                ).hexdigest()
+    return {
+        "device": device,
+        "ids": ids,
+        "trace": trace,
+        "ui_preview": ui_preview,
+        "selected": selected,
+        "files": files,
+    }
+
+
+def store_card(
+    device: str,
+    ids: list[str],
+    run_dir: Path,
+    trace: bool = False,
+    *,
+    ui_preview: bool = False,
+    prepared: dict[str, Any] | None = None,
+) -> Path:
+    """Build a card from freshly prepared content, including its initial selection."""
+    from tools.firmware import config
+    from tools.patchkit import pk_dkrt
+
+    if prepared is None:
+        prepared = prepare_store(device, ids, run_dir, trace, ui_preview=ui_preview)
     syx = config.stock(STOCK_SYX[device])
     image = run_dir / "store-card.img"
-    pk_dkrt.build_card(tools, folder, image, syx, device)
-    if selected:
-        pk_dkrt.write_selection(image, selected, device)
+    pk_dkrt.build_card(pk_dkrt.Tools(), run_dir / "plus_drive", image, syx, device)
+    if prepared["selected"]:
+        pk_dkrt.write_selection(image, prepared["selected"], device)
+    (run_dir / "store-request.json").write_text(json.dumps(prepared, sort_keys=True))
     return image
+
+
+def stop_connected(emu: Emu, run_dir: Path, timeout: float = 5) -> None:
+    """Stop the connected process and await exit before replacing its mounted card."""
+    try:
+        info = json.loads((run_dir / "current.json").read_text())
+        pid = info["pid"]
+        if (
+            type(pid) is not int
+            or pid <= 0
+            or info["socket"] != emu.path
+            or pid == os.getpid()
+        ):
+            raise ValueError("daemon identity mismatch")
+    except (OSError, ValueError, KeyError) as exc:
+        raise H.HarnessError(
+            f"cannot identify store daemon in {run_dir}: {exc}"
+        ) from exc
+    deadline = time.monotonic() + timeout
+    try:
+        emu._sock.settimeout(timeout)  # noqa: SLF001  quit must also be bounded
+        emu.quit()
+    except (OSError, EmuError) as exc:
+        raise H.HarnessError(
+            f"could not stop store daemon in {run_dir}: {exc}"
+        ) from exc
+    finally:
+        release(emu)
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        if time.monotonic() >= deadline:
+            raise H.HarnessError(f"store daemon did not stop in {run_dir}")
+        time.sleep(0.05)
+
+
+def refresh_store(
+    emu: Emu | None,
+    device: str,
+    target: str,
+    ids: list[str],
+    run_dir: Path,
+    trace: bool,
+    ui_preview: bool,
+) -> tuple[Emu | None, Path]:
+    """Reuse the initial request baseline, or prepare a replacement before stopping."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".dk-store-", dir=run_dir.parent) as tmp:
+        candidate = Path(tmp)
+        prepared = prepare_store(device, ids, candidate, trace, ui_preview=ui_preview)
+        prepared["target"] = target
+        try:
+            baseline = json.loads((run_dir / "store-request.json").read_text())
+        except (OSError, ValueError):
+            baseline = None
+        image = run_dir / "store-card.img"
+        if emu is not None and prepared == baseline:
+            return emu, image
+        # Card construction and selection validation may fail: keep the daemon alive until both succeed.
+        store_card(
+            device, ids, candidate, trace, ui_preview=ui_preview, prepared=prepared
+        )
+        if emu is not None:
+            stop_connected(emu, run_dir)
+        # A saved overlay belongs to the previous card layout/content. Quit may
+        # have written it, so remove it only after the daemon has fully exited.
+        (run_dir / "overlay.bin").unlink(missing_ok=True)
+        shutil.rmtree(run_dir / "plus_drive", ignore_errors=True)
+        shutil.move(str(candidate / "plus_drive"), run_dir / "plus_drive")
+        for name in ("store-card.img", "store-request.json"):
+            os.replace(candidate / name, run_dir / name)
+        return None, image
 
 
 def start(
@@ -344,6 +451,7 @@ def start(
     dsp: str = "sharc",
     *,
     store_ui_preview: bool = False,
+    prepared_card: Path | None = None,
 ) -> tuple[Emu, H.Session]:
     """A new daemon that outlives this process: it boots the patched image of the cell (cached by image)."""
     session = H.Session(
@@ -354,7 +462,9 @@ def start(
         run_dir=run_dir,
         dsp=dsp,
     )
-    if store:
+    if prepared_card is not None:
+        session.card_override = str(prepared_card)
+    elif store:
         run_dir.mkdir(parents=True, exist_ok=True)
         session.card_override = str(
             store_card(cell.device, store, run_dir, trace, ui_preview=store_ui_preview)
@@ -418,12 +528,28 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
     print(f"{device}: auto DSP {dsp}", file=sys.stderr, flush=True)
     run_dir = run_dir_of(device, a.target, store, a.trace, dsp)
     emu = connect(run_dir)
+    prepared_card = None
+    if store:
+        try:
+            emu, prepared_card = refresh_store(
+                emu, device, a.target, store, run_dir, a.trace, ui_preview
+            )
+        except BaseException:
+            if emu is not None:
+                release(emu)
+            raise
     started = False
     t_start = 0.0
     if emu is None:
         t = time.monotonic()
         emu, session = start(
-            cell, run_dir, store, a.trace, dsp, store_ui_preview=ui_preview
+            cell,
+            run_dir,
+            store,
+            a.trace,
+            dsp,
+            store_ui_preview=ui_preview,
+            **({"prepared_card": prepared_card} if prepared_card is not None else {}),
         )
         t_start, started = time.monotonic() - t, True
     else:
@@ -510,7 +636,7 @@ def main(argv: list[str]) -> int:
     )
     ap.add_argument(
         "--store",
-        help="module ids separated by commas: packed into the module store of the card the daemon boots with; an id ending in * is also in the saved selection, synth:NAME:BSS is a module that needs BSS bytes of arena, file:SRC=DEST puts a host file or folder at digikit/DEST of the store, e.g. out/smp=samples (a kept daemon keeps its card; each list has its own daemon)",
+        help="module ids separated by commas: packed into the module store of the card the daemon boots with; an id ending in * is also in the saved selection, synth:NAME:BSS is a module that needs BSS bytes of arena, file:SRC=DEST puts a host file or folder at digikit/DEST of the store, e.g. out/smp=samples (unchanged content keeps its card; changed content restarts its daemon)",
     )
     ap.add_argument(
         "--trace",
