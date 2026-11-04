@@ -52,10 +52,17 @@ The affected-plan matrix below records requested targets selected out of a chose
 | Menu `menu.c` | 30 / 100 | Raw selection includes nine conformance targets; the exact-file gate exception omits them. |
 | Harness `ready.ts` | 30 / 100 | Broad device and conformance checks. |
 
+## Decision: runtime loader and public SDK coverage
+
+Keep normal Nx affected selection for runtime loader and public SDK changes: no new automatic fixture-first exception. The loader controls relocation and BSS, menu and function addresses, registry initialization, and callback publication ([loader.rs](../../modules/core/runtime/src/rs/src/loader.rs)). A representative machine/FX load cannot establish compatibility for every shipped artifact or exercise all later behavior through those addresses.
+
+The runtime machine/FX fixture uses the same [`expectModuleLoad`](../../tests/conformance/assert-load.ts) assertions as shipped conformance: upload, stored bytes and reboot persistence, registration, version/contracts, DSP status, and fault containment. The separate zero-DSP service fixture covers service behavior. These are useful common boundary checks, but neither they nor shipped load conformance prove rendered audio correctness or all later module behavior. Retain shipped conformance and every native-selected consumer device behavior check in the merge gate. The loader's 32 / 100 and public header's 65 / 100 selection above remain accepted coverage, not demonstrated redundant work.
+
+For iteration, run `pnpm nx:pilot run core/runtime:rust-tests`, plus `core/runtime-fixture-tests:test-device` and `core/runtime-service-tests:test-device` as relevant. For public SDK headers, use `sdk:test-host` and `sdk-ui-zero-tests:test-device`, adding the runtime fixtures when load or ABI behavior is affected; invoke each with `pnpm nx:pilot run`. Inspect `mise run test:plan`, then run the full affected `mise run test` before merge, subject to the already documented branch exception. Revisit this decision only with an assertion-level mapping of the unique behavior each omitted shipped conformance or consumer device check proves and evidence that replacement checks cover it.
+
 ## Decisions still to prove
 
 - Catalog validation is selected for hypothetical shipped and fixture manifest edits without being selected for Pluck C source edits. Repository-wide behavior has been checked; malformed-catalog rejection remains the catalog target's role, independent of local pack selection.
-- Further runtime/SDK fixture-first exemptions need assertion-level coverage evidence and explicit compatibility triggers before any more shipped-module conformance is omitted.
 - Nx 24 affected selection propagates through declared producer outputs and `^production`; a truthful cache key alone cannot express "hash this runtime but do not schedule its consumers." The isolated menu and UI exceptions therefore change gate scheduling only. Manual per-module conformance keeps its full runtime/image cache key.
 - The full-tier inferred-needs cases now have their own `core/runtime-inferred-needs-tests:test-device-full` target. Its 12 real modules and fixtures do not select the quick capacity target for a module edit. One named DT2 `test/c-demo` case passed; the other 22 cases were filtered out, so the full matrix remains unverified on this branch.
 - A future raw card module needs explicit delivery metadata. Current Nx inference gives a pack target to dynamic, host, or service modules (and acceptance fixtures), so a plain `type = "raw"` module with no such marker would not pack in the gate. Do not overload `dynamic` to mean card delivery.
