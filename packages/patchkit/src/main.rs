@@ -28,10 +28,11 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          exit 1 on any failure (stock files are looked up in firmware/ by sha256)
   isa-scan X.syx [--list]                stores in the DSP section (7) the SHARC+ ISA does not have, one per line; exit 1 when found
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
-  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT] [--trace] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm;
+  pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT] [--trace] [--ui-preview] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm;
                                          builds the objects that are stale first (content modules: cache out/cache/dko)
                                          (a `dynamic = true` module: its machine and param records for --device)
                                          (--trace: built with DK_TRACE defined, trace bit set in the header; objects cached apart)
+                                         --ui-preview: declarative machine UI only, stub init and no DSP; for isolated zero-DSP emulator previews
                                          --manifest PATH (repeatable, relative to cwd): explicit library instead of discovery; include the module and its requires closure
                                          explicit manifests replace modules/, --modules-dir and PATCHKIT_MODULES
   desc    MODULE_ID                      the effects the module declares (the DK_FX records of its ColdFire object), as JSON
@@ -103,6 +104,43 @@ fn flag(rest: &[String], name: &str) -> Option<String> {
     rest.iter()
         .position(|a| a == name)
         .and_then(|i| rest.get(i + 1).cloned())
+}
+
+/// Preview only declarations: dropping arbitrary CF bytes could silently hide callbacks or
+/// initialization. Require descriptor-only CF objects rather than recognizing hook names.
+fn check_ui_preview(m: &patchkit::module::Module) -> Result<()> {
+    let id = &m.manifest.module.id;
+    let reject = |reason: &str| Error(format!("{id}: --ui-preview {reason}"));
+    if !m.manifest.module.dynamic
+        || m.manifest.module.kind != patchkit::module::ModuleKind::Machine
+        || m.manifest.machine.is_empty()
+    {
+        return Err(reject("requires a declarative run-time machine"));
+    }
+    if !patchkit::desc::module_fx(m)?.is_empty() {
+        return Err(reject("does not support effects"));
+    }
+    if m.manifest.sample_bank.is_some() || m.manifest.sample_tracks.is_some() {
+        return Err(reject("does not support sample banks or sample tracks"));
+    }
+    if m.manifest.param.iter().any(|p| p.action.is_some()) {
+        return Err(reject("does not support parameter click actions"));
+    }
+    for obj in m.objects.iter().filter(|o| o.arch == "cf") {
+        if let Some(obj) = patchkit::desc::strip(obj) {
+            let sections: Vec<_> = obj
+                .sections
+                .iter()
+                .filter(|s| s.size > 0)
+                .map(|s| s.name.as_str())
+                .collect();
+            return Err(reject(&format!(
+                "requires descriptor-only ColdFire objects; remaining sections {} could contain hooks or callbacks",
+                sections.join(", ")
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn registry(root: &Path) -> Result<Registry> {
@@ -699,6 +737,10 @@ plan.json {}",
             let m = lib
                 .get(id)
                 .ok_or_else(|| Error(format!("no module {id}")))?;
+            let ui_preview = rest.iter().any(|a| a == "--ui-preview");
+            if ui_preview {
+                check_ui_preview(m)?;
+            }
             let cf: Vec<_> = m
                 .objects
                 .iter()
@@ -810,7 +852,7 @@ plan.json {}",
                         pages.push(p);
                     }
                 }
-                match sharc.first() {
+                match sharc.first().filter(|_| !ui_preview) {
                     Some((o, _)) => {
                         dsp = patchkit::dkmdsp::pack_with_samples(
                             o,
@@ -821,10 +863,11 @@ plan.json {}",
                             m.manifest.sample_tracks.as_ref(),
                         )?
                     }
-                    None if !voices.is_empty()
-                        || !fxs.is_empty()
-                        || m.manifest.sample_bank.is_some()
-                        || m.manifest.sample_tracks.is_some() =>
+                    None if !ui_preview
+                        && (!voices.is_empty()
+                            || !fxs.is_empty()
+                            || m.manifest.sample_bank.is_some()
+                            || m.manifest.sample_tracks.is_some()) =>
                     {
                         return Err(Error(format!(
                             "{id}: a voice or an effect needs a DSP object for {dev}"
@@ -862,7 +905,10 @@ plan.json {}",
                 vec![]
             };
             // the descriptor records stay behind: the object of the .dkm has no `.dk.desc` section
-            let cf_obj = cf.first().and_then(|c| patchkit::desc::strip(c.0));
+            let cf_obj = cf
+                .first()
+                .filter(|_| !ui_preview)
+                .and_then(|c| patchkit::desc::strip(c.0));
             let file = patchkit::dkm::pack_full(cf_obj.as_ref(), &reg, &dsp, &opts)?;
             write(&out, &file)?;
             let d = patchkit::dkm::Dkm::parse(&file)?;
@@ -877,6 +923,11 @@ plan.json {}",
                 d.sha256
             );
             println!("size     {out}: {}", d.size_summary(file.len()));
+            if ui_preview {
+                println!(
+                    "UI preview only: no module DSP or ColdFire hooks; use only in an isolated zero-DSP emulator run"
+                );
+            }
         }
         "desc" => {
             let id = need(rest)?;
@@ -1145,6 +1196,120 @@ mod tests {
             } else {
                 std::fs::copy(entry.path(), dest).unwrap();
             }
+        }
+    }
+
+    #[test]
+    fn ui_preview_preserves_machine_registration_without_module_code() {
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let output = ApplyRoot::new("ui-preview-pack");
+        for dev in ["dt2", "dn2"] {
+            let pack = |preview: bool| {
+                let path = output.0.join(format!("{dev}-{preview}.dkm"));
+                let mut rest: Vec<String> = vec![
+                    "pack".into(),
+                    "test/sine".into(),
+                    "--device".into(),
+                    dev.into(),
+                    "-o".into(),
+                    path.display().to_string(),
+                    "--manifest".into(),
+                    real.join("tests/fixtures/modules/sine/module.toml")
+                        .display()
+                        .to_string(),
+                ];
+                if preview {
+                    rest.push("--ui-preview".into());
+                }
+                run(Args {
+                    root: real.clone(),
+                    rest,
+                })
+                .unwrap();
+                patchkit::dkm::Dkm::parse(&std::fs::read(path).unwrap()).unwrap()
+            };
+            let full = pack(false);
+            let preview = pack(true);
+            assert!(!full.dsp.is_empty());
+            assert_eq!(preview.register, full.register);
+            let reg = patchkit::register::Register::parse(&preview.register).unwrap();
+            assert_eq!(
+                (reg.machines.len(), reg.params.len(), reg.pages.len()),
+                (1, 1, usize::from(dev == "dn2"))
+            );
+            assert!(preview.dsp.is_empty());
+            assert_eq!(preview.image, [0x70, 0x00, 0x4e, 0x75]);
+            assert_eq!(preview.bss, 0);
+            assert_eq!(preview.init, Some(0));
+            assert!(preview.fini.is_none() && preview.menu.is_none());
+            assert!(
+                preview.slots.is_empty() && preview.relocs.is_empty() && preview.imports.is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn ui_preview_refuses_declarations_and_cf_content_it_cannot_preserve() {
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let id = "test/sine".to_string();
+        let lib = selected_library(
+            &real,
+            &[],
+            false,
+            std::slice::from_ref(&id),
+            std::slice::from_ref(&id),
+        )
+        .unwrap();
+        let machine = lib.get(&id).unwrap();
+        check_ui_preview(machine).unwrap();
+        let rejected = |m: &patchkit::module::Module, message: &str| {
+            let err = check_ui_preview(m).unwrap_err().0;
+            assert!(err.contains(message), "{err}");
+        };
+        let mut m = machine.clone();
+        m.manifest.module.kind = patchkit::module::ModuleKind::Fx;
+        rejected(&m, "requires a declarative run-time machine");
+        let mut m = machine.clone();
+        m.manifest.module.dynamic = false;
+        rejected(&m, "requires a declarative run-time machine");
+        let mut m = machine.clone();
+        m.manifest.sample_bank = Some(patchkit::typed::SampleBankDef {
+            local_id: 0,
+            bank: "bank".into(),
+            descriptor: "desc".into(),
+            capacity_frames: 32,
+        });
+        rejected(&m, "sample banks or sample tracks");
+        let mut m = machine.clone();
+        m.manifest.sample_tracks = Some(patchkit::typed::SampleTracksDef {
+            local_id: 0,
+            records: "records".into(),
+            control: "control".into(),
+        });
+        rejected(&m, "sample banks or sample tracks");
+        let mut m = machine.clone();
+        m.manifest.param[0].action = Some("click".into());
+        rejected(&m, "parameter click actions");
+        // Even anonymous/static code and state must not be stripped silently.
+        for (name, kind, hex) in [
+            (".text", "text", "4e75"),
+            (".data", "data", "0000"),
+            (".bss", "bss", ""),
+        ] {
+            let mut m = machine.clone();
+            m.objects
+                .iter_mut()
+                .find(|o| o.arch == "cf")
+                .unwrap()
+                .sections
+                .push(patchkit::dko::DkoSection {
+                    name: name.into(),
+                    kind: kind.into(),
+                    size: 2,
+                    align: 2,
+                    hex: hex.into(),
+                });
+            rejected(&m, "requires descriptor-only ColdFire objects");
         }
     }
 
