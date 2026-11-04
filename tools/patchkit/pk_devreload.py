@@ -124,6 +124,27 @@ def target_dsp_mode(target: str, device: str, store: list[str]) -> str:
     return dsp_mode(resolve_modules(target, device), store, zero_framework=hinted)
 
 
+def store_ui_preview_mode(target: str, device: str, store: list[str]) -> str:
+    """Internal dk:module path: one declarative machine on a zero-safe base."""
+    if (
+        target != "emulator"
+        or len(store) != 1
+        or store[0].startswith(("file:", "synth:"))
+    ):
+        raise H.HarnessError(
+            "UI preview requires the emulator set and one machine store id"
+        )
+    mid = store[0].rstrip("*")
+    manifest = tomllib.loads((modroots.module_dir(mid) / "module.toml").read_text())
+    if manifest["module"].get("type") != "machine":
+        raise H.HarnessError(
+            "UI preview store requires a declarative machine; use --dsp"
+        )
+    if target_dsp_mode(target, device, []) != "zero":
+        raise H.HarnessError("UI preview requires a zero-DSP emulator base")
+    return "zero"
+
+
 def assert_mode(emu: Emu, dsp: str) -> None:
     status = emu.status()
     audio = status.get("audio")
@@ -251,7 +272,14 @@ def connect(run_dir: Path) -> Emu | None:
     return emu
 
 
-def store_card(device: str, ids: list[str], run_dir: Path, trace: bool = False) -> Path:
+def store_card(
+    device: str,
+    ids: list[str],
+    run_dir: Path,
+    trace: bool = False,
+    *,
+    ui_preview: bool = False,
+) -> Path:
     """A card image whose module store holds the modules `ids`, packed for the device (`<leaf>.dkm` under digikit/modules);
     with `trace` they are built with DK_TRACE (`patchkit pack --trace`)."""
     from tools.firmware import config
@@ -296,6 +324,7 @@ def store_card(device: str, ids: list[str], run_dir: Path, trace: bool = False) 
                 "-o",
                 out,
                 *(["--trace"] if trace else []),
+                *(["--ui-preview"] if ui_preview else []),
             )
         if pick:
             selected.append(f"modules/{out.name}")
@@ -313,6 +342,8 @@ def start(
     store: list[str] | None = None,
     trace: bool = False,
     dsp: str = "sharc",
+    *,
+    store_ui_preview: bool = False,
 ) -> tuple[Emu, H.Session]:
     """A new daemon that outlives this process: it boots the patched image of the cell (cached by image)."""
     session = H.Session(
@@ -325,7 +356,9 @@ def start(
     )
     if store:
         run_dir.mkdir(parents=True, exist_ok=True)
-        session.card_override = str(store_card(cell.device, store, run_dir, trace))
+        session.card_override = str(
+            store_card(cell.device, store, run_dir, trace, ui_preview=store_ui_preview)
+        )
     session.open()
     assert session.emu is not None
     emu = session.emu
@@ -374,9 +407,14 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
     for m in modules:
         modroots.module_dir(m)
     cell = H.Cell(device, FIRMWARE[device], modules)
-    t_build, rebuilt = build(closure(modules))
     store = [m for m in (a.store or "").split(",") if m]
-    dsp = target_dsp_mode(a.target, device, store)
+    ui_preview = a.store_ui_preview
+    dsp = (
+        store_ui_preview_mode(a.target, device, store)
+        if ui_preview
+        else target_dsp_mode(a.target, device, store)
+    )
+    t_build, rebuilt = build(closure(modules))
     print(f"{device}: auto DSP {dsp}", file=sys.stderr, flush=True)
     run_dir = run_dir_of(device, a.target, store, a.trace, dsp)
     emu = connect(run_dir)
@@ -384,7 +422,9 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
     t_start = 0.0
     if emu is None:
         t = time.monotonic()
-        emu, session = start(cell, run_dir, store, a.trace, dsp)
+        emu, session = start(
+            cell, run_dir, store, a.trace, dsp, store_ui_preview=ui_preview
+        )
         t_start, started = time.monotonic() - t, True
     else:
         session = session_on(emu, cell, run_dir, dsp)
@@ -477,12 +517,15 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="build the --store modules with DK_TRACE (patchkit pack --trace): their DK_TRACE_LOG and DK_STEP marks exist; the kept daemon is its own (the card differs)",
     )
+    ap.add_argument("--store-ui-preview", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--out", default=str(ROOT / "out" / "runs" / "devreload"))
     ap.add_argument(
         "--stop", action="store_true", help="end the kept daemons of this module set"
     )
     ap.add_argument("--json", action="store_true", help="print the reports as JSON")
     a = ap.parse_args(argv)
+    if a.store_ui_preview and a.trace:
+        ap.error("--store-ui-preview cannot be combined with --trace")
     devices = [d for d in a.device.split(",") if d]
     for d in devices:
         if d not in FIRMWARE:

@@ -205,9 +205,15 @@ From the repository root after [setup](#setup), with the [DN2 firmware](#firmwar
 ```sh
 mise run dk:menu       # the real SETTINGS > DIGIKIT menu
 mise run dk:ui-demo    # the SDK UI controls fixture
+mise run dk:module pluck  # zero-DSP machine UI preview, selected on its card
+mise run dk:module pluck --dsp  # full module with SHARC audio
 ```
 
-Each command starts or reloads a kept DN2 emulator, navigates to SETTINGS > DIGIKIT, and opens a local browser faceplate with its live display and controls. The command prints the exact panel URL. `dk:menu` uses the `emulator` patch set, including `core/digikit-menu`; `dk:ui-demo` uses the separate `test/ui-demo` fixture, which requires `core/ui` and conflicts with the real menu. Both automatically use zero DSP, so these previews have no audio.
+Each command starts or reloads a kept DN2 emulator, navigates to SETTINGS > DIGIKIT, and opens a local browser faceplate with its live display and controls. The command prints the exact panel URL. `dk:menu` uses the `emulator` patch set, including `core/digikit-menu`; `dk:ui-demo` uses the separate `test/ui-demo` fixture, which requires `core/ui` and conflicts with the real menu. These two previews automatically use zero DSP, so they have no audio.
+
+`dk:module` accepts a full module id or a unique leaf alias (for example, `pluck`). It packs a card `.dkm`, saves its selection for boot, and uses the `emulator` runtime patch set. By default, a declarative machine (including pluck) uses a data-only UI preview pack and zero DSP, with no audio. The preview pack rejects actions, samples and hooks. ColdFire-only services use normal packing and zero DSP. Effects and other DSP-backed modules require `--dsp`, which packs the full module and selects SHARC when needed. Its dependencies must already be provided by that patch set. It opens the DIGIKIT MODULES list; use the panel controls to reach the module's machine or effect page. Add `--device dt2` for Digitakt II (with its firmware available); DN2 is the default.
+
+On each invocation, `dk:module` compares a fresh pack with the kept daemon's card-staged module. Changed bytes restart that daemon with a rebuilt card; identical bytes reuse it. Selection is saved when the card is built: if you change the selection yourself, stop the daemon to get a fresh selected card. `mise run dk:module ID --stop` stops only that module's kept daemon for the chosen device, without packing or opening the browser.
 
 Keep the command running while using the panel. Ctrl-C stops the Vite browser server; the emulator stays alive for the next reload. Stop it with `mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop`, respectively. For the controls and acceptance test, see the [UI demo README](../tests/fixtures/modules/ui-demo/README.md).
 

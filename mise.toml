@@ -303,6 +303,10 @@ description = "Fast edit loop for module code: mise run dk:dev -- test/ui-demo -
 run = "uv run python -m tools.patchkit.pk_panel menu"
 description = "Open the DIGIKIT menu in a visible browser faceplate on the kept DN2 emulator; Ctrl-C stops the browser server"
 
+[tasks."dk:module"]
+run = "uv run python -m tools.patchkit.pk_panel module"
+description = "Open a runtime module in the browser faceplate: mise run dk:module ID [--device dn2|dt2] [--dsp] [--stop]; zero-DSP machine UI preview by default, --dsp packs the full module for audio; selects its card .dkm, opens DIGIKIT MODULES, restarts the kept emulator when the module changes"
+
 [tasks."dk:ui-demo"]
 run = "uv run python -m tools.patchkit.pk_panel ui-demo"
 description = "Open the SDK UI component demo in a visible browser faceplate on the kept DN2 emulator; Ctrl-C stops the browser server"

@@ -1,10 +1,13 @@
 """Automatic development-loop DSP selection and mode guards."""
 
+import argparse
 from unittest.mock import Mock
 
 import pytest
 
+from tools.firmware import config
 from tools.patchkit import pk_devreload as dev
+from tools.patchkit import pk_dkrt
 
 
 def test_cf_target_and_synthetic_store_use_zero():
@@ -111,3 +114,102 @@ def test_stop_reaches_exact_legacy_directory_for_same_device_target_store_and_tr
     ]
     legacy.quit.assert_called_once()
     legacy.close.assert_called_once()
+
+
+@pytest.mark.parametrize("device", ["dn2", "dt2"])
+def test_machine_ui_preview_store_overrides_dsp_but_keeps_exact_tuple(device):
+    store = ["digikit/pluck*"]
+    assert dev.store_ui_preview_mode("emulator", device, store) == "zero"
+    assert dev.target_dsp_mode("emulator", device, store) == "sharc"
+    assert (
+        "store-digikit_pluck"
+        in dev.run_dir_of(device, "emulator", store, dsp="zero").name
+    )
+
+
+@pytest.mark.parametrize(
+    "target,store",
+    [
+        ("sample-tracks", ["digikit/pluck*"]),
+        ("emulator", []),
+        ("emulator", ["file:anywhere=modules"]),
+        ("emulator", ["synth:test:0"]),
+        ("emulator", ["digikit/pluck*", "digikit/pluck"]),
+        ("emulator", ["core/sample-pool"]),
+    ],
+)
+def test_ui_preview_store_rejects_other_inputs(target, store):
+    with pytest.raises(dev.H.HarnessError, match="UI preview"):
+        dev.store_ui_preview_mode(target, "dn2", store)
+
+
+@pytest.mark.parametrize("preview", [False, True])
+def test_card_pack_uses_same_preview_variant_as_candidate(
+    monkeypatch, tmp_path, preview
+):
+    pack_cli = argparse.ArgumentParser()
+    pack_cli.add_argument("command", choices=["pack"])
+    pack_cli.add_argument("module")
+    pack_cli.add_argument("--device")
+    pack_cli.add_argument("-o", type=dev.Path)
+    pack_cli.add_argument("--ui-preview", action="store_true")
+
+    def pack(*args):
+        request = pack_cli.parse_args([str(arg) for arg in args])
+        request.o.write_text(f"{request.module}:{request.device}:{request.ui_preview}")
+
+    tools = Mock(patchkit_run=Mock(side_effect=pack))
+    monkeypatch.setattr(pk_dkrt, "Tools", Mock(return_value=tools))
+    monkeypatch.setattr(config, "stock", Mock(return_value=tmp_path / "stock.syx"))
+    build_card = Mock()
+    selection = Mock()
+    monkeypatch.setattr(pk_dkrt, "build_card", build_card)
+    monkeypatch.setattr(pk_dkrt, "write_selection", selection)
+    card = dev.store_card("dn2", ["digikit/pluck*"], tmp_path, ui_preview=preview)
+    staged = tmp_path / "plus_drive/digikit/modules/pluck.dkm"
+    assert staged.read_text() == f"digikit/pluck:dn2:{preview}"
+    build_card.assert_called_once()
+    selection.assert_called_once_with(card, ["modules/pluck.dkm"], "dn2")
+
+
+def test_ui_preview_run_uses_zero_mode_for_start_and_kept_directory(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(dev, "build", Mock(return_value=(0, [])))
+    monkeypatch.setattr(dev, "load_keys", Mock(return_value=[]))
+    monkeypatch.setattr(dev, "connect", Mock(return_value=None))
+    emu = Mock()
+    emu.status.return_value = {"dsp": "zero"}
+    emu.call.return_value = {}
+    session = Mock()
+    start = Mock(return_value=(emu, session))
+    monkeypatch.setattr(dev, "start", start)
+    release = Mock()
+    monkeypatch.setattr(dev, "release", release)
+    args = argparse.Namespace(
+        target="emulator",
+        store="digikit/pluck*",
+        store_ui_preview=True,
+        trace=False,
+        out=str(tmp_path),
+        keys=None,
+    )
+    report = dev.run_device("dn2", args)
+    assert report["dsp"] == "zero"
+    assert start.call_args.args[1] == dev.run_dir_of(
+        "dn2", "emulator", ["digikit/pluck*"], dsp="zero"
+    )
+    assert start.call_args.args[2:] == (["digikit/pluck*"], False, "zero")
+    assert start.call_args.kwargs == {"store_ui_preview": True}
+    emu.pcm_start.assert_not_called()
+    release.assert_called_once_with(emu)
+
+
+def test_preview_trace_is_rejected_before_running(monkeypatch):
+    run = Mock()
+    monkeypatch.setattr(dev, "run_device", run)
+    with pytest.raises(SystemExit):
+        dev.main(
+            ["emulator", "--store", "digikit/pluck*", "--store-ui-preview", "--trace"]
+        )
+    run.assert_not_called()

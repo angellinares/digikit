@@ -153,6 +153,8 @@ Keep the command running while using the panel. Ctrl-C stops its browser server 
 `mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop` stops the respective emulator.
 The commands also write `out/runs/devreload/dn2/digikit-menu.png` or `ui-demo.png`. Use `dk:dev` directly to choose DT2, load a particular module or card store, or provide another key script.
 
+For a content module, `mise run dk:module ID [--device dn2|dt2] [--dsp]` packs its card `.dkm`, selects it for boot and opens the MODULES list in the live faceplate. It uses the `emulator` patch set. Declarative machines default to a data-only UI preview pack with zero DSP and no audio; preview packs reject actions, samples and hooks. ColdFire-only services keep normal packing with zero DSP. Effects and other DSP-backed modules require `--dsp` for the full pack and automatic SHARC selection. Unlike generic `dk:dev --store`, it restarts its exact kept daemon when freshly packed bytes differ from its staged module, so edits reach the card. `mise run dk:module ID --stop` stops it. See [visible previews](DEVELOPMENT.md#visible-preview) for aliases and selection behavior. This interactive preview does not replace the module's acceptance checks.
+
 `dk:dev` automatically reports and selects DSP `zero` for ColdFire-only module closures (such as `test/ui-demo`), skipping PCM
 capture. `tools/patchkit/pk_devreload.toml` lists base patch sets whose menu/runtime supports a zero DSP
 peer despite optional DSP adapters (`emulator` on both devices). Store module closures are always checked independently: adding
