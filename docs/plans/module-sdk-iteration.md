@@ -17,6 +17,7 @@ Status: in progress on `test/module-sdk-iteration` (2026-11-04). This plan follo
 - Remote `test-conformance` cache behavior: first run 20.9s (two cells), identical repeat 1.8s with 1/22 cache hit on the test target, and 14.5s after changing declared `DIGI_NO_PROGRESS_MS=180000`. The module source input and sibling exclusion were inspected in affected plans. The cached test target has `outputs: []`; pack and CLI producers remain `cache: false`, so output restoration is deferred.
 - Pluck preview checks on DN2 1.12 and DT2 1.17 returned loaded module `digikit/pluck`, `dsp_len = 0`, machine type 16 and no audio. The DN2 machine page and DT2 MODULES row were seen. In one cold zero-DSP observation per device, `pk_devreload` reported about 40s total, including about 27–29s rebuilding the daemon binary during startup; candidate packing and Vite startup were outside that report. Warm remote service reuse was about 6s. A cold full Pluck SHARC launch was about 93.5s. These observations are not a paired performance benchmark.
 - The first reviewed fixture-first gate exception covers only an isolated edit to `modules/core/apps/digikit-menu/src/menu.c`. A hypothetical plan keeps the menu/runtime fixture owners and the real menu host test while omitting nine unchanged shipped conformance targets. Mixed and compatibility-affecting changes retain normal broad selection.
+- A second exact-file exception covers only an isolated modification to `modules/core/adapters/ui/src/ui.c`. It omits the nine shipped conformance targets while retaining native Nx selection for every other target, including `sdk-ui-zero-tests`, both menu owners, both runtime fixture owners, other consumer device tests and build prerequisites. The raw `pack,test-device,test-conformance,rust-tests` plan has 20 device targets, nine conformance targets and 34 pack tasks (87 total with prerequisites); Nx recalculates prerequisites after conformance is omitted. This explicitly accepts losing per-shipped-artifact load, persistence, registration, contract/DSP-status and fault-containment conformance proof for isolated `ui.c` edits. Shared fixtures do not prove that every shipped artifact loads. Public ABI headers, UI `shim.s`, loader/runtime edits and any mixed change retain conformance. Only status `M`, one explicit nonempty base, no head override and the complete required target list qualify; alternate selectors and uncertain Git metadata fail closed. Named conformance remains unchanged.
 - The whole branch plans more than 80 requested tasks because it changes Nx plugin and gate files. The already agreed broad-suite exception is being used during implementation; no full device gate has run on this branch.
 
 ## Outcome
@@ -37,10 +38,23 @@ Status: in progress on `test/module-sdk-iteration` (2026-11-04). This plan follo
 - Module `pack` is currently `cache: false`, although its object builder has a content-hash cache. Device tests and conformance depend on pack, and this branch adds affected pack targets directly to `mise run test`.
 - The scoped pack cache audit still recommends `cache: false`: installed compiler contents, inherited build environment, and mutable DKO intermediates are outside the proven Nx key. The content-hash object cache already avoids repeated compilation. Direct affected pack selection is implemented on this branch. No broad gate was run on this branch under its existing exception.
 
+The affected-plan matrix below records requested targets selected out of a chosen 100-target list; it is not the full gate, does not count prerequisite expansion, and does not measure run time. The menu and UI entries are raw native Nx selection before gate policy removes conformance.
+
+| Hypothetical edit | Requested targets selected / chosen targets | Key selected work / implication |
+| --- | --- | --- |
+| Pluck C source | 4 / 100 | Own pack, preview and conformance. |
+| Pluck manifest | 9 / 100 | Own module checks plus catalog validation. |
+| SDK public header | 65 / 100 | Broad consumer checks, including shipped conformance. |
+| Picker helper | 65 / 100 | Broad selection despite only Shot listing the helper. |
+| Runtime loader | 32 / 100 | Broad runtime and consumer checks, including shipped conformance. |
+| UI `ui.c` | 30 / 100 | Raw selection includes nine conformance targets; the exact-file gate exception omits them. |
+| Menu `menu.c` | 30 / 100 | Raw selection includes nine conformance targets; the exact-file gate exception omits them. |
+| Harness `ready.ts` | 30 / 100 | Broad device and conformance checks. |
+
 ## Decisions still to prove
 
 - Catalog validation is selected for hypothetical shipped and fixture manifest edits without being selected for Pluck C source edits. Repository-wide behavior has been checked; malformed-catalog rejection remains the catalog target's role, independent of local pack selection.
 - Further runtime/SDK fixture-first exemptions need assertion-level coverage evidence and explicit compatibility triggers before any more shipped-module conformance is omitted.
-- Nx 24 affected selection propagates through declared producer outputs and `^production`; a truthful cache key alone cannot express "hash this runtime but do not schedule its consumers." The isolated menu exception therefore changes gate scheduling only. Manual per-module conformance keeps its full runtime/image cache key.
+- Nx 24 affected selection propagates through declared producer outputs and `^production`; a truthful cache key alone cannot express "hash this runtime but do not schedule its consumers." The isolated menu and UI exceptions therefore change gate scheduling only. Manual per-module conformance keeps its full runtime/image cache key.
 - The full-tier inferred-needs cases now have their own `core/runtime-inferred-needs-tests:test-device-full` target. Its 12 real modules and fixtures do not select the quick capacity target for a module edit. One named DT2 `test/c-demo` case passed; the other 22 cases were filtered out, so the full matrix remains unverified on this branch.
 - A future raw card module needs explicit delivery metadata. Current Nx inference gives a pack target to dynamic, host, or service modules (and acceptance fixtures), so a plain `type = "raw"` module with no such marker would not pack in the gate. Do not overload `dynamic` to mean card delivery.

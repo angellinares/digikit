@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
 import { manifestClosure } from '../module-manifests.mjs';
-import { changedFiles, gateCommands, menuOnly, MENU_SOURCE } from '../gate.mjs';
+import { changedFiles, gateCommands, menuOnly, MENU_SOURCE, uiOnly, UI_SOURCE } from '../gate.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
@@ -90,10 +90,14 @@ function otherImageConsumer(): string {
 
 const manifestOf = (id: string) => `${workspace.nodes[id].data.root}/module.toml`;
 
-describe('default gate menu scheduling policy', () => {
+describe('default gate fixture scheduling policy', () => {
   beforeEach(() => vi.stubEnv('NX_HEAD', ''));
   afterEach(() => vi.unstubAllEnvs());
   const targets = 'pack,test-device,test-conformance,rust-tests';
+  const requestedTargets = (command: string[]) => {
+    const index = command.indexOf('-t');
+    return new Set(command[index + 1].split(','));
+  };
   const commandsFor = (files: string[]) =>
     gateCommands(
       ['--base=main', '-t', targets],
@@ -156,6 +160,60 @@ describe('default gate menu scheduling policy', () => {
     expect(named.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
   }, 30_000);
 
+  it('omits only UI conformance and lets Nx retain device owners and recalculate prerequisites', () => {
+    const raw = selected(UI_SOURCE, targets);
+    expect(Object.values(raw.tasks).some((task) => task.target.target === 'test-conformance')).toBe(true);
+    const [graph] = gatePlan([UI_SOURCE]);
+    expect(graph).toEqual(selected(UI_SOURCE, 'pack,test-device,rust-tests'));
+    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
+    for (const id of [
+      'sdk-ui-zero-tests:test-device',
+      'core/digikit-menu-zero-tests:test-device',
+      'core/digikit-menu:test-device',
+      'core/runtime-fixture-tests:test-device',
+      'core/runtime-service-tests:test-device',
+      ...Object.entries(raw.tasks)
+        .filter(([, task]) => ['test-device', 'build-objects'].includes(task.target.target))
+        .map(([id]) => id),
+    ])
+      expect(graph.tasks[id], id).toEqual(raw.tasks[id]);
+    const named = plan(['run', `${imageConsumer()}:test-conformance`]).tasks;
+    expect(named.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+  }, 30_000);
+
+  it('keeps UI policy fail-closed for unsupported selectors, comparisons and incomplete target sets', () => {
+    const changes = [{ file: UI_SOURCE, status: 'M' }];
+    const selections = [
+      [],
+      ['--base='],
+      ['--base=main', '--base=HEAD'],
+      ['--base=main', '--head=HEAD'],
+      ...['--files', '--stdin', '--uncommitted', '--untracked', '--all'].map((selector) => [
+        '--base=main',
+        `${selector}=true`,
+      ]),
+    ];
+    for (const args of selections) {
+      expect(changedFiles(args)).toEqual([]);
+      const command = gateCommands([...args, '-t', targets], changes)[0];
+      expect(requestedTargets(command)).toEqual(new Set(targets.split(',')));
+    }
+    vi.stubEnv('NX_HEAD', 'another-commit');
+    expect(requestedTargets(gateCommands(['--base=main', '-t', targets], changes)[0])).toEqual(
+      new Set(targets.split(',')),
+    );
+    vi.stubEnv('NX_HEAD', '');
+    for (const missing of targets.split(',')) {
+      const incomplete = targets
+        .split(',')
+        .filter((target) => target !== missing)
+        .join(',');
+      const [command] = gateCommands(['--base=main', '-t', incomplete], changes);
+      const graph = plan([...command.filter((arg: string) => arg !== '--base=main'), `--files=${UI_SOURCE}`]).tasks;
+      expect(graph).toEqual(selected(UI_SOURCE, incomplete));
+    }
+  }, 30_000);
+
   it('keeps normal affected selection for source, manifest, SDK, loader, mixed and unknown changes', () => {
     const owner = imageConsumer();
     const ownerRoot = workspace.nodes[owner].data.root;
@@ -167,6 +225,11 @@ describe('default gate menu scheduling policy', () => {
       ['sdk/include/dk/api.h'],
       ['modules/core/runtime/src/rs/src/loader.rs'],
       [MENU_SOURCE, manifestOf(imageConsumer())],
+      [UI_SOURCE, MENU_SOURCE],
+      [UI_SOURCE, 'sdk/include/dk/api.h'],
+      [UI_SOURCE, 'modules/core/adapters/ui/src/shim.s'],
+      [UI_SOURCE, 'modules/core/runtime/src/rs/src/loader.rs'],
+      ['modules/core/adapters/ui/src/shim.s'],
       ['unknown-file'],
     ]) {
       const graphs = gatePlan(files);
@@ -188,28 +251,39 @@ describe('default gate menu scheduling policy', () => {
   it('rejects rename, deletion and uncertain change metadata', () => {
     for (const status of ['A', 'D', 'R100', '?']) expect(menuOnly([{ file: MENU_SOURCE, status }])).toBe(false);
     expect(menuOnly([])).toBe(false);
+    for (const status of ['A', 'D', 'R100', '?']) {
+      const changes = [{ file: UI_SOURCE, status }];
+      expect(uiOnly(changes)).toBe(false);
+      expect(requestedTargets(gateCommands(['--base=main', '-t', targets], changes)[0])).toEqual(
+        new Set(targets.split(',')),
+      );
+    }
+    expect(uiOnly([])).toBe(false);
   });
 
-  it('uses Git status to distinguish modifications from renames, deletions and mixed edits', () => {
-    const repo = join(scratch, 'git-policy');
-    mkdirSync(join(repo, 'modules/core/apps/digikit-menu/src'), { recursive: true });
+  it.each([
+    [MENU_SOURCE, menuOnly],
+    [UI_SOURCE, uiOnly],
+  ] as const)('uses Git status to classify modifications to %s', (source, isolatedOnly) => {
+    const repo = join(scratch, `git-policy-${source === MENU_SOURCE ? 'menu' : 'ui'}`);
+    mkdirSync(join(repo, source, '..'), { recursive: true });
     const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
     git('init', '-b', 'main');
-    writeFileSync(join(repo, MENU_SOURCE), 'original');
+    writeFileSync(join(repo, source), 'original');
     git('add', '.');
     git('-c', 'user.name=Gate Test', '-c', 'user.email=gate@example.invalid', 'commit', '-m', 'fixture');
     const changes = () => changedFiles(['--base=main'], repo);
-    writeFileSync(join(repo, MENU_SOURCE), 'modified');
-    expect(menuOnly(changes())).toBe(true);
+    writeFileSync(join(repo, source), 'modified');
+    expect(isolatedOnly(changes())).toBe(true);
     writeFileSync(join(repo, 'unknown'), 'new');
-    expect(menuOnly(changes())).toBe(false);
+    expect(isolatedOnly(changes())).toBe(false);
     rmSync(join(repo, 'unknown'));
-    git('mv', MENU_SOURCE, 'renamed.c');
-    expect(menuOnly(changes())).toBe(false);
-    expect(menuOnly(changedFiles([`--files=${MENU_SOURCE}`], repo))).toBe(false);
+    git('mv', source, 'renamed.c');
+    expect(isolatedOnly(changes())).toBe(false);
+    expect(isolatedOnly(changedFiles([`--files=${source}`], repo))).toBe(false);
     git('reset', '--hard', 'HEAD');
-    rmSync(join(repo, MENU_SOURCE));
-    expect(menuOnly(changes())).toBe(false);
+    rmSync(join(repo, source));
+    expect(isolatedOnly(changes())).toBe(false);
   });
 });
 
@@ -459,9 +533,7 @@ describe('workspace selection', () => {
 
   it('keeps full-only module fixtures out of quick capacity selection', () => {
     const manifest = manifestOf(otherImageConsumer());
-    expect(
-      Object.values(selected(manifest, 'test-device').tasks).filter((task) => task.target.target === 'test-device'),
-    ).toEqual([]);
+    expect(selected(manifest, 'test-device').tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
     const full = selected(manifest, 'test-device-full');
     expect(full.tasks['core/runtime-inferred-needs-tests:test-device-full']).toBeDefined();
     expect(full.tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();

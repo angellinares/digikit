@@ -4,9 +4,14 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MENU_SOURCE = 'modules/core/apps/digikit-menu/src/menu.c';
+export const UI_SOURCE = 'modules/core/adapters/ui/src/ui.c';
 
 export function menuOnly(changes) {
   return changes.length > 0 && changes.every(({ file, status }) => file === MENU_SOURCE && status === 'M');
+}
+
+export function uiOnly(changes) {
+  return changes.length > 0 && changes.every(({ file, status }) => file === UI_SOURCE && status === 'M');
 }
 
 function option(args, names) {
@@ -36,7 +41,7 @@ export function gateCommands(args, changes) {
   const required = ['pack', 'test-device', 'test-conformance', 'rust-tests'];
   if (
     !supportedComparison(args) ||
-    !menuOnly(changes) ||
+    !(menuOnly(changes) || uiOnly(changes)) ||
     !required.every((target) => targets?.split(',').includes(target))
   )
     return [['affected', ...args]];
@@ -98,7 +103,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     option(commands[0], ['-t', '--targets', '--target']) !== option(args, ['-t', '--targets', '--target']);
   console.log(
     narrowed
-      ? `gate: ${MENU_SOURCE} -> menu fixture policy -> Nx affected without test-conformance; includes dkui-host:rust-tests`
+      ? uiOnly(changes)
+        ? `gate: ${UI_SOURCE} -> UI fixture policy -> Nx affected without test-conformance`
+        : `gate: ${MENU_SOURCE} -> menu fixture policy -> Nx affected without test-conformance; includes dkui-host:rust-tests`
       : `gate: ${summary || 'unknown changes'} -> normal Nx affected selection`,
   );
   for (const command of commands) {
