@@ -1,6 +1,8 @@
 # Fast module and SDK iteration
 
-Status: in progress on `test/module-sdk-iteration` (2026-11-04). This plan follows the Nx workflow work merged in #285 and the SDK host fixture and zero-DSP card safety work merged in #286.
+Status: current scoped iteration complete on `test/module-sdk-iteration` (2026-11-04); follow-ups below are deferred. This plan follows the Nx workflow work merged in #285 and the SDK host fixture and zero-DSP card safety work merged in #286.
+
+Representative affected-plan regression cases are in [`tools/nx/tests/selection.test.ts`](../../tools/nx/tests/selection.test.ts): module source/manifest, runtime loader, public API header and mixed menu/UI changes around lines 225–230; shared harness `ready.ts` around line 675; and broad public SDK contract coverage around line 886. The checkpoint evidence below closes this iteration's selection and fixture work. No full device gate has run on this branch under the user-approved broad-suite exception; deferred work is not part of this closeout.
 
 ## Checkpoint: selected module work
 
@@ -60,9 +62,13 @@ The runtime machine/FX fixture uses the same [`expectModuleLoad`](../../tests/co
 
 For iteration, run `pnpm nx:pilot run core/runtime:rust-tests`, plus `core/runtime-fixture-tests:test-device` and `core/runtime-service-tests:test-device` as relevant. For public SDK headers, use `sdk:test-host` and `sdk-ui-zero-tests:test-device`, adding the runtime fixtures when load or ABI behavior is affected; invoke each with `pnpm nx:pilot run`. Inspect `mise run test:plan`, then run the full affected `mise run test` before merge, subject to the already documented branch exception. Revisit this decision only with an assertion-level mapping of the unique behavior each omitted shipped conformance or consumer device check proves and evidence that replacement checks cover it.
 
-## Decisions still to prove
+## Selection constraints
 
 - Catalog validation is selected for hypothetical shipped and fixture manifest edits without being selected for Pluck C source edits. Repository-wide behavior has been checked; malformed-catalog rejection remains the catalog target's role, independent of local pack selection.
 - Nx 24 affected selection propagates through declared producer outputs and `^production`; a truthful cache key alone cannot express "hash this runtime but do not schedule its consumers." The isolated menu and UI exceptions therefore change gate scheduling only. Manual per-module conformance keeps its full runtime/image cache key.
+
+## Deferred follow-ups
+
+- Prove actual source-edit invalidation of the Nx conformance result cache and pack output restoration before enabling pack caching. Pack remains `cache: false`; the current conformance target has `outputs: []`, so its cache evidence does not establish restoration of pack or CLI outputs.
 - The full-tier inferred-needs cases now have their own `core/runtime-inferred-needs-tests:test-device-full` target. Its 12 real modules and fixtures do not select the quick capacity target for a module edit. One named DT2 `test/c-demo` case passed; the other 22 cases were filtered out, so the full matrix remains unverified on this branch.
 - A future raw card module needs explicit delivery metadata. Current Nx inference gives a pack target to dynamic, host, or service modules (and acceptance fixtures), so a plain `type = "raw"` module with no such marker would not pack in the gate. Do not overload `dynamic` to mean card delivery.

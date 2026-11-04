@@ -75,9 +75,15 @@ beforeAll(() => {
   workspace = plan(['graph'], '--file').graph;
 });
 
-function imageConsumer(): string {
+// Let Vitest flush worker updates between synchronous Nx subprocesses.
+afterEach(async () => {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+});
+
+function imageConsumer(excluded?: string): string {
   return Object.entries(workspace.nodes).find(
-    ([, node]) => node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'],
+    ([id, node]) =>
+      id !== excluded && node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'],
   )![0];
 }
 
@@ -89,6 +95,20 @@ function otherImageConsumer(): string {
 }
 
 const manifestOf = (id: string) => `${workspace.nodes[id].data.root}/module.toml`;
+
+function pickerConsumer(): string {
+  const consumers = Object.entries(workspace.nodes).filter(([id, node]) => {
+    if (!node.data.targets.pack) return false;
+    const manifest = parse(readFileSync(join(root, manifestOf(id)), 'utf8')) as {
+      object?: { sources?: string[] }[];
+    };
+    return manifest.object?.some((object) =>
+      object.sources?.some((source) => resolve(root, node.data.root, source) === join(root, 'sdk/src/sample_picker.c')),
+    );
+  });
+  expect(consumers).toHaveLength(1);
+  return consumers[0][0];
+}
 
 describe('default gate fixture scheduling policy', () => {
   beforeEach(() => vi.stubEnv('NX_HEAD', ''));
@@ -860,25 +880,25 @@ describe('workspace selection', () => {
 it.each(['sdk/src/picker_logic.c', 'sdk/src/picker_logic.h', 'sdk/src/sample_picker.c', 'sdk/src/chooser.c'])(
   'limits private SDK source %s to its pack and host consumers',
   (file) => {
+    const picker = pickerConsumer();
+    const unrelated = imageConsumer(picker);
     const graph = selected(file, 'pack,rust-tests,test-device,test-conformance');
-    expect(graph.tasks['digikit/shot:pack']).toBeDefined();
+    expect(graph.tasks[`${picker}:pack`]).toBeDefined();
     expect(graph.tasks['dkui-host:rust-tests']).toBeDefined();
     const conformanceOwners = Object.values(graph.tasks)
       .filter((task) => task.target.target === 'test-conformance')
       .map((task) => task.target.project);
-    expect(conformanceOwners).toEqual(
-      workspace.nodes['digikit/shot'].data.targets['test-conformance'] ? ['digikit/shot'] : [],
-    );
-    for (const target of ['digikit/shot:pack', 'dkui-host:rust-tests']) {
+    expect(conformanceOwners).toEqual(workspace.nodes[picker].data.targets['test-conformance'] ? [picker] : []);
+    for (const target of [`${picker}:pack`, 'dkui-host:rust-tests']) {
       const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
       expect(inputs.files, target).toContain(file);
     }
-    for (const target of ['digikit/pluck:pack', 'digikit/pluck:test-conformance', 'core/runtime:build-objects']) {
+    for (const target of [`${unrelated}:pack`, `${unrelated}:test-conformance`, 'core/runtime:build-objects']) {
       const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
       expect(inputs.files, target).not.toContain(file);
     }
-    expect(graph.tasks['digikit/pluck:pack']).toBeUndefined();
-    expect(graph.tasks['digikit/shot:test-device']).toBeDefined();
+    expect(graph.tasks[`${unrelated}:pack`]).toBeUndefined();
+    expect(graph.tasks[`${picker}:test-device`]).toBeDefined();
   },
   30_000,
 );
@@ -886,11 +906,13 @@ it.each(['sdk/src/picker_logic.c', 'sdk/src/picker_logic.h', 'sdk/src/sample_pic
 it.each(['sdk/include/dk/api.h', 'sdk/sdk.toml'])(
   'retains broad module and device selection for shared SDK contract %s',
   (file) => {
+    const picker = pickerConsumer();
+    const unrelated = imageConsumer(picker);
     const graph = selected(file, 'pack,test-device,test-conformance');
     for (const target of [
-      'digikit/shot:pack',
-      'digikit/pluck:pack',
-      'digikit/pluck:test-conformance',
+      `${picker}:pack`,
+      `${unrelated}:pack`,
+      `${unrelated}:test-conformance`,
       'core/runtime-tests:test-device',
     ])
       expect(graph.tasks[target], target).toBeDefined();

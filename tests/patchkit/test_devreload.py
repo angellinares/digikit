@@ -16,7 +16,7 @@ def test_cf_target_and_synthetic_store_use_zero():
 
 
 def test_store_dsp_and_unknown_files_keep_sharc():
-    assert dev.dsp_mode(["test/ui-demo"], ["digikit/pluck*"]) == "sharc"
+    assert dev.dsp_mode(["test/ui-demo"], ["test/sine*"]) == "sharc"
     assert dev.dsp_mode(["test/ui-demo"], ["file:anywhere=modules"]) == "sharc"
     assert dev.dsp_mode(["unknown/missing"], []) == "sharc"
 
@@ -60,7 +60,7 @@ def test_zero_session_key_actions_skip_pcm():
 @pytest.mark.parametrize("device", ["dn2", "dt2"])
 def test_patch_set_hint_does_not_cover_store_or_other_sets(device):
     assert dev.target_dsp_mode("emulator", device, []) == "zero"
-    assert dev.target_dsp_mode("emulator", device, ["digikit/pluck*"]) == "sharc"
+    assert dev.target_dsp_mode("emulator", device, ["test/sine*"]) == "sharc"
     assert dev.target_dsp_mode("sample-tracks", device, []) == "sharc"
     assert dev.target_dsp_mode("test/ui-demo", device, []) == "zero"
 
@@ -75,7 +75,7 @@ def test_zero_patch_set_policy_names_existing_sets():
 
 
 def test_zero_safe_base_still_requires_sharc_for_content_dsp():
-    assert dev.dsp_mode(["digikit/pluck"], [], zero_framework=True) == "sharc"
+    assert dev.dsp_mode(["test/sine"], [], zero_framework=True) == "sharc"
     assert dev.dsp_mode(["test/patched-pluck"], [], zero_framework=True) == "sharc"
     assert (
         dev.dsp_mode(["test/ui-demo"], ["core/sample-pool"], zero_framework=True)
@@ -99,14 +99,14 @@ def test_stop_reaches_exact_legacy_directory_for_same_device_target_store_and_tr
 ):
     legacy = Mock()
     visited = []
-    expected = dev.H.OUT / "run-devreload-dn2-test_ui-demo+store-digikit_pluck+trace"
+    expected = dev.H.OUT / "run-devreload-dn2-test_ui-demo+store-test_sine+trace"
 
     def connect(path):
         visited.append(path)
         return legacy if path == expected else None
 
     monkeypatch.setattr(dev, "connect", connect)
-    dev.stop("dn2", "test/ui-demo", ["digikit/pluck"], trace=True)
+    dev.stop("dn2", "test/ui-demo", ["test/sine"], trace=True)
     assert visited == [
         expected.with_name(expected.name + "-zero"),
         expected.with_name(expected.name + "-sharc"),
@@ -118,23 +118,22 @@ def test_stop_reaches_exact_legacy_directory_for_same_device_target_store_and_tr
 
 @pytest.mark.parametrize("device", ["dn2", "dt2"])
 def test_machine_ui_preview_store_overrides_dsp_but_keeps_exact_tuple(device):
-    store = ["digikit/pluck*"]
+    store = ["test/sine*"]
     assert dev.store_ui_preview_mode("emulator", device, store) == "zero"
     assert dev.target_dsp_mode("emulator", device, store) == "sharc"
     assert (
-        "store-digikit_pluck"
-        in dev.run_dir_of(device, "emulator", store, dsp="zero").name
+        "store-test_sine" in dev.run_dir_of(device, "emulator", store, dsp="zero").name
     )
 
 
 @pytest.mark.parametrize(
     "target,store",
     [
-        ("sample-tracks", ["digikit/pluck*"]),
+        ("sample-tracks", ["test/sine*"]),
         ("emulator", []),
         ("emulator", ["file:anywhere=modules"]),
         ("emulator", ["synth:test:0"]),
-        ("emulator", ["digikit/pluck*", "digikit/pluck"]),
+        ("emulator", ["test/sine*", "test/sine"]),
         ("emulator", ["core/sample-pool"]),
     ],
 )
@@ -165,11 +164,11 @@ def test_card_pack_uses_same_preview_variant_as_candidate(
     selection = Mock()
     monkeypatch.setattr(pk_dkrt, "build_card", build_card)
     monkeypatch.setattr(pk_dkrt, "write_selection", selection)
-    card = dev.store_card("dn2", ["digikit/pluck*"], tmp_path, ui_preview=preview)
-    staged = tmp_path / "plus_drive/digikit/modules/pluck.dkm"
-    assert staged.read_text() == f"digikit/pluck:dn2:{preview}"
+    card = dev.store_card("dn2", ["test/sine*"], tmp_path, ui_preview=preview)
+    staged = tmp_path / "plus_drive/digikit/modules/sine.dkm"
+    assert staged.read_text() == f"test/sine:dn2:{preview}"
     build_card.assert_called_once()
-    selection.assert_called_once_with(card, ["modules/pluck.dkm"], "dn2")
+    selection.assert_called_once_with(card, ["modules/sine.dkm"], "dn2")
 
 
 def test_ui_preview_run_uses_zero_mode_for_start_and_kept_directory(
@@ -190,7 +189,7 @@ def test_ui_preview_run_uses_zero_mode_for_start_and_kept_directory(
     monkeypatch.setattr(dev, "release", release)
     args = argparse.Namespace(
         target="emulator",
-        store="digikit/pluck*",
+        store="test/sine*",
         store_ui_preview=True,
         trace=False,
         out=str(tmp_path),
@@ -199,9 +198,9 @@ def test_ui_preview_run_uses_zero_mode_for_start_and_kept_directory(
     report = dev.run_device("dn2", args)
     assert report["dsp"] == "zero"
     assert start.call_args.args[1] == dev.run_dir_of(
-        "dn2", "emulator", ["digikit/pluck*"], dsp="zero"
+        "dn2", "emulator", ["test/sine*"], dsp="zero"
     )
-    assert start.call_args.args[2:] == (["digikit/pluck*"], False, "zero")
+    assert start.call_args.args[2:] == (["test/sine*"], False, "zero")
     assert start.call_args.kwargs == {
         "store_ui_preview": True,
         "prepared_card": card,
@@ -214,9 +213,7 @@ def test_preview_trace_is_rejected_before_running(monkeypatch):
     run = Mock()
     monkeypatch.setattr(dev, "run_device", run)
     with pytest.raises(SystemExit):
-        dev.main(
-            ["emulator", "--store", "digikit/pluck*", "--store-ui-preview", "--trace"]
-        )
+        dev.main(["emulator", "--store", "test/sine*", "--store-ui-preview", "--trace"])
     run.assert_not_called()
 
 
@@ -258,7 +255,7 @@ def refresh(run_dir, emu=None, ids=None, **kwargs):
         emu,
         kwargs.get("device", "dn2"),
         kwargs.get("target", "emulator"),
-        ids if ids is not None else ["digikit/pluck*"],
+        ids if ids is not None else ["test/sine*"],
         run_dir,
         kwargs.get("trace", False),
         kwargs.get("ui_preview", False),
@@ -273,7 +270,7 @@ def test_unchanged_store_reuses_live_card_and_initial_selection(store_build, tmp
     card.write_bytes(b"runtime selection changed")
     overlay = run_dir / "overlay.bin"
     overlay.write_bytes(b"saved runtime writes")
-    staged = run_dir / "plus_drive/digikit/modules/pluck.dkm"
+    staged = run_dir / "plus_drive/digikit/modules/sine.dkm"
     staged.write_bytes(b"runtime mirror changed")
     emu = Mock()
     assert refresh(run_dir, emu) == (emu, card)
@@ -283,7 +280,7 @@ def test_unchanged_store_reuses_live_card_and_initial_selection(store_build, tmp
     assert len(requests) == 2  # one candidate pack per invocation
     card_build.assert_called_once()
     selection.assert_called_once_with(
-        card_build.call_args.args[2], ["modules/pluck.dkm"], "dn2"
+        card_build.call_args.args[2], ["modules/sine.dkm"], "dn2"
     )
     stop.assert_not_called()
 
@@ -342,7 +339,7 @@ def test_store_directory_changes_refresh_card(store_build, tmp_path, change):
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("ids", ["digikit/pluck"]),
+        ("ids", ["test/sine"]),
         ("trace", True),
         ("ui_preview", True),
         ("target", "different/target"),
@@ -471,7 +468,7 @@ def test_start_mounts_prepared_card_without_repacking(monkeypatch, tmp_path):
     monkeypatch.setattr(dev.H, "Session", Mock(return_value=session))
     pack_card = Mock()
     monkeypatch.setattr(dev, "store_card", pack_card)
-    assert dev.start(cell, tmp_path, ["digikit/pluck*"], prepared_card=card) == (
+    assert dev.start(cell, tmp_path, ["test/sine*"], prepared_card=card) == (
         emu,
         session,
     )
