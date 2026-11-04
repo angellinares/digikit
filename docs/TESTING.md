@@ -146,8 +146,9 @@ and reloads without `build`.
 `--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
 
 For a no-argument DN2 preview, `mise run dk:menu` opens the real DIGIKIT menu in a visible browser faceplate;
-`mise run dk:ui-demo` opens the SDK UI component demo. Both start or reload their kept daemon with the same automatic DSP selection as
+`mise run dk:ui-demo` opens the separate [`test/ui-demo` fixture](../tests/fixtures/modules/ui-demo/README.md), which conflicts with the real menu. See [visible previews](DEVELOPMENT.md#visible-preview) for the quick start. Both start or reload their kept daemon with the same automatic DSP selection as
 `dk:dev`, navigate to the menu, then open `/panel.html` through the live Vite proxy on an available localhost port against that exact daemon.
+The command prints the exact panel URL. `dk:dev` itself writes screenshots without opening a browser.
 Keep the command running while using the panel. Ctrl-C stops its browser server and keeps the emulator for the next reload;
 `mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop` stops the respective emulator.
 The commands also write `out/runs/devreload/dn2/digikit-menu.png` or `ui-demo.png`. Use `dk:dev` directly to choose DT2, load a particular module or card store, or provide another key script.

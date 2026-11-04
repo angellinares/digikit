@@ -104,7 +104,7 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Architecture](docs/ARCHITECTURE.md): the layers (module, SDK, runtime, adapters, firmware), what each may depend on, how a new device fits
-- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules) (`dk:dev`, Reload modules), tests, analysis tools, repository layout
+- [Developing digikit](docs/DEVELOPMENT.md): [open the DIGIKIT menu or UI demo](docs/DEVELOPMENT.md#visible-preview) (`mise run dk:menu`, `mise run dk:ui-demo`), [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules), tests, analysis tools, repository layout
 - [Testing](docs/TESTING.md): `mise run test` verifies affected work; `mise run test:plan` explains selection first. `test:changed` is cheap preflight.
 - [Releasing](docs/RELEASING.md): independent module/runtime versions, previewing and applying version metadata
 - [Results of the research](docs/FINDINGS.md)
