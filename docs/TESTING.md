@@ -126,7 +126,7 @@ relocated runtime acceptance target remain uncached; the latter awaits device-in
 
 - `mise run test` runs `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`), under the shared benchlock at nice 10.
 - `mise run test:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Run it only after generated-core changes.
-- Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs), `devices` and `sdk`; only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
+- Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs. Only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
 - Two Nx tasks may run concurrently; each device target sets two Vitest workers (`REGRESSION_JOBS=2`).
 - Nx's `summary` output reports counts and paths to full failure logs; `--output-style=static-failures-only` prints failing task output inline. No custom status router is involved.
 
@@ -304,13 +304,21 @@ without running it.
   `{workspaceRoot}` globs in their target inputs. Nx affected ignores negated (`!`) inputs, so inputs
   that decide selection must be positive globs.
 - Module projects with device tests depend on `regression` (harness), `digi-control` (daemons),
-  `patchkit` (packs), `devices` and `sdk`; only modules with `test-conformance` also depend on
-  `conformance`. A change in a dependency selects the modules that use it. The module targets
+  `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs.
+  Only modules with `test-conformance` also depend on `conformance`. A change in a dependency selects the modules that use it. The module targets
   `test-device` and `test-conformance` hash `^production` of their dependencies. `production` is the
   named input in `nx.json` (default minus `{projectRoot}/tests/**` and Markdown); for `regression` it is
   the harness only (see `tests/regression/project.json`). So a change to a stock test, a golden, an FX
   scenario, a host test or another module's tests still selects the dependent modules, but their device
   results replay from the cache. Packs still run (they are not cached).
+- Build, pack and device inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/asm`, `sdk/dsp` and `sdk/vectors`.
+  Optional implementation sources under `sdk/src` belong to their explicit consumers: pack manifests name the C
+  files, with adjacent private headers included, and `dkui-host:rust-tests` names the picker sources and headers
+  compiled by its build script. Module and Cargo source ownership remains project-wide. A picker helper edit
+  selects Shot's pack, device and conformance checks and the UI host tests, plus their prerequisites; unrelated
+  module packs and conformance are excluded. Public headers and the SDK contract retain broad selection.
+  `sdk:check-generated` names the shared generator inputs and all generated output surfaces, including outputs
+  outside `sdk`; changes to generator output paths must update this list. It excludes optional `sdk/src` sources.
 - `tools:python-checks` and `tools:python-tests` run on any change outside `docs/`. `python-checks` runs ruff, ruff
   format, mypy, layercheck and `patchkit gen --check`. `python-tests` first runs
   `tests/patchkit/test_pk_current.py` (module and port staleness), then the Python test files that

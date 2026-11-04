@@ -856,3 +856,44 @@ describe('workspace selection', () => {
     expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
   }, 30_000);
 });
+
+it.each(['sdk/src/picker_logic.c', 'sdk/src/picker_logic.h', 'sdk/src/sample_picker.c', 'sdk/src/chooser.c'])(
+  'limits private SDK source %s to its pack and host consumers',
+  (file) => {
+    const graph = selected(file, 'pack,rust-tests,test-device,test-conformance');
+    expect(graph.tasks['digikit/shot:pack']).toBeDefined();
+    expect(graph.tasks['dkui-host:rust-tests']).toBeDefined();
+    const conformanceOwners = Object.values(graph.tasks)
+      .filter((task) => task.target.target === 'test-conformance')
+      .map((task) => task.target.project);
+    expect(conformanceOwners).toEqual(
+      workspace.nodes['digikit/shot'].data.targets['test-conformance'] ? ['digikit/shot'] : [],
+    );
+    for (const target of ['digikit/shot:pack', 'dkui-host:rust-tests']) {
+      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
+      expect(inputs.files, target).toContain(file);
+    }
+    for (const target of ['digikit/pluck:pack', 'digikit/pluck:test-conformance', 'core/runtime:build-objects']) {
+      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
+      expect(inputs.files, target).not.toContain(file);
+    }
+    expect(graph.tasks['digikit/pluck:pack']).toBeUndefined();
+    expect(graph.tasks['digikit/shot:test-device']).toBeDefined();
+  },
+  30_000,
+);
+
+it.each(['sdk/include/dk/api.h', 'sdk/sdk.toml'])(
+  'retains broad module and device selection for shared SDK contract %s',
+  (file) => {
+    const graph = selected(file, 'pack,test-device,test-conformance');
+    for (const target of [
+      'digikit/shot:pack',
+      'digikit/pluck:pack',
+      'digikit/pluck:test-conformance',
+      'core/runtime-tests:test-device',
+    ])
+      expect(graph.tasks[target], target).toBeDefined();
+  },
+  30_000,
+);

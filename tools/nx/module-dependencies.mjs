@@ -46,7 +46,7 @@ export const createDependencies = (_opts, ctx) => {
         p.targets?.['test-device-full']?.options?.command ||
         p.targets?.['test-conformance']
       );
-      const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
+      const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices'] : [];
       // Runtime acceptance records name the fixture/content modules loaded by device tests.
       // Their source changes must invalidate the consumer's device-test cache.
       for (const rec of records(join(ctx.workspaceRoot, p.root))) {

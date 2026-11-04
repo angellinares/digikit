@@ -34,3 +34,13 @@ it('rejects inherited or external Cargo dependency paths instead of omitting the
   write('modules/example/src/Cargo.toml', '[dependencies]\nhelper = { path = "../../../../external" }\n');
   expect(() => packSourceInputs(root, modules, [file])).toThrow('outside the workspace');
 });
+
+it('keeps explicit sources outside module and Cargo owners file-level with private headers', () => {
+  write('sdk/project.json', '{"name":"sdk"}');
+  const external = new Map([['example/module', { file, objects: [{ sources: ['../../sdk/src/picker.c'] }] }]]);
+  expect(packSourceInputs(root, external, [file])).toEqual([
+    { input: 'production', projects: ['example/module'] },
+    '{workspaceRoot}/sdk/src/**/*.{h,hh,hpp,hxx}',
+    '{workspaceRoot}/sdk/src/picker.c',
+  ]);
+});

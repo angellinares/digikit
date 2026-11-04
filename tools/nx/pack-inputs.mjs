@@ -23,25 +23,30 @@ export const packSourceInputs = (workspaceRoot, byId, manifests) => {
   const paths = new Set();
   const include = (path, directory = false) => {
     path = bounded(path);
-    // Explicit project owners can be outside the module/Cargo libraries (for example sdk/).
-    for (let root = directory ? path : dirname(path); root !== '.'; root = dirname(root)) {
-      const file = join(root, 'project.json');
-      if (existsSync(join(workspaceRoot, file))) {
-        const project = readProject(file);
-        if (project.name) owners.push({ name: project.name, root });
-        break;
+    // Cargo directories retain project ownership, including non-workspace path crates.
+    if (directory)
+      for (let root = path; root !== '.'; root = dirname(root)) {
+        const file = join(workspaceRoot, root, 'project.json');
+        if (existsSync(file)) {
+          const project = JSON.parse(readFileSync(file, 'utf8'));
+          if (project.name) owners.push({ name: project.name, root });
+          break;
+        }
       }
-    }
     const candidates = owners.filter((owner) => path === owner.root || path.startsWith(`${owner.root}/`));
     candidates.sort((a, b) => b.root.length - a.root.length);
     const owner = candidates[0];
     if (owner && candidates.some((other) => other.root === owner.root && other.name !== owner.name))
       throw new Error(`Ambiguous pack source owner: ${path}`);
     if (owner) projects.add(owner.name);
-    else paths.add(`{workspaceRoot}/${path}${directory ? '/**/*' : ''}`);
+    else {
+      paths.add(`{workspaceRoot}/${path}${directory ? '/**/*' : ''}`);
+      // External C/C++ objects read private headers beside their explicit sources. Public
+      // include roots are shared build inputs; a project owner must not widen these sources.
+      if (!directory && /\.(?:c|cc|cpp|cxx)$/.test(path))
+        paths.add(`{workspaceRoot}/${dirname(path)}/**/*.{h,hh,hpp,hxx}`);
+    }
   };
-  // project.json is JSON, unlike the library and Cargo manifests.
-  const readProject = (file) => JSON.parse(readFileSync(join(workspaceRoot, file), 'utf8'));
   const crates = new Set();
   const includeCrate = (root) => {
     root = bounded(root);

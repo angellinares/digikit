@@ -4,6 +4,14 @@ import { join } from 'node:path';
 // Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
 export const PK = 'dist/patchkit/patchkit --root .';
 export const IMAGE_BUILD = { target: 'build-objects', projects: ['tag:acceptance-image'] };
+// Shared compiler/contract surfaces. Optional implementation sources are named by their consumers.
+export const SHARED_SDK_INPUTS = [
+  '{workspaceRoot}/sdk/sdk.toml',
+  '{workspaceRoot}/sdk/include/**/*',
+  '{workspaceRoot}/sdk/asm/**/*',
+  '{workspaceRoot}/sdk/dsp/**/*',
+  '{workspaceRoot}/sdk/vectors/**/*',
+];
 // Build/pack producers do not read acceptance tests. Nx's implicit ^default input would
 // otherwise turn a harness-only edit into a changed image output for every consumer.
 export const BUILD_INPUTS = [
@@ -19,7 +27,7 @@ export const BUILD_INPUTS = [
   '{workspaceRoot}/modules/**/module.toml',
   '{workspaceRoot}/tests/fixtures/modules/**/module.toml',
   '{workspaceRoot}/devices/**/*',
-  '{workspaceRoot}/sdk/**/*',
+  ...SHARED_SDK_INPUTS,
   '{workspaceRoot}/tools/patchkit/**/*',
   '{workspaceRoot}/Cargo.toml',
   '{workspaceRoot}/Cargo.lock',
@@ -53,6 +61,7 @@ export const scopedManifestInputs = (inputs, manifests) => [
 // tools/emulator/fast_regions.json (sets SHARC_* env). Manifests follow production and declared
 // acceptance module dependencies; conformance also names its scoped selected manifest.
 export const DEVICE_INPUTS = [
+  ...SHARED_SDK_INPUTS,
   'default',
   '^production',
   'jsToolchain',
