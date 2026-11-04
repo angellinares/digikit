@@ -300,12 +300,12 @@ run = "uv run python -m tools.patchkit.pk_devreload"
 description = "Fast edit loop for module code: mise run dk:dev -- test/ui-demo --device dn2[,dt2] [--keys FILE|tap:SETTINGS,wait:400,shot:menu] [--store IDS [--trace]] [--out DIR] [--stop]; builds changed objects, reloads a kept emulator daemon (module swap in about a second, or a boot), presses the keys, writes PNGs and a contact sheet"
 
 [tasks."dk:menu"]
-run = "uv run python -m tools.patchkit.pk_devreload emulator --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:digikit-menu'"
-description = "Open the DIGIKIT menu in the kept DN2 zero-DSP emulator and save out/runs/devreload/dn2/digikit-menu.png"
+run = "uv run python -m tools.patchkit.pk_panel menu"
+description = "Open the DIGIKIT menu in a visible browser faceplate on the kept DN2 emulator; Ctrl-C stops the browser server"
 
 [tasks."dk:ui-demo"]
-run = "uv run python -m tools.patchkit.pk_devreload test/ui-demo --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:ui-demo'"
-description = "Open the SDK UI component demo in the kept DN2 zero-DSP emulator and save out/runs/devreload/dn2/ui-demo.png"
+run = "uv run python -m tools.patchkit.pk_panel ui-demo"
+description = "Open the SDK UI component demo in a visible browser faceplate on the kept DN2 emulator; Ctrl-C stops the browser server"
 
 [tasks."module:dev"]
 run = "uv run python -m tools.patchkit.pk_dev"

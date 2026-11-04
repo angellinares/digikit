@@ -145,8 +145,12 @@ modules button (⇧⌘R), with `build: true`: it builds the stale objects of the
 and reloads without `build`.
 `--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
 
-For a no-argument DN2 preview, `mise run dk:menu` opens the real DIGIKIT menu and writes `out/runs/devreload/dn2/digikit-menu.png`;
-`mise run dk:ui-demo` opens the SDK UI component demo and writes `out/runs/devreload/dn2/ui-demo.png`. Use `dk:dev` directly to choose DT2, load a particular module or card store, or provide another key script.
+For a no-argument DN2 preview, `mise run dk:menu` opens the real DIGIKIT menu in a visible browser faceplate;
+`mise run dk:ui-demo` opens the SDK UI component demo. Both start or reload their kept daemon with the same automatic DSP selection as
+`dk:dev`, navigate to the menu, then open `/panel.html` through the live Vite proxy on an available localhost port against that exact daemon.
+Keep the command running while using the panel. Ctrl-C stops its browser server and keeps the emulator for the next reload;
+`mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop` stops the respective emulator.
+The commands also write `out/runs/devreload/dn2/digikit-menu.png` or `ui-demo.png`. Use `dk:dev` directly to choose DT2, load a particular module or card store, or provide another key script.
 
 `dk:dev` automatically reports and selects DSP `zero` for ColdFire-only module closures (such as `test/ui-demo`), skipping PCM
 capture. `tools/patchkit/pk_devreload.toml` lists base patch sets whose menu/runtime supports a zero DSP
