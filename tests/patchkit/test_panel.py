@@ -16,6 +16,40 @@ def available_port(monkeypatch):
     monkeypatch.setattr(panel.socket, "socket", Mock(return_value=listener))
 
 
+def test_navigation_isolates_new_daemon_and_keeps_group_on_success(monkeypatch):
+    proc = Mock()
+    proc.wait.return_value = 0
+    popen = Mock(return_value=proc)
+    killpg = Mock()
+    monkeypatch.setattr(panel.subprocess, "Popen", popen)
+    monkeypatch.setattr(panel.os, "killpg", killpg)
+    assert panel.navigate(["emulator"]) == 0
+    options = popen.call_args.kwargs
+    assert options["start_new_session"] is True
+    assert options["env"]["PYTHONPATH"].split(panel.os.pathsep)[0] == str(
+        panel.dev.ROOT
+    )
+    assert options["cwd"] == panel.dev.ROOT
+    proc.wait.assert_called_once_with(timeout=120)
+    killpg.assert_not_called()
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_unfinished_navigation_cleans_only_its_group(monkeypatch, interrupted):
+    failure = (
+        KeyboardInterrupt() if interrupted else subprocess.TimeoutExpired("dev", 120)
+    )
+    proc = Mock(pid=12345)
+    proc.wait.side_effect = [failure, 0]
+    monkeypatch.setattr(panel.subprocess, "Popen", Mock(return_value=proc))
+    killpg = Mock()
+    monkeypatch.setattr(panel.os, "killpg", killpg)
+    expected = KeyboardInterrupt if interrupted else panel.dev.H.HarnessError
+    with pytest.raises(expected):
+        panel.navigate(["emulator"])
+    killpg.assert_called_once_with(proc.pid, signal.SIGTERM)
+
+
 @pytest.mark.parametrize("target", ["emulator", "test/ui-demo"])
 def test_socket_comes_from_exact_auto_mode_daemon(monkeypatch, target):
     emu = Mock(path="/tmp/preview.sock")
@@ -30,7 +64,7 @@ def test_socket_comes_from_exact_auto_mode_daemon(monkeypatch, target):
 
 
 def test_missing_preview_daemon_is_reported(monkeypatch, capsys):
-    monkeypatch.setattr(panel.dev, "main", Mock(return_value=0))
+    monkeypatch.setattr(panel, "navigate", Mock(return_value=0))
     monkeypatch.setattr(panel.dev, "connect", Mock(return_value=None))
     serve = Mock()
     monkeypatch.setattr(panel, "serve", serve)
@@ -50,7 +84,7 @@ def test_wrong_mode_closes_connection(monkeypatch):
 
 
 def test_failed_navigation_does_not_open_browser(monkeypatch):
-    monkeypatch.setattr(panel.dev, "main", Mock(return_value=2))
+    monkeypatch.setattr(panel, "navigate", Mock(return_value=2))
     socket = Mock()
     monkeypatch.setattr(panel, "panel_socket", socket)
     assert panel.main(["ui-demo"]) == 2
@@ -81,7 +115,7 @@ def test_navigation_then_serving_same_target(monkeypatch, preview, target):
         assert path == "/tmp/exact-preview.sock"
         return 0
 
-    monkeypatch.setattr(panel.dev, "main", navigate)
+    monkeypatch.setattr(panel, "navigate", navigate)
     monkeypatch.setattr(panel, "panel_socket", resolve)
     monkeypatch.setattr(panel, "serve", serve)
     assert panel.main([preview]) == 0
@@ -123,7 +157,7 @@ def test_server_escalates_only_own_unresponsive_group(monkeypatch):
 
 
 def test_server_start_error_is_reported(monkeypatch, capsys):
-    monkeypatch.setattr(panel.dev, "main", Mock(return_value=0))
+    monkeypatch.setattr(panel, "navigate", Mock(return_value=0))
     monkeypatch.setattr(
         panel, "panel_socket", Mock(return_value="/tmp/exact-preview.sock")
     )

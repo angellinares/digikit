@@ -10,12 +10,42 @@ import socket
 import subprocess
 import sys
 
+from tools import python_env
 from tools.patchkit import pk_devreload as dev
 
 PREVIEWS = {
     "menu": ("emulator", "digikit-menu"),
     "ui-demo": ("test/ui-demo", "ui-demo"),
 }
+
+
+def stop_group(proc: subprocess.Popen) -> None:
+    """Stop only this launcher's child group, including pnpm's Vite child."""
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+
+
+def navigate(argv: list[str]) -> int:
+    """Isolate the startup group so a newly kept daemon survives terminal Ctrl-C."""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "tools.patchkit.pk_devreload", *argv],
+        cwd=dev.ROOT,
+        env=python_env(),
+        start_new_session=True,
+    )
+    try:
+        return proc.wait(timeout=120)
+    except (KeyboardInterrupt, subprocess.TimeoutExpired) as e:
+        stop_group(proc)
+        if isinstance(e, subprocess.TimeoutExpired):
+            raise dev.H.HarnessError("preview startup exceeded 120 seconds") from e
+        raise
 
 
 def panel_socket(target: str) -> str:
@@ -66,14 +96,7 @@ def serve(socket_path: str) -> int:
         return 130
     finally:
         # pnpm spawns Vite, so terminate the group even if pnpm has already exited.
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(proc.pid, signal.SIGTERM)
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
+        stop_group(proc)
 
 
 def main(argv: list[str]) -> int:
@@ -83,7 +106,7 @@ def main(argv: list[str]) -> int:
     target, shot = PREVIEWS[args.preview]
     keys = f"tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:{shot}"
     try:
-        result = dev.main([target, "--device", "dn2", "--keys", keys])
+        result = navigate([target, "--device", "dn2", "--keys", keys])
         if result:
             return result
         socket_path = panel_socket(target)
