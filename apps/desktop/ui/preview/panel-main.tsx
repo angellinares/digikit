@@ -30,14 +30,20 @@ function Faceplate() {
   let frameRevision: number | undefined;
   let ledRevision: number | undefined;
   let inputs = Promise.resolve();
+  // A lost reply can still have applied a press. Forget a key only after its release is acknowledged.
+  const held = new Set<number>();
   // Preserve press/release and chord order, including rapid encoder pushes.
   const input = (method: string, params: Record<string, unknown>) => {
     inputs = inputs
       .then(async () => {
         if (!connected) throw new Error('Emulator disconnected; reconnecting…');
+        if (method === 'input.button' && params.down) held.add(params.code as number);
         await call(method, params);
+        if (method === 'input.button' && !params.down) held.delete(params.code as number);
       })
       .catch((cause) => {
+        connected = false;
+        panel?.releaseAll();
         setError(String(cause));
       });
     return inputs;
@@ -58,7 +64,17 @@ function Faceplate() {
         setDevice(cf.device);
         frameRevision = ledRevision = undefined;
       }
-      connected = true;
+      if (!connected) {
+        // Drain the old queue first: an in-flight press may have reached the same daemon.
+        await inputs;
+        for (const code of held) {
+          await call('input.button', { code, down: false });
+          held.delete(code);
+        }
+        if (!alive) return;
+        panel?.releaseAll();
+        connected = true;
+      }
       if (status.frame_revision != null && status.frame_revision !== frameRevision) {
         const frame = await call<{ revision: number; data_b64: string }>('framebuffer.get');
         if (!alive) return;
@@ -76,8 +92,8 @@ function Faceplate() {
       setError('');
     } catch (cause) {
       if (!alive) return;
-      panel?.releaseAll();
       connected = false;
+      panel?.releaseAll();
       panel?.clear();
       frameRevision = ledRevision = undefined;
       setError(String(cause));
@@ -97,7 +113,12 @@ function Faceplate() {
       <Show when={device()} keyed>
         {(name) => (
           <div class="faceplate" style={{ '--accent': panels[name].accent, '--func-legend': panels[name].func_legend }}>
-            <LivePanel panel={panels[name]} runtime={() => runtime} onError={setError} ref={(api) => (panel = api)} />
+            <LivePanel
+              panel={panels[name]}
+              runtime={() => (connected ? runtime : undefined)}
+              onError={setError}
+              ref={(api) => (panel = api)}
+            />
           </div>
         )}
       </Show>
