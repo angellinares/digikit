@@ -1,0 +1,19 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "targets": {
+    "rust-tests": {
+      "inputs": [
+        "default",
+        "^production",
+        "{workspaceRoot}/Cargo.toml",
+        "{workspaceRoot}/Cargo.lock",
+        "{workspaceRoot}/modules/core/apps/digikit-menu/src/menu.c",
+        "{workspaceRoot}/sdk/include/**/*",
+        "{workspaceRoot}/sdk/src/picker_logic.c",
+        "{workspaceRoot}/sdk/src/sample_picker.c",
+        "{workspaceRoot}/sdk/src/chooser.c",
+        "{workspaceRoot}/sdk/src/**/*.h"
+      ]
+    }
+  }
+}

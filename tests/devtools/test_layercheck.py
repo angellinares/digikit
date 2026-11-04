@@ -323,7 +323,7 @@ def test_self_contained_docs_agents_and_fixtures_may_name_modules(tree: Path) ->
 def test_runtime_acceptance_metadata_exception_is_owned_by_the_test_project(
     tree: Path,
 ) -> None:
-    project = "modules/core/runtime/tests/project.json"
+    project = "modules/core/runtime/tests/capacity/inferred/project.json"
     metadata = {"metadata": {"runtimeAcceptance": [{"modules": ["digikit/gain"]}]}}
     write(tree, project, json.dumps(metadata))
     assert sc(tree) == []

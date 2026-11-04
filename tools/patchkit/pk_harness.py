@@ -684,7 +684,9 @@ class Session:
         env: dict[str, str] | None = None,
         cache_dir: Path | None = None,
         run_dir: Path | None = None,
+        dsp: str = "sharc",
     ):
+        self.dsp = dsp
         self.cell, self.goldens, self.update = cell, goldens, update
         self.run_dir = run_dir  # explicit: kept; None: a temp dir made by open, removed after a clean close
         self.env = dict(env or {})
@@ -729,7 +731,8 @@ class Session:
         run_dir = self.run_dir
         if self.cache_dir is not None:
             link_shared(run_dir, self.cache_dir)
-        self.emu = Emu.spawn_coupled(
+        spawn = Emu.spawn_zero if self.dsp == "zero" else Emu.spawn_coupled
+        self.emu = spawn(
             self.syx,
             self.ready,
             timeout=300,
@@ -738,7 +741,7 @@ class Session:
             env=self.env,
         )
         emu = self.emu
-        if emu.status().get("audio") is None:
+        if self.dsp == "sharc" and emu.status().get("audio") is None:
             raise HarnessError("this digi-emud has no coupled audio")
         emu.subscribe()
         if self.card_override:
@@ -813,7 +816,8 @@ class Session:
         )
         emu.drain_events()
         self.run_ms(300)
-        emu.pcm_start()
+        if self.dsp == "sharc":
+            emu.pcm_start()
         self.pcm_mark = 0
         self.health("ready")
         status = emu.status()
@@ -889,6 +893,8 @@ class Session:
 
     # -- actions
     def mark_pcm(self) -> None:
+        if self.dsp == "zero":
+            return
         emu = self.emu
         assert emu is not None
         self.pcm_mark = len(emu.pcm_report().get("window_rms") or [])

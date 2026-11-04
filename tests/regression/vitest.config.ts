@@ -51,7 +51,11 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'runtime',
-          include: ['emulator/**/*.test.ts', '../../modules/**/tests/**/*.device.test.ts'],
+          include: [
+            'emulator/**/*.test.ts',
+            '../../modules/**/tests/**/*.device.test.ts',
+            '../fixtures/modules/**/tests/**/*.device.test.ts',
+          ],
           pool: 'forks',
           // Hang detection is the no-progress watchdog (DIGI_NO_PROGRESS_MS, default 120 s). These limits are
           // backstops, so host load cannot fail a slow but healthy test.

@@ -184,7 +184,7 @@ pnpm dev                                # the gallery at /patch: patch in the br
 
 1. Create the module: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR]` (`KIND` is `machine`, `fx` or `service`). Guide: docs/MODULE-AUTHORING.md.
 2. Build it: `mise run module:build -- AUTHOR/NAME [--check]` (`patchkit build`: ColdFire C, assembly and Rust, and SHARC+ with Selache as a library, all in the `patchkit` binary; an object whose sources did not change is skipped). The objects of a content module are build output in the cache `out/cache/dko/<module id>/` (not committed; `core/*` objects stay in their module); `mise run module:pack` and `dk:run` build what is stale themselves, so a module goes from source to `.dkm` in one command. `patchkit dko show FILE` prints what an object holds. `module:check` fails on a stale object.
-3. Check it without an emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
+3. Check it with the module owner's tests: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
 4. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
 5. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
 
@@ -196,15 +196,41 @@ Each task takes `-- --help`.
 
 ## Fast iteration: runtime, UI and modules
 
-One edit and one look take seconds, not a boot. Iterate on the Digitone II (its boot is about half as long), check the Digitakt II at the end, and finish with the owner's check (`module:check`, the scenarios, the harness).
+One edit and one look take seconds, not a boot. Iterate on the Digitone II (its boot is about half as long), check the Digitakt II at the end, and finish with the owner's check (`module:check` for a content module, the named Nx device target for a fixture).
+
+### Visible preview
+
+From the repository root after [setup](#setup), with the [DN2 firmware](#firmware-files) available:
 
 ```sh
+mise run dk:menu       # the real SETTINGS > DIGIKIT menu
+mise run dk:ui-demo    # the SDK UI controls fixture
+mise run dk:module pluck  # zero-DSP machine UI preview, selected on its card
+mise run dk:module pluck --dsp  # full module with SHARC audio
+```
+
+Each command starts or reloads a kept DN2 emulator, navigates to SETTINGS > DIGIKIT, and opens a local browser faceplate with its live display and controls. The command prints the exact panel URL. `dk:menu` uses the `emulator` patch set, including `core/digikit-menu`; `dk:ui-demo` uses the separate `test/ui-demo` fixture, which requires `core/ui` and conflicts with the real menu. These two previews automatically use zero DSP, so they have no audio.
+
+`dk:module` accepts a full module id or a unique leaf alias (for example, `pluck`). It packs a card `.dkm`, saves its selection for boot, and uses the `emulator` runtime patch set. By default, a declarative machine (including pluck) uses a data-only UI preview pack and zero DSP, with no audio. The preview pack rejects actions, samples and hooks. ColdFire-only services use normal packing and zero DSP. Effects and other DSP-backed modules require `--dsp`, which packs the full module and selects SHARC when needed. Its dependencies must already be provided by that patch set. It opens the DIGIKIT MODULES list; use the panel controls to reach the module's machine or effect page. Add `--device dt2` for Digitakt II (with its firmware available); DN2 is the default.
+
+On each invocation, `dk:module` delegates to the generic `dk:dev --store` path. It stages content and compares the exact store request and initial selection with the kept daemon. Unchanged content keeps the daemon and overlay, including any selection the user changed while it was running; changed content rebuilds the card and restarts that exact daemon. To restore the initial selected card after changing selection live, stop and restart the daemon. `mise run dk:module ID --stop` stops only that module's kept daemon for the chosen device, without packing or opening the browser.
+
+Keep the command running while using the panel. Ctrl-C stops the Vite browser server; the emulator stays alive for the next reload. Stop it with `mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop`, respectively. For the controls and acceptance test, see the [UI demo README](../tests/fixtures/modules/ui-demo/README.md).
+
+### A module or fixture of your own
+
+`dk:dev` accepts a module ID (including a test fixture) or a device patch set such as `emulator`. It builds and reloads that target, runs a key script and writes screenshots; it does not open a browser. Choose `--device dn2` or `--device dt2`, or both as below:
+
+```sh
+mise run dk:dev -- AUTHOR/NAME --device dn2 --keys 'shot:main' # your module
 mise run dk:dev -- test/ui-demo --device dn2 --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:menu'
 mise run dk:dev -- emulator --device dn2,dt2 --keys FILE.json   # the workbench's module set of devices/*.toml
 mise run dk:dev -- core/digikit-menu --store 'test/dyn-demo*,synth:HUGE:8000000'  # a card with these modules (* = selected)
 mise run dk:dev -- test/ui-demo --stop                          # end the kept daemon
 cargo test --offline -p dkui-host                               # menu and UI logic on the host, about 1 s
 ```
+
+For an interactive content module in an already running workbench or emulator, use `mise run dk:run -- AUTHOR/NAME --emu` ([module loop](#module-loop)). Finish with `mise run module:check AUTHOR/NAME`; for the UI fixture, use `pnpm nx:pilot run sdk-ui-zero-tests:test-device`. A preview or screenshot is not an acceptance check.
 
 `dk:dev` builds what changed, reloads a daemon it keeps per device and module set, runs the keys from the main screen and writes `out/runs/devreload/<device>/sheet.png`. The reload (daemon method `dev.reload`) compares the new patched image with the running one:
 

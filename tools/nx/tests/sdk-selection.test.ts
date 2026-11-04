@@ -59,5 +59,24 @@ it('declares SDK fixture inputs and excludes shipped leaf module edits', () => {
   const source = globSync('modules/machines/*/src/**/*.c', { cwd: root }).sort()[0];
   expect(source).toBeDefined();
   expect(inputs.files).not.toContain(source);
+  for (const file of ['sdk/src/picker_logic.c', 'sdk/src/picker_logic.h']) {
+    expect(inputs.files).not.toContain(file);
+    expect(selected(file)['sdk:test-host']).toBeUndefined();
+  }
   expect(selected(source)['sdk:test-host']).toBeUndefined();
+}, 30_000);
+
+it('keeps shared generation inputs complete without optional SDK implementation sources', () => {
+  const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'sdk:check-generated', '--json']));
+  for (const file of [
+    'sdk/sdk.toml',
+    'sdk/include/dk/gen/api.h',
+    'sdk/asm/dk_machine.inc',
+    'modules/core/runtime/abi.toml',
+    'modules/core/runtime/sdk/src/gen_abi.rs',
+    'modules/core/fw/reference.json',
+    'packages/dk-session/src/gen_proto.ts',
+  ])
+    expect(inputs.files, file).toContain(file);
+  for (const file of ['sdk/src/picker_logic.c', 'sdk/src/picker_logic.h']) expect(inputs.files).not.toContain(file);
 }, 30_000);

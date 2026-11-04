@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "digikit-pluck-preview-tests",
+  "tags": ["test-only"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["ui-preview.device.test.ts"],
+        "plusdrive": true,
+        "sources": ["modules/machines/pluck/module.toml", "modules/machines/pluck/src/module.c"]
+      }
+    ]
+  }
+}

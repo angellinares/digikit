@@ -1,0 +1,3 @@
+# Base patch sets whose menu/runtime supports a zero DSP peer despite optional
+# core framework DSP adapters. Store modules are always classified independently.
+zero_dsp_patch_sets = ["emulator"]

@@ -7,7 +7,7 @@ MODULE_OR_SET is a patch set of devices/<device>.toml (`emulator`), or module id
 they require are added. Per device the tool
 
 1. builds the objects of every module in the set whose sources changed (`patchkit build`: unchanged objects cost nothing),
-2. keeps one daemon per device and module set alive between runs (run directory out/runs/patchkit/run-devreload-<device>-<set>; the first run
+2. keeps one daemon per device and module set alive between runs (run directory out/runs/patchkit/run-devreload-<device>-<set>-<dsp>; the first run
    starts it and boots the patched image, `--stop` ends it) and calls `dev.reload` (docs/CONTROL.md): the daemon applies the
    modules again, compares the image with the running one and either swaps the module bytes into a restored main-screen state
    (`swap`: UI layer modules, about a second) or loads the new image (`boot`: the runtime or any other module changed; a cold
@@ -26,11 +26,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 import tomllib
 from pathlib import Path
@@ -70,6 +72,88 @@ def closure(roots: list[str]) -> list[str]:
         manifest = tomllib.loads((modroots.module_dir(mid) / "module.toml").read_text())
         todo += manifest["module"].get("requires", [])
     return seen
+
+
+def dsp_mode(
+    modules: list[str], store: list[str], *, zero_framework: bool = False
+) -> str:
+    """Classify both closures; a zero-safe base may have core DSP adapters.
+
+    Store files can contain arbitrary packed modules, so their DSP needs are unknown.
+    Synthetic BSS-only modules contain no DSP code. Store closures never inherit the
+    base set's permission to run its framework adapters with a zero peer.
+    """
+    stored = []
+    for entry in store:
+        mid = entry.rstrip("*")
+        if mid.startswith("file:"):
+            return "sharc"
+        if not mid.startswith("synth:"):
+            stored.append(mid)
+    try:
+        for roots, allow_adapters in ((modules, zero_framework), (stored, False)):
+            for mid in closure(roots):
+                manifest = tomllib.loads(
+                    (modroots.module_dir(mid) / "module.toml").read_text()
+                )
+                kind = manifest["module"].get("type")
+                if kind in ("machine", "fx"):
+                    return "sharc"
+                for obj in manifest.get("object", []):
+                    place = obj.get("place")
+                    if place in ("cf.expansion", "cf.flash_cave"):
+                        continue
+                    if (
+                        allow_adapters
+                        and mid.startswith("core/")
+                        and kind == "framework"
+                        and place == "dsp.l2"
+                    ):
+                        continue
+                    return "sharc"
+    except (OSError, ValueError, KeyError, SystemExit):
+        return "sharc"
+    return "zero"
+
+
+def target_dsp_mode(target: str, device: str, store: list[str]) -> str:
+    """Declared zero-safe patch sets may contain optional core DSP adapters."""
+    data = tomllib.loads((ROOT / "devices" / DEVICE_FILE[device]).read_text())
+    policy = tomllib.loads((HERE / "pk_devreload.toml").read_text())
+    hinted = target in policy.get("zero_dsp_patch_sets", []) and target in data.get(
+        "patch_sets", {}
+    )
+    return dsp_mode(resolve_modules(target, device), store, zero_framework=hinted)
+
+
+def store_ui_preview_mode(target: str, device: str, store: list[str]) -> str:
+    """Internal dk:module path: one declarative machine on a zero-safe base."""
+    if (
+        target != "emulator"
+        or len(store) != 1
+        or store[0].startswith(("file:", "synth:"))
+    ):
+        raise H.HarnessError(
+            "UI preview requires the emulator set and one machine store id"
+        )
+    mid = store[0].rstrip("*")
+    manifest = tomllib.loads((modroots.module_dir(mid) / "module.toml").read_text())
+    if manifest["module"].get("type") != "machine":
+        raise H.HarnessError(
+            "UI preview store requires a declarative machine; use --dsp"
+        )
+    if target_dsp_mode(target, device, []) != "zero":
+        raise H.HarnessError("UI preview requires a zero-DSP emulator base")
+    return "zero"
+
+
+def assert_mode(emu: Emu, dsp: str) -> None:
+    status = emu.status()
+    audio = status.get("audio")
+    if status.get("dsp") != dsp or (audio is not None) != (dsp == "sharc"):
+        raise H.HarnessError(
+            f"expected DSP {dsp}, got dsp={status.get('dsp')!r}, audio={audio is not None}"
+        )
 
 
 def build(modules: list[str]) -> tuple[float, list[str]]:
@@ -158,7 +242,11 @@ def contact_sheet(frames: list[tuple[str, bytes]], dest: Path) -> None:
 
 
 def run_dir_of(
-    device: str, target: str, store: list[str] | None = None, trace: bool = False
+    device: str,
+    target: str,
+    store: list[str] | None = None,
+    trace: bool = False,
+    dsp: str | None = "sharc",
 ) -> Path:
     slug = re.sub(
         r"[^A-Za-z0-9.+-]+",
@@ -167,7 +255,9 @@ def run_dir_of(
         + ("+store-" + ",".join(store) if store else "")
         + ("+trace" if trace else ""),
     )
-    return H.OUT / f"run-devreload-{device}-{slug}"
+    # None names the exact pre-mode directory, used only to stop legacy daemons.
+    suffix = f"-{dsp}" if dsp is not None else ""
+    return H.OUT / f"run-devreload-{device}-{slug}{suffix}"
 
 
 def connect(run_dir: Path) -> Emu | None:
@@ -184,10 +274,15 @@ def connect(run_dir: Path) -> Emu | None:
     return emu
 
 
-def store_card(device: str, ids: list[str], run_dir: Path, trace: bool = False) -> Path:
-    """A card image whose module store holds the modules `ids`, packed for the device (`<leaf>.dkm` under digikit/modules);
-    with `trace` they are built with DK_TRACE (`patchkit pack --trace`)."""
-    from tools.firmware import config
+def prepare_store(
+    device: str,
+    ids: list[str],
+    run_dir: Path,
+    trace: bool = False,
+    *,
+    ui_preview: bool = False,
+) -> dict[str, Any]:
+    """Pack/copy requested content in isolated staging, without touching a mounted card."""
     from tools.patchkit import pk_dkrt
 
     tools = pk_dkrt.Tools()
@@ -229,19 +324,134 @@ def store_card(device: str, ids: list[str], run_dir: Path, trace: bool = False) 
                 "-o",
                 out,
                 *(["--trace"] if trace else []),
+                *(["--ui-preview"] if ui_preview else []),
             )
         if pick:
             selected.append(f"modules/{out.name}")
+    files = {}
+    for path in sorted(folder.rglob("*")):
+        if path.is_file():
+            with path.open("rb") as content:
+                files[path.relative_to(folder).as_posix()] = hashlib.file_digest(
+                    content, "sha256"
+                ).hexdigest()
+    return {
+        "device": device,
+        "ids": ids,
+        "trace": trace,
+        "ui_preview": ui_preview,
+        "selected": selected,
+        "files": files,
+    }
+
+
+def store_card(
+    device: str,
+    ids: list[str],
+    run_dir: Path,
+    trace: bool = False,
+    *,
+    ui_preview: bool = False,
+    prepared: dict[str, Any] | None = None,
+) -> Path:
+    """Build a card from freshly prepared content, including its initial selection."""
+    from tools.firmware import config
+    from tools.patchkit import pk_dkrt
+
+    if prepared is None:
+        prepared = prepare_store(device, ids, run_dir, trace, ui_preview=ui_preview)
     syx = config.stock(STOCK_SYX[device])
     image = run_dir / "store-card.img"
-    pk_dkrt.build_card(tools, folder, image, syx, device)
-    if selected:
-        pk_dkrt.write_selection(image, selected, device)
+    pk_dkrt.build_card(pk_dkrt.Tools(), run_dir / "plus_drive", image, syx, device)
+    if prepared["selected"]:
+        pk_dkrt.write_selection(image, prepared["selected"], device)
+    (run_dir / "store-request.json").write_text(json.dumps(prepared, sort_keys=True))
     return image
 
 
+def stop_connected(emu: Emu, run_dir: Path, timeout: float = 5) -> None:
+    """Stop the connected process and await exit before replacing its mounted card."""
+    try:
+        info = json.loads((run_dir / "current.json").read_text())
+        pid = info["pid"]
+        if (
+            type(pid) is not int
+            or pid <= 0
+            or info["socket"] != emu.path
+            or pid == os.getpid()
+        ):
+            raise ValueError("daemon identity mismatch")
+    except (OSError, ValueError, KeyError) as exc:
+        raise H.HarnessError(
+            f"cannot identify store daemon in {run_dir}: {exc}"
+        ) from exc
+    deadline = time.monotonic() + timeout
+    try:
+        emu._sock.settimeout(timeout)  # noqa: SLF001  quit must also be bounded
+        emu.quit()
+    except (OSError, EmuError) as exc:
+        raise H.HarnessError(
+            f"could not stop store daemon in {run_dir}: {exc}"
+        ) from exc
+    finally:
+        release(emu)
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        if time.monotonic() >= deadline:
+            raise H.HarnessError(f"store daemon did not stop in {run_dir}")
+        time.sleep(0.05)
+
+
+def refresh_store(
+    emu: Emu | None,
+    device: str,
+    target: str,
+    ids: list[str],
+    run_dir: Path,
+    trace: bool,
+    ui_preview: bool,
+) -> tuple[Emu | None, Path]:
+    """Reuse the initial request baseline, or prepare a replacement before stopping."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".dk-store-", dir=run_dir.parent) as tmp:
+        candidate = Path(tmp)
+        prepared = prepare_store(device, ids, candidate, trace, ui_preview=ui_preview)
+        prepared["target"] = target
+        try:
+            baseline = json.loads((run_dir / "store-request.json").read_text())
+        except (OSError, ValueError):
+            baseline = None
+        image = run_dir / "store-card.img"
+        if emu is not None and prepared == baseline:
+            return emu, image
+        # Card construction and selection validation may fail: keep the daemon alive until both succeed.
+        store_card(
+            device, ids, candidate, trace, ui_preview=ui_preview, prepared=prepared
+        )
+        if emu is not None:
+            stop_connected(emu, run_dir)
+        # A saved overlay belongs to the previous card layout/content. Quit may
+        # have written it, so remove it only after the daemon has fully exited.
+        (run_dir / "overlay.bin").unlink(missing_ok=True)
+        shutil.rmtree(run_dir / "plus_drive", ignore_errors=True)
+        shutil.move(str(candidate / "plus_drive"), run_dir / "plus_drive")
+        for name in ("store-card.img", "store-request.json"):
+            os.replace(candidate / name, run_dir / name)
+        return None, image
+
+
 def start(
-    cell: H.Cell, run_dir: Path, store: list[str] | None = None, trace: bool = False
+    cell: H.Cell,
+    run_dir: Path,
+    store: list[str] | None = None,
+    trace: bool = False,
+    dsp: str = "sharc",
+    *,
+    store_ui_preview: bool = False,
+    prepared_card: Path | None = None,
 ) -> tuple[Emu, H.Session]:
     """A new daemon that outlives this process: it boots the patched image of the cell (cached by image)."""
     session = H.Session(
@@ -250,10 +460,15 @@ def start(
         cache_dir=H.SHARED_CACHE,
         run_name=f"devreload-{cell.device}",
         run_dir=run_dir,
+        dsp=dsp,
     )
-    if store:
+    if prepared_card is not None:
+        session.card_override = str(prepared_card)
+    elif store:
         run_dir.mkdir(parents=True, exist_ok=True)
-        session.card_override = str(store_card(cell.device, store, run_dir, trace))
+        session.card_override = str(
+            store_card(cell.device, store, run_dir, trace, ui_preview=store_ui_preview)
+        )
     session.open()
     assert session.emu is not None
     emu = session.emu
@@ -268,8 +483,10 @@ def release(emu: Emu) -> None:
     emu.close()
 
 
-def session_on(emu: Emu, cell: H.Cell, run_dir: Path) -> H.Session:
-    session = H.Session(cell, H.Goldens(), cache_dir=H.SHARED_CACHE, run_dir=run_dir)
+def session_on(emu: Emu, cell: H.Cell, run_dir: Path, dsp: str = "sharc") -> H.Session:
+    session = H.Session(
+        cell, H.Goldens(), cache_dir=H.SHARED_CACHE, run_dir=run_dir, dsp=dsp
+    )
     session.emu = emu
     card = run_dir / "card.txt"
     session.card = card.read_text() if card.is_file() else None
@@ -279,15 +496,19 @@ def session_on(emu: Emu, cell: H.Cell, run_dir: Path) -> H.Session:
 def stop(
     device: str, target: str, store: list[str] | None = None, trace: bool = False
 ) -> None:
-    run_dir = run_dir_of(device, target, store, trace)
-    emu = connect(run_dir)
-    if emu is None:
-        print(f"{device}: no daemon in {run_dir}")
-        return
-    with contextlib.suppress(OSError, EmuError):
-        emu.quit()
-    emu.close()
-    print(f"{device}: daemon stopped")
+    stopped = False
+    for dsp in ("zero", "sharc", None):
+        run_dir = run_dir_of(device, target, store, trace, dsp)
+        emu = connect(run_dir)
+        if emu is None:
+            continue
+        with contextlib.suppress(OSError, EmuError):
+            emu.quit()
+        emu.close()
+        stopped = True
+        print(f"{device}: {dsp or 'legacy'} daemon stopped")
+    if not stopped:
+        print(f"{device}: no daemon for {target}")
 
 
 def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
@@ -296,29 +517,57 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
     for m in modules:
         modroots.module_dir(m)
     cell = H.Cell(device, FIRMWARE[device], modules)
-    t_build, rebuilt = build(closure(modules))
     store = [m for m in (a.store or "").split(",") if m]
-    run_dir = run_dir_of(device, a.target, store, a.trace)
+    ui_preview = a.store_ui_preview
+    dsp = (
+        store_ui_preview_mode(a.target, device, store)
+        if ui_preview
+        else target_dsp_mode(a.target, device, store)
+    )
+    t_build, rebuilt = build(closure(modules))
+    print(f"{device}: auto DSP {dsp}", file=sys.stderr, flush=True)
+    run_dir = run_dir_of(device, a.target, store, a.trace, dsp)
     emu = connect(run_dir)
+    prepared_card = None
+    if store:
+        try:
+            emu, prepared_card = refresh_store(
+                emu, device, a.target, store, run_dir, a.trace, ui_preview
+            )
+        except BaseException:
+            if emu is not None:
+                release(emu)
+            raise
     started = False
     t_start = 0.0
     if emu is None:
         t = time.monotonic()
-        emu, session = start(cell, run_dir, store, a.trace)
+        emu, session = start(
+            cell,
+            run_dir,
+            store,
+            a.trace,
+            dsp,
+            store_ui_preview=ui_preview,
+            **({"prepared_card": prepared_card} if prepared_card is not None else {}),
+        )
         t_start, started = time.monotonic() - t, True
     else:
-        session = session_on(emu, cell, run_dir)
+        session = session_on(emu, cell, run_dir, dsp)
     try:
+        assert_mode(emu, dsp)
         t = time.monotonic()
         # auto_no: the DT2's FILE SYSTEM OK modal is closed once the state is restored, as the harness does after a restart.
         report = emu.call("dev.reload", auto_no=True)
+        assert_mode(emu, dsp)
         t_reload = time.monotonic() - t
         out = Path(a.out) / device
         out.mkdir(parents=True, exist_ok=True)
         t = time.monotonic()
         frames: list[tuple[str, bytes]] = []
         session.run_ms(300)
-        emu.pcm_start()  # the harness' key actions mark the PCM window
+        if dsp == "sharc":
+            emu.pcm_start()  # the harness' key actions mark the PCM window
         session.pcm_mark = 0
         for step in load_keys(a.keys):
             if "shot" in step:
@@ -335,6 +584,7 @@ def run_device(device: str, a: argparse.Namespace) -> dict[str, Any]:
         release(emu)
     return {
         "device": device,
+        "dsp": dsp,
         "path": report.get("path"),
         "reason": report.get("reason"),
         "report": report,
@@ -366,7 +616,7 @@ def describe(r: dict[str, Any]) -> str:
         )
     s = r["seconds"]
     return (
-        f"{r['device']}: {path}{detail}\n"
+        f"{r['device']}: DSP {r['dsp']} (auto); {path}{detail}\n"
         f"    rebuilt {', '.join(r['rebuilt']) or 'nothing'}; daemon {'started' if r['started_daemon'] else 'kept'};"
         f" build {s['build']} s, start {s['daemon_start']} s, reload {s['reload']} s, keys {s['keys']} s,"
         f" total {s['total']} s\n    frames {r['out']}/"
@@ -386,19 +636,22 @@ def main(argv: list[str]) -> int:
     )
     ap.add_argument(
         "--store",
-        help="module ids separated by commas: packed into the module store of the card the daemon boots with; an id ending in * is also in the saved selection, synth:NAME:BSS is a module that needs BSS bytes of arena, file:SRC=DEST puts a host file or folder at digikit/DEST of the store, e.g. out/smp=samples (a kept daemon keeps its card; each list has its own daemon)",
+        help="module ids separated by commas: packed into the module store of the card the daemon boots with; an id ending in * is also in the saved selection, synth:NAME:BSS is a module that needs BSS bytes of arena, file:SRC=DEST puts a host file or folder at digikit/DEST of the store, e.g. out/smp=samples (unchanged content keeps its card; changed content restarts its daemon)",
     )
     ap.add_argument(
         "--trace",
         action="store_true",
         help="build the --store modules with DK_TRACE (patchkit pack --trace): their DK_TRACE_LOG and DK_STEP marks exist; the kept daemon is its own (the card differs)",
     )
+    ap.add_argument("--store-ui-preview", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--out", default=str(ROOT / "out" / "runs" / "devreload"))
     ap.add_argument(
         "--stop", action="store_true", help="end the kept daemons of this module set"
     )
     ap.add_argument("--json", action="store_true", help="print the reports as JSON")
     a = ap.parse_args(argv)
+    if a.store_ui_preview and a.trace:
+        ap.error("--store-ui-preview cannot be combined with --trace")
     devices = [d for d in a.device.split(",") if d]
     for d in devices:
         if d not in FIRMWARE:

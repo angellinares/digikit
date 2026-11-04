@@ -2,14 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DkModule } from '@digi/dk-session';
 import { expect, test } from 'vitest';
-import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
-import { CARD_SYMBOLS, cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
+import { cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { needsOf, parseDspSection, relocate } from '@digi/regression/runtime/dkm.ts';
-import { dspBytes, word } from '@digi/regression/runtime/fx-live.ts';
+import { dspBytes } from '@digi/regression/runtime/fx-live.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
-import { ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
-import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { bootEntries, COUPLED_ROOTS, expectBoot, SYMBOLS, type Entry } from './capacity-helpers.ts';
 import {
   block,
   CODE,
@@ -36,23 +34,11 @@ import {
  *   the arena to the last byte), and the next module of each kind is refused with the limit's own code. ColdFire only, then coupled with a real reference
  *   module whose DSP bytes in L2 are compared with its packed image.
  * - files and arena: a file of the staging buffer's size loads and one 4 bytes over does not; a bss that fills the arena, one above it.
- * - inferred needs: what `patchkit needs` infers from a module's file is what the runtime takes.
  */
 
 const E_FORMAT = -5;
 const E_LOADED = -10;
 const E_TOO_BIG = -13;
-
-/** One module of a card in boot order: its file, the name it reports and the result the loader must give. */
-interface Entry {
-  name: string;
-  file: string;
-  want: Want;
-}
-
-const SYMBOLS = [...CARD_SYMBOLS, 'DKRT_ARENA', '_dl_area', 'DKRT_TABLE_BAD'];
-const popcount = (n: number) => n.toString(2).replace(/0/g, '').length;
-const resultOk = (got: number, want: Want) => (want === LOADED ? got === 0 || got === E_LOADING : got === want);
 
 /** Pack the synthetic modules SPECS (with their wanted results) for the rig's device into the card entries. */
 async function synthEntries(rig: CardRig, tag: string, mods: { spec: SynthSpec; want: Want }[]): Promise<Entry[]> {
@@ -61,77 +47,6 @@ async function synthEntries(rig: CardRig, tag: string, mods: { spec: SynthSpec; 
   for (const [i, m] of mods.entries())
     out.push({ name: m.spec.name, file: await packSynth(rig.device, m.spec, dir, `${i}.dkm`), want: m.want });
   return out;
-}
-
-/** Boot a card of ENTRIES (selected in order) and read what the runtime says. */
-async function bootEntries(rig: CardRig, tag: string, entries: Entry[]) {
-  const rt = await rig.load(tag, {
-    modules: entries.map((e, i) => ({ name: `modules/m${i}.dkm`, file: e.file })),
-    selection: entries.map((_, i) => `modules/m${i}.dkm`),
-  });
-  const info = await bootInfo(rt.session, rig.plan);
-  const { mods, cap } = await rig.usb(rt, async (dk) => ({ mods: await dk.modules(), cap: await dk.capacity() }));
-  return { rt, info, mods, cap };
-}
-
-/** Every nonzero range [off, off + len) lies in [lo, hi) and no two overlap. */
-function rangesOk(ranges: [number, number][], lo: number, hi: number): boolean {
-  const rs = ranges
-    .filter(([, len]) => len)
-    .map(([off, len]) => [off, off + len] as const)
-    .sort((a, b) => a[0] - b[0]);
-  return rs.every(([a, b]) => lo <= a && b <= hi) && rs.every((r, i) => i === rs.length - 1 || r[1] <= rs[i + 1]![0]);
-}
-
-/** The checks every boot of a set shares. Returns the loaded modules. */
-async function expectBoot(rig: CardRig, g: Geometry, entries: Entry[], got: Awaited<ReturnType<typeof bootEntries>>) {
-  const { rt, info, mods, cap } = got;
-  expect(info.count, 'the boot saw every selected module').toBe(entries.length);
-  entries.forEach((e, i) =>
-    expect(resultOk(info.results[i]!, e.want), `${e.name}: result ${info.results[i]}, wanted ${e.want}`).toBe(true),
-  );
-  const loaded = entries.filter((e) => e.want === LOADED).map((e) => e.name);
-  expect(
-    mods.map((m) => m.name),
-    'MODULES lists exactly the loaded modules, in order',
-  ).toEqual(loaded);
-  expect(
-    rangesOk(
-      mods.map((m) => [m.cf_base, m.cf_size]),
-      g.arenaLo,
-      g.arenaHi,
-    ),
-    'ColdFire blocks lie in the arena and do not overlap',
-  ).toBe(true);
-  expect(
-    rangesOk(
-      mods.map((m) => [m.dsp_off, m.dsp_len]),
-      0,
-      g.dspArea,
-    ),
-    'DSP ranges lie in the area and do not overlap',
-  ).toBe(true);
-  const rows = mods.reduce((n, m) => n | m.rows, 0);
-  expect(cap.MODULES!, 'CAPACITY modules').toMatchObject({ limit: g.modules, used: loaded.length });
-  expect(cap.SELECTION!.used, 'CAPACITY selection').toBe(entries.length);
-  expect(cap.ARENA!.limit, 'CAPACITY arena').toBe(g.arenaFree);
-  expect(cap.STAGE!, 'CAPACITY stage').toMatchObject({ limit: g.stageBytes, largest: g.stageBytes });
-  expect(cap.DSP_AREA!.limit, 'CAPACITY DSP area').toBe(g.dspArea);
-  expect(cap.VOICE_ROWS!, 'CAPACITY voice rows are the owned rows').toMatchObject({
-    limit: g.machineRows,
-    used: popcount(rows),
-  });
-  expect([cap.MACHINE_ROWS!.limit, cap.PARAM_ROWS!.limit, cap.PAGE_ROWS!.limit], 'CAPACITY registry rows').toEqual([
-    g.machineRows,
-    g.paramRows,
-    g.pageRows,
-  ]);
-  const bad = (await word(rt.session, planSymbol(rig.plan, 'DKRT_TABLE_BAD'))) >>> 24;
-  expect(
-    [bad, (await ringEvents(rt.session, rig.plan, 'TABLE_BAD')).length],
-    'the table check never failed: a refused module left nothing behind',
-  ).toEqual([0, 0]);
-  return mods;
 }
 
 // ---- the full set: every limit used at once ------------------------------------------------------------------------------------
@@ -238,9 +153,6 @@ cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }
  */
 const REFERENCE = 'test/dyn-fx-gain';
 
-/** The module core/input, core/dynfx and core/fxpages are patched in for the modules that import from them or take rows in them. */
-const COUPLED_ROOTS = [...RT, 'core/input', 'core/dynfx', 'core/fxpages'];
-
 cardRigs('capacity, coupled', { roots: COUPLED_ROOTS, hold: true, symbols: SYMBOLS }, (rig) => {
   test(
     'full set behind a real module: the reference keeps its ranges and its DSP bytes in L2, every row is used up',
@@ -267,63 +179,4 @@ cardRigs('capacity, coupled', { roots: COUPLED_ROOTS, hold: true, symbols: SYMBO
     },
     CARD_TIMEOUT,
   );
-});
-
-/**
- * The needs that `patchkit needs` infers from a packed module's contents are what the runtime takes of each resource once the module is loaded:
- * the arena block, the DSP range, the voice, machine, parameter and page rows and the effect rows. Real modules of the repository and the fixtures
- * that stand for the other shapes of a module (a raw ColdFire module, a machine, an effect, a service). One boot per module: full tier.
- */
-const INFERRED_NEEDS_MODULES = [
-  'digikit/debug',
-  'digikit/probe',
-  'digikit/remote',
-  'digikit/freqshift',
-  'digikit/pluck',
-  'fadedlimes/analog',
-  'fadedlimes/bd',
-  'fadedlimes/pd',
-  'test/c-demo',
-  'test/dyn-params',
-  'test/dyn-fx-gain',
-  'test/sine',
-];
-
-/** Modules with no Digitone II port. */
-const DT2_ONLY = ['test/dyn-params'];
-
-cardRigs('inferred needs', { roots: COUPLED_ROOTS, hold: true, full: true, symbols: SYMBOLS }, (rig) => {
-  for (const id of INFERRED_NEEDS_MODULES.filter((m) => !(rig.device === 'dn2' && DT2_ONLY.includes(m))))
-    test(
-      `${id}: the resources taken are the needs inferred from its contents`,
-      async () => {
-        await rig.first();
-        const g = geometryOf(rig.device, rig.plan);
-        const file = moduleArtifact(rig.device, id);
-        const [n] = await needsOf([file]);
-        const entries: Entry[] = [{ name: id, file, want: LOADED }];
-        const got = await bootEntries(rig, `needs-${id.replace(/\//g, '-')}`, entries);
-        const mods = await expectBoot(rig, g, entries, got);
-        // the DSP part is done: the arena holds the module's block only (the DSP image's copy is freed) and every row is in the registry
-        const kinds = [
-          'ARENA',
-          'DSP_AREA',
-          'MACHINE_ROWS',
-          'VOICE_ROWS',
-          'PARAM_ROWS',
-          'PAGE_ROWS',
-          'FX_SLOTS',
-        ] as const;
-        expect(
-          Object.fromEntries(kinds.map((k) => [k, got.cap[k]!.used])),
-          `taken (CAPACITY), inferred ${JSON.stringify(n)}`,
-        ).toEqual(Object.fromEntries(kinds.map((k) => [k, n![k]])));
-        const rec = mods[0]!;
-        expect(
-          [block(rec.cf_size), rec.dsp_len, popcount(rec.rows)],
-          'the MODULES record: arena block, DSP range, voice rows',
-        ).toEqual([n!.ARENA, n!.DSP_AREA, n!.VOICE_ROWS]);
-      },
-      CARD_TIMEOUT,
-    );
 });

@@ -112,7 +112,7 @@ run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; node tools/nx/remote-cac
 description = "Cheap preflight only: affected lint, format, types, host tests and Python checks; no builds or devices; use test for complete affected verification"
 
 [tasks.test]
-run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot affected --base "$DIGI_GATE_BASE" -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone'
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- node tools/nx/gate.mjs --base "$DIGI_GATE_BASE" -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,catalog-check,pack,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone'
 description = "Default affected verification and merge gate against DIGI_GATE_BASE (default main); three Nx tasks by default with two Vitest workers per device target; runs at nice 10"
 
 [tasks."test:plan"]
@@ -120,7 +120,7 @@ run = "mise run test -- --explain"
 description = "Explain the default test selection without running tasks; DIGI_GATE_BASE sets the shared comparison base"
 
 [tasks."test:full"]
-run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot run-many -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone,tier-sweep,dt2-tier-sweep'
+run = 'export DIGI_GATE_BASE="${DIGI_GATE_BASE:-main}"; nice -n 10 node tools/nx/remote-cache.mjs exec --access rw -- uv run python -m tools.devtools.benchlock run --shared -- pnpm nx:pilot run-many -t lint,fmt-check,typecheck,test-host,test,check,build:ui,check:ui,cargo-test,rust-tests,catalog-check,pack,test-device,test-device-full,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,tier-quick,dt2-tier-quick,card,smoke,dt2-tone,tier-sweep,dt2-tier-sweep'
 description = "Full gate: every gate target on every project, plus the tier sweeps"
 
 # --- tests ---
@@ -298,6 +298,18 @@ description = "Import a .dkmod: mise run module:import -- FILE [--dir DIR] [--re
 [tasks."dk:dev"]
 run = "uv run python -m tools.patchkit.pk_devreload"
 description = "Fast edit loop for module code: mise run dk:dev -- test/ui-demo --device dn2[,dt2] [--keys FILE|tap:SETTINGS,wait:400,shot:menu] [--store IDS [--trace]] [--out DIR] [--stop]; builds changed objects, reloads a kept emulator daemon (module swap in about a second, or a boot), presses the keys, writes PNGs and a contact sheet"
+
+[tasks."dk:menu"]
+run = "uv run python -m tools.patchkit.pk_panel menu"
+description = "Open the DIGIKIT menu in a visible browser faceplate on the kept DN2 emulator; Ctrl-C stops the browser server"
+
+[tasks."dk:module"]
+run = "uv run python -m tools.patchkit.pk_panel module"
+description = "Open a runtime module in the browser faceplate: mise run dk:module ID [--device dn2|dt2] [--dsp] [--stop]; zero-DSP machine UI preview by default, --dsp packs the full module for audio; selects its card .dkm, opens DIGIKIT MODULES, restarts the kept emulator when the module changes"
+
+[tasks."dk:ui-demo"]
+run = "uv run python -m tools.patchkit.pk_panel ui-demo"
+description = "Open the SDK UI component demo in a visible browser faceplate on the kept DN2 emulator; Ctrl-C stops the browser server"
 
 [tasks."module:dev"]
 run = "uv run python -m tools.patchkit.pk_dev"

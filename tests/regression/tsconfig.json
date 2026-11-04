@@ -28,6 +28,7 @@
     "host",
     "scenarios",
     "../conformance",
+    "../fixtures/modules/**/tests/**/*.device.test.ts",
     "../../modules/**/tests/**/*.device.test.ts"
   ]
 }
