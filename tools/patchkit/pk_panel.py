@@ -57,6 +57,7 @@ def panel_socket(target: str) -> str:
         raise dev.H.HarnessError(f"preview daemon is unavailable in {run_dir}")
     try:
         dev.assert_mode(emu, dsp)
+        emu.call("run.mode", mode="free")
         return emu.path
     finally:
         emu.close()
@@ -69,6 +70,7 @@ def serve(socket_path: str) -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
+    print(f"Live faceplate: http://127.0.0.1:{port}/panel.html", flush=True)
     proc = subprocess.Popen(
         [
             "pnpm",

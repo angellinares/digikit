@@ -2,7 +2,7 @@
 
 import signal
 import subprocess
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 
@@ -59,6 +59,10 @@ def test_socket_comes_from_exact_auto_mode_daemon(monkeypatch, target):
 
     assert panel.panel_socket(target) == emu.path
     connect.assert_called_once_with(panel.dev.run_dir_of("dn2", target, dsp="zero"))
+    emu.call.assert_called_once_with("run.mode", mode="free")
+    emu.assert_has_calls(
+        [call.status(), call.call("run.mode", mode="free"), call.close()]
+    )
     emu.close.assert_called_once()
     emu.quit.assert_not_called()
 
@@ -80,6 +84,7 @@ def test_wrong_mode_closes_connection(monkeypatch):
     monkeypatch.setattr(panel.dev, "connect", Mock(return_value=emu))
     with pytest.raises(panel.dev.H.HarnessError, match="expected DSP zero"):
         panel.panel_socket("emulator")
+    emu.call.assert_not_called()
     emu.close.assert_called_once()
 
 
@@ -123,7 +128,7 @@ def test_navigation_then_serving_same_target(monkeypatch, preview, target):
 
 
 @pytest.mark.parametrize("interrupted", [False, True])
-def test_server_has_exact_socket_and_owns_cleanup(monkeypatch, interrupted):
+def test_server_has_exact_socket_and_owns_cleanup(monkeypatch, capsys, interrupted):
     proc = Mock(pid=12345)
     proc.wait.side_effect = [KeyboardInterrupt() if interrupted else 0, 0]
     popen = Mock(return_value=proc)
@@ -132,6 +137,7 @@ def test_server_has_exact_socket_and_owns_cleanup(monkeypatch, interrupted):
     monkeypatch.setattr(panel.os, "killpg", killpg)
 
     assert panel.serve("/tmp/exact-preview.sock") == (130 if interrupted else 0)
+    assert "http://127.0.0.1:54321/panel.html" in capsys.readouterr().out
     options = popen.call_args.kwargs
     assert options["env"]["DIGI_LIVE_SOCKET"] == "/tmp/exact-preview.sock"
     assert options["cwd"] == panel.dev.ROOT
