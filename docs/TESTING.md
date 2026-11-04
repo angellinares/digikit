@@ -153,7 +153,9 @@ Keep the command running while using the panel. Ctrl-C stops its browser server 
 `mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop` stops the respective emulator.
 The commands also write `out/runs/devreload/dn2/digikit-menu.png` or `ui-demo.png`. Use `dk:dev` directly to choose DT2, load a particular module or card store, or provide another key script.
 
-For a content module, `mise run dk:module ID [--device dn2|dt2] [--dsp]` packs its card `.dkm`, selects it for boot and opens the MODULES list in the live faceplate. It uses the `emulator` patch set. Declarative machines default to a data-only UI preview pack with zero DSP and no audio; preview packs reject actions, samples and hooks. ColdFire-only services keep normal packing with zero DSP. Effects and other DSP-backed modules require `--dsp` for the full pack and automatic SHARC selection. Unlike generic `dk:dev --store`, it restarts its exact kept daemon when freshly packed bytes differ from its staged module, so edits reach the card. `mise run dk:module ID --stop` stops it. See [visible previews](DEVELOPMENT.md#visible-preview) for aliases and selection behavior. This interactive preview does not replace the module's acceptance checks.
+For a content module, `mise run dk:module ID [--device dn2|dt2] [--dsp]` packs its card `.dkm`, selects it for boot and opens the MODULES list in the live faceplate. It uses the `emulator` patch set. Declarative machines default to a data-only UI preview pack with zero DSP and no audio; preview packs reject actions, samples and hooks. ColdFire-only services keep normal packing with zero DSP. Effects and other DSP-backed modules require `--dsp` for the full pack and automatic SHARC selection. `dk:module` delegates to generic `dk:dev --store`: the generic path stages content and compares the exact request and initial selection. Unchanged content keeps the daemon and overlay, including a user-edited live selection; changed content rebuilds the card and restarts that exact daemon. Stop and restart to restore the initial selected card after changing selection live. `mise run dk:module ID --stop` stops it. See [visible previews](DEVELOPMENT.md#visible-preview) for aliases and selection behavior. This interactive preview does not replace the module's acceptance checks.
+
+The Pluck zero-DSP UI proof is `pnpm nx:pilot run digikit-pluck-preview-tests:test-device`. It runs two UI-only tests across DT2 1.17 and DN2 1.12 (42.5s for the named target) and has no dependency on the full Pluck pack. Full module conformance remains coupled to SHARC.
 
 `dk:dev` automatically reports and selects DSP `zero` for ColdFire-only module closures (such as `test/ui-demo`), skipping PCM
 capture. `tools/patchkit/pk_devreload.toml` lists base patch sets whose menu/runtime supports a zero DSP
@@ -490,6 +492,9 @@ These producers are uncached; patchkit's source hashes skip current objects. Con
 remain in place, so existing graph edges can overselect preparation; narrowing awaits clearer test ownership.
 Repeated per-owner generation checks currently repeat shared SDK/interface checks. This is a future optimization.
 
+Catalog selection has a scoped proof: hypothetical edits to a shipped manifest and a fixture manifest both
+select `patchkit:catalog-check`; an edit to Pluck's C source does not. This verifies selection behavior only.
+
 `pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The local cache is
 per worktree; the "Remote cache" section covers sharing across worktrees. A hit
 replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
@@ -502,6 +507,11 @@ This describes the declared hash plan, not every file a command or subprocess ac
 Before enabling or changing a cache, review source/dependency reads, outputs, toolchain and
 environment identities, including setup commands and runtime digests. Run scoped behavior checks
 appropriate to the change: invalidation for relevant inputs and restoration of declared outputs.
+The remote `test-conformance` cache proof measured 20.9s on its first run (two cells), 1.8s on an
+identical repeat (1/22 cache hit, the test target), and 14.5s after changing declared
+`DIGI_NO_PROGRESS_MS=180000`. The module source input and sibling exclusion were inspected against
+affected plans. The cached test target declares no outputs; pack and CLI producers remain
+`cache: false`, so `dist/` output restoration is not yet applicable or proven.
 Verify affected selection separately: a runtime hash does not select a task after an ignored input
 changes. The former custom auditor/tracer was removed; its historical passes did not prove
 subprocess closure or runtime-digest provenance. Unresolved coverage is not a cache-safety proof.
