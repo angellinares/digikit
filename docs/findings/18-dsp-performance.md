@@ -1990,3 +1990,51 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
   audio s, 0.1 to 0.25 s.
 - The fast-tier kernels still decline any store into a code-watched page (`mem_addr.rs` guards on the page's watch
   byte), so on DN2 module data on a code page leaves the fast tier; placing module data on its own page would avoid it.
+
+## Block bodies continue after MODE1 writes (2026-11-05)
+
+- **[D]** Dispatch causes, DN2 1.12, held note (trig1-hold), 1 audio second, existing `SHARC_PROFILE_PREFIX` `.trans`
+  data, classified against the 1.12 program database:
+  - 3.07M engine dispatches per audio second (fast-tier defaults).
+  - At least 54% (1.67M) end within 4 instructions after a MODE1 write. This is a lower bound: 44% end near
+    undecoded instructions. Returns to a caller are about 0%.
+  - Top stops: 0x1c07d2 and 0x1c07d7 (291k each; float-to-int helper: set TRUNCATE 0x8000, `fix`, `MODE1 = R2`);
+    0x1c06c0 and 0x1c06fe (float divide 0x1c06ba: clear RND32 0x10000, `frnd`, `MODE1 = R1`); 0x1c0c9d and 0x1c0d9f
+    (0x1c0c76: set 0x2000, `MODE1 = R12`). Others: PEYEN 0x200000 on and off.
+- **[D]** Cause: `tools/sharc_dev/sharc_rsgen.py` ended a body after any MODE1 write (TERMINAL), so the engine could
+  complete a bank request (`St::bank_complete`) and check interrupts. These writes change no bank-select bit (0x4f8),
+  IRPTEN or NESTM.
+- **[D]** Change (lane/sharc-mode1, commit 45ebd538): a MODE1 write that changes none of `MODE1_ENGINE_BITS`
+  (0x4f8|0x800|0x1000) and is followed by an instruction of the same block continues the body. Block code does the bank
+  bookkeeping of `St::commit` itself: one `St::bank_complete` after the write, one after the next instruction. A restore
+  with an unknown value (`MODE1 = Rn`) continues only under a run-time guard that MODE1 equals the body's entry value;
+  every guard exits with the state of the old exit. Tests: `tests/sharc/generation/test_sharc_rsgen_mode1.py` (decision
+  cases; emitted code run against the native runtime for the exact bank state, the guard exit and a trap in the next
+  instruction).
+- **[D]** Full DN2 core: OLD (rule off) is byte-identical to the promoted gen in code. MODE1 terminal sites 324 to 67;
+  `blocks_*.rs` +3.9% (57.96 MB to 60.20 MB). Exact PCM, full SHRD, instruction count and duration on held note and idle.
+- **[D]** Paired A/B (`tools/devtools/sharc_matrix.py`, plain builds, no PGO, default tiers, 3 alternating pairs of 3
+  audio s, quiet host). Criterion declared first: median B/A <= 0.98 in both scenarios and every pair < 1.
+
+  | scenario | B/A per pair | median |
+  |---|---|---:|
+  | held note | 0.9620, 0.9666, 0.9631 | 0.9631 |
+  | idle | 0.9664, 0.9683, 0.9670 | 0.9670 |
+
+  DSP CPU per audio s: held 1.2340 to 1.1911, idle 1.2297 to 1.1888. CF CPU unchanged. Block entries per 3 s: 9.14M to
+  7.58M (-17%). Criterion met. Artifacts: `out/native/runs/20261105-mode1-full/ab/` (`results/summary.json`,
+  `criterion.json`).
+- **[O]** About 383k MODE1 stops per audio second remain: restores whose value is not the body's entry value (for example
+  0x1c06fe, 0x1c0d9f). DT2 regeneration, the shared core and PGO are not measured yet.
+
+### MODE1 effect latency
+
+- **[D]** The public SHARC programming reference (ADSP-2136x/2137x/214xx, Table A-11 and the text before it) gives MODE1
+  one cycle of effect latency: the instruction right after a MODE1 write still uses the old mode. The public SHARC+
+  programming reference keeps this through stalls for compatibility. `sharc_core` delays only the bank selects
+  (`sharc_core/state.py` `bank_model`); rounding, truncation, saturation and PEYEN take effect on the next instruction.
+- **[D]** A static scan of DT2 1.17 (229 MODE1 writes) and DN2 1.12 (252) found no next instruction that depends on the
+  changed mode, except DN2 0x1c6d7c (ALUSAT set, then `R7 = add(R10,R10)`: differs only if that add overflows).
+  `recips` and `rsqrts` right after an RND32 clear at DT2 0x1c06bd and 0x1c1287 and DN2 0x1c06bd and 0x1c1231 are seed
+  approximations (inferred unaffected, not checked).
+- **[O]** Whether to model the latency.
