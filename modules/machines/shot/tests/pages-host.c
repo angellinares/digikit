@@ -29,12 +29,13 @@ static int32_t peaks(uint32_t h, uint32_t i, uint32_t token, uint8_t *out, uint3
     return 512;
 }
 static unsigned window_calls, window_ready_after = 2, window_columns, window_first, window_span;
+static int window_hold; /* 1: new windows stay pending */
 static int32_t peaks_window(uint32_t h, uint32_t i, uint32_t token, uint32_t first, uint32_t frames,
     uint32_t columns, uint8_t *out, uint32_t cap) {
     (void)h; (void)i;
     assert(token == current_token && columns == 95 && cap >= columns * sizeof(dk_sample_peak));
     window_calls++; window_first = first; window_span = frames; window_columns = columns;
-    if (window_calls < window_ready_after) return 0;
+    if (window_calls < window_ready_after || window_hold) return 0;
     dk_sample_peak *p = (dk_sample_peak *)out;
     for (unsigned k = 0; k < columns; k++) { p[k].min = -16384; p[k].max = 16384; }
     return (int32_t)columns;
@@ -115,6 +116,16 @@ int main(void) {
     assert(bitmap[15][50] == 0); /* pending: the zeroed overview is stretched */
     shot_range_draw(&f);
     assert(window_calls == 2 && bitmap[15][50] == 1 && bitmap[27][50] == 1);
+    /* One more detent whose window stays pending: the previous detail (not the zeroed overview) is drawn. */
+    window_hold = 1;
+    event.delta = 1; shot_range_event(&event);
+    memset(bitmap, 0, sizeof(bitmap));
+    shot_range_draw(&f);
+    assert(window_span < 1500 && bitmap[15][50] == 1 && bitmap[27][50] == 1);
+    event.delta = -1; shot_range_event(&event);
+    window_hold = 0;
+    shot_range_draw(&f);
+    assert(window_span == 1500);
     /* The viewport follows the marker turned last: END, then START again. */
     f.word_values[SHOT_P_END] = 64 << 8; shot_range_draw(&f);
     assert(window_first > 20000 && window_first < 24188);

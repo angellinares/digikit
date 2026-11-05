@@ -100,8 +100,42 @@ static void check_zoom_and_columns(void) {
     assert(bitmap[26][51] == 1 && bitmap[26][50] == 1);
 }
 
+static void check_previous_detail(void) {
+    dk_page_canvas_v1 canvas = {99, 53, bar_text, bar_rect};
+    dk_sample_region_rect plot = {0, 18, 98, 41};
+    dk_sample_peak zero[512], prev[99];
+    memset(zero, 0, sizeof(zero));
+    for (unsigned i = 0; i < 99; i++) { prev[i].min = 0; prev[i].max = 30000; }
+    /* A covering previous window is the source: the overview is flat, so only the window draws above the centre. */
+    memset(bitmap, 0, sizeof(bitmap));
+    dk_sample_region_draw_detail(&canvas, plot, 51200, 0, 800, zero, 512, 0, 0,
+        prev, 0, 800, 99, 0, 51200);
+    for (unsigned x = 8; x < 90; x++) assert(bitmap[22][x] == 1);
+    /* Partial coverage (frames 400..800): uncovered pixels use the overview, covered ones the window. */
+    memset(bitmap, 0, sizeof(bitmap));
+    dk_sample_region_draw_detail(&canvas, plot, 51200, 0, 800, zero, 512, 0, 0,
+        prev, 400, 400, 99, 0, 51200);
+    for (unsigned x = 8; x < 45; x++) assert(bitmap[22][x] == 0);
+    for (unsigned x = 55; x < 90; x++) assert(bitmap[22][x] == 1);
+    /* Zoom in: viewport 100..300 lies in prev columns 1..3 of 10 (80 frames each); no gaps. */
+    dk_sample_peak coarse[10];
+    for (unsigned i = 0; i < 10; i++) { coarse[i].min = 0; coarse[i].max = (i >= 1 && i <= 3) ? 30000 : 0; }
+    memset(bitmap, 0, sizeof(bitmap));
+    dk_sample_region_draw_detail(&canvas, plot, 51200, 100, 200, zero, 512, 0, 0,
+        coarse, 0, 800, 10, 0, 51200);
+    for (unsigned x = 8; x < 90; x++) assert(bitmap[22][x] == 1);
+    /* An exact window wins over the previous one. */
+    dk_sample_peak none[99];
+    memset(none, 0, sizeof(none));
+    memset(bitmap, 0, sizeof(bitmap));
+    dk_sample_region_draw_detail(&canvas, plot, 51200, 0, 800, zero, 512, none, 99,
+        prev, 0, 800, 99, 0, 51200);
+    for (unsigned x = 8; x < 90; x++) assert(bitmap[22][x] == 0);
+}
+
 int main(void) {
     check_zoom_and_columns();
+    check_previous_detail();
     check_viewport();
     check_bars_and_ramp();
     return 0;

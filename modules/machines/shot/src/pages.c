@@ -153,7 +153,13 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     /* A pixel that covers less than one overview bin needs the detail window; until it is ready the overview is stretched. */
     if (real && span < (frames + DK_SAMPLE_PEAK_BINS - 1) / DK_SAMPLE_PEAK_BINS * PLOT_WIDTH)
         window = sample_view_window(&shot_samples, slot, info.token, first, span, PLOT_WIDTH, &count);
-    dk_sample_region_draw(&f->canvas, plot, frames, first, span, peaks, bins, window, count, start_frame, end_frame);
+    const dk_sample_peak *prev = 0;
+    uint32_t pfirst = 0, pspan = 0;
+    unsigned pcols = 0;
+    /* Exact window not ready: keep drawing the last ready one (rescaled) where it covers the viewport. */
+    if (real && !window) prev = sample_view_last_window(&shot_samples, slot, info.token, &pfirst, &pspan, &pcols);
+    dk_sample_region_draw_detail(&f->canvas, plot, frames, first, span, peaks, bins, window, count,
+        prev, pfirst, pspan, pcols, start_frame, end_frame);
     region_values(f);
     f->canvas.text(58, 52, "ZOOM");
     zoom_number(&f->canvas, 135, 46, ratio);

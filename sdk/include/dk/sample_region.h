@@ -56,10 +56,16 @@ static inline void dk_sample_viewport(uint32_t frames, uint32_t focus, uint32_t 
    `frames` frames. With columns != 0 and ncols == plot width, pixel x is
    columns[x]; otherwise each pixel is derived from the overview bins. Then the
    centre line and the START/END markers (frame positions; outside the
-   viewport they sit at its edge). */
-static inline void dk_sample_region_draw(const dk_page_canvas_v1 *c, dk_sample_region_rect r,
+   viewport they sit at its edge).
+   The _detail form also takes a previous detail window prev (pcols columns over
+   frames [pfirst, pfirst + pspan)): when no exact columns are given, each pixel
+   whose frame range lies inside it takes min/max of the touched prev columns;
+   other pixels use the overview. */
+static inline void dk_sample_region_draw_detail(const dk_page_canvas_v1 *c, dk_sample_region_rect r,
     uint32_t frames, uint32_t first, uint32_t span, const dk_sample_peak *overview, unsigned bins,
-    const dk_sample_peak *columns, unsigned ncols, uint32_t start_frame, uint32_t end_frame)
+    const dk_sample_peak *columns, unsigned ncols,
+    const dk_sample_peak *prev, uint32_t pfirst, uint32_t pspan, unsigned pcols,
+    uint32_t start_frame, uint32_t end_frame)
 {
     if (!c) return;
     uint32_t width = dk_sample_region_clip(c, &r);
@@ -73,7 +79,8 @@ static inline void dk_sample_region_draw(const dk_page_canvas_v1 *c, dk_sample_r
     int32_t mid = (top + bottom) / 2, radius = (bottom - top) / 2 - 2;
     dk_sample_region_fill(c, r, r.left, mid, r.right, mid, 1);
     int use_columns = columns && ncols == width;
-    for (uint32_t x = 0; (use_columns || (overview && bins)) && x < width; x++) {
+    int have_prev = prev && pcols && pspan;
+    for (uint32_t x = 0; (use_columns || have_prev || (overview && bins)) && x < width; x++) {
         int32_t min = 0, max = 0;
         if (use_columns) {
             min = columns[x].min; max = columns[x].max;
@@ -83,6 +90,21 @@ static inline void dk_sample_region_draw(const dk_page_canvas_v1 *c, dk_sample_r
             /* Short samples/zoom spans repeat a source bin across pixels rather
                than leaving holes when the pixel's integer frame interval is empty. */
             if (f1 <= f0) f1 = f0 + 1;
+            if (have_prev && f0 >= pfirst && f1 - pfirst <= pspan) {
+                /* The previous detail window covers this pixel: reuse its columns. */
+                uint32_t c0 = dk_region_fraction(f0 - pfirst, pcols, pspan);
+                uint32_t c1 = dk_region_fraction(f1 - 1 - pfirst, pcols, pspan);
+                if (c1 >= pcols) c1 = pcols - 1;
+                if (c0 > c1) c0 = c1;
+                for (uint32_t i = c0; i <= c1; i++) {
+                    if (prev[i].min < min) min = prev[i].min;
+                    if (prev[i].max > max) max = prev[i].max;
+                }
+                dk_sample_region_fill(c, r, r.left + (int32_t)x, mid - max * radius / 32768,
+                             r.left + (int32_t)x, mid - min * radius / 32768, 1);
+                continue;
+            }
+            if (!(overview && bins)) continue;
             uint32_t lo = f0 / bin_width, hi = (f1 - 1) / bin_width;
             if (hi >= bins) hi = bins - 1;
             if (lo >= bins) lo = bins - 1;
@@ -110,6 +132,14 @@ static inline void dk_sample_region_draw(const dk_page_canvas_v1 *c, dk_sample_r
         dk_sample_region_fill(c, r, ax, top + i, ax + 4 - i, top + i, 1);
         dk_sample_region_fill(c, r, bx - 4 + i, bottom - i, bx, bottom - i, 1);
     }
+}
+/* As dk_sample_region_draw_detail without a previous window. */
+static inline void dk_sample_region_draw(const dk_page_canvas_v1 *c, dk_sample_region_rect r,
+    uint32_t frames, uint32_t first, uint32_t span, const dk_sample_peak *overview, unsigned bins,
+    const dk_sample_peak *columns, unsigned ncols, uint32_t start_frame, uint32_t end_frame)
+{
+    dk_sample_region_draw_detail(c, r, frames, first, span, overview, bins, columns, ncols,
+        0, 0, 0, 0, start_frame, end_frame);
 }
 /* Viewport follows START (0..127 units). Zoom is Q8 with no fixed upper limit;
    the viewport keeps at least one frame per column. */
