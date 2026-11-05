@@ -38,7 +38,8 @@ runtimeTests(
     async function observed() {
       const reply = await dk.request(0x3e);
       expect(reply.status).toBe(0);
-      expect(reply.body).toHaveLength(24);
+      // 7 words: draws, events, track, start, end, zoom, level seen.
+      expect(reply.body).toHaveLength(28);
       const values = Buffer.from(reply.body);
       return {
         draws: values.readUInt32BE(0),

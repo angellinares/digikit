@@ -908,14 +908,12 @@ mod tests {
         let f = pack_with(None, &[], &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 0, 0]);
         // register records that hold a machine: machine too (a data-only machine module); param and page records alone: not
-        let rec = |kind: u32, len: usize| {
-            let mut r = kind.to_be_bytes().to_vec();
-            r.extend((len as u32).to_be_bytes());
-            r.resize(len, 0);
-            r
-        };
+        let rec = record;
         let table = |recs: &[Vec<u8>]| {
             let mut t = vec![0u8; crate::register::HEADER];
+            t[0..4].copy_from_slice(&crate::register::MAGIC.to_be_bytes());
+            t[4..8].copy_from_slice(&crate::register::VERSION.to_be_bytes());
+            t[12..16].copy_from_slice(&(recs.len() as u32).to_be_bytes());
             for r in recs {
                 t.extend(r);
             }
@@ -927,6 +925,25 @@ mod tests {
         assert_eq!(c(&f), vec![1, 4, 1, 1, 0, 0, 0, 0]);
         let f = pack_with(None, &table(&[param]), &opts()).unwrap();
         assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// One register record of a kind and length. One-letter names: the packer validates the register section.
+    fn record(kind: u32, len: usize) -> Vec<u8> {
+        use crate::register::{KIND_MACHINE, KIND_PAGE, KIND_PARAM};
+        let mut r = kind.to_be_bytes().to_vec();
+        r.extend((len as u32).to_be_bytes());
+        r.resize(len, 0);
+        // Offsets of the text fields in the whole record, the 8-byte prefix included.
+        let text: &[usize] = match kind {
+            KIND_PARAM => &[32, 64],
+            KIND_MACHINE => &[60, 84],
+            KIND_PAGE => &[48, 72],
+            _ => &[],
+        };
+        for &o in text {
+            r[o] = b'x';
+        }
+        r
     }
 
     /// A DSP section of an 8-byte image with BSS bytes of bss and one version 3 voice with `voices` states of 20 bytes (0: version 2).
@@ -989,12 +1006,7 @@ mod tests {
         let f = pack_full(Some(&object()), &[], &dsp_section(100, 0), &opts()).unwrap();
         assert_eq!(needs(&f).unwrap().dsp_area, 128);
         // register records: the counts of each kind
-        let rec = |kind: u32, len: usize| {
-            let mut r = kind.to_be_bytes().to_vec();
-            r.extend((len as u32).to_be_bytes());
-            r.resize(len, 0);
-            r
-        };
+        let rec = record;
         let mut t = vec![0u8; crate::register::HEADER];
         t[0..4].copy_from_slice(&0x444b_5247u32.to_be_bytes());
         t[4..8].copy_from_slice(&1u32.to_be_bytes());
