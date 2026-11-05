@@ -126,21 +126,33 @@ int main(void) {
     window_hold = 0;
     shot_range_draw(&f);
     assert(window_span == 1500);
-    /* The viewport follows the marker turned last: END, then START again. */
-    f.word_values[SHOT_P_END] = 64 << 8; shot_range_draw(&f);
-    assert(window_first > 20000 && window_first < 24188);
-    unsigned end_first = window_first;
+    /* Zoom is anchored on the active marker (START by default, frame 0): first stays 0.
+       Step 41 is ratio 279 << 5 = 8928, span = 48000 * 256 / 8928 = 1376 (5 * 256 + 96). */
+    event.delta = 1; shot_range_event(&event); shot_range_draw(&f);
+    assert(window_span == 1376 && window_first == 0);
+    event.delta = -1; shot_range_event(&event); shot_range_draw(&f);
+    assert(window_span == 1500 && window_first == 0);
+    /* START turned to unit 10 (frame 48000 * 2560 / 32512 = 3779) is right of the view [0, 1500).
+       It pans so START sits span / 8 = 187 from the right edge: first = 3779 + 187 - 1500 = 2466. */
     f.word_values[SHOT_P_START] = 10 << 8; shot_range_draw(&f);
-    assert(window_first < end_first && window_first < 4000);
-    /* Region fits (span 1500): START frame 3779, END frame 4157 (units 10, 11). The window
-       centres on the middle 3779 + 189 = 3968, so first = 3968 - 750 = 3218, although END turned last. */
-    f.word_values[SHOT_P_END] = 11 << 8; shot_range_draw(&f);
-    assert(window_first == 3218);
-    /* Region does not fit: END turned last, so it centres on END frame 48000 * 16384 / 32512 = 24188 (first 23438). */
+    assert(window_first == 2466);
+    /* One detent in: START is at offset 3779 - 2466 = 1313 of 1500, so offset = 1313 * 1376 / 1500 = 1204
+       in the new view: first = 3779 - 1204 = 2575. */
+    event.delta = 1; shot_range_event(&event); shot_range_draw(&f);
+    assert(window_span == 1376 && window_first == 2575);
+    /* One detent out: offset 1204 of 1376 gives 1204 * 1500 / 1376 = 1312: first = 3779 - 1312 = 2467. */
+    event.delta = -1; shot_range_event(&event); shot_range_draw(&f);
+    assert(window_span == 1500 && window_first == 2467);
+    /* END turned to unit 64 (frame 48000 * 16384 / 32512 = 24188) is far right of the view [2467, 3967).
+       END is active now: first = 24188 + 187 - 1500 = 22875. */
     f.word_values[SHOT_P_END] = 64 << 8; shot_range_draw(&f);
-    assert(window_first == 23438);
-    /* START turned last (unit 20, frame 7559): first = 7559 - 750 = 6809. */
-    f.word_values[SHOT_P_START] = 20 << 8; shot_range_draw(&f);
-    assert(window_first == 6809);
+    assert(window_first == 22875);
+    /* One detent in keeps END's position: offset 24188 - 22875 = 1313 of 1500 gives 1204 of 1376,
+       first = 24188 - 1204 = 22984. */
+    event.delta = 1; shot_range_event(&event); shot_range_draw(&f);
+    assert(window_span == 1376 && window_first == 22984);
+    /* END to unit 63 (frame 23811) lies inside [22984, 24360): the view does not pan. */
+    f.word_values[SHOT_P_END] = 63 << 8; shot_range_draw(&f);
+    assert(window_first == 22984);
     return 0;
 }

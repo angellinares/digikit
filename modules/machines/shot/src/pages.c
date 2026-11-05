@@ -6,7 +6,8 @@
 #define ZOOM_STEPS_MAX 128 /* 16 doublings */
 static int32_t page_zoom[16]; /* per track step index z: ratio 2^(z/8), one detent = one step */
 static uint32_t last_start[16], last_end[16]; /* words seen at the last draw */
-static uint8_t focus_end[16]; /* the viewport centres on END (else START) */
+static uint8_t focus_end[16]; /* the active marker is END (else START) */
+static uint32_t view_first[16], view_span[16], view_frames[16]; /* viewport kept per track, and the span/frames it was computed for */
 
 /* Pixel width of a string in the firmware's proportional font. Measured from the DN2 1.12
    framebuffer: 1 px between glyphs. Replace it with a firmware-centred text call on the
@@ -134,20 +135,27 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     const dk_sample_peak *peaks = ready == 0 ? sample_view_peaks(&shot_samples, &bins) : 0;
     unsigned start_unit = unit(f->word_values[SHOT_P_START]), end_unit = unit(f->word_values[SHOT_P_END]);
     uint32_t start_word = start_unit << 8, end_word = end_unit << 8;
-    /* Viewport centring: when the whole region fits at the current zoom, centre on the
-       region's middle. Otherwise follow the marker turned last (START wins when both changed). */
+    /* The active marker is the one turned last (START wins when both changed; START by default). */
+    int edited = 0;
     if (last_start[f->track]) { /* stored +1: 0 means not seen yet */
-        if (start_word + 1 != last_start[f->track]) focus_end[f->track] = 0;
-        else if (end_word + 1 != last_end[f->track]) focus_end[f->track] = 1;
+        if (start_word + 1 != last_start[f->track]) { focus_end[f->track] = 0; edited = 1; }
+        else if (end_word + 1 != last_end[f->track]) { focus_end[f->track] = 1; edited = 1; }
     }
     last_start[f->track] = start_word + 1; last_end[f->track] = end_word + 1;
     uint32_t start_frame = word_frame(frames, start_unit), end_frame = word_frame(frames, end_unit);
+    uint32_t anchor = focus_end[f->track] ? end_frame : start_frame;
     uint32_t first, span;
     dk_sample_viewport(frames, 0, ratio, PLOT_WIDTH, &first, &span); /* span only */
-    uint32_t lo = start_frame < end_frame ? start_frame : end_frame;
-    uint32_t hi = start_frame < end_frame ? end_frame : start_frame;
-    uint32_t focus = hi - lo <= span ? lo + (hi - lo) / 2 : focus_end[f->track] ? end_frame : start_frame;
-    dk_sample_viewport(frames, focus, ratio, PLOT_WIDTH, &first, &span);
+    /* A zoom or a new sample keeps the active marker at its screen position (a new sample
+       starts from the whole-sample view). Then an edited marker pans the view into sight. */
+    if (view_frames[f->track] != frames) {
+        view_first[f->track] = 0; view_span[f->track] = frames;
+    }
+    if (view_span[f->track] != span || view_frames[f->track] != frames)
+        view_first[f->track] = dk_sample_view_zoom(frames, view_first[f->track], view_span[f->track], span, anchor);
+    if (edited) view_first[f->track] = dk_sample_view_follow(frames, view_first[f->track], span, anchor);
+    view_frames[f->track] = frames; view_span[f->track] = span;
+    first = view_first[f->track];
     const dk_sample_peak *window = 0;
     unsigned count = 0;
     /* A pixel that covers less than one overview bin needs the detail window; until it is ready the overview is stretched. */
@@ -159,7 +167,7 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     /* Exact window not ready: keep drawing the last ready one (rescaled) where it covers the viewport. */
     if (real && !window) prev = sample_view_last_window(&shot_samples, slot, info.token, &pfirst, &pspan, &pcols);
     dk_sample_region_draw_detail(&f->canvas, plot, frames, first, span, peaks, bins, window, count,
-        prev, pfirst, pspan, pcols, start_frame, end_frame);
+        prev, pfirst, pspan, pcols, start_frame, end_frame, 2048);
     region_values(f);
     f->canvas.text(58, 52, "ZOOM");
     zoom_number(&f->canvas, 135, 46, ratio);

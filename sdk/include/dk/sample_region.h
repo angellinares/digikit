@@ -52,20 +52,101 @@ static inline void dk_sample_viewport(uint32_t frames, uint32_t focus, uint32_t 
     if (f > frames - s) f = frames - s;
     *first = f; *span = s;
 }
+/* New first frame of a viewport after its span changes from span_old to span_new
+   (both at most frames). The anchor frame keeps its screen fraction
+   p = (anchor - first_old) / span_old; an anchor outside the old viewport uses
+   p = 1/2. The result is clamped to [0, frames - span_new]. At span_new >= frames
+   the view is the whole sample (0). Uses a 64-bit product, no 64-bit division. */
+static inline uint32_t dk_sample_view_zoom(uint32_t frames, uint32_t first_old, uint32_t span_old,
+    uint32_t span_new, uint32_t anchor)
+{
+    if (span_new >= frames) return 0;
+    uint32_t offset;
+    if (span_old && anchor >= first_old && anchor - first_old < span_old)
+        offset = dk_region_fraction(anchor - first_old, span_new, span_old);
+    else
+        offset = span_new / 2;
+    uint32_t first = anchor > offset ? anchor - offset : 0;
+    return first > frames - span_new ? frames - span_new : first;
+}
+/* New first frame of the viewport [first, first + span) after the edited marker
+   `frame` moved. A frame inside the view does not pan. Outside, the view pans just
+   enough to put the frame span / 8 from the edge it came from (left edge when
+   the frame is before the view, right edge when after: first = frame + span / 8 - span). Clamped to the sample. */
+static inline uint32_t dk_sample_view_follow(uint32_t frames, uint32_t first, uint32_t span,
+    uint32_t frame)
+{
+    if (span >= frames) return 0;
+    uint32_t margin = span / 8;
+    if (frame < first) first = frame > margin ? frame - margin : 0;
+    else if (frame >= first + span) first = frame + margin > span ? frame + margin - span : 0;
+    return first > frames - span ? frames - span : first;
+}
+/* Peak min/max of plot column x from exact columns, the previous window or the
+   overview. Returns 0 when no source covers it. */
+static inline int dk_sample_region_column(int use_columns, const dk_sample_peak *columns,
+    const dk_sample_peak *overview, unsigned bins, uint32_t bin_width,
+    int have_prev, const dk_sample_peak *prev, uint32_t pfirst, uint32_t pspan, unsigned pcols,
+    uint32_t left, uint32_t span, uint32_t width, uint32_t x, int32_t *omin, int32_t *omax)
+{
+    int32_t min = 0, max = 0;
+    if (use_columns) {
+        min = columns[x].min; max = columns[x].max;
+    } else {
+        uint32_t f0 = left + dk_region_fraction(span, x, width);
+        uint32_t f1 = left + dk_region_fraction(span, x + 1, width);
+        /* Short samples/zoom spans repeat a source bin across pixels rather
+           than leaving holes when the pixel's integer frame interval is empty. */
+        if (f1 <= f0) f1 = f0 + 1;
+        if (have_prev && f0 >= pfirst && f1 - pfirst <= pspan) {
+            /* The previous detail window covers this pixel: reuse its columns. */
+            uint32_t c0 = dk_region_fraction(f0 - pfirst, pcols, pspan);
+            uint32_t c1 = dk_region_fraction(f1 - 1 - pfirst, pcols, pspan);
+            if (c1 >= pcols) c1 = pcols - 1;
+            if (c0 > c1) c0 = c1;
+            for (uint32_t i = c0; i <= c1; i++) {
+                if (prev[i].min < min) min = prev[i].min;
+                if (prev[i].max > max) max = prev[i].max;
+            }
+        } else {
+            if (!(overview && bins)) return 0;
+            uint32_t lo = f0 / bin_width, hi = (f1 - 1) / bin_width;
+            if (hi >= bins) hi = bins - 1;
+            if (lo >= bins) lo = bins - 1;
+            for (uint32_t i = lo; i <= hi; i++) {
+                if (overview[i].min < min) min = overview[i].min;
+                if (overview[i].max > max) max = overview[i].max;
+            }
+        }
+    }
+    *omin = min; *omax = max;
+    return 1;
+}
+/* v * gain_q8 / 256, saturated to the int16 range. */
+static inline int32_t dk_sample_region_gain(int32_t v, uint32_t gain_q8)
+{
+    v = (v * (int32_t)gain_q8) >> 8;
+    return v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+}
 /* Draws the waveform of the viewport [first, first + span) of a sample of
    `frames` frames. With columns != 0 and ncols == plot width, pixel x is
    columns[x]; otherwise each pixel is derived from the overview bins. Then the
-   centre line and the START/END markers (frame positions; outside the
-   viewport they sit at its edge).
+   centre line and the START/END markers (frame positions). A marker inside
+   [first, first + span] is a line with a flag (START's at the top, END's at the
+   bottom); a marker outside the viewport is a solid 3 x 5 px arrow at that side of
+   the plot, at the flag row, pointing outwards.
    The _detail form also takes a previous detail window prev (pcols columns over
    frames [pfirst, pfirst + pspan)): when no exact columns are given, each pixel
    whose frame range lies inside it takes min/max of the touched prev columns;
-   other pixels use the overview. */
+   other pixels use the overview.
+   Vertical auto-scale: the peak amplitude amp of the visible columns gives
+   gain_q8 = amp == 0 ? 256 : min(vmax_q8, max(256, 32767 * 256 / amp)). vmax_q8 256
+   turns it off, 2048 allows up to 8x. Display only. vmax_q8 is limited to 8192. */
 static inline void dk_sample_region_draw_detail(const dk_page_canvas_v1 *c, dk_sample_region_rect r,
     uint32_t frames, uint32_t first, uint32_t span, const dk_sample_peak *overview, unsigned bins,
     const dk_sample_peak *columns, unsigned ncols,
     const dk_sample_peak *prev, uint32_t pfirst, uint32_t pspan, unsigned pcols,
-    uint32_t start_frame, uint32_t end_frame)
+    uint32_t start_frame, uint32_t end_frame, unsigned vmax_q8)
 {
     if (!c) return;
     uint32_t width = dk_sample_region_clip(c, &r);
@@ -80,66 +161,66 @@ static inline void dk_sample_region_draw_detail(const dk_page_canvas_v1 *c, dk_s
     dk_sample_region_fill(c, r, r.left, mid, r.right, mid, 1);
     int use_columns = columns && ncols == width;
     int have_prev = prev && pcols && pspan;
-    for (uint32_t x = 0; (use_columns || have_prev || (overview && bins)) && x < width; x++) {
-        int32_t min = 0, max = 0;
-        if (use_columns) {
-            min = columns[x].min; max = columns[x].max;
-        } else {
-            uint32_t f0 = left + dk_region_fraction(span, x, width);
-            uint32_t f1 = left + dk_region_fraction(span, x + 1, width);
-            /* Short samples/zoom spans repeat a source bin across pixels rather
-               than leaving holes when the pixel's integer frame interval is empty. */
-            if (f1 <= f0) f1 = f0 + 1;
-            if (have_prev && f0 >= pfirst && f1 - pfirst <= pspan) {
-                /* The previous detail window covers this pixel: reuse its columns. */
-                uint32_t c0 = dk_region_fraction(f0 - pfirst, pcols, pspan);
-                uint32_t c1 = dk_region_fraction(f1 - 1 - pfirst, pcols, pspan);
-                if (c1 >= pcols) c1 = pcols - 1;
-                if (c0 > c1) c0 = c1;
-                for (uint32_t i = c0; i <= c1; i++) {
-                    if (prev[i].min < min) min = prev[i].min;
-                    if (prev[i].max > max) max = prev[i].max;
-                }
-                dk_sample_region_fill(c, r, r.left + (int32_t)x, mid - max * radius / 32768,
-                             r.left + (int32_t)x, mid - min * radius / 32768, 1);
-                continue;
-            }
-            if (!(overview && bins)) continue;
-            uint32_t lo = f0 / bin_width, hi = (f1 - 1) / bin_width;
-            if (hi >= bins) hi = bins - 1;
-            if (lo >= bins) lo = bins - 1;
-            for (uint32_t i = lo; i <= hi; i++) {
-                if (overview[i].min < min) min = overview[i].min;
-                if (overview[i].max > max) max = overview[i].max;
-            }
+    uint32_t gain = DK_SAMPLE_ZOOM_ONE;
+    if (vmax_q8 > 8192) vmax_q8 = 8192;
+    if (vmax_q8 > DK_SAMPLE_ZOOM_ONE && (use_columns || have_prev || (overview && bins))) {
+        uint32_t amp = 0;
+        for (uint32_t x = 0; x < width; x++) {
+            int32_t min, max;
+            if (!dk_sample_region_column(use_columns, columns, overview, bins, bin_width,
+                    have_prev, prev, pfirst, pspan, pcols, left, span, width, x, &min, &max)) continue;
+            uint32_t m = (uint32_t)(-min), p = (uint32_t)max;
+            if (m > amp) amp = m;
+            if (p > amp) amp = p;
         }
+        if (amp) {
+            gain = 32767u * DK_SAMPLE_ZOOM_ONE / amp;
+            if (gain < DK_SAMPLE_ZOOM_ONE) gain = DK_SAMPLE_ZOOM_ONE;
+            if (gain > vmax_q8) gain = vmax_q8;
+        }
+    }
+    for (uint32_t x = 0; (use_columns || have_prev || (overview && bins)) && x < width; x++) {
+        int32_t min, max;
+        if (!dk_sample_region_column(use_columns, columns, overview, bins, bin_width,
+                have_prev, prev, pfirst, pspan, pcols, left, span, width, x, &min, &max)) continue;
+        min = dk_sample_region_gain(min, gain); max = dk_sample_region_gain(max, gain);
         dk_sample_region_fill(c, r, r.left + (int32_t)x, mid - max * radius / 32768,
                      r.left + (int32_t)x, mid - min * radius / 32768, 1);
     }
     /* Selection rail and handles stay distinct from the waveform. Markers beyond
-       a zoomed viewport sit at its edge. */
-    int32_t ax = a <= left ? 0 : a >= left + span ? (int32_t)width - 1 :
+       the viewport are arrows; the rail runs to the plot edge on that side. */
+    int a_in = a >= left && a - left <= span, b_in = b >= left && b - left <= span;
+    int32_t ax = a < left ? 0 : a - left > span ? (int32_t)width - 1 :
         (int32_t)dk_region_fraction(a - left, width - 1, span);
-    int32_t bx = b <= left ? 0 : b >= left + span ? (int32_t)width - 1 :
+    int32_t bx = b < left ? 0 : b - left > span ? (int32_t)width - 1 :
         (int32_t)dk_region_fraction(b - left, width - 1, span);
     ax += r.left; bx += r.left;
     if (b >= a) dk_sample_region_fill(c, r, ax, bottom, bx, bottom, 1);
-    dk_sample_region_fill(c, r, ax - 1, top, ax + 1, bottom, 0);
-    dk_sample_region_fill(c, r, bx - 1, top, bx + 1, bottom, 0);
-    dk_sample_region_fill(c, r, ax, top, ax, bottom, 1);
-    dk_sample_region_fill(c, r, bx, top, bx, bottom, 1);
+    if (a_in) {
+        dk_sample_region_fill(c, r, ax - 1, top, ax + 1, bottom, 0);
+        dk_sample_region_fill(c, r, ax, top, ax, bottom, 1);
+    }
+    if (b_in) {
+        dk_sample_region_fill(c, r, bx - 1, top, bx + 1, bottom, 0);
+        dk_sample_region_fill(c, r, bx, top, bx, bottom, 1);
+    }
     for (int i = 0; i < 5; i++) {
-        dk_sample_region_fill(c, r, ax, top + i, ax + 4 - i, top + i, 1);
-        dk_sample_region_fill(c, r, bx - 4 + i, bottom - i, bx, bottom - i, 1);
+        int32_t d = i < 2 ? 2 - i : i - 2; /* distance from the arrow's middle row; the tip is at the plot edge */
+        if (a_in) dk_sample_region_fill(c, r, ax, top + i, ax + 4 - i, top + i, 1);
+        else if (a < left) dk_sample_region_fill(c, r, r.left + d, top + i, r.left + 2, top + i, 1);
+        else dk_sample_region_fill(c, r, r.right - 2, top + i, r.right - d, top + i, 1);
+        if (b_in) dk_sample_region_fill(c, r, bx - 4 + i, bottom - i, bx, bottom - i, 1);
+        else if (b < left) dk_sample_region_fill(c, r, r.left + d, bottom - i, r.left + 2, bottom - i, 1);
+        else dk_sample_region_fill(c, r, r.right - 2, bottom - i, r.right - d, bottom - i, 1);
     }
 }
-/* As dk_sample_region_draw_detail without a previous window. */
+/* As dk_sample_region_draw_detail without a previous window and without auto-scale. */
 static inline void dk_sample_region_draw(const dk_page_canvas_v1 *c, dk_sample_region_rect r,
     uint32_t frames, uint32_t first, uint32_t span, const dk_sample_peak *overview, unsigned bins,
     const dk_sample_peak *columns, unsigned ncols, uint32_t start_frame, uint32_t end_frame)
 {
     dk_sample_region_draw_detail(c, r, frames, first, span, overview, bins, columns, ncols,
-        0, 0, 0, 0, start_frame, end_frame);
+        0, 0, 0, 0, start_frame, end_frame, DK_SAMPLE_ZOOM_ONE);
 }
 /* Viewport follows START (0..127 units). Zoom is Q8 with no fixed upper limit;
    the viewport keeps at least one frame per column. */

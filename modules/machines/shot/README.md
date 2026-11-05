@@ -18,8 +18,10 @@ semitones and an exact fractional row, without changing pitch's 0..127 range or 
 sample box at D; a ready box shows its local index, with compact loading/missing marks. There is no center status text. START is bottom-left E and END
 bottom-right H on both pages. The waveform page has ZOOM at G. One detent is one step; 8 steps double the zoom (ratio 2^(steps/8)), up to one frame per pixel
 (at most 16 doublings); one turn event moves at most 16 steps. The label is `x1.0` to `x9.9` with one decimal, `x10` and up without, `xMAX` above 9999. Zoom is UI-local per track.
-It shows the loaded sample's min/max overview, a permanent zero line and contrasting trim flags. When the whole START to END region fits at the current zoom, the viewport centres on the
-region's middle; otherwise it centres on the marker turned last (START or END; START wins when both changed). When one pixel covers less than one overview bin, the page asks the runtime for a detail
+It shows the loaded sample's min/max overview, a permanent zero line and contrasting trim flags. Zoom is anchored on the active marker, the one turned last (START by default; START wins when both changed): when the zoom
+changes, that marker keeps its screen position, and 1x shows the whole sample. Turning START or END pans the view only when the marker is outside it,
+just far enough to put it 1/8 of the span from the edge it came from. A marker outside the view is drawn as a small solid arrow at that side of the plot
+(at its flag row) instead of a line. The waveform is scaled vertically to the visible peak, up to 8x (display only; silence stays flat). When one pixel covers less than one overview bin, the page asks the runtime for a detail
 window (`sample_pool_peaks_window`, 95 columns of the viewport, computed in the background); until it is ready the previous detail window stays on screen (rescaled) where it covers the viewport, and the overview is drawn stretched elsewhere. The
 ready sample box shows its local slot index; the waveform page keeps its upper area free for the graph. The graph spans global x17..111 and y6..36, centered at x64; START, ZOOM and END are drawn on page 1's label row (canvas y52, x5/58/87, the same pixels as the stock labels), with their values one row above (y46), each centred on its label using a measured font width table. SRC/SYN cycles the two pages.
 The ordinary `DK_PAGE` remains the storage/parameter schema; its fixed knob slots do not constrain these custom bindings.
