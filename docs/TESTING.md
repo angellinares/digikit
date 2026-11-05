@@ -104,7 +104,7 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 | `pnpm verify:host` | oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
 | `pnpm --filter @digi/web test` | `node --test` in `apps/web/tests`. Cases that need WASM or firmware skip when absent. |
 | `mise run lint:py` | `ruff check` and `ruff format --check` over the pyproject include list. |
-| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. `lint:rust` runs `workspace:rust-fmt` (`cargo fmt --check` on a listed set of clean crates). Crates in the daemon key, the PGO key or committed module objects are not formatted yet, because formatting them makes the PGO profile stale; they are added when the profile is next retrained. |
+| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. `lint:rust` runs `workspace:rust-fmt` (`cargo fmt --check` on every workspace crate except `dkrt-sdk`, `dkrt-fit`, `dkneeds` and `dkfw`). Those four are excluded because their sources are hashed into `source_sha256` of committed `build/*.dko.json` objects. Generated files carry `#[rustfmt::skip]` on their `mod` line. |
 | `mise run test:pypy` | The SHARC core tests under PyPy 3.11. Slow. |
 | `mise run test:stock` | Vitest project `stock` (`tests/regression/dt2`): DT2 1.17 zero-DSP goldens. Filters pass through. |
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
@@ -460,7 +460,7 @@ B = max(2, cores - 2), or `DIGI_BUDGET=N`. A value already set in the environmen
 | `CARGO_BUILD_JOBS` | B | 2 | 6 | 10 | 14 |
 | `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 6 | 5 | 5 |
 
-Crates outside `workspace:rust-fmt`, `packages/emulator/README.md`, and comments in `packages/dkupload/src/wasm.rs`, `packages/dksample/src/lib.rs` and `tools/emulator/digi_env.py` wait for the next PGO retrain, because editing them changes the daemon or PGO key.
+Formatting changes the daemon key and the PGO key, so the PGO profile needs a retrain. `dkrt-sdk`, `dkrt-fit`, `dkneeds` and `dkfw` are not formatted, because their sources are hashed into committed module objects.
 
 - For verbs that run tasks the launcher runs at nice 10 and takes the shared benchlock, except when all
   targets are light (`lint`, `fmt-check`, `rust-fmt`, `typecheck`, `test-host`, `check`, `check:ui`,

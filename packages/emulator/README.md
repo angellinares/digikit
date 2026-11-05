@@ -14,7 +14,7 @@ mise run workbench         # build and run it (DN2 audio when the ready inputs e
 mise run scenario:build    # build the headless runner coupled-run
 mise run scenario:all      # run every DN2 scenario against its pinned PCM hash
 mise run test:quick        # fast checks for the tooling and the coupled runtime
-uv run python -m tools.devtools.rust_ws check    # cargo check --workspace --all-targets
+node tools/nx/rust-env.mjs --gen -- cargo check --workspace --exclude digiemu-desktop --all-targets --locked
 mise run web:wasm          # browser cores
 ```
 
@@ -268,7 +268,7 @@ run-time selection `4,2,1` on the generic core. `node tools/devtools/wasm_parity
 the native `expect_sha256`.
 
 The coupled core (`emulator-core-sharc.wasm`) contains firmware-derived DSP code.
-`tools/emulator/native_wasm.py` writes it to `apps/web/.local/`, which is gitignored
+`tools/nx/wasm.mjs` writes it to `apps/web/.local/`, which is gitignored
 and served only by the dev server. It is never in `dist/`: a build guard fails
 the build if it appears in the output. The CF-only core stays in
 `apps/web/public/`.

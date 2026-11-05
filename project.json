@@ -62,10 +62,10 @@
       "cache": false,
       "inputs": ["{workspaceRoot}/**/*.rs", "{workspaceRoot}/Cargo.toml", "{workspaceRoot}/mise.toml"],
       "options": {
-        "command": "node tools/nx/rust-env.mjs -- cargo fmt --check -p bootstrap-emu -p device-profile -p digiemu-desktop -p dksample -p dt2-firmware-loader -p plusdrive-format -p sharc-gen -p sharc-gen-2 -p sharc-stats",
+        "command": "node tools/nx/rust-env.mjs -- cargo fmt --check -p elektron-native-boot -p coldfire -p device-profile -p dt2-firmware-loader -p emmc-card -p periph -p live-audio -p machine -p patchkit -p dkupload -p sharc-rt -p plusdrive-format -p dksample -p sharc-fast-wasm -p sharc-fast-cl -p sharc-native -p sharc-gen -p sharc-stats -p sharc-native-2 -p sharc-gen-2 -p bootstrap-emu -p digi-control -p digi-coupled -p sharc-fast-cl-2 -p dkmidi -p dkui-host -p digiemu-desktop",
         "cwd": "."
       },
-      "description": "Crates outside the daemon key, the PGO key and committed module objects. Other crates are added when the profile is next retrained."
+      "description": "Workspace crates except dkrt-sdk, dkrt-fit, dkneeds and dkfw, whose sources are hashed into committed module objects, and any generated crate root."
     }
   }
 }
