@@ -914,6 +914,8 @@ fn run_scenario(
     let wall = end.wall.duration_since(start.wall).as_secs_f64();
     let cf_cpu = (end.cf_cpu_ns - start.cf_cpu_ns) as f64 / 1e9;
     let dsp_cpu = (end.worker.cpu_ns - start.worker.cpu_ns) as f64 / 1e9;
+    let dsp_cycles = end.worker.cycles.saturating_sub(start.worker.cycles);
+    let dsp_insns = end.worker.insns.saturating_sub(start.worker.insns);
     let tap = rt.pcm_tap();
     let audio_s = match tap {
         Some(t) => t.seconds(),
@@ -993,6 +995,8 @@ fn run_scenario(
         "cpu": {
             "dsp_thread_s": dsp_cpu, "cf_thread_s": cf_cpu,
             "dsp_thread_per_audio_s": per(dsp_cpu), "cf_thread_per_audio_s": per(cf_cpu),
+            "dsp_thread_cycles_per_audio_s": per(dsp_cycles as f64),
+            "dsp_thread_insns_per_audio_s": per(dsp_insns as f64),
             "dsp_thread_busy_of_wall": dsp_cpu / wall.max(1e-9),
             "cf_thread_busy_of_wall": cf_cpu / wall.max(1e-9),
             "clock": "CLOCK_THREAD_CPUTIME_ID",

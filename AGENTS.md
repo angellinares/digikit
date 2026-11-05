@@ -44,7 +44,7 @@ out/                Ignored generated artifacts and run outputs
 - Put results in `docs/findings/`, one topic per file, indexed from `docs/FINDINGS.md`; handovers describe ongoing work. Marks: **[V]** verified here, **[D]** measured or read once, **[O]** open, **[C]** corrects an earlier claim. Before marking [V], a second agent must check against image bytes. An empty caller list does not prove dead code.
 - Before work likely to take more than a day, state payoff and confidence; recommend stopping when they are weak.
 - Use static evidence first. Bound emulator runs with `--limit` or `--seconds`. Stop only your own PIDs or run directories; never use `pkill` or `killall` on emulators.
-- For performance claims, give the ceiling first, then one paired A/B using `tools/devtools/coupled_ab.py`.
+- For performance claims, give the ceiling first, then one paired A/B using `tools/devtools/coupled_ab.py`. Host instruction ratios (`cpu.dsp_thread_insns_per_audio_s`, `sharc_matrix` `insn_ratios_B_over_A`) repeat within 0.02% on a busy host: use them to judge path-length changes, and keep the paired timing A/B as the final check.
 
 ## Checks
 

@@ -9,8 +9,8 @@ emulator available.
 The panel is rebuilt only when its sources changed (DIGI_EMU_PANEL=1 forces
 it). The app is built once with cargo build and the binary is run directly;
 --build-only stops after the build and prints the binary path. A stale PGO
-profile is used with a warning; `mise run perf:pgo` retrains it (or launch once
-with DIGI_EMU_PGO_TRAIN=1).
+profile is not used: the build falls back to plain with a warning. `mise run
+perf:pgo` retrains it (or launch once with DIGI_EMU_PGO_TRAIN=1).
 """
 
 from __future__ import annotations

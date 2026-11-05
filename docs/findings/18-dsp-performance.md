@@ -1990,3 +1990,99 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
   audio s, 0.1 to 0.25 s.
 - The fast-tier kernels still decline any store into a code-watched page (`mem_addr.rs` guards on the page's watch
   byte), so on DN2 module data on a code page leaves the fast tier; placing module data on its own page would avoid it.
+
+## Block bodies continue after MODE1 writes (2026-11-05)
+
+- **[D]** Dispatch causes, DN2 1.12, held note (trig1-hold), 1 audio second, existing `SHARC_PROFILE_PREFIX` `.trans`
+  data, classified against the 1.12 program database:
+  - 3.07M engine dispatches per audio second (fast-tier defaults).
+  - At least 54% (1.67M) end within 4 instructions after a MODE1 write. This is a lower bound: 44% end near
+    undecoded instructions. Returns to a caller are about 0%.
+  - Top stops: 0x1c07d2 and 0x1c07d7 (291k each; float-to-int helper: set TRUNCATE 0x8000, `fix`, `MODE1 = R2`);
+    0x1c06c0 and 0x1c06fe (float divide 0x1c06ba: clear RND32 0x10000, `frnd`, `MODE1 = R1`); 0x1c0c9d and 0x1c0d9f
+    (0x1c0c76: set 0x2000, `MODE1 = R12`). Others: PEYEN 0x200000 on and off.
+- **[D]** Cause: `tools/sharc_dev/sharc_rsgen.py` ended a body after any MODE1 write (TERMINAL), so the engine could
+  complete a bank request (`St::bank_complete`) and check interrupts. These writes change no bank-select bit (0x4f8),
+  IRPTEN or NESTM.
+- **[D]** Change (lane/sharc-mode1, commit 45ebd538): a MODE1 write that changes none of `MODE1_ENGINE_BITS`
+  (0x4f8|0x800|0x1000) and is followed by an instruction of the same block continues the body. Block code does the bank
+  bookkeeping of `St::commit` itself: one `St::bank_complete` after the write, one after the next instruction. A restore
+  with an unknown value (`MODE1 = Rn`) continues only under a run-time guard that MODE1 equals the body's entry value;
+  every guard exits with the state of the old exit. Tests: `tests/sharc/generation/test_sharc_rsgen_mode1.py` (decision
+  cases; emitted code run against the native runtime for the exact bank state, the guard exit and a trap in the next
+  instruction).
+- **[D]** Full DN2 core: OLD (rule off) is byte-identical to the promoted gen in code. MODE1 terminal sites 324 to 67;
+  `blocks_*.rs` +3.9% (57.96 MB to 60.20 MB). Exact PCM, full SHRD, instruction count and duration on held note and idle.
+- **[D]** Paired A/B (`tools/devtools/sharc_matrix.py`, plain builds, no PGO, default tiers, alternating pairs of 3
+  audio s). Criterion declared first: median B/A <= 0.98 in both scenarios and every pair < 1.
+  - Quiet host, DN2 only: held 0.9631, idle 0.9670.
+  - Later batch at load about 4: DN2 held 0.983, DN2 idle 0.996 (pairs 0.954 to 1.041), DT2 sample-trig 0.982, DT2
+    retrigger 0.985.
+  - Exact PCM, state, instruction count and duration on all cells.
+  - Block entries per 3 s: DN2 9.14M to 7.58M, DT2 7.95M to 6.51M.
+  - The gain in time is about 2 to 3.5% and is limited by host noise. The predeclared criterion passed in the first
+    run and failed in the second.
+  - DT2: MODE1 sites 107 to 29, `blocks_*.rs` +5.8%.
+  - Artifacts of the first run: `out/native/runs/20261105-mode1-full/ab/` (`results/summary.json`, `criterion.json`).
+- **[O]** About 383k MODE1 stops per audio second remain: restores whose value is not the body's entry value (for example
+  0x1c06fe, 0x1c0d9f). DT2 regeneration, the shared core and PGO are not measured yet.
+
+### MODE1 effect latency
+
+- **[D]** The public SHARC programming reference (ADSP-2136x/2137x/214xx, Table A-11 and the text before it) gives MODE1
+  one cycle of effect latency: the instruction right after a MODE1 write still uses the old mode. The public SHARC+
+  programming reference keeps this through stalls for compatibility. `sharc_core` delays only the bank selects
+  (`sharc_core/state.py` `bank_model`); rounding, truncation, saturation and PEYEN take effect on the next instruction.
+- **[D]** A static scan of DT2 1.17 (229 MODE1 writes) and DN2 1.12 (252) found no next instruction that depends on the
+  changed mode, except DN2 0x1c6d7c (ALUSAT set, then `R7 = add(R10,R10)`: differs only if that add overflows).
+  `recips` and `rsqrts` right after an RND32 clear at DT2 0x1c06bd and 0x1c1287 and DN2 0x1c06bd and 0x1c1231 are seed
+  approximations (inferred unaffected, not checked).
+- **[O]** Whether to model the latency.
+
+### Hardware counters and host noise
+
+- **[D]** CPU time for the same binary spread 10 to 24% on the development laptop in normal use. The DSP worker now
+  reports per-thread retired instructions and cycles (report.json `cpu.dsp_thread_insns_per_audio_s`,
+  `cpu.dsp_thread_cycles_per_audio_s`; docs/INSTRUMENTATION.md).
+- **[D]** A/A control, DN2 held, 3 pairs, load about 4: instructions 1.0002, 1.0000, 1.0000; cycles 1.0125, 0.9906,
+  0.9974; CPU time 1.0129, 0.9855, 0.9975.
+- **[D]** Instruction ratios settle a path-length question in one run. They do not show stalls or layout, so a timing
+  A/B on a quiet host remains the final check. IPC is about 5.5 in every tier configuration.
+
+### Engine work per dispatch
+
+- **[D]** A block dispatch no longer runs the full interrupt candidate when nothing allowed is latched and enabled,
+  reuses that result for the latent-interrupt check, calls the fast tier's run only for a PC it wants or when it has
+  queued work, and syncs chain stops only when some are pending. Exact PCM, state and every tier counter on the four
+  cells.
+- **[D]** Host instructions: DN2 0.9924, DT2 0.9895. Cycles in 3 pairs: DN2 held median 0.980, idle 0.978, DT2
+  sample-trig 1.021, DT2 retrigger 1.012.
+- **[O]** The DT2 cycle rise against fewer instructions, and an earlier timing run of the same source change at 0.955,
+  suggest a code-layout effect of several percent between builds; not separated.
+
+### Host instruction cost model
+
+- **[D]** Steady state per audio second, (6 s - 3 s)/3, plain build:
+
+  | cell / config | host insns | cycles | guest AOT | fast | interp | idle | block entries | fast calls |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|
+  | DN2 held, default | 24.52G | 4.47G | 235.5M | 265.5M | 2.0M | 497.0M | 2.525M | 516k |
+  | DN2 held, fast tier off | 31.71G | 6.05G | 500.4M | - | 2.5M | - | 1.728M | - |
+  | DT2 sample-trig, default | 25.29G | 4.42G | 294.1M | 18.6M | 1.8M | 685.4M | 2.168M | 313k |
+  | DT2 sample-trig, fast tier off | 47.42G | 8.89G | 295.2M | - | 19.4M | - | - | - |
+  | DT2 sample-trig, idle skip off | 129.3G | - | 979.8M | - | - | - | 145.0M | - |
+  | DN2 held, AOT off | 344.1G | - | - | 279.7M | 223.2M | - | - | - |
+
+- **[D]** One interpreted guest instruction costs about 900 to 1500 host instructions (three measurements), so 0.2% of
+  the guest work is about 8 to 12% of the host instructions.
+- **[O]** AOT about 63 and the fast tier about 12 host instructions per guest instruction (estimates from profile
+  shares). A dispatch costs about 550 (from the idle-skip-off row).
+- **[D]** Runtime roots 0xb8251e and 0x1c201d in the DN2 1.12 block-translator list: host instructions 24.54G to
+  23.85G (-2.8%), interpreted guest instructions 1.99M to 1.19M per audio second, exact PCM and state at 3 s and 6 s.
+
+### AOT path length
+
+- **[O]** From a hand count of older PGO disassembly (about +-20%): about 43 host instructions per guest instruction in
+  hot straight-line code. Real work 10%, float flush and classify 23%, flags 22%, spills 12%, loop end 10%, dead
+  Result tests 9%, memory checks 7%, other 8%. Undo copies, PC guards and budget checks fold away.
+- **[O]** Candidates: lazy flags, canonical floats, memory-test layout, loop-end index width.

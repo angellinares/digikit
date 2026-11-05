@@ -926,6 +926,127 @@ fn latched_interrupt_blocks_model_safe_blocks_while_deferred() {
     assert_eq!(e.latent_interrupt(), None);
 }
 
+fn xorshift(x: &mut u64) -> u64 {
+    *x ^= *x << 13;
+    *x ^= *x >> 7;
+    *x ^= *x << 17;
+    *x
+}
+
+/// Pseudo-random MODE1, IRPTL, IMASK, IMASKP (some not known) and an
+/// `allowed` mask that contains every source the engine would allow.
+fn random_irq_state(x: &mut u64, s: &mut St) -> u32 {
+    const SOURCES: u32 = 0xf040_8800;
+    let reg = |x: &mut u64, pool: &[u32]| {
+        let n = xorshift(x);
+        match n % 8 {
+            0 => V::UNK,
+            1 => V::partial(0xff, (n >> 32) as Int),
+            2 => V::c(0),
+            3 => V::c(pool[(n >> 8) as usize % pool.len()] as Int),
+            _ => V::c((((n >> 16) as u32) & SOURCES | ((n >> 48) as u32 & 0x3)) as Int),
+        }
+    };
+    s.r[114] = reg(x, &[0, 0x1000, 0x1800, 0x800, 0x2000]);
+    s.r[122] = reg(x, &[0, SOURCES, 0x1000_0000]);
+    s.r[123] = reg(x, &[0, SOURCES, 0x1000_0000]);
+    s.r[124] = reg(x, &[0, 0x1000_0000, 0x2000_0000]);
+    let n = xorshift(x);
+    let mut allowed = 0xf000_0000 | 0x0040_0800 | 0x0000_8000;
+    if n & 1 != 0 {
+        allowed &= 0xf000_0000;
+    }
+    if n & 2 != 0 {
+        allowed &= !0x0040_0800;
+    }
+    if n & 4 != 0 {
+        allowed |= (n >> 8) as u32 & 0x0000_ffff;
+    }
+    allowed
+}
+
+/// When the pre-check says quiet, the full generated check finds no interrupt.
+#[cfg(sharc_gen)]
+#[test]
+fn interrupt_precheck_matches_full_candidate() {
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let (mut quiet, mut loud) = (0, 0);
+    for case in 0..5000 {
+        let mut s = St::new(Mem::new());
+        let allowed = random_irq_state(&mut x, &mut s);
+        if xorshift(&mut x) & 3 == 0 {
+            s.pending = Some(Pending::default());
+        }
+        if crate::irq_quiet_of(&s, allowed) {
+            quiet += 1;
+            let full =
+                crate::generated::core_g::sequencer::_interrupt_candidate(&mut s, allowed as Int);
+            assert!(matches!(full, Ok(0)), "case {case}: quiet but full check {full:?}");
+        } else {
+            loud += 1;
+        }
+    }
+    assert!(quiet > 100 && loud > 100, "quiet {quiet} loud {loud}");
+}
+
+/// A quiet interrupt check implies no latent interrupt for `block_plan`.
+#[test]
+fn quiet_implies_no_latent_interrupt() {
+    let mut x = 0x2545_f491_4f6c_dd1du64;
+    let mut e = crate::Engine::new(Mem::new());
+    e.software_interrupts = true;
+    e.s.cfg.core_timer = true;
+    e.s.cfg.peripheral_model = true;
+    let mut quiet = 0;
+    for case in 0..5000 {
+        let allowed = random_irq_state(&mut x, &mut e.s);
+        // The loop-top mask contains the engine's own (0xf040_8800).
+        if crate::irq_quiet_of(&e.s, allowed | 0xf040_8800) {
+            quiet += 1;
+            assert_eq!(e.latent_interrupt(), Some(false), "case {case}");
+        }
+    }
+    assert!(quiet > 100, "quiet {quiet}");
+}
+
+/// A tier that does not want the PC and has nothing queued is not called;
+/// one with queued work still is, and the block runs either way.
+#[test]
+fn block_only_pc_skips_fast_run_but_drains_queues() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    struct QueueProbe {
+        runs: Arc<AtomicUsize>,
+        queued: bool,
+    }
+    impl crate::fast::FastTier for QueueProbe {
+        fn wants(&self, _pc: u32) -> bool {
+            false
+        }
+        fn has_queued(&self) -> bool {
+            self.queued
+        }
+        fn run(&mut self, _s: &mut St, _pc: u32) -> Option<u32> {
+            self.runs.fetch_add(1, Ordering::Relaxed);
+            None
+        }
+    }
+    for queued in [false, true] {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let mut e = fallback_probe_engine(true, Some(vec![]));
+        e.set_fast(Some(Box::new(QueueProbe {
+            runs: runs.clone(),
+            queued,
+        })));
+        assert!(!e.block_plan(10).expect("block plan").1.fast_pc);
+        e.step(10);
+        assert_eq!(e.s.r[0], V::c(1), "block ran, queued {queued}");
+        assert_eq!(runs.load(Ordering::Relaxed), usize::from(queued));
+    }
+}
+
 #[test]
 fn peripheral_stores_that_act_leave_block_code() {
     use crate::rt::periph::write_acts;

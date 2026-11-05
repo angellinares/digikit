@@ -607,7 +607,8 @@ def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
 def stale_notice(detail: str = "", device: str = "dn2") -> str:
     """The one line printed when a stale profile is not used."""
     return (
-        "PGO profile is stale for this core; building without PGO. Retrain with "
+        "WARNING: native PGO: profile is stale for this core; building without PGO "
+        "(about 30% slower DSP). Retrain with "
         "`mise run perf:pgo` (all three), `mise run perf:pgo:dn2`, `mise run perf:pgo:dt2` or "
         "`mise run perf:pgo:both` (the two-core desktop build; "
         "`uv run python -m tools.emulator.native_pgo train --device both`)."
