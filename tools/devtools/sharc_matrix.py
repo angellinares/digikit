@@ -416,12 +416,34 @@ def instrument(
 
 def summary(state: dict) -> dict:
     ratios = {}
+    cycle_ratios: dict[str, list[float]] = {}
+    insn_ratios: dict[str, list[float]] = {}
     for key, step in state["steps"].items():
         if key.startswith("timing/"):
             cell = key.rsplit("/", 1)[0].removeprefix("timing/")
             ratios.setdefault(cell, []).append(
                 step["result"]["B"]["dsp_cpu"] / step["result"]["A"]["dsp_cpu"]
             )
+            for name, store in (
+                ("dsp_cycles", cycle_ratios),
+                ("dsp_insns", insn_ratios),
+            ):
+                a = step["result"]["A"].get(name)
+                b = step["result"]["B"].get(name)
+                if a and b:
+                    store.setdefault(cell, []).append(b / a)
+
+    def stats(groups: dict[str, list[float]]) -> dict:
+        return {
+            key: {
+                "median": statistics.median(v),
+                "min": min(v),
+                "max": max(v),
+                "pairs": len(v),
+            }
+            for key, v in groups.items()
+        }
+
     return {
         "status": state["status"],
         "coverage": state["identity"]["preflight"]["coverage"],
@@ -437,6 +459,8 @@ def summary(state: dict) -> dict:
             }
             for key, v in ratios.items()
         },
+        "cycle_ratios_B_over_A": stats(cycle_ratios),
+        "insn_ratios_B_over_A": stats(insn_ratios),
         "tiers": {
             key.removeprefix("correctness/"): {
                 label: result["tiers"] for label, result in step["result"].items()

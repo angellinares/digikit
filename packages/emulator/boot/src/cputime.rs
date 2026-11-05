@@ -26,6 +26,27 @@ mod imp {
             .saturating_mul(1_000_000_000)
             .saturating_add(ts.nsec as u64)
     }
+
+    #[cfg(target_os = "macos")]
+    unsafe extern "C" {
+        fn thread_selfcounts(kind: i32, buf: *mut std::ffi::c_void, nbytes: usize) -> i32;
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn thread_counters() -> (u64, u64) {
+        let mut buf = [0u64; 2];
+        // SAFETY: `buf` is a valid, writable buffer of two u64 for the call.
+        let rc = unsafe { thread_selfcounts(1, buf.as_mut_ptr().cast(), size_of::<[u64; 2]>()) };
+        if rc != 0 {
+            return (0, 0);
+        }
+        (buf[0], buf[1])
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn thread_counters() -> (u64, u64) {
+        (0, 0)
+    }
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -33,6 +54,16 @@ mod imp {
     pub fn thread_cpu_ns() -> u64 {
         0
     }
+
+    pub fn thread_counters() -> (u64, u64) {
+        (0, 0)
+    }
+}
+
+/// Hardware counters of the calling thread: (cycles, retired instructions).
+/// (0, 0) where unavailable.
+pub fn thread_counters() -> (u64, u64) {
+    imp::thread_counters()
 }
 
 /// Nanoseconds of CPU time (user + system) the calling thread has used; 0 where
@@ -43,6 +74,20 @@ pub fn thread_cpu_ns() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn thread_counters_advance_on_macos() {
+        let (c0, i0) = super::thread_counters();
+        let mut x = 0u64;
+        for _ in 0..5_000_000u64 {
+            x = x.wrapping_add(std::hint::black_box(1));
+        }
+        let (c1, i1) = super::thread_counters();
+        assert!(x > 0);
+        assert!(c1 > c0, "{c0} {c1}");
+        assert!(i1 > i0, "{i0} {i1}");
+    }
+
     #[test]
     fn counts_own_busy_time_and_not_sleep() {
         let start = super::thread_cpu_ns();

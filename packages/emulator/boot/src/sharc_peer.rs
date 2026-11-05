@@ -1063,6 +1063,9 @@ const LIVE_REPORT_FRAMES: u64 = 150;
 pub struct WorkerReport {
     /// CPU time of the worker thread so far (CLOCK_THREAD_CPUTIME_ID).
     pub cpu_ns: u64,
+    /// Hardware counters of the worker thread so far; 0 where unavailable.
+    pub cycles: u64,
+    pub insns: u64,
     pub tiers: Option<sharc_native::TierCounters>,
     /// Aggregate model-gate counters. Unlike execution-map text, this is a
     /// small Copy value and is available to ordinary boundary reports.
@@ -1307,8 +1310,11 @@ impl ThreadedPeer {
                             }
                         }
                         Msg::Report => {
+                            let (cycles, insns) = crate::cputime::thread_counters();
                             let _ = report_tx.send(WorkerReport {
                                 cpu_ns: crate::cputime::thread_cpu_ns(),
+                                cycles,
+                                insns,
                                 tiers: core.engine.tier_counters(),
                                 model_stats: core.engine.model_stats(),
                                 region_profile: core.engine.region_profile(),
