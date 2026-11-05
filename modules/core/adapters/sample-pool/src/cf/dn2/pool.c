@@ -20,6 +20,7 @@ extern const u32 sp_dev_ddr_base;    /* device.s, from [adapter.sample_pool] ddr
 extern const u32 sp_dev_ddr_bytes;   /* ... and ddr_bytes */
 
 spa_pool sp_pool;
+spp_peak sp_peaks[SPA_BLOCKS][SPP_BINS];
 SpReq sp_reqs[SP_REQS];
 volatile u32 sp_link_dead;
 
@@ -125,4 +126,11 @@ void dkpool_tick(void)
 {
     if (ready)
         sp_xfer_tick();
+}
+
+/* READY backing only; the runtime separately validates the public pool token. */
+i32 dkpool_peaks(const dkpool_handle *h, u8 *out, u32 cap)
+{
+    if (dkpool_check(h) != 0) return DKPOOL_E_LOST;
+    return spp_copy(sp_peaks[h->id], h->frames, out, cap);
 }

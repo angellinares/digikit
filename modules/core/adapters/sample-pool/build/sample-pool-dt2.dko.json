@@ -109,91 +109,154 @@
   },
   {
    "addend": 0,
-   "offset": 58,
+   "offset": 78,
    "section": ".text.invoker",
    "symbol": ".sec..rodata.invoker.str1.1",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 68,
+   "offset": 84,
    "section": ".text.invoker",
    "symbol": "cf.storage.fn.path.open",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 122,
+   "offset": 144,
    "section": ".text.invoker",
    "symbol": "cf.storage.fn.path.read",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 136,
+   "offset": 158,
    "section": ".text.invoker",
    "symbol": "cf.storage.fn.directory.metadata",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 146,
+   "offset": 168,
    "section": ".text.invoker",
    "symbol": "cf.storage.fn.path.close",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 178,
+   "offset": 210,
    "section": ".text.invoker",
    "symbol": "cf.samples.fn.loader.load",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 214,
+   "offset": 252,
    "section": ".text.invoker",
    "symbol": "cf.samples.site.record.vector",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 230,
+   "offset": 272,
    "section": ".text.invoker",
    "symbol": "cf.samples.site.slot.map",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 274,
+   "offset": 316,
    "section": ".text.invoker",
    "symbol": "cf.samples.site.slot.stereo",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 392,
-   "section": ".text.invoker",
-   "symbol": "sp_dsp_pool_base",
-   "type": "cf.32"
-  },
-  {
-   "addend": 64,
-   "offset": 556,
+   "offset": 448,
    "section": ".text.invoker",
    "symbol": "sp_dsp_pool_base",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 584,
+   "offset": 634,
+   "section": ".text.invoker",
+   "symbol": ".sec..bss.peak_ready",
+   "type": "cf.32"
+  },
+  {
+   "addend": 64,
+   "offset": 668,
+   "section": ".text.invoker",
+   "symbol": "sp_dsp_pool_base",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 724,
+   "section": ".text.invoker",
+   "symbol": ".sec..bss.peaks",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 772,
+   "section": ".text.invoker",
+   "symbol": ".sec..rodata.invoker.str1.1",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 810,
+   "section": ".text.invoker",
+   "symbol": ".sec..bss.peak_read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 816,
+   "section": ".text.invoker",
+   "symbol": "cf.storage.fn.path.read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 906,
+   "section": ".text.invoker",
+   "symbol": ".sec..bss.peak_read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 974,
+   "section": ".text.invoker",
+   "symbol": ".sec..bss.peak_read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1040,
+   "section": ".text.invoker",
+   "symbol": "cf.storage.fn.path.close",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1058,
+   "section": ".text.invoker",
+   "symbol": "cf.storage.fn.path.close",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1074,
    "section": ".text.invoker",
    "symbol": "cf.samples.fn.slot.release",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 600,
+   "offset": 1094,
    "section": ".text.invoker",
    "symbol": "cf.samples.fn.slot.release",
    "type": "cf.32"
@@ -421,6 +484,27 @@
    "section": ".text.dkpool_tick",
    "symbol": ".sec..bss.slot_busy",
    "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 16,
+   "section": ".text.dkpool_peaks",
+   "symbol": ".sec..text.dkpool_check",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 58,
+   "section": ".text.dkpool_peaks",
+   "symbol": ".sec..bss.peak_ready",
+   "type": "cf.32"
+  },
+  {
+   "addend": 2,
+   "offset": 136,
+   "section": ".text.dkpool_peaks",
+   "symbol": ".sec..bss.peaks",
+   "type": "cf.32"
   }
  ],
  "sections": [
@@ -475,10 +559,10 @@
   },
   {
    "align": 2,
-   "hex": "4e56ffa4206e000848d73cfc2a504aad000c6600023e202d00084a80663a47eefff045eeffe042b30800721042b208005880b28066f02f0a487900000000486d00544eb9000000004fef000c4a80671c78ff2b440004600670f12b40000470022a804cee3cfcffa44e5e4e752f0a7c0c4878000c486effd44eb9000000002f0b2f2effe026004eb9000000002f0a24004eb9000000004fef0018bc8366044a8267087efd2b47000460b42f2d00102f0b4eb900000000508f240070ffb082660872f02b41000460964a82670478fd6082226effd841f9000000002b49001c2850266d001041f9000000002050246d00202030bc004a806c0674fb6000010620547c34222c000492884c461001b08164e849f90000000028541e34b800670000fa76024a8967d22a032209da854c4510044c4510012d41ffcc4a8466bc222efff87c3fbc8164b20681ffffffc0b28965a872344c010800d1c0286800144a8c679820094c430000222800104a07670000b02e0ce28fbe806580068700000020d087b08c6200ff740681000000002041d28741e8002020080680800000000c801fffffff620c2e087c03ce864a876700008891c82001068080000000254800080c801fffffff62127e03c2874a81660ae4882800068410000000223c0000bb802544000c256effcc001025410014254300184a886700ff044a846700fefeba896200fef82b4200044aad00046638248b256d001400046000fe4876016000ff06068000000040b08c6200fed006810000000020416000ff60e4882040d1fc100000006000ff702f0b4eb900000000588f6000fe0e2f2d00104eb90000000042ad000460ea",
+   "hex": "4e56ff7c206e000848d73cfc2d50ffb0206effb04aa8000c66000422242800084a82670870f121400004604642804beeffe045eeffd042b50800721042b208005880b28066f02f0a286effb048790000000047f90000000049ec00542f0c4e934fef000c4a80671c206effb076ff214300042a6effb070022a804cee3cfcff7c4e5e4e752f0a4878000c486effc44eb9000000002f0d2f2effd028004eb9000000002f0a26004eb9000000004fef0018700cb08466044a83670c72fd206effb02141000460ac226effb02f2900102f0d4eb900000000508f224070ffb089660472f060d84a89670a206effb070fd6000ff36246effb0202effc84bf900000000206a00202540001c2615246a00104bf9000000002a552835ac004a846c08327cfffb600001182a4372342e15262d000496874c413003b88364e44bf9000000002a551635a8001d43ffb46700013c76024a8067ca2c032200dc864c4610054c4610012d46ffbc2d41ffb84a8566b02c2effe8723fb28664a60686ffffffc0bc80659c7c344c0648002a44dbc72c2d00144a86678a28004c434004222d00104a2effb4670000ea2e06e28f2a47be846500ff6e4bed0020d88db8866200ff620681000000002c01d28d06860000002028060684800000000c841fffffff620a7e03cc874a86670000c042842c01068680000000214400080c861fffffff62127e03c2874a81660ae48e2a060685100000002c3c0000bb802145000c216effb8001021460014214300184a846700fef24a856700feecb0aeffbc6500fee42a6effb02b4900044aad0004660001e4208a216d00140004b5fc000003ef6308282800104a84664e76fb4a8357c3206effb0203c000003ff90a8001041f9000000004483118308006000fdec76016000fec4068400000040b8866200fe860681000000002c016000ff2ae48c0684100000006000ff3a2228001820015380e2882d41ffa84a8066a0203c000003ff7c0b908aeda82440d5fc00000000200a204a0680000008004247425058883147fffeb08866f242aefff02a0e0685fffffff02f0542aefff448790000000042aefff82f0c42aefffc4e934fef000c26004a806600010a2f057c404878004048790000000049f9000000004e944fef000c222effa8d2812d41ffb4bc80660000d620047e090680000001ffeea82d40ffb8206effb04aa80008660000a82c2effb4203c000010004c4600002c049c82b08664022c003e2effb62f05cec62f074879000000004e944fef000cbe8066744aaeffb8676642aeffac42aeffa4222effb8206effa4d1c220084c4100000c80000001ff624643f20c00202effac9bcdd0802040d1fc0000000036587f51734bbe816f02328b7f690002be816c04334b0002528dbbeeffa866e0222effa852aeffa4d3aeffacbcaeffa466a2d486b4846500ff502f054eb900000000588fb4846700fe4c600a2f054eb900000000588f76fd6000fe3a2f0a4eb900000000588f6000fc38226effb02f2900104eb900000000246effb042aa000460e2",
    "kind": "text",
    "name": ".text.invoker",
-   "size": 610
+   "size": 1108
   },
   {
    "align": 2,
@@ -531,6 +615,13 @@
   },
   {
    "align": 2,
+   "hex": "4feffff448d7040c246f00102f0a4eb900000000588f4a80670c70f14cd7040c4fef000c4e7520120c80000003ef63ea223c000003ff928041f9000000004a301800675e226a00104a89660470d060cc4aaf001467f6200974090680000001ffe4a843f108ff260020094c4300002600e58bb6af001862d4740be5a9226f0014548920414281d1fc00000000b280678c3368fffefffe5281588832a8fffc588960ea70fd6000ff76",
+   "kind": "text",
+   "name": ".text.dkpool_peaks",
+   "size": 168
+  },
+  {
+   "align": 2,
    "hex": "",
    "kind": "bss",
    "name": ".bss.tokens_issued",
@@ -558,6 +649,27 @@
    "size": 1024
   },
   {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.peak_read",
+   "size": 4096
+  },
+  {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.peak_ready",
+   "size": 16
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.peaks",
+   "size": 32768
+  },
+  {
    "align": 2,
    "hex": "",
    "kind": "bss",
@@ -565,8 +677,26 @@
    "size": 5440
   }
  ],
- "source_sha256": "715a2d57f1098e6f3b229528b231d0843c457f9a9e0420f0e52e4daf653bbbba",
+ "source_sha256": "f0a8009f9d7b4486ce649c9342d281dbc44335831d26ef9ce58385a32129075b",
  "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss.peak_read",
+   "section": ".bss.peak_read",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.peak_ready",
+   "section": ".bss.peak_ready",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.peaks",
+   "section": ".bss.peaks",
+   "value": 0
+  },
   {
    "global": false,
    "name": ".sec..bss.reqs",
@@ -613,6 +743,12 @@
    "global": false,
    "name": ".sec..text.current",
    "section": ".text.current",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.dkpool_check",
+   "section": ".text.dkpool_check",
    "value": 0
   },
   {
@@ -743,6 +879,12 @@
   },
   {
    "global": true,
+   "name": "dkpool_peaks",
+   "section": ".text.dkpool_peaks",
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "dkpool_release",
    "section": ".text.dkpool_release",
    "value": 0
@@ -781,6 +923,24 @@
    "global": false,
    "name": "manager",
    "section": ".text.manager",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "peak_read",
+   "section": ".bss.peak_read",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "peak_ready",
+   "section": ".bss.peak_ready",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "peaks",
+   "section": ".bss.peaks",
    "value": 0
   },
   {
@@ -842,8 +1002,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "594",
-  "isa_check": "10d7150364f2cd8920de53e8a2990153bc48fb4a83aca61c5c26c86fe186ef71",
+  "instructions_redecoded": "802",
+  "isa_check": "2d4666136ed04b22cfd60d3779b64175db678129ccc591a9be583a4e986feceb",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

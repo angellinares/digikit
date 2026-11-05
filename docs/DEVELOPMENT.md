@@ -163,6 +163,23 @@ Ghidra project, `tools/coldfire/cfdb.py build` makes a database from the dump, a
 queries it. Decoding uses only public manuals ([docs/sharc/SOURCES.md](sharc/SOURCES.md)).
 All tools are indexed in [docs/TOOLS.md](TOOLS.md).
 
+### ColdFire UI candidate review
+
+After building both atlases and their catalogues, generate the complete inventories:
+
+```sh
+uv run python -m tools.firmware.catalog_page dt2-1.17 --all
+uv run python -m tools.firmware.catalog_page dn2-1.12 --all
+```
+
+Open `out/atlas/dt2-1.17-review.html` or `out/atlas/dn2-1.12-review.html` in a browser. Keep both files together with these names for paired-device links. `--all` includes every catalogue row, including anchored functions, small groups and the ungrouped bucket. The page renders only the active group's filtered rows; search also covers tags, existing anchors and labelled SDK uses. An address links directly to its row (`#r-0x...`), revealing it through active filters. Pairs outside the other candidate inventory retain their address and matching evidence without a broken row link.
+
+Each command also writes `out/atlas/<image>-review.tsv`, containing the **complete** catalogue, original evidence columns, flattened row/group labels and links to both review pages. This TSV is complete even without `--all`; omitting that option retains the curated visible selection. Curated pages keep omitted rows as lookup data so TSV and paired-device deep links can reveal any catalogue row on demand. `--labels FILE ...` replaces the discovered labels. Labels remain guesses [O] until checked against image bytes; stability, hash uniqueness, pair matches and rule agreement are shown separately.
+
+Without Claude's database, Keep/Later/Skip uses local browser storage per firmware image. **Export decisions (JSONL)** saves `dt2-1.17-decisions.jsonl` or `dn2-1.12-decisions.jsonl`; **Import local decisions** merges a previous export for that image. Export before closing if browser storage is unavailable, and before moving or regenerating review files: storage for local files varies by browser. On a published Claude page, the existing database path remains in use; local imports are disabled there.
+
+The **Bitmap candidates** and **Parameter candidates** shortcuts search the existing function names, callees and anchor tags. The catalogue does not contain glyph IDs, glyph previews or bitmap asset metadata, so these are entry points for investigation rather than an asset gallery.
+
 ## Patching
 
 patchkit applies modules (new machines, parameters, master-bus effects) to your own stock `.syx` and writes a new
@@ -211,7 +228,7 @@ mise run dk:module pluck --dsp  # full module with SHARC audio
 
 Each command starts or reloads a kept DN2 emulator, navigates to SETTINGS > DIGIKIT, and opens a local browser faceplate with its live display and controls. The command prints the exact panel URL. `dk:menu` uses the `emulator` patch set, including `core/digikit-menu`; `dk:ui-demo` uses the separate `test/ui-demo` fixture, which requires `core/ui` and conflicts with the real menu. These two previews automatically use zero DSP, so they have no audio.
 
-`dk:module` accepts a full module id or a unique leaf alias (for example, `pluck`). It packs a card `.dkm`, saves its selection for boot, and uses the `emulator` runtime patch set. By default, a declarative machine (including pluck) uses a data-only UI preview pack and zero DSP, with no audio. The preview pack rejects actions, samples and hooks. ColdFire-only services use normal packing and zero DSP. Effects and other DSP-backed modules require `--dsp`, which packs the full module and selects SHARC when needed. Its dependencies must already be provided by that patch set. It opens the DIGIKIT MODULES list; use the panel controls to reach the module's machine or effect page. Add `--device dt2` for Digitakt II (with its firmware available); DN2 is the default.
+`dk:module` accepts a full module id or a unique leaf alias (for example, `pluck`). It packs a card `.dkm`, saves its selection for boot, and uses the `emulator` runtime patch set. By default, a declarative machine (including pluck) uses a data-only UI preview pack and zero DSP, with no audio. Machines declaring a sample bank or sample tracks automatically use the full module with DSP, preserving sample loading and picker callbacks. The UI preview pack rejects actions, samples and hooks. ColdFire-only services use normal packing and zero DSP. Effects and DSP-backed services require `--dsp`, which packs the full module and selects SHARC when needed. Its dependencies must already be provided by that patch set. It opens the DIGIKIT MODULES list; use the panel controls to reach the module's machine or effect page. Add `--device dt2` for Digitakt II (with its firmware available); DN2 is the default.
 
 On each invocation, `dk:module` delegates to the generic `dk:dev --store` path. It stages content and compares the exact store request and initial selection with the kept daemon. Unchanged content keeps the daemon and overlay, including any selection the user changed while it was running; changed content rebuilds the card and restarts that exact daemon. To restore the initial selected card after changing selection live, stop and restart the daemon. `mise run dk:module ID --stop` stops only that module's kept daemon for the chosen device, without packing or opening the browser.
 

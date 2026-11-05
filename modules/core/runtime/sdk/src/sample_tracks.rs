@@ -472,6 +472,16 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         Ok(self.tracks[client][track].published)
     }
 
+    /// READY-only backing access for bounded overview queries. Public and backing
+    /// tokens are distinct; never allow an earlier published generation through.
+    pub fn peak_handle(&self, client: usize, track: usize, token: u32) -> Result<Handle, i32> {
+        let info = self.info(client, track)?;
+        if info.token != token { return Err(E_NOT_FOUND); }
+        let entry = self.tracks[client][track].bound.ok_or(E_NOT_FOUND)?;
+        if self.entries[entry].state != EState::Ready { return Err(E_NOT_FOUND); }
+        Ok(self.entries[entry].handle)
+    }
+
     /// The stored path of the track's current selection, in the form `select` was given (the runtime's own, device-rooted form), in
     /// every state but UNUSED: the sticky error of a failed select still names its file.
     pub fn path(&self, client: usize, track: usize) -> Result<&[u8], i32> {

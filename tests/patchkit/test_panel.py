@@ -1,6 +1,7 @@
 """Browser preview routing and launcher lifecycle, without booting firmware."""
 
 import argparse
+import json
 import signal
 import subprocess
 from unittest.mock import MagicMock, Mock, call
@@ -31,7 +32,7 @@ def test_navigation_isolates_new_daemon_and_keeps_group_on_success(monkeypatch):
         panel.dev.ROOT
     )
     assert options["cwd"] == panel.dev.ROOT
-    proc.wait.assert_called_once_with(timeout=120)
+    proc.wait.assert_called_once_with(timeout=360)
     killpg.assert_not_called()
 
 
@@ -257,6 +258,15 @@ def module_launch(monkeypatch, tmp_path, module_tree):
     monkeypatch.setattr(panel.dev, "run_dir_of", directory)
     monkeypatch.setattr(panel.dev, "target_dsp_mode", mode)
     monkeypatch.setattr(panel.dev, "connect", Mock(return_value=Mock()))
+    monkeypatch.setattr(
+        panel.patchkit,
+        "run",
+        Mock(
+            return_value=Mock(
+                returncode=0, stdout='{"sample_bank": null, "sample_tracks": null}'
+            )
+        ),
+    )
     stop = Mock()
     monkeypatch.setattr(panel, "stop_exact", stop)
 
@@ -265,6 +275,7 @@ def module_launch(monkeypatch, tmp_path, module_tree):
     launch_cli.add_argument("--device")
     launch_cli.add_argument("--store")
     launch_cli.add_argument("--keys")
+    launch_cli.add_argument("--reuse", action="store_true")
     launch_cli.add_argument("--store-ui-preview", action="store_true")
 
     def start(args):
@@ -300,6 +311,7 @@ def test_module_delegates_store_refresh_to_devreload(module_launch, device):
     assert navigate.request.store == "example/preview*"
     socket.assert_called_once_with("emulator", device, ["example/preview*"], dsp="zero")
     assert navigate.request.store_ui_preview
+    assert navigate.request.reuse
     serve.assert_called_once_with("/tmp/module.sock")
     tools.patchkit_run.assert_not_called()
 
@@ -508,6 +520,39 @@ def test_default_zero_service_uses_normal_pack(module_tree, module_launch, capsy
     assert not navigate.request.store_ui_preview
     assert "zero DSP, no audio" in capsys.readouterr().out
     socket.assert_called_once_with("emulator", "dn2", ["example/preview*"], dsp="zero")
+
+
+@pytest.mark.parametrize("device", ["dn2", "dt2"])
+@pytest.mark.parametrize("declaration", ["sample_bank", "sample_tracks"])
+def test_sample_machine_automatically_uses_full_preview(
+    module_launch, capsys, device, declaration
+):
+    _, _, _, _, mode, _, navigate, socket, serve = module_launch
+    mode.return_value = "sharc"
+    panel.patchkit.run.return_value.stdout = json.dumps({declaration: {}})
+    assert panel.main(["module", "preview", "--device", device]) == 0
+    mode.assert_called_once_with("emulator", device, ["example/preview*"])
+    assert not navigate.request.store_ui_preview
+    socket.assert_called_once_with(
+        "emulator", device, ["example/preview*"], dsp="sharc"
+    )
+    serve.assert_called_once()
+    assert "Sample machine preview: full module with DSP" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_declaration_failure_stops_before_navigation(module_launch, capsys, invalid):
+    _, _, _, _, _, stop, navigate, _, serve = module_launch
+    if invalid:
+        panel.patchkit.run.return_value.stdout = "invalid JSON"
+    else:
+        panel.patchkit.run.return_value.returncode = 1
+        panel.patchkit.run.return_value.stderr = "object build failed"
+    assert panel.main(["module", "preview"]) == 2
+    assert "module declarations" in capsys.readouterr().err
+    stop.assert_not_called()
+    navigate.assert_not_called()
+    serve.assert_not_called()
 
 
 @pytest.mark.parametrize("kind", ["machine", "fx", "service"])

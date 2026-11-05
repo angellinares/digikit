@@ -142,6 +142,7 @@ static i32 run_job(void)
     u32 c = 0, j, k, ch = job.channels, chunk_bytes = SPA_PAGE_BYTES * ch;
     spw_begin(&job.x, dkrt_blocks());
     job.armed = 0;
+    spp_clear(sp_peaks[job.r->blk]);
     while (c < job.plane_pages) {
         spw_span s;
         if (cancelled())
@@ -154,6 +155,7 @@ static i32 run_job(void)
             const u8 *pcm = rbuf + s.skip + j * chunk_bytes;
             i32 rc;
             spw_chunk_of(ch, job.frames, c, &ck);
+            spp_feed(sp_peaks[job.r->blk], job.frames, c * SPA_PAGE_FRAMES, pcm, ck.frames, ch);
             if (ch == 1)
                 spw_page_mono(pcm, ck.frames, pages[0]);
             else

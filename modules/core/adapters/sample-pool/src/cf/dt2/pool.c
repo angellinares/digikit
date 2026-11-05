@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include "dkrt_pool.h"
 #include "cf/pool_core.h"
+#include "cf/pool_peaks.h"
 #include "dk_fw_samples.h"
 #include "dk_fw_storage.h"
 
@@ -57,6 +58,10 @@ typedef struct Req {
 } Req;
 
 static Req reqs[SP_REQS];
+/* The adapter borrows only the top 16 slots (device floor 0x3f0). */
+static spp_peak peaks[SP_REQS][SPP_BINS];
+static u8 peak_ready[SP_REQS];
+static u8 peak_read[4096];
 static u8 slot_state[SP_SLOTS];  /* SL_* by stock slot */
 static u8 slot_busy[SP_SLOTS];   /* nonzero for every slot this adapter holds (the argument of sp_pick_slot) */
 static u32 slot_token[SP_SLOTS];
@@ -92,6 +97,36 @@ static i32 describe(u32 slot, const u32 *key, u32 pcm, dkpool_handle *out)
         return DKPOOL_E_FORMAT;
     rec = (const u32 *)(vec[0] + (u32)idx * SP_REC_BYTES);
     return sp_geometry((u32)&sp_dsp_pool_base, rec[SP_REC_BLOCK / 4], rec[SP_REC_EXTENT / 4], stereo_flags()[slot] != 0, pcm, key[2], out);
+}
+
+/* A sequential source scan on the same worker as the stock loader: 4 KiB
+ * reads, bounded by the validated geometry, no UI-task PCM access. */
+static i32 read_peaks(Req *r)
+{
+    u32 file[4], i, first = 0, frames = r->out->frames, ch = r->out->channels;
+    spp_peak *p;
+    if (r->slot < SP_SLOTS - SP_REQS || !frames || (ch != 1 && ch != 2))
+        return DKPOOL_E_FORMAT;
+    p = peaks[SP_SLOTS - 1u - r->slot];
+    spp_clear(p);
+    for (i = 0; i < 4; i++) ((volatile u32 *)file)[i] = 0;
+    if (dk_fw_storage_path_open(r->path, (const u8 *)"r", file) != 0)
+        return DKPOOL_E_READ;
+    if (dk_fw_storage_path_read(peak_read, 64, file) != 64) {
+        dk_fw_storage_path_close(file);
+        return DKPOOL_E_READ;
+    }
+    while (first < frames) {
+        u32 n = frames - first, bytes;
+        if (r->cancelled) break;
+        if (n > sizeof(peak_read) / (ch * 2u)) n = sizeof(peak_read) / (ch * 2u);
+        bytes = n * ch * 2u;
+        if (dk_fw_storage_path_read(peak_read, bytes, file) != (i32)bytes) break;
+        spp_feed(p, frames, first, peak_read, n, ch);
+        first += n;
+    }
+    dk_fw_storage_path_close(file);
+    return first == frames ? 0 : DKPOOL_E_READ;
 }
 
 /* The load job, in the worker task. */
@@ -131,6 +166,9 @@ static void run_load(Req *r)
     if (r->result == 0) {
         r->out->id = r->slot;
         r->out->token = r->token;
+        /* Overview IO is optional: playback keeps the valid stock block even
+           when the second source read fails. A new token gets one new attempt. */
+        peak_ready[SP_SLOTS - 1u - r->slot] = read_peaks(r) == 0;
     } else {
         dk_fw_samples_slot_release(r->slot);   /* a block we cannot describe is of no use */
     }
@@ -300,4 +338,11 @@ void dkpool_tick(void)
                 set_slot(slot, SL_FREE);
         dkrt_pool_lost();
     }
+}
+
+i32 dkpool_peaks(const dkpool_handle *h, u8 *out, u32 cap)
+{
+    if (dkpool_check(h) != 0 || h->id < SP_SLOTS - SP_REQS) return DKPOOL_E_LOST;
+    if (!peak_ready[SP_SLOTS - 1u - h->id]) return DKPOOL_E_READ;
+    return spp_copy(peaks[SP_SLOTS - 1u - h->id], h->frames, out, cap);
 }

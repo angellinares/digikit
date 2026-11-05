@@ -299,6 +299,14 @@ class MachineRig:
                 poke(nw(dv.TABLE) + 17, b.state)
                 poke(nw(dv.TABLE) + 18, b.stride)
                 poke(nw(dv.TABLE) + 19, b.clear)
+                poke(
+                    nw(dv.TABLE) + 22,
+                    sum(
+                        1 << p.latched_word
+                        for p in self.spec.params
+                        if p.latched_word is not None
+                    ),
+                )
             for addr, raw, is_bss in b.inits:
                 for k in range(len(raw) // 4):
                     w = (

@@ -126,6 +126,9 @@ fn check_ui_preview(m: &patchkit::module::Module) -> Result<()> {
     if m.manifest.param.iter().any(|p| p.action.is_some()) {
         return Err(reject("does not support parameter click actions"));
     }
+    if !m.manifest.native_page.is_empty() {
+        return Err(reject("does not support native callback pages"));
+    }
     for obj in m.objects.iter().filter(|o| o.arch == "cf") {
         if let Some(obj) = patchkit::desc::strip(obj) {
             let sections: Vec<_> = obj
@@ -825,6 +828,7 @@ plan.json {}",
                         note_on: v.note_on.clone(),
                         desc: v.desc.clone(),
                         stereo: v.stereo,
+                        latched: v.latched,
                         ranges,
                     });
                 }
@@ -882,7 +886,7 @@ plan.json {}",
                 };
                 // the click callbacks of the parameters (`DK_PARAM_ACTION`): their offsets in the image of the object that is packed
                 if let (Some(r), Some(reg)) = (resolved, regs.as_mut())
-                    && r.params.iter().any(|p| p.action.is_some())
+                    && (r.params.iter().any(|p| p.action.is_some()) || !r.native_pages.is_empty())
                 {
                     let obj = cf
                         .first()
@@ -891,6 +895,15 @@ plan.json {}",
                             Error(format!("{id}: a click action needs a ColdFire object"))
                         })?;
                     reg.set_actions(r, &patchkit::dkm::image_symbols(&obj)?)?;
+                    for page in &r.native_pages {
+                        for callback in [&page.draw, &page.event] {
+                            if !obj.symbols.iter().any(|symbol| symbol.global && &symbol.name == callback &&
+                                symbol.section.as_ref().is_some_and(|section| obj.sections.iter().any(|s| &s.name == section && s.kind == "text"))) {
+                                return Err(Error(format!("{id}: native page callback {callback} must be global text")));
+                            }
+                        }
+                    }
+                    reg.set_native_pages(r, id, &patchkit::dkm::image_symbols(&obj)?)?;
                 }
                 if !pages.is_empty() {
                     let r = regs.get_or_insert_with(|| patchkit::register::Register {
@@ -931,7 +944,9 @@ plan.json {}",
         }
         "desc" => {
             let id = need(rest)?;
-            let lib = library(&a.root, rest)?;
+            // Only this module's compiled declarations are needed. Unrelated content
+            // may have stale or unbuildable sources, just as when packing one module.
+            let lib = library_with(&a.root, rest, false, Some(std::slice::from_ref(id)))?;
             let m = lib
                 .get(id)
                 .ok_or_else(|| Error(format!("no module {id}")))?;
@@ -944,6 +959,7 @@ plan.json {}",
                     "machines": mf.machine,
                     "params": mf.param,
                     "pages": mf.page,
+                    "native_pages": mf.native_page,
                     "voices": mf.voice,
                     "sample_bank": mf.sample_bank,
                     "sample_tracks": mf.sample_tracks,
@@ -1503,6 +1519,22 @@ path = "build/gen/device-{dev}.inc"
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn desc_does_not_build_unrelated_content() {
+        let root = ApplyRoot::new("desc-selection");
+        root.module("modules", "test/selected", &[], true);
+        root.module("tests/fixtures/modules", "test/unrelated", &[], false);
+        let describe = |id: &str| {
+            run(Args {
+                root: root.0.clone(),
+                rest: vec!["desc".into(), id.into()],
+            })
+        };
+        describe("test/selected").unwrap();
+        // The same missing source still fails when explicitly requested.
+        assert!(describe("test/unrelated").is_err());
     }
 
     #[test]

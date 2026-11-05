@@ -4,8 +4,8 @@
 pub const RUNTIME_VERSION: u32 = 0x000504;
 
 pub mod contract {
-    pub const API: (u8, u8) = (1, 6);
-    pub const MACHINE: (u8, u8) = (1, 2);
+    pub const API: (u8, u8) = (1, 7);
+    pub const MACHINE: (u8, u8) = (1, 5);
     pub const FX: (u8, u8) = (1, 0);
     pub const SERVICE: (u8, u8) = (1, 0);
 }
@@ -301,6 +301,8 @@ pub mod api {
         pub param_set: unsafe extern "C" fn(track: u32, word: u32, raw: i32) -> i32,
         /// (api 1.6) Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path.
         pub sample_pool_set: unsafe extern "C" fn(handle: u32, index: u32, path: *const u8) -> i32,
+        /// (api 1.7) Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h.
+        pub sample_pool_peaks: unsafe extern "C" fn(handle: u32, index: u32, token: u32, out: *mut u8, capacity: u32) -> i32,
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).

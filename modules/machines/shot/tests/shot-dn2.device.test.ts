@@ -542,7 +542,7 @@ runtimeTests(
       });
 
       // ---- 8b. SMP picks the pool entry of a note: T is entry 0 and L (4 s, 220/330 Hz) is added as entry 2, so entry 1 (Y) lies between them. The page is still
-      // SHOT's: knob B is SMP. Both SMP values are turned while a long sample plays, because `_dv_params` is rewritten only while a voice renders.
+      // SHOT's: knob D is SMP. Both SMP values are turned while a long sample plays, because `_dv_params` is rewritten only while a voice renders.
       await phase('smp', async () => {
         const index = await api.add(file('l'));
         expect(index, 'L takes the first free entry after Y').toBe(2);

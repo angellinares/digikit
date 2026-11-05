@@ -92,6 +92,7 @@
       {
         "default": 0,
         "id": "shot_smp",
+        "latched_word": 0,
         "max": 3840,
         "min": 0,
         "name": "Sample",
@@ -135,7 +136,7 @@
         "max": 32512,
         "min": 0,
         "name": "Pitch",
-        "short": "PITCH",
+        "short": "TUNE",
         "slot": 31,
         "template": 213
       }
@@ -144,6 +145,7 @@
       {
         "default": 0,
         "id": "shot_smp",
+        "latched_word": 0,
         "max": 3840,
         "min": 0,
         "name": "Sample",
@@ -187,7 +189,7 @@
         "max": 32512,
         "min": 0,
         "name": "Pitch",
-        "short": "PITCH",
+        "short": "TUNE",
         "slot": 6,
         "template": 204
       }

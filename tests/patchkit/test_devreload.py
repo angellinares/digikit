@@ -157,7 +157,8 @@ def test_card_pack_uses_same_preview_variant_as_candidate(
         request = pack_cli.parse_args([str(arg) for arg in args])
         request.o.write_text(f"{request.module}:{request.device}:{request.ui_preview}")
 
-    tools = Mock(patchkit_run=Mock(side_effect=pack))
+    tools = Mock()
+    monkeypatch.setattr(dev, "pack_store", pack)
     monkeypatch.setattr(pk_dkrt, "Tools", Mock(return_value=tools))
     monkeypatch.setattr(config, "stock", Mock(return_value=tmp_path / "stock.syx"))
     build_card = Mock()
@@ -238,7 +239,8 @@ def store_build(monkeypatch, tmp_path):
             + b"".join(p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file())
         )
 
-    tools = Mock(patchkit_run=Mock(side_effect=pack))
+    tools = Mock()
+    monkeypatch.setattr(dev, "pack_store", pack)
     monkeypatch.setattr(pk_dkrt, "Tools", Mock(return_value=tools))
     monkeypatch.setattr(config, "stock", Mock(return_value=tmp_path / "stock.syx"))
     card_build = Mock(side_effect=build_card)
@@ -374,7 +376,7 @@ def test_synthetic_and_file_store_can_reuse_unchanged_card(store_build, tmp_path
 
 @pytest.mark.parametrize("failure", ["pack", "copy", "card", "selection", "shutdown"])
 def test_prepare_or_shutdown_failure_preserves_mounted_card(
-    store_build, tmp_path, failure
+    store_build, tmp_path, failure, monkeypatch
 ):
     packed, _, card_build, selection, stop = store_build
     run_dir = tmp_path / "kept"
@@ -384,7 +386,7 @@ def test_prepare_or_shutdown_failure_preserves_mounted_card(
     packed["bytes"] = b"updated"
     ids = None
     if failure == "pack":
-        pk_dkrt.Tools().patchkit_run.side_effect = RuntimeError("pack")
+        monkeypatch.setattr(dev, "pack_store", Mock(side_effect=RuntimeError("pack")))
     elif failure == "copy":
         ids = [f"file:{tmp_path / 'missing'}=samples/missing"]
     elif failure == "card":
@@ -467,6 +469,7 @@ def test_start_mounts_prepared_card_without_repacking(monkeypatch, tmp_path):
     session = Mock(emu=emu, card=str(card))
     monkeypatch.setattr(dev.H, "Session", Mock(return_value=session))
     pack_card = Mock()
+    monkeypatch.setattr(dev, "cached_runtime_image", Mock(return_value=None))
     monkeypatch.setattr(dev, "store_card", pack_card)
     assert dev.start(cell, tmp_path, ["test/sine*"], prepared_card=card) == (
         emu,
@@ -476,3 +479,413 @@ def test_start_mounts_prepared_card_without_repacking(monkeypatch, tmp_path):
     assert (tmp_path / "card.txt").read_text() == str(card)
     pack_card.assert_not_called()
     session.open.assert_called_once()
+
+
+def test_same_session_launchers_wait_but_other_sessions_do_not(monkeypatch, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    blocked, entered = Event(), Event()
+    real_flock = dev.flock
+
+    def observe(lock, operation):
+        try:
+            return real_flock(lock, operation)
+        except BlockingIOError:
+            blocked.set()
+            raise
+
+    monkeypatch.setattr(dev, "flock", observe)
+
+    def second():
+        with dev.session_lock(tmp_path / "same"):
+            entered.set()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with dev.session_lock(tmp_path / "same"):
+            pending = pool.submit(second)
+            assert blocked.wait(5)
+            assert not entered.is_set()
+            with dev.session_lock(tmp_path / "other", timeout=0):
+                pass
+        pending.result(timeout=5)
+    assert entered.is_set()
+
+
+def test_session_startup_lock_timeout_leaves_holder_intact(tmp_path):
+    with (
+        dev.session_lock(tmp_path),
+        pytest.raises(dev.H.HarnessError, match="startup did not finish"),
+        dev.session_lock(tmp_path, timeout=0),
+    ):
+        pytest.fail("same session acquired twice")
+    with dev.session_lock(tmp_path, timeout=0):
+        pass
+
+
+def test_reload_waits_for_busy_without_cancelling_job(monkeypatch):
+    emu = Mock()
+    emu.call.side_effect = [dev.EmuError(3, "a job is running"), {"path": "none"}]
+    monkeypatch.setattr(dev.time, "sleep", Mock())
+    assert dev.reload_ready(emu, Mock()) == {"path": "none"}
+    assert emu.call.call_count == 2
+    emu.quit.assert_not_called()
+
+
+def test_reload_busy_deadline_preserves_running_job(monkeypatch):
+    emu = Mock()
+    emu.call.side_effect = dev.EmuError(3, "a job is running")
+    monkeypatch.setattr(dev.time, "monotonic", Mock(side_effect=[0, 61]))
+    with pytest.raises(dev.H.HarnessError, match="running job was left intact"):
+        dev.reload_ready(emu, Mock())
+    emu.quit.assert_not_called()
+
+
+def test_reload_recovers_only_missing_record_and_reapplies_card(monkeypatch, tmp_path):
+    from unittest.mock import call
+
+    emu = Mock()
+    emu.call.side_effect = [
+        dev.EmuError(4, "dev.reload: the running image has no patch record"),
+        {"start_used": "snapshot"},
+        {"path": "none"},
+    ]
+    session = object.__new__(dev.H.Session)
+    session.emu = emu
+    session.cell = Mock(stall_ms=2000)
+    session.syx = tmp_path / "stock.syx"
+    session.run_dir = tmp_path
+    session.card = str(tmp_path / "kept-card.img")
+    session.cache_dir = None
+    session.timings = {}
+    image = tmp_path / "recovery/patched.syx"
+    patch = Mock(return_value=image)
+    monkeypatch.setattr(dev.H, "patched_image", patch)
+    assert dev.reload_ready(emu, session) == {"path": "none"}
+    patch.assert_called_once_with(session.cell, session.syx, tmp_path / "recovery")
+    assert emu.call.call_args_list[1] == call(
+        "firmware.load",
+        syx=str(image),
+        force=True,
+        auto_no=True,
+        start="auto",
+        card=session.card,
+    )
+    emu.quit.assert_not_called()
+
+
+def test_reload_preserves_other_rejections():
+    emu = Mock()
+    error = dev.EmuError(4, "new module does not fit")
+    emu.call.side_effect = error
+    session = Mock()
+    with pytest.raises(dev.EmuError, match="does not fit"):
+        dev.reload_ready(emu, session)
+    session.load.assert_not_called()
+
+
+def test_build_only_invokes_builder_for_stale_modules(monkeypatch, tmp_path):
+    folders = {mid: tmp_path / mid for mid in ("core/base", "core/ui")}
+    monkeypatch.setattr(dev.modroots, "module_dir", folders.__getitem__)
+    monkeypatch.setattr(
+        dev.patchkit,
+        "module_statuses",
+        Mock(
+            return_value={
+                folders["core/base"]: "unchanged",
+                folders["core/ui"]: "needs build",
+            }
+        ),
+    )
+    builder = Mock(return_value=["built ui"])
+    monkeypatch.setattr(dev.patchkit, "build_module", builder)
+    assert dev.build(list(folders))[1] == ["core/ui"]
+    builder.assert_called_once_with(folders["core/ui"], check=False)
+
+
+@pytest.mark.parametrize("change", ["none", "inputs", "image", "busy", "missing"])
+def test_preview_warm_reuse_checks_inputs_and_live_image(monkeypatch, tmp_path, change):
+    image = tmp_path / "patched.syx"
+    image.write_bytes(b"runtime")
+    digest = dev.hashlib.sha256(image.read_bytes()).hexdigest()
+    cached = Mock(return_value=image)
+    monkeypatch.setattr(dev, "cached_runtime_image", cached)
+    reload = Mock(return_value={"path": "boot"})
+    monkeypatch.setattr(dev, "reload_ready", reload)
+    monkeypatch.setattr(dev.H, "patched_image", Mock(return_value=image))
+    emu = Mock()
+    status = {"firmware": {"syx_sha256": digest}}
+    emu.status.return_value = status
+    session = Mock(run_dir=tmp_path)
+    assert dev.preview_reload(emu, session, [], True)["path"] == "boot"
+    cached.assert_not_called()
+    if change == "inputs":
+        image.write_bytes(b"new runtime")
+    elif change == "image":
+        status["firmware"]["syx_sha256"] = "stock-image"
+    elif change == "busy":
+        emu.status.side_effect = [{"job": {"kind": "running"}}, status]
+        monkeypatch.setattr(dev.time, "sleep", Mock())
+    elif change == "missing":
+        cached.return_value = None
+    assert dev.preview_reload(emu, session, [], False)["path"] == (
+        "kept" if change in ("none", "busy") else "boot"
+    )
+    reload.assert_not_called()
+    assert session.load.call_count == (
+        1 if change in ("inputs", "image", "missing") else 0
+    )
+
+
+def test_card_restart_reuses_firmware_but_changed_runtime_repatches(
+    monkeypatch, tmp_path
+):
+    fingerprint = Mock(return_value="original")
+    monkeypatch.setattr(dev, "runtime_fingerprint", fingerprint)
+    image = tmp_path / "runtime/patched.syx"
+
+    def patch(*args):
+        image.parent.mkdir(exist_ok=True)
+        image.write_bytes(fingerprint.return_value.encode())
+        return image
+
+    patcher = Mock(side_effect=patch)
+    monkeypatch.setattr(dev.H, "patched_image", patcher)
+    session = Mock(run_dir=tmp_path)
+    assert dev.cached_runtime_image(session) == image
+    assert dev.cached_runtime_image(session) == image
+    patcher.assert_called_once()
+    fingerprint.return_value = "core changed"
+    assert dev.cached_runtime_image(session) == image
+    assert patcher.call_count == 2
+    image.write_bytes(b"corrupt cached image")
+    assert dev.cached_runtime_image(session) == image
+    assert patcher.call_count == 3
+
+
+def test_module_preview_uploads_to_mounted_card_without_rebuilding_or_stopping(
+    store_build, monkeypatch, tmp_path
+):
+    packed, _, card_build, _, stop = store_build
+    run_dir = tmp_path / "kept"
+    _, card = refresh(run_dir)
+    original = card.read_bytes()
+    packed["bytes"] = b"updated"
+    update = Mock()
+    monkeypatch.setattr(dev, "upload_store", update)
+    emu = Mock()
+    result = dev.refresh_store(
+        emu, "dn2", "emulator", ["test/sine*"], run_dir, False, False, live_update=True
+    )
+    assert result == (emu, card)
+    update.assert_called_once()
+    assert update.call_args.args[0] is emu
+    assert card.read_bytes() == original
+    card_build.assert_called_once()
+    stop.assert_not_called()
+    assert refresh(run_dir, emu) == (emu, card)
+    stop.assert_not_called()
+
+
+def test_failed_upload_does_not_commit_candidate_or_replace_card(
+    store_build, monkeypatch, tmp_path
+):
+    packed, _, card_build, _, stop = store_build
+    run_dir = tmp_path / "kept"
+    _, card = refresh(run_dir)
+    baseline = (run_dir / "store-request.json").read_bytes()
+    original = card.read_bytes()
+    packed["bytes"] = b"updated"
+    monkeypatch.setattr(
+        dev, "upload_store", Mock(side_effect=dev.H.HarnessError("verify failed"))
+    )
+    with pytest.raises(dev.H.HarnessError, match="verify failed"):
+        dev.refresh_store(
+            Mock(),
+            "dn2",
+            "emulator",
+            ["test/sine*"],
+            run_dir,
+            False,
+            False,
+            live_update=True,
+        )
+    assert (run_dir / "store-request.json").read_bytes() == baseline
+    assert card.read_bytes() == original
+    card_build.assert_called_once()
+    stop.assert_not_called()
+
+
+def test_uploaded_preview_keeps_saved_overlay_when_daemon_is_absent(
+    store_build, tmp_path
+):
+    _, _, card_build, _, _ = store_build
+    run_dir = tmp_path / "kept"
+    _, card = refresh(run_dir)
+    overlay = run_dir / "overlay.bin"
+    overlay.write_bytes(b"uploaded DKM and user data")
+    assert refresh(run_dir) == (None, card)
+    assert overlay.read_bytes() == b"uploaded DKM and user data"
+    card_build.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", [None, "missing", "boot", "no_boot"])
+def test_upload_store_waits_for_boot_and_module_without_debug_log(
+    monkeypatch, tmp_path, capsys, failure
+):
+    from tools.device import dkrun, dktransfer, dkupload
+
+    source = tmp_path / "plus_drive/digikit/modules/voice.dkm"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"packed module")
+    emu = Mock()
+    emu.status.return_value = {"job": None}
+    emu.call.return_value = {"previous": "free"}
+    elapsed = 0.0
+
+    def step(_instructions):
+        nonlocal elapsed
+        elapsed += 0.5
+
+    emu.step.side_effect = step
+    monkeypatch.setattr(dev.time, "monotonic", lambda: elapsed)
+    if failure == "no_boot":
+        emu.drain_events.return_value = []
+    else:
+        emu.drain_events.side_effect = [
+            [],  # Clear old events before requesting the restart.
+            [{"kind": "firmware.loaded", "ok": failure != "boot"}],
+        ]
+    up = Mock()
+    up.verify.return_value = dev.hashlib.sha256(source.read_bytes()).hexdigest()
+    up.modules.side_effect = (
+        None
+        if failure == "missing"
+        else [{"modules": []}, {"modules": [{"name": "VOICE"}]}]
+    )
+    up.modules.return_value = {"modules": []}
+    up.ls.return_value = [("modules/voice.dkm", 0, "")]
+    up.log.side_effect = AssertionError("preview must not require a debug log")
+    monkeypatch.setattr(dkupload, "Uploader", Mock(return_value=up))
+    monkeypatch.setattr(dkrun, "require_runtime", Mock())
+    upload = Mock()
+    monkeypatch.setattr(dkrun, "upload_if_changed", upload)
+    monkeypatch.setattr(dktransfer, "header_info", Mock(return_value={"name": "VOICE"}))
+    legacy_restart = Mock(
+        side_effect=AssertionError("preview must not wait for BOOT_START")
+    )
+    monkeypatch.setattr(dktransfer, "restart_device", legacy_restart)
+    events = Mock()
+    for name, obj in (
+        ("upload", upload),
+        ("verify", up.verify),
+        ("select", up.select),
+        ("restart", up.restart),
+    ):
+        events.attach_mock(obj, name)
+    if failure:
+        reason = {
+            "missing": "MODULES does not list VOICE.*files are on the card but did not load",
+            "boot": "cold boot failed",
+            "no_boot": "emulator did not boot again",
+        }[failure]
+        with pytest.raises(dev.H.HarnessError, match=reason):
+            dev.upload_store(emu, tmp_path, {"selected": ["modules/voice.dkm"]})
+    else:
+        dev.upload_store(emu, tmp_path, {"selected": ["modules/voice.dkm"]})
+        assert "preview: module ready (VOICE)" in capsys.readouterr().out
+    if failure == "no_boot":
+        assert elapsed == 90
+    else:
+        assert elapsed < 22
+    if failure in ("boot", "no_boot"):
+        up.modules.assert_not_called()
+    assert [c[0] for c in events.mock_calls] == [
+        "upload",
+        "verify",
+        "select",
+        "restart",
+    ]
+    emu.quit.assert_not_called()
+    emu.restart.assert_not_called()
+    up.log.assert_not_called()
+    legacy_restart.assert_not_called()
+    assert emu.call.call_args_list[-1].kwargs == {"mode": "free"}
+
+
+def test_missing_card_rebuilds_before_stopping_live_preview(store_build, tmp_path):
+    _, _, card_build, _, stop = store_build
+    run_dir = tmp_path / "kept"
+    _, card = refresh(run_dir)
+    card.unlink()
+    emu = Mock()
+    assert dev.refresh_store(
+        emu, "dn2", "emulator", ["test/sine*"], run_dir, False, False, live_update=True
+    ) == (None, card)
+    assert card.is_file()
+    assert card_build.call_count == 2
+    stop.assert_called_once_with(emu, run_dir)
+
+
+@pytest.mark.parametrize(
+    "changed", ["object", "manifest", "sdk", "port", "packer", "stock"]
+)
+def test_runtime_cache_key_tracks_patch_inputs(monkeypatch, tmp_path, changed):
+    monkeypatch.setattr(dev, "ROOT", tmp_path)
+    folder = tmp_path / "module"
+    folder.mkdir()
+    manifest = folder / "module.toml"
+    manifest.write_text('[module]\nrequires = []\n[[object]]\npath = "object.json"\n')
+    inputs = {
+        "manifest": manifest,
+        "object": folder / "object.json",
+        "sdk": tmp_path / "sdk/sdk.toml",
+        "port": tmp_path / "devices/ports/current.toml",
+        "packer": tmp_path / "patchkit-bin",
+        "stock": tmp_path / "stock.syx",
+    }
+    for path in [
+        *inputs.values(),
+        tmp_path / "Cargo.lock",
+        tmp_path / "packages/patchkit/Cargo.toml",
+    ]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path != manifest:
+            path.write_bytes(b"original")
+    monkeypatch.setattr(dev.modroots, "module_dir", lambda mid: folder)
+    monkeypatch.setattr(
+        dev.modroots, "object_path", lambda data, folder, obj: folder / obj["path"]
+    )
+    monkeypatch.setattr(dev.patchkit, "binary", lambda: inputs["packer"])
+    before = dev.runtime_fingerprint(["core/base"], "dn2", inputs["stock"])
+    assert before
+    with inputs[changed].open("ab") as content:
+        content.write(b"\n# changed")
+    assert dev.runtime_fingerprint(["core/base"], "dn2", inputs["stock"]) != before
+    inputs["object"].unlink()
+    assert dev.runtime_fingerprint(["core/base"], "dn2", inputs["stock"]) is None
+
+
+def test_lost_upload_overlay_rebuilds_card_instead_of_using_old_module(
+    store_build, monkeypatch, tmp_path
+):
+    packed, _, card_build, _, _ = store_build
+    run_dir = tmp_path / "kept"
+    _, card = refresh(run_dir)
+    packed["bytes"] = b"updated"
+    monkeypatch.setattr(dev, "upload_store", Mock())
+    dev.refresh_store(
+        Mock(),
+        "dn2",
+        "emulator",
+        ["test/sine*"],
+        run_dir,
+        False,
+        False,
+        live_update=True,
+    )
+    assert (run_dir / "store-overlay-required").is_file()
+    assert refresh(run_dir) == (None, card)
+    assert b"updated" in card.read_bytes()
+    assert card_build.call_count == 2
+    assert not (run_dir / "store-overlay-required").exists()

@@ -78,6 +78,9 @@ void dkpool_tick(void);
    cancelled. An adapter without the symbol behaves as before: the load runs to its end and its result is released.
    Runs in the UI-loop task, like every dkpool_* call. */
 void dkpool_cancel(uint32_t req);
+/* Optional bounded overview: READY handle only, native-endian int16 min/max
+   pairs, <=512 bins, width ceil(frames/512). Capacity in bytes, no IO/PCM scan. */
+int32_t dkpool_peaks(const dkpool_handle *h, uint8_t *out, uint32_t capacity);
 
 /* Adapter to runtime. result: 0, DKPOOL_E_POOL, DKPOOL_E_READ or DKPOOL_E_FORMAT. */
 void dkrt_pool_done(uint32_t req, int32_t result);

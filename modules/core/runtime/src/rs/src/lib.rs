@@ -27,6 +27,7 @@ pub mod fxpage;
 mod fxsend;
 mod loader;
 pub mod pageclick;
+pub mod nativepage;
 pub mod paramapi;
 pub mod registry;
 pub mod scan;
@@ -524,6 +525,7 @@ unsafe extern "C" fn api_sample_pool_set(handle: u32, index: u32, path: *const u
 unsafe extern "C" fn api_sample_pool_clear(handle: u32, track: u32) -> i32 { tracks::pool_clear(handle, track) }
 unsafe extern "C" fn api_sample_pool_status(handle: u32, track: u32) -> i32 { tracks::status(handle, track) }
 unsafe extern "C" fn api_sample_pool_info(handle: u32, track: u32, out: *mut u8) -> i32 { tracks::info(handle, track, out) }
+unsafe extern "C" fn api_sample_pool_peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity: u32) -> i32 { tracks::peaks(handle, track, token, out, capacity) }
 unsafe extern "C" fn api_sample_pool_path(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 { tracks::path(handle, track, buf, cap) }
 unsafe extern "C" fn api_param_get(track: u32, word: u32) -> i32 { pageclick::param_get(track, word) }
 unsafe extern "C" fn api_param_set(track: u32, word: u32, raw: i32) -> i32 { pageclick::param_set(track, word, raw) }
@@ -569,6 +571,7 @@ pub static mut dkrt_api: Api = Api {
     param_get: api_param_get,
     param_set: api_param_set,
     sample_pool_set: api_sample_pool_set,
+    sample_pool_peaks: api_sample_pool_peaks,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {

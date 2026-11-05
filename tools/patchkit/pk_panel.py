@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import re
 import signal
@@ -15,8 +16,8 @@ import tomllib
 from pathlib import Path
 
 from tools import python_env
+from tools.patchkit import patchkit, pk_dkrt
 from tools.patchkit import pk_devreload as dev
-from tools.patchkit import pk_dkrt
 
 PREVIEWS = {
     "menu": ("emulator", "digikit-menu"),
@@ -45,11 +46,11 @@ def navigate(argv: list[str]) -> int:
         start_new_session=True,
     )
     try:
-        return proc.wait(timeout=120)
+        return proc.wait(timeout=360)
     except (KeyboardInterrupt, subprocess.TimeoutExpired) as e:
         stop_group(proc)
         if isinstance(e, subprocess.TimeoutExpired):
-            raise dev.H.HarnessError("preview startup exceeded 120 seconds") from e
+            raise dev.H.HarnessError("preview startup exceeded 360 seconds") from e
         raise
 
 
@@ -133,6 +134,22 @@ def stop_exact(run_dir: Path) -> None:
         time.sleep(0.05)
 
 
+def machine_has_samples(mid: str) -> bool:
+    """Read sample declarations from the compiled DK_* records, not the manifest."""
+    result = patchkit.run(["desc", mid], capture=True)
+    if result.returncode:
+        raise dev.H.HarnessError(
+            f"{mid}: cannot read module declarations:\n{result.stderr}"
+        )
+    try:
+        records = json.loads(result.stdout)
+        return any(
+            records.get(key) is not None for key in ("sample_bank", "sample_tracks")
+        )
+    except (ValueError, AttributeError) as e:
+        raise dev.H.HarnessError(f"{mid}: invalid module declarations: {e}") from e
+
+
 def module_preview(name: str, device: str, stop: bool, full_dsp: bool = False) -> int:
     mid = (
         resolve_module_id(name, allow_missing=True)
@@ -146,6 +163,8 @@ def module_preview(name: str, device: str, stop: bool, full_dsp: bool = False) -
         return 0
     manifest = tomllib.loads((dev.modroots.module_dir(mid) / "module.toml").read_text())
     kind = manifest["module"]["type"]
+    sample_machine = not full_dsp and kind == "machine" and machine_has_samples(mid)
+    full_dsp = full_dsp or sample_machine
     ui_preview = not full_dsp and kind == "machine"
     if not full_dsp and kind == "fx":
         raise dev.H.HarnessError(f"{mid}: effect preview requires DSP; use --dsp")
@@ -161,10 +180,32 @@ def module_preview(name: str, device: str, stop: bool, full_dsp: bool = False) -
             "UI preview: zero DSP, no audio. Use --dsp for the full module.",
             flush=True,
         )
-    keys = (
-        "tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,"
-        "tap:DOWN*3,tap:YES,wait:600,shot:module"
-    )
+    elif sample_machine:
+        print("Sample machine preview: full module with DSP.", flush=True)
+    if kind == "machine":
+        # The preview card selects only this module. Its first machine follows
+        # the current port's stock rows; use native selection/editing, not a menu overlay.
+        steps = [{"tap": "NO"}] * 4 + [
+            {"tap": ["TRK", "TRIG 1"]},
+            {"tap": ["FUNC", "SRC"]},
+        ]
+        for _ in range(16):
+            steps += [{"tap": "UP"}, {"wait_ms": 80}]
+        for _ in range(7 if device == "dt2" else 5):
+            steps += [{"tap": "DOWN"}, {"wait_ms": 80}]
+        steps += [
+            {"tap": "YES"},
+            {"wait_ms": 300},
+            {"tap": "YES"},
+            {"wait_ms": 300},
+            {"shot": "module"},
+        ]
+        keys = json.dumps(steps)
+    else:
+        keys = (
+            "tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,"
+            "tap:DOWN*3,tap:YES,wait:600,shot:module"
+        )
     # Generic devreload prepares and compares the store before touching its daemon.
     result = navigate(
         [
@@ -173,6 +214,7 @@ def module_preview(name: str, device: str, stop: bool, full_dsp: bool = False) -
             device,
             "--store",
             store[0],
+            "--reuse",
             "--keys",
             keys,
             *(["--store-ui-preview"] if ui_preview else []),

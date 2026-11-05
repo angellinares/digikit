@@ -6,23 +6,27 @@ picks the entry. The picker adds PCM16 files (mono or stereo) to the pool throug
 
 | Word | Parameter | Knob | Range and default | Meaning |
 | --- | --- | --- | --- | --- |
-| 0 | SMP | B | 0 to 15, default 0 | pool entry that plays; turning steps through the pool, p-lockable; an empty entry is silent |
-| 1 | START | C | 0 to 127, default 0 | first frame, spread over the whole sample: frame = round(frames * v / 127) |
-| 2 | END | E | 0 to 127, default 127 | end frame (exclusive) the same way; END at or below START plays nothing |
-| 3 | PLAY | F | 0 to 3, default 3 | 0 REV, 1 REV.L, 2 FWD.L, 3 FWD (the stock PLAY modes); .L loops the region START to END |
-| 4 | PITCH | G | 0 to 127, default 64 | 64 is the played note unchanged; each unit is 3/8 semitone, so -24 to +23.6 semitones |
+| 0 | SMP | D | 0 to 15, default 0 | pool entry that plays; turning steps through the pool, p-lockable; an empty entry is silent |
+| 1 | START | E | 0 to 127, default 0 | first frame, spread over the whole sample: frame = round(frames * v / 127) |
+| 2 | END | H | 0 to 127, default 127 | end frame (exclusive) the same way; END at or below START plays nothing |
+| 3 | PLAY | B | 0 to 3, default 3 | 0 REV, 1 REV.L, 2 FWD.L, 3 FWD (the stock PLAY modes); .L loops the region START to END |
+| 4 | TUNE | A | 0 to 127, default 64 | 64 is the played note unchanged; each unit is 3/8 semitone, so -24 to +23.6 semitones |
 
-The knob letters are the same on both devices (the shared knob map of `param_slots`: words 0 to 4 on B C E F G). The Digitakt II keeps TUNE on
-A, the sample slot on D and LEV on H; the Digitone II has A, D and H free.
+Both devices use the same two opt-in pages (machine contract 1.5). The control page binds TUNE A, PLAY B, SMP D, START E and END H,
+with the native left LEV fader. A bounded overlay uses code-native tune/sample boxes and a portable PLAY mark. TUNE displays signed whole
+semitones and an exact fractional row, without changing pitch's 0..127 range or 3/8-semitone scale. An empty selected pool slot is a dotted
+sample box at D; a ready box shows its local index, with compact loading/missing marks. There is no center status text. START is bottom-left E and END
+bottom-right H on both pages. The waveform page has ZOOM at G, adjustable from 1.00x to 4.00x in 1/64x detents; zoom is UI-local per track.
+It shows the loaded sample's bounded min/max overview, a permanent zero line and contrasting trim flags. The viewport follows START. The
+ready sample box shows its local slot index; the waveform page keeps its upper area free for the graph. The graph spans global x17..111 and y6..36, centered at x64; START, ZOOM and END keep their encoder-aligned positions below it. SRC/SYN cycles the two pages.
+The ordinary `DK_PAGE` remains the storage/parameter schema; its fixed knob slots do not constrain these custom bindings.
 
-- Pool: click SMP (release without a turn) to open the list: `+ ADD`, then the entries 00 to 15 with name and length. The entry SMP points at is
-  marked with `>` and the cursor starts on it. YES on an entry sets SMP to it and returns to the page. YES on `+ ADD` opens the folder browser; YES
-  on a file adds it to the pool, sets SMP to the new entry and returns to the page, all in one press. An error (pool full, bad path) closes the
-  list and shows its text on the page. RIGHT on an entry gives CLEAR and INFO; NO goes back one level (browser, list, page). The pick writes SMP of the
-  clicked track with `param_set` (API 1.6); while TRIG or FUNC is held it writes nothing and the page shows `RELEASE TRIG TO SET SMP`. The list is the
-  chooser of `docs/design/ui-rules.md`. SHOT declares `DK_PARAM_ACTION(shot, 0, shot_smp_click)`; the runtime page hook calls
-  `void shot_smp_click(uint32_t track)` in the UI task (see `docs/design/machine-page-click.md`). The test route `test/track-select` fills the pool
-  in tests.
+- Pool: click SMP at D (release without a turn) to open entries 00 to 15 with name and state. The current entry is marked with `>` and selected.
+  YES on an empty or filled slot opens its file browser; YES on a file loads that slot, sets SMP and returns to the control page. Slots retain
+  their indexes when cleared. RIGHT on an entry gives CLEAR and INFO; NO goes back one level. The pick writes SMP of the clicked track with
+  `param_set` (API 1.6); while TRIG or FUNC is held it writes nothing and the page shows `RELEASE TRIG TO SET SMP`. The chooser is described in
+  `docs/design/ui-rules.md`. `DK_PARAM_ACTION(shot, 0, shot_smp_click)` follows the custom D binding; the test route `test/track-select` fills the
+  pool in tests.
 - Pitch: MIDI note 60 plays the sample at its own speed; the cursor rate is `srcrate / 48000 * 2^(semitones / 12)` in Q16.16, limited to 1/65536 to 64
   frames per sample. As in the stock one-shot, SMP is read at note-on; START, END, PLAY, PITCH and the note follow every block. A PLAY
   change that flips the direction does so at the current cursor. FWD reads from the cursor to END (a later START has no effect); REV reads
@@ -38,7 +42,7 @@ A, the sample slot on D and LEV on H; the Digitone II has A, D and H free.
   `render` checks the epoch and acquires and releases the entry. A stale token (clear, a new load, a stock reset) or an entry that is not ready gives
   a silent block and `DK_DONE`.
 - Packing: `patchkit pack digikit/shot --device dt2|dn2` carries the pool table in the DSP section (kind 2 record) and declares API 1.5 and machine
-  contract 1.2. The runtime reserves it when the module loads and writes the records over the DSP link once the DSP image is in.
+  contract 1.5. The runtime reserves it when the module loads and writes the records over the DSP link once the DSP image is in.
 - Filling the pool in a test: the fixture `test/track-select` (`tests/fixtures/modules/track-select`) calls the pool API for the
   first table in the image (handle 1). Request 0x3e with body `[1, 0x61, ...path bytes]` is `sample_pool_add` (the reply body is the pool index);
   `[1, 0x63, index]` is `sample_pool_clear`; request 0x3f with body `[1, index]` returns the BE32 status (3 = ready) and, when ready, frames,

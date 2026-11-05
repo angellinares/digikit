@@ -48,10 +48,11 @@ typedef struct dk_api {
     int32_t (*param_get)(uint32_t track, uint32_t word); /* (api 1.6) Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). UI task only, and only in the flow of a click: from the DK_PARAM_ACTION callback until the page gets its next key or turn (so a list the callback opened may call it), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows. */
     int32_t (*param_set)(uint32_t track, uint32_t word, int32_t raw); /* (api 1.6) Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock). */
     int32_t (*sample_pool_set)(uint32_t handle, uint32_t index, const uint8_t *path); /* (api 1.6) Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path. */
+    int32_t (*sample_pool_peaks)(uint32_t handle, uint32_t index, uint32_t token, uint8_t *out, uint32_t capacity); /* (api 1.7) Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h. */
 } dk_api;
 
 #if UINTPTR_MAX == 0xffffffffu
-_Static_assert(sizeof(dk_api) == 132, "dk_api size");
+_Static_assert(sizeof(dk_api) == 136, "dk_api size");
 _Static_assert(offsetof(dk_api, version) == 0, "dk_api.version");
 _Static_assert(offsetof(dk_api, size) == 4, "dk_api.size");
 _Static_assert(offsetof(dk_api, device) == 8, "dk_api.device");
@@ -85,6 +86,7 @@ _Static_assert(offsetof(dk_api, sample_pool_path) == 116, "dk_api.sample_pool_pa
 _Static_assert(offsetof(dk_api, param_get) == 120, "dk_api.param_get");
 _Static_assert(offsetof(dk_api, param_set) == 124, "dk_api.param_set");
 _Static_assert(offsetof(dk_api, sample_pool_set) == 128, "dk_api.sample_pool_set");
+_Static_assert(offsetof(dk_api, sample_pool_peaks) == 132, "dk_api.sample_pool_peaks");
 #endif
 
 /* Imports: names the loader resolves in the runtime's table (Api.import gives the address at run time). */
@@ -142,6 +144,6 @@ void dkm_slot_5(const dk_api *api);
 void dkm_slot_6(const dk_api *api);
 void dkm_slot_7(const dk_api *api);
 
-#define DK_API_MINOR 6
+#define DK_API_MINOR 7
 
 #endif /* DK_GEN_API_H */

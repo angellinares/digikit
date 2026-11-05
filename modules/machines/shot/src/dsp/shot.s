@@ -1,4 +1,4 @@
-// digikit/shot: one-shot playback of the stereo sample bound to the track, a stereo machine of the SDK contract (<dk/machine.h>, contract 1.2),
+// digikit/shot: one-shot playback of the stereo sample bound to the track, a stereo machine of the SDK contract (<dk/machine.h>, contract 1.3),
 // one body for both devices. The adapter of core/dsp-voice calls `_shot_note_on` once per note and `_shot_render` once per block with
 // R4 = this voice's state, R8 = the `dk_voice_in` (pitch in semitones << 8 with the tune folded in, the track, the outputs `out` (L) and `out_r` (R)),
 // R12 = the five parameter words SMP, START, END, PLAY, PITCH (unit << 8: 0 .. 0x7f00 = UI 0 .. 127; SMP is 0 .. 15, 0 .. 0x0f00).
@@ -107,7 +107,8 @@ _shot_render:
     R1 = PASS R1;
     IF NE R0 = -R0;
     DM(4, I3) = R0;
-    R0 = DM(12, I3);                      // the pool index
+    R0 = DM(0, I4);                       // SMP: the adapter retains its trigger snapshot
+    R0 = LSHIFT R0 BY -8;                 // pool index; the bound metadata and epoch stay in voice state
     SHOT_TRACK_PTRS;
     NOP; NOP; NOP;
     DK_SAMPLE_BANK_LOCK(R13);

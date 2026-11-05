@@ -12,7 +12,7 @@ ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 # Calls through the Api table that the packer cannot see: the SMP pick writes the parameter (API 1.6).
-uses_api = ["param_get", "param_set", "sample_pool_set"]
+uses_api = ["param_get", "param_set", "sample_pool_set", "sample_pool_peaks"]
 
 [targets]
 "dt2-1.17" = "experimental"

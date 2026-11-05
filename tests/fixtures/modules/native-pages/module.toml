@@ -1,0 +1,23 @@
+[module]
+id = "test/native-pages"
+version = "0.1.0"
+name = "Native replacement proof"
+category = "test"
+type = "machine"
+author = "test"
+status = "experimental"
+summary = "Neutral proof of replacement page zero, page one, action mapping and independent level access."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[[object]]
+path = "build/native-pages-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
+path = "build/native-pages-dsp.dko.json"
+sources = ["src/dsp/native-pages.s"]
+place = "dsp.l2"

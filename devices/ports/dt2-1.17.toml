@@ -967,12 +967,42 @@ mark = "D"
 rule = "fw/page:cf_ptr"
 
 [[anchor]]
+name = "cf.page.data.native_font_operand"
+cpu = "cf"
+kind = "code"
+addr = 0x4006b18c
+len = 4
+sha256 = "ba5567a341c8e3a326c468378b5850c697eacc0af1fcb44ddbf0883c1d1eb3f3"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
 name = "cf.page.fn.page_desc"
 cpu = "cf"
 kind = "code"
 addr = 0x400c898a
 len = 6
 sha256 = "4804747ca9c54fb6cf82b4a21415559c390b2b2f9fc4f3cea86546d00ee4dc72"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_code"
+cpu = "cf"
+kind = "code"
+addr = 0x40017cd4
+len = 8
+sha256 = "aafc8f979f6aeb11a4358bcf7b01706892acebe4c40d3e520f88528b3cac80a8"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_draw"
+cpu = "cf"
+kind = "code"
+addr = 0x40016eac
+len = 8
+sha256 = "0a19a633070732de69815e030ca0d25aaa0823017b5e957942c8a8835582aab1"
 mark = "D"
 rule = "fw/page:cf_func"
 
@@ -3179,6 +3209,16 @@ mode = "replace"
 name = "cf.page.hook.sound_load_exit"
 site = "cf.page.site.sound_load_exit"
 mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.source_code"
+site = "cf.page.fn.source_code"
+mode = "before"
+
+[[hook]]
+name = "cf.page.hook.source_draw"
+site = "cf.page.fn.source_draw"
+mode = "before"
 
 [[hook]]
 name = "cf.page.hook.source_key"

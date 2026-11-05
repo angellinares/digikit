@@ -295,4 +295,84 @@ regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # view at 4(sp)
 devices = ["dt2", "dn2"]
 mark = "D"
 users = ["core/runtime"]
-doc = "Entry of the machine page's encoder turn handler; the hook sees every turn and never consumes one."
+doc = "Entry of the machine page's encoder turn handler; ordinary PARAM turns continue natively, while opt-in native-page LOCAL/unused turns return one to consume."
+
+# Opt-in native callback pages. Current-image reads; see native-page proof notes.
+[[fn]]
+name = "cf.page.fn.source_draw"
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "cbe8bf9e6b77989b0032eba45c39a8f2", offset = 0, len = 8 }
+rule.dn2 = { kind = "cf_func", hash = "f17e974be13fbdb831879bfc866600c8", offset = 0, len = 8 }
+mark = "D"
+users = ["core/machines"]
+doc = "Native source-page draw entry, stack (view, Bitmap*). A callback page may draw and return before the displaced prologue; ordinary pages resume unchanged."
+
+[[fn]]
+name = "cf.page.fn.source_code"
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "f5736035a2ca339c2b0b70fbd543c4b7", offset = 0, len = 8 }
+rule.dn2 = { kind = "cf_func", hash = "57a209993d906e049bd7d59e8e451b4f", offset = 0, len = 8 }
+mark = "D"
+users = ["core/machines"]
+doc = "Native source-page encoder-to-parameter-code entry (vtable slot 47), stack (view, encoder). Callback page PARAM bindings return an existing code; page zero and stock mappings resume unchanged."
+
+[[fn]]
+name = "cf.page.fn.native_sound_index"
+cpu = "cf"
+devices = ["dn2"]
+sig = "u32 (u8 *view)"
+rule = { kind = "cf_func", hash = "d6c23337018e02ad3e32faa951d0c43f", offset = 0, len = 4 }
+mark = "D"
+users = ["core/machines"]
+doc = "DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound."
+
+[[fn]]
+name = "cf.page.fn.native_track_sound"
+cpu = "cf"
+devices = ["dn2"]
+sig = "u8 *(u8 *sounds, u32 track)"
+rule = { kind = "cf_func", hash = "9fbd7b798068d1cc0a201b9060ff7250", offset = 0, len = 4 }
+mark = "D"
+users = ["core/machines"]
+doc = "DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper."
+
+[[fn]]
+name = "cf.page.fn.native_library_sound"
+cpu = "cf"
+devices = ["dn2"]
+sig = "u8 *(u8 *sounds, u32 index)"
+rule = { kind = "cf_func", hash = "1b963943133becbdc8e558724bd1ccbb", offset = 0, len = 4 }
+mark = "D"
+users = ["core/machines"]
+doc = "DN2 browser-selected sound from view+0x68 and the selected-sound index, as used by its draw and parameter mapper."
+
+[[data]]
+name = "cf.page.data.native_font_operand"
+cpu = "cf"
+rule.dt2 = { kind = "cf_func", hash = "763528900f7319c8f10026dea9cf938c", offset = 0xdc, len = 4 }
+rule.dn2 = { kind = "cf_func", hash = "d9f47657c8c7d0976980dee490d55065", offset = 0xdc, len = 4 }
+mark = "D"
+users = ["core/machines"]
+doc = "Address operand of pea at ParameterPageView generic knob draw+0xda; the operand points to the live RAM font object. Hash the code operand, not mutable RAM. Used only through bounded canvas text."
+
+[[hook]]
+name = "cf.page.hook.source_draw"
+site = "cf.page.fn.source_draw"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/machines"]
+doc = "Draw entry: opt-in page returns directly after bounded callback rendering; every other page resumes its prologue."
+
+[[hook]]
+name = "cf.page.hook.source_code"
+site = "cf.page.fn.source_code"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/machines"]
+doc = "Encoder code entry: opt-in page returns its declarative code (zero for LOCAL/unused); other mappings resume unchanged."

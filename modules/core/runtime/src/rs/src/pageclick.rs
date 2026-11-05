@@ -2,15 +2,15 @@
 //!
 //! A machine module declares `DK_PARAM_ACTION(machine, word, fn)`. The packer lowers it to an ACTION record of the `register` table; `registry::apply`
 //! stores the callback's address per parameter row (`set`). Two hooks at the entry of the machine page's key handler and turn handler
-//! (`dkrt_pagekey_hook`, `dkrt_pageturn_hook`, src/cf/tramp.s) call `dkrt_page_key` and `dkrt_page_turn` and then run the stock handler unchanged:
-//! the hooks never consume an event.
+//! (`dkrt_pagekey_hook`, `dkrt_pageturn_hook`, src/cf/tramp.s) call `dkrt_page_key` and `dkrt_page_turn`.
+//! Ordinary PARAM turns and all keys continue through the stock handler. An opt-in native page's LOCAL/unused turn returns one to consume it.
 //!
 //! A click is a press of an encoder's key (codes 0x29 to 0x30) and its release with no turn in between. Press and turn is the stock coarse step
 //! and never a click. The parameter under the encoder comes from the page itself (vtable slot 47 of the view, the call the stock list-opener
 //! uses): the dispatch is by parameter row, so it does not depend on the device's knob layout. The callback runs from the UI loop pass
 //! that follows the release (`tick`), in the UI task, with the track number: `void fn(u32 track)`.
 //!
-//! Without any action, `dkrt_page_key` and `dkrt_page_turn` return at one test of `ARMED`.
+//! Without any action or native page, the hooks return after their armed checks.
 use crate::paramapi::{self, Ctx, Held};
 use crate::registry;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
@@ -158,14 +158,21 @@ pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
 /// Hook at the entry of the page's turn handler (stack: view, event). Only an encoder event (`event[3] - 1` is 0 to 7) is a turn.
 #[cfg(not(test))]
 #[no_mangle]
-pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) {
-    if read_volatile(addr_of!(ARMED)) == 0 {
-        return;
+pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) -> u32 {
+    // Every page turn ends the click flow, including LOCAL and unused custom
+    // encoders. Bookkeeping must precede the consumed return: press A, turn an
+    // unused D, release A must never become an SMP click.
+    if read_volatile(addr_of!(ARMED)) != 0 {
+        turn_input(&mut *addr_of_mut!(DET), &mut *addr_of_mut!(HELD), view as usize, word(ev, 0xc));
     }
-    (*addr_of_mut!(HELD)).input();
-    if word(ev, 0xc).wrapping_sub(1) < ENCODERS {
-        (*addr_of_mut!(DET)).turn(view as usize);
-    }
+    // PARAM continues through the native handler exactly once; LOCAL/unused is
+    // consumed only after recording the turn above.
+    crate::nativepage::turn(view, ev)
+}
+
+pub fn turn_input(detector: &mut Detector, held: &mut Held, view: usize, encoder: u32) {
+    held.input();
+    if encoder.wrapping_sub(1) < ENCODERS { detector.turn(view); }
 }
 
 /// A click of encoder `enc` on `view`: queue the action of the parameter under it, if it has one.
@@ -309,6 +316,21 @@ mod tests {
         // the next press starts clean
         d.key(V, code(2), PRESS);
         assert_eq!(d.key(V, code(2), REL), Some(2));
+    }
+
+    #[test]
+    fn unused_and_same_encoder_turns_cancel_click_and_flow_before_consumption() {
+        for encoder in [1, 4] { // A itself and unused D on a replacement page
+            let mut detector = Detector::new();
+            let mut held = Held::new();
+            held.begin(Ctx { view: V, track: 0, owner: 1 });
+            detector.key(V, code(0), PRESS);
+            turn_input(&mut detector, &mut held, V, encoder);
+            assert_eq!(held.ctx(), None);
+            assert_eq!(detector.key(V, code(0), REL), None);
+            detector.key(V, code(0), PRESS);
+            assert_eq!(detector.key(V, code(0), REL), Some(0));
+        }
     }
 
     #[test]

@@ -52,4 +52,12 @@
         .kind = DK_DESC_PARAM_ACTION, .size = sizeof(dk_desc_param_action),              \
         .machine = #MACHINE, .word = (WORD), .fn = #FN}
 
+/* Machine contract 1.3: snapshot this parameter's effective, clamped value at actual note_on.
+   Both note_on and render receive it in the existing params array until the next note_on.
+   Other words remain live. The snapshot belongs to the adapter voice/slot, not the source track. */
+#define DK_PARAM_LATCHED(OWNER, WORD)                                                   \
+    static const dk_desc_param_latched dk_desc_param_latched_##OWNER##_##WORD DK_DESC = { \
+        .kind = DK_DESC_PARAM_LATCHED, .size = sizeof(dk_desc_param_latched),           \
+        .owner = #OWNER, .word = (WORD)}
+
 #endif
