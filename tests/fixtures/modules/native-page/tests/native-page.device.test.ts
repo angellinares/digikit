@@ -80,11 +80,11 @@ runtimeTests(
     record(artifacts, 'after-A', left);
     expect(left.start, 'A edits START through the native path').toBeGreaterThan(before.start);
     expect(left.end).toBe(before.end);
-    await ui.burst('ENC D', 30, -4, 2);
+    await ui.burst('ENC H', 30, -4, 2);
     await ui.settle(300);
     const right = await observed();
-    record(artifacts, 'after-D', right);
-    expect(right.end, 'D edits the existing END word').toBeLessThan(left.end);
+    record(artifacts, 'after-H', right);
+    expect(right.end, 'H edits the existing END word').toBeLessThan(left.end);
     expect(right.start).toBe(left.start);
     await ui.turn('ENC C', 4);
     const local = await observed();
