@@ -193,7 +193,12 @@ impl Emit<'_, '_> {
                     let a = self.b.ins().iadd(base, o);
                     self.b.ins().store(mem_flags(), v, a, 0);
                 }
-                Inst::StoreN { base, off, v, bytes } => {
+                Inst::StoreN {
+                    base,
+                    off,
+                    v,
+                    bytes,
+                } => {
                     let (base, off, v) = (self.v(base), self.v(off), self.v(v));
                     let o = self.b.ins().uextend(types::I64, off);
                     let a = self.b.ins().iadd(base, o);
@@ -619,7 +624,10 @@ impl ClBackend {
         let mut fctx = FunctionBuilderContext::new();
         build(k, entry, &mut cctx.func, &mut fctx, isa.frontend_config());
         let code = cctx
-            .compile(&*isa, &mut cranelift_codegen::control::ControlPlane::default())
+            .compile(
+                &*isa,
+                &mut cranelift_codegen::control::ControlPlane::default(),
+            )
             .map_err(|e| format!("{:?}", e.inner))?;
         Ok(CodeBlob {
             bytes: code.code_buffer().to_vec(),

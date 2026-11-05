@@ -462,7 +462,8 @@ fn place(
 ) -> Result<Placed> {
     let kn = &model.knobs;
     // the entries of each page as (parameter index, position)
-    let mut entries: Vec<Vec<(usize, Option<usize>)>> = vec![];    let mut on_page = vec![false; mine.len()];
+    let mut entries: Vec<Vec<(usize, Option<usize>)>> = vec![];
+    let mut on_page = vec![false; mine.len()];
     for pg in pages {
         let mut list = vec![];
         for e in &pg.knobs {
@@ -680,18 +681,29 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 state: m.voice_state.get(&v.machine).cloned(),
             })
             .collect();
-        let native_pages = m.native_page.iter().map(|page| {
+        let native_pages = m
+            .native_page
+            .iter()
+            .map(|page| {
                 let mut page = page.clone();
                 for binding in &mut page.bindings {
                     if binding.kind == 1 {
-                        let p = m.param.iter().find(|p| p.machine == page.owner && p.word == binding.value)
-                            .ok_or_else(|| err!("native page parameter word {} is missing", binding.value))?;
-                        binding.value = params.iter().position(|r| r.id == p.id)
-                            .ok_or_else(|| err!("native page parameter {} unavailable on {dev}", p.id))? as u32;
+                        let p = m
+                            .param
+                            .iter()
+                            .find(|p| p.machine == page.owner && p.word == binding.value)
+                            .ok_or_else(|| {
+                                err!("native page parameter word {} is missing", binding.value)
+                            })?;
+                        binding.value =
+                            params.iter().position(|r| r.id == p.id).ok_or_else(|| {
+                                err!("native page parameter {} unavailable on {dev}", p.id)
+                            })? as u32;
                     }
                 }
                 Ok(page)
-            }).collect::<Result<Vec<_>>>()?;
+            })
+            .collect::<Result<Vec<_>>>()?;
         out.push(DevResolved {
             dev: dev.clone(),
             model: model.clone(),
@@ -1020,7 +1032,9 @@ summary = "t."
     }
     fn knobs_of(m: &Manifest, dev: &str) -> Vec<Knob> {
         let r = resolve(m, &models()).unwrap();
-        r.iter().find(|x| x.dev == dev).unwrap().machines[0].knobs.clone()
+        r.iter().find(|x| x.dev == dev).unwrap().machines[0]
+            .knobs
+            .clone()
     }
     fn bad(m: &Manifest) -> String {
         resolve(m, &models()).unwrap_err().0
@@ -1097,7 +1111,10 @@ summary = "t."
         assert!(r.iter().find(|x| x.dev == "dt2").unwrap().pages.is_empty());
         let dn2 = r.iter().find(|x| x.dev == "dn2").unwrap();
         assert_eq!(dn2.pages.len(), 1);
-        assert_eq!((dn2.pages[0].name.as_str(), dn2.pages[0].title.as_str()), ("TEE", "Tee"));
+        assert_eq!(
+            (dn2.pages[0].name.as_str(), dn2.pages[0].title.as_str()),
+            ("TEE", "Tee")
+        );
         assert_eq!(dn2.pages[0].knobs, [p("t_0"), p("t_1")]);
     }
 
@@ -1107,9 +1124,21 @@ summary = "t."
         let x = Knob::Code(0);
         assert_eq!(
             knobs_of(&m, "dt2"),
-            [Knob::Code(0xca), p("t_0"), p("t_1"), x.clone(), p("t_2"), p("t_3"), x, Knob::Code(0xd1)]
+            [
+                Knob::Code(0xca),
+                p("t_0"),
+                p("t_1"),
+                x.clone(),
+                p("t_2"),
+                p("t_3"),
+                x,
+                Knob::Code(0xd1)
+            ]
         );
-        assert_eq!(knobs_of(&m, "dn2"), [p("t_0"), p("t_1"), p("t_2"), p("t_3")]);
+        assert_eq!(
+            knobs_of(&m, "dn2"),
+            [p("t_0"), p("t_1"), p("t_2"), p("t_3")]
+        );
     }
 
     #[test]
@@ -1117,9 +1146,15 @@ summary = "t."
         let m = manifest(3, &[&[(0, None), (1, None), (2, None)]]);
         let r = resolve(&m, &models()).unwrap();
         let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
-        assert_eq!(dt2.params.iter().map(|q| q.knob).collect::<Vec<_>>(), [1, 2, 4]);
+        assert_eq!(
+            dt2.params.iter().map(|q| q.knob).collect::<Vec<_>>(),
+            [1, 2, 4]
+        );
         let dn2 = r.iter().find(|x| x.dev == "dn2").unwrap();
-        assert_eq!(dn2.params.iter().map(|q| q.knob).collect::<Vec<_>>(), [0, 1, 2]);
+        assert_eq!(
+            dn2.params.iter().map(|q| q.knob).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
     }
 
     #[test]
@@ -1139,7 +1174,10 @@ summary = "t."
     fn placement_mistakes_are_refused() {
         // more parameters than a device has free positions
         let e = bad(&manifest(5, &[]));
-        assert!(e.contains("5 parameters") && e.contains("free knob positions"), "{e}");
+        assert!(
+            e.contains("5 parameters") && e.contains("free knob positions"),
+            "{e}"
+        );
         // a page entry names a word the machine does not have
         let e = bad(&manifest(2, &[&[(0, None), (7, None)]]));
         assert!(e.contains("word 7"), "{e}");
@@ -1194,7 +1232,10 @@ summary = "t."
         let res = resolve(&m, &models()).unwrap();
         for r in &res {
             assert_eq!(
-                r.params.iter().map(|p| p.action.as_deref()).collect::<Vec<_>>(),
+                r.params
+                    .iter()
+                    .map(|p| p.action.as_deref())
+                    .collect::<Vec<_>>(),
                 [None, Some("_t_click"), None]
             );
             let mut reg = crate::register::Register::lower(r, "machines/t").unwrap();
@@ -1210,7 +1251,13 @@ summary = "t."
     fn a_glyph_selects_the_template_row_of_the_device() {
         let templates = |m: &Manifest, dev: &str| -> Vec<i64> {
             let r = resolve(m, &models()).unwrap();
-            r.iter().find(|x| x.dev == dev).unwrap().params.iter().map(|q| q.template).collect()
+            r.iter()
+                .find(|x| x.dev == dev)
+                .unwrap()
+                .params
+                .iter()
+                .map(|q| q.template)
+                .collect()
         };
         let mut m = manifest(2, &[]);
         assert_eq!(templates(&m, "dt2"), [0xcc, 0xcc]);

@@ -102,9 +102,8 @@ fn isa_check_file(file: &str) -> Result<Option<u32>> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     if file.ends_with(".json") {
-        let o = Dko::parse(
-            &std::fs::read_to_string(file).map_err(|e| Error(format!("{file}: {e}")))?,
-        )?;
+        let o =
+            Dko::parse(&std::fs::read_to_string(file).map_err(|e| Error(format!("{file}: {e}")))?)?;
         if o.arch != "cf" {
             return Ok(None);
         }
@@ -127,7 +126,10 @@ fn isa_check_file(file: &str) -> Result<Option<u32>> {
             .and_then(|secs| cf::check_text(&secs, &format!("{name}: {member}:")));
         match checked {
             Ok(h) => total += h.values().sum::<u32>(),
-            Err(e) => bad.push(e.0.split_once('\n').map_or(e.0.clone(), |x| x.1.trim().to_string())),
+            Err(e) => bad.push(
+                e.0.split_once('\n')
+                    .map_or(e.0.clone(), |x| x.1.trim().to_string()),
+            ),
         }
     }
     if !bad.is_empty() {
@@ -283,7 +285,10 @@ pub fn sharc(root: &Path, rest: &[String]) -> Result<()> {
             let defines = flags(rest, "--define");
             print!("{}", bs::source_text_in(dirs, &srcs, &defines)?);
         }
-        "cond" => print!("{}", bs::apply_conditionals(&read("-")?, &flags(rest, "--define"))?),
+        "cond" => print!(
+            "{}",
+            bs::apply_conditionals(&read("-")?, &flags(rest, "--define"))?
+        ),
         "inc" => {
             let dirs: Vec<PathBuf> = flags(rest, "-I").into_iter().map(PathBuf::from).collect();
             print!("{}", bs::expand_includes(&read("-")?, &dirs, 0)?);
@@ -312,7 +317,10 @@ pub fn sharc(root: &Path, rest: &[String]) -> Result<()> {
             for line in text.lines().filter(|l| !l.trim().is_empty()) {
                 let w = u64::from_str_radix(line.trim(), 16)
                     .map_err(|_| Error(format!("bad hex word {line:?}")))?;
-                println!("{}", so::shift_problem_of_word(w).unwrap_or_else(|| "ok".into()));
+                println!(
+                    "{}",
+                    so::shift_problem_of_word(w).unwrap_or_else(|| "ok".into())
+                );
             }
         }
         _ => return Err(Error(U.into())),

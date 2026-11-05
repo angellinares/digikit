@@ -11,13 +11,18 @@ use serde_json::json;
 fn stock(var: &str, name: &str) -> Option<PathBuf> {
     std::env::var_os(var).map(PathBuf::from).or_else(|| {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        root.ancestors().map(|dir| dir.join("firmware").join(name)).find(|path| path.exists())
+        root.ancestors()
+            .map(|dir| dir.join("firmware").join(name))
+            .find(|path| path.exists())
     })
 }
 
 #[test]
 fn a_session_is_adopted_by_the_load_that_starts_it() {
-    let (Some(dt2), Some(dn2)) = (stock("DT2_SYX", "Digitakt_II_OS1.17.syx"), stock("DN2_SYX", "Digitone_II_OS1.12.syx")) else {
+    let (Some(dt2), Some(dn2)) = (
+        stock("DT2_SYX", "Digitakt_II_OS1.17.syx"),
+        stock("DN2_SYX", "Digitone_II_OS1.12.syx"),
+    ) else {
         return;
     };
     let dir = std::env::temp_dir().join(format!("digi-ui-session-{}", std::process::id()));
@@ -26,10 +31,13 @@ fn a_session_is_adopted_by_the_load_that_starts_it() {
     config.run_dir = dir.clone();
     let (handle, join) = spawn(config);
     let ok = |method: &str, session: u64| handle.call(method, json!({"session": session}));
-    let stale = |r: Result<serde_json::Value, digi_control::RpcError>| r.unwrap_err().message == "stale emulator session";
+    let stale = |r: Result<serde_json::Value, digi_control::RpcError>| {
+        r.unwrap_err().message == "stale emulator session"
+    };
 
     // Open, runtime on: the DT2 image is patched here and becomes session 3.
-    let load = json!({"syx": dt2.display().to_string(), "runtime": true, "replace": true, "session": 3});
+    let load =
+        json!({"syx": dt2.display().to_string(), "runtime": true, "replace": true, "session": 3});
     let report = handle.call("firmware.load", load.clone()).unwrap();
     assert_eq!(report["runtime"]["patched"], true, "{report}");
     assert!(ok("status", 3).is_ok());
@@ -37,7 +45,13 @@ fn a_session_is_adopted_by_the_load_that_starts_it() {
     // The status keeps the patch report.
     let status = handle.call("status", json!({})).unwrap();
     assert_eq!(status["firmware"]["runtime"]["set"], "emulator", "{status}");
-    assert_eq!(status["firmware"]["runtime"]["modules"].as_array().unwrap().len(), 16);
+    assert_eq!(
+        status["firmware"]["runtime"]["modules"]
+            .as_array()
+            .unwrap()
+            .len(),
+        16
+    );
     // The same token again is not newer; a reset takes the next one and keeps the runtime report.
     assert!(stale(handle.call("firmware.load", load)));
     handle.call("restart", json!({"session": 4})).unwrap();

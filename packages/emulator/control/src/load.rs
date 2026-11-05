@@ -329,7 +329,10 @@ mod tests {
         }
         let spike = 100.0 * 400_000.0 * f.dsp_nominal / (f.dsp_clock_hz / f.dsp_block_rate);
         assert!((peak_in[1].1 - spike).abs() < 1e-9, "the spike window");
-        assert!((peak_in[2].1 - spike).abs() < 1e-9, "kept after quiet windows");
+        assert!(
+            (peak_in[2].1 - spike).abs() < 1e-9,
+            "kept after quiet windows"
+        );
         assert!(peak_in[2].0 < spike, "while the shown value falls");
         m.reset();
         assert!(m.poll(&f, at(0, 0, None)).is_none());

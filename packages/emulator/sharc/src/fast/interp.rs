@@ -231,7 +231,12 @@ impl InterpKernel {
                         .wrapping_add(vals[off as usize].0 as u32 as usize);
                     unsafe { (p as *mut u32).write_unaligned(vals[v as usize].0 as u32) }
                 }
-                Inst::StoreN { base, off, v, bytes } => {
+                Inst::StoreN {
+                    base,
+                    off,
+                    v,
+                    bytes,
+                } => {
                     self.check_window(
                         ctx,
                         vals[base as usize].0,

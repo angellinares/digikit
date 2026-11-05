@@ -132,7 +132,9 @@ static VOLATILE: std::sync::Mutex<Option<std::collections::HashMap<u32, u64>>> =
 
 pub fn mark_volatile(pc: u32, mask: u64) {
     let mut g = VOLATILE.lock().unwrap_or_else(|e| e.into_inner());
-    *g.get_or_insert_with(Default::default).entry(pc >> 7).or_default() |= mask;
+    *g.get_or_insert_with(Default::default)
+        .entry(pc >> 7)
+        .or_default() |= mask;
 }
 
 fn apply_volatile(env: &mut Env, pc: u32) {
@@ -259,7 +261,9 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
     }
     let out = last.unwrap();
     if out.retry {
-        return Err(Refuse("a circular index is written outside its buffer".into()));
+        return Err(Refuse(
+            "a circular index is written outside its buffer".into(),
+        ));
     }
     out.kernel
         .validate()

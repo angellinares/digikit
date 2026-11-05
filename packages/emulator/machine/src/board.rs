@@ -1604,7 +1604,8 @@ impl Board {
                 let ssi_pending = self.device_ssi50_pending();
                 let pending = self.dma.edma_regs.read(addr, size);
                 self.dma.edma_regs.write(addr, size, pending & !value);
-                if ssi_pending && !self.device_ssi50_pending()
+                if ssi_pending
+                    && !self.device_ssi50_pending()
                     && let Some(ssi) = self.dma.ssi.as_mut()
                 {
                     ssi.on_cint(ssi::TX_CHAN as u8);

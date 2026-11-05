@@ -198,12 +198,18 @@ fn main() {
             "button" => {
                 emu.button(num(&op["code"]) as u8, op["down"].as_bool().unwrap())
                     .unwrap();
-                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+                println!(
+                    "{}",
+                    json!({"op": name, "tag": tag, "icount": emu.icount()})
+                );
             }
             "turn" => {
                 let d = op["detents"].as_i64().unwrap() as i32;
                 emu.turn(num(&op["enc"]) as u8, d).unwrap();
-                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+                println!(
+                    "{}",
+                    json!({"op": name, "tag": tag, "icount": emu.icount()})
+                );
             }
             "snap" => {
                 let (addr, len) = (num(&op["addr"]) as u32, num(&op["len"]) as usize);
@@ -213,7 +219,10 @@ fn main() {
                     buf.extend(peek(&mut emu, addr + buf.len() as u32, n));
                 }
                 snaps.insert(op["name"].as_str().unwrap().to_owned(), (addr, buf));
-                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+                println!(
+                    "{}",
+                    json!({"op": name, "tag": tag, "icount": emu.icount()})
+                );
             }
             "diff" => {
                 let (addr, old) = snaps[op["name"].as_str().unwrap()].clone();
@@ -258,13 +267,28 @@ fn main() {
                         _ => runs.push((s, s + 1)),
                     }
                 }
-                let shown: Vec<String> = runs.iter().take(60).map(|r| format!("{:#x}+{}", r.0, r.1 - r.0)).collect();
-                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount(), "runs": runs.len(), "first": shown}));
+                let shown: Vec<String> = runs
+                    .iter()
+                    .take(60)
+                    .map(|r| format!("{:#x}+{}", r.0, r.1 - r.0))
+                    .collect();
+                println!(
+                    "{}",
+                    json!({"op": name, "tag": tag, "icount": emu.icount(), "runs": runs.len(), "first": shown})
+                );
             }
             "probe" => {
-                let pcs: Vec<u32> = op["pcs"].as_array().unwrap().iter().map(|v| num(v) as u32).collect();
+                let pcs: Vec<u32> = op["pcs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| num(v) as u32)
+                    .collect();
                 emu.probe_pcs(&pcs);
-                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount()}));
+                println!(
+                    "{}",
+                    json!({"op": name, "tag": tag, "icount": emu.icount()})
+                );
             }
             "hits" => {
                 let h: Vec<Value> = emu
@@ -272,7 +296,10 @@ fn main() {
                     .iter()
                     .map(|(pc, n)| json!([format!("{pc:#x}"), n]))
                     .collect();
-                println!("{}", json!({"op": name, "tag": tag, "icount": emu.icount(), "hits": h}));
+                println!(
+                    "{}",
+                    json!({"op": name, "tag": tag, "icount": emu.icount(), "hits": h})
+                );
             }
             "wait32" => {
                 let addr = num(&op["addr"]) as u32;

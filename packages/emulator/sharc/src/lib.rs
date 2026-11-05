@@ -30,14 +30,14 @@ pub mod canon;
 mod code_diff;
 mod cycmix;
 mod diag;
-mod irq_probe;
 pub mod fast;
 pub mod frames;
+mod irq_probe;
 mod live_capture;
-pub mod sha256;
-pub mod vectors;
 mod pc_dump;
 mod reply_watch;
+pub mod sha256;
+pub mod vectors;
 mod write_watch;
 pub use sharc_stats::{ModelStats, RegionCost, RegionEntryProfile, RegionProfile, TierCounters};
 
@@ -79,8 +79,10 @@ mod tests;
 #[cfg(all(test, sharc_gen))]
 mod tests_gen;
 #[cfg(all(test, sharc_gen))]
+#[rustfmt::skip]
 mod tests_gen_programs;
 #[cfg(all(test, sharc_gen))]
+#[rustfmt::skip]
 mod tests_gen_vectors;
 
 use rt::*;
@@ -1254,11 +1256,10 @@ impl Engine {
                     let i = ranges.partition_point(|r| r.0 <= pc).checked_sub(1)?;
                     (pc < ranges[i].0 + ranges[i].1).then_some(i)
                 };
-                let barred = code_diff::barred_entries(
-                    generated::image::REGION_ENTRIES,
-                    &changed,
-                    |pc| range_of(pc).is_none_or(|i| whole.contains(&i)),
-                );
+                let barred =
+                    code_diff::barred_entries(generated::image::REGION_ENTRIES, &changed, |pc| {
+                        range_of(pc).is_none_or(|i| whole.contains(&i))
+                    });
                 for &pc in &barred {
                     self.s.chain_stop_add(pc);
                 }
@@ -1335,7 +1336,10 @@ impl Engine {
             checked += (start..start + len)
                 .filter(|&pc| generated::image::insn_at(pc as Int).is_some())
                 .count();
-            diffs.extend(self.changed_pcs_in(start, len, usize::MAX - 1).unwrap_or_default());
+            diffs.extend(
+                self.changed_pcs_in(start, len, usize::MAX - 1)
+                    .unwrap_or_default(),
+            );
         }
         let n = diffs.len();
         diffs.truncate(64);
@@ -1460,9 +1464,9 @@ impl Engine {
         };
         if !code_ok
             && entry.is_some_and(|_| {
-                self.code_barred.as_ref().is_none_or(|b| {
-                    b.binary_search(&(self.s.pc_sw as u32)).is_ok()
-                })
+                self.code_barred
+                    .as_ref()
+                    .is_none_or(|b| b.binary_search(&(self.s.pc_sw as u32)).is_ok())
             })
         {
             entry = None;
@@ -1640,8 +1644,7 @@ impl Engine {
             if self.models_active() {
                 let s = &self.s;
                 if (s.cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0))
-                    || (s.cfg.stack_model
-                        && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0))
+                    || (s.cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0))
                 {
                     break;
                 }
@@ -1807,19 +1810,22 @@ impl Engine {
             {
                 #[cfg(sharc_gen)]
                 {
-                    let allowed = self.irq_probe.as_ref().map_or(0, |p| p.mask as Int) | (if self.software_interrupts {
-                        0xf000_0000
-                    } else {
-                        0
-                    }) | (if self.s.cfg.core_timer {
-                        0x0040_0800
-                    } else {
-                        0
-                    }) | (if self.s.cfg.peripheral_model {
-                        0x0000_8000
-                    } else {
-                        0
-                    });
+                    let allowed = self.irq_probe.as_ref().map_or(0, |p| p.mask as Int)
+                        | (if self.software_interrupts {
+                            0xf000_0000
+                        } else {
+                            0
+                        })
+                        | (if self.s.cfg.core_timer {
+                            0x0040_0800
+                        } else {
+                            0
+                        })
+                        | (if self.s.cfg.peripheral_model {
+                            0x0000_8000
+                        } else {
+                            0
+                        });
                     if self.s.cfg.peripheral_model && rt::periph::sec_line_active(&self.s) {
                         // The SEC request line latches SECI at the boundary
                         // (tools/sharc_dev/sharc_run.py calls periph._sec_line here).
@@ -1855,8 +1861,8 @@ impl Engine {
                             self.s.bank_complete();
                             self.s.commit_host();
                             self.model_stats.irq_taken += 1;
-                            self.model_stats.irq_by_vector[(mask.trailing_zeros() & 63) as usize] +=
-                                1;
+                            self.model_stats.irq_by_vector
+                                [(mask.trailing_zeros() & 63) as usize] += 1;
                         } else {
                             self.s.rollback();
                         }

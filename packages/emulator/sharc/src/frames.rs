@@ -106,7 +106,11 @@ pub fn run_call(e: &mut Engine, max: u32) -> Result<u64, String> {
 }
 
 /// `run_call` with another stepper (the JIT runtime's).
-pub fn run_call_with(e: &mut Engine, max: u32, step: &mut dyn FnMut(&mut Engine, u32) -> u32) -> Result<u64, String> {
+pub fn run_call_with(
+    e: &mut Engine,
+    max: u32,
+    step: &mut dyn FnMut(&mut Engine, u32) -> u32,
+) -> Result<u64, String> {
     // One step call runs until a trap halts the engine or the budget ends.
     let done = step(e, max) as u64;
     if done >= max as u64 {

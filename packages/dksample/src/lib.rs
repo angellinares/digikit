@@ -1,5 +1,5 @@
 //! The WAV to native sample converter and the +Drive content hash. One copy for the card builder (`plusdrive-format` uses this crate) and for
-//! the browser and the desktop webview (`apps/web/public/dksample.wasm`, built by `tools/emulator/native_wasm.py`, C ABI below), so a sample
+//! the browser and the desktop webview (`apps/web/public/dksample.wasm`, built by `tools/nx/wasm.mjs`, C ABI below), so a sample
 //! sent over USB is byte for byte the file the +Drive build writes (docs/MIDI-SYSEX-RPC.md section 12). No dependencies.
 //!
 //! `ds_convert(wav, len)` returns 0 and leaves the native file in the output buffer (`ds_out_ptr`/`ds_out_len`) and a JSON object in the info buffer

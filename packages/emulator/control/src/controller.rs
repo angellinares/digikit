@@ -126,7 +126,9 @@ pub fn overlay_path(image: &Path) -> PathBuf {
 /// foreign file is ignored with a message. A ready snapshot restored afterwards brings its own overlay.
 fn apply_saved_overlay(card: &mut Card, image: &Path) {
     let path = overlay_path(image);
-    let Ok(bytes) = std::fs::read(&path) else { return };
+    let Ok(bytes) = std::fs::read(&path) else {
+        return;
+    };
     let result = plusdrive_format::parse_overlay(&bytes)
         .map_err(|e| e.to_string())
         .and_then(|sectors| apply_overlay_sectors(card, &sectors));
@@ -136,14 +138,18 @@ fn apply_saved_overlay(card: &mut Card, image: &Path) {
 }
 
 /// Lay sectors the guest wrote over a fresh card.
-fn apply_overlay_sectors(card: &mut Card, sectors: &[emmc_card::CardOverlaySector]) -> Result<(), String> {
+fn apply_overlay_sectors(
+    card: &mut Card,
+    sectors: &[emmc_card::CardOverlaySector],
+) -> Result<(), String> {
     let state = emmc_card::CardCheckpoint {
         blocks: card.blocks(),
         rca: card.rca(),
         selected: card.selected(),
         overlay: Default::default(),
     };
-    card.restore_checkpoint_sectors(&state, sectors).map_err(|e| format!("{e:?}"))
+    card.restore_checkpoint_sectors(&state, sectors)
+        .map_err(|e| format!("{e:?}"))
 }
 
 /// A digest of an overlay, for the key of a cached cold boot that started from it.
@@ -649,7 +655,11 @@ struct Actor {
 fn default_plus_drive_root(repo_root: Option<&Path>) -> Option<PathBuf> {
     std::env::var_os("DIGI_PLUS_DRIVE")
         .map(PathBuf::from)
-        .or_else(|| runtime_patch::find_root(repo_root).ok().map(|root| root.join("plus_drive")))
+        .or_else(|| {
+            runtime_patch::find_root(repo_root)
+                .ok()
+                .map(|root| root.join("plus_drive"))
+        })
 }
 
 fn no_firmware<T>() -> Result<T, RpcError> {
@@ -713,13 +723,16 @@ impl Actor {
             card_last: json!({"state": "idle"}),
             card_folder: None,
             mirror: None,
-            mirror_on: config.mirror_dir.is_some() || config.device_folders.as_ref().is_some_and(|f| f.sync),
+            mirror_on: config.mirror_dir.is_some()
+                || config.device_folders.as_ref().is_some_and(|f| f.sync),
             mirror_first: config.mirror_dir,
             device_cards: config.device_folders.is_some(),
             folder_sync: config.device_folders.as_ref().is_some_and(|f| f.sync),
             folders: match &config.device_folders {
                 Some(f) => DeviceFolders::new(
-                    f.root.clone().or_else(|| default_plus_drive_root(config.repo_root.as_deref())),
+                    f.root
+                        .clone()
+                        .or_else(|| default_plus_drive_root(config.repo_root.as_deref())),
                     f.choices.clone(),
                 ),
                 None => DeviceFolders::default(),
@@ -768,7 +781,9 @@ impl Actor {
     fn keep_ram_range(&mut self) -> Option<(u32, u32)> {
         let diag = self.runtime.as_mut()?.diagnostics();
         let device = diag["device"].as_str()?;
-        plusdrive_format::device_profile::Registry::load().ok()?.keep_ram(device)
+        plusdrive_format::device_profile::Registry::load()
+            .ok()?
+            .keep_ram(device)
     }
 
     /// The guest asked for a soft reset (RCM.RCR): boot the same patched firmware again from the reset entry, on the card as the
@@ -776,7 +791,9 @@ impl Actor {
     fn soft_reset(&mut self) {
         // The guest rewrote the flash container (the OS upgrade): the bootstrap boots what it wrote, so the emulator does too.
         let flashed = self.runtime.as_ref().and_then(|r| {
-            (r.flash_writes().programs > 0).then(|| r.flash_bytes(0x80000, 0x300000).map(<[u8]>::to_vec)).flatten()
+            (r.flash_writes().programs > 0)
+                .then(|| r.flash_bytes(0x80000, 0x300000).map(<[u8]>::to_vec))
+                .flatten()
         });
         if let (Some(flash), Some(loaded)) = (flashed, self.loaded.as_mut()) {
             match patchkit::flash::image_from_flash(&flash, &loaded.current) {
@@ -797,8 +814,14 @@ impl Actor {
         if let Err(reason) = analysed {
             self.reset_overlay = None;
             self.reset_ram = None;
-            self.emit("cpu.reset", json!({"restart": "unsupported", "reason": reason}));
-            self.finish_job(Err(RpcError::new(code::GUEST_FAULT, "boot loop: the restart failed")));
+            self.emit(
+                "cpu.reset",
+                json!({"restart": "unsupported", "reason": reason}),
+            );
+            self.finish_job(Err(RpcError::new(
+                code::GUEST_FAULT,
+                "boot loop: the restart failed",
+            )));
             self.mode = Mode::Paused;
             return;
         }
@@ -809,21 +832,38 @@ impl Actor {
             loaded.base_sha.clone(),
             loaded.base.clone(),
         );
-        let new = loaded.current_analysis.clone().expect("ensure_analysis made it");
+        let new = loaded
+            .current_analysis
+            .clone()
+            .expect("ensure_analysis made it");
         self.reset_overlay = self.runtime.as_ref().map(|r| r.card_overlay());
-        self.reset_ram = self.keep_ram_range().and_then(|(base, bytes)| {
-            self.runtime.as_mut().map(|r| r.peek_ram(base, bytes))
-        });
+        self.reset_ram = self
+            .keep_ram_range()
+            .and_then(|(base, bytes)| self.runtime.as_mut().map(|r| r.peek_ram(base, bytes)));
         let (tx, _rx) = mpsc::channel();
         // A reset during boot continues the original load request, as the coupled worker does.
         let boot = self.job.take();
         let reply = boot.as_ref().map_or(&tx, |job| &job.reply);
-        let mut report = boot.as_ref().map_or_else(|| json!({}), |job| job.partial.clone());
-        match self.load_patched(bytes, card, new, base_sha, base_bytes, &mut report, "cold", reply) {
+        let mut report = boot
+            .as_ref()
+            .map_or_else(|| json!({}), |job| job.partial.clone());
+        match self.load_patched(
+            bytes,
+            card,
+            new,
+            base_sha,
+            base_bytes,
+            &mut report,
+            "cold",
+            reply,
+        ) {
             Ok(true) => {
                 // CF boot runs as a controller job and resumes free running. A coupled
                 // worker preserves the caller's mode, including paused RPC boundaries.
-                if matches!(self.job.as_ref().map(|job| &job.kind), Some(JobKind::Boot { .. })) {
+                if matches!(
+                    self.job.as_ref().map(|job| &job.kind),
+                    Some(JobKind::Boot { .. })
+                ) {
                     self.mode = Mode::Free;
                 }
                 self.emit("cpu.reset", json!({"restart": "cold boot started"}));
@@ -833,13 +873,19 @@ impl Actor {
                 self.reset_ram = None;
                 self.mode = Mode::Paused;
                 let reason = "the boot was installed without a worker";
-                self.emit("cpu.reset", json!({"restart": "unsupported", "reason": reason}));
+                self.emit(
+                    "cpu.reset",
+                    json!({"restart": "unsupported", "reason": reason}),
+                );
                 let _ = reply.send(Err(RpcError::new(code::GUEST_FAULT, reason)));
             }
             Err(e) => {
                 self.reset_overlay = None;
                 self.reset_ram = None;
-                self.emit("cpu.reset", json!({"restart": "unsupported", "reason": e.message}));
+                self.emit(
+                    "cpu.reset",
+                    json!({"restart": "unsupported", "reason": e.message}),
+                );
                 self.mode = Mode::Paused;
                 let _ = reply.send(Err(e));
             }
@@ -848,16 +894,27 @@ impl Actor {
 
     /// Finish an old-runtime target, or continue a cold boot with the coupled path's reset bound.
     fn handle_reset(&mut self) {
-        if !self.reset_pending { return; }
-        if matches!(self.job.as_ref().map(|j| &j.kind), Some(JobKind::Boot { .. })) {
+        if !self.reset_pending {
+            return;
+        }
+        if matches!(
+            self.job.as_ref().map(|j| &j.kind),
+            Some(JobKind::Boot { .. })
+        ) {
             self.boot_resets += 1;
             self.reset_pending = false;
             if self.boot_resets > 8 {
-                self.finish_job(Err(RpcError::new(code::GUEST_FAULT, "boot loop: the restart failed")));
+                self.finish_job(Err(RpcError::new(
+                    code::GUEST_FAULT,
+                    "boot loop: the restart failed",
+                )));
                 self.mode = Mode::Paused;
                 self.emit("cpu.reset", json!({"restart": "unsupported", "reason": "boot loop", "count": self.boot_resets}));
             } else {
-                self.emit("cpu.reset", json!({"during_boot": true, "count": self.boot_resets}));
+                self.emit(
+                    "cpu.reset",
+                    json!({"during_boot": true, "count": self.boot_resets}),
+                );
                 self.soft_reset();
             }
         } else {
@@ -883,7 +940,10 @@ impl Actor {
         };
         let now = Instant::now();
         let (start, base) = *self.pace_anchor.get_or_insert((now, elapsed));
-        match pace_ahead(now.duration_since(start).as_secs_f64(), elapsed.checked_sub(base)) {
+        match pace_ahead(
+            now.duration_since(start).as_secs_f64(),
+            elapsed.checked_sub(base),
+        ) {
             Some(ahead) => ahead,
             // the clock went back (rebased) or the stretch lags: start a new one
             None => {
@@ -909,7 +969,8 @@ impl Actor {
                 && (self.job.is_some() || (self.mode == Mode::Free && !carding));
             let command = if busy {
                 if self.job.is_none()
-                    && (self.runtime.as_ref().is_some_and(Runtime::audio_ahead) || self.must_wait_for_clock())
+                    && (self.runtime.as_ref().is_some_and(Runtime::audio_ahead)
+                        || self.must_wait_for_clock())
                 {
                     // Free running with the audio queue at its target, or (no audio) ahead of the wall clock: wait for
                     // a command instead of stepping.
@@ -1314,7 +1375,9 @@ impl Actor {
             self.auto_card = Some((image, dir));
             return;
         }
-        let (Some(card), Some(source)) = (card, self.startup_card_folder.take()) else { return };
+        let (Some(card), Some(source)) = (card, self.startup_card_folder.take()) else {
+            return;
+        };
         eprintln!(
             "card: {} is the +Drive folder of this card; {}",
             display_path(&source.dir),
@@ -1368,23 +1431,35 @@ impl Actor {
         if let Some(card) = running.as_ref().filter(|card| Some(*card) != own) {
             return Some(card.clone());
         }
-        if let Some(card) = self.card_from_device_folder(device, stock.unwrap_or(bytes), stock.is_some()) {
+        if let Some(card) =
+            self.card_from_device_folder(device, stock.unwrap_or(bytes), stock.is_some())
+        {
             return Some(card);
         }
         if device != "dt2" {
             return None;
         }
-        running.or_else(|| self.remembered_card(stock.unwrap_or(bytes)).map(|(_, paths)| paths.image))
+        running.or_else(|| {
+            self.remembered_card(stock.unwrap_or(bytes))
+                .map(|(_, paths)| paths.image)
+        })
     }
 
     /// Build (or reuse) the card of `device`'s folder. A folder with nothing for the card, or a build that fails, gives no card (the
     /// load goes on without it); the failure is printed.
-    fn card_from_device_folder(&mut self, device: &str, syx: &[u8], stock: bool) -> Option<PathBuf> {
+    fn card_from_device_folder(
+        &mut self,
+        device: &str,
+        syx: &[u8],
+        stock: bool,
+    ) -> Option<PathBuf> {
         if !self.device_cards {
             return None;
         }
         let dir = self.folders.folder(device).filter(|d| d.is_dir())?;
-        let files = cards::device_files(device, &dir).ok().filter(|f| !f.is_empty())?;
+        let files = cards::device_files(device, &dir)
+            .ok()
+            .filter(|f| !f.is_empty())?;
         // The card belongs to the stock firmware: a patched image that was not patched here names its base in its patch record.
         let found;
         let syx = if stock {
@@ -1745,9 +1820,16 @@ impl Actor {
         };
         let starts_session = matches!(method, "firmware.load" | "restart");
         if let Some(token) = token
-            && if starts_session { token <= self.session } else { token != self.session }
+            && if starts_session {
+                token <= self.session
+            } else {
+                token != self.session
+            }
         {
-            let _ = reply.send(Err(RpcError::new(code::STALE_SESSION, "stale emulator session")));
+            let _ = reply.send(Err(RpcError::new(
+                code::STALE_SESSION,
+                "stale emulator session",
+            )));
             return;
         }
         let outcome: Result<Option<Value>, RpcError> = match method {
@@ -1868,7 +1950,10 @@ impl Actor {
     fn rpc_state_save(&mut self, p: &Params) -> RpcResult {
         let path = PathBuf::from(p.str("path")?);
         if self.job.is_some() {
-            return Err(RpcError::new(code::BUSY, "a job is running; wait for it before saving"));
+            return Err(RpcError::new(
+                code::BUSY,
+                "a job is running; wait for it before saving",
+            ));
         }
         let runtime = self.runtime.as_mut().ok_or_else(RpcError::no_firmware)?;
         save_cache(runtime, &path)?;
@@ -1884,7 +1969,10 @@ impl Actor {
     fn rpc_state_load(&mut self, p: &Params) -> RpcResult {
         let path = PathBuf::from(p.str("path")?);
         if self.job.is_some() {
-            return Err(RpcError::new(code::BUSY, "a job is running; wait for it before loading"));
+            return Err(RpcError::new(
+                code::BUSY,
+                "a job is running; wait for it before loading",
+            ));
         }
         let runtime = self.runtime.as_mut().ok_or_else(RpcError::no_firmware)?;
         if runtime.icount() != 0 {
@@ -1893,15 +1981,18 @@ impl Actor {
                 "state.load needs a runtime that has not run: firmware.load first",
             ));
         }
-        let data = std::fs::read(&path).map_err(|e| RpcError::io(format!("{}: {e}", path.display())))?;
-        runtime
-            .restore_state(&data)
-            .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, format!("{}: {e}", path.display())))?;
+        let data =
+            std::fs::read(&path).map_err(|e| RpcError::io(format!("{}: {e}", path.display())))?;
+        runtime.restore_state(&data).map_err(|e| {
+            RpcError::new(code::FIRMWARE_REJECTED, format!("{}: {e}", path.display()))
+        })?;
         runtime.resume_watch();
         self.held_frame = None;
         self.held_leds = None;
         self.epoch += 1;
-        Ok(json!({"path": path.display().to_string(), "bytes": data.len(), "icount": runtime.icount()}))
+        Ok(
+            json!({"path": path.display().to_string(), "bytes": data.len(), "icount": runtime.icount()}),
+        )
     }
 
     fn start_job(
@@ -2000,9 +2091,13 @@ impl Actor {
     fn rpc_state_digest(&mut self, p: &Params) -> RpcResult {
         let arch = p.opt_bool("arch")?.unwrap_or(false);
         self.with_runtime(|r| {
-            if arch { r.state_digest_arch() } else { r.state_digest() }
-                .map(|digest| json!({"digest": digest}))
-                .map_err(|e| RpcError::new(code::GUEST_FAULT, e))
+            if arch {
+                r.state_digest_arch()
+            } else {
+                r.state_digest()
+            }
+            .map(|digest| json!({"digest": digest}))
+            .map_err(|e| RpcError::new(code::GUEST_FAULT, e))
         })
     }
 
@@ -2063,7 +2158,8 @@ impl Actor {
             .ok_or("no runtime")?;
         let base = plusdrive_format::export::FileImage::open(&image)?;
         let mut options = plusdrive_format::export::Options::new(out.unwrap_or_else(|| {
-            std::env::var_os("DIGI_PLUSDRIVE_OUT").map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from)
+            std::env::var_os("DIGI_PLUSDRIVE_OUT")
+                .map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from)
         }));
         options.prune = prune;
         options.include_working_project = working_project;
@@ -2074,8 +2170,11 @@ impl Actor {
     /// The card layout of the running device (its profile's `[card]` section), found by the base firmware's hash.
     fn card_layout(&self) -> Result<plusdrive_format::CardLayout, String> {
         let loaded = self.loaded.as_ref().ok_or("no firmware is loaded")?;
-        let registry = plusdrive_format::device_profile::Registry::load().map_err(|e| e.to_string())?;
-        let (device, _) = registry.identify(&loaded.base_sha).map_err(|e| e.to_string())?;
+        let registry =
+            plusdrive_format::device_profile::Registry::load().map_err(|e| e.to_string())?;
+        let (device, _) = registry
+            .identify(&loaded.base_sha)
+            .map_err(|e| e.to_string())?;
         device
             .card
             .clone()
@@ -2087,12 +2186,16 @@ impl Actor {
     /// Failures are printed: the quit goes on.
     fn finish_card(&mut self) {
         self.mirror_flush();
-        let Some(folder) = self.card_folder.as_ref().filter(|f| f.sync) else { return };
+        let Some(folder) = self.card_folder.as_ref().filter(|f| f.sync) else {
+            return;
+        };
         let (image, dir, out) = (folder.image.clone(), folder.dir.clone(), folder.out.clone());
         if self.loaded.as_ref().and_then(|l| l.card.as_ref()) != Some(&image) {
             return;
         }
-        let Some(overlay) = self.runtime.as_ref().map(|r| r.card_overlay()) else { return };
+        let Some(overlay) = self.runtime.as_ref().map(|r| r.card_overlay()) else {
+            return;
+        };
         let path = overlay_path(&image);
         if !overlay.is_empty() {
             let merged = merge_overlay(std::fs::read(&path).ok(), overlay);
@@ -2123,23 +2226,38 @@ impl Actor {
 
     /// What the mirror reads: the card as built (its image file, or nothing), the guest's writes over it, and the store's place on the
     /// card (the device profile).
-    fn mirror_view(&mut self) -> Result<(Box<dyn RandomAccessRead>, Vec<emmc_card::CardOverlaySector>, plusdrive_format::device_profile::StoreLayout), String> {
+    fn mirror_view(
+        &mut self,
+    ) -> Result<
+        (
+            Box<dyn RandomAccessRead>,
+            Vec<emmc_card::CardOverlaySector>,
+            plusdrive_format::device_profile::StoreLayout,
+        ),
+        String,
+    > {
         let range = self
             .card_layout()?
             .store
             .ok_or("this device has no module store on its card")?;
-        let base: Box<dyn RandomAccessRead> = match self.loaded.as_ref().and_then(|l| l.card.clone()) {
-            Some(image) => Box::new(plusdrive_format::export::FileImage::open(&image)?),
-            None => Box::new(plusdrive_format::mirror::EmptyImage),
-        };
-        let overlay = self.runtime.as_ref().map(|r| r.card_overlay()).ok_or("no runtime")?;
+        let base: Box<dyn RandomAccessRead> =
+            match self.loaded.as_ref().and_then(|l| l.card.clone()) {
+                Some(image) => Box::new(plusdrive_format::export::FileImage::open(&image)?),
+                None => Box::new(plusdrive_format::mirror::EmptyImage),
+            };
+        let overlay = self
+            .runtime
+            .as_ref()
+            .map(|r| r.card_overlay())
+            .ok_or("no runtime")?;
         Ok((base, overlay, range))
     }
 
     /// The short id of the loaded device (`dt2`, `dn2`).
     fn loaded_device(&self) -> Option<&'static str> {
         let loaded = self.loaded.as_ref()?;
-        runtime_patch::device_short(&loaded.current).or_else(|| loaded.base.as_deref().and_then(runtime_patch::device_short))
+        runtime_patch::device_short(&loaded.current)
+            .or_else(|| loaded.base.as_deref().and_then(runtime_patch::device_short))
     }
 
     /// The mirror writes to the folder of the loaded device: the user's choice, else `plus_drive/<device>/` (made if missing). A
@@ -2148,7 +2266,9 @@ impl Actor {
         if !self.mirror_on {
             return;
         }
-        let Some(device) = self.loaded_device() else { return };
+        let Some(device) = self.loaded_device() else {
+            return;
+        };
         if let Some(dir) = self.mirror_first.take() {
             self.folders.set_session(device, dir);
         }
@@ -2173,7 +2293,9 @@ impl Actor {
         let seen = match self.mirror_view() {
             Ok((base, overlay, range)) => {
                 let view = plusdrive_format::OverlayImage::new(base.as_ref(), &overlay);
-                plusdrive_format::mirror::store_files(&view, &range).map(|f| f.into_keys().collect()).unwrap_or_default()
+                plusdrive_format::mirror::store_files(&view, &range)
+                    .map(|f| f.into_keys().collect())
+                    .unwrap_or_default()
             }
             Err(_) => Default::default(),
         };
@@ -2185,7 +2307,9 @@ impl Actor {
 
     /// Once per pass of the run loop: the card's write count, and the pass itself when the quiet period has run out.
     fn mirror_tick(&mut self) {
-        let Some(writes) = self.runtime.as_ref().map(|r| r.card_write_count()) else { return };
+        let Some(writes) = self.runtime.as_ref().map(|r| r.card_write_count()) else {
+            return;
+        };
         let now = Instant::now();
         let due = match self.mirror.as_mut() {
             Some(m) => {
@@ -2211,10 +2335,16 @@ impl Actor {
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs());
-            let out = std::env::var_os("DIGI_PLUSDRIVE_OUT").map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from);
+            let out = std::env::var_os("DIGI_PLUSDRIVE_OUT")
+                .map_or_else(|| PathBuf::from("out/plusdrive"), PathBuf::from);
             let backup = out.join("backup").join(format!("mirror-{stamp}"));
-            let mut seen = self.mirror.as_mut().map(|m| std::mem::take(&mut m.seen)).unwrap_or_default();
-            let report = plusdrive_format::mirror::mirror_store(&view, &range, &dir, &backup, &mut seen);
+            let mut seen = self
+                .mirror
+                .as_mut()
+                .map(|m| std::mem::take(&mut m.seen))
+                .unwrap_or_default();
+            let report =
+                plusdrive_format::mirror::mirror_store(&view, &range, &dir, &backup, &mut seen);
             if let Some(m) = self.mirror.as_mut() {
                 m.seen = seen;
             }
@@ -2229,7 +2359,12 @@ impl Actor {
 
     /// At the end of the session: mirror what the quiet period had not reached yet.
     fn mirror_flush(&mut self) {
-        if self.mirror.as_ref().is_some_and(|m| m.pending() || m.behind()) && self.runtime.is_some() {
+        if self
+            .mirror
+            .as_ref()
+            .is_some_and(|m| m.pending() || m.behind())
+            && self.runtime.is_some()
+        {
             if let Err(e) = self.mirror_pass() {
                 eprintln!("card: the module store was not mirrored: {e}");
             }
@@ -2244,16 +2379,30 @@ impl Actor {
     fn rpc_card_folder(&mut self) -> RpcResult {
         let mut status = match &self.mirror {
             Some(m) => m.status(plusdrive_format::mirror::folder_files(&m.dir)),
-            None => json!({"folder": null, "continuous": false, "files": [], "last_sync": null, "error": null}),
+            None => {
+                json!({"folder": null, "continuous": false, "files": [], "last_sync": null, "error": null})
+            }
         };
         if let Some(device) = self.loaded_device() {
             let next = self.folders.folder(device);
             status["device"] = device.into();
-            status["default_folder"] = self.folders.default_folder(device).map(|p| p.display().to_string()).into();
+            status["default_folder"] = self
+                .folders
+                .default_folder(device)
+                .map(|p| p.display().to_string())
+                .into();
             status["custom"] = self.folders.choice(device).is_some().into();
-            status["chosen_missing"] = self.folders.missing_choice(device).map(|p| p.display().to_string()).into();
+            status["chosen_missing"] = self
+                .folders
+                .missing_choice(device)
+                .map(|p| p.display().to_string())
+                .into();
             status["next_folder"] = next.as_ref().map(|p| p.display().to_string()).into();
-            status["reload_needed"] = (self.mirror.as_ref().is_some_and(|m| Some(&m.dir) != next.as_ref())).into();
+            status["reload_needed"] = (self
+                .mirror
+                .as_ref()
+                .is_some_and(|m| Some(&m.dir) != next.as_ref()))
+            .into();
         }
         Ok(status)
     }
@@ -2265,16 +2414,26 @@ impl Actor {
     fn rpc_card_folder_set(&mut self, p: &Params) -> RpcResult {
         let device = match p.opt_str("device")? {
             Some(d) => d.to_string(),
-            None => self.loaded_device().map(str::to_string).ok_or_else(RpcError::no_firmware)?,
+            None => self
+                .loaded_device()
+                .map(str::to_string)
+                .ok_or_else(RpcError::no_firmware)?,
         };
         if !device_ok(&device) {
-            return Err(RpcError::bad_params(format!("not a device name: {device:?}")));
+            return Err(RpcError::bad_params(format!(
+                "not a device name: {device:?}"
+            )));
         }
-        let dir = p.opt_str("dir")?.filter(|d| !d.is_empty()).map(PathBuf::from);
+        let dir = p
+            .opt_str("dir")?
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from);
         if dir.as_ref().is_some_and(|d| !d.is_absolute()) {
             return Err(RpcError::bad_params("dir must be an absolute path"));
         }
-        self.folders.set_choice(&device, dir.as_deref()).map_err(RpcError::bad_params)?;
+        self.folders
+            .set_choice(&device, dir.as_deref())
+            .map_err(RpcError::bad_params)?;
         if self.mirror_on && self.loaded_device() == Some(device.as_str()) {
             let path_fs = self.card_layout().is_ok_and(|l| l.path_fs.is_some());
             if !path_fs {
@@ -2320,11 +2479,15 @@ impl Actor {
             (Some(Value::String(hex)), None) => {
                 let digits: Vec<u8> = hex.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
                 if digits.len() % 2 != 0 || !digits.iter().all(u8::is_ascii_hexdigit) {
-                    return Err(RpcError::bad_params("bytes is an even number of hex digits"));
+                    return Err(RpcError::bad_params(
+                        "bytes is an even number of hex digits",
+                    ));
                 }
                 digits
                     .chunks(2)
-                    .map(|c| u8::from_str_radix(std::str::from_utf8(c).unwrap_or("0"), 16).unwrap_or(0))
+                    .map(|c| {
+                        u8::from_str_radix(std::str::from_utf8(c).unwrap_or("0"), 16).unwrap_or(0)
+                    })
                     .collect::<Vec<u8>>()
             }
             (Some(Value::Array(items)), None) => items
@@ -2335,7 +2498,11 @@ impl Actor {
             (None, Some(path)) => {
                 std::fs::read(path).map_err(|e| RpcError::io(format!("{path}: {e}")))?
             }
-            _ => return Err(RpcError::bad_params("give bytes (hex string or array) or file")),
+            _ => {
+                return Err(RpcError::bad_params(
+                    "give bytes (hex string or array) or file",
+                ));
+            }
         };
         let period = p
             .opt_u64("period")?
@@ -2363,7 +2530,11 @@ impl Actor {
             if usb {
                 r.usb_midi_watch().map_err(RpcError::bad_params)?;
             }
-            let bytes = if usb { r.take_usb_out() } else { r.take_midi_out() };
+            let bytes = if usb {
+                r.take_usb_out()
+            } else {
+                r.take_midi_out()
+            };
             Ok((bytes, r.midi_status()))
         })?;
         if let Some(path) = p.opt_str("file")? {
@@ -2394,8 +2565,10 @@ impl Actor {
 
     /// `flash.read {offset, length}`: bytes of the model's flash as a hex string (the container is at 0x80000; at most 4 MiB per call).
     fn rpc_flash_read(&mut self, p: &Params) -> RpcResult {
-        let offset = usize::try_from(p.u64("offset")?).map_err(|_| RpcError::bad_params("offset"))?;
-        let length = usize::try_from(p.u64("length")?).map_err(|_| RpcError::bad_params("length"))?;
+        let offset =
+            usize::try_from(p.u64("offset")?).map_err(|_| RpcError::bad_params("offset"))?;
+        let length =
+            usize::try_from(p.u64("length")?).map_err(|_| RpcError::bad_params("length"))?;
         if length > 4 << 20 {
             return Err(RpcError::bad_params("length is at most 4 MiB"));
         }
@@ -2451,18 +2624,30 @@ impl Actor {
     /// After a swap the boot cache has no entry for the new image: a plain `firmware.load` of it, or a `restart`, boots cold once.
     fn rpc_dev_reload(&mut self, p: &Params, reply: &RpcReply) -> Result<Option<Value>, RpcError> {
         let started = Instant::now();
-        let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, format!("dev.reload: {m}"));
+        let rejected =
+            |m: String| RpcError::new(code::FIRMWARE_REJECTED, format!("dev.reload: {m}"));
         if self.job.is_some() || self.patch_job.is_some() {
-            return Err(RpcError::new(code::BUSY, "a job is running; wait for it before dev.reload"));
+            return Err(RpcError::new(
+                code::BUSY,
+                "a job is running; wait for it before dev.reload",
+            ));
         }
         let loaded = self.loaded.as_ref().ok_or_else(RpcError::no_firmware)?;
         let current = loaded.current.clone();
         let record = patchkit::verify::patch_record(&current)
             .map_err(|e| rejected(e.to_string()))?
             .ok_or_else(|| rejected("the running image has no patch record (load a patched image or `runtime: true`)".into()))?;
-        let root = runtime_patch::find_root(p.opt_str("modules_dir")?.map(Path::new).or(self.repo_root.as_deref()))
-            .map_err(&rejected)?;
-        let ids: Vec<String> = record.modules.iter().map(|t| patchkit::live::owner_id(t).to_string()).collect();
+        let root = runtime_patch::find_root(
+            p.opt_str("modules_dir")?
+                .map(Path::new)
+                .or(self.repo_root.as_deref()),
+        )
+        .map_err(&rejected)?;
+        let ids: Vec<String> = record
+            .modules
+            .iter()
+            .map(|t| patchkit::live::owner_id(t).to_string())
+            .collect();
         let build = if p.opt_bool("build")?.unwrap_or(false) {
             let sum = runtime_patch::build_modules(&root, &ids).map_err(&rejected)?;
             Some(json!({
@@ -2482,10 +2667,19 @@ impl Actor {
             .clone()
             .filter(|b| firmware::sha256_hex(b) == record.base_sha256)
             .or_else(|| runtime_patch::find_stock(&root, &record.base_sha256))
-            .ok_or_else(|| rejected(format!("the stock image {} is not in firmware/", record.base_sha256)))?;
+            .ok_or_else(|| {
+                rejected(format!(
+                    "the stock image {} is not in firmware/",
+                    record.base_sha256
+                ))
+            })?;
         let card = {
             let own = self.auto_card.as_ref().map(|(image, _)| image);
-            loaded.card.as_ref().filter(|c| Some(*c) != own).map(|c| c.display().to_string())
+            loaded
+                .card
+                .as_ref()
+                .filter(|c| Some(*c) != own)
+                .map(|c| c.display().to_string())
         };
         let stock_main_len = patchkit::firmware::Firmware::parse(&stock)
             .map_err(|e| rejected(e.to_string()))?
@@ -2498,29 +2692,52 @@ impl Actor {
             Some(r) if r.running_sha == firmware::sha256_hex(&current) => r.baseline.clone(),
             _ => current.clone(),
         };
-        let diff_of = |from: &[u8]| patchkit::live::diff(from, &new_syx, stock_main_len, &plan).map_err(|e| rejected(e.to_string()));
+        let diff_of = |from: &[u8]| {
+            patchkit::live::diff(from, &new_syx, stock_main_len, &plan)
+                .map_err(|e| rejected(e.to_string()))
+        };
         // Nothing to do when the running image already is the new one; otherwise the writes are the baseline's difference (a state
         // swapped back to its baseline's bytes is a swap with no ranges).
         let from_current = diff_of(&current)?;
         if from_current.is_empty() {
             let ms = started.elapsed().as_secs_f64() * 1e3;
-            return Ok(Some(with_build(json!({"path": "none", "ms": ms, "apply_ms": ms}), &build)));
+            return Ok(Some(with_build(
+                json!({"path": "none", "ms": ms, "apply_ms": ms}),
+                &build,
+            )));
         }
-        let diff = if baseline == current { from_current } else { diff_of(&baseline)? };
+        let diff = if baseline == current {
+            from_current
+        } else {
+            diff_of(&baseline)?
+        };
         let apply_ms = started.elapsed().as_secs_f64() * 1e3;
         let swap: Vec<String> = match p.get("swap_modules") {
             Some(Value::Array(a)) => a
                 .iter()
-                .map(|v| v.as_str().map(str::to_string).ok_or_else(|| RpcError::bad_params("swap_modules is a list of module ids")))
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| RpcError::bad_params("swap_modules is a list of module ids"))
+                })
                 .collect::<Result<_, _>>()?,
             Some(_) => return Err(RpcError::bad_params("swap_modules is a list of module ids")),
-            None => SWAP_DEFAULT.iter().map(|s| s.to_string()).chain(re.requirers).collect(),
+            None => SWAP_DEFAULT
+                .iter()
+                .map(|s| s.to_string())
+                .chain(re.requirers)
+                .collect(),
         };
-        let differing: Vec<&patchkit::live::Change> = diff.changes.iter().filter(|c| c.differs).collect();
+        let differing: Vec<&patchkit::live::Change> =
+            diff.changes.iter().filter(|c| c.differs).collect();
         let blocker = if !diff.other_sections.is_empty() {
             Some(format!("sections {:?} changed", diff.other_sections))
         } else if let Some(c) = differing.iter().find(|c| !swap.contains(&c.owner)) {
-            let who = if c.owner.is_empty() { "unowned MAIN bytes" } else { c.owner.as_str() };
+            let who = if c.owner.is_empty() {
+                "unowned MAIN bytes"
+            } else {
+                c.owner.as_str()
+            };
             Some(format!("{who} changed at {:#x}", c.addr))
         } else if diff.dsp_changed {
             Some("the DSP section changed".to_string())
@@ -2535,7 +2752,10 @@ impl Actor {
                 "bytes": true, "force": force, "start": "auto", "restart": true, "card": card,
                 "report_extra": with_build(json!({"path": path, "reason": reason, "apply_ms": apply_ms}), &build),
             });
-            this.reload = Some(ReloadState { running_sha: firmware::sha256_hex(&new_syx), baseline: new_syx.clone() });
+            this.reload = Some(ReloadState {
+                running_sha: firmware::sha256_hex(&new_syx),
+                baseline: new_syx.clone(),
+            });
             this.firmware_load(&Params(&params), new_syx.clone(), reply)
         };
         if let Some(reason) = blocker {
@@ -2546,14 +2766,19 @@ impl Actor {
         let restore = json!({"bytes": true, "force": true, "start": "snapshot", "restart": true, "card": card});
         let restored = match self.firmware_load(&Params(&restore), baseline.clone(), reply) {
             Ok(Some(report)) => report,
-            Ok(None) => return Err(rejected("internal: restoring a ready state started a boot".into())),
+            Ok(None) => {
+                return Err(rejected(
+                    "internal: restoring a ready state started a boot".into(),
+                ));
+            }
             Err(e) => return load_new(self, format!("no ready state to restore: {}", e.message)),
         };
         let restore_ms = restore_started.elapsed().as_secs_f64() * 1e3;
         let write_started = Instant::now();
         let mut bytes = 0;
         for c in &diff.changes {
-            let addr = u32::try_from(c.addr).map_err(|_| rejected(format!("{:#x} is not a 32-bit address", c.addr)))?;
+            let addr = u32::try_from(c.addr)
+                .map_err(|_| rejected(format!("{:#x} is not a 32-bit address", c.addr)))?;
             self.with_runtime(|r| r.write_ram(addr, &c.bytes).map_err(RpcError::bad_params))?;
             bytes += c.bytes.len();
         }
@@ -2563,7 +2788,10 @@ impl Actor {
             l.current = new_syx.clone();
             l.current_analysis = Some(analysis);
         }
-        self.reload = Some(ReloadState { running_sha: firmware::sha256_hex(&new_syx), baseline });
+        self.reload = Some(ReloadState {
+            running_sha: firmware::sha256_hex(&new_syx),
+            baseline,
+        });
         Ok(Some(with_build(
             json!({
                 "path": "swap", "ranges": diff.changes.len(), "bytes": bytes, "owners": diff.owners(),
@@ -2846,8 +3074,9 @@ impl Actor {
             "disarm" => DdrMonitorCommand::Disarm,
             "arm" => {
                 let address = |key| {
-                    u32::try_from(p.u64(key)?)
-                        .map_err(|_| RpcError::bad_params("start and end are 32-bit byte addresses"))
+                    u32::try_from(p.u64(key)?).map_err(|_| {
+                        RpcError::bad_params("start and end are 32-bit byte addresses")
+                    })
                 };
                 DdrMonitorCommand::Arm(DdrMonitorRange {
                     start: address("start")?,
@@ -2968,7 +3197,8 @@ impl Actor {
             let root = runtime_patch::find_root(self.repo_root.as_deref()).map_err(&patch_error)?;
             match runtime_patch::prepare(&root, &bytes, set).map_err(&patch_error)? {
                 runtime_patch::Outcome::AlreadyPatched => {
-                    runtime_report = Some(json!({"patched": false, "reason": "the input has a patch record"}));
+                    runtime_report =
+                        Some(json!({"patched": false, "reason": "the input has a patch record"}));
                 }
                 runtime_patch::Outcome::Patched(patched) => {
                     runtime_report = Some(json!({
@@ -3050,11 +3280,22 @@ impl Actor {
             // First load: stock when the file is a known one (or base_sha256
             // names itself), otherwise a patched build of `base_sha256`.
             let base_sha = base_param.clone().unwrap_or_else(|| new.sha256.clone());
-            let card = card_param.clone().or_else(|| self.default_card(&bytes, stock_base.as_deref()));
+            let card = card_param
+                .clone()
+                .or_else(|| self.default_card(&bytes, stock_base.as_deref()));
             if base_sha == new.sha256 {
                 self.load_stock(bytes, card, new, &mut report, start)?
             } else {
-                self.load_patched(bytes, card, new, base_sha, stock_base, &mut report, start, reply)?
+                self.load_patched(
+                    bytes,
+                    card,
+                    new,
+                    base_sha,
+                    stock_base,
+                    &mut report,
+                    start,
+                    reply,
+                )?
             }
         } else {
             let loaded = self.loaded.as_ref().expect("loaded");
@@ -3296,7 +3537,10 @@ impl Actor {
             .to_string();
         // The ColdFire-only ready state holds the runtime's picture of the card (its store header and table), so it belongs to
         // the card it booted on: a state restored onto another card would write that picture back.
-        let card_key = card_snapshot_key(card.as_deref(), std::env::var_os("DIGI_COLD_RELAX_FS").is_some());
+        let card_key = card_snapshot_key(
+            card.as_deref(),
+            std::env::var_os("DIGI_COLD_RELAX_FS").is_some(),
+        );
         let zero = self.audio.as_ref().is_some_and(|audio| audio.zero);
         let mode = if zero { "-zero" } else { "" };
         let cache = self
@@ -3339,12 +3583,18 @@ impl Actor {
             runtime.relax_fs_check();
         }
         if let Some(ram) = &self.reset_ram {
-            let registry = plusdrive_format::device_profile::Registry::load().map_err(|e| rejected(e.to_string()))?;
-            let (device, _) = registry.identify(&base_sha).map_err(|e| rejected(e.to_string()))?;
-            let (base, size) = device.keep_ram
+            let registry = plusdrive_format::device_profile::Registry::load()
+                .map_err(|e| rejected(e.to_string()))?;
+            let (device, _) = registry
+                .identify(&base_sha)
+                .map_err(|e| rejected(e.to_string()))?;
+            let (base, size) = device
+                .keep_ram
                 .ok_or_else(|| rejected("soft reset RAM has no device keep range".into()))?;
             if ram.len() != size as usize || ram.len() % 4 != 0 {
-                return Err(rejected("soft reset RAM does not match the device keep range".into()));
+                return Err(rejected(
+                    "soft reset RAM does not match the device keep range".into(),
+                ));
             }
             runtime.poke_ram(base, ram).map_err(&rejected)?;
         }
@@ -3385,7 +3635,9 @@ impl Actor {
         } else if start == "snapshot" {
             return Err(rejected(format!(
                 "no cached snapshot for this MAIN ({}); start snapshot never boots cold",
-                cache.as_ref().map_or_else(|| "soft reset".into(), |p| p.display().to_string())
+                cache
+                    .as_ref()
+                    .map_or_else(|| "soft reset".into(), |p| p.display().to_string())
             )));
         } else {
             boot_job = true;
@@ -3431,7 +3683,9 @@ fn decode_hex(text: &str) -> Result<Vec<u8>, String> {
     }
     (0..text.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).map_err(|_| format!("hex: bad digits at {i}")))
+        .map(|i| {
+            u8::from_str_radix(&text[i..i + 2], 16).map_err(|_| format!("hex: bad digits at {i}"))
+        })
         .collect()
 }
 
@@ -3491,8 +3745,13 @@ fn card_identity(card: &Path) -> Option<String> {
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map_or(0, |d| d.as_secs());
-    let overlay = std::fs::read(overlay_path(card)).map_or_else(|_| "-".to_string(), |b| format!("{:x}", Sha256::digest(&b)));
-    Some(format!("{}:{}:{modified}:{overlay}", card.display(), meta.len()))
+    let overlay = std::fs::read(overlay_path(card))
+        .map_or_else(|_| "-".to_string(), |b| format!("{:x}", Sha256::digest(&b)));
+    Some(format!(
+        "{}:{}:{modified}:{overlay}",
+        card.display(),
+        meta.len()
+    ))
 }
 
 /// The file name suffix of a ColdFire-only ready state for `card` (empty without a card): the card file's identity and its saved
@@ -3530,7 +3789,8 @@ fn patched_pair_key(
         hash.update(Sha256::digest(&data));
     }
     if let Some(card) = card {
-        let identity = card_identity(card).ok_or_else(|| format!("{}: cannot read card metadata", card.display()))?;
+        let identity = card_identity(card)
+            .ok_or_else(|| format!("{}: cannot read card metadata", card.display()))?;
         hash.update(identity.as_bytes());
     }
     let key = format!("{:x}", hash.finalize());
@@ -3857,15 +4117,38 @@ impl Actor {
             self.reset_ram = job.keep_out.lock().expect("kept ram").take();
             self.boot_resets += 1;
             if let (Some(overlay), true) = (overlay, self.boot_resets <= 8) {
-                self.emit("cpu.reset", json!({"during_boot": true, "count": self.boot_resets}));
-                let PatchInstall { bytes, card, new, base_sha, base_bytes, report, .. } = job.install;
+                self.emit(
+                    "cpu.reset",
+                    json!({"during_boot": true, "count": self.boot_resets}),
+                );
+                let PatchInstall {
+                    bytes,
+                    card,
+                    new,
+                    base_sha,
+                    base_bytes,
+                    report,
+                    ..
+                } = job.install;
                 self.reset_overlay = Some(overlay);
                 let mut report = report;
                 let reply = job.reply.clone();
-                match self.load_patched_coupled(&bytes, &card, &new, &base_sha, &base_bytes, &mut report, "cold", &reply) {
+                match self.load_patched_coupled(
+                    &bytes,
+                    &card,
+                    &new,
+                    &base_sha,
+                    &base_bytes,
+                    &mut report,
+                    "cold",
+                    &reply,
+                ) {
                     Ok(CoupledLoad::Started) => return,
                     _ => {
-                        let _ = reply.send(Err(RpcError::new(code::GUEST_FAULT, "boot loop: the restart failed")));
+                        let _ = reply.send(Err(RpcError::new(
+                            code::GUEST_FAULT,
+                            "boot loop: the restart failed",
+                        )));
                         return;
                     }
                 }
@@ -3977,17 +4260,18 @@ fn run_card_job(
         json!({"state": "working", "phase": "scanning", "message": "Reading the +Drive folder", "fraction": 0.0}),
     );
     let files = cards::list_files(&dir)?;
-    let (paths, card_cached, total) = cards::ensure_card("dt2", &run_dir, &syx, &dir, &files, |done, total| {
-        set_status(
-            status,
-            json!({
-                "state": "working", "phase": "building",
-                "message": format!("Building the card ({done}/{total} files)"),
-                "fraction": 0.1 * done as f64 / total.max(1) as f64,
-                "done": done, "total": total,
-            }),
-        );
-    })?;
+    let (paths, card_cached, total) =
+        cards::ensure_card("dt2", &run_dir, &syx, &dir, &files, |done, total| {
+            set_status(
+                status,
+                json!({
+                    "state": "working", "phase": "building",
+                    "message": format!("Building the card ({done}/{total} files)"),
+                    "fraction": 0.1 * done as f64 / total.max(1) as f64,
+                    "done": done, "total": total,
+                }),
+            );
+        })?;
     let build_seconds = started.elapsed().as_secs_f64();
     if cancel.load(Ordering::Relaxed) {
         return Err("cancelled".into());
@@ -4430,12 +4714,22 @@ mod tests {
         std::fs::write(&raw, b"raw reset one").unwrap();
         let changed = patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").unwrap();
         std::fs::write(&raw, b"raw reset two").unwrap();
-        assert_ne!(changed, patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").unwrap(), "changed DSP follows raw reset bytes");
+        assert_ne!(
+            changed,
+            patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").unwrap(),
+            "changed DSP follows raw reset bytes"
+        );
         std::fs::remove_file(&idle).unwrap();
-        assert!(patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").is_ok(), "changed DSP does not use initialized idle state");
+        assert!(
+            patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").is_ok(),
+            "changed DSP does not use initialized idle state"
+        );
         std::fs::write(&idle, b"idle one").unwrap();
         std::fs::remove_file(&raw).unwrap();
-        assert!(key(&main, None).starts_with("abababababababab-"), "unchanged DSP does not require raw reset state");
+        assert!(
+            key(&main, None).starts_with("abababababababab-"),
+            "unchanged DSP does not require raw reset state"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
@@ -4451,27 +4745,57 @@ mod reset_tests {
         let (_commands, rx) = mpsc::channel();
         let mut controller = Actor::new(rx, Config::new(None));
         let (reply, result) = mpsc::channel();
-        controller.start_job(JobKind::Steps { end: 100 }, &reply, None, json!({}), "step").unwrap();
+        controller
+            .start_job(JobKind::Steps { end: 100 }, &reply, None, json!({}), "step")
+            .unwrap();
         controller.reset_pending = true;
         controller.handle_reset();
-        assert_eq!(result.try_recv().unwrap().unwrap()["runtime_replaced"], true);
+        assert_eq!(
+            result.try_recv().unwrap().unwrap()["runtime_replaced"],
+            true
+        );
         assert!(controller.job.is_none() && controller.reset_pending);
-        controller.start_job(JobKind::Boot { cache: None, limit: BOOT_LIMIT }, &reply,
-            None, json!({}), "firmware.load").unwrap();
+        controller
+            .start_job(
+                JobKind::Boot {
+                    cache: None,
+                    limit: BOOT_LIMIT,
+                },
+                &reply,
+                None,
+                json!({}),
+                "firmware.load",
+            )
+            .unwrap();
         controller.boot_resets = 8;
         controller.mode = Mode::Free;
         controller.handle_reset();
         assert_eq!(controller.boot_resets, 9);
-        assert!(controller.mode == Mode::Paused && controller.job.is_none() && !controller.reset_pending);
-        assert_eq!(result.try_recv().unwrap().unwrap_err().code, code::GUEST_FAULT);
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
+        assert!(
+            controller.mode == Mode::Paused
+                && controller.job.is_none()
+                && !controller.reset_pending
+        );
+        assert_eq!(
+            result.try_recv().unwrap().unwrap_err().code,
+            code::GUEST_FAULT
+        );
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .unwrap();
         for (env, file) in [
             ("DT2_SYX", "Digitakt_II_OS1.17.syx"),
             ("DN2_SYX", "Digitone_II_OS1.12.syx"),
         ] {
-            let path = std::env::var_os(env).map(PathBuf::from)
+            let path = std::env::var_os(env)
+                .map(PathBuf::from)
                 .unwrap_or_else(|| root.join("firmware").join(file));
-            assert!(path.is_file(), "required firmware missing: {}", path.display());
+            assert!(
+                path.is_file(),
+                "required firmware missing: {}",
+                path.display()
+            );
             let bytes = std::fs::read(path).unwrap();
             let new = Analysis::of(&bytes).unwrap();
             let base_sha = firmware::sha256_hex(&bytes);
@@ -4480,17 +4804,22 @@ mod reset_tests {
             let (base, size) = device.keep_ram.unwrap();
             let ram: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
             let mut sector = emmc_card::CardOverlaySector {
-                sector: 17, written: [0; 64], data: [0; 512],
+                sector: 17,
+                written: [0; 64],
+                data: [0; 512],
             };
             sector.written[0] = 3;
             sector.data[0] = 0xa5; // Includes an explicitly written zero at byte 1.
             let overlay = vec![sector];
-            let dir = std::env::temp_dir().join(format!("digi-cf-reset-{}-{env}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("digi-cf-reset-{}-{env}", std::process::id()));
             let mut config = Config::new(None);
             config.run_dir = dir.clone();
             let (_tx, rx) = mpsc::channel();
             let mut actor = Actor::new(rx, config);
-            let cache = dir.join("patched").join(format!("{}.snap", new.main_sha256().unwrap()));
+            let cache = dir
+                .join("patched")
+                .join(format!("{}.snap", new.main_sha256().unwrap()));
             std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
             std::fs::write(&cache, b"initial cache must remain untouched").unwrap();
             actor.reset_overlay = Some(overlay.clone());
@@ -4498,31 +4827,88 @@ mod reset_tests {
             let (reply, result) = mpsc::channel();
             let mut report = json!({});
             actor.reset_ram = Some(vec![0; 3]);
-            assert!(actor.load_patched(bytes.clone(), None, new.clone(), base_sha.clone(),
-                Some(bytes.clone()), &mut report, "cold", &reply).is_err());
-            assert_eq!(actor.reset_overlay.as_ref(), Some(&overlay), "failed construction keeps captured card state");
-            assert_eq!(actor.reset_ram.as_deref(), Some(&[0; 3][..]), "failed construction keeps captured RAM");
+            assert!(
+                actor
+                    .load_patched(
+                        bytes.clone(),
+                        None,
+                        new.clone(),
+                        base_sha.clone(),
+                        Some(bytes.clone()),
+                        &mut report,
+                        "cold",
+                        &reply
+                    )
+                    .is_err()
+            );
+            assert_eq!(
+                actor.reset_overlay.as_ref(),
+                Some(&overlay),
+                "failed construction keeps captured card state"
+            );
+            assert_eq!(
+                actor.reset_ram.as_deref(),
+                Some(&[0; 3][..]),
+                "failed construction keeps captured RAM"
+            );
             actor.reset_ram = Some(ram.clone());
-            assert!(actor.load_patched(bytes.clone(), None, new.clone(), base_sha.clone(),
-                Some(bytes.clone()), &mut report, "auto", &reply).unwrap());
+            assert!(
+                actor
+                    .load_patched(
+                        bytes.clone(),
+                        None,
+                        new.clone(),
+                        base_sha.clone(),
+                        Some(bytes.clone()),
+                        &mut report,
+                        "auto",
+                        &reply
+                    )
+                    .unwrap()
+            );
             let runtime = actor.runtime.as_mut().unwrap();
-            assert_eq!(runtime.elapsed_instructions(), 0, "retained state precedes boot");
+            assert_eq!(
+                runtime.elapsed_instructions(),
+                0,
+                "retained state precedes boot"
+            );
             assert_eq!(runtime.peek_ram(base, size), ram);
-            assert_eq!(runtime.card_overlay(), overlay, "blank-card writes survive reset");
-            assert!(report.get("cache_note").is_none(), "reset must not read the cache");
-            assert!(matches!(actor.job.as_ref().unwrap().kind, JobKind::Boot { cache: None, .. }),
-                "reset must not write the cache when ready");
+            assert_eq!(
+                runtime.card_overlay(),
+                overlay,
+                "blank-card writes survive reset"
+            );
+            assert!(
+                report.get("cache_note").is_none(),
+                "reset must not read the cache"
+            );
+            assert!(
+                matches!(
+                    actor.job.as_ref().unwrap().kind,
+                    JobKind::Boot { cache: None, .. }
+                ),
+                "reset must not write the cache when ready"
+            );
             assert!(actor.reset_overlay.is_none() && actor.reset_ram.is_none());
-            assert_eq!(std::fs::read(&cache).unwrap(), b"initial cache must remain untouched");
+            assert_eq!(
+                std::fs::read(&cache).unwrap(),
+                b"initial cache must remain untouched"
+            );
             actor.job = None;
             actor.mode = Mode::Paused;
             actor.soft_reset();
-            assert!(actor.mode == Mode::Free, "guest reset resumes free running after the boot job");
+            assert!(
+                actor.mode == Mode::Free,
+                "guest reset resumes free running after the boot job"
+            );
             let runtime = actor.runtime.as_mut().unwrap();
             assert_eq!(runtime.elapsed_instructions(), 0);
             assert_eq!(runtime.peek_ram(base, size), ram);
             assert_eq!(runtime.card_overlay(), overlay);
-            assert!(matches!(actor.job.as_ref().unwrap().kind, JobKind::Boot { cache: None, .. }));
+            assert!(matches!(
+                actor.job.as_ref().unwrap().kind,
+                JobKind::Boot { cache: None, .. }
+            ));
             actor.boot_resets = 7;
             actor.reset_pending = true;
             actor.handle_reset();
@@ -4532,16 +4918,45 @@ mod reset_tests {
             actor.job.as_mut().unwrap().reply = reply.clone();
             actor.loaded.as_mut().unwrap().card = Some(dir.join("missing-card.img"));
             actor.soft_reset();
-            assert!(result.try_recv().unwrap().is_err(), "terminal reset failure replies to the original boot caller");
-            assert!(actor.reset_overlay.is_none() && actor.reset_ram.is_none(), "terminal reset state cannot leak into a new load");
+            assert!(
+                result.try_recv().unwrap().is_err(),
+                "terminal reset failure replies to the original boot caller"
+            );
+            assert!(
+                actor.reset_overlay.is_none() && actor.reset_ram.is_none(),
+                "terminal reset state cannot leak into a new load"
+            );
             actor.job = None;
-            actor.load_patched(bytes, None, new, base_sha, None, &mut json!({}), "cold", &reply).unwrap();
-            assert!(matches!(&actor.job.as_ref().unwrap().kind, JobKind::Boot { cache: Some(path), .. } if path == &cache),
-                "ordinary initial cold boots still save the MAIN cache");
-            assert_eq!(actor.boot_resets, 0, "independent loads start a fresh reset sequence");
+            actor
+                .load_patched(
+                    bytes,
+                    None,
+                    new,
+                    base_sha,
+                    None,
+                    &mut json!({}),
+                    "cold",
+                    &reply,
+                )
+                .unwrap();
+            assert!(
+                matches!(&actor.job.as_ref().unwrap().kind, JobKind::Boot { cache: Some(path), .. } if path == &cache),
+                "ordinary initial cold boots still save the MAIN cache"
+            );
+            assert_eq!(
+                actor.boot_resets, 0,
+                "independent loads start a fresh reset sequence"
+            );
             let runtime = actor.runtime.as_mut().unwrap();
-            assert!(runtime.card_overlay().is_empty(), "fresh default card has none of the failed reset's writes");
-            assert_ne!(runtime.peek_ram(base, size), ram, "failed reset RAM is not reused");
+            assert!(
+                runtime.card_overlay().is_empty(),
+                "fresh default card has none of the failed reset's writes"
+            );
+            assert_ne!(
+                runtime.peek_ram(base, size),
+                ram,
+                "failed reset RAM is not reused"
+            );
             std::fs::remove_dir_all(dir).unwrap();
         }
     }

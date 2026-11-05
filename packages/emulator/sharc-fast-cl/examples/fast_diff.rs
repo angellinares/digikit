@@ -85,7 +85,10 @@ fn open(image: &[u8], state: &[u8], clock_base: u64) -> Engine {
     }
     if std::env::var_os("FD_CFG").is_some() {
         let c = &e.s.cfg;
-        eprintln!("cfg: bank_model {} stack_model {}", c.bank_model, c.stack_model);
+        eprintln!(
+            "cfg: bank_model {} stack_model {}",
+            c.bank_model, c.stack_model
+        );
     }
     e
 }
@@ -824,12 +827,20 @@ fn units_sys() -> Vec<Unit> {
             let (mask, base) = form_base("17b");
             let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
             // Mostly R, I and M; sometimes another register (refused).
-            let code = if r.chance(12) { r.below(128) } else { r.below(48) };
+            let code = if r.chance(12) {
+                r.below(128)
+            } else {
+                r.below(48)
+            };
             raw.set(38, 32, code as u64);
             raw.set(15, 0, 0);
             if r.chance(3) {
                 // Edge immediates: sign bit and its neighbours.
-                raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, 0xfff8][r.below(6) as usize]);
+                raw.set(
+                    31,
+                    16,
+                    [0, 1, 0x7fff, 0x8000, 0xffff, 0xfff8][r.below(6) as usize],
+                );
             }
             (raw.0, Check::None)
         }),
@@ -851,7 +862,11 @@ fn units_sys() -> Vec<Unit> {
         make: Box::new(|r| {
             let (mask, base) = form_base("18a");
             let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
-            let bop = if r.chance(2) { r.below(3) } else { 4 + r.below(2) } as u64;
+            let bop = if r.chance(2) {
+                r.below(3)
+            } else {
+                4 + r.below(2)
+            } as u64;
             let sreg = if r.chance(4) { r.below(16) } else { 2 } as u64;
             raw.set(39, 37, bop);
             raw.set(35, 32, sreg);
@@ -1306,7 +1321,10 @@ fn expect_special(c: Check, s: &St) -> bool {
                 || not_finite((f(xa) - f(ya)).to_bits())
         }
         Check::DualF(x, y) => {
-            dn(x) || dn(y) || not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
+            dn(x)
+                || dn(y)
+                || not_finite((f(x) + f(y)).to_bits())
+                || not_finite((f(x) - f(y)).to_bits())
         }
         Check::FAbs(x) => dn(x) || f(x).is_nan(),
         Check::FPass(x) => dn(x) || not_finite(s.r[x as usize].b),
@@ -2545,9 +2563,17 @@ fn sys_insn(r: &mut Rng) -> Vec<u16> {
     match r.below(6) {
         0 | 1 => {
             let mut raw = Raw(form_base("17b").1);
-            let code = if r.chance(4) { 32 + r.below(16) } else { r.below(13) };
+            let code = if r.chance(4) {
+                32 + r.below(16)
+            } else {
+                r.below(13)
+            };
             raw.set(38, 32, code as u64);
-            raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, r.below(65536)][r.below(6) as usize] as u64);
+            raw.set(
+                31,
+                16,
+                [0, 1, 0x7fff, 0x8000, 0xffff, r.below(65536)][r.below(6) as usize] as u64,
+            );
             words_of(raw.0, 2)
         }
         2 => words_of(form_base("21a").1, 3),
@@ -2558,7 +2584,11 @@ fn sys_insn(r: &mut Rng) -> Vec<u16> {
             raw.set(35, 32, 2);
             // The MODE1 of the cfg runs has SIMD clear: a clear of it, or a
             // random mask now and then.
-            let data = if r.chance(3) { r.next() as u32 } else { 0x20_0000 };
+            let data = if r.chance(3) {
+                r.next() as u32
+            } else {
+                0x20_0000
+            };
             raw.set(31, 0, data as u64);
             words_of(raw.0, 3)
         }
@@ -3162,15 +3192,22 @@ fn cfgprog(args: &[String]) {
                 if std::env::var_os("FD_REQS").is_some() {
                     for pc in &entries {
                         if let Some(r) = fe.borrow().region(*pc) {
-                            println!("      region {pc:#x}: forms {:?} reqs {:?}", r.forms, r.reqs);
+                            println!(
+                                "      region {pc:#x}: forms {:?} reqs {:?}",
+                                r.forms, r.reqs
+                            );
                         }
                     }
                 }
                 let _ = pair(&mut ei, &mut ef, st_seed, mode1, hi);
                 println!(
                     "      after it: MODE1 interp {:#x} fast {:#x}, ASTATx {:#x} {:#x}, ASTATy {:#x} {:#x}",
-                    ei.s.r[114].b, ef.s.r[114].b, ei.s.r[118].b, ef.s.r[118].b,
-                    ei.s.r[119].b, ef.s.r[119].b
+                    ei.s.r[114].b,
+                    ef.s.r[114].b,
+                    ei.s.r[118].b,
+                    ef.s.r[118].b,
+                    ei.s.r[119].b,
+                    ef.s.r[119].b
                 );
                 println!(
                     "      at budget {hi}: pc interp {:#x} fast {:#x}, icount {} {}, fast pending {:?} loops {:?}",
@@ -3226,7 +3263,9 @@ fn cfgprog(args: &[String]) {
         built
     );
     println!("declined shape/req/window/budget/exit0 = {declined:?}");
-    println!("final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}");
+    println!(
+        "final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}"
+    );
     println!("final regions with a register trip count: {regn_total}");
     for (why, n) in &refusals {
         println!("{n:>5} x refused: {why}");

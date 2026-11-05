@@ -1,4 +1,4 @@
-//! The C ABI the web app loads (`apps/web/public/dkupload.wasm`, built by tools/emulator/native_wasm.py): the
+//! The C ABI the web app loads (`apps/web/public/dkupload.wasm`, built by tools/nx/wasm.mjs): the
 //! same codec, upload machine and mock device as the desktop app, driven from TypeScript.
 //!
 //! Results are read after a call from the output buffer (`dk_out_ptr`/`dk_out_len`) or the error buffer

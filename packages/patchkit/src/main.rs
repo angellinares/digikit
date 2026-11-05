@@ -897,9 +897,18 @@ plan.json {}",
                     reg.set_actions(r, &patchkit::dkm::image_symbols(&obj)?)?;
                     for page in &r.native_pages {
                         for callback in [&page.draw, &page.event] {
-                            if !obj.symbols.iter().any(|symbol| symbol.global && &symbol.name == callback &&
-                                symbol.section.as_ref().is_some_and(|section| obj.sections.iter().any(|s| &s.name == section && s.kind == "text"))) {
-                                return Err(Error(format!("{id}: native page callback {callback} must be global text")));
+                            if !obj.symbols.iter().any(|symbol| {
+                                symbol.global
+                                    && &symbol.name == callback
+                                    && symbol.section.as_ref().is_some_and(|section| {
+                                        obj.sections
+                                            .iter()
+                                            .any(|s| &s.name == section && s.kind == "text")
+                                    })
+                            }) {
+                                return Err(Error(format!(
+                                    "{id}: native page callback {callback} must be global text"
+                                )));
                             }
                         }
                     }

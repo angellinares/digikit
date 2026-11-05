@@ -20,6 +20,7 @@ pub mod cond;
 pub mod fixed_alu;
 pub mod float_alu;
 pub mod flow;
+#[rustfmt::skip]
 pub mod gen_forms;
 pub mod gen_prims;
 pub mod helper;
@@ -532,7 +533,9 @@ impl Lower {
             regs: vec![RegInfo::default(); NALL],
             cur: vec![None; NALL],
             written_iter: vec![false; NALL],
-            hint: (0..NALL).map(|c| (c < NREGS as usize).then_some(c as u8)).collect(),
+            hint: (0..NALL)
+                .map(|c| (c < NREGS as usize).then_some(c as u8))
+                .collect(),
             self_update: Vec::new(),
             moves: Vec::new(),
             reqs: Vec::new(),
@@ -1543,9 +1546,7 @@ impl Lower {
                 self.guard_plain(addr);
                 Ok(())
             }
-            None => {
-                refuse("address range unknown")
-            }
+            None => refuse("address range unknown"),
         }
     }
 
@@ -1738,7 +1739,9 @@ impl Lower {
         if gen_enabled(d.form) && self.gen_lower(d)? {
             return self.commit();
         }
-        if self.mode1_cur & (1 << 21) != 0 && !matches!(d.form, "21a" | "21c" | "22c" | "25c_rframe") {
+        if self.mode1_cur & (1 << 21) != 0
+            && !matches!(d.form, "21a" | "21c" | "22c" | "25c_rframe")
+        {
             // The hand-written forms are made for SISD.
             return refuse(format!("{} in SIMD mode (no generated lowering)", d.form));
         }
@@ -2514,9 +2517,16 @@ mod tests {
         let a = Abs::konst(0x8052_d790u32 as i32 as i64).as_addr();
         assert_eq!((a.lo, a.hi), (0x8052_d790, 0x8052_d790));
         // A range that crosses zero, or has a base, stays as it is.
-        let b = Abs { lo: -4, hi: 4, ..Abs::konst(0) };
+        let b = Abs {
+            lo: -4,
+            hi: 4,
+            ..Abs::konst(0)
+        };
         assert_eq!(b.as_addr(), b);
-        let c = Abs { base: Base::Reg(2), ..Abs::konst(-8) };
+        let c = Abs {
+            base: Base::Reg(2),
+            ..Abs::konst(-8)
+        };
         assert_eq!(c.as_addr(), c);
     }
 }

@@ -89,15 +89,27 @@ fn setting_again_changes_the_period_and_restarts_it_stopping_removes() {
     unsafe {
         tk_reset();
         assert_eq!(tk_set(0, 100, 0), 0);
-        assert_eq!(tk_set(0, 200, 100), 0, "same function and context: a change, not a second timer");
+        assert_eq!(
+            tk_set(0, 200, 100),
+            0,
+            "same function and context: a change, not a second timer"
+        );
         assert_eq!(tk_active(), 1);
         tk_run(250, BLOCKS);
-        assert_eq!(tk_calls(0), 0, "the restart counts from 100: 200 ms are 300 blocks");
+        assert_eq!(
+            tk_calls(0),
+            0,
+            "the restart counts from 100: 200 ms are 300 blocks"
+        );
         tk_run(400, BLOCKS);
         assert_eq!(tk_calls(0), 1);
         assert_eq!(tk_set(0, 0, 400), 0);
         assert_eq!(tk_active(), 0);
-        assert_eq!(tk_set(0, 0, 400), 0, "stopping what does not run is not an error");
+        assert_eq!(
+            tk_set(0, 0, 400),
+            0,
+            "stopping what does not run is not an error"
+        );
         tk_run(100_000, BLOCKS);
         assert_eq!(tk_calls(0), 1);
     }
@@ -145,7 +157,11 @@ fn a_callback_may_stop_its_own_timer_and_run_reports_what_is_left() {
         assert_eq!(tk_set(0, 10, 0), 0);
         assert_eq!(tk_set(1, 10, 0), 0);
         assert_eq!(tk_run(15, BLOCKS), 2);
-        assert_eq!(tk_run(30, BLOCKS), 1, "timer 0 stopped itself in its second call");
+        assert_eq!(
+            tk_run(30, BLOCKS),
+            1,
+            "timer 0 stopped itself in its second call"
+        );
         assert_eq!(tk_calls(0), 2);
         assert_eq!(tk_run(45, BLOCKS), 1);
         assert_eq!(tk_calls(0), 2);
@@ -180,7 +196,11 @@ fn a_module_screen_redraws_while_a_load_runs_and_stops_its_timer() {
         assert_eq!(tk_module_polls(), 0);
         advance_ms(1);
         assert_eq!(tk_module_polls(), 1);
-        assert_eq!(tk_module_fills(), fills + 1, "the poll refreshed the screen");
+        assert_eq!(
+            tk_module_fills(),
+            fills + 1,
+            "the poll refreshed the screen"
+        );
         advance_ms(300);
         assert_eq!(tk_module_polls(), 4);
         tk_module_finish();

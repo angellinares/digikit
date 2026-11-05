@@ -241,5 +241,4 @@ mod instruction_table_tests {
         assert!(tb.get(0x200).is_some() && tb.get(0x100).is_none());
         assert!(std::ptr::eq(ta, insn_table(a)) && std::ptr::eq(tb, insn_table(b)));
     }
-
 }

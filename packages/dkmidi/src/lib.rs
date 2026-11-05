@@ -80,7 +80,12 @@ const CANCEL_SLICE: Duration = Duration::from_millis(40);
 
 /// Wait up to `timeout` for the next message, in short slices so a change of `cancel` (from the value `seen`) ends the wait at once.
 /// Blocks the calling thread: run it on a worker.
-pub fn recv_message(rx: &Receiver<Vec<u8>>, timeout: Duration, cancel: &AtomicU64, seen: u64) -> Recv {
+pub fn recv_message(
+    rx: &Receiver<Vec<u8>>,
+    timeout: Duration,
+    cancel: &AtomicU64,
+    seen: u64,
+) -> Recv {
     let end = Instant::now() + timeout;
     loop {
         if cancel.load(Ordering::Acquire) != seen {
@@ -204,7 +209,10 @@ mod tests {
         assert!(!worker.is_finished());
         assert_eq!(worker.join().unwrap(), Recv::Timeout);
         let took = started.elapsed();
-        assert!(took >= Duration::from_millis(290) && took < Duration::from_millis(1500), "{took:?}");
+        assert!(
+            took >= Duration::from_millis(290) && took < Duration::from_millis(1500),
+            "{took:?}"
+        );
     }
 
     #[test]
@@ -215,7 +223,11 @@ mod tests {
             let cancel = cancel.clone();
             std::thread::spawn(move || {
                 let started = Instant::now();
-                (recv_message(&rx, Duration::from_secs(30), &cancel, 0), started.elapsed(), rx)
+                (
+                    recv_message(&rx, Duration::from_secs(30), &cancel, 0),
+                    started.elapsed(),
+                    rx,
+                )
             })
         };
         std::thread::sleep(Duration::from_millis(100));
@@ -225,9 +237,15 @@ mod tests {
         assert!(took < Duration::from_secs(2), "{took:?}");
         // a later wait (it sees the new counter) is not cancelled by the old cancel
         tx.send(vec![0xF0, 1, 0xF7]).unwrap();
-        assert_eq!(recv_message(&rx, Duration::from_secs(1), &cancel, 1), Recv::Message(vec![0xF0, 1, 0xF7]));
+        assert_eq!(
+            recv_message(&rx, Duration::from_secs(1), &cancel, 1),
+            Recv::Message(vec![0xF0, 1, 0xF7])
+        );
         drop(tx);
-        assert_eq!(recv_message(&rx, Duration::from_secs(1), &cancel, 1), Recv::Closed);
+        assert_eq!(
+            recv_message(&rx, Duration::from_secs(1), &cancel, 1),
+            Recv::Closed
+        );
     }
 
     #[test]

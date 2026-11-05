@@ -127,7 +127,9 @@ impl Env {
         } else {
             "librustc_codegen_gcc.so"
         };
-        self.cg_dir().join("rustc_codegen_gcc/target/debug").join(lib)
+        self.cg_dir()
+            .join("rustc_codegen_gcc/target/debug")
+            .join(lib)
     }
 
     pub fn codegen_gcc_ready(&self) -> bool {

@@ -367,11 +367,7 @@ impl Emulator {
         self.contract = device_profile::ReadinessContract::MainPanelV1;
     }
 
-    pub fn new_patched(
-        syx: &[u8],
-        card: Option<Card>,
-        base_sha256: &str,
-    ) -> Result<Self, String> {
+    pub fn new_patched(syx: &[u8], card: Option<Card>, base_sha256: &str) -> Result<Self, String> {
         Self::build(syx, card, ExecutionPolicy::Reference, Some(base_sha256))
     }
 
@@ -444,7 +440,12 @@ impl Emulator {
             unique_signature(&main, JOB_PUMP_SIG, None).ok_or("job_pump signature ambiguous")?;
         let flash_read = unique(&main, FLASH_READ_SIG, &vec![false; FLASH_READ_SIG.len()])?;
         let flash_erase = unique(&main, FLASH_ERASE_SIG, &data_mask(FLASH_ERASE_SIG, None)).ok();
-        let flash_program = unique(&main, FLASH_PROGRAM_SIG, &data_mask(FLASH_PROGRAM_SIG, None)).ok();
+        let flash_program = unique(
+            &main,
+            FLASH_PROGRAM_SIG,
+            &data_mask(FLASH_PROGRAM_SIG, None),
+        )
+        .ok();
         let fs_worker = match contract {
             device_profile::ReadinessContract::MainPanelFsCheckV1 => {
                 Some(resolve_fs_worker(&main)?)
@@ -659,7 +660,8 @@ impl Emulator {
                 let count = self.advance_ram_clear(budget - iterations);
                 #[cfg(feature = "cf-profile")]
                 if count != 0 {
-                    self.prof.add(0, crate::cputime::thread_cpu_ns() - t, u64::from(count));
+                    self.prof
+                        .add(0, crate::cputime::thread_cpu_ns() - t, u64::from(count));
                 }
                 if count != 0 {
                     iterations += count;
@@ -671,7 +673,8 @@ impl Emulator {
             let fast = self.run_fast(budget - iterations);
             if fast != 0 {
                 #[cfg(feature = "cf-profile")]
-                self.prof.add(1, crate::cputime::thread_cpu_ns() - t0, u64::from(fast));
+                self.prof
+                    .add(1, crate::cputime::thread_cpu_ns() - t0, u64::from(fast));
                 iterations += fast;
                 continue;
             }
@@ -690,7 +693,8 @@ impl Emulator {
             let idle = self.advance_idle(previous_pc, budget - iterations);
             #[cfg(feature = "cf-profile")]
             if idle != 0 {
-                self.prof.add(3, crate::cputime::thread_cpu_ns() - t2, u64::from(idle));
+                self.prof
+                    .add(3, crate::cputime::thread_cpu_ns() - t2, u64::from(idle));
                 self.prof.sample_idle(previous_pc, u64::from(idle));
             }
             iterations += idle;
@@ -947,7 +951,12 @@ impl Emulator {
                 args.get(len).map_or(len, |&n| n as usize),
             );
             let bytes = (0..n.min(CAPTURE_MAX))
-                .map(|i| self.bus.board.read8(ptr.wrapping_add(i as u32)).unwrap_or(0))
+                .map(|i| {
+                    self.bus
+                        .board
+                        .read8(ptr.wrapping_add(i as u32))
+                        .unwrap_or(0)
+                })
                 .collect();
             self.captures.push(Capture {
                 pc,
@@ -1126,7 +1135,10 @@ impl Emulator {
     /// Write `bytes` (a multiple of 4 long) of guest RAM at `addr` without bus side effects.
     pub fn poke_ram(&mut self, addr: u32, bytes: &[u8]) -> Result<(), String> {
         for (i, w) in bytes.chunks_exact(4).enumerate() {
-            self.poke32(addr + 4 * i as u32, u32::from_be_bytes([w[0], w[1], w[2], w[3]]))?;
+            self.poke32(
+                addr + 4 * i as u32,
+                u32::from_be_bytes([w[0], w[1], w[2], w[3]]),
+            )?;
         }
         Ok(())
     }
@@ -1139,10 +1151,15 @@ impl Emulator {
             return Ok(());
         }
         let end = addr
-            .checked_add(u32::try_from(bytes.len()).map_err(|_| "write_ram: range too long".to_string())?)
+            .checked_add(
+                u32::try_from(bytes.len()).map_err(|_| "write_ram: range too long".to_string())?,
+            )
             .ok_or("write_ram: range wraps")?;
         if addr < 0x4000_0000 || end > 0x5000_0000 {
-            return Err(format!("write_ram {addr:#x}+{}: not in SDRAM or its +128 MiB alias", bytes.len()));
+            return Err(format!(
+                "write_ram {addr:#x}+{}: not in SDRAM or its +128 MiB alias",
+                bytes.len()
+            ));
         }
         let first = addr & !3;
         let last = (end + 3) & !3;
@@ -1165,7 +1182,8 @@ impl Emulator {
                 .write_guest(word, 4, u32::from_be_bytes(b))
                 .map_err(|e| format!("write_ram {word:#x}: {e:?}"))?;
         }
-        self.cpu.invalidate_external_write(first, (last - first) as usize);
+        self.cpu
+            .invalidate_external_write(first, (last - first) as usize);
         Ok(())
     }
 
@@ -1173,7 +1191,9 @@ impl Emulator {
     /// canary fills). Unmapped SDRAM pages are mapped zeroed first.
     pub fn poke32(&mut self, addr: u32, value: u32) -> Result<(), String> {
         if addr & 3 != 0 || !(0x4000_0000..0x5000_0000).contains(&addr) {
-            return Err(format!("poke32 {addr:#x}: not an aligned word in SDRAM or its +128 MiB alias"));
+            return Err(format!(
+                "poke32 {addr:#x}: not an aligned word in SDRAM or its +128 MiB alias"
+            ));
         }
         self.bus
             .board
@@ -1540,7 +1560,8 @@ impl Emulator {
                 deadline.map_or(u64::MAX, |due| due.saturating_sub(now).saturating_sub(1));
             (u64::from(remaining).min(before_timer).min(usb_wait) as u32) & !1
         } else {
-            idle_advance_limit(remaining, self.idle_passes, now, deadline).min(usb_wait.min(u64::from(u32::MAX)) as u32)
+            idle_advance_limit(remaining, self.idle_passes, now, deadline)
+                .min(usb_wait.min(u64::from(u32::MAX)) as u32)
         };
         if count == 0 {
             return 0;
@@ -1549,7 +1570,8 @@ impl Emulator {
         // Reserve every counter before mutation; no fabricated interpreted work.
         let (Some(cpu_count), Some(passes), Some(skipped), Some(done)) = (
             self.cpu.icount.checked_add(n),
-            self.idle_passes.checked_add(if counter.is_some() { 0 } else { n }),
+            self.idle_passes
+                .checked_add(if counter.is_some() { 0 } else { n }),
             self.idle_fast_forwarded_instructions.checked_add(n),
             now.checked_add(n),
         ) else {
@@ -1615,7 +1637,11 @@ impl Emulator {
         pcs.extend(self.softfloat.entries());
         pcs.extend(self.probe_hits.keys().copied());
         if self.midi.usb.enabled {
-            pcs.extend([self.midi.usb.tx_fn, self.midi.usb.ret_pc].into_iter().filter(|&pc| pc != 0));
+            pcs.extend(
+                [self.midi.usb.tx_fn, self.midi.usb.ret_pc]
+                    .into_iter()
+                    .filter(|&pc| pc != 0),
+            );
         }
         pcs.extend(self.reg_watch.iter().copied());
         pcs.extend(self.capture_at.iter().map(|c| c.0));
@@ -1809,7 +1835,11 @@ impl Emulator {
                     };
                     self.prof.exit(
                         reason,
-                        if reason == 7 { self.bus.board.last_epoch_addr() } else { pc },
+                        if reason == 7 {
+                            self.bus.board.last_epoch_addr()
+                        } else {
+                            pc
+                        },
                     );
                 }
                 self.interpreted_instructions += self.cpu.icount.saturating_sub(start_icount);
@@ -2179,7 +2209,11 @@ impl Emulator {
         if let Some(hits) = self.probe_hits.get_mut(&pc) {
             *hits += 1;
             let ret = self.bus.board.read32(self.cpu.a[7]).unwrap_or(0);
-            let arg = self.bus.board.read32(self.cpu.a[7].wrapping_add(4)).unwrap_or(0);
+            let arg = self
+                .bus
+                .board
+                .read32(self.cpu.a[7].wrapping_add(4))
+                .unwrap_or(0);
             let entry = self.probe_rets.entry((pc, ret, arg)).or_insert((0, 0));
             entry.0 += 1;
             entry.1 = self.cpu.icount;
@@ -2400,8 +2434,7 @@ impl Emulator {
             .board
             .read32(INTC0_BASE + 0x0c)
             .map_err(|_| "DSPI1 IMRL")?;
-        if level == 0 || (imrl >> source) & 1 != 0 || ((self.cpu.sr >> 8) & 7) >= u16::from(level)
-        {
+        if level == 0 || (imrl >> source) & 1 != 0 || ((self.cpu.sr >> 8) & 7) >= u16::from(level) {
             if vector == 65 {
                 // The pin pulsed while the guest had it masked: edge lost.
                 self.irq1_pending = false;
@@ -2468,7 +2501,7 @@ impl Emulator {
         chunk: Option<usize>,
         period: Option<u64>,
     ) -> Result<usize, String> {
-        use crate::midi::{resolve_usb, USB_CHUNK, USB_PERIOD};
+        use crate::midi::{USB_CHUNK, USB_PERIOD, resolve_usb};
         let chunk = chunk.unwrap_or(USB_CHUNK);
         if chunk == 0 || chunk > 384 {
             return Err("usb chunk is 1 to 384 bytes".into());
@@ -2523,7 +2556,12 @@ impl Emulator {
             let handler = self
                 .bus
                 .board
-                .read32(self.cpu.ctrl.vbr.wrapping_add(4 * u32::from(crate::midi::RX_VECTOR)))
+                .read32(
+                    self.cpu
+                        .ctrl
+                        .vbr
+                        .wrapping_add(4 * u32::from(crate::midi::RX_VECTOR)),
+                )
                 .map_err(|_| "usb: vector")?;
             let at = handler.checked_sub(MAIN_LOAD).ok_or("usb: handler")? as usize;
             let scan = self.main.get(at..at + 0x100).ok_or("usb: handler range")?;
@@ -2540,7 +2578,10 @@ impl Emulator {
         } else {
             self.cpu.a[7]
         };
-        if !self.bus.board.can_write_ram_range((stack & !3).wrapping_sub(512 + chunk.len() as u32), 512 + chunk.len()) {
+        if !self.bus.board.can_write_ram_range(
+            (stack & !3).wrapping_sub(512 + chunk.len() as u32),
+            512 + chunk.len(),
+        ) {
             return Ok(false);
         }
         let saved = [self.cpu.d[0], self.cpu.d[1], self.cpu.a[0], self.cpu.a[1]];
@@ -2560,7 +2601,10 @@ impl Emulator {
         let mut sp = data;
         for word in [chunk.len() as u32, data, self.midi.usb.ret_pc] {
             sp -= 4;
-            self.bus.board.write32(sp, word).map_err(|_| "usb: stack write")?;
+            self.bus
+                .board
+                .write32(sp, word)
+                .map_err(|_| "usb: stack write")?;
         }
         self.cpu.a[7] = sp;
         self.cpu.pc = self.midi.usb.rx_cb;
@@ -3208,7 +3252,9 @@ impl Emulator {
         }
         if periph::clock::cf_ips() != periph::clock::BASE_IPS {
             // Snapshots hold deadlines at the base rate; load_state rescales from it.
-            return Err("save_state needs DIGI_CF_IPS unset (snapshots are taken at 132 MHz)".into());
+            return Err(
+                "save_state needs DIGI_CF_IPS unset (snapshots are taken at 132 MHz)".into(),
+            );
         }
         if self.irq1_pending {
             return Err("a DSPI1 peer interrupt is pending".into());
@@ -3595,7 +3641,10 @@ impl Emulator {
         if ips == periph::clock::BASE_IPS {
             return;
         }
-        let now = self.cpu.icount.saturating_add(self.softfloat.counts.calls());
+        let now = self
+            .cpu
+            .icount
+            .saturating_add(self.softfloat.counts.calls());
         if let Some(time) = self.bus.board.time_mut() {
             time.rescale(now as f64, ips as f64);
         }
@@ -3663,7 +3712,10 @@ mod tests {
             [0xaa, 0xaa, 0xaa, 1, 2, 3, 4, 5, 0xaa, 0xaa, 0xaa, 0xaa]
         );
         assert!(runtime.write_ram(0x1000, &[0]).is_err(), "outside SDRAM");
-        assert!(runtime.write_ram(0x4fff_fffe, &[0; 4]).is_err(), "past the end");
+        assert!(
+            runtime.write_ram(0x4fff_fffe, &[0; 4]).is_err(),
+            "past the end"
+        );
         runtime.write_ram(base, &[]).unwrap();
     }
 
@@ -3726,7 +3778,11 @@ mod tests {
             };
             let emu = Emulator::new_with_policy(&syx, None, ExecutionPolicy::SoftfloatAbiV1)
                 .unwrap_or_else(|e| panic!("{file}: {e}"));
-            assert!(emu.softfloat.enabled, "{file}: softfloat {:?}", emu.softfloat.reason);
+            assert!(
+                emu.softfloat.enabled,
+                "{file}: softfloat {:?}",
+                emu.softfloat.reason
+            );
             assert!(emu.ram_clear.is_some(), "{file}: RAM clear loop");
             assert!(!emu.fused_loops.is_empty(), "{file}: fused loops");
             assert!(!emu.idle_spins.is_empty(), "{file}: idle spins");
@@ -4138,10 +4194,16 @@ mod tests {
             let mut emu = Emulator::new(&syx, None).unwrap();
             emu.bus.board.map_zeroed_ram_page(base & !0xf_ffff).unwrap();
             for (i, b) in code.iter().enumerate() {
-                emu.bus.board.write_guest(base + i as u32, 1, u32::from(*b)).unwrap();
+                emu.bus
+                    .board
+                    .write_guest(base + i as u32, 1, u32::from(*b))
+                    .unwrap();
             }
             for (i, b) in [0x72u8, 0x01, 0x4e, 0x75].iter().enumerate() {
-                emu.bus.board.write_guest(routine + i as u32, 1, u32::from(*b)).unwrap();
+                emu.bus
+                    .board
+                    .write_guest(routine + i as u32, 1, u32::from(*b))
+                    .unwrap();
             }
             emu.cpu.pc = base;
             emu.cpu.sr = 0x2700;
@@ -4214,7 +4276,10 @@ mod tests {
                     let mut emu = Emulator::new(&syx, None).unwrap();
                     emu.bus.board.map_zeroed_ram_page(base & !0xf_ffff).unwrap();
                     for (i, b) in code.iter().enumerate() {
-                        emu.bus.board.write_guest(base + i as u32, 1, u32::from(*b)).unwrap();
+                        emu.bus
+                            .board
+                            .write_guest(base + i as u32, 1, u32::from(*b))
+                            .unwrap();
                     }
                     emu.bus.board.write_guest(counter, 4, init).unwrap();
                     emu.cpu.pc = start;

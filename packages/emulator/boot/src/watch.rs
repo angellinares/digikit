@@ -187,8 +187,12 @@ impl WatchConfig {
         {
             static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let stem = out.file_stem().map_or(String::new(), |s| s.to_string_lossy().into_owned());
-            let ext = out.extension().map_or(String::new(), |s| format!(".{}", s.to_string_lossy()));
+            let stem = out
+                .file_stem()
+                .map_or(String::new(), |s| s.to_string_lossy().into_owned());
+            let ext = out
+                .extension()
+                .map_or(String::new(), |s| format!(".{}", s.to_string_lossy()));
             cfg.out = Some(out.with_file_name(format!("{stem}-{n}{ext}")));
         }
         Ok(Some(cfg))
@@ -404,7 +408,11 @@ impl Watch {
                 None
             }
         });
-        let cfg_stacks = cfg.stacks.iter().map(|&(lo, hi)| StackMark::new(lo, hi)).collect();
+        let cfg_stacks = cfg
+            .stacks
+            .iter()
+            .map(|&(lo, hi)| StackMark::new(lo, hi))
+            .collect();
         Self {
             started: cfg.after == After::Start,
             flush: cfg.flush_check.then(Flush::new),
@@ -476,7 +484,12 @@ impl Watch {
     }
 
     fn stack_store(&mut self, pc: u32, addr: u32, size: u8, icount: u64) {
-        if self.cfg.epochs.iter().any(|&(lo, hi)| addr < hi && addr.saturating_add(u32::from(size)) > lo) {
+        if self
+            .cfg
+            .epochs
+            .iter()
+            .any(|&(lo, hi)| addr < hi && addr.saturating_add(u32::from(size)) > lo)
+        {
             self.close_epoch(addr, icount);
         }
         let n = normalise(addr);
@@ -771,10 +784,17 @@ mod tests {
         w.store(0x4000_1008, 0x4700_0000, 4, 0, 3); // epoch ends: low 0x100 deep
         w.store(0x4000_100c, 0x4097_ffc0, 4, 0, 4);
         w.store(0x4000_1010, 0x4000_0000, 4, 0, 5); // outside the stack
-        assert_eq!((w.stacks[0].low, w.stacks[0].pc), (0x4097_ff00, 0x4000_1004));
+        assert_eq!(
+            (w.stacks[0].low, w.stacks[0].pc),
+            (0x4097_ff00, 0x4000_1004)
+        );
         assert_eq!(w.stacks[0].e_low, 0x4097_ffc0);
         assert_eq!(w.epoch_rows.len(), 1);
-        assert!(w.epoch_rows[0].contains("\"depth\":256"), "{}", w.epoch_rows[0]);
+        assert!(
+            w.epoch_rows[0].contains("\"depth\":256"),
+            "{}",
+            w.epoch_rows[0]
+        );
     }
 
     #[test]

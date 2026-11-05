@@ -72,7 +72,10 @@ fn a_counter_in_the_code_page_leaves_the_loop_cached() {
     assert_eq!(ram.read32(0x3800).unwrap(), 5);
     // the counter is in the page of the loop and was written five times: the loop is still decoded
     assert!(cpu.decoded_at(0x3400) && cpu.decoded_at(0x3406));
-    assert!(!cpu.decode_cached(0x3800, 4), "a write to the counter would clear no cached instruction");
+    assert!(
+        !cpu.decode_cached(0x3800, 4),
+        "a write to the counter would clear no cached instruction"
+    );
     assert!(cpu.decode_cached(0x3402, 2), "a write into the addq would");
 }
 
@@ -88,7 +91,10 @@ fn a_cpu_write_into_a_cached_instruction_is_seen() {
     cpu.d[1] = 0x7002_0000; // moveq #2,d0 at 0x3400
     cpu.pc = 0x3000;
     cpu.step(&mut ram).unwrap();
-    assert!(!cpu.decoded_at(0x3400), "the overwritten instruction is not cached any more");
+    assert!(
+        !cpu.decoded_at(0x3400),
+        "the overwritten instruction is not cached any more"
+    );
     assert!(cpu.decoded_at(0x3000), "the writer in the same page is");
     cpu.pc = 0x3400;
     cpu.step(&mut ram).unwrap();
@@ -148,5 +154,8 @@ fn an_external_write_still_evicts_whole_pages() {
     ram.write16(0x3400, 0x7002).unwrap();
     cpu.invalidate_external_write(0x3400, 2);
     assert!(!cpu.decoded_at(0x3400));
-    assert!(!cpu.decoded_at(0x3a00), "the page is evicted, not only the written word");
+    assert!(
+        !cpu.decoded_at(0x3a00),
+        "the page is evicted, not only the written word"
+    );
 }

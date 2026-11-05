@@ -72,7 +72,11 @@ pub unsafe extern "C" fn digi_load_snapshot(
     snap: *const u8,
     snap_len: usize,
 ) -> i32 {
-    if syx.is_null() || syx_len == 0 || syx_len > ALLOCATION_LIMIT || snap.is_null() || snap_len == 0
+    if syx.is_null()
+        || syx_len == 0
+        || syx_len > ALLOCATION_LIMIT
+        || snap.is_null()
+        || snap_len == 0
     {
         return failure("invalid input");
     }
@@ -349,7 +353,9 @@ mod coupled {
         DSP_PEER.with(|slot| match slot.borrow_mut().as_mut() {
             Some(peer) => {
                 let reply = peer.reply(tx);
-                unsafe { std::ptr::copy_nonoverlapping(reply.as_ptr(), rx, reply.len().min(tx_len)) };
+                unsafe {
+                    std::ptr::copy_nonoverlapping(reply.as_ptr(), rx, reply.len().min(tx_len))
+                };
                 0
             }
             None => -1,

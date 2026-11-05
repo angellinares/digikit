@@ -34,10 +34,18 @@ pub struct Observation {
 pub enum Alert {
     Fault(String),
     Halt(String),
-    Stall { hits: u64, stalled_ms: u64 },
-    StallEnd { hits: u64 },
+    Stall {
+        hits: u64,
+        stalled_ms: u64,
+    },
+    StallEnd {
+        hits: u64,
+    },
     /// The audio sink ran dry `new` times since the last observation; `total` since the session began.
-    Underrun { new: u64, total: u64 },
+    Underrun {
+        new: u64,
+        total: u64,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -162,11 +170,20 @@ mod tests {
         assert!(h.observe(1, &obs(0, 5)).is_empty());
         assert!(h.observe(1, &obs(99, 5)).is_empty());
         let a = h.observe(1, &obs(100, 5));
-        assert_eq!(a, vec![Alert::Stall { hits: 5, stalled_ms: 100 }]);
+        assert_eq!(
+            a,
+            vec![Alert::Stall {
+                hits: 5,
+                stalled_ms: 100
+            }]
+        );
         assert!(h.stalled());
         assert_eq!(h.stall_count, 1);
         assert!(h.observe(1, &obs(500, 5)).is_empty(), "once per episode");
-        assert_eq!(h.observe(1, &obs(501, 6)), vec![Alert::StallEnd { hits: 6 }]);
+        assert_eq!(
+            h.observe(1, &obs(501, 6)),
+            vec![Alert::StallEnd { hits: 6 }]
+        );
         assert!(!h.stalled());
         // and a second episode fires again
         assert!(h.observe(1, &obs(550, 6)).is_empty());

@@ -80,13 +80,17 @@ pub enum StorageStepError {
     DeviceTimerRequired,
     LegacyDmaIrqConfigured,
     LegacyDmaIrqPending,
-    UnsupportedDmaGroupSources { pending: u32 },
+    UnsupportedDmaGroupSources {
+        pending: u32,
+    },
     UnsupportedControllerLevelMasking,
     UnsupportedLevel7,
     /// Invalid or unsupported supplied Device timer request configuration.
     DeviceTimerRequests(DeviceDtimError),
     Stop(Stop),
-    InterruptDeliveryPoisoned { stop: Stop },
+    InterruptDeliveryPoisoned {
+        stop: Stop,
+    },
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]

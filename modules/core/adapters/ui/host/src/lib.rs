@@ -475,7 +475,10 @@ pub extern "C" fn dk_ui_tick(f: Option<TickFn>, ctx: Ctx, period_ms: u32) -> c_i
         }
         s.log(format!("tick {period_ms}"));
         let now = s.now_ms;
-        let at = s.ticks.iter().position(|t| t.f as usize == f as usize && t.ctx == ctx);
+        let at = s
+            .ticks
+            .iter()
+            .position(|t| t.f as usize == f as usize && t.ctx == ctx);
         match (at, period_ms) {
             (Some(i), 0) => {
                 s.ticks.remove(i);
@@ -489,7 +492,12 @@ pub extern "C" fn dk_ui_tick(f: Option<TickFn>, ctx: Ctx, period_ms: u32) -> c_i
                 if s.ticks.len() >= TICKS {
                     return -1;
                 }
-                s.ticks.push(Tick { f, ctx, ms: ms.min(1_000_000), last: now });
+                s.ticks.push(Tick {
+                    f,
+                    ctx,
+                    ms: ms.min(1_000_000),
+                    last: now,
+                });
             }
         }
         0

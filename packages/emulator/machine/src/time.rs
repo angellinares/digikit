@@ -48,8 +48,12 @@ pub enum DevicePitError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeviceDtimError {
     DevicePolicyRequired,
-    InvalidChannel { channel: usize },
-    UnsupportedMode { channel: usize },
+    InvalidChannel {
+        channel: usize,
+    },
+    UnsupportedMode {
+        channel: usize,
+    },
     CounterOutOfRange {
         channel: usize,
         counter: u32,
@@ -62,9 +66,15 @@ impl From<DeviceReferenceError> for DeviceDtimError {
         match error {
             DeviceReferenceError::InvalidChannel { channel } => Self::InvalidChannel { channel },
             DeviceReferenceError::UnsupportedMode { channel } => Self::UnsupportedMode { channel },
-            DeviceReferenceError::CounterOutOfRange { channel, counter, reference } => {
-                Self::CounterOutOfRange { channel, counter, reference }
-            }
+            DeviceReferenceError::CounterOutOfRange {
+                channel,
+                counter,
+                reference,
+            } => Self::CounterOutOfRange {
+                channel,
+                counter,
+                reference,
+            },
         }
     }
 }
