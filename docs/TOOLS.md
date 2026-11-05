@@ -143,8 +143,10 @@ each has a module docstring with its full command line.
 | `tools/emulator/native_emu.py` | `mise run workbench` (`-- --build-only` builds only), `emu:serve`: build the desktop emulator once and run it (`--plus-drive DIR` or `--samples DIR`; default `plus_drive/<device>/`, `--dsp-patch FILE`, `--cf-only`, `--daemon`). |
 | `tools/emulator/native_target.py` | Pick the cargo target dir for a generated core (`prod`, `nogen`, `generic`, `g-<hash>`). |
 | `tools/emulator/native_pgo.py` | Profile-guided optimisation of the desktop build (`mise run perf:pgo`; `bench-bins`). |
-| `tools/emulator/native_wasm.py` | `mise run web:wasm`: build the browser cores. |
-| `tools/emulator/native_boot.py` | `mise run dev:boot`: the bounded native boot diagnostic. `mise run dev:plusdrive` runs the standalone +Drive CLI (`cargo run`, no wrapper script). |
+| `tools/nx/wasm.mjs` | `mise run web:wasm`: build the browser cores. |
+| `tools/nx/nx.mjs` | `pnpm nx:pilot`: the one Nx launcher. Computes the CPU budget, takes the shared benchlock for task runs. |
+| `tools/nx/gate.mjs` | `mise run test`, `test:plan`, `test:changed`, `test:full`: target lists are `TIERS`. |
+| `mise run dev:boot -- --syx ABS --out ABS_DIR --limit N` | The bounded native boot diagnostic. `mise run dev:plusdrive` runs the standalone +Drive CLI (`cargo run`, no wrapper script). |
 | `tools/emulator/ready.py` | `mise run emu:ready -- dn2\|dt2`: build the ready snapshots from the `.syx` alone (cold DSP start). |
 | `tools/emulator/coupled.py` | `mise run scenario`, `scenario:all`, `scenario:replay`, `scenario:bisect`: build and run `coupled-run`, bisect DSP tiers. |
 | `tools/emulator/coupled_matrix.py` | Run scenarios across DSP configurations, repeated, under the benchmark lock. |
@@ -157,7 +159,7 @@ each has a module docstring with its full command line.
 | `tools/devtools/sharc_regionbench.py` | One-region microbenchmark for generated block code (about 50 s per variant). |
 | `tools/devtools/benchlock.py` | Shared lock for builds and exclusive lock for timed runs (`status` shows holders). |
 | `tools/devtools/upload_bench.py` | `uv run python -m tools.devtools.upload_bench [--device dn2\|dt2] -- --bytes N`: one free-running daemon, then `upload_bench.mjs` (digikit BEGIN/DATA/END and ranged VERIFY, DN2) or `upload_bench_rpc.mjs` (stock +Drive MidiRpc write, DT2): wall MB/s, guest instructions per byte (`work_insn_per_byte` less the firmware's own load), the real-time factor, controller CPU seconds. |
-| `tools/devtools/rust_ws.py` | `test:slow` / `lint:rust` helper: cargo over the whole workspace with the pinned toolchain. |
+| `tools/nx/rust-env.mjs` | `node tools/nx/rust-env.mjs [--gen] [--variant NAME] -- CMD`: runs a cargo command with the pinned toolchain; `--gen` sets `SHARC_GEN_DIR` and `CARGO_TARGET_DIR` and checks the generated-core fingerprint. |
 | `tools/emulator/digi_env.py` | Paths, firmware lookup, ready-input lookup, the generated-core registry and fast-region tables (`tools/emulator/fast_regions.json`). |
 | `tools/devtools/wasm_parity.mjs` | `mise run web:parity NAME`: check the browser core renders a scenario's PCM byte-identical to native. |
 | `tools/devtools/worktree-setup.sh` | Link `out/`, `.venv`, each `firmware/*.syx` and generated language files into an agent worktree. |

@@ -15,20 +15,11 @@
         "{workspaceRoot}/.cargo/**/*",
         "{workspaceRoot}/rust-toolchain*",
         "{workspaceRoot}/mise.toml",
-        "{workspaceRoot}/pyproject.toml",
-        "{workspaceRoot}/uv.lock",
-        "{workspaceRoot}/tools/__init__.py",
-        "{workspaceRoot}/tools/devtools/rust_ws.py",
-        "{workspaceRoot}/tools/devtools/benchlock.py",
-        "{workspaceRoot}/tools/devtools/portable_flock.py",
-        "{workspaceRoot}/tools/emulator/digi_env.py",
-        "{workspaceRoot}/tools/emulator/native_target.py",
-        "{workspaceRoot}/tools/emulator/ready_inputs.json",
-        "{workspaceRoot}/tools/firmware/config.py"
+        "{workspaceRoot}/tools/nx/rust-env.mjs"
       ],
       "outputs": [],
       "options": {
-        "command": "uv run python -m tools.devtools.benchlock run --shared --label runtime-unit -- uv run python -m tools.devtools.rust_ws test --packages dkrt",
+        "command": "node tools/nx/rust-env.mjs --variant host-dkrt -- cargo test --manifest-path modules/core/runtime/src/rs/Cargo.toml --lib --offline --locked",
         "cwd": "."
       }
     }

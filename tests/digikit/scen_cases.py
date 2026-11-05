@@ -26,7 +26,7 @@ def cases(kinds: tuple[str, ...], device: str | None = None):
     return out
 
 
-JOBS = int(os.environ.get("DIGIKIT_JOBS", "3"))
+JOBS = int(os.environ.get("DIGI_JOBS", "3"))
 _REPORTS: dict[tuple[str, str], dict] = {}
 
 

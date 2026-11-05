@@ -12,8 +12,9 @@ The binary is built into the prod generated-core target dir
     uv run python -m tools.emulator.coupled replay FILE [--wav] [--out JSON]
     uv run python -m tools.emulator.coupled bisect NAME [--seconds S]
     uv run python -m tools.emulator.coupled test-quick
+    uv run python -m tools.emulator.coupled gates [-- TEST_ARGS...]
 
-Every command except ``build`` and ``test-quick`` builds first (a no-op when
+Every command except ``build``, ``test-quick`` and ``gates`` builds first (a no-op when
 current) unless ``--no-build`` is given. ``bisect`` finds which DSP tier changes
 a scenario's PCM: the interpreter-only reference (cached under
 ``out/native/bisect/<name>/``) against the default tiers, then single changes
@@ -848,6 +849,29 @@ def cmd_test_quick(args) -> int:
     return 0
 
 
+def cmd_gates(args) -> int:
+    """The ignored coupled gate tests (coupled_ready_exactness: restores the ready
+    session, 100M instructions). Needs the private DN2 ready inputs."""
+    gen = generated()
+    digi_env.check_generated(gen)
+    env = {
+        **digi_env.rust_env(),
+        "SHARC_GEN_DIR": str(gen),
+        "DIGI_COUPLED_FIXTURES": str(digi_env.READY),
+        "DIGI_COUPLED_SYX": str(digi_env.firmware()),
+    }
+    command = cargo(
+        [
+            "test", "--release", "-p", "digi-coupled",
+            "--features", "coupled-audio", "--lib",
+            "--target-dir", str(native_target.target_dir(gen)), "--locked",
+            "gate_tests", "--", "--ignored", *args.extra,
+        ]
+    )  # fmt: skip
+    with benchlock("shared", "coupled gates"):
+        return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
+
+
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     sub = top.add_subparsers(dest="command", required=True)
@@ -928,6 +952,7 @@ def parser() -> argparse.ArgumentParser:
     p = add("cache", cmd_cache, "render cache: stats or clear")
     p.add_argument("action", choices=["stats", "clear"])
     add("test-quick", cmd_test_quick, "fast cargo tests with the pinned toolchain")
+    add("gates", cmd_gates, "the ignored coupled gate tests (private DN2 ready inputs)")
     return top
 
 
@@ -941,9 +966,9 @@ def main(argv: list[str] | None = None) -> int:
     args.extra = extra
     if getattr(args, "dt2_card", False) or os.environ.get("DIGI_DT2_CARD"):
         enable_dt2_card()
-    if extra and args.command not in ("scenario", "replay"):
+    if extra and args.command not in ("scenario", "replay", "gates"):
         raise SystemExit(
-            "coupled: extra arguments after -- only apply to scenario/replay"
+            "coupled: extra arguments after -- only apply to scenario/replay/gates"
         )
     return args.func(args)
 

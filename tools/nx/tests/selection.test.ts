@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
 import { manifestClosure } from '../module-manifests.mjs';
-import { changedFiles, gateCommands, menuOnly, MENU_SOURCE, uiOnly, UI_SOURCE } from '../gate.mjs';
+import { changedFiles, gateCommands, menuOnly, MENU_SOURCE, TIERS, uiOnly, UI_SOURCE } from '../gate.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
@@ -566,7 +566,7 @@ describe('workspace selection', () => {
     expect(project.targets['test-device']).toBeUndefined();
     const target = project.targets['test-device-full'];
     expect(target.options?.env?.DIGIKIT_TIER).toBe('full');
-    expect(target.cache).toBe(false);
+    expect(target.cache).toBe(true);
     const graph = plan(['run', 'core/runtime-inferred-needs-tests:test-device-full']).tasks;
     const prerequisites = graph.dependencies['core/runtime-inferred-needs-tests:test-device-full'].map(
       (task) => task.id,
@@ -575,9 +575,8 @@ describe('workspace selection', () => {
     expect(modules).toHaveLength(12);
     for (const id of modules) expect(prerequisites).toContain(`${id}:pack`);
     expect(prerequisites).toContain('plusdrive-format:cli');
-    const gate = parse(readFileSync(join(root, 'mise.toml'), 'utf8')).tasks as Record<string, { run: string }>;
-    expect(gate.test.run.match(/ -t ([^' ]+)/)![1].split(',')).not.toContain('test-device-full');
-    expect(gate['test:full'].run.match(/ -t ([^' ]+)/)![1].split(',')).toContain('test-device-full');
+    expect(TIERS.merge.targets).not.toContain('test-device-full');
+    expect(TIERS.full.targets).toContain('test-device-full');
   }, 30_000);
 
   it('leaves manual device audits out of inferred gate commands', () => {
@@ -640,8 +639,7 @@ describe('workspace selection', () => {
   }, 30_000);
 
   it('packs affected modules without device tests through the default gate', () => {
-    const gate = parse(readFileSync(join(root, 'mise.toml'), 'utf8')).tasks as Record<string, { run: string }>;
-    const targets = gate.test.run.match(/ -t ([^' ]+)/)![1];
+    const targets = TIERS.merge.targets.join(',');
     const [owner, node] = Object.entries(workspace.nodes).find(
       ([, node]) =>
         node.data.targets.pack && !node.data.targets['test-device'] && !node.data.targets['test-conformance'],
@@ -684,11 +682,6 @@ describe('workspace selection', () => {
         'tests/regression/tsconfig.json',
         'tests/regression/package.json',
         'tests/regression/support.ts',
-        'tools/nx/modules.mjs',
-        'tools/nx/module-manifests.mjs',
-        'tools/nx/module-targets.mjs',
-        'tools/nx/module-dependencies.mjs',
-        'tools/nx/test-imports.mjs',
         'pnpm-lock.yaml',
       ])
         expect(inputs.files, file).toContain(file);

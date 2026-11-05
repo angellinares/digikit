@@ -29,12 +29,12 @@
       ],
       "outputs": []
     },
-    "cargo-test": {
+    "rust-tests": {
       "executor": "nx:run-commands",
       "cache": false,
       "parallelism": false,
       "options": {
-        "command": "uv run python -m tools.emulator.digi_env exec -- cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir .nx/target/check-desktop-clean",
+        "command": "node tools/nx/rust-env.mjs --gen -- cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir .nx/target/check-desktop-clean",
         "cwd": "."
       }
     },

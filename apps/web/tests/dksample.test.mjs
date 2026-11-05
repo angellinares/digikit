@@ -1,5 +1,5 @@
 // The WAV converter and the +Drive content hash (dksample.wasm, packages/dksample) and what the upload does with a file. Skips when dksample.wasm is not built
-// (`uv run python -m tools.emulator.native_wasm --patchkit-only` builds it).
+// (`mise run wasm:patchkit` builds it).
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

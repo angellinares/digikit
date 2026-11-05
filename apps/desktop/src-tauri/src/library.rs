@@ -17,7 +17,11 @@ pub struct LibFile {
 }
 
 fn device_dir(root: &Path, device: &str) -> Result<PathBuf, String> {
-    if device.is_empty() || !device.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+    if device.is_empty()
+        || !device
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    {
         return Err(format!("not a device id: {device:?}"));
     }
     Ok(root.join(LIBRARY_DIR).join(device))
@@ -32,8 +36,15 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<LibFile>) -> std::io::Result<()> 
             walk(&path, base, out)?;
         } else if path.extension().is_some_and(|e| e == "dkm") {
             let rel = path.strip_prefix(base).unwrap_or(&path);
-            let rel = rel.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
-            out.push(LibFile { path: rel, size: meta.len() });
+            let rel = rel
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            out.push(LibFile {
+                path: rel,
+                size: meta.len(),
+            });
         }
     }
     Ok(())
@@ -55,7 +66,11 @@ pub fn scan(root: &Path, device: &str) -> Result<Vec<LibFile>, String> {
 /// The bytes of one library file; a path that leaves the device's folder is refused.
 pub fn read(root: &Path, device: &str, rel: &str) -> Result<Vec<u8>, String> {
     let dir = device_dir(root, device)?;
-    if rel.split('/').any(|p| p.is_empty() || p == "." || p == "..") || !rel.ends_with(".dkm") {
+    if rel
+        .split('/')
+        .any(|p| p.is_empty() || p == "." || p == "..")
+        || !rel.ends_with(".dkm")
+    {
         return Err(format!("not a library file: {rel:?}"));
     }
     let path = dir.join(rel);
@@ -77,12 +92,14 @@ pub async fn lib_scan(device: String) -> Result<Vec<LibFile>, String> {
 /// One library file as raw bytes.
 #[tauri::command]
 pub async fn lib_read(device: String, path: String) -> Result<tauri::ipc::Response, String> {
-    tauri::async_runtime::spawn_blocking(move || read(&root()?, &device, &path).map(tauri::ipc::Response::new))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        read(&root()?, &device, &path).map(tauri::ipc::Response::new)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
-/// The converter of the Samples tab (`apps/web/public/dksample.wasm`, built by `uv run python -m tools.emulator.native_wasm --patchkit-only`),
+/// The converter of the Samples tab (`apps/web/public/dksample.wasm`, built by `mise run wasm:patchkit`),
 /// as raw bytes. The page cannot import it: the file is a build product, not in the repository.
 #[tauri::command]
 pub async fn sample_wasm() -> Result<tauri::ipc::Response, String> {
@@ -90,21 +107,21 @@ pub async fn sample_wasm() -> Result<tauri::ipc::Response, String> {
         let path = root()?.join("apps/web/public/dksample.wasm");
         std::fs::read(&path)
             .map(tauri::ipc::Response::new)
-            .map_err(|e| format!("{}: {e} (build it: uv run python -m tools.emulator.native_wasm --patchkit-only)", path.display()))
+            .map_err(|e| format!("{}: {e} (build it: mise run wasm:patchkit)", path.display()))
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 /// The needs reader of the Transfer page: `apps/web/public/patchkit.wasm` (`pk_needs`, the Rust code that infers what a `.dkm` takes of the device;
-/// built by `uv run python -m tools.emulator.native_wasm --patchkit-only`), as raw bytes.
+/// built by `mise run wasm:patchkit`), as raw bytes.
 #[tauri::command]
 pub async fn patchkit_wasm() -> Result<tauri::ipc::Response, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let path = root()?.join("apps/web/public/patchkit.wasm");
         std::fs::read(&path)
             .map(tauri::ipc::Response::new)
-            .map_err(|e| format!("{}: {e} (build it: uv run python -m tools.emulator.native_wasm --patchkit-only)", path.display()))
+            .map_err(|e| format!("{}: {e} (build it: mise run wasm:patchkit)", path.display()))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -125,14 +142,22 @@ pub fn storage_of(device: &str) -> Result<DeviceStorage, String> {
         .iter()
         .find(|d| d.short == device)
         .ok_or_else(|| format!("no device profile for {device:?}"))?;
-    let storage = profile.storage.as_ref().ok_or_else(|| format!("the {} profile has no [storage]", profile.name))?;
-    Ok(DeviceStorage { name: profile.name.clone(), samples: storage.samples.clone() })
+    let storage = profile
+        .storage
+        .as_ref()
+        .ok_or_else(|| format!("the {} profile has no [storage]", profile.name))?;
+    Ok(DeviceStorage {
+        name: profile.name.clone(),
+        samples: storage.samples.clone(),
+    })
 }
 
 /// Where the device keeps samples: read from its profile, so the page names no device.
 #[tauri::command]
 pub async fn device_storage(device: String) -> Result<DeviceStorage, String> {
-    tauri::async_runtime::spawn_blocking(move || storage_of(&device)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || storage_of(&device))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
@@ -140,7 +165,8 @@ mod tests {
     use super::*;
 
     fn library(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("digi-library-test-{name}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("digi-library-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let dir = root.join(LIBRARY_DIR).join("dt2");
         std::fs::create_dir_all(dir.join("acme")).unwrap();
@@ -157,8 +183,14 @@ mod tests {
         assert_eq!(
             scan(&root, "dt2").unwrap(),
             vec![
-                LibFile { path: "acme/synth.dkm".into(), size: 5 },
-                LibFile { path: "test/sine.dkm".into(), size: 6 }
+                LibFile {
+                    path: "acme/synth.dkm".into(),
+                    size: 5
+                },
+                LibFile {
+                    path: "test/sine.dkm".into(),
+                    size: 6
+                }
             ]
         );
         assert_eq!(scan(&root, "dn2").unwrap(), vec![]);
@@ -170,16 +202,29 @@ mod tests {
     #[test]
     fn the_storage_comes_from_the_profile() {
         let dt2 = storage_of("dt2").unwrap();
-        assert_eq!((dt2.name.as_str(), dt2.samples.as_str()), ("Digitakt II", "stock-rpc"));
+        assert_eq!(
+            (dt2.name.as_str(), dt2.samples.as_str()),
+            ("Digitakt II", "stock-rpc")
+        );
         let dn2 = storage_of("dn2").unwrap();
-        assert_eq!((dn2.name.as_str(), dn2.samples.as_str()), ("Digitone II", "digikit"));
+        assert_eq!(
+            (dn2.name.as_str(), dn2.samples.as_str()),
+            ("Digitone II", "digikit")
+        );
         assert!(storage_of("nothing").is_err());
     }
 
     #[test]
     fn a_read_stays_inside_the_device_folder() {
         let root = library("read");
-        for bad in ["../dn2/x.dkm", "digikit/../../x.dkm", "/etc/passwd", "notes.txt", "", "a//b.dkm"] {
+        for bad in [
+            "../dn2/x.dkm",
+            "digikit/../../x.dkm",
+            "/etc/passwd",
+            "notes.txt",
+            "",
+            "a//b.dkm",
+        ] {
             assert!(read(&root, "dt2", bad).is_err(), "{bad}");
         }
         assert!(read(&root, "dt2", "nothing.dkm").is_err());

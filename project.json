@@ -56,6 +56,16 @@
         "cwd": "."
       },
       "description": "Not cached: prettier also opens files it never formats (.py, .rs), and nested .gitignore and .editorconfig files change its result."
+    },
+    "rust-fmt": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": ["{workspaceRoot}/**/*.rs", "{workspaceRoot}/Cargo.toml", "{workspaceRoot}/mise.toml"],
+      "options": {
+        "command": "node tools/nx/rust-env.mjs -- cargo fmt --check -p bootstrap-emu -p device-profile -p digiemu-desktop -p dksample -p dt2-firmware-loader -p plusdrive-format -p sharc-gen -p sharc-gen-2 -p sharc-stats",
+        "cwd": "."
+      },
+      "description": "Crates outside the daemon key, the PGO key and committed module objects. Other crates are added when the profile is next retrained."
     }
   }
 }

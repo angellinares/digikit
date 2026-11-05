@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// Each worker runs one coupled daemon (two cores); the gate sets REGRESSION_JOBS from its core share.
+// Each worker runs one coupled daemon (two cores); the Nx launcher sets REGRESSION_JOBS from its budget.
 // stock, runtime and conformance files run in parallel up to maxWorkers; fx-* stay serial.
 // Vitest 3.2 reads only singleFork per project; worker caps are root-level.
 const serial = { poolOptions: { forks: { singleFork: true } } };
@@ -22,7 +22,7 @@ export default defineConfig({
   resolve: { alias },
   test: {
     // Caps the shared pool: workers at once in stock, runtime and conformance.
-    maxWorkers: Number(process.env.REGRESSION_JOBS ?? 4),
+    maxWorkers: Number(process.env.REGRESSION_JOBS ?? 2),
     // REGRESSION_JUNIT_FILE (verify's failed-unit record) names the report; REGRESSION_JUNIT=1 alone keeps the default.
     reporters:
       process.env.REGRESSION_JUNIT === '1' || process.env.REGRESSION_JUNIT_FILE

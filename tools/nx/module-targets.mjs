@@ -14,31 +14,74 @@ export const SHARED_SDK_INPUTS = [
 ];
 // Build/pack producers do not read acceptance tests. Nx's implicit ^default input would
 // otherwise turn a harness-only edit into a changed image output for every consumer.
+// Plugin sources are not inputs: Nx hashes each project's resolved configuration, so a plugin edit reaches only targets whose definition changes.
 export const BUILD_INPUTS = [
   'production',
   '^production',
   'jsToolchain',
   { dependentTasksOutputFiles: '**/*', transitive: true },
-  '{workspaceRoot}/tools/nx/modules.mjs',
-  '{workspaceRoot}/tools/nx/module-dependencies.mjs',
-  '{workspaceRoot}/tools/nx/module-manifests.mjs',
-  '{workspaceRoot}/tools/nx/module-targets.mjs',
   // gen reads the library manifests and device facts; builders read shared SDK headers and pins.
   '{workspaceRoot}/modules/**/module.toml',
   '{workspaceRoot}/tests/fixtures/modules/**/module.toml',
-  '{workspaceRoot}/devices/**/*',
+  // pack and build-objects run the Rust patchkit binary, which reads devices/*.toml and the toolchain pins;
+  // pk_toolchains.py pins the m68k compiler; there is no Python on this path.
+  '{workspaceRoot}/devices/*.toml',
   ...SHARED_SDK_INPUTS,
-  '{workspaceRoot}/tools/patchkit/**/*',
+  '{workspaceRoot}/tools/patchkit/toolchain/**/*',
+  '{workspaceRoot}/tools/patchkit/pk_toolchains.py',
   '{workspaceRoot}/Cargo.toml',
   '{workspaceRoot}/Cargo.lock',
   '{workspaceRoot}/.cargo/**/*',
   '{workspaceRoot}/rust-toolchain*',
   '{workspaceRoot}/mise.toml',
-  '{workspaceRoot}/pyproject.toml',
-  '{workspaceRoot}/uv.lock',
-  '{workspaceRoot}/tools/__init__.py',
-  '{workspaceRoot}/tools/devtools/benchlock.py',
-  '{workspaceRoot}/tools/devtools/portable_flock.py',
+];
+
+// These lists hold the module-level import closure of the tools device tests spawn, plus the files in
+// tools/patchkit and tools/device that those tools import from functions. Other tools/coldfire and
+// tools/sharc_dev files are imported only from functions and are left out.
+// Extend a list when a test spawns a new tool.
+export const PYTHON_CLIENT_SOURCES = [
+  'tools/__init__.py',
+  'tools/control/digi_client.py',
+  'tools/devtools/__init__.py',
+  'tools/devtools/portable_flock.py',
+  'tools/devtools/stablebin.py',
+  'tools/emulator/__init__.py',
+  'tools/emulator/digi_env.py',
+  'tools/emulator/native_target.py',
+  'tools/firmware/*.py',
+  'tools/patchkit/__init__.py',
+  'tools/patchkit/dsp_patch.py',
+  'tools/patchkit/modroots.py',
+  'tools/patchkit/patchkit.py',
+].map((path) => `{workspaceRoot}/${path}`);
+
+export const PYTHON_TOOL_SOURCES = [
+  ...PYTHON_CLIENT_SOURCES,
+  ...[
+    'tools/coldfire/__init__.py',
+    'tools/coldfire/arena_safety.py',
+    'tools/coldfire/panel_script.py',
+    'tools/coldfire/regions.py',
+    'tools/control/__init__.py',
+    'tools/device/*.py',
+    'tools/devtools/benchlock.py',
+    'tools/devtools/render_cache.py',
+    'tools/emulator/card_check.py',
+    'tools/emulator/card_overlay.py',
+    'tools/emulator/coupled.py',
+    'tools/emulator/dt2_sample_check.py',
+    'tools/emulator/native_pgo.py',
+    'tools/emulator/snapread.py',
+    'tools/patchkit/hook_ab.py',
+    'tools/patchkit/pk_device.py',
+    'tools/patchkit/pk_digikit_*.py',
+    'tools/patchkit/pk_dkrt*.py',
+    'tools/patchkit/pk_dsp_budget.py',
+    'tools/patchkit/pk_emud_pgo.py',
+    'tools/patchkit/pk_harness.py',
+    'tools/patchkit/pk_mem.py',
+  ].map((path) => `{workspaceRoot}/${path}`),
 ];
 
 // These commands receive an explicit library; shared devices, SDK and tool inputs stay conservative.
@@ -77,15 +120,11 @@ export const DEVICE_INPUTS = [
   { env: 'SHARC_BLOCKTRANS' },
   { env: 'SHARC_FAST_FALLBACK_REGIONS' },
   { env: 'SHARC_FAST_AUTO' },
+  { env: 'UPDATE_GOLDENS' },
   '{workspaceRoot}/packages/test-support/**/*',
   '{workspaceRoot}/packages/control-client/**/*',
   '{workspaceRoot}/packages/dk-session/**/*',
   '{workspaceRoot}/tools/nx/device-inputs.mjs',
-  '{workspaceRoot}/tools/nx/modules.mjs',
-  '{workspaceRoot}/tools/nx/module-dependencies.mjs',
-  '{workspaceRoot}/tools/nx/module-manifests.mjs',
-  '{workspaceRoot}/tools/nx/module-targets.mjs',
-  '{workspaceRoot}/tools/nx/test-imports.mjs',
   '{workspaceRoot}/tools/emulator/fast_regions.json',
 ];
 export const deviceTarget = (root, tests, recs, imageInput, importInputs, uploadable = false) => {
@@ -95,6 +134,7 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
     for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
     if (Object.keys(rec.aliases ?? {}).length) dependsOn.push('pack-aliases');
     if (rec.plusdrive) dependsOn.push('plusdrive-format:cli');
+    if (rec.dksampleWasm) dependsOn.push('dksample:wasm');
   }
   return {
     executor: 'nx:run-commands',
@@ -104,11 +144,15 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
       imageInput,
       ...importInputs(tests.map((test) => join(root, test))),
       ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
+      ...(recs.some((rec) => rec.pythonTools === true)
+        ? PYTHON_TOOL_SOURCES
+        : recs.some((rec) => rec.pythonTools === 'client')
+          ? PYTHON_CLIENT_SOURCES
+          : []),
     ],
     dependsOn: [...new Set(dependsOn)],
     outputs: [],
     options: {
-      env: { REGRESSION_JOBS: '2' },
       command: `pnpm --filter @digi/regression test:runtime ${tests.map((t) => `../../${root}/${t}`).join(' ')}`,
       cwd: '.',
     },

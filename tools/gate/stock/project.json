@@ -35,9 +35,10 @@
         { "env": "SHARC_FAST_REGIONS" },
         { "env": "SHARC_BLOCKTRANS" },
         { "env": "SHARC_FAST_FALLBACK_REGIONS" },
-        { "env": "SHARC_FAST_AUTO" }
+        { "env": "SHARC_FAST_AUTO" },
+        { "env": "UPDATE_GOLDENS" }
       ],
-      "options": { "command": "pnpm --filter @digi/regression test:stock", "cwd": "." }
+      "options": { "command": "REGRESSION_JOBS=${DIGI_JOBS:-4} pnpm --filter @digi/regression test:stock", "cwd": "." }
     }
   }
 }
