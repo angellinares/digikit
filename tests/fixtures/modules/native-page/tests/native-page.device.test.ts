@@ -101,9 +101,9 @@ runtimeTests(
       local.zoom,
       local.events,
     ]);
-    // Page zero retains its ordinary mapping (DT2 reserves A for TUNE); cycling restores saved words.
+    // Page zero retains its ordinary mapping: END (word 1) is on C on both devices (shared knob map); cycling restores saved words.
     await ui.tap(source);
-    await ui.burst(session.options.device === 'dt2' ? 'ENC C' : 'ENC B', 30, -4, 2);
+    await ui.burst('ENC C', 30, -4, 2);
     await ui.settle(300);
     await ui.tap(source);
     const normal = await observed();
