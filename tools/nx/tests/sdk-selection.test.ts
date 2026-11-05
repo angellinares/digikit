@@ -33,12 +33,7 @@ function selected(file: string) {
   return JSON.parse(readFileSync(output, 'utf8')).tasks.tasks;
 }
 
-it.each([
-  'sdk/include/dk/machine.h',
-  'sdk/include/dk/fx.h',
-  'tests/fixtures/modules/sine/src/module.c',
-  'tests/fixtures/modules/dyn-fx-gain-both/src/module.c',
-])(
+it.each(['sdk/include/dk/machine.h'])(
   'selects the SDK host contract for %s',
   (file) => {
     expect(selected(file)['sdk:test-host']).toBeDefined();

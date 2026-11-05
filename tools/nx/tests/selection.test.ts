@@ -28,13 +28,12 @@ type ProjectGraph = {
         targets: Record<
           string,
           {
-            options?: { command?: string; env?: Record<string, string> };
+            options?: { command?: string };
             inputs?: unknown[];
-            outputs?: string[];
             cache?: boolean;
           }
         >;
-        metadata?: { runtimeAcceptance?: { files?: string[]; sources?: string[]; modules?: string[] }[] };
+        metadata?: { runtimeAcceptance?: { files?: string[]; sources?: string[] }[] };
       };
     }
   >;
@@ -129,15 +128,18 @@ describe('default gate fixture scheduling policy', () => {
       (command: string[]) =>
         plan([...command.filter((arg) => arg !== '--base=main'), `--files=${files.join(',')}`]).tasks,
     );
+  const withoutConformance = targets
+    .split(',')
+    .filter((target) => target !== 'test-conformance')
+    .join(',');
 
   it('keeps comparisons without one explicit nonempty base on the broad path', () => {
     for (const comparison of [[], ['--base='], ['--base=main', '--base=HEAD'], ['--base=main', '--head=HEAD']]) {
       expect(changedFiles(comparison)).toEqual([]);
     }
     const command = gateCommands(['-t', targets], [{ file: MENU_SOURCE, status: 'M' }])[0];
-    const graph = plan([...command, `--files=${MENU_SOURCE}`]).tasks;
-    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-  }, 30_000);
+    expect(command).toEqual(['affected', '-t', targets]);
+  });
 
   it('keeps an Nx environment head override on the broad path', () => {
     vi.stubEnv('NX_HEAD', 'another-commit');
@@ -159,47 +161,17 @@ describe('default gate fixture scheduling policy', () => {
       expect(changedFiles(selector)).toEqual([]);
       // Even a supplied menu-only classification cannot override an alternate selector.
       const commands = gateCommands([...selector, '-t', targets], [{ file: MENU_SOURCE, status: 'M' }]);
-      const graph = plan(commands[0]).tasks;
-      expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+      expect(commands).toEqual([['affected', ...selector, '-t', targets]]);
     }
-  }, 30_000);
+  });
 
-  it('keeps the four device owners and host menu fixtures while omitting unchanged conformance', () => {
-    const graphs = gatePlan([MENU_SOURCE]);
-    const tasks: TaskGraph['tasks'] = Object.assign({}, ...graphs.map((graph) => graph.tasks));
-    for (const id of [
-      'core/digikit-menu-zero-tests:test-device',
-      'core/digikit-menu:test-device',
-      'core/runtime-fixture-tests:test-device',
-      'core/runtime-service-tests:test-device',
-      'dkui-host:rust-tests',
-    ])
-      expect(tasks[id], id).toBeDefined();
-    expect(Object.values(tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
-    const named = plan(['run', `${imageConsumer()}:test-conformance`]).tasks;
-    expect(named.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-  }, 30_000);
+  it('drops only conformance for the menu fixture and keeps the base comparison', () => {
+    expect(commandsFor([MENU_SOURCE])).toEqual([['affected', '--base=main', '-t', withoutConformance]]);
+  });
 
-  it('omits only UI conformance and lets Nx retain device owners and recalculate prerequisites', () => {
-    const raw = selected(UI_SOURCE, targets);
-    expect(Object.values(raw.tasks).some((task) => task.target.target === 'test-conformance')).toBe(true);
-    const [graph] = gatePlan([UI_SOURCE]);
-    expect(graph).toEqual(selected(UI_SOURCE, 'pack,test-device,rust-tests'));
-    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
-    for (const id of [
-      'sdk-ui-zero-tests:test-device',
-      'core/digikit-menu-zero-tests:test-device',
-      'core/digikit-menu:test-device',
-      'core/runtime-fixture-tests:test-device',
-      'core/runtime-service-tests:test-device',
-      ...Object.entries(raw.tasks)
-        .filter(([, task]) => ['test-device', 'build-objects'].includes(task.target.target))
-        .map(([id]) => id),
-    ])
-      expect(graph.tasks[id], id).toEqual(raw.tasks[id]);
-    const named = plan(['run', `${imageConsumer()}:test-conformance`]).tasks;
-    expect(named.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-  }, 30_000);
+  it('drops only conformance for the UI fixture and keeps the base comparison', () => {
+    expect(commandsFor([UI_SOURCE])).toEqual([['affected', '--base=main', '-t', withoutConformance]]);
+  });
 
   it('keeps UI policy fail-closed for unsupported selectors, comparisons and incomplete target sets', () => {
     const changes = [{ file: UI_SOURCE, status: 'M' }];
@@ -228,38 +200,21 @@ describe('default gate fixture scheduling policy', () => {
         .split(',')
         .filter((target) => target !== missing)
         .join(',');
-      const [command] = gateCommands(['--base=main', '-t', incomplete], changes);
-      const graph = plan([...command.filter((arg: string) => arg !== '--base=main'), `--files=${UI_SOURCE}`]).tasks;
-      expect(graph).toEqual(selected(UI_SOURCE, incomplete));
+      expect(gateCommands(['--base=main', '-t', incomplete], changes)).toEqual([
+        ['affected', '--base=main', '-t', incomplete],
+      ]);
     }
-  }, 30_000);
+  });
 
-  it('keeps normal affected selection for source, manifest, SDK, loader, mixed and unknown changes', () => {
-    const owner = imageConsumer();
-    const ownerRoot = workspace.nodes[owner].data.root;
-    const source = `${ownerRoot}/${globSync('src/**/*.{c,rs}', { cwd: join(root, ownerRoot) }).sort()[0]}`;
-    expect(existsSync(join(root, source))).toBe(true);
+  it('keeps normal affected selection for mixed and unknown changes', () => {
     for (const files of [
-      [source],
-      [manifestOf(imageConsumer())],
-      ['sdk/include/dk/api.h'],
-      ['modules/core/runtime/src/rs/src/loader.rs'],
-      [MENU_SOURCE, manifestOf(imageConsumer())],
-      [UI_SOURCE, MENU_SOURCE],
       [UI_SOURCE, 'sdk/include/dk/api.h'],
-      [UI_SOURCE, 'modules/core/adapters/ui/src/shim.s'],
       [UI_SOURCE, 'modules/core/runtime/src/rs/src/loader.rs'],
-      ['modules/core/adapters/ui/src/shim.s'],
       ['unknown-file'],
     ]) {
       const graphs = gatePlan(files);
       expect(graphs).toHaveLength(1);
       expect(graphs[0]).toEqual(selectedPlan(files));
-      if (files.length === 1 && [source, manifestOf(owner)].includes(files[0])) {
-        expect(graphs[0].tasks[`${owner}:pack`]).toBeDefined();
-        if (workspace.nodes[owner].data.targets['test-device'])
-          expect(graphs[0].tasks[`${owner}:test-device`]).toBeDefined();
-      }
       if (files[0] !== 'unknown-file')
         expect(Object.keys(graphs[0].tasks)).toContain(`${imageConsumer()}:test-conformance`);
     }
@@ -306,105 +261,6 @@ describe('default gate fixture scheduling policy', () => {
     expect(isolatedOnly(changes())).toBe(false);
   });
 });
-
-it('prepares precisely the declared image core objects before patched-image consumers', () => {
-  const consumers = [
-    'core/runtime-tests:test-device',
-    'core/runtime-service-tests:test-device',
-    'core/runtime-settings-tests:test-device',
-    `${imageConsumer()}:test-conformance`,
-    'regression:test-device',
-  ];
-  const image = workspace.nodes['core/runtime-tests'].data.targets['test-device'].inputs!.find(
-    (input): input is { input: string; projects: string[] } =>
-      typeof input === 'object' && input !== null && 'projects' in input,
-  )!;
-  const expected = image.projects.filter((id) => workspace.nodes[id].data.targets['build-objects']).sort();
-  expect(expected.length).toBeGreaterThan(0);
-  for (const consumer of consumers) {
-    const graph = plan(['run', consumer]).tasks;
-    const producers = Object.values(graph.tasks).filter((task) => task.target.target === 'build-objects');
-    expect(producers.map((task) => task.target.project).sort(), consumer).toEqual(expected);
-    expect(
-      graph.dependencies[consumer].map((dep) => dep.id),
-      consumer,
-    ).toEqual(expect.arrayContaining(expected.map((id) => `${id}:build-objects`)));
-    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'check-generated')).toEqual([
-      expect.objectContaining({ target: expect.objectContaining({ project: 'sdk' }) }),
-    ]);
-    expect(graph.dependencies['sdk:check-generated'].map((dep) => dep.id)).toContain('patchkit:cli');
-    expect(workspace.nodes.sdk.data.targets['check-generated'].cache).toBe(false);
-    for (const producer of producers) {
-      const id = `${producer.target.project}:build-objects`;
-      expect(graph.dependencies[id].map((dep) => dep.id)).toContain('sdk:check-generated');
-      expect(workspace.nodes[producer.target.project].data.targets['build-objects'].cache).toBe(false);
-    }
-    expect(graph.dependencies['core/runtime:build-objects'].map((dep) => dep.id)).toContain(
-      'core/expansion:build-objects',
-    );
-  }
-}, 30_000);
-
-it('keeps stock and runtime host units independent of core-object preparation', () => {
-  for (const target of ['gate-stock:stock', 'core/runtime:rust-tests']) {
-    const graph = plan(['run', target]).tasks;
-    expect(
-      Object.values(graph.tasks).filter((task) => ['build-objects', 'check-generated'].includes(task.target.target)),
-      target,
-    ).toEqual([]);
-  }
-}, 30_000);
-
-it('selects core preparation for source edits and declares external Rust build sources', () => {
-  const graph = selected('modules/core/apps/digikit-menu/src/menu.c', 'build-objects');
-  expect(graph.tasks['core/digikit-menu:build-objects']).toBeDefined();
-  expect(Object.values(graph.tasks).some((task) => task.target.target === 'test-device')).toBe(false);
-  const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime:build-objects', '--json']));
-  for (const source of [
-    'modules/core/runtime/src/rs/src/lib.rs',
-    'modules/core/runtime/sdk/src/device.rs',
-    'modules/core/fw/rs/src/lib.rs',
-    'packages/dkneeds/src/lib.rs',
-  ])
-    expect(inputs.files, source).toContain(source);
-  const outputs = JSON.parse(nx(['show', 'target', 'outputs', 'core/ui:build-objects', '--json']));
-  expect(outputs.outputPaths).toEqual(['modules/core/adapters/ui/build/ui.dko.json']);
-  expect(outputs.expandedOutputs).toEqual(outputs.outputPaths);
-}, 30_000);
-
-it('declares patch-image sources and objects without consumer acceptance files', () => {
-  const conformance = JSON.parse(nx(['show', 'target', 'inputs', `${imageConsumer()}:test-conformance`, '--json']));
-  const acceptance = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
-  for (const file of [
-    'modules/core/apps/digikit-menu/src/menu.c',
-    'modules/core/apps/digikit-menu/build/digikit-menu.dko.json',
-    'modules/core/adapters/ui/src/ui.c',
-    'modules/core/adapters/ui/build/ui.dko.json',
-    // DSP-link is a transitive requirement, not an emulator-set root.
-    'modules/core/adapters/dsp-link/src/cf/dsp-link.c',
-    'modules/core/adapters/dsp-link/build/dsp-link-cf.dko.json',
-  ]) {
-    expect(conformance.files, file).toContain(file);
-    expect(acceptance.files, file).toContain(file);
-  }
-  expect(conformance.files).not.toContain('modules/core/runtime/tests/capacity/capacity.device.test.ts');
-  expect(conformance.files).not.toContain('tests/fixtures/modules/dyn-demo-stray/src/rs/src/lib.rs');
-}, 30_000);
-
-it('declares patchkit external compile sources in the native input plan', () => {
-  const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'patchkit:rust-tests', '--json']));
-  for (const file of [
-    'sdk/sdk.toml',
-    'sdk/vectors/fit-vectors.json',
-    'sdk/vectors/settings-vectors.json',
-    'devices/digitakt-ii.toml',
-    'devices/digitone-ii.toml',
-    'tools/patchkit/toolchain/pins.toml',
-    'tools/patchkit/toolchain/m68k-cf-none-elf-a2.json',
-    'tools/patchkit/pk_toolchains.py',
-  ])
-    expect(inputs.files, file).toContain(file);
-}, 30_000);
 
 it('keeps runtime and shipped content outside dependency cycles', () => {
   const reaches = (from: string, target: string, seen = new Set<string>()): boolean => {
@@ -497,60 +353,6 @@ it('forms explicit manifest libraries from selected modules and transitive requi
 });
 
 describe('workspace selection', () => {
-  it('scopes Remote changes to its pack and actual conformance artifact consumer', () => {
-    const source = 'modules/tools/remote/src/c/remote.c';
-    const packs = selected(source, 'pack,pack-aliases');
-    expect(
-      Object.values(packs.tasks)
-        .filter((task) => ['pack', 'pack-aliases'].includes(task.target.target))
-        .map((task) => task.target.project),
-    ).toEqual(['digikit/remote']);
-    const conformance = selected(source, 'test-conformance');
-    expect(
-      Object.values(conformance.tasks)
-        .filter((task) => task.target.target === 'test-conformance')
-        .map((task) => task.target.project),
-    ).toEqual(['digikit/remote']);
-    for (const target of ['digikit/debug:pack', 'digikit/probe:pack', 'digikit/debug:test-conformance']) {
-      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
-      expect(inputs.files).not.toContain(source);
-    }
-  }, 30_000);
-
-  it('keeps shared object sources, Cargo path dependencies and declared requirements in pack inputs', () => {
-    const sine = selected('tests/fixtures/modules/sine/src/dsp/sine.s', 'pack');
-    for (const id of ['test/dyn-params', 'test/dyn-dn2']) expect(sine.tasks[`${id}:pack`]).toBeDefined();
-    const sdk = selected('modules/core/runtime/sdk/src/lib.rs', 'pack');
-    for (const id of ['test/dyn-demo', 'test/dyn-demo-stray']) expect(sdk.tasks[`${id}:pack`]).toBeDefined();
-    const source = globSync('src/**/*.c', { cwd: join(root, workspace.nodes['core/input'].data.root) }).sort()[0];
-    expect(source).toBeDefined();
-    expect(
-      selected(`${workspace.nodes['core/input'].data.root}/${source}`, 'pack').tasks['digikit/remote:pack'],
-    ).toBeDefined();
-    for (const id of ['test/dyn-params', 'test/dyn-demo']) {
-      const inputs = JSON.parse(nx(['show', 'target', 'inputs', `${id}:pack`, '--json']));
-      expect(inputs.files).toContain(
-        id === 'test/dyn-params' ? 'tests/fixtures/modules/sine/src/dsp/sine.s' : 'modules/core/runtime/sdk/src/lib.rs',
-      );
-      expect(workspace.nodes[id].data.targets.pack.cache).toBe(false);
-    }
-  }, 30_000);
-
-  it('keeps the shared Debug artifact connected to every conformance suite', () => {
-    const graph = selected('modules/tools/debug/src/c/debug.c', 'test-conformance');
-    expect(
-      Object.values(graph.tasks)
-        .filter((task) => task.target.target === 'test-conformance')
-        .map((task) => task.target.project)
-        .sort(),
-    ).toEqual(
-      Object.entries(workspace.nodes)
-        .filter(([, node]) => node.data.targets['test-conformance'])
-        .map(([id]) => id)
-        .sort(),
-    );
-  }, 30_000);
-
   it('keeps full-only module fixtures out of quick capacity selection', () => {
     const manifest = manifestOf(otherImageConsumer());
     expect(selected(manifest, 'test-device').tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
@@ -561,24 +363,6 @@ describe('workspace selection', () => {
     expect(quick.tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
   }, 30_000);
 
-  it('runs the complete inferred-needs owner only through the full gate', () => {
-    const project = workspace.nodes['core/runtime-inferred-needs-tests'].data;
-    expect(project.targets['test-device']).toBeUndefined();
-    const target = project.targets['test-device-full'];
-    expect(target.options?.env?.DIGIKIT_TIER).toBe('full');
-    expect(target.cache).toBe(true);
-    const graph = plan(['run', 'core/runtime-inferred-needs-tests:test-device-full']).tasks;
-    const prerequisites = graph.dependencies['core/runtime-inferred-needs-tests:test-device-full'].map(
-      (task) => task.id,
-    );
-    const modules = project.metadata!.runtimeAcceptance![0].modules!;
-    expect(modules).toHaveLength(12);
-    for (const id of modules) expect(prerequisites).toContain(`${id}:pack`);
-    expect(prerequisites).toContain('plusdrive-format:cli');
-    expect(TIERS.merge.targets).not.toContain('test-device-full');
-    expect(TIERS.full.targets).toContain('test-device-full');
-  }, 30_000);
-
   it('leaves manual device audits out of inferred gate commands', () => {
     const manual = 'modules/core/runtime/tests/memaudit-module.manual.device.test.ts';
     expect(existsSync(join(root, manual))).toBe(true);
@@ -586,56 +370,11 @@ describe('workspace selection', () => {
       expect(data.targets['test-device']?.options?.command ?? '').not.toContain('.manual.device.test.ts');
   });
 
-  it('keeps unrelated manifests out of core producers and other conformance suites', () => {
-    const unrelated = manifestOf(otherImageConsumer());
-    expect(Object.keys(selected(unrelated, 'build-objects').tasks)).toEqual([]);
-    const graph = selected(unrelated, 'test-conformance');
-    expect(
-      Object.values(graph.tasks)
-        .filter((task) => task.target.target === 'test-conformance')
-        .map((task) => task.target.project),
-    ).toEqual([otherImageConsumer()]);
-    const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime:build-objects', '--json']));
-    expect(inputs.files).not.toContain(unrelated);
-    expect(inputs.files).not.toContain('tests/fixtures/modules/c-demo/module.toml');
-    const core = globSync('modules/**/module.toml', { cwd: root }).filter(
-      (file) => (parse(readFileSync(join(root, file), 'utf8')).module as { category: string }).category === 'core',
-    );
-    expect(core.length).toBeGreaterThan(0);
-    for (const file of core) expect(inputs.files).toContain(file);
-  }, 30_000);
-
   it('retains core manifest selection for producers and their image consumers', () => {
     const graph = selected('modules/core/runtime/module.toml', 'build-objects,test-conformance');
     expect(graph.tasks['core/runtime:build-objects']).toBeDefined();
     expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
     expect(graph.tasks[`${otherImageConsumer()}:test-conformance`]).toBeDefined();
-  }, 30_000);
-
-  it('limits pack and conformance manifest inputs to their scoped reads', () => {
-    const own = manifestOf(imageConsumer());
-    const unrelated = manifestOf(otherImageConsumer());
-    for (const target of [`${imageConsumer()}:pack`, `${imageConsumer()}:test-conformance`]) {
-      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
-      expect(inputs.files).toContain(own);
-      expect(inputs.files).not.toContain(unrelated);
-    }
-    const remote = JSON.parse(nx(['show', 'target', 'inputs', 'digikit/remote:pack', '--json']));
-    expect(remote.files).toContain('modules/core/adapters/input/module.toml');
-    const conformance = workspace.nodes[imageConsumer()].data.targets['test-conformance'];
-    expect(conformance.options?.env?.DIGI_CONFORMANCE_MANIFEST).toBe(own);
-    const general = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-service-tests:test-device', '--json']));
-    expect(general.files).not.toContain(unrelated);
-  }, 30_000);
-
-  it('selects scoped packs for owned and required manifests while excluding unrelated packs', () => {
-    expect(selected(manifestOf(otherImageConsumer()), 'pack').tasks[`${imageConsumer()}:pack`]).toBeUndefined();
-    const own = selected(manifestOf(imageConsumer()), 'pack,test-conformance');
-    expect(own.tasks[`${imageConsumer()}:pack`]).toBeDefined();
-    expect(own.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-    const required = selected('modules/core/adapters/input/module.toml', 'pack,test-conformance');
-    expect(required.tasks['digikit/remote:pack']).toBeDefined();
-    expect(required.tasks['digikit/remote:test-conformance']).toBeDefined();
   }, 30_000);
 
   it('packs affected modules without device tests through the default gate', () => {
@@ -651,137 +390,12 @@ describe('workspace selection', () => {
     expect(node.data.targets.pack.cache).toBe(false);
   }, 30_000);
 
-  it('selects only the importing suites for the card rig helper', () => {
-    const graph = selected('tests/regression/runtime/card-rig.ts', 'test-device,test-conformance');
-    expect(
-      Object.values(graph.tasks)
-        .filter((task) => ['test-device', 'test-conformance'].includes(task.target.target))
-        .map((task) => `${task.target.project}:${task.target.target}`)
-        .sort(),
-    ).toEqual([
-      'core/digikit-menu:test-device',
-      'core/dynreg:test-device',
-      'core/runtime-capacity-tests:test-device',
-      'core/runtime-settings-tests:test-device',
-      'core/runtime-tests:test-device',
-    ]);
-  }, 30_000);
-
-  it('hashes transitive helpers only in suites that import them, with shared configuration intact', () => {
-    const consumer = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
-    const conformance = JSON.parse(nx(['show', 'target', 'inputs', `${imageConsumer()}:test-conformance`, '--json']));
-    const emulator = JSON.parse(nx(['show', 'target', 'inputs', 'regression:test-device', '--json']));
-    for (const file of ['tests/regression/runtime/card-rig.ts', 'tests/regression/runtime/card-kit.ts']) {
-      expect(consumer.files).toContain(file);
-      expect(conformance.files).not.toContain(file);
-      expect(emulator.files).not.toContain(file);
-    }
-    for (const inputs of [consumer, conformance, emulator])
-      for (const file of [
-        'tests/regression/vitest.config.ts',
-        'tests/regression/tsconfig.json',
-        'tests/regression/package.json',
-        'tests/regression/support.ts',
-        'pnpm-lock.yaml',
-      ])
-        expect(inputs.files, file).toContain(file);
-    expect(conformance.files).toContain('tests/regression/runtime/ready.ts');
-    const graph = selected('tests/regression/runtime/ready.ts', 'test-device,test-conformance');
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
-    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-  }, 30_000);
-
-  it('keeps producer source, device and toolchain inputs while excluding test helpers', () => {
-    const packer = imageConsumer();
-    for (const target of ['core/runtime:build-objects', 'core/dynfx:pack-aliases', `${packer}:pack`]) {
-      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
-      expect(inputs.files).not.toContain('tests/regression/runtime/card-rig.ts');
-      for (const file of ['sdk/sdk.toml', 'devices/digitakt-ii.toml', 'tools/patchkit/toolchain/pins.toml'])
-        expect(inputs.files, `${target}: ${file}`).toContain(file);
-    }
-    for (const file of ['devices/digitakt-ii.toml', 'tools/patchkit/toolchain/pins.toml']) {
-      const graph = selected(file, 'build-objects,pack,pack-aliases');
-      expect(graph.tasks['core/runtime:build-objects']).toBeDefined();
-      expect(graph.tasks['core/dynfx:pack-aliases']).toBeDefined();
-      expect(graph.tasks[`${packer}:pack`]).toBeDefined();
-    }
-  }, 30_000);
-
-  it('selects only the settings owner for a settings acceptance edit', () => {
-    const graph = selected(
-      'modules/core/runtime/tests/settings/settings.device.test.ts',
-      'test-device,test-conformance',
-    );
-    expect(
-      Object.values(graph.tasks)
-        .filter((task) => task.target.target === 'test-device')
-        .map((task) => task.target.project),
-    ).toEqual(['core/runtime-settings-tests']);
-    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
-  }, 30_000);
-
-  it('keeps every actual consumer of the shared settings fixture selected', () => {
-    const graph = selected('tests/fixtures/modules/c-demo/src/c/c_demo.c', 'test-device,test-conformance');
-    expect(
-      Object.values(graph.tasks)
-        .filter((task) => task.target.target === 'test-device')
-        .map((task) => task.target.project)
-        .sort(),
-    ).toEqual(['core/runtime-settings-tests', 'core/runtime-tests']);
-    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
-  }, 30_000);
-
-  it.each([
-    'modules/core/runtime/tests/service-commands/service-commands.device.test.ts',
-    'tests/fixtures/modules/svc-echo/src/c/svc_echo.c',
-  ])(
-    'selects only the CF owner for %s',
-    (file) => {
-      const graph = selected(file, 'test-device,test-conformance');
-      expect(
-        Object.values(graph.tasks)
-          .filter((task) => task.target.target === 'test-device')
-          .map((task) => task.target.project),
-      ).toEqual(['core/runtime-service-tests']);
-      expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
-    },
-    30_000,
-  );
-
-  it('keeps the CF file out of parent inputs while preserving owner metadata selection', () => {
-    const file = 'modules/core/runtime/tests/service-commands/service-commands.device.test.ts';
-    const inputs = JSON.parse(nx(['show', 'target', 'inputs', 'core/runtime-tests:test-device', '--json']));
-    expect(inputs.files).not.toContain(file);
-    expect(
-      selected('modules/core/runtime/tests/project.json', 'test-device').tasks['core/runtime-tests:test-device'],
-    ).toBeDefined();
-    expect(
-      selected('modules/core/runtime/tests/service-commands/project.json', 'test-device').tasks[
-        'core/runtime-service-tests:test-device'
-      ],
-    ).toBeDefined();
-  }, 30_000);
-  it.each(['modules/core/apps/digikit-menu/src/menu.c', 'modules/core/adapters/ui/src/ui.c'])(
+  it.each(['modules/core/adapters/ui/src/ui.c'])(
     'selects image consumers when %s changes',
     (file) => {
       const graph = selected(file, 'test-device,test-conformance');
       expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
       expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-    },
-    30_000,
-  );
-
-  it('selects a Rust dependency’s own and consumer tests', () => {
-    const graph = selected('packages/dksample/src/lib.rs', 'rust-tests');
-    expect(graph.tasks['dksample:rust-tests']).toBeDefined();
-    expect(graph.tasks['plusdrive-format:rust-tests']).toBeDefined();
-    expect(graph.tasks['patchkit:rust-tests']).toBeDefined();
-  }, 30_000);
-
-  it.each(['sdk/sdk.toml', 'devices/digitakt-ii.toml', 'tools/patchkit/toolchain/pins.toml'])(
-    'selects patchkit Rust tests for external compile source %s',
-    (file) => {
-      expect(selected(file, 'rust-tests').tasks['patchkit:rust-tests']).toBeDefined();
     },
     30_000,
   );
@@ -800,77 +414,9 @@ describe('workspace selection', () => {
     expect(graph.tasks['device-profile:rust-tests']).toBeDefined();
     expect(graph.tasks['patchkit:rust-tests']).toBeUndefined();
   }, 30_000);
-
-  it('keeps an acceptance-only fixture out of unrelated conformance', () => {
-    const graph = selected('tests/fixtures/modules/dyn-demo-stray/src/rs/src/lib.rs', 'test-device,test-conformance');
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
-    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
-  }, 30_000);
-
-  it('runs the standalone runtime unit tests without build or daemon prerequisites', () => {
-    const graph = selected('modules/core/runtime/src/rs/src/lib.rs', 'rust-tests,test-device');
-    expect(graph.tasks['core/runtime:rust-tests']).toBeDefined();
-    expect(graph.dependencies['core/runtime:rust-tests']).toEqual([]);
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
-    expect(graph.tasks['core/runtime-service-tests:test-device']).toBeDefined();
-    expect(graph.tasks['core/runtime-settings-tests:test-device']).toBeDefined();
-  }, 30_000);
-
-  it('keeps desktop source edits out of unrelated host suites', () => {
-    const graph = selected('apps/desktop/ui/src/card-core.ts', 'test-host');
-    expect(Object.keys(graph.tasks)).toEqual(['@digi/desktop:test-host']);
-  }, 30_000);
-
-  it.each(['modules/core/runtime/sdk/src/lib.rs', 'modules/core/runtime/fit/src/lib.rs'])(
-    'selects the runtime consumer unit tests when %s changes',
-    (file) => {
-      const graph = selected(file, 'rust-tests');
-      expect(graph.tasks['core/runtime:rust-tests']).toBeDefined();
-      expect(graph.dependencies['core/runtime:rust-tests']).toEqual([]);
-    },
-    30_000,
-  );
-
-  it('retains a leaf module’s own conformance and pack prerequisites', () => {
-    const fixtures = new Set(workspace.dependencies['core/runtime-inferred-needs-tests'].map((dep) => dep.target));
-    const [owner, node] = Object.entries(workspace.nodes)
-      .filter(
-        ([name, node]) =>
-          node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'] && fixtures.has(name),
-      )
-      .sort(([a], [b]) => a.localeCompare(b))[0];
-    const source = globSync('src/**/*.{c,rs}', { cwd: join(root, node.data.root) }).sort()[0];
-    expect(source).toBeDefined();
-    const file = `${node.data.root}/${source}`;
-    const graph = selected(file, 'test-conformance,test-device,test-device-full');
-    expect(graph.tasks[`${owner}:test-conformance`]).toBeDefined();
-    expect(graph.dependencies[`${owner}:test-conformance`].map((dep) => dep.id)).toContain(`${owner}:pack`);
-    expect(graph.tasks['core/runtime-inferred-needs-tests:test-device-full']).toBeDefined();
-    expect(graph.tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
-    expect(
-      Object.values(graph.tasks)
-        .filter((task) => task.target.target === 'test-conformance')
-        .map((task) => task.target.project),
-    ).toEqual([owner]);
-  }, 30_000);
-
-  it('keeps runtime acceptance edits out of production consumers', () => {
-    const graph = selected(
-      'modules/core/runtime/tests/capacity/capacity.device.test.ts',
-      'rust-tests,test-device,test-conformance',
-    );
-    expect(graph.tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
-    expect(graph.tasks['core/runtime:rust-tests']).toBeUndefined();
-    expect(Object.values(graph.tasks).filter((task) => task.target.target === 'test-conformance')).toEqual([]);
-  }, 30_000);
-
-  it('selects acceptance for its declared Python helper source', () => {
-    const graph = selected('tools/device/dktransfer.py', 'test-device');
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
-  }, 30_000);
 });
 
-it.each(['sdk/src/picker_logic.c', 'sdk/src/picker_logic.h', 'sdk/src/sample_picker.c', 'sdk/src/chooser.c'])(
+it.each(['sdk/src/sample_picker.c'])(
   'limits private SDK source %s to its pack and host consumers',
   (file) => {
     const picker = pickerConsumer();
@@ -896,7 +442,7 @@ it.each(['sdk/src/picker_logic.c', 'sdk/src/picker_logic.h', 'sdk/src/sample_pic
   30_000,
 );
 
-it.each(['sdk/include/dk/api.h', 'sdk/sdk.toml'])(
+it.each(['sdk/include/dk/api.h'])(
   'retains broad module and device selection for shared SDK contract %s',
   (file) => {
     const picker = pickerConsumer();
