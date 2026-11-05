@@ -6290,6 +6290,157 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40065ae8",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4006b18c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_font_operand",
+        "rust": "dkfw::page::NATIVE_FONT_OPERAND"
+      },
+      "cpu": "cf",
+      "doc": "Address operand of pea at ParameterPageView generic knob draw+0xda; the operand points to the live RAM font object. Hash the code operand, not mutable RAM. Used only through bounded canvas text.",
+      "file": "devices/fw/page.toml",
+      "kind": "data",
+      "mark": "D",
+      "name": "cf.page.data.native_font_operand",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 220
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 220
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4003e426",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_library_sound",
+        "rust": "dkfw::page::native_library_sound"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 browser-selected sound from view+0x68 and the selected-sound index, as used by its draw and parameter mapper.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_library_sound",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u8 *sounds, u32 index)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400167a4",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_sound_index",
+        "rust": "dkfw::page::native_sound_index"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_sound_index",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u8 *view)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40030e66",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_track_sound",
+        "rust": "dkfw::page::native_track_sound"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_track_sound",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u8 *sounds, u32 track)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x400c2474",
@@ -6339,6 +6490,92 @@
         "cf.fxpages.acc",
         "cf.page.fn.acc"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4001683a",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40017cd4",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_code",
+        "rust": "dkfw::page::source_code"
+      },
+      "cpu": "cf",
+      "doc": "Native source-page encoder-to-parameter-code entry (vtable slot 47), stack (view, encoder). Callback page PARAM bindings return an existing code; page zero and stock mappings resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_code",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40018118",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40016eac",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_draw",
+        "rust": "dkfw::page::source_draw"
+      },
+      "cpu": "cf",
+      "doc": "Native source-page draw entry, stack (view, Bitmap*). A callback page may draw and return before the displaced prologue; ordinary pages resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_draw",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -6858,6 +7095,88 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4001683a"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40017cd4"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Encoder code entry: opt-in page returns its declarative code (zero for LOCAL/unused); other mappings resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_code",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_code",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40018118"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40016eac"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Draw entry: opt-in page returns directly after bounded callback rendering; every other page resumes its prologue.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_draw",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_draw",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x40016480"
@@ -6925,7 +7244,7 @@
         "dt2",
         "dn2"
       ],
-      "doc": "Entry of the machine page's encoder turn handler; the hook sees every turn and never consumes one.",
+      "doc": "Entry of the machine page's encoder turn handler; ordinary PARAM turns continue natively, while opt-in native-page LOCAL/unused turns return one to consume.",
       "file": "devices/fw/page.toml",
       "kind": "hook",
       "mark": "D",
@@ -16492,7 +16811,7 @@
       "name": "midi"
     },
     {
-      "count": 26,
+      "count": 34,
       "cpu": "cf",
       "file": "devices/fw/page.toml",
       "meaning": "parameter and FX pages",

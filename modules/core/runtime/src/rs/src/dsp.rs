@@ -34,17 +34,17 @@ const MAX_RELOCS: u32 = dkneeds::MAX_RELOCS;
 const MAX_IMPORTS: u32 = dkneeds::MAX_IMPORTS;
 const GRANULE: u32 = dkneeds::GRANULE;
 /// Words of a voice row of `core/dsp-voice`: 0 type, 1 pc, 2 to 9 the range of knob 0 to 7 (min | max << 16), 10 the type the guard disabled, then its counters,
-/// 16 note_on pc, 17 state base, 18 state stride, 19 clear bytes, 20 generation, 21 log level, 22 and 23 spare.
+/// 16 note_on pc, 17 state base, 18 state stride, 19 clear bytes, 20 generation, 21 log level, 22 parameter latch mask, 23 spare.
 const ROW_WORDS: u32 = 24;
 /// Bytes of a voice entry in a DSP section: version 1 16 (type, entry), version 2 48 (type, entry, 8 ranges, 2 reserved),
-/// version 3 64 (type, render, note_on, state_bytes, clear_bytes, 8 ranges, voices, 2 reserved).
+/// version 3 64 (type, render, note_on, state_bytes, clear_bytes, 8 ranges, voices, latch mask, reserved).
 const VOICE_V1: u32 = 16;
 const VOICE_V2: u32 = 48;
 const VOICE_V3: u32 = 64;
 /// Most voice states a module may reserve.
 const MAX_STATE_VOICES: u32 = dkneeds::MAX_STATE_VOICES;
-/// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the cleared disabled word, the type.
-const ROW_STEPS: u32 = 15;
+/// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the latch mask, the cleared disabled word, the type.
+const ROW_STEPS: u32 = 16;
 /// Effect rows: the most a chain takes (`DK_FX_MAX`), the bytes of an effect record in a DSP section of version 4, the words of a row of `core/fx`, the pc of
 /// a free row and the steps to publish a row: 8 parameter words, desc, state, mix, enabled, the 4 amount words and the route (finding 62), the pc.
 pub const MAX_FX: usize = dkneeds::MAX_FX as usize;
@@ -208,6 +208,7 @@ pub struct DspState {
     pub row_state_base: [u32; MAX_ROWS],
     pub row_stride: [u32; MAX_ROWS],
     pub row_clear: [u32; MAX_ROWS],
+    pub row_latched: [u32; MAX_ROWS],
     /// Per effect row (the free rows of `core/dynfx`, in order): the owner (module record + 1, 0: free), whether its pc word was written to the DSP (so it needs
     /// clearing), the pc, the byte addresses of the desc and the state, and the words p0 to p7 to publish.
     pub fx_owner: [u8; MAX_FX],
@@ -704,6 +705,10 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
             if note_on >= image_size || note_on & 1 != 0 || clear > state || state > iw(I_AREA_BYTES) || count > MAX_STATE_VOICES {
                 return E_DSP_FORMAT;
             }
+            let latched = rd32(e.add(56));
+            if latched & !0xff != 0 || (latched != 0 && note_on == 0) || rd32(e.add(60)) != 0 {
+                return E_DSP_FORMAT;
+            }
             i += 1;
         }
     }
@@ -916,12 +921,14 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
             d.row_state_base[row] = L2_BYTE_BASE + state_at + byte_shift;
             d.row_stride[row] = stride;
             d.row_clear[row] = rd32(e.add(16));
+            d.row_latched[row] = rd32(e.add(56));
             state_at += rd32(e.add(52)) * stride;
         } else {
             d.row_note_on[row] = 0;
             d.row_state_base[row] = 0;
             d.row_stride[row] = 0;
             d.row_clear[row] = 0;
+            d.row_latched[row] = 0;
         }
         d.row_owner[row] = rec as u8 + 1;
         d.row_pub[row] = 0;
@@ -998,6 +1005,7 @@ unsafe fn unreserve(rec: usize) {
             d.row_state_base[k] = 0;
             d.row_stride[k] = 0;
             d.row_clear[k] = 0;
+            d.row_latched[k] = 0;
         }
         k += 1;
     }
@@ -1317,7 +1325,7 @@ pub unsafe fn step() {
             }
             PH_ROWS => {
                 // rows of the module in claim order; `ROW_STEPS` steps each: the 8 ranges, the pc, note_on, state base, stride, clear
-                // bytes, the disabled word cleared, the type
+                // bytes, the latch mask, the disabled word cleared, the type
                 let rec = d.pending.rec as usize;
                 let first = iw(I_VFIRST);
                 let mut want = d.step;
@@ -1400,6 +1408,8 @@ pub unsafe fn step() {
                     } else if want == 12 {
                         (at + 19, d.row_clear[row])
                     } else if want == 13 {
+                        (at + 22, d.row_latched[row])
+                    } else if want == 14 {
                         (at + 10, 0)
                     } else {
                         (at, d.row_type[row])

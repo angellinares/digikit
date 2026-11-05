@@ -87,6 +87,7 @@ class Param:
     hi: int
     default: int
     stock: bool = False  # a stock knob of the base machine (the tune knob), not a `[[param]]` of the module
+    latched_word: int | None = None
 
     @property
     def mid(self) -> int:
@@ -251,7 +252,16 @@ def _params(moddir: Path, man: dict, device: str) -> tuple[Param, ...]:
         if "param" in k and k["param"] in decl:
             p = decl[k["param"]]
             out.append(
-                Param(k["param"], j, int(p["min"]), int(p["max"]), int(p["default"]))
+                Param(
+                    k["param"],
+                    j,
+                    int(p["min"]),
+                    int(p["max"]),
+                    int(p["default"]),
+                    latched_word=int(p["latched_word"])
+                    if p.get("latched_word") is not None
+                    else None,
+                )
             )
         elif k.get("stock") in STOCK_KNOBS:
             name, lo, hi, dflt = STOCK_KNOBS[k["stock"]]

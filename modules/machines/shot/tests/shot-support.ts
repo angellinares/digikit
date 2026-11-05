@@ -203,7 +203,7 @@ export function trackApi({ dk }: Pick<PatchedSession, 'dk'>, handle = HANDLE) {
   return { add, clear, select, status, settle };
 }
 
-/** Turn SMP (knob B of the SHOT page, word 0 of `_dv_params`, index << 8) to pool entry `index`, one detent at a time with TRIG 1 held: the
+/** Turn SMP (knob D of the SHOT page, word 0 of `_dv_params`, index << 8) to pool entry `index`, one detent at a time with TRIG 1 held: the
  * parameter buffer is rewritten only while a voice renders, so a note must sound while the value is read back. The loop reads the word after every
  * detent and turns toward the target (a detent may move one unit or several); it stops on `word >> 8 === index`. Returns the words seen. */
 export async function setSmp(
@@ -223,7 +223,7 @@ export async function setSmp(
       const now = word >> 8;
       if (now === index) return trace;
       if (i === maxTurns) break;
-      await ui.burst('ENC B', 1, now < index ? 1 : -1);
+      await ui.burst('ENC D', 1, now < index ? 1 : -1);
       await ui.settle(60);
     }
   } finally {

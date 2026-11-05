@@ -21,7 +21,7 @@
 //!            guard of core/dsp-voice (min | max << 16; 0: undeclared), 2 x u32 reserved. Version 1 had 16 bytes (type, entry, 2 reserved)
 //!          version 3: 64 bytes each: 0 u32 type, 4 u32 render entry (image byte offset), 8 u32 note_on entry (image byte offset; 0: none),
 //!            12 u32 state_bytes (per voice), 16 u32 clear_bytes (zeroed at note-on), 20..51 8 x u32 ranges as above, 52 u32 voices (number of
-//!            voice states to reserve behind the image and bss), 56..63 reserved 0. The packer writes version 3 only when a voice has a
+//!            voice states to reserve behind the image and bss), 56 u32 parameter-word latch mask (contract 1.3), 60 reserved 0. The packer writes version 3 only when a voice has a
 //!            note_on entry or a state; otherwise version 2 (the runtime parses all three; v1 and v2 voices have note_on 0 and no state)
 //! fx     : version 4: 64 bytes each: 0 u32 process (image byte offset of the process routine), 4 u32 desc (image byte offset of its `dk_fx_desc`),
 //!            8 u32 state_bytes (from the desc: reserved behind the image, bss and voice states), 12 u32 n_params (from the desc), 16 u32 flags (the routes, below; 0 = master only),
@@ -124,12 +124,14 @@ pub struct Voice {
     pub voices: u32,
     /// range of machine knob 0 .. 7 (min | max << 16; 0 undeclared)
     pub ranges: [u32; 8],
+    /// Parameter-word latch mask (machine contract 1.3), in v3 reserved word 14.
+    pub latched: u32,
 }
 
 impl Voice {
     /// The record needs version 3.
     fn contract(&self) -> bool {
-        self.note_on != 0 || self.state_bytes != 0 || self.clear_bytes != 0 || self.voices != 0
+        self.note_on != 0 || self.state_bytes != 0 || self.clear_bytes != 0 || self.voices != 0 || self.latched != 0
     }
 }
 
@@ -144,6 +146,7 @@ pub struct VoiceSpec {
     /// Declared stereo in `DK_MACHINE`; the desc must carry `DESC_STEREO` too.
     pub stereo: bool,
     pub ranges: [u32; 8],
+    pub latched: u32,
 }
 
 impl VoiceSpec {
@@ -155,6 +158,7 @@ impl VoiceSpec {
             note_on: None,
             desc: None,
             stereo: false,
+            latched: 0,
             ranges,
         }
     }
@@ -323,9 +327,9 @@ impl SampleTracks {
                 ));
             }
             if image[off as usize..end as usize].iter().any(|&b| b != 0)
-                || relocs
-                    .iter()
-                    .any(|r| u64::from(r.offset) < u64::from(end) && u64::from(r.offset) + 6 > u64::from(off))
+                || relocs.iter().any(|r| {
+                    u64::from(r.offset) < u64::from(end) && u64::from(r.offset) + 6 > u64::from(off)
+                })
             {
                 return Err(err!(
                     "sample track table must be zero and contain no relocations"
@@ -505,6 +509,9 @@ pub fn pack_with_samples(
         Ok(((pc - L2_SW_BASE as u64) * 2) as u32)
     };
     for v in voices {
+        if v.latched & !0xff != 0 || (v.latched != 0 && (v.note_on.is_none() || v.desc.is_none())) {
+            return Err(err!("voice {}: latching requires a contract note_on and an 8-bit parameter mask", v.render));
+        }
         let entry = entry_of(&v.render)?;
         let note_on = match &v.note_on {
             Some(n) => {
@@ -570,6 +577,7 @@ pub fn pack_with_samples(
             clear_bytes,
             voices: voices_n,
             ranges: v.ranges,
+            latched: v.latched,
         });
     }
     if fxs.len() > MAX_FX {
@@ -648,9 +656,7 @@ pub fn pack_with_samples(
             .symbols
             .iter()
             .find(|s| s.name == name && s.section.is_some())
-            .ok_or_else(|| {
-                err!("sample symbol {name}: not defined by this DSP object")
-            })?;
+            .ok_or_else(|| err!("sample symbol {name}: not defined by this DSP object"))?;
         let sec = obj
             .sections
             .iter()
@@ -817,6 +823,7 @@ impl DspSection {
                     put(&mut f, at + 20 + 4 * k, *w);
                 }
                 put(&mut f, at + 52, v.voices);
+                put(&mut f, at + 56, v.latched);
             } else {
                 for (k, w) in v.ranges.iter().enumerate() {
                     put(&mut f, at + 8 + 4 * k, *w);
@@ -944,6 +951,7 @@ impl DspSection {
                     state_bytes: if v3 { get(vo, at + 12) } else { 0 },
                     clear_bytes: if v3 { get(vo, at + 16) } else { 0 },
                     voices: if v3 { get(vo, at + 52) } else { 0 },
+                    latched: if v3 { get(vo, at + 56) } else { 0 },
                     ranges: match version {
                         VERSION_1 => [0; 8],
                         VERSION_3 | VERSION_4 | VERSION_5 => {
@@ -960,6 +968,8 @@ impl DspSection {
                 || v.note_on as usize >= image_size
                 || v.note_on % 2 != 0
                 || v.clear_bytes > v.state_bytes
+                || v.latched & !0xff != 0
+                || (v.latched != 0 && v.note_on == 0)
         }) {
             return Err(err!("DSP voice entry outside the image"));
         }
@@ -1246,9 +1256,21 @@ mod tests {
     fn sample_tracks_need_zero_data_inside_the_image_and_no_overlap() {
         let (o, t) = tracks_object();
         // a block that is not in an initialized data section, is too short, overlaps the other, or is not zero
-        for (records, control) in [("buf", "ctl"), ("var", "buf"), ("var", "var"), ("helper", "ctl")] {
-            let t = crate::typed::SampleTracksDef { records: records.into(), control: control.into(), ..t.clone() };
-            assert!(pack_with_samples(&o, 1, &[], &[], None, Some(&t)).is_err(), "{records} {control}");
+        for (records, control) in [
+            ("buf", "ctl"),
+            ("var", "buf"),
+            ("var", "var"),
+            ("helper", "ctl"),
+        ] {
+            let t = crate::typed::SampleTracksDef {
+                records: records.into(),
+                control: control.into(),
+                ..t.clone()
+            };
+            assert!(
+                pack_with_samples(&o, 1, &[], &[], None, Some(&t)).is_err(),
+                "{records} {control}"
+            );
         }
         let mut bad = o.clone();
         bad.sections[1] = sec("d", "data", 4, &[0; 767]);
@@ -1395,6 +1417,7 @@ mod tests {
                 state_bytes: 0,
                 clear_bytes: 0,
                 voices: 0,
+                latched: 0,
                 ranges: [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0]
             }]
         );
@@ -1483,7 +1506,22 @@ mod tests {
             desc: Some("mdesc".into()),
             stereo,
             ranges: [0; 8],
+            latched: 0,
         }
+    }
+
+    #[test]
+    fn latched_voice_mask_roundtrips_and_needs_a_contract_callback() {
+        let object = machine_object(DESC_CONTRACT);
+        let mut spec = machine_spec(false);
+        spec.latched = 1;
+        let bytes = pack(&object, 1, &[spec.clone()], &[]).unwrap();
+        assert_eq!(DspSection::parse(&bytes).unwrap().voices[0].latched, 1);
+        spec.latched = 0x100;
+        assert!(pack(&object, 1, &[spec.clone()], &[]).unwrap_err().0.contains("8-bit parameter mask"));
+        spec.latched = 1;
+        spec.note_on = None;
+        assert!(pack(&object, 1, &[spec], &[]).unwrap_err().0.contains("contract note_on"));
     }
 
     #[test]

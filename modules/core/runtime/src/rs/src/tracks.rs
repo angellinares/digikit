@@ -48,6 +48,7 @@ extern "C" {
     fn dkpool_tick();
     // Optional growth of plug-in point version 1 (dkrt_pool.h): the runtime tests each for 0.
     fn dkpool_cancel(req: u32);
+    fn dkpool_peaks(h: *const Handle, out: *mut u8, capacity: u32) -> i32;
     // Per-device tables of the runtime's assembly objects (DT2 1.17 anchors; zeros on DN2). Both are declared in sample_source.rs and files.rs too.
     static dkrt_sample_fs: [u32; 4];
     static dkrt_files_fs: [u32; 3];
@@ -670,4 +671,16 @@ pub unsafe extern "C" fn dkrt_pool_lost() {
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_project_changed(slot: u32) {
     core_().project_changed(slot);
+}
+
+/// Bounded overview copy; no file or PCM access in the UI task.
+pub unsafe fn peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity: u32) -> i32 {
+    let c = match client(handle) { Ok(c) => c, Err(e) => return e };
+    if out.is_null() || (out as usize & 1) != 0 || capacity < 2048 || black_box(dkpool_peaks as *const () as usize) == 0 {
+        return E_CONTRACT;
+    }
+    match core_().peak_handle(c, track as usize, token) {
+        Ok(h) => dkpool_peaks(&h, out, capacity),
+        Err(e) => e,
+    }
 }

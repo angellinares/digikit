@@ -233,6 +233,8 @@ pub struct ParamDef {
     pub action: Option<String>,
     /// The glyph (a `DK_PARAM_GLYPH` record, `dk_glyph`); `None`: the encoder.
     pub glyph: Option<u32>,
+    /// The adapter snapshots this word at actual note_on (machine contract 1.3).
+    pub latched: bool,
 }
 
 /// The template name and the allowed knob range (min, max) of a `dk_glyph` value.
@@ -265,6 +267,25 @@ pub struct PageDef {
     pub name: String,
     pub title: String,
     pub knobs: Vec<PageKnob>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeBinding {
+    pub kind: u32,
+    pub value: u32,
+    pub position: u32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NativePageDef {
+    pub version: u32,
+    pub page: u32,
+    pub flags: u32,
+    pub owner: String,
+    pub title: String,
+    pub draw: String,
+    pub event: String,
+    pub bindings: Vec<NativeBinding>,
 }
 
 /// The DSP routines of a machine (from its `DK_MACHINE` record): `render` and `note_on` are the symbols of the routines, `desc` the
@@ -373,6 +394,7 @@ pub struct RParam {
     pub mirror: i64,
     /// The symbol of the click callback of the knob.
     pub action: Option<String>,
+    pub latched_word: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -393,6 +415,7 @@ pub struct RVoice {
     pub note_on: Option<String>,
     pub desc: Option<String>,
     pub stereo: bool,
+    pub latched: u32,
     /// A patched-in contract voice: the state block `Library::lower` reserved for it (`desc` read from the object).
     pub state: Option<VoiceState>,
 }
@@ -415,6 +438,7 @@ pub struct DevResolved {
     pub params: Vec<RParam>,
     pub pages: Vec<RPage>,
     pub voices: Vec<RVoice>,
+    pub native_pages: Vec<NativePageDef>,
 }
 
 /// Where the parameters of one machine sit on a device: `pos[i]` is the knob position of parameter `i` (of the machine's list);
@@ -516,6 +540,9 @@ fn place(
 
 /// Resolve the typed sections against the device models: one [`DevResolved`] per device that has something.
 pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
+    if !m.native_page.is_empty() && !m.module.dynamic {
+        return Err(err!("native callback pages require a run-time machine"));
+    }
     let who = m.module.id.as_str();
     let mut out = vec![];
     if m.machine.is_empty() {
@@ -596,9 +623,10 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                         p.max as f64 / 256.0
                     ));
                 }
-                let template = *model.templates.get(gname).ok_or_else(|| {
-                    err!("{who}: devices/{dev}.toml has no `{gname}` template")
-                })?;
+                let template = *model
+                    .templates
+                    .get(gname)
+                    .ok_or_else(|| err!("{who}: devices/{dev}.toml has no `{gname}` template"))?;
                 params.push(RParam {
                     id: p.id.clone(),
                     name: p.name.clone(),
@@ -612,6 +640,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                     frame_off: model.frame_offset(at),
                     mirror: model.frame.mirror_base + model.frame_offset(at),
                     action: p.action.clone(),
+                    latched_word: p.latched.then_some(p.word),
                 });
             }
             for (k, (name, title, list)) in placed.pages.iter().enumerate() {
@@ -643,9 +672,26 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 note_on: Some(v.note_on.clone()),
                 desc: Some(v.desc.clone()),
                 stereo: v.stereo,
+                latched: m
+                    .param
+                    .iter()
+                    .filter(|p| p.machine == v.machine && p.latched)
+                    .fold(0, |mask, p| mask | (1 << p.word)),
                 state: m.voice_state.get(&v.machine).cloned(),
             })
             .collect();
+        let native_pages = m.native_page.iter().map(|page| {
+                let mut page = page.clone();
+                for binding in &mut page.bindings {
+                    if binding.kind == 1 {
+                        let p = m.param.iter().find(|p| p.machine == page.owner && p.word == binding.value)
+                            .ok_or_else(|| err!("native page parameter word {} is missing", binding.value))?;
+                        binding.value = params.iter().position(|r| r.id == p.id)
+                            .ok_or_else(|| err!("native page parameter {} unavailable on {dev}", p.id))? as u32;
+                    }
+                }
+                Ok(page)
+            }).collect::<Result<Vec<_>>>()?;
         out.push(DevResolved {
             dev: dev.clone(),
             model: model.clone(),
@@ -653,6 +699,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             params,
             pages,
             voices,
+            native_pages,
         });
     }
     Ok(out)
@@ -730,6 +777,9 @@ pub fn entries(resolved: &[DevResolved]) -> Vec<EntryDef> {
             }
             if let Some(n) = &v.note_on {
                 f.push(kv("note_on", s(n)));
+            }
+            if v.latched != 0 {
+                f.push(kv("latched", int(v.latched as i64)));
             }
             if let Some(st) = &v.state {
                 f.push(kv("state_base", s(&st.symbol)));
@@ -936,6 +986,7 @@ summary = "t."
                 default: 50,
                 action: None,
                 glyph: None,
+                latched: false,
             })
             .collect();
         m.page = pages

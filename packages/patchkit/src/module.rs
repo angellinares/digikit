@@ -41,6 +41,8 @@ pub struct Manifest {
     #[serde(skip)]
     pub page: Vec<crate::typed::PageDef>,
     #[serde(skip)]
+    pub native_page: Vec<crate::typed::NativePageDef>,
+    #[serde(skip)]
     pub voice: Vec<crate::typed::VoiceDef>,
     /// Removed forms (`[[fx]]`, `[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`): kept only to refuse them with a clear error.
     #[serde(default)]
@@ -554,6 +556,7 @@ impl Module {
             manifest.machine = d.machines;
             manifest.param = d.params;
             manifest.page = d.pages;
+            manifest.native_page = d.native_pages;
             manifest.voice = d.voices;
             manifest.sample_bank = d.sample_bank;
             manifest.sample_tracks = d.sample_tracks;

@@ -25,7 +25,7 @@ import {
 } from './shot-support.ts';
 
 // DT2 1.17: the SMP click flow of digikit/shot (docs/design/ui-rules.md, docs/design/machine-page-click.md, docs/design/sample-picker.md):
-// a click on knob B (press and release without a turn) opens the slot list 00..15; YES on a slot (empty or filled) opens the file browser for
+// a click on knob D (press and release without a turn) opens the slot list 00..15; YES on a slot (empty or filled) opens the file browser for
 // that slot; YES on a file loads it into that slot, sets SMP to the slot and returns to the page; NO goes back one level; a held TRIG keeps SMP
 // unchanged; a press with a turn is the stock coarse step and opens no list.
 //
@@ -73,7 +73,7 @@ runtimeTests(
     const up = async (n: number) => {
       for (let i = 0; i < n; i++) await ui.tap('UP');
     };
-    const click = async () => ui.tap('PUSH B', 600);
+    const click = async () => ui.tap('PUSH D', 600);
     try {
       await settleUi(session);
       await installWithDebug(runtime, 'digikit/shot', 'test/track-select', 'test/stock-pool');
@@ -97,10 +97,10 @@ runtimeTests(
         }
       };
       const smp = async () => (await smpWord()) >> 8;
-            /** Back on the SHOT page from wherever a flow stopped: NO closes the open levels, SRC shows the page of the selected track. */
+            /** Every picker starts on custom page0; closing its levels returns there without cycling to the waveform page. */
       const toPage = async () => {
         for (let i = 0; i < 4; i++) await ui.tap('NO', 200);
-        await ui.tap('SRC', 500);
+        await ui.settle(500);
       };
       /** A note on TRIG 1: the tones of the pair, split L / R. */
       const noteIs = async (name: string, pair: readonly [number, number]) => {
@@ -242,13 +242,13 @@ runtimeTests(
 
       // ---- 7. a press with a turn is the stock coarse step: no list ---------------------------------------------------------------------------
       const before = await smp();
-      await session.client.inputButton(button('PUSH B'), true);
+      await session.client.inputButton(button('PUSH D'), true);
       try {
         await ui.settle(100);
-        await session.client.inputTurn(encoder('ENC B'), 1);
+        await session.client.inputTurn(encoder('ENC D'), 1);
         await ui.settle(200);
       } finally {
-        await session.client.inputButton(button('PUSH B'), false);
+        await session.client.inputButton(button('PUSH D'), false);
       }
       await ui.settle(1500);
       const turned = await screen('15-press-turn');
@@ -258,6 +258,20 @@ runtimeTests(
       log.pressTurn = { before, after };
       // No check on the value: one slow detent moves a parameter by about 1/256 of a unit (stock acceleration, finding 02), and
       // `_dv_params` is only rewritten while a voice plays. The point of this step is that a press with a turn opens no list.
+
+      // An unused custom encoder still cancels a pending SMP click.
+      await session.client.inputButton(button('PUSH D'), true);
+      try {
+        await ui.settle(100);
+        await session.client.inputTurn(encoder('ENC C'), 1);
+        await ui.settle(200);
+      } finally {
+        await session.client.inputButton(button('PUSH D'), false);
+      }
+      await ui.settle(800);
+      const unusedTurn = await screen('16-press-unused-turn');
+      expect(unusedTurn, 'unused C turn cancels D click').not.toBe(listHash);
+      expect(unusedTurn).not.toBe(list0);
 
       const modules = await dk.modules();
       for (const m of modules) expect(m.faults, `${m.name} faults`).toBe(0);

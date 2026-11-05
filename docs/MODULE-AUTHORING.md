@@ -209,6 +209,12 @@ Glyphs on effect parameters are not supported yet.
 | `DK_GLYPH_TUNE` | 4 .. 124 | centre 64, one unit = one semitone |
 | `DK_GLYPH_PLAY` | 0 .. 3 | REV, REV.L, FWD.L, FWD; the Digitone II has no PLAY row and shows 0 .. 3 |
 
+`DK_PARAM_LATCHED(MACHINE, WORD)` snapshots that parameter's effective, clamped value at actual `note_on`. The existing `params` array
+passed to `render` retains it until the next trigger; other words remain live. Snapshots are per adapter voice/slot, including overlapping DN2
+notes from the same source track. At most one declaration per parameter; the owner and word must already be declared. A packed module with
+this feature requires machine contract 1.3 and is refused by older runtimes. SHOT uses it for SMP only. See [parameter views](design/param-views.md)
+for the callback boundary and validation limits.
+
 `DK_PARAM_ACTION(MACHINE, WORD, FN)` makes a click on the knob of that parameter (press and release of the encoder, no turn between) call
 `void FN(uint32_t track)`, a global function of the module, in the UI task. It may open a `<dk/ui.h>` menu over the page. A parameter has at most
 one action; a knob without one keeps the stock click. Only a `dynamic` module can declare it. Details: `docs/design/machine-page-click.md`.
@@ -726,3 +732,67 @@ allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES
 
 The firmware reference (`mise run fw:reference`, which writes `out/reference/fw.html`) is for `core/*` adapters. Content modules do not use
 firmware declarations or anchors.
+
+A machine can opt into one additional native callback page with
+`DK_NATIVE_PAGE_V1` (machine contract 1.4). Declare existing parameter bindings
+with `DK_PAGE_PARAM(word, encoder)` and UI-only controls with
+`DK_PAGE_LOCAL(id, encoder)`; draw through the bounded SDK canvas. PARAM turns
+continue through native editing rather than calling `param_set`. See
+[the native page contract](design/native-machine-pages.md) and the neutral
+`tests/fixtures/modules/native-page` fixture. This is an experimental proof API;
+complete both current-device acceptance checks before using it in a product page.
+
+
+For two replacement pages, use `DK_NATIVE_PAGE_V2` (machine contract 1.5),
+declaring exactly indexes 0 and 1. The ordinary `DK_PAGE` still defines parameter
+storage. Existing V1 pages and default V2 pages retain their draw behavior.
+
+
+Page zero may use genuine native widgets plus a clipped overlay:
+
+```c
+DK_NATIVE_PAGE_V2_FLAGS(voice, 0, DK_PAGE_STOCK_OVERLAY, "VOICE",
+    controls_draw, controls_event, DK_PAGE_PARAM(0, 0), DK_PAGE_PARAM(1, 4));
+DK_NATIVE_PAGE_V2(voice, 1, "DETAIL", detail_draw, controls_event,
+    DK_PAGE_PARAM(1, 4));
+```
+
+Native widgets draw first, then the callback. The unchanged frame supplies the
+same 99×53 local canvas. Clear intended overlay rectangles with
+`fill_rect(..., 0)` before drawing text or glyphs; only explicitly filled
+rectangles are composited. Text outside that mask is invisible. Other native
+pixels, including the LEVEL fader and page dots, remain intact. The flag is
+supported only on V2 page zero; unknown flags are rejected. LEVEL remains the
+native physical control, independently of parameter bindings. Draw order,
+clipping and explicit opaque rectangles are the SDK contract. Firmware calls,
+Bitmap layout and scratch buffers are internal adapter details that may change.
+
+
+Replacement page one can opt into `DK_PAGE_WIDE_CANVAS` with
+`DK_NATIVE_PAGE_V2_FLAGS`. Its canvas is 107×53 pixels (global x17..123),
+leaving the track badge and page dots outside it. Ordinary pages and
+`DK_PAGE_STOCK_OVERLAY` retain the 99×53 canvas (global x25..123).
+The wide flag is rejected on page zero and cannot combine with the overlay.
+`dk_sample_region_rect_q8` in `<dk/sample_region.h>` accepts an inclusive
+`dk_sample_region_rect` to place and clip the waveform, rail and handles within
+a smaller plot; `dk_sample_region_q8` remains the full-width helper.
+
+`<dk/widgets.h>` provides code-native display helpers for custom pages:
+`dk_page_encoder(&frame->canvas, x, y, value)` draws a 17×17 circle/needle,
+and `dk_page_level(...)` draws a 9×17 vertical fader. Coordinates are top-left
+canvas pixels; drawing clips to the reported canvas bounds. Values clamp to
+0..127; normalize a smaller parameter range before drawing. The helpers neither
+clear their backgrounds nor edit parameters. LEVEL may be displayed from
+`frame->level` without binding any A–H encoder; physical LEVEL keeps its normal
+behavior. Encoder/level use fewer than 100 small drawing calls and no allocation.
+These are our own code-drawn shapes, with no firmware assets. The helper API and
+value/geometry contract are stable; internal rasterization may be refactored.
+
+`dk_page_tune(canvas, x, y, eighths)` is a 22×17 box for signed 1/8-semitone
+values (clamped to ±24 semitones). It shows whole semitones in the canvas font
+and exact nonzero fractions in a small code-native 3×5 row; it never changes a
+parameter's scale. Shot passes `(pitch_unit-64)*3`, preserving its 3/8-semitone
+step. `dk_page_sample(canvas, x, y, slot, state)` is a 22×17 local slot display:
+`DK_WIDGET_SAMPLE_EMPTY` is dotted, `READY` shows an index 0..99, `LOADING` uses
+dots and `MISSING` a cross. These helpers have no stock sample-bank semantics.
+Tune uses fewer than 130 drawing calls; sample fewer than 100; neither allocates.

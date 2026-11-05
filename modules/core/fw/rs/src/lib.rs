@@ -422,7 +422,29 @@ pub mod midi {
 }
 
 pub mod page {
+    unsafe extern "C" {
+        /// DN2 browser-selected sound from view+0x68 and the selected-sound index, as used by its draw and parameter mapper.
+        #[link_name = "cf.page.fn.native_library_sound"]
+        pub fn native_library_sound(sounds: *mut u8, index: u32) -> *mut u8;
+    }
+
+    unsafe extern "C" {
+        /// DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound.
+        #[link_name = "cf.page.fn.native_sound_index"]
+        pub fn native_sound_index(view: *mut u8) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper.
+        #[link_name = "cf.page.fn.native_track_sound"]
+        pub fn native_track_sound(sounds: *mut u8, track: u32) -> *mut u8;
+    }
+
     // cf.page.fn.page_desc: no sig yet
+
+    // cf.page.fn.source_code: no sig yet
+
+    // cf.page.fn.source_draw: no sig yet
 
     // cf.page.fn.source_key: no sig yet
 
@@ -444,6 +466,12 @@ pub mod page {
         /// The stock list itself (rodata, three page numbers) and the stock count (the byte of `moveq 3,D1` at +1): the runtime copies them in front of its pages. The stock list (rodata 0x401e0448, pages 17, 18, 19) and the stock count.
         #[link_name = "cf.page.data.fx_view_list"]
         pub static FX_VIEW_LIST: u8;
+    }
+
+    unsafe extern "C" {
+        /// Address operand of pea at ParameterPageView generic knob draw+0xda; the operand points to the live RAM font object. Hash the code operand, not mutable RAM. Used only through bounded canvas text.
+        #[link_name = "cf.page.data.native_font_operand"]
+        pub static NATIVE_FONT_OPERAND: u8;
     }
 }
 

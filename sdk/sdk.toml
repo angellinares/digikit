@@ -9,8 +9,8 @@ version = "0.5.4"   # 0.x: MINOR may break (contract major, store format, SysEx 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
-api = [1, 6]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path appended
-machine = [1, 2]    # minor 1: source track appended to voice_in, latched at note_on; minor 2: stereo machines (out_r appended to voice_in, DK_MACHINE_STEREO, DK_STEREO)
+api = [1, 7]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks
+machine = [1, 5]    # minor 1: source track; 2: stereo; 3: executable parameter latches; 4: opt-in native callback page v1; 5: two replacement callback pages v2
 fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
 
@@ -53,6 +53,7 @@ fields = [
     { name = "param_get", type = "i32 (u32 track, u32 word)", doc = "Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). UI task only, and only in the flow of a click: from the DK_PARAM_ACTION callback until the page gets its next key or turn (so a list the callback opened may call it), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows.", since = 6 },
     { name = "param_set", type = "i32 (u32 track, u32 word, i32 raw)", doc = "Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).", since = 6 },
     { name = "sample_pool_set", type = "i32 (u32 handle, u32 index, const u8 *path)", doc = "Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path.", since = 6 },
+    { name = "sample_pool_peaks", type = "i32 (u32 handle, u32 index, u32 token, u8 *out, u32 capacity)", doc = "Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h.", since = 7 },
 ]
 
 # Function types by name. As a parameter or field a name is a nullable pointer to the function (`Option<ServiceCmd>` in Rust, `dk_service_cmd *` in C).
@@ -119,7 +120,7 @@ desc = [
 ]
 fns = [
     "i32 note_on(void *state, const dk_voice_in *in, const i32 *params) // At note-on, after `state_clear_bytes` are zeroed; no sound. params: DK_MAX_PARAMS words. Returns 0, or a negative number (a fault). Entered with I13 = return address (R4 state, R8 in, R12 params; result R0).",
-    "i32 render(void *state, const dk_voice_in *in, const i32 *params) // Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words. Returns dk_status.",
+    "i32 render(void *state, const dk_voice_in *in, const i32 *params) // Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words; DK_PARAM_LATCHED words retain the effective clamped note_on value, all other words are live. Returns dk_status.",
 ]
 
 # The FX contract's numbers (sdk/include/dk/gen/fx.h is the generated C view; it includes the generated sdk/include/dk/gen/fx_consts.h).
@@ -186,6 +187,9 @@ consts = [
     { name = "DK_DESC_FX_PARAM", value = 5, doc = "Record kind of dk_desc_fx_param." },
     { name = "DK_DESC_PARAM_ACTION", value = 8, doc = "Record kind of dk_desc_param_action." },
     { name = "DK_DESC_PARAM_GLYPH", value = 9, doc = "Record kind of dk_desc_param_glyph." },
+    { name = "DK_DESC_PARAM_LATCHED", value = 10, doc = "Record kind of dk_desc_param_latched (machine contract 1.3)." },
+    { name = "DK_DESC_NATIVE_PAGE", value = 11, doc = "Record kind of dk_desc_native_page (machine contract 1.4)." },
+    { name = "DK_DESC_NATIVE_PAGE_V2", value = 12, doc = "Record kind of dk_desc_native_page_v2 (machine contract 1.5)." },
     { name = "DK_GLYPH_ENCODER", value = 0, doc = "Glyph (the dk_glyph values): a plain encoder knob, values 0 .. 127 (the default)." },
     { name = "DK_GLYPH_FADER", value = 1, doc = "Glyph: a fader, values 0 .. 127." },
     { name = "DK_GLYPH_PAN", value = 2, doc = "Glyph: a pan knob, values 0 .. 127 (centre 64, shows L/R)." },
@@ -315,6 +319,17 @@ fields = [
 ]
 
 [[desc.record]]
+name = "dk_desc_param_latched"
+kind = "DK_DESC_PARAM_LATCHED"
+doc = "Snapshot one machine parameter at actual note_on, after effective values and clamping. Render sees that value until the next note_on; undeclared words remain live. At most one declaration per parameter. Requires machine contract 1.3."
+fields = [
+    "u32 kind // DK_DESC_PARAM_LATCHED",
+    "u32 size // sizeof(dk_desc_param_latched)",
+    "char owner[16] // the declared machine id",
+    "u32 word // the declared machine parameter word, 0 .. 7",
+]
+
+[[desc.record]]
 name = "dk_desc_page_knob"
 doc = "One encoder of a page. An unused entry is all zero."
 fields = [
@@ -334,6 +349,47 @@ fields = [
     "char name[24] // 1 to 23 characters; for an effect, 1 to 3: the tab of the FX page",
     "char title[24] // 1 to 23 characters, the page title",
     "dk_desc_page_knob knob[DK_PAGE_KNOBS] // the encoders, from entry 0, without gaps",
+]
+
+[[desc.record]]
+name = "dk_desc_native_binding"
+doc = "One encoder of an opt-in native page: kind 1 PARAM names an existing parameter word; kind 2 LOCAL names a UI-local control id; kind 0 is unused."
+fields = [
+    "u32 kind // 0 unused, 1 PARAM, 2 LOCAL",
+    "u32 value // parameter word or local control id",
+    "u32 position // encoder 0 .. 7",
+]
+
+[[desc.record]]
+name = "dk_desc_native_page"
+kind = "DK_DESC_NATIVE_PAGE"
+doc = "One additional native page, after a machine's ordinary page zero. Version 1 has a bounded draw callback and an event callback for LOCAL controls only; PARAM controls use the native parameter edit path."
+fields = [
+    "u32 kind // DK_DESC_NATIVE_PAGE",
+    "u32 size // sizeof(dk_desc_native_page)",
+    "u32 version // 1",
+    "char owner[16] // declared machine id",
+    "char title[24] // 1 to 23 printable characters",
+    "char draw[32] // ColdFire draw callback symbol",
+    "char event[32] // ColdFire LOCAL event callback symbol",
+    "dk_desc_native_binding binding[DK_PAGE_KNOBS] // contiguous used entries, unique positions",
+]
+
+[[desc.record]]
+name = "dk_desc_native_page_v2"
+kind = "DK_DESC_NATIVE_PAGE_V2"
+doc = "One of exactly two replacement native pages, indexes zero and one, of a machine. Uses the shared callback frame/event v1 ABI; cannot mix with append-only native page v1."
+fields = [
+    "u32 kind // DK_DESC_NATIVE_PAGE_V2",
+    "u32 size // sizeof(dk_desc_native_page_v2)",
+    "u32 version // 2",
+    "char owner[16] // declared machine id",
+    "char title[24] // 1 to 23 printable characters",
+    "char draw[32] // ColdFire draw callback symbol",
+    "char event[32] // ColdFire LOCAL event callback symbol",
+    "u32 page // replacement page index 0 or 1; both are required",
+    "u32 flags // 0, DK_PAGE_STOCK_OVERLAY (1, page zero only) or DK_PAGE_WIDE_CANVAS (2, page one only, 107x53 canvas); the two flags are mutually exclusive",
+    "dk_desc_native_binding binding[DK_PAGE_KNOBS] // contiguous used entries, unique positions",
 ]
 
 # The names a module may import. The runtime's table (modules/core/runtime/src/rs/src/lib.rs `IMPORTS`) holds those without `requires`, in this

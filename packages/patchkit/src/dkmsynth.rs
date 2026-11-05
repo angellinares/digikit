@@ -233,6 +233,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
                     clear_bytes: 0,
                     voices: v.voices,
                     ranges: [0; 8],
+                    latched: 0,
                 });
             }
             DspSection {

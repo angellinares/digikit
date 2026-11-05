@@ -916,12 +916,72 @@ mark = "D"
 rule = "fw/page:cf_ptr"
 
 [[anchor]]
+name = "cf.page.data.native_font_operand"
+cpu = "cf"
+kind = "code"
+addr = 0x40065ae8
+len = 4
+sha256 = "18fa5944312ffc58c4dcd9d15264d6ef3db92ca602cf91bf63bfb78cb36a7632"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.native_library_sound"
+cpu = "cf"
+kind = "code"
+addr = 0x4003e426
+len = 4
+sha256 = "01cd0be926859b23dc6ead99f9388ef76fb5a847403d911bbfe2ec6348c0b863"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.native_sound_index"
+cpu = "cf"
+kind = "code"
+addr = 0x400167a4
+len = 4
+sha256 = "23201b350b902ad73d89ce6a89eee29dfa14dd42612057eede16e4b546dc6759"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.native_track_sound"
+cpu = "cf"
+kind = "code"
+addr = 0x40030e66
+len = 4
+sha256 = "722ca8039c8eebdf90cbebf597b0c144a2c7979c379def4f7d87b953df4f5b50"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
 name = "cf.page.fn.page_desc"
 cpu = "cf"
 kind = "code"
 addr = 0x400c25d8
 len = 6
 sha256 = "0fbc1e7867ae69055826fb539800554f1e416e22a759807b3fcd56a4df09cb69"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_code"
+cpu = "cf"
+kind = "code"
+addr = 0x4001683a
+len = 8
+sha256 = "4997842f477c42235c625d7ba815c13fc3a07a0c57335d4361007e1288ff0795"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_draw"
+cpu = "cf"
+kind = "code"
+addr = 0x40018118
+len = 8
+sha256 = "fdc53ec1b0f51fa6089902f7d7a11c5b87ff8341debbeb9a0d7a46dd60a125e5"
 mark = "D"
 rule = "fw/page:cf_func"
 
@@ -3513,6 +3573,16 @@ mode = "replace"
 name = "cf.page.hook.sound_load_exit"
 site = "cf.page.site.sound_load_exit"
 mode = "replace"
+
+[[hook]]
+name = "cf.page.hook.source_code"
+site = "cf.page.fn.source_code"
+mode = "before"
+
+[[hook]]
+name = "cf.page.hook.source_draw"
+site = "cf.page.fn.source_draw"
+mode = "before"
 
 [[hook]]
 name = "cf.page.hook.source_key"

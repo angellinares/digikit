@@ -7,6 +7,7 @@
 #include "dkrt_pool.h"
 #include "cf/pool_alloc.h"
 #include "cf/pool_wire.h"
+#include "cf/pool_peaks.h"
 
 #define SP_REQS 16u
 
@@ -26,6 +27,7 @@ typedef struct SpReq {
 } SpReq;
 
 extern spa_pool sp_pool;
+extern spp_peak sp_peaks[SPA_BLOCKS][SPP_BINS];
 extern SpReq sp_reqs[SP_REQS];
 extern volatile uint32_t sp_link_dead;   /* the receiver reported status 3: no new load can succeed until a boot */
 

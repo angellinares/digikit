@@ -1,0 +1,142 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            null,
+            {
+              "param": "twin_smp",
+              "slot": 26
+            },
+            {
+              "param": "twin_start",
+              "slot": 27
+            },
+            null,
+            {
+              "param": "twin_end",
+              "slot": 29
+            }
+          ],
+          "level": 10,
+          "name": "TWIN",
+          "own_dsp": true,
+          "page": {
+            "name": "TWN",
+            "title": "Twin"
+          },
+          "position": null,
+          "short": "TWN",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "twin_smp",
+              "slot": 1
+            },
+            {
+              "param": "twin_start",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "twin_end",
+              "slot": 4
+            },
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "TWIN",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "TWN",
+          "type": null
+        }
+      },
+      "id": "twin",
+      "name": "TWIN",
+      "short": "TWN"
+    }
+  ],
+  "module": "test/native-pages",
+  "params": {
+    "dn2": [
+      {
+        "default": 0,
+        "id": "twin_smp",
+        "max": 3840,
+        "min": 0,
+        "name": "Sample",
+        "short": "SMP",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 4096,
+        "id": "twin_start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 27,
+        "template": 213
+      },
+      {
+        "default": 28672,
+        "id": "twin_end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 29,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 0,
+        "id": "twin_smp",
+        "max": 3840,
+        "min": 0,
+        "name": "Sample",
+        "short": "SMP",
+        "slot": 1,
+        "template": 204
+      },
+      {
+        "default": 4096,
+        "id": "twin_start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 2,
+        "template": 204
+      },
+      {
+        "default": 28672,
+        "id": "twin_end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 4,
+        "template": 204
+      }
+    ]
+  }
+}

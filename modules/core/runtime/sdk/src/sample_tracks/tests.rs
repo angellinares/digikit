@@ -815,3 +815,26 @@ fn a_store_file_is_inspected_with_the_native_header_and_its_table_sha() {
     head[8] ^= 1;
     assert_eq!(store_inspect(size, &sha, &head).err(), Some(E_FORMAT), "rate");
 }
+
+#[test]
+fn peak_handles_require_the_current_ready_generation() {
+    let (mut c, mut e) = (core(), Fake::new());
+    e.add("a", id(100, 1), 500, 2);
+    e.add("b", id(200, 2), 800, 1);
+    c.pool_set(0, 0, b"a");
+    assert!(c.peak_handle(0, 0, 0).is_err());
+    run(&mut c, &mut e, 6);
+    let old = c.info(0, 0).unwrap().token;
+    assert_eq!(c.peak_handle(0, 0, old).unwrap().frames, 500);
+    assert!(c.peak_handle(0, 0, old + 1).is_err());
+    c.pool_set(0, 0, b"b");
+    assert!(c.peak_handle(0, 0, old).is_err());
+    run(&mut c, &mut e, 8);
+    let next = c.info(0, 0).unwrap().token;
+    assert_ne!(old, next);
+    assert!(c.peak_handle(0, 0, old).is_err());
+    assert_eq!(c.peak_handle(0, 0, next).unwrap().frames, 800);
+    c.unbind(0, 0);
+    assert!(c.peak_handle(0, 0, next).is_err());
+    assert!(c.peak_handle(0, 16, next).is_err());
+}

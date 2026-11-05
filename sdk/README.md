@@ -9,7 +9,8 @@ and the device profiles (`devices/*.toml`).
 | Path | What | Edit |
 | --- | --- | --- |
 | `sdk.toml` | The contract spec: versions, the `dk_api` table, imports, machine and effect layouts, log kinds, protocol numbers, limits, settings. | yes |
-| `include/dk/` | Public C headers. Modules include these: `<dk/api.h>`, `<dk/fx.h>`, `<dk/machine.h>`, `<dk/page.h>` (`DK_PAGE` and `DK_KNOB`, shared by the other two) and `<dk/trace.h>` (trace marks). | yes |
+| `include/dk/` | Public C headers. Modules include these: `<dk/api.h>` (the `dk_api` table and run-time imports; provides `DK_API_HAS(api, field)`, true when the table is long enough to hold the field and the field is set), `<dk/chooser.h>` (slot list chooser for numbered slots that files load into), `<dk/files.h>` (read-only file listing, API 1.4), `<dk/fx.h>` (effect contract), `<dk/machine.h>` (machine contract), `<dk/page.h>` (`DK_PAGE` and `DK_KNOB`, shared by fx and machine), `<dk/params.h>` (read and write a machine parameter from a `DK_PARAM_ACTION` callback), `<dk/sample.h>` (module-owned mono float sample banks, API 1.3), `<dk/sample_picker.h>` (on-device sample picker for a 16-entry pool), `<dk/sample_region.h>` (sample-region drawing for native pages), `<dk/sample_track.h>` (per-module stereo sample pool, API 1.5 to 1.7), `<dk/trace.h>` (trace marks), `<dk/ui.h>` (menus, lists and dialogs on the device screen) and `<dk/widgets.h>` (small page widgets). | yes |
+| `src/` | Compiled SDK sources. A module lists them in the `sources` of its `module.toml`: `chooser.c`, `picker_logic.c`, `sample_picker.c`. | yes |
 | `include/dk/gen/` | C layouts and constants generated from `sdk.toml`. | no |
 | `asm/` | SHARC+ includes generated from `sdk.toml`: `dk_fx.inc`, `dk_machine.inc`. `dk_trace.inc` is hand-written (see Tracing). | partly |
 | `dsp/` | SHARC+ DSP kernels (macros and block routines). See [dsp/README.md](dsp/README.md). | yes |
