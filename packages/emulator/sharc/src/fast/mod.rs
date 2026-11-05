@@ -282,6 +282,17 @@ pub trait FastTier: Send {
     fn sync_chain_stops(&mut self, _s: &mut St) -> bool {
         true
     }
+    /// False only when `sync_chain_stops` would change nothing and return
+    /// true, so the engine may skip the call. The default is conservative.
+    fn stops_pending(&self) -> bool {
+        true
+    }
+    /// False only when `run` at a PC this tier does not `wants` would change
+    /// no state and decline, so the engine may skip the call. The default is
+    /// conservative: a tier may do work in `run` before `wants` sees a PC.
+    fn has_queued(&self) -> bool {
+        true
+    }
     /// A one-paragraph summary for logs.
     fn report(&self) -> String {
         String::new()
@@ -1750,6 +1761,16 @@ impl FastTier for FastEngine {
             s.chain_stop_add(pc);
         }
         true
+    }
+
+    fn stops_pending(&self) -> bool {
+        self.cap_chain && (self.auto_dispatch() || !self.stops_new.is_empty())
+    }
+
+    /// `run_inner` at a PC with no entry only drains the follow and chase
+    /// queues (and prints the `tl` timeline tick), then declines.
+    fn has_queued(&self) -> bool {
+        !self.follow_queue.is_empty() || !self.chase_queue.is_empty() || self.tl.is_some()
     }
 
     fn auto(&self) -> bool {

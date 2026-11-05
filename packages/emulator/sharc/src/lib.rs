@@ -337,6 +337,26 @@ pub struct Engine {
     diag_on: bool,
     /// `wwatch` or `rwatch` is set: one flag test per dispatch unit, as with `wwatch` alone before.
     ww_any: bool,
+    /// Set by `step` at the interrupt check of one loop iteration: MODE1, IRPTL,
+    /// IMASK and IMASKP are known and no source in the check's allowed mask is
+    /// latched and enabled (`irq_quiet_of`). Valid only until the iteration
+    /// writes one of those registers; `block_plan` may reuse it, nothing after
+    /// a block or kernel call may.
+    irq_quiet: bool,
+}
+
+/// MODE1, IRPTL, IMASK and IMASKP are all known and no source in ALLOWED is
+/// both latched and enabled. Then the generated `_interrupt_candidate`
+/// returns 0 on every path (it only reads those registers and the
+/// pending/loop state, and `candidates` is 0 before any priority mask), so
+/// the call can be skipped without a change in behaviour.
+fn irq_quiet_of(s: &St, allowed: u32) -> bool {
+    let r = &s.r;
+    r[114].is_c()
+        && r[122].is_c()
+        && r[123].is_c()
+        && r[124].is_c()
+        && (r[122].b & r[123].b & allowed) == 0
 }
 
 /// The last code check that found a mismatch (`Engine::verify_code`).
@@ -354,6 +374,9 @@ struct BlockPlan {
     limit: u64,
     /// Healthy fallback-only tiers do not participate in this dispatch or chain.
     fast_active: bool,
+    /// The fast tier wants this PC and `fast_allowed` held for it when the
+    /// plan was made (nothing that `fast_allowed` reads changes before the call).
+    fast_pc: bool,
     models: bool,
     timer_count: Option<u32>,
     /// A bank selection completed ahead of the block (its pending mask): it
@@ -685,6 +708,7 @@ impl Engine {
             irq_probe: irq_probe::IrqProbe::from_env(),
             diag_on: false,
             ww_any: false,
+            irq_quiet: false,
         };
         // Live-daemon profile for sharc_rsgen (docs/INSTRUMENTATION.md): same maps as option 26.
         if std::env::var_os("SHARC_PROFILE_PREFIX").is_some() {
@@ -1402,6 +1426,8 @@ impl Engine {
     /// the ticks before that), and no peripheral store (those leave the block
     /// as TRAP_BLOCK_MODEL).
     fn block_plan(&mut self, limit: u64) -> Option<(Option<Entry>, BlockPlan)> {
+        // Consumed here so a stale value is never reused by a later call.
+        let quiet = std::mem::take(&mut self.irq_quiet);
         if !(self.s.cfg.block_base_ok
             && !self.stop_software_interrupt
             && self.stop_pc.is_none()
@@ -1455,6 +1481,7 @@ impl Engine {
         let mut plan = BlockPlan {
             limit,
             fast_active,
+            fast_pc,
             models: false,
             timer_count: None,
             bank_pre: None,
@@ -1488,7 +1515,16 @@ impl Engine {
                 return None;
             }
             if self.software_interrupts || s.cfg.core_timer || s.cfg.peripheral_model {
-                match self.latent_interrupt() {
+                // `irq_quiet` (set at this iteration's interrupt check, not
+                // cleared since) implies Some(false): the four registers are
+                // known and nothing in the check's allowed mask, a superset of
+                // `latent_interrupt`'s own, is latched and enabled.
+                let lat = if quiet {
+                    Some(false)
+                } else {
+                    self.latent_interrupt()
+                };
+                match lat {
                     Some(false) => {}
                     // A latched, unmasked interrupt that only an active DO
                     // loop defers (the interpreter delivers none while the
@@ -1737,6 +1773,7 @@ impl Engine {
         self.idle_snap = None;
         self.s.probe = None;
         'steploop: while self.s.icount < limit {
+            self.irq_quiet = false;
             self.ww_flush();
             if self.at_stop_range() {
                 break;
@@ -1796,8 +1833,16 @@ impl Engine {
                             }
                         }
                     }
-                    let candidate =
-                        generated::core_g::sequencer::_interrupt_candidate(&mut self.s, allowed);
+                    // Exact: see `irq_quiet_of`. Nothing writes the four
+                    // registers between here and `block_plan`, except the idle
+                    // skip, which clears the flag below.
+                    let quiet = irq_quiet_of(&self.s, allowed as u32);
+                    self.irq_quiet = quiet;
+                    let candidate = if quiet {
+                        Ok(0)
+                    } else {
+                        generated::core_g::sequencer::_interrupt_candidate(&mut self.s, allowed)
+                    };
                     let result = candidate.and_then(|mask| {
                         if mask == 0 {
                             return Ok(());
@@ -1845,6 +1890,7 @@ impl Engine {
                     self.ww_begin(self.s.pc_sw as u64, 's');
                 }
                 self.idle_visit(head, skip_limit);
+                self.irq_quiet = false;
                 self.ww_flush();
                 if self.s.icount >= limit {
                     break;
@@ -1891,9 +1937,15 @@ impl Engine {
                     let mut code = None;
                     // Ordinary tiers may flush followed entries even before `wants`
                     // sees them; only fallback policy may suppress this call.
+                    // For a PC the tier does not want, its `run` only drains
+                    // queued entries, so the call is skipped unless it has some
+                    // (`has_queued`). `plan.fast_pc` implies `fast_allowed`
+                    // held for this PC, and nothing it reads changed since.
                     let fast_eligible = plan.fast_active
                         && !plan.stop_loop_empty
-                        && self.fast_allowed(entry_pc);
+                        && (plan.fast_pc
+                            || (self.fast.as_ref().is_some_and(|f| f.has_queued())
+                                && self.fast_allowed(entry_pc)));
                     if let Some(f) = self.fast.as_mut().filter(|_| fast_eligible) {
                         #[cfg(feature = "region-profile")]
                         {
@@ -1936,6 +1988,7 @@ impl Engine {
                                 self.region_profile.as_ref().map(|_| Instant::now());
                             if plan.fast_active
                                 && let Some(f) = self.fast.as_mut()
+                                && f.stops_pending()
                                 && !f.sync_chain_stops(&mut self.s)
                             {
                                 // The tier needs every dispatch: end the chain at
@@ -1977,6 +2030,7 @@ impl Engine {
                         {
                             if plan.fast_active
                                 && let Some(f) = self.fast.as_mut()
+                                && f.stops_pending()
                                 && !f.sync_chain_stops(&mut self.s)
                             {
                                 // The tier needs every dispatch: end the chain at
