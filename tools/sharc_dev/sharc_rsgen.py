@@ -49,7 +49,7 @@ import os
 import re
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -260,13 +260,40 @@ def model_unsafe_reason(insn, pc: int, loop_end_set: frozenset) -> str | None:
 #   instruction (TERMINAL): the engine then does what the interpreter's
 #   commit does after it (St::bank_complete moves a MODE1 bank request to
 #   pending) and takes an interrupt it enabled at the next boundary, as
-#   after an interpreted instruction;
+#   after an interpreted instruction; a MODE1 write that changes no
+#   MODE1_ENGINE_BITS is not terminal when the body's next instruction
+#   follows it (mode1_continue, Body.mode1_cont);
 # - writing any other model register is not.
 # Type 18a bit operations name their system register in "sreg" (USTAT1 +
 # sreg), which the same rule decides.
 TERMINAL = "terminal"
 TERMINAL_WRITE_NAMES = ("MODE1", "IRPTL", "IMASK", "IMASKP", "MMASK")
 UNSAFE_READ_NAMES = ("EMUCLK", "EMUCLK2", "TCOUNT")
+
+# MODE1 bits the engine acts on between instructions: the bank selects
+# (BANK_MASK 0x4f8 of St::bank_complete, packages/emulator/sharc-rt/src/rt.rs),
+# NESTM 0x800 and IRPTEN 0x1000. A MODE1 write that changes none of them
+# needs only the bank-request bookkeeping St::commit does, which block code
+# then does itself (Body.mode1_cont), so the body goes on.
+MODE1_ENGINE_BITS = 0x4F8 | 0x800 | 0x1000
+
+
+def mode1_continue(
+    before: int | None, after: int | None, entry: int | None
+) -> tuple[bool, int | None]:
+    """Whether a body may go on after an instruction that writes MODE1,
+    and the value a run-time guard must find in MODE1 (None: no guard).
+    BEFORE and AFTER are the MODE1 facts around the write (None: unknown),
+    ENTRY the body's MODE1 fact. A known AFTER decides statically; an
+    unknown one (a restore such as MODE1 = R2) is taken to restore ENTRY,
+    which a guard checks."""
+    if before is None:
+        return False, None
+    if after is not None:
+        return (before ^ after) & MODE1_ENGINE_BITS == 0, None
+    if entry is not None and (entry ^ before) & MODE1_ENGINE_BITS == 0:
+        return True, entry
+    return False, None
 
 
 def keeps_loop_sync(pc: int, insn) -> bool:
@@ -340,6 +367,9 @@ class Body:
     stopped: tuple | None
     read_any: set
     writes: set
+    # Step index of a MODE1 write the body goes on after -> the MODE1 value a
+    # run-time guard checks (None: none).
+    mode1_cont: dict = field(default_factory=dict)
 
 
 def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
@@ -349,6 +379,7 @@ def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
     from tools.sharc_dev import sharc_transpile as tp
 
     steps: list = []
+    cont: dict = {}
     pending_none = True
     stopped: tuple | None = None
     entry_mode1 = mode1
@@ -409,9 +440,26 @@ def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
         effects = tr.variant_effects.get(path, {"pending", "MODE1"})
         if "pending" in effects:
             pending_none = False
+        before = mode1
         if "MODE1" in effects:
             mode1 = tr.variant_facts_out.get(path, {}).get("MODE1")
+        goes_on = False
+        if (
+            terminal
+            and terminal_names(insn, tr.variant_regs[path]) == "MODE1"
+            and i + 1 < len(block.insns)
+            and "pending" in facts
+            and "pending" not in effects
+        ):
+            ok, expect = mode1_continue(before, mode1, entry_mode1)
+            if ok:
+                if mode1 is None:
+                    mode1 = expect
+                terminal = False
+                goes_on = True
         steps.append((pc, insn, path, tr.variant_regs[path], "pending" in facts, mode1))
+        if goes_on:
+            cont[len(steps) - 1] = expect
         if terminal:
             # The body ends after it: the engine completes the instruction
             # (a requested bank change) and checks interrupts at the next
@@ -425,7 +473,7 @@ def plan_body(block: Block, tr, mode1: int | None, idx: int) -> Body | None:
             break
     read_any = set().union(*(r | o for _p, _i, _x, (r, o, _w), _n, _m in steps))
     writes = set().union(*(w for _p, _i, _x, (_r, _o, w), _n, _m in steps))
-    return Body(block, entry_mode1, idx, steps, stopped, read_any, writes)
+    return Body(block, entry_mode1, idx, steps, stopped, read_any, writes, cont)
 
 
 def route(
@@ -560,6 +608,40 @@ def _loop_empty_exit(pc: int, ind: str) -> list[str]:
     ]
 
 
+def _mode1_bookkeeping(i: int, body: Body, ind: str) -> list[str]:
+    """The bank-request bookkeeping of St::commit for a body that goes on
+    after a MODE1 write (Body.mode1_cont), after step I."""
+    if i in body.mode1_cont:
+        lines = []
+        expect = body.mode1_cont[i]
+        if expect is not None:
+            lines.append(
+                ind
+                + "// MODE1 restore: go on only if it restored the body's entry value"
+            )
+            lines.append(
+                ind
+                + "{ let m = rf.r[%d]; if m.m != u32::MAX || m.b != %#x { break 'r crate::EXIT_NEXT; } }"
+                % (MODE1, expect)
+            )
+        lines.append(
+            ind + "// the bank request of the MODE1 write, as St::commit after it"
+        )
+        lines.append(ind + "s.bank_complete();")
+        lines.append(
+            ind
+            + "if s.bank_pending_mask >= 0 && s.bank_pending_mask != s.bank_active_mask { break 'r crate::EXIT_NEXT; }"
+        )
+        return lines
+    if i - 1 in body.mode1_cont:
+        return [
+            ind
+            + "// completion after the instruction that follows a MODE1 write (swaps nothing)",
+            ind + "s.bank_complete();",
+        ]
+    return []
+
+
 def _after_step(i, n, pc, insn, m_after, body, by_start, succ, chain, ind):
     """Control flow after step I of N: the PC check against the straight line
     and the exit of the body's last step."""
@@ -568,7 +650,12 @@ def _after_step(i, n, pc, insn, m_after, body, by_start, succ, chain, ind):
     if not last:
         nxt = pc + insn.length_bytes // 2
         lines.append(ind + "if rf.pc != %#x {" % nxt)
-        lines.extend(route(body, m_after, by_start, succ, ind + "    ", chain))
+        if i in body.mode1_cont:
+            # The next instruction's completion has not run: only the engine
+            # may continue.
+            lines.append(ind + "    break 'r crate::EXIT_NEXT;")
+        else:
+            lines.extend(route(body, m_after, by_start, succ, ind + "    ", chain))
         lines.append(ind + "}")
     elif body.stopped is None:
         lines.extend(route(body, m_after, by_start, succ, ind, chain))
@@ -660,6 +747,7 @@ def body_lines(
                 if tr_logs(path):
                     lines.append(ind + "s.un = 0;")
                 lines.append(ind + "ic += 1;")
+                lines.extend(_mode1_bookkeeping(i, body, ind))
                 lines.extend(_loop_empty_exit(pc, ind))
                 lines.extend(
                     _after_step(
@@ -708,6 +796,7 @@ def body_lines(
             if tr_logs(path):
                 lines.append(ind + "s.un = 0;")
             lines.append(ind + "ic += 1;")
+            lines.extend(_mode1_bookkeeping(i, body, ind))
             lines.extend(_loop_empty_exit(pc, ind))
             lines.extend(
                 _after_step(i, n, pc, insn, m_after, body, by_start, succ, chain, ind)
