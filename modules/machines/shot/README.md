@@ -18,7 +18,7 @@ semitones and an exact fractional row, without changing pitch's 0..127 range or 
 sample box at D; a ready box shows its local index, with compact loading/missing marks. There is no center status text. START is bottom-left E and END
 bottom-right H on both pages. The waveform page has ZOOM at G. One detent is one step; 8 steps double the zoom (ratio 2^(steps/8)), up to one frame per pixel
 (at most 16 doublings); one turn event moves at most 16 steps. The label is `x1.0` to `x9.9` with one decimal, `x10` and up without, `xMAX` above 9999. Zoom is UI-local per track.
-It shows the loaded sample's min/max overview, a permanent zero line and contrasting trim flags. Zoom is anchored on the active marker, the one turned last (START by default; START wins when both changed): when the zoom
+It shows the loaded sample's min/max overview, a permanent zero line and contrasting trim flags. Zoom is anchored on the active marker: START each time page 2 is entered, then the marker turned last on page 2 (START wins when both changed). Its value is underlined. When the zoom
 changes, that marker keeps its screen position, and 1x shows the whole sample. Turning START or END pans the view only when the marker is outside it,
 just far enough to put it 1/8 of the span from the edge it came from. A marker outside the view is drawn as a small solid arrow at that side of the plot
 (at its flag row) instead of a line. The waveform is scaled vertically to the visible peak, up to 8x (display only; silence stays flat). When one pixel covers less than one overview bin, the page asks the runtime for a detail

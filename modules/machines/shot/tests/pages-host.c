@@ -53,7 +53,7 @@ static void text(int32_t x, int32_t y, const char *s) {
     if (y == 46 && s[0] == 'x') { assert(strlen(s) < sizeof(zoom_label)); strcpy(zoom_label, s); }
 }
 static void rect(int32_t a, int32_t b, int32_t c, int32_t d, int32_t color) {
-    if (range_draw) assert(a >= 0 && c <= 94 && b >= 6 && d <= 36);
+    if (range_draw && b != 47) assert(a >= 0 && c <= 94 && b >= 6 && d <= 36);
     for (int y = b; y <= d; y++) for (int x = a; x <= c; x++)
         if (x >= 0 && x < 107 && y >= 0 && y < 53) bitmap[y][x] = color != 0;
     if (a == 0 && b == 21 && c == 94 && d == 21) center_lines++;
@@ -74,7 +74,7 @@ int main(void) {
     assert(start_x == 14 && end_x == 87);
     /* Wide origin x17 preserves global E/H value positions x33/x105. */
     for (int y = 0; y < 53; y++) for (int x = 0; x < 107; x++)
-        if (y < 6 || y > 36 || x > 94) assert(bitmap[y][x] == 0);
+        if ((y < 6 || y > 36 || x > 94) && y != 47) assert(bitmap[y][x] == 0);
     /* "10" is 3 + 4 + 1 = 8 wide, centred on 15.5: floor((31 - 7) / 2) = 12. */
     f.word_values[SHOT_P_START] = 10 << 8; shot_range_draw(&f);
     assert(two_digit_x == 12);
@@ -154,5 +154,22 @@ int main(void) {
     /* END to unit 63 (frame 23811) lies inside [22984, 24360): the view does not pan. */
     f.word_values[SHOT_P_END] = 63 << 8; shot_range_draw(&f);
     assert(window_first == 22984);
+    /* Entering page 2 after page 1 was drawn: END changed meanwhile (frame 48000, far outside the view)
+       is no turn. START stays the anchor, so the view does not pan and START's value is underlined
+       (canvas row 47, between the value row and the label row). "10" is 8 wide at x12..19;
+       "127" is 13 wide at x87..99. */
+    range_draw = 0; shot_controls_draw(&f); range_draw = 1;
+    f.word_values[SHOT_P_END] = 127 << 8;
+    memset(bitmap, 0, sizeof(bitmap));
+    shot_range_draw(&f);
+    assert(window_first == 22984);
+    for (int x = 12; x <= 19; x++) assert(bitmap[47][x] == 1);
+    for (int x = 87; x <= 99; x++) assert(bitmap[47][x] == 0);
+    /* END turned between two consecutive page-2 draws makes END active: its value "64" (9 wide, x89..97) is underlined. */
+    f.word_values[SHOT_P_END] = 64 << 8;
+    memset(bitmap, 0, sizeof(bitmap));
+    shot_range_draw(&f);
+    for (int x = 89; x <= 97; x++) assert(bitmap[47][x] == 1);
+    for (int x = 12; x <= 19; x++) assert(bitmap[47][x] == 0);
     return 0;
 }

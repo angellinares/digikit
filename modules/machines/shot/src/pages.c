@@ -7,6 +7,7 @@
 static int32_t page_zoom[16]; /* per track step index z: ratio 2^(z/8), one detent = one step */
 static uint32_t last_start[16], last_end[16]; /* words seen at the last draw */
 static uint8_t focus_end[16]; /* the active marker is END (else START) */
+static uint8_t left_range[16]; /* page 1 was drawn since the last page-2 draw: the next page-2 draw is an entry */
 static uint32_t view_first[16], view_span[16], view_frames[16]; /* viewport kept per track, and the span/frames it was computed for */
 
 /* Pixel width of a string in the firmware's proportional font. Measured from the DN2 1.12
@@ -28,13 +29,21 @@ static void text_centered(const dk_page_canvas_v1 *canvas, int centre2, int y, c
     canvas->text(left, y, s);
 }
 
-static void page_number(const dk_page_canvas_v1 *canvas, int centre2, int y, unsigned value)
+/* Canvas row between the value row (text y 46 covers rows 42..46) and the label row (y 52 covers rows 48..52). */
+#define MARK_ROW 47
+
+static void page_number(const dk_page_canvas_v1 *canvas, int centre2, int y, unsigned value, int underline)
 {
     char text[12];
     char *at = text + sizeof(text) - 1;
     *at = 0;
     do { *--at = (char)('0' + value % 10); value /= 10; } while (value);
     text_centered(canvas, centre2, y, at);
+    if (underline) {
+        int w = text_width(at);
+        int left = (centre2 - (w ? w - 1 : 0)) / 2;
+        canvas->fill_rect(left, MARK_ROW, left + w - 1, MARK_ROW, 1);
+    }
 }
 
 static unsigned unit(int32_t raw)
@@ -43,13 +52,14 @@ static unsigned unit(int32_t raw)
     return value > 127 ? 127 : value;
 }
 
-static void region_values(const dk_page_frame_v1 *f)
+static void region_values(const dk_page_frame_v1 *f, int end_active)
 {
     const dk_page_canvas_v1 *c = &f->canvas;
-    /* Names sit on page 1's label row; values one row above, centred on the names. */
+    /* Names sit on page 1's label row; values one row above, centred on the names.
+       The active marker's value is underlined. */
     c->text(5, 52, "START"); c->text(87, 52, "END");
-    page_number(c, 31, 46, unit(f->word_values[SHOT_P_START]));
-    page_number(c, 187, 46, unit(f->word_values[SHOT_P_END]));
+    page_number(c, 31, 46, unit(f->word_values[SHOT_P_START]), !end_active);
+    page_number(c, 187, 46, unit(f->word_values[SHOT_P_END]), end_active);
 }
 
 static unsigned sample_visual(int ready, int status)
@@ -63,6 +73,7 @@ void shot_controls_draw(const dk_page_frame_v1 *f)
 {
     if (f->version != 1 || f->size < sizeof(*f) || f->track >= 16 || f->word_count < SHOT_P_COUNT) return;
     const dk_page_canvas_v1 *c = &f->canvas;
+    left_range[f->track] = 1;
     unsigned slot = unit(f->word_values[SHOT_P_SMP]);
     dk_sample_info info;
     int ready = sample_view_update(&shot_samples, slot, &info, 0);
@@ -135,9 +146,15 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     const dk_sample_peak *peaks = ready == 0 ? sample_view_peaks(&shot_samples, &bins) : 0;
     unsigned start_unit = unit(f->word_values[SHOT_P_START]), end_unit = unit(f->word_values[SHOT_P_END]);
     uint32_t start_word = start_unit << 8, end_word = end_unit << 8;
-    /* The active marker is the one turned last (START wins when both changed; START by default). */
+    /* Entering the page (after page 1 was drawn, or the first draw) resets the active marker to START and
+       takes the current words as seen. Then the active marker is the one turned between two page-2 draws
+       (START wins when both changed). */
     int edited = 0;
-    if (last_start[f->track]) { /* stored +1: 0 means not seen yet */
+    int entering = left_range[f->track] || !last_start[f->track]; /* stored +1: 0 means not seen yet */
+    left_range[f->track] = 0;
+    if (entering) {
+        focus_end[f->track] = 0;
+    } else {
         if (start_word + 1 != last_start[f->track]) { focus_end[f->track] = 0; edited = 1; }
         else if (end_word + 1 != last_end[f->track]) { focus_end[f->track] = 1; edited = 1; }
     }
@@ -155,6 +172,7 @@ void shot_range_draw(const dk_page_frame_v1 *f)
         view_first[f->track] = dk_sample_view_zoom(frames, view_first[f->track], view_span[f->track], span, anchor);
     if (edited) view_first[f->track] = dk_sample_view_follow(frames, view_first[f->track], span, anchor);
     view_frames[f->track] = frames; view_span[f->track] = span;
+    if (entering && span >= frames) view_first[f->track] = 0; /* 1x: fit the whole sample */
     first = view_first[f->track];
     const dk_sample_peak *window = 0;
     unsigned count = 0;
@@ -168,7 +186,7 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     if (real && !window) prev = sample_view_last_window(&shot_samples, slot, info.token, &pfirst, &pspan, &pcols);
     dk_sample_region_draw_detail(&f->canvas, plot, frames, first, span, peaks, bins, window, count,
         prev, pfirst, pspan, pcols, start_frame, end_frame, 2048);
-    region_values(f);
+    region_values(f, focus_end[f->track]);
     f->canvas.text(58, 52, "ZOOM");
     zoom_number(&f->canvas, 135, 46, ratio);
 }
