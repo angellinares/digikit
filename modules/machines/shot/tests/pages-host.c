@@ -40,16 +40,16 @@ static int32_t peaks_window(uint32_t h, uint32_t i, uint32_t token, uint32_t fir
     return (int32_t)columns;
 }
 static void text(int32_t x, int32_t y, const char *s) {
-    if (range_draw && y == 43) {
-        if (!strcmp(s, "START")) assert(x == 8);
+    if (range_draw && y == 52) {
+        if (!strcmp(s, "START")) assert(x == 5);
         if (!strcmp(s, "ZOOM")) assert(x == 58);
-        if (!strcmp(s, "END")) assert(x == 89);
+        if (!strcmp(s, "END")) assert(x == 87);
     }
     if (!strcmp(s, "EMPTY")) empty++;
-    if (y == 51 && !strcmp(s, "0")) start_x = x;
-    if (y == 51 && !strcmp(s, "127")) end_x = x;
-    if (y == 51 && !strcmp(s, "10")) two_digit_x = x;
-    if (y == 51 && x == 59) { assert(strlen(s) < sizeof(zoom_label)); strcpy(zoom_label, s); }
+    if (y == 46 && !strcmp(s, "0")) start_x = x;
+    if (y == 46 && !strcmp(s, "127")) end_x = x;
+    if (y == 46 && !strcmp(s, "10")) two_digit_x = x;
+    if (y == 46 && s[0] == 'x') { assert(strlen(s) < sizeof(zoom_label)); strcpy(zoom_label, s); }
 }
 static void rect(int32_t a, int32_t b, int32_t c, int32_t d, int32_t color) {
     if (range_draw) assert(a >= 0 && c <= 94 && b >= 6 && d <= 36);
@@ -69,13 +69,14 @@ int main(void) {
     range_draw = 1;
     shot_range_draw(&f); shot_range_draw(&f);
     assert(queries == 1 && center_lines == 2);
-    assert(start_x == 16 && end_x == 88);
+    /* Values are centred on the labels (canvas 15.5 and 93.5): "0" is 4 wide, "127" is 13 wide. */
+    assert(start_x == 14 && end_x == 87);
     /* Wide origin x17 preserves global E/H value positions x33/x105. */
     for (int y = 0; y < 53; y++) for (int x = 0; x < 107; x++)
         if (y < 6 || y > 36 || x > 94) assert(bitmap[y][x] == 0);
-    /* A two-digit number is centred on x19: 19 - 2 * 6 / 2. */
+    /* "10" is 3 + 4 + 1 = 8 wide, centred on 15.5: floor((31 - 7) / 2) = 12. */
     f.word_values[SHOT_P_START] = 10 << 8; shot_range_draw(&f);
-    assert(two_digit_x == 13);
+    assert(two_digit_x == 12);
     f.word_values[SHOT_P_START] = 0;
     /* Another slot cannot cause this failed generation to be retried. */
     f.word_values[0] = 1 << 8; current_token = 2; shot_range_draw(&f);
@@ -90,7 +91,7 @@ int main(void) {
     assert(empty == 0 && sample_view_peaks(&shot_samples, &bins) == 0 && bins == 0 && center_lines == 8);
     current_state = DK_SAMPLE_READY; current_token = 4; shot_range_draw(&f);
     assert(queries == 4);
-    /* Zoom is observed in the ZOOM label at (59, 51). */
+    /* Zoom is observed in the ZOOM label on the value row (y 46); "x1.0" is 14 wide, left 61. */
     dk_page_event_v1 event = {.version = 1, .size = sizeof(event), .track = 0, .control = 0, .delta = 1, .coarse = 0};
     /* One detent is one step of 2^(1/8); a delta clamps to 16 steps per event. */
     shot_range_event(&event); shot_range_draw(&f); assert(!strcmp(zoom_label, "x1.1"));
@@ -116,9 +117,19 @@ int main(void) {
     assert(window_calls == 2 && bitmap[15][50] == 1 && bitmap[27][50] == 1);
     /* The viewport follows the marker turned last: END, then START again. */
     f.word_values[SHOT_P_END] = 64 << 8; shot_range_draw(&f);
-    assert(window_first > 20000 && window_first < 24189);
+    assert(window_first > 20000 && window_first < 24188);
     unsigned end_first = window_first;
     f.word_values[SHOT_P_START] = 10 << 8; shot_range_draw(&f);
     assert(window_first < end_first && window_first < 4000);
+    /* Region fits (span 1500): START frame 3779, END frame 4157 (units 10, 11). The window
+       centres on the middle 3779 + 189 = 3968, so first = 3968 - 750 = 3218, although END turned last. */
+    f.word_values[SHOT_P_END] = 11 << 8; shot_range_draw(&f);
+    assert(window_first == 3218);
+    /* Region does not fit: END turned last, so it centres on END frame 48000 * 16384 / 32512 = 24188 (first 23438). */
+    f.word_values[SHOT_P_END] = 64 << 8; shot_range_draw(&f);
+    assert(window_first == 23438);
+    /* START turned last (unit 20, frame 7559): first = 7559 - 750 = 6809. */
+    f.word_values[SHOT_P_START] = 20 << 8; shot_range_draw(&f);
+    assert(window_first == 6809);
     return 0;
 }

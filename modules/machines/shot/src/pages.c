@@ -8,13 +8,32 @@ static int32_t page_zoom[16]; /* per track step index z: ratio 2^(z/8), one dete
 static uint32_t last_start[16], last_end[16]; /* words seen at the last draw */
 static uint8_t focus_end[16]; /* the viewport centres on END (else START) */
 
-static void page_number(const dk_page_canvas_v1 *canvas, int center, int y, unsigned value)
+/* Pixel width of a string in the firmware's proportional font. Measured from the DN2 1.12
+   framebuffer: 1 px between glyphs. Replace it with a firmware-centred text call on the
+   canvas (planned SDK change). */
+static int text_width(const char *s)
+{
+    int width = 0, n = 0;
+    for (; *s; s++, n++)
+        width += *s == 'T' || *s == 'x' || *s == '1' ? 3 : *s == 'M' ? 5 : *s == '.' ? 1 : 4;
+    return n ? width + n - 1 : 0;
+}
+
+/* Draws s centred on centre2 / 2 (doubled coordinate, so half pixels work), rounding down. */
+static void text_centered(const dk_page_canvas_v1 *canvas, int centre2, int y, const char *s)
+{
+    int w = text_width(s);
+    int left = (centre2 - (w ? w - 1 : 0)) / 2;
+    canvas->text(left, y, s);
+}
+
+static void page_number(const dk_page_canvas_v1 *canvas, int centre2, int y, unsigned value)
 {
     char text[12];
     char *at = text + sizeof(text) - 1;
     *at = 0;
     do { *--at = (char)('0' + value % 10); value /= 10; } while (value);
-    canvas->text(center - (int)(text + sizeof(text) - 1 - at) * 6 / 2, y, at);
+    text_centered(canvas, centre2, y, at);
 }
 
 static unsigned unit(int32_t raw)
@@ -26,9 +45,10 @@ static unsigned unit(int32_t raw)
 static void region_values(const dk_page_frame_v1 *f)
 {
     const dk_page_canvas_v1 *c = &f->canvas;
-    c->text(8, 43, "START"); c->text(89, 43, "END");
-    page_number(c, 19, 51, unit(f->word_values[SHOT_P_START]));
-    page_number(c, 97, 51, unit(f->word_values[SHOT_P_END]));
+    /* Names sit on page 1's label row; values one row above, centred on the names. */
+    c->text(5, 52, "START"); c->text(87, 52, "END");
+    page_number(c, 31, 46, unit(f->word_values[SHOT_P_START]));
+    page_number(c, 187, 46, unit(f->word_values[SHOT_P_END]));
 }
 
 static unsigned sample_visual(int ready, int status)
@@ -57,7 +77,7 @@ void shot_controls_draw(const dk_page_frame_v1 *f)
 }
 
 /* "x" + ratio: one decimal below 10 (x1.4), none from 10 (x512), xMAX above 9999. 5 characters at most. */
-static void zoom_number(const dk_page_canvas_v1 *c, int x, int y, unsigned ratio)
+static void zoom_number(const dk_page_canvas_v1 *c, int centre2, int y, unsigned ratio)
 {
     char text[6];
     unsigned tenths = (ratio * 10u + 128u) / 256u;
@@ -77,7 +97,7 @@ static void zoom_number(const dk_page_canvas_v1 *c, int x, int y, unsigned ratio
             *out = 0;
         }
     }
-    c->text(x, y, text);
+    text_centered(c, centre2, y, text);
 }
 
 /* Q8 ratio of zoom step z: 2^(z/8). */
@@ -114,7 +134,8 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     const dk_sample_peak *peaks = ready == 0 ? sample_view_peaks(&shot_samples, &bins) : 0;
     unsigned start_unit = unit(f->word_values[SHOT_P_START]), end_unit = unit(f->word_values[SHOT_P_END]);
     uint32_t start_word = start_unit << 8, end_word = end_unit << 8;
-    /* The viewport follows the marker turned last; START wins when both changed. */
+    /* Viewport centring: when the whole region fits at the current zoom, centre on the
+       region's middle. Otherwise follow the marker turned last (START wins when both changed). */
     if (last_start[f->track]) { /* stored +1: 0 means not seen yet */
         if (start_word + 1 != last_start[f->track]) focus_end[f->track] = 0;
         else if (end_word + 1 != last_end[f->track]) focus_end[f->track] = 1;
@@ -122,7 +143,11 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     last_start[f->track] = start_word + 1; last_end[f->track] = end_word + 1;
     uint32_t start_frame = word_frame(frames, start_unit), end_frame = word_frame(frames, end_unit);
     uint32_t first, span;
-    dk_sample_viewport(frames, focus_end[f->track] ? end_frame : start_frame, ratio, PLOT_WIDTH, &first, &span);
+    dk_sample_viewport(frames, 0, ratio, PLOT_WIDTH, &first, &span); /* span only */
+    uint32_t lo = start_frame < end_frame ? start_frame : end_frame;
+    uint32_t hi = start_frame < end_frame ? end_frame : start_frame;
+    uint32_t focus = hi - lo <= span ? lo + (hi - lo) / 2 : focus_end[f->track] ? end_frame : start_frame;
+    dk_sample_viewport(frames, focus, ratio, PLOT_WIDTH, &first, &span);
     const dk_sample_peak *window = 0;
     unsigned count = 0;
     /* A pixel that covers less than one overview bin needs the detail window; until it is ready the overview is stretched. */
@@ -130,8 +155,8 @@ void shot_range_draw(const dk_page_frame_v1 *f)
         window = sample_view_window(&shot_samples, slot, info.token, first, span, PLOT_WIDTH, &count);
     dk_sample_region_draw(&f->canvas, plot, frames, first, span, peaks, bins, window, count, start_frame, end_frame);
     region_values(f);
-    f->canvas.text(58, 43, "ZOOM");
-    zoom_number(&f->canvas, 59, 51, ratio);
+    f->canvas.text(58, 52, "ZOOM");
+    zoom_number(&f->canvas, 135, 46, ratio);
 }
 
 void shot_range_event(const dk_page_event_v1 *event)
