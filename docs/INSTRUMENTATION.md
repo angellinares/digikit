@@ -265,8 +265,12 @@ of every window that fell behind real time (dsp, compile, cf, ui-gap).
 `coupled-run` report.json has `cpu.dsp_thread_cycles_per_audio_s` and
 `cpu.dsp_thread_insns_per_audio_s` (cycles and retired instructions of the DSP
 worker thread; macOS only, 0 elsewhere). `sharc_matrix` summaries give
-`cycle_ratios_B_over_A` and `insn_ratios_B_over_A`, which depend less on other
-load than CPU time.
+`cycle_ratios_B_over_A` and `insn_ratios_B_over_A`. Instructions per audio second
+repeat within about 0.02% for the same binary and workload, also on a busy host
+(A/A control). Cycles spread like CPU time (about 1-10% between runs) because
+contention and core type change them. Instruction ratios therefore show the path
+length a change removes; they do not show stall changes, so a timing A/B on a
+quiet host stays the final check.
 
 ## Browser bench (`mise run web:bench`)
 

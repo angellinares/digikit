@@ -40,7 +40,8 @@ mod imp {
         if rc != 0 {
             return (0, 0);
         }
-        (buf[0], buf[1])
+        // Kernel order is [0] instructions, [1] cycles (checked with a loop of known instruction count).
+        (buf[1], buf[0])
     }
 
     #[cfg(not(target_os = "macos"))]
