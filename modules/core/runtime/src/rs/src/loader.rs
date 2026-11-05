@@ -484,6 +484,7 @@ pub unsafe fn unload_rec(rec: usize) -> i32 {
 
 unsafe fn unload_rec_inner(rec: usize) -> i32 {
     if !crate::files::retire(rec) { return E_BUSY; }
+    if !crate::worker::retire(rec) { return E_BUSY; }
     let s = st();
     let m: &mut Module = &mut s.modules[rec];
     // 1. clear the slots (one aligned store each) so no new call starts

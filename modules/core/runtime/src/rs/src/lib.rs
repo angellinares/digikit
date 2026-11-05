@@ -41,6 +41,8 @@ pub mod store;
 mod table;
 pub mod upload;
 mod watch;
+mod worker;
+mod peakwin;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -533,6 +535,9 @@ unsafe extern "C" fn api_files_client() -> i32 { files::client() }
 unsafe extern "C" fn api_files_list(client: u32, root: u32, path: *const u8, notify: Option<dkrt_sdk::api::FileEvent>, context: *mut u8) -> i32 { files::list(client, root, path, notify, context) }
 unsafe extern "C" fn api_files_poll(client: u32, ticket: u32, out: *mut u8, cap: u32) -> i32 { files::poll(client, ticket, out, cap) }
 unsafe extern "C" fn api_files_cancel(client: u32, ticket: u32) -> i32 { files::cancel(client, ticket) }
+unsafe extern "C" fn api_job_post(step: Option<dkrt_sdk::api::JobStep>, done: Option<dkrt_sdk::api::JobDone>, ctx: *mut u8) -> i32 { worker::post(dlog::current_source(), step, done, ctx) }
+unsafe extern "C" fn api_job_cancel(id: u32) -> i32 { worker::cancel(dlog::current_source(), id) }
+unsafe extern "C" fn api_sample_pool_peaks_window(handle: u32, track: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32 { peakwin::window(handle, track, token, first, frames, columns, out, capacity) }
 
 
 /// The table is built at first use: pointers to the helpers are not constants.
@@ -572,6 +577,9 @@ pub static mut dkrt_api: Api = Api {
     param_set: api_param_set,
     sample_pool_set: api_sample_pool_set,
     sample_pool_peaks: api_sample_pool_peaks,
+    job_post: api_job_post,
+    job_cancel: api_job_cancel,
+    sample_pool_peaks_window: api_sample_pool_peaks_window,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {
@@ -1111,6 +1119,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     crash::install();
     dsp::step();
     sample::tick();
+    worker::tick();
     tracks::tick();
     files::tick();
     fxpage::tick();

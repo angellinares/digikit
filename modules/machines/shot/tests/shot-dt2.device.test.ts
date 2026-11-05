@@ -12,7 +12,7 @@ import { memory, panel } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { settleUi } from '@digi/regression/runtime/waits.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
-import { setSmp } from './shot-support.ts';
+import { expectedWindow, setSmp, trackApi as sharedTrackApi } from './shot-support.ts';
 
 // End to end, DT2 1.17: the device-neutral runtime (API 1.5 sample pool), core/sample-pool (the borrowed stock pool), machine contract 1.2
 // and digikit/shot playing a stereo sample that a fixture module added to the pool by path (docs/design/sample-api-1.5.md).
@@ -312,6 +312,24 @@ runtimeTests(
       expect(readyA.rate).toBe(RATE);
       expect(Math.abs(readyA.frames - SECONDS * RATE), `frames ${readyA.frames}`).toBeLessThanOrEqual(64);
       expect(readyA.token).not.toBe(0);
+
+      // 3b. Peak windows deep inside A, one of them larger than one 64 KiB read step.
+      {
+        const shared = sharedTrackApi(runtime);
+        const stored = files[0]!.stored;
+        const small = Math.floor(readyA.frames * 0.7) + 123;
+        const large = Math.floor(readyA.frames * 0.2);
+        const cases: [string, number, number][] = [
+          ['small', small, 950],
+          ['large', large, Math.min(40000, readyA.frames - large)],
+        ];
+        for (const [name, first, frames] of cases) {
+          const got = await shared.awaitWindow(runtime, TRACK, readyA.token, first, frames, 95);
+          log[`window.${name}`] = { first, frames, ret: got.ret, ms: got.ms };
+          expect(got.ret, `${name} window ready`).toBe(95);
+          expect(got.cols, `${name} window columns`).toEqual(expectedWindow(stored, 2, first, frames, 95));
+        }
+      }
 
       // 4. A note right after READY (READY means the record is in the DSP): both source channels reach the output.
       const noteA = await captureNote(runtime, path.join(artifacts, 'note-a.wav'), async (clock) => {

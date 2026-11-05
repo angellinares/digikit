@@ -611,6 +611,12 @@ pub mod sig {
     /// Adapter to runtime: the load `req` of dkpool_load finished. result is OK (the handle `out` is filled), E_POOL, E_READ or E_FORMAT. Only from dkpool_tick.
     pub type dkrt_pool_done = unsafe extern "C" fn(req: u32, result: i32);
 
+    /// Adapter to runtime: queue a job on the background worker (owner 0). step is the address of i32 step(u8 *ctx), run in the worker task: it returns 1 to be called again, 0 when finished, or a negative error. done is the address of void done(u8 *ctx, i32 status) (or 0), called once in the UI task with the final status, or -80 after a cancel. Returns a job id > 0, E_BUSY when the queue is full or E_CONTRACT for a null step.
+    pub type dkrt_job_post = unsafe extern "C" fn(step: usize, done: usize, ctx: *mut u8) -> i32;
+
+    /// Adapter to runtime: cancel the job id of dkrt_job_post. A queued job gets done with -80 at the next tick; a running one stops after its current step. OK or E_NOT_FOUND.
+    pub type dkrt_job_cancel = unsafe extern "C" fn(id: u32) -> i32;
+
     /// Adapter to runtime: the backing was lost (a stock reset), every handle is invalid. Only from dkpool_tick.
     pub type dkrt_pool_lost = unsafe extern "C" fn();
 

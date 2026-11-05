@@ -3481,28 +3481,37 @@ struct PatchJob {
     keep_out: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
-/// The file name suffix of a ColdFire-only ready state for `card` (empty without a card): the card file's identity and the readiness
-/// contract the boot ran with.
+/// The card file's path, length and mtime, and the SHA-256 of its saved overlay (`overlay.bin`, "-" without one).
+/// `None` when the card file's metadata cannot be read.
+fn card_identity(card: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let meta = std::fs::metadata(card).ok()?;
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    let overlay = std::fs::read(overlay_path(card)).map_or_else(|_| "-".to_string(), |b| format!("{:x}", Sha256::digest(&b)));
+    Some(format!("{}:{}:{modified}:{overlay}", card.display(), meta.len()))
+}
+
+/// The file name suffix of a ColdFire-only ready state for `card` (empty without a card): the card file's identity and its saved
+/// overlay, and the readiness contract the boot ran with.
 fn card_snapshot_key(card: Option<&Path>, relax_fs: bool) -> String {
     use sha2::{Digest, Sha256};
     let Some(card) = card else {
         return String::new();
     };
     let mut hash = Sha256::new();
-    if let Ok(meta) = std::fs::metadata(card) {
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(0, |d| d.as_secs());
-        hash.update(format!("{}:{}:{modified}:{relax_fs}", card.display(), meta.len()).as_bytes());
+    if let Some(identity) = card_identity(card) {
+        hash.update(format!("{identity}:{relax_fs}").as_bytes());
     }
     format!("-{:x}", hash.finalize())[..17].to_string()
 }
 
 /// The file name stem of the ready pair of a (MAIN, DSP inputs, card): the
 /// SHA-256 of the MAIN digest, of the DSP image and selected startup state, and
-/// of the card file's identity.
+/// of the card file's identity and its saved overlay.
 #[cfg(feature = "coupled-audio")]
 fn patched_pair_key(
     main_sha: &str,
@@ -3521,13 +3530,8 @@ fn patched_pair_key(
         hash.update(Sha256::digest(&data));
     }
     if let Some(card) = card {
-        let meta = std::fs::metadata(card).map_err(|e| format!("{}: {e}", card.display()))?;
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map_or(0, |d| d.as_secs());
-        hash.update(format!("{}:{}:{modified}", card.display(), meta.len()).as_bytes());
+        let identity = card_identity(card).ok_or_else(|| format!("{}: cannot read card metadata", card.display()))?;
+        hash.update(identity.as_bytes());
     }
     let key = format!("{:x}", hash.finalize());
     Ok(format!(
@@ -4327,6 +4331,53 @@ fn summarize_audio(runtime: &mut Runtime) -> Value {
         "source_audio_seconds": report["source_audio_seconds"],
         "dsp_tiers": report["dsp_tiers"], "dsp_core": report["dsp_core"],
     })
+}
+
+#[cfg(test)]
+mod card_key_tests {
+    use super::{card_snapshot_key, overlay_path};
+
+    #[test]
+    fn the_card_snapshot_key_follows_the_saved_overlay() {
+        let dir = std::env::temp_dir().join(format!("digi-card-key-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let card = dir.join("card");
+        std::fs::write(&card, vec![0u8; 512]).unwrap();
+        let _ = std::fs::remove_file(overlay_path(&card));
+        let key = || card_snapshot_key(Some(&card), false);
+        let none = key();
+        assert_eq!(none, key(), "stable");
+        std::fs::write(overlay_path(&card), b"overlay one").unwrap();
+        let one = key();
+        assert_ne!(none, one, "overlay created");
+        assert_eq!(one, key(), "same content");
+        std::fs::write(overlay_path(&card), b"overlay two").unwrap();
+        assert_ne!(one, key(), "overlay content changed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(feature = "coupled-audio")]
+    #[test]
+    fn the_ready_pair_key_follows_the_saved_overlay() {
+        let dir = std::env::temp_dir().join(format!("digi-card-pair-key-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (image, cold, card) = (dir.join("image"), dir.join("cold"), dir.join("card"));
+        std::fs::write(&image, b"image").unwrap();
+        std::fs::write(&cold, b"cold").unwrap();
+        std::fs::write(&card, vec![0u8; 512]).unwrap();
+        let _ = std::fs::remove_file(overlay_path(&card));
+        let main = "ab".repeat(32);
+        let key = || super::patched_pair_key(&main, &image, &cold, Some(&card), b"").unwrap();
+        let none = key();
+        assert_eq!(none, key(), "stable");
+        std::fs::write(overlay_path(&card), b"overlay one").unwrap();
+        let one = key();
+        assert_ne!(none, one, "overlay created");
+        assert_eq!(one, key(), "same content");
+        std::fs::write(overlay_path(&card), b"overlay two").unwrap();
+        assert_ne!(one, key(), "overlay content changed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]

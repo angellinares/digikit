@@ -16,6 +16,7 @@ import {
   allFinite,
   captureNote,
   expectSplitPair,
+  expectedWindow,
   onset,
   peak,
   selectDynamicMachine,
@@ -319,6 +320,25 @@ runtimeTests(
         expect(r0.token, 'no new load: the token is the one of the first load').toBe(aRecord!.token);
         expect(r0.baseL, 'same base_l').toBe(aRecord!.baseL);
         expect(r0.baseR, 'same base_r').toBe(aRecord!.baseR);
+      });
+
+      // ---- 2b. peak windows deep inside the ready sample A (3 s stereo), one of them larger than one 64 KiB read step ----------------
+      await phase('window', async () => {
+        const f = fixtures.a!;
+        const s = await api.status(0);
+        expect(s.state, 'A is ready').toBe(3);
+        const small = Math.floor(f.frames * 0.7) + 123;
+        const large = Math.floor(f.frames * 0.2);
+        const cases: [string, number, number][] = [
+          ['small', small, 950],
+          ['large', large, Math.min(40000, f.frames - large)],
+        ];
+        for (const [name, first, frames] of cases) {
+          const got = await api.awaitWindow(runtime, 0, s.token, first, frames, 95);
+          log[`window.${name}`] = { first, frames, ret: got.ret, ms: got.ms };
+          expect(got.ret, `${name} window ready`).toBe(95);
+          expect(got.cols, `${name} window columns`).toEqual(expectedWindow(f.prep.stored, f.channels, first, frames, 95));
+        }
       });
 
       // ---- 3. stereo audio: SHOT playing L 440 Hz / R 660 Hz through the stock filter and pan -----------------------------------

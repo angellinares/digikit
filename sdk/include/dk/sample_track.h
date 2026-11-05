@@ -61,6 +61,13 @@ _Static_assert(sizeof(dk_sample_info) == 16, "dk_sample_info layout");
 #define DK_SAMPLE_PEAK_BINS 512u
 typedef struct dk_sample_peak { int16_t min, max; } dk_sample_peak;
 
+/* API 1.8: sample_pool_peaks_window(h, index, token, first, frames, columns, out, capacity) gives min/max pairs (dk_sample_peak) of
+   `columns` equal parts of the frames [first, first + frames) of a READY entry. The runtime reads the PCM in the background. It returns
+   `columns` when out is filled, 0 while the window is computed (call again from the draw callback with the same arguments), or a
+   negative error. A call with other arguments replaces a pending window; one window is kept per module. columns is 1..DK_SAMPLE_WINDOW_MAX
+   and capacity is at least columns * 4 bytes. Check api->size covers sample_pool_peaks_window; UI task only. */
+#define DK_SAMPLE_WINDOW_MAX 128u
+
 /* Declares the table: RECORDS names 16 zeroed dk_strack in the module's DSP data
    (DK_STRACKS * 8 words); CONTROL names 16 control sets of 4 zeroed words.
    The runtime fills the records; the module never writes them. */

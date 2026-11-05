@@ -5,6 +5,7 @@ import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
 // Helpers of the SHOT device tests (shot-dn2): WAV fixtures, the sample pool requests of test/track-select, PCM capture with the
 // key held and the tone measurements on it. shot-dt2.device.test.ts has its own copies of the same code (it passed before they were split out).
@@ -200,7 +201,74 @@ export function trackApi({ dk }: Pick<PatchedSession, 'dk'>, handle = HANDLE) {
       await delay(pollMs);
     }
   }
-  return { add, clear, select, status, settle };
+  /** `sample_pool_peaks_window` request through test/track-select ('w'): the status of the request (0 = stored). */
+  async function window(index: number, token: number, first: number, frames: number, columns: number): Promise<number> {
+    const body = Buffer.alloc(16);
+    body[0] = handle;
+    body[1] = 0x77;
+    body[2] = index;
+    body.writeUInt32BE(token, 3);
+    body.writeUInt32BE(first, 7);
+    body.writeUInt32BE(frames, 11);
+    body[15] = columns;
+    return (await dk.request(0x3e, body)).status;
+  }
+  /** The last return of the API ('r'): 0 not ready, the column count when ready, below 0 an error; the columns when ready. */
+  async function windowResult(): Promise<WindowResult> {
+    const reply = await dk.request(0x3e, Buffer.from([handle, 0x72]));
+    expect(reply.status, 'window result request').toBe(0);
+    const b = Buffer.from(reply.body);
+    const ret = b.readInt32BE(0);
+    const cols: WindowColumn[] = [];
+    for (let i = 0; ret > 0 && i < ret; i++) cols.push({ min: b.readInt16BE(4 + 4 * i), max: b.readInt16BE(6 + 4 * i) });
+    return { ret, cols };
+  }
+  /** Request a window, then poll the result every 30 ms of emulated time until it is not 0. `ms` is the wall time until ready. */
+  async function awaitWindow(
+    { session }: Pick<PatchedSession, 'session'>,
+    index: number,
+    token: number,
+    first: number,
+    frames: number,
+    columns: number,
+    timeoutMs = 60_000,
+  ) {
+    const t0 = Date.now();
+    expect(await window(index, token, first, frames, columns), 'window request stored').toBe(0);
+    for (;;) {
+      const r = await windowResult();
+      if (r.ret !== 0) return { ...r, ms: Date.now() - t0 };
+      if (Date.now() - t0 > timeoutMs) throw new Error(`window ${first}+${frames} was not ready after ${timeoutMs} ms`);
+      await waitEmulated(session, 30);
+    }
+  }
+  return { add, clear, select, status, settle, window, windowResult, awaitWindow };
+}
+
+export interface WindowColumn {
+  min: number;
+  max: number;
+}
+
+export interface WindowResult {
+  ret: number;
+  cols: WindowColumn[];
+}
+
+/** The oracle of `sample_pool_peaks_window`: min/max over all channels of `columns` equal parts of the frames [first, first + frames), zero included.
+ * `stored` is the native file (PCM16 big endian from byte 64, interleaved); the column of frame f is (f - first) * columns / frames. */
+export function expectedWindow(stored: Uint8Array, channels: number, first: number, frames: number, columns: number): WindowColumn[] {
+  const b = Buffer.from(stored.buffer, stored.byteOffset, stored.byteLength);
+  const cols: WindowColumn[] = Array.from({ length: columns }, () => ({ min: 0, max: 0 }));
+  for (let f = first; f < first + frames; f++) {
+    const col = cols[Math.floor(((f - first) * columns) / frames)]!;
+    for (let c = 0; c < channels; c++) {
+      const v = b.readInt16BE(64 + (f * channels + c) * 2);
+      if (v < col.min) col.min = v;
+      if (v > col.max) col.max = v;
+    }
+  }
+  return cols;
 }
 
 /** Turn SMP (knob D of the SHOT page, word 0 of `_dv_params`, index << 8) to pool entry `index`, one detent at a time with TRIG 1 held: the
