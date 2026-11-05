@@ -34,7 +34,7 @@ use dkrt_sdk::sample_tracks::{
 use dkrt_sdk::{logk, E_CONTRACT, E_DSP_XFER, E_NOT_FOUND, E_READ, E_SEL_PATH};
 
 pub const DKPOOL_VERSION: u32 = 1;
-const CLIENTS: usize = 2;
+pub(crate) const CLIENTS: usize = 2;
 const ENTRIES: usize = 16;
 const PROJECTS: usize = 4;
 
@@ -49,6 +49,7 @@ extern "C" {
     // Optional growth of plug-in point version 1 (dkrt_pool.h): the runtime tests each for 0.
     fn dkpool_cancel(req: u32);
     fn dkpool_peaks(h: *const Handle, out: *mut u8, capacity: u32) -> i32;
+    fn dkpool_window_step(h: *const Handle, path: *const u8, first: u32, frames: u32, columns: u32, out: *mut i16, cursor: *mut u32) -> i32;
     // Per-device tables of the runtime's assembly objects (DT2 1.17 anchors; zeros on DN2). Both are declared in sample_source.rs and files.rs too.
     static dkrt_sample_fs: [u32; 4];
     static dkrt_files_fs: [u32; 3];
@@ -68,7 +69,7 @@ static mut FORCE: usize = usize::MAX;
 /// 0 not checked, 1 usable, 2 absent or wrong version.
 static mut POOL: u8 = 0;
 
-unsafe fn core_() -> &'static mut Core<CLIENTS, ENTRIES, PROJECTS> {
+pub(crate) unsafe fn core_() -> &'static mut Core<CLIENTS, ENTRIES, PROJECTS> {
     &mut *addr_of_mut!(CORE)
 }
 
@@ -403,7 +404,7 @@ impl Env for Device {
 }
 
 /// The client slot of the calling module, if it has a track table.
-unsafe fn client(handle: u32) -> Result<usize, i32> {
+pub(crate) unsafe fn client(handle: u32) -> Result<usize, i32> {
     let h = handle as usize;
     if h == 0 || h > CLIENTS || !core_().is_open(h - 1) {
         return Err(E_NOT_FOUND);
@@ -467,6 +468,7 @@ pub unsafe fn remove(rec: usize) {
             }
             FORCE = usize::MAX;
             (*addr_of_mut!(OPS))[i] = [OP0; TRACKS];
+            crate::peakwin::reset(i);
             LIVE[i] = false;
             OWNER[i] = usize::MAX;
         }
@@ -671,6 +673,16 @@ pub unsafe extern "C" fn dkrt_pool_lost() {
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_project_changed(slot: u32) {
     core_().project_changed(slot);
+}
+
+/// Is the optional `dkpool_window_step` hook in the image?
+pub(crate) unsafe fn window_hook() -> bool {
+    black_box(dkpool_window_step as *const () as usize) != 0
+}
+
+/// One step of a peak window (worker task); see `dkpool_window_step` in dkrt_pool.h.
+pub(crate) unsafe fn window_step(h: *const Handle, path: *const u8, first: u32, frames: u32, columns: u32, out: *mut i16, cursor: *mut u32) -> i32 {
+    dkpool_window_step(h, path, first, frames, columns, out, cursor)
 }
 
 /// Bounded overview copy; no file or PCM access in the UI task.

@@ -28,6 +28,17 @@ static int32_t peaks(uint32_t h, uint32_t i, uint32_t token, uint8_t *out, uint3
     memset(out, 0, cap);
     return 512;
 }
+static unsigned window_calls, window_ready_after = 2, window_columns, window_first, window_span;
+static int32_t peaks_window(uint32_t h, uint32_t i, uint32_t token, uint32_t first, uint32_t frames,
+    uint32_t columns, uint8_t *out, uint32_t cap) {
+    (void)h; (void)i;
+    assert(token == current_token && columns == 95 && cap >= columns * sizeof(dk_sample_peak));
+    window_calls++; window_first = first; window_span = frames; window_columns = columns;
+    if (window_calls < window_ready_after) return 0;
+    dk_sample_peak *p = (dk_sample_peak *)out;
+    for (unsigned k = 0; k < columns; k++) { p[k].min = -16384; p[k].max = 16384; }
+    return (int32_t)columns;
+}
 static void text(int32_t x, int32_t y, const char *s) {
     if (range_draw && y == 43) {
         if (!strcmp(s, "START")) assert(x == 8);
@@ -49,7 +60,8 @@ static void rect(int32_t a, int32_t b, int32_t c, int32_t d, int32_t color) {
 
 int main(void) {
     dk_api api = {.version = 1, .size = sizeof(api),
-        .sample_pool_info = info, .sample_pool_status = status, .sample_pool_peaks = peaks};
+        .sample_pool_info = info, .sample_pool_status = status, .sample_pool_peaks = peaks,
+        .sample_pool_peaks_window = peaks_window};
     dk_page_frame_v1 f = {.version = 1, .size = sizeof(f), .track = 0,
         .params = {[7] = 127 << 8}, .word_count = 5, .word_values = {[2] = 127 << 8},
         .canvas = {107, 53, text, rect}};
@@ -80,13 +92,33 @@ int main(void) {
     assert(queries == 4);
     /* Zoom is observed in the ZOOM label at (59, 51). */
     dk_page_event_v1 event = {.version = 1, .size = sizeof(event), .track = 0, .control = 0, .delta = 1, .coarse = 0};
-    shot_range_event(&event); shot_range_draw(&f); assert(!strcmp(zoom_label, "1.02"));
-    event.delta = 1000; shot_range_event(&event); shot_range_draw(&f); assert(!strcmp(zoom_label, "4.00"));
-    event.delta = -1000; shot_range_event(&event); shot_range_draw(&f); assert(!strcmp(zoom_label, "1.00"));
+    /* One detent is one step of 2^(1/8); a delta clamps to 16 steps per event. */
+    shot_range_event(&event); shot_range_draw(&f); assert(!strcmp(zoom_label, "x1.1"));
+    event.delta = 1000; shot_range_event(&event); shot_range_draw(&f); assert(!strcmp(zoom_label, "x4.4"));
+    event.delta = -1000; shot_range_event(&event); event.delta = -1000; shot_range_event(&event);
+    shot_range_draw(&f); assert(!strcmp(zoom_label, "x1.0"));
+    /* No window is requested at 1x or 4.4x (a pixel covers more than one overview bin). */
+    assert(window_calls == 0);
     /* Another control or event version leaves the zoom unchanged. */
     event.delta = 1; event.control = 1; shot_range_event(&event); shot_range_draw(&f);
-    assert(!strcmp(zoom_label, "1.00"));
+    assert(!strcmp(zoom_label, "x1.0"));
     event.control = 0; event.version = 2; shot_range_event(&event); shot_range_draw(&f);
-    assert(!strcmp(zoom_label, "1.00"));
+    assert(!strcmp(zoom_label, "x1.0"));
+    /* Deep zoom (40 steps = 32x) asks for a 95-column window of the viewport at START. */
+    event.version = 1; event.delta = 16; shot_range_event(&event); shot_range_event(&event);
+    event.delta = 8; shot_range_event(&event);
+    memset(bitmap, 0, sizeof(bitmap));
+    shot_range_draw(&f);
+    assert(!strcmp(zoom_label, "x32") && window_calls == 1);
+    assert(window_columns == 95 && window_first == 0 && window_span == 1500);
+    assert(bitmap[15][50] == 0); /* pending: the zeroed overview is stretched */
+    shot_range_draw(&f);
+    assert(window_calls == 2 && bitmap[15][50] == 1 && bitmap[27][50] == 1);
+    /* The viewport follows the marker turned last: END, then START again. */
+    f.word_values[SHOT_P_END] = 64 << 8; shot_range_draw(&f);
+    assert(window_first > 20000 && window_first < 24189);
+    unsigned end_first = window_first;
+    f.word_values[SHOT_P_START] = 10 << 8; shot_range_draw(&f);
+    assert(window_first < end_first && window_first < 4000);
     return 0;
 }

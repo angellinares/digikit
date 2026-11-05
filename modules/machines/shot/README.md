@@ -16,8 +16,11 @@ Both devices use the same two opt-in pages (machine contract 1.5). The control p
 with the native left LEV fader. A bounded overlay uses code-native tune/sample boxes and a portable PLAY mark. TUNE displays signed whole
 semitones and an exact fractional row, without changing pitch's 0..127 range or 3/8-semitone scale. An empty selected pool slot is a dotted
 sample box at D; a ready box shows its local index, with compact loading/missing marks. There is no center status text. START is bottom-left E and END
-bottom-right H on both pages. The waveform page has ZOOM at G, adjustable from 1.00x to 4.00x in 1/64x detents; zoom is UI-local per track.
-It shows the loaded sample's bounded min/max overview, a permanent zero line and contrasting trim flags. The viewport follows START. The
+bottom-right H on both pages. The waveform page has ZOOM at G. One detent is one step; 8 steps double the zoom (ratio 2^(steps/8)), up to one frame per pixel
+(at most 16 doublings); one turn event moves at most 16 steps. The label is `x1.0` to `x9.9` with one decimal, `x10` and up without, `xMAX` above 9999. Zoom is UI-local per track.
+It shows the loaded sample's min/max overview, a permanent zero line and contrasting trim flags. The viewport centres on the marker turned last
+(START or END; START wins when both changed). When one pixel covers less than one overview bin, the page asks the runtime for a detail
+window (`sample_pool_peaks_window`, 95 columns of the viewport, computed in the background); until it is ready the overview is drawn stretched. The
 ready sample box shows its local slot index; the waveform page keeps its upper area free for the graph. The graph spans global x17..111 and y6..36, centered at x64; START, ZOOM and END keep their encoder-aligned positions below it. SRC/SYN cycles the two pages.
 The ordinary `DK_PAGE` remains the storage/parameter schema; its fixed knob slots do not constrain these custom bindings.
 
@@ -53,7 +56,7 @@ The ordinary `DK_PAGE` remains the storage/parameter schema; its fixed knob slot
 - `src/module.c`: the machine, parameters, page and the pool table declarations; `dkm_init`/`fini` resolve the table handle and start the picker;
   `shot_smp_click` (the SMP click action) opens the pool list with the current entry marked; `smp_pick` sets SMP.
 - `src/pages.c`: the two native pages (draw and event callbacks). The short name and page name are SHT.
-- `src/sample_view.c`, `src/sample_view.h`: the view of one pool slot (info and peak copy).
+- `src/sample_view.c`, `src/sample_view.h`: the view of one pool slot (info, peak copy and the detail window cache).
 - `src/shot.h`: internal header shared by the C sources.
 - `src/shot_params.h`: parameter word indexes shared by C and the DSP assembly.
 - `src/dsp/shot.s`: `render`, `note_on`, the table storage and the descriptor. Every sample, mono or stereo, is read by the SDK stereo kernel

@@ -505,9 +505,93 @@
    "section": ".text.dkpool_peaks",
    "symbol": ".sec..bss.peaks",
    "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 22,
+   "section": ".text.dkpool_window_step",
+   "symbol": ".sec..text.dkpool_check",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 176,
+   "section": ".text.dkpool_window_step",
+   "symbol": ".sec..rodata.invoker.str1.1",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 192,
+   "section": ".text.dkpool_window_step",
+   "symbol": "cf.storage.fn.path.open",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 258,
+   "section": ".text.dkpool_window_step",
+   "symbol": "__muldi3",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 308,
+   "section": ".text.dkpool_window_step",
+   "symbol": "cf.storage.fn.path.close",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 372,
+   "section": ".text.dkpool_window_step",
+   "symbol": ".sec..bss.win_read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 378,
+   "section": ".text.dkpool_window_step",
+   "symbol": "cf.storage.fn.path.read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 394,
+   "section": ".text.dkpool_window_step",
+   "symbol": "cf.storage.fn.path.close",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 436,
+   "section": ".text.dkpool_window_step",
+   "symbol": "__udivdi3",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 642,
+   "section": ".text.dkpool_window_step",
+   "symbol": "__udivdi3",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 702,
+   "section": ".text.dkpool_window_step",
+   "symbol": ".sec..bss.win_read",
+   "type": "cf.32"
   }
  ],
  "sections": [
+  {
+   "align": 4,
+   "hex": "4fefffe848d7041c226f0020206f002845ef00242009220824004840260148413802c8c3c4c1c6c0c2c0200442404840d480d483640606810001000048427000300234042f420014d0812f400010200922084c1208004cd7041c2240202f001c4c010800222f00142040202f0010d089d0884fef00184e754fefffdc202f003048d7047c242f002822022a2f002c2805262f00344a80660000aeb483640000e0200304c04a806710e1a97a209a802404eaaae1abe1ac828220032a03424048407bc5240020404c4210004c42100124042c0542424842484042404c01680022468082b08664162401d0835382b08365000326b086640003205581d0832c0890894c4600024c46000079c44c005800204428024844424424088882b88564142040d8835388b883650002e0b885640002da55804841424193c9828020094cd7047c4fef00244e75b480641093c9428120094cd7047c4fef00244e75220004c122414a8166000172b4806206ba8365000314720120094cd7047c4fef00244e754a836700009a200304c04a806600009c22032a03424148417bc5327c000194834c4120004c4120022c024c0568004840424020462c04424648468086b088641a2442538a2f4a0018d083b08365000274b0886400026e5582d08390884c4100064c41000079c42206484142414c0058008284b28564142040d2835388b2836500024ab285640002445580220248414241828020094cd7047c4fef00244e75760142844c443003200304c0e1ab722092802c022805e1aae2aee2ac224622032c044241484128052a03e1ac8c8224097bc54c4120004c4120022046424648464840424022424c0528008086b082641a45e9ffffd0832f4a0018b08365000172b0826400016c5589d08390824c4100024c4100002c087dc6484242422f4600182c054c00680084af00182046b486641a2440538a2f4a0018d483b4836500013ab486640001345580d4832c099488484642468c8022466000feca782098812c03e8aee3a82202e8a92f4600182c09edaa2c05e8ae2809e9ab8c822f43001c262f0018868020462008424048402c0328034246484679c42f4000204c4610004c46100124042f4600184c0128004840424080af0020b082641a2c0153862f460020d083b08365000132b0826400012c5581d0832c2f001890824c4600024c4600002c087dc6484242424c0048008486b48464162040d4835388b48365000104b484640000fe5580d4834841424194842f420018828020412008222f001c24004840260148413802c8c3c4c1c6c0c2c0200442404840d480d483640606810001000048427000300234042f420020d0812f40001c246f001cb5ef00186200008a677a93c9220820094cd7047c4fef00244e75226f00186000fe942c09948848464246202f00188c8022466000fd9848414241200893c982806000fd262c08220290894c4600024c46000079c44c005800204428024844424424088882b8856400fcf86000fce0242f00186000fd92220220084841424182806000fdbc2009e1adbaaf00206400ff7c93c92208200953814cd7047c4fef00244e75222f00206000fed420086000ff04428120094cd7047c4fef00244e75",
+   "kind": "text",
+   "name": ".text",
+   "size": 1168
+  },
   {
    "align": 4,
    "hex": "000003f0",
@@ -622,6 +706,13 @@
   },
   {
    "align": 2,
+   "hex": "4e56ff8448d73cfc2f2e0008242e000c286e00104eb900000000588f4a80660002e04a8267064aae001c660c70d04cee3cfcff844e5e4e754aae002067ee4aae001867e84aae001467e2206e00082a28001820055380e28866d220280010b9c062ca908cb0ae001465c2206e00202d50ffb4b9eeffb462b4266e0014d7ccb7eeffb465a8da85700148404c450000220b92aeffb4b081640000b8d0aeffb42d40ffcc42aefff0486efff042aefff448790000000042aefff82f0242aefffc4eb9000000004fef000c4a80660000c4243c000010004c4520022d6e0018ffbc42aeffb8202effb42c2effb82e2effbc42aeffc04c0508002d42ffdc2d6e0014ffc44bf9000000000680000000402d40fff4428053879d802d46ffe82d47ffec242effcc280e0684fffffff0b4aeffb462282f044eb900000000b7eeffb452c0206e0020588f20aeffb4710044806000fee02d4bffcc6000ff4c242effcc94aeffb4b4aeffdc6304242effdc36052f04c6c22f034879000000004eb9000000004fef000cb68067102f044eb900000000588f70fd6000fe9ab9eeffb4620000b0202effb4908cb0ae0014640000a2206e0008280b45f900000000206800182f2effbc2f2effb82f0042a72d48ffc84e954fef00102f2effc42f2effc02f012f004e924fef001042aeffe02f2effc42d41ffe426012c2effe02e2effe42f2effc042805287dd802f072f064e952c2effe82e2effec4fef000c2eaeffbc2f2effb8de81dd802f072f064e9298aeffb44fef0010d28cb48464022802d8aeffb4246effb442862d44ffb0b5eeffb06642d5aeffb46000fecc2f2effc42f2effc054832f0342a74e95262effe8282effec4fef000c2eaeffbc2f2effb8d881d7802f042f034eb9000000004fef00102607d28cb5c1650a2e035287beae001865b82003e588206e001cd1c02d48ffd4206e001c41f008022006d0802d48ffd82040d1fc000000002d48ffac4280b0aeffc8660adcaeffc8528a6000ff70206effac54aeffac3258206effd47f497950b8876f023089206effd87950b8876c023089528060c870f16000fd2a",
+   "kind": "text",
+   "name": ".text.dkpool_window_step",
+   "size": 774
+  },
+  {
+   "align": 2,
    "hex": "",
    "kind": "bss",
    "name": ".bss.tokens_issued",
@@ -652,6 +743,13 @@
    "align": 1,
    "hex": "",
    "kind": "bss",
+   "name": ".bss.win_read",
+   "size": 4096
+  },
+  {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
    "name": ".bss.peak_read",
    "size": 4096
   },
@@ -677,7 +775,7 @@
    "size": 5440
   }
  ],
- "source_sha256": "f0a8009f9d7b4486ce649c9342d281dbc44335831d26ef9ce58385a32129075b",
+ "source_sha256": "1f469aaeb75840e08589852d29abafb561146bf554e8a37aa0e60ed9a1ec2234",
  "symbols": [
   {
    "global": false,
@@ -729,6 +827,12 @@
   },
   {
    "global": false,
+   "name": ".sec..bss.win_read",
+   "section": ".bss.win_read",
+   "value": 0
+  },
+  {
+   "global": false,
    "name": ".sec..rodata.invoker.str1.1",
    "section": ".rodata.invoker.str1.1",
    "value": 0
@@ -774,6 +878,18 @@
    "name": ".sec..text.queue_release",
    "section": ".text.queue_release",
    "value": 0
+  },
+  {
+   "global": false,
+   "name": "__muldi3",
+   "section": ".text",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "__udivdi3",
+   "section": ".text",
+   "value": 120
   },
   {
    "global": true,
@@ -903,6 +1019,12 @@
   },
   {
    "global": true,
+   "name": "dkpool_window_step",
+   "section": ".text.dkpool_window_step",
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "dkrt_pool_done",
    "section": null,
    "value": 0
@@ -996,14 +1118,20 @@
    "name": "tokens_issued",
    "section": ".bss.tokens_issued",
    "value": 0
+  },
+  {
+   "global": false,
+   "name": "win_read",
+   "section": ".bss.win_read",
+   "value": 0
   }
  ],
  "toolchain": {
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "802",
-  "isa_check": "2d4666136ed04b22cfd60d3779b64175db678129ccc591a9be583a4e986feceb",
+  "instructions_redecoded": "1501",
+  "isa_check": "22a5b249e31fd1844304008caecbf1bf55e3042a3cfbe896f27bf5a2efee8a4f",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

@@ -81,6 +81,16 @@ void dkpool_cancel(uint32_t req);
 /* Optional bounded overview: READY handle only, native-endian int16 min/max
    pairs, <=512 bins, width ceil(frames/512). Capacity in bytes, no IO/PCM scan. */
 int32_t dkpool_peaks(const dkpool_handle *h, uint8_t *out, uint32_t capacity);
+/* Optional symbol (added after version 1, no version change; the runtime tests its address for 0). One step of a peak window,
+   in the worker task (never the UI task). The window is `columns` equal parts of the frames [first, first + frames) of the
+   sample behind h. path: the slot's file path (NUL-terminated) as the runtime loaded it; an adapter that kept its own file
+   record may ignore it. The step reads at most DKPOOL_WINDOW_CHUNK bytes of PCM from frame *cursor on, folds each frame (all
+   channels) into out[column].min/.max, and advances *cursor. The caller zeroes out and sets *cursor = first before the first
+   step. out is `columns` pairs {min, max} of int16 (the layout of dkpool_peaks). Returns 1: call again; 0: done
+   (*cursor == first + frames); or a negative DKPOOL_E_*. */
+#define DKPOOL_WINDOW_CHUNK 65536u
+int32_t dkpool_window_step(const dkpool_handle *h, const uint8_t *path, uint32_t first, uint32_t frames, uint32_t columns,
+                           int16_t *out, uint32_t *cursor);
 
 /* Adapter to runtime. result: 0, DKPOOL_E_POOL, DKPOOL_E_READ or DKPOOL_E_FORMAT. */
 void dkrt_pool_done(uint32_t req, int32_t result);

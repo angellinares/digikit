@@ -22,8 +22,10 @@ extern const u32 sp_dev_ddr_bytes;   /* ... and ddr_bytes */
 spa_pool sp_pool;
 spp_peak sp_peaks[SPA_BLOCKS][SPP_BINS];
 SpReq sp_reqs[SP_REQS];
+DkrtStoreFile sp_files[SPA_BLOCKS];
 volatile u32 sp_link_dead;
 
+static u8 win_buf[8 * SPW_SECTOR] __attribute__((aligned(16)));   /* one read of dkpool_window_step */
 static u8 hbuf[SPW_SECTOR] __attribute__((aligned(16)));   /* sector 0 of the file being loaded (xfer.c has its own buffers: a transfer may run) */
 static u32 ready;       /* spa_init succeeded */
 static u32 arrivals;    /* orders the queue; wrapping is harmless (compared as a difference) */
@@ -133,4 +135,43 @@ i32 dkpool_peaks(const dkpool_handle *h, u8 *out, u32 cap)
 {
     if (dkpool_check(h) != 0) return DKPOOL_E_LOST;
     return spp_copy(sp_peaks[h->id], h->frames, out, cap);
+}
+
+/* One step of a peak window (dkrt_pool.h), in the worker task: reads the store file of the block, at most DKPOOL_WINDOW_CHUNK bytes of
+ * PCM from frame *cursor on. The PCM starts at byte 64 and a frame is 2 or 4 bytes, so a frame never crosses a sector border: each
+ * read feeds whole frames and no partial frame is carried. `path` is not needed: sp_files keeps the file of each loaded block. */
+i32 dkpool_window_step(const dkpool_handle *h, const u8 *path, u32 first, u32 frames, u32 columns, int16_t *out, u32 *cursor)
+{
+    u32 fb, end, at, total_sectors;
+    const DkrtStoreFile *f;
+    (void)path;
+    if (dkpool_check(h) != 0)
+        return DKPOOL_E_LOST;
+    if (!out || !cursor || !columns || !frames || h->id >= SPA_BLOCKS || (h->channels != 1 && h->channels != 2))
+        return DKPOOL_E_CONTRACT;
+    if (first > h->frames || frames > h->frames - first || *cursor < first || *cursor > first + frames)
+        return DKPOOL_E_CONTRACT;
+    f = &sp_files[h->id];
+    fb = h->channels * 2u;
+    at = *cursor;
+    end = first + frames;
+    if (end - at > DKPOOL_WINDOW_CHUNK / fb)
+        end = at + DKPOOL_WINDOW_CHUNK / fb;
+    if (f->size < SPW_HEADER_BYTES || (f->size - SPW_HEADER_BYTES) / fb < end)
+        return DKPOOL_E_FORMAT;
+    total_sectors = (f->size + SPW_SECTOR - 1u) / SPW_SECTOR;
+    while (at < end) {
+        u32 byte = SPW_HEADER_BYTES + at * fb, sector = byte / SPW_SECTOR, skip = byte % SPW_SECTOR, count = total_sectors - sector, n;
+        if (count > 8u)
+            count = 8u;
+        if (dkrt_store_read(f, sector, count, win_buf) != 0)
+            return DKPOOL_E_READ;
+        n = (count * SPW_SECTOR - skip) / fb;
+        if (n > end - at)
+            n = end - at;
+        spp_window_feed(out, columns, first, frames, at, win_buf + skip, n, h->channels);
+        at += n;
+    }
+    *cursor = at;
+    return at < first + frames ? 1 : 0;
 }

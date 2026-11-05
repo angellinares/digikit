@@ -31,6 +31,38 @@ static inline void spp_feed(spp_peak *p, uint32_t total, uint32_t first,
         }
     }
 }
+/* First frame of column col + 1 of a window of `frames` frames in `columns` columns: first + ceil((col + 1) * frames / columns).
+ * Frame f is in column (f - first) * columns / frames. */
+static inline uint32_t spp_window_bound(uint32_t first, uint32_t frames, uint32_t columns, uint32_t col)
+{
+    return first + (uint32_t)((((uint64_t)col + 1u) * frames + columns - 1u) / columns);
+}
+/* Fold n frames that start at frame `at` into the window peaks out[column] = {min, max} (int16 pairs; the caller zeroes out first,
+ * so zero is part of every column). Needs first <= at and at + n <= first + frames; frames outside the window are ignored.
+ * The 64-bit math runs once per column, not per frame. */
+static inline void spp_window_feed(int16_t *out, uint32_t columns, uint32_t first, uint32_t frames, uint32_t at,
+                                   const uint8_t *pcm, uint32_t n, uint32_t channels)
+{
+    uint32_t i, c, col, bound;
+    if (!columns || !frames || at < first || at - first >= frames)
+        return;
+    if (n > frames - (at - first))
+        n = frames - (at - first);
+    col = (uint32_t)(((uint64_t)(at - first) * columns) / frames);
+    bound = spp_window_bound(first, frames, columns, col);
+    for (i = 0; i < n; i++) {
+        while (at + i >= bound && col + 1u < columns) {
+            col++;
+            bound = spp_window_bound(first, frames, columns, col);
+        }
+        for (c = 0; c < channels; c++) {
+            const uint8_t *p = pcm + (i * channels + c) * 2u;
+            int16_t v = (int16_t)(((uint32_t)p[0] << 8) | p[1]);
+            if (v < out[col * 2u]) out[col * 2u] = v;
+            if (v > out[col * 2u + 1u]) out[col * 2u + 1u] = v;
+        }
+    }
+}
 static inline int32_t spp_copy(const spp_peak *p, uint32_t frames, uint8_t *out, uint32_t cap)
 {
     uint32_t i, n;

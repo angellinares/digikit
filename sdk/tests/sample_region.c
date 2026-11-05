@@ -54,7 +54,54 @@ static void check_bars_and_ramp(void) {
     assert(memcmp(before,bitmap,sizeof(before)) != 0);
 }
 
+static void check_zoom_and_columns(void) {
+    uint32_t first, span;
+    /* Centred on the focus, clamped at both ends. */
+    dk_sample_viewport(48000, 24000, 512, 95, &first, &span);
+    assert(span == 24000 && first == 12000);
+    dk_sample_viewport(48000, 100, 512, 95, &first, &span);
+    assert(span == 24000 && first == 0);
+    dk_sample_viewport(48000, 47900, 512, 95, &first, &span);
+    assert(span == 24000 && first == 24000);
+    /* Deep zoom keeps one frame per column; a short sample shows all frames. */
+    dk_sample_viewport(48000, 24000, 256u * 4096u, 95, &first, &span);
+    assert(span == 95 && first == 24000 - 47);
+    dk_sample_viewport(50, 10, 256u * 64u, 95, &first, &span);
+    assert(span == 50 && first == 0);
+    dk_sample_viewport(48000, 0, 100, 95, &first, &span);
+    assert(span == 48000 && first == 0);
+
+    /* 64x of 51200 frames: 800 frames over 99 columns, no gaps. */
+    dk_page_canvas_v1 canvas = {99, 53, bar_text, bar_rect};
+    dk_sample_peak flat[512];
+    for (unsigned i = 0; i < 512; i++) { flat[i].min = -16000; flat[i].max = 16000; }
+    bars = 0;
+    dk_sample_region_q8(&canvas, flat, 512, 51200, 64, 127, 256 * 64, 18, 41);
+    assert(bars == 99);
+
+    /* The columns path draws exactly the given columns. */
+    dk_sample_peak cols[99];
+    for (unsigned i = 0; i < 99; i++) {
+        cols[i].min = 0; cols[i].max = (i & 1) ? 0 : 30000;
+    }
+    memset(bitmap, 0, sizeof(bitmap));
+    dk_sample_region_draw(&canvas, (dk_sample_region_rect){0, 18, 98, 41}, 51200, 0, 800,
+        flat, 512, cols, 99, 0, 51200);
+    /* Odd columns have no waveform above the centre line (y 29); even columns do. */
+    for (unsigned x = 8; x < 90; x++) {
+        if (x & 1) assert(bitmap[22][x] == 0);
+        else assert(bitmap[22][x] == 1);
+    }
+    /* A column count other than the width falls back to the overview. */
+    memset(bitmap, 0, sizeof(bitmap));
+    dk_sample_region_draw(&canvas, (dk_sample_region_rect){0, 18, 98, 41}, 51200, 0, 800,
+        flat, 512, cols, 50, 0, 51200);
+    /* The overview (+-16000) reaches about 5 px above the centre: both neighbours are drawn at y 26. */
+    assert(bitmap[26][51] == 1 && bitmap[26][50] == 1);
+}
+
 int main(void) {
+    check_zoom_and_columns();
     check_viewport();
     check_bars_and_ramp();
     return 0;

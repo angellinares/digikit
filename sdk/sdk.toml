@@ -9,7 +9,7 @@ version = "0.5.4"   # 0.x: MINOR may break (contract major, store format, SysEx 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
-api = [1, 7]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks
+api = [1, 8]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks; minor 8: job_post/job_cancel (background jobs)
 machine = [1, 5]    # minor 1: source track; 2: stereo; 3: executable parameter latches; 4: opt-in native callback page v1; 5: two replacement callback pages v2
 fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
@@ -54,6 +54,9 @@ fields = [
     { name = "param_set", type = "i32 (u32 track, u32 word, i32 raw)", doc = "Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).", since = 6 },
     { name = "sample_pool_set", type = "i32 (u32 handle, u32 index, const u8 *path)", doc = "Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path.", since = 6 },
     { name = "sample_pool_peaks", type = "i32 (u32 handle, u32 index, u32 token, u8 *out, u32 capacity)", doc = "Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h.", since = 7 },
+    { name = "job_post", type = "i32 (job_step step, job_done done, u8 *ctx)", doc = "Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/job.h>). `done(ctx, status)` is called once in the UI task with the final status, or DK_JOB_E_CANCELLED. Returns a job id > 0, or a negative error (E_BUSY when 8 jobs are queued, E_CONTRACT for a null step).", since = 8 },
+    { name = "job_cancel", type = "i32 (u32 id)", doc = "Cancel a job of this module: a queued job never runs and a running one stops after its current step; `done` gets DK_JOB_E_CANCELLED. Returns 0, or E_NOT_FOUND for an unknown id.", since = 8 },
+    { name = "sample_pool_peaks_window", type = "i32 (u32 handle, u32 index, u32 token, u32 first, u32 frames, u32 columns, u8 *out, u32 capacity)", doc = "Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready (out holds int16 min, max pairs; capacity is bytes, at least columns * 4; columns is 1..DK_SAMPLE_WINDOW_MAX), 0 while it is computed, or a negative error. Another request replaces a pending one. Poll from the draw callback. UI task only. See dk/sample_track.h.", since = 8 },
 ]
 
 # Function types by name. As a parameter or field a name is a nullable pointer to the function (`Option<ServiceCmd>` in Rust, `dk_service_cmd *` in C).
@@ -63,6 +66,11 @@ fields = [
 # negative status (a `proto::E_*` code or its own: sent as the reply's status with no body).
 service_cmd = "i32 (u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)"
 file_event = "void (u32 client, u32 request, i32 state, u8 *context)"
+# A background job step (`Api.job_post`). It runs in the worker task: it computes on its own memory and calls no dk_api function.
+# Returns DK_JOB_MORE (1) to be called again, 0 when finished, or a negative error.
+job_step = "i32 (u8 *ctx)"
+# The end of a background job, in the UI task, once. `status` is the last step's result, or DK_JOB_E_CANCELLED.
+job_done = "void (u8 *ctx, i32 status)"
 
 # The machine contract's numbers (sdk/include/dk/gen/machine.h is the generated C view; it includes the generated sdk/include/dk/gen/machine_consts.h).
 # `patchkit gen` writes sdk/asm/dk_machine.inc and sdk/include/dk/gen/machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).

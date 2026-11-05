@@ -4,7 +4,7 @@
 pub const RUNTIME_VERSION: u32 = 0x000504;
 
 pub mod contract {
-    pub const API: (u8, u8) = (1, 7);
+    pub const API: (u8, u8) = (1, 8);
     pub const MACHINE: (u8, u8) = (1, 5);
     pub const FX: (u8, u8) = (1, 0);
     pub const SERVICE: (u8, u8) = (1, 0);
@@ -230,6 +230,12 @@ pub mod api {
     /// The function type `file_event` of `[api.types]`.
     pub type FileEvent = unsafe extern "C" fn(client: u32, request: u32, state: i32, context: *mut u8);
 
+    /// The function type `job_done` of `[api.types]`.
+    pub type JobDone = unsafe extern "C" fn(ctx: *mut u8, status: i32);
+
+    /// The function type `job_step` of `[api.types]`.
+    pub type JobStep = unsafe extern "C" fn(ctx: *mut u8) -> i32;
+
     /// The function type `service_cmd` of `[api.types]`.
     pub type ServiceCmd = unsafe extern "C" fn(cmd: u32, seq: u32, body: *const u8, len: u32, out: *mut u8) -> i32;
 
@@ -303,6 +309,12 @@ pub mod api {
         pub sample_pool_set: unsafe extern "C" fn(handle: u32, index: u32, path: *const u8) -> i32,
         /// (api 1.7) Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h.
         pub sample_pool_peaks: unsafe extern "C" fn(handle: u32, index: u32, token: u32, out: *mut u8, capacity: u32) -> i32,
+        /// (api 1.8) Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/job.h>). `done(ctx, status)` is called once in the UI task with the final status, or DK_JOB_E_CANCELLED. Returns a job id > 0, or a negative error (E_BUSY when 8 jobs are queued, E_CONTRACT for a null step).
+        pub job_post: unsafe extern "C" fn(step: Option<JobStep>, done: Option<JobDone>, ctx: *mut u8) -> i32,
+        /// (api 1.8) Cancel a job of this module: a queued job never runs and a running one stops after its current step; `done` gets DK_JOB_E_CANCELLED. Returns 0, or E_NOT_FOUND for an unknown id.
+        pub job_cancel: unsafe extern "C" fn(id: u32) -> i32,
+        /// (api 1.8) Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready (out holds int16 min, max pairs; capacity is bytes, at least columns * 4; columns is 1..DK_SAMPLE_WINDOW_MAX), 0 while it is computed, or a negative error. Another request replaces a pending one. Poll from the draw callback. UI task only. See dk/sample_track.h.
+        pub sample_pool_peaks_window: unsafe extern "C" fn(handle: u32, index: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32,
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).

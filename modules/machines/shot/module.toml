@@ -12,7 +12,7 @@ ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
 # Every dk_api field the module's sources call (module and picker); the packer takes the API floor from the newest.
-uses_api = ["files_client", "files_list", "files_poll", "files_cancel", "sample_tracks", "sample_pool_set", "sample_pool_clear", "sample_pool_status", "sample_pool_info", "sample_pool_path", "sample_pool_peaks", "param_get", "param_set"]
+uses_api = ["files_client", "files_list", "files_poll", "files_cancel", "sample_tracks", "sample_pool_set", "sample_pool_clear", "sample_pool_status", "sample_pool_info", "sample_pool_path", "sample_pool_peaks", "sample_pool_peaks_window", "param_get", "param_set"]
 
 [targets]
 "dt2-1.17" = "experimental"

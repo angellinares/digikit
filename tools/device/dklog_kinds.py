@@ -58,4 +58,4 @@ LEVEL_MASK = 7
 SOURCE_SHIFT = 8
 SOURCE_MASK = 255
 LEVELS = ("error", "warn", "info", "debug", "trace")
-CONTRACT = {"api": (1, 7), "machine": (1, 5), "fx": (1, 0), "service": (1, 0)}
+CONTRACT = {"api": (1, 8), "machine": (1, 5), "fx": (1, 0), "service": (1, 0)}

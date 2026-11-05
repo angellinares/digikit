@@ -7,6 +7,8 @@ void sample_view_init(sample_view *v, const dk_api *api, uint32_t pool)
     v->slot = DK_STRACKS;
     v->token = 0;
     v->peak_count = 0;
+    v->win_state = SAMPLE_VIEW_WIN_NONE;
+    v->win_count = 0;
     for (unsigned i = 0; i < DK_STRACKS; i++) v->peak_failed[i] = 0;
 }
 
@@ -32,6 +34,33 @@ const dk_sample_peak *sample_view_peaks(const sample_view *v, unsigned *bins)
 {
     if (v->peak_count > 0) { *bins = (unsigned)v->peak_count; return v->peaks; }
     *bins = 0;
+    return 0;
+}
+
+const dk_sample_peak *sample_view_window(sample_view *v, unsigned slot, uint32_t token, uint32_t first,
+    uint32_t span, unsigned columns, unsigned *count)
+{
+    *count = 0;
+    if (!DK_API_HAS(v->api, sample_pool_peaks_window)) return 0;
+    int32_t r = v->api->sample_pool_peaks_window(v->pool, slot, token, first, span, columns,
+        (uint8_t *)v->window, sizeof(v->window));
+    int same = v->win_state != SAMPLE_VIEW_WIN_NONE && v->win_slot == slot && v->win_token == token &&
+        v->win_first == first && v->win_span == span && v->win_columns == columns;
+    if (r > 0) {
+        v->win_slot = slot; v->win_token = token; v->win_first = first; v->win_span = span;
+        v->win_columns = columns; v->win_state = SAMPLE_VIEW_WIN_READY; v->win_count = r;
+        *count = (unsigned)r;
+        return v->window;
+    }
+    if (r < 0) { v->win_state = SAMPLE_VIEW_WIN_NONE; return 0; }
+    if (same && v->win_state == SAMPLE_VIEW_WIN_READY) {
+        *count = (unsigned)v->win_count;
+        return v->window;
+    }
+    if (!same) {
+        v->win_slot = slot; v->win_token = token; v->win_first = first; v->win_span = span;
+        v->win_columns = columns; v->win_state = SAMPLE_VIEW_WIN_PENDING; v->win_count = 0;
+    }
     return 0;
 }
 

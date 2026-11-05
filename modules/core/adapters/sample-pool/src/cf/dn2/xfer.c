@@ -194,6 +194,12 @@ static void finish(i32 result)
     SpReq *r = job.r;
     u32 req = r->req;
     if (result == 0) {
+        DkrtStoreFile *f = &sp_files[r->blk];
+        u32 i;
+        f->first = r->file.first;   /* field copies: a struct assignment may call memcpy, which this object cannot link */
+        f->size = r->file.size;
+        for (i = 0; i < 32; i++)
+            ((volatile u8 *)f->sha)[i] = r->file.sha[i];
         spa_ready(&sp_pool, r->blk);
         spa_fill(&sp_pool, r->blk, r->out);
     } else {
