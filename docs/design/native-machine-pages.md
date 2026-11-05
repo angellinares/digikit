@@ -102,7 +102,11 @@ finish before calling the bounded overlay renderer; only callback fill rectangle
 are composited. Default V2 and V1 behavior is unchanged. Unknown flags and
 page-one overlays are rejected. The frame ABI stays unchanged. The separate
 `<dk/widgets.h>` helpers remain available for modules drawing their own pages;
-Shot uses stock widgets on page zero and its custom waveform on page one.
+Shot declares page zero with `DK_PAGE_STOCK_OVERLAY`: the firmware labels, the
+E/H encoders (START, END) and the LEV fader stay, and the module draws its own
+TUNE, PLAY and SMP glyphs over the A, B and D glyph areas. Page one uses
+`DK_PAGE_WIDE_CANVAS`: the module draws the waveform with START/END markers,
+START at E, a module-local ZOOM control at G, and END at H.
 
 Replacement page one may request `DK_PAGE_WIDE_CANVAS` (flag 2). The adapter
 provides 107×53 pixels at global x17..123; default and stock-overlay pages

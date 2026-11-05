@@ -199,7 +199,7 @@ typedef struct {
     char draw[32];                           /* ColdFire draw callback symbol */
     char event[32];                          /* ColdFire LOCAL event callback symbol */
     uint32_t page;                           /* replacement page index 0 or 1; both are required */
-    uint32_t flags;                          /* 0 or DK_PAGE_STOCK_OVERLAY (page zero only) */
+    uint32_t flags;                          /* 0, DK_PAGE_STOCK_OVERLAY (1, page zero only) or DK_PAGE_WIDE_CANVAS (2, page one only, 107x53 canvas); the two flags are mutually exclusive */
     dk_desc_native_binding binding[DK_PAGE_KNOBS]; /* contiguous used entries, unique positions */
 } dk_desc_native_page_v2;
 

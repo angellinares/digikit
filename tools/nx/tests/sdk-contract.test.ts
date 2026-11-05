@@ -41,3 +41,26 @@ it('compiles public machine and FX declarations and preserves their parameter un
     rmSync(scratch, { recursive: true, force: true });
   }
 }, 20_000);
+
+function runHostC(source: string) {
+  const scratch = mkdtempSync(join(tmpdir(), 'digikit-sdk-host-'));
+  try {
+    const binary = join(scratch, 'host');
+    execFileSync('cc', ['-std=c11', '-Wall', '-Wextra', '-Werror', '-Isdk/include', source, '-o', binary], {
+      cwd: root,
+      timeout: 15_000,
+      stdio: 'pipe',
+    });
+    execFileSync(binary, { timeout: 5000, stdio: 'pipe' });
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+it('draws the page widgets inside their bounds', () => {
+  runHostC('sdk/tests/widgets.c');
+}, 20_000);
+
+it('draws and clips the sample region', () => {
+  runHostC('sdk/tests/sample_region.c');
+}, 20_000);

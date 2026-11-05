@@ -24,9 +24,10 @@
 // 1 / 65536 .. 64 frames per sample, negative for REV and REV.L. MIDI note 60 plays the sample at its own speed. A mono sample (channels 1) uses
 // base_r = base_l: the same samples go to both outputs (centred). REV and FWD play once, then the voice ends; the .L modes loop.
 //
-// State per voice (18 words, all cleared at note-on): 0 .. 5 the cursor of the kernel (start, end, index, fraction, rate, done), 6 the epoch (token),
-// 7 base_l, 8 base_r, 9 and 10 the gain pair [start, step] for the gain ramp (written every block), 11 the source rate in Hz, 12 the pool index, 13 the play mode 0 .. 3 (every block), 14 the adapter's return address (I13) across the kernel call,
-// 15 the frame count of the sample, 16 out, 17 out_r (the output pointer pair for the stereo kernel).
+// State per voice (18 words, all cleared at note-on): the word indices are the SHOT_ST_* defines below. Words 0 .. 5 are the cursor of the kernel
+// (start, end, index, fraction, rate, done), 6 the epoch (token), 7 base_l, 8 base_r, 9 and 10 the gain pair [start, step] for the gain ramp
+// (written every block), 11 the source rate in Hz, 12 the pool index, 13 the play mode 0 .. 3 (every block), 14 the adapter's return address (I13)
+// across the kernel call, 15 the frame count of the sample, 16 out, 17 out_r (the output pointer pair for the stereo kernel).
 
 #include "dk_machine.inc"
 #include "dsp/call.inc"
@@ -36,6 +37,51 @@
 #include "dsp/sample_pcm16_stereo.inc"
 #include "dsp/sample_bank.inc"
 #include "dsp/sample_track.inc"
+#include "shot_params.h"
+
+// Voice state word indices (DM(n, I3) with I3 = the state), as in the layout comment above.
+#define SHOT_ST_START 0
+#define SHOT_ST_END 1
+#define SHOT_ST_INDEX 2
+#define SHOT_ST_FRAC 3
+#define SHOT_ST_RATE 4
+#define SHOT_ST_DONE 5
+#define SHOT_ST_EPOCH 6
+#define SHOT_ST_BASE_L 7
+#define SHOT_ST_BASE_R 8
+#define SHOT_ST_GAIN_START 9
+#define SHOT_ST_GAIN_STEP 10
+#define SHOT_ST_RATE_HZ 11
+#define SHOT_ST_POOL 12
+#define SHOT_ST_MODE 13
+#define SHOT_ST_RET 14
+#define SHOT_ST_FRAMES 15
+#define SHOT_ST_OUT_L 16
+#define SHOT_ST_OUT_R 17
+#define SHOT_ST_WORDS 18
+// Byte offsets of the state words that the kernels take as pointers (4 bytes for each word).
+#define SHOT_ST_BASE_L_BYTES 28
+#define SHOT_ST_GAIN_START_BYTES 36
+#define SHOT_ST_OUT_L_BYTES 64
+#define SHOT_ST_BYTES 72
+
+// Start and end frame from the START and END parameter words, frames in R0: R2 = start frame, R3 = end frame, 0 .. frames.
+// Clobbers R1, R9, R10, F2, F3, F11. The mapping is frames * word / 32512 (0x38010204 = 1 / 32512).
+#define SHOT_START_END_FRAMES \
+    R9 = DM(SHOT_P_START, I4); \
+    R10 = DM(SHOT_P_END, I4); \
+    F11 = FLOAT R0; \
+    R1 = 0x38010204; \
+    F2 = FLOAT R9; \
+    F2 = F2 * F11; \
+    F2 = F2 * F1; \
+    R2 = FIX F2; \
+    R2 = MIN(R2, R0); \
+    F3 = FLOAT R10; \
+    F3 = F3 * F11; \
+    F3 = F3 * F1; \
+    R3 = FIX F3; \
+    R3 = MIN(R3, R0)
 
 // I5 = the record and I1 = the control set of the track in R0 (normal-word addresses); the DAG registers are ready 3 instructions later.
 // Clobbers R1, R2.
@@ -62,7 +108,7 @@ _shot_render:
     I4 = R12;                             // the parameter words
     NOP; NOP; NOP;
     R0 = I13;
-    DM(14, I3) = R0;                      // the adapter's return address (the kernel call may use I12; I13 is kept here in any case)
+    DM(SHOT_ST_RET, I3) = R0;             // the adapter's return address (the kernel call may use I12; I13 is kept here in any case)
     // the cursor rate: srcrate / 48000 * 2^x, x = ((pitch / 256 - 60) + (PITCH - 0x4000) * 3 / 2048) / 12 in 2^-8 .. 2^8
     R0 = DM(DK_IN_W_PITCH, I2);
     F10 = FLOAT R0;
@@ -70,7 +116,7 @@ _shot_render:
     F10 = F10 * F1;
     R1 = 0x42700000;                      // 60.0
     F10 = F10 - F1;
-    R0 = DM(4, I4);                       // PITCH
+    R0 = DM(SHOT_P_PITCH, I4);            // PITCH
     R1 = 0x4000;
     R0 = R0 - R1;
     F0 = FLOAT R0;
@@ -85,7 +131,7 @@ _shot_render:
     F10 = MAX(F10, F1);
     F0 = PASS F10;
     CALL _dv_exp2;
-    R1 = DM(11, I3);                      // the source rate in Hz
+    R1 = DM(SHOT_ST_RATE_HZ, I3);         // the source rate in Hz
     F1 = FLOAT R1;
     F0 = F0 * F1;
     R1 = 0x3faec33e;                      // 65536 / 48000
@@ -95,29 +141,27 @@ _shot_render:
     R1 = 0x3f800000;                      // 1.0 (1 / 65536 frames per sample)
     F0 = MAX(F0, F1);
     R0 = FIX F0;
-    R3 = DM(3, I4);                       // PLAY, read every block: a change of direction flips at the current cursor
+    R3 = DM(SHOT_P_PLAY, I4);             // PLAY, read every block: a change of direction flips at the current cursor
     R3 = LSHIFT R3 BY -8;                 // mode: 0 REV, 1 REV.L, 2 FWD.L, 3 FWD
     R9 = 3;
     R3 = MIN(R3, R9);
-    DM(13, I3) = R3;
+    DM(SHOT_ST_MODE, I3) = R3;
     R1 = 0;
     R2 = 1;
     COMP(R3, R2);
     IF LE R1 = PASS R2;                   // reverse for the modes 0 and 1
     R1 = PASS R1;
     IF NE R0 = -R0;
-    DM(4, I3) = R0;
-    R0 = DM(0, I4);                       // SMP: the adapter retains its trigger snapshot
+    DM(SHOT_ST_RATE, I3) = R0;
+    R0 = DM(SHOT_P_SMP, I4);              // SMP:the adapter retains its trigger snapshot
     R0 = LSHIFT R0 BY -8;                 // pool index; the bound metadata and epoch stay in voice state
     SHOT_TRACK_PTRS;
     NOP; NOP; NOP;
     DK_SAMPLE_BANK_LOCK(R13);
     DK_STRACK_CHECK_ADMISSION(I5, I1, R0, R1, _shot_render_denied, _shot_render_fault);
-    DK_STRACK_CHECK_EPOCH(I5, I3, 6, R0, R1, _shot_render_denied);
+    DK_STRACK_CHECK_EPOCH(I5, I3, SHOT_ST_EPOCH, R0, R1, _shot_render_denied);
     DK_STRACK_ACQUIRE(I1, R0);
     DK_SAMPLE_BANK_UNLOCK(R13);
-.GLOBAL _shot_render_acquired;
-_shot_render_acquired:
     // The kernel range from the live START, END and PLAY, as the stock one-shot does every block: FWD [0, END), REV [START, END).
     // The cursor stays. A cursor outside the range, or an empty range, renders this block over the whole sample and forces the end of the voice
     // after it (R9 = 1, kept by the kernel), so the end ramp fades the block. A voice that is already done keeps its range.
@@ -125,30 +169,17 @@ _shot_render_acquired:
     // the loop option of the kernel, set for every block) and the voice does not end by itself. A cursor outside the region (START or END moved)
     // goes into it: START forward, END - 1 in reverse. An empty region ends the voice as above.
     R9 = 0;
-    R5 = DM(5, I3);
+    R5 = DM(SHOT_ST_DONE, I3);
     R5 = PASS R5;
     IF NE JUMP _shot_render_ranged;
-    R0 = DM(15, I3);                      // frames
-    R9 = DM(1, I4);                       // START word
-    R10 = DM(2, I4);                      // END word
-    F11 = FLOAT R0;
-    R1 = 0x38010204;                      // 1 / 32512, the mapping of note-on
-    F2 = FLOAT R9;
-    F2 = F2 * F11;
-    F2 = F2 * F1;
-    R2 = FIX F2;
-    R2 = MIN(R2, R0);                     // start frame, 0 .. frames
-    F3 = FLOAT R10;
-    F3 = F3 * F11;
-    F3 = F3 * F1;
-    R3 = FIX F3;
-    R3 = MIN(R3, R0);                     // end frame
+    R0 = DM(SHOT_ST_FRAMES, I3);          // frames
+    SHOT_START_END_FRAMES;                // R2 = start frame, R3 = end frame
     R9 = 0;                               // the force flag (R9 held the START word above)
-    R1 = DM(13, I3);                      // the play mode
+    R1 = DM(SHOT_ST_MODE, I3);            // the play mode
     R10 = 3;
     COMP(R1, R10);
     IF EQ R2 = PASS R9;                   // FWD: the range starts at frame 0 (R9 = 0)
-    R4 = DM(2, I3);                       // the cursor index
+    R4 = DM(SHOT_ST_INDEX, I3);           // the cursor index
     R10 = 1;
     R11 = 2;
     COMP(R1, R10);
@@ -175,13 +206,13 @@ _shot_render_into:
     R4 = PASS R2;                         // forward: START
     COMP(R1, R10);
     IF EQ R4 = R3 - 1;                    // reverse: END - 1
-    DM(2, I3) = R4;
+    DM(SHOT_ST_INDEX, I3) = R4;
 _shot_render_range_set:
-    DM(0, I3) = R2;
-    DM(1, I3) = R3;
+    DM(SHOT_ST_START, I3) = R2;
+    DM(SHOT_ST_END, I3) = R3;
 _shot_render_ranged:
     // The loop option of the kernel: bit 1 of the done word, for the modes 1 and 2 (the kernel writes the word back without it).
-    R0 = DM(13, I3);
+    R0 = DM(SHOT_ST_MODE, I3);
     R1 = 1;
     R2 = 2;
     R4 = 0;
@@ -191,22 +222,22 @@ _shot_render_ranged:
     IF EQ R4 = PASS R2;
     R9 = PASS R9;
     IF NE R4 = R4 XOR R4;                 // a forced end block does not loop
-    R1 = DM(5, I3);
+    R1 = DM(SHOT_ST_DONE, I3);
     R1 = R1 OR R4;
-    DM(5, I3) = R1;
+    DM(SHOT_ST_DONE, I3) = R1;
     // One stereo read: R4 = the plane bases [base_l, base_r] (state words 7, 8), R8 = the output pointers [out, out_r] (state words 16, 17),
     // R12 = the cursor (state words 0 .. 5). The pointers are byte addresses of the state, which is how the adapters enter (finding 111).
     R0 = DM(DK_IN_W_OUT, I2);
-    DM(16, I3) = R0;
+    DM(SHOT_ST_OUT_L, I3) = R0;
     R0 = DM(DK_IN_W_OUT_R, I2);
-    DM(17, I3) = R0;
+    DM(SHOT_ST_OUT_R, I3) = R0;
     MODIFY(I7, -1) (NW);                  // the adapter's frame ends at I7: one word for DK_CALL's second store
     R12 = I3;                             // the cursor
-    R0 = 28;                              // word 7 is 28 bytes on
+    R0 = SHOT_ST_BASE_L_BYTES;            // word 7 is 28 bytes on
     R4 = R12 + R0;
-    R0 = 64;                              // word 16 is 64 bytes on
+    R0 = SHOT_ST_OUT_L_BYTES;             // word 16 is 64 bytes on
     R8 = R12 + R0;
-    R5 = DM(5, I3);                       // done before the block (R5 is kept by the kernel and the bank macros)
+    R5 = DM(SHOT_ST_DONE, I3);                      // done before the block (R5 is kept by the kernel and the bank macros)
     R0 = 1;
     R5 = R5 AND R0;                       // without the loop bit
     DK_CALL(_dk_sample_pcm16_stereo_linear, _shot_after_stereo);
@@ -225,31 +256,31 @@ _shot_render_released:
     R9 = PASS R9;
     IF EQ JUMP _shot_render_unforced;
     R0 = 1;
-    DM(5, I3) = R0;                       // the cursor left the live range: this block is the last
+    DM(SHOT_ST_DONE, I3) = R0;            // the cursor left the live range: this block is the last
 _shot_render_unforced:
     R5 = PASS R5;
     IF NE JUMP _shot_render_faded;        // done before this block
-    R1 = DM(5, I3);                       // done now
+    R1 = DM(SHOT_ST_DONE, I3);            // done now
     R2 = 0x3c55c8e7;                      // G / 31 = 0.4045 / 31 = 0.013048387 (float32)
     R0 = 0;                               // step 0: a constant gain
     R1 = PASS R1;
     IF NE R0 = PASS R2;                   // the ending block: the end ramp
     R1 = DK_SAMPLE_STOCK_GAIN;
-    DM(9, I3) = R1;
-    DM(10, I3) = R0;
+    DM(SHOT_ST_GAIN_START, I3) = R1;
+    DM(SHOT_ST_GAIN_STEP, I3) = R0;
     R4 = DM(DK_IN_W_OUT, I2);
     R8 = DM(DK_IN_W_OUT_R, I2);
     R12 = I3;
-    R0 = 36;                              // word 9 is 36 bytes on
+    R0 = SHOT_ST_GAIN_START_BYTES;        // word 9 is 36 bytes on
     R12 = R12 + R0;
     MODIFY(I7, -1) (NW);                  // one word for DK_CALL's second store, as above
     DK_CALL(_dk_gain_ramp_stereo, _shot_after_gain);
     MODIFY(I7, 1) (NW);
 _shot_render_faded:
-    R0 = DM(5, I3);                       // done: DK_DONE (1) or DK_OK (0)
+    R0 = DM(SHOT_ST_DONE, I3);            // done: DK_DONE (1) or DK_OK (0)
     R1 = DK_STEREO;
     R0 = R0 OR R1;
-    I13 = DM(14, I3);
+    I13 = DM(SHOT_ST_RET, I3);
     NOP; NOP; NOP;
     JUMP (M13, I13);
 _shot_render_fault:
@@ -267,8 +298,8 @@ _shot_render_denied:
         DM(I4, M6) = R0;
 _shot_zero: DM(I0, M6) = R0;
     R0 = 1;
-    DM(5, I3) = R0;
-    I13 = DM(14, I3);
+    DM(SHOT_ST_DONE, I3) = R0;
+    I13 = DM(SHOT_ST_RET, I3);
     R0 = DK_DONE;
     R1 = DK_STEREO;
     R0 = R0 OR R1;
@@ -282,67 +313,52 @@ _shot_note_on:
     I4 = R12;                             // the parameter words
     NOP; NOP; NOP;
     R0 = 1;
-    DM(5, I3) = R0;                       // done until the sample is bound and acquired
-    R0 = DM(0, I4);                       // SMP word: pool index << 8
+    DM(SHOT_ST_DONE, I3) = R0;            // done until the sample is bound and acquired
+    R0 = DM(SHOT_P_SMP, I4);              // SMP word: pool index << 8
     R0 = LSHIFT R0 BY -8;
     R1 = 15;
     COMP(R0, R1);
     IF GT JUMP _shot_note_return;        // not an entry of the pool: no epoch, render ends the voice
-    DM(12, I3) = R0;
+    DM(SHOT_ST_POOL, I3) = R0;
     SHOT_TRACK_PTRS;
     NOP; NOP; NOP;
     DK_SAMPLE_BANK_LOCK(R13);
     DK_STRACK_CHECK_ADMISSION(I5, I1, R0, R1, _shot_note_denied, _shot_note_fault);
-    DK_STRACK_LATCH_EPOCH(I5, I3, 6, R0, R1, _shot_note_denied);
+    DK_STRACK_LATCH_EPOCH(I5, I3, SHOT_ST_EPOCH, R0, R1, _shot_note_denied);
     DK_STRACK_ACQUIRE(I1, R0);
     DK_SAMPLE_BANK_UNLOCK(R13);
-.GLOBAL _shot_note_acquired;
-_shot_note_acquired:
-    R0 = DM(2, I5);                       // frames
-    DM(15, I3) = R0;                      // kept for the live START and END
-    R1 = DM(3, I5);                       // source rate
-    R2 = DM(4, I5);                       // channels
-    R3 = DM(5, I5);                       // fmt
-    R9 = DM(6, I5);                       // base_l
-    R10 = DM(7, I5);                      // base_r
-    DM(7, I3) = R9;
-    DM(11, I3) = R1;
+    R0 = DM(DK_STRACK_W_FRAMES, I5);      // frames
+    DM(SHOT_ST_FRAMES, I3) = R0;          // kept for the live START and END
+    R1 = DM(DK_STRACK_W_RATE, I5);        // source rate
+    R2 = DM(DK_STRACK_W_CHANNELS, I5);    // channels
+    R3 = DM(DK_STRACK_W_FMT, I5);         // fmt
+    R9 = DM(DK_STRACK_W_BASE_L, I5);      // base_l
+    R10 = DM(DK_STRACK_W_BASE_R, I5);     // base_r
+    DM(SHOT_ST_BASE_L, I3) = R9;
+    DM(SHOT_ST_RATE_HZ, I3) = R1;
     R1 = 1;
     COMP(R2, R1);
     IF EQ R10 = PASS R9;                  // mono: both outputs read the one plane
-    DM(8, I3) = R10;
+    DM(SHOT_ST_BASE_R, I3) = R10;
     R1 = 1;                               // DK_STRACK_FMT_PCM16
     COMP(R3, R1);
     IF NE JUMP _shot_note_release;       // not PCM16: stay done
-    R9 = DM(1, I4);                       // START word
-    R10 = DM(2, I4);                      // END word
-    F11 = FLOAT R0;                       // frames
-    R1 = 0x38010204;                      // 1 / 32512
-    F2 = FLOAT R9;
-    F2 = F2 * F11;
-    F2 = F2 * F1;
-    R2 = FIX F2;
-    R2 = MIN(R2, R0);                     // start frame, 0 .. frames
-    F3 = FLOAT R10;
-    F3 = F3 * F11;
-    F3 = F3 * F1;
-    R3 = FIX F3;
-    R3 = MIN(R3, R0);                     // end frame
-    DM(0, I3) = R2;
-    DM(1, I3) = R3;
+    SHOT_START_END_FRAMES;                // R2 = start frame, R3 = end frame (frames in R0)
+    DM(SHOT_ST_START, I3) = R2;
+    DM(SHOT_ST_END, I3) = R3;
     COMP(R2, R3);
     IF GE JUMP _shot_note_release;       // empty: stay done
-    DM(2, I3) = R2;                       // forward: the first frame is START
-    R0 = DM(3, I4);                       // PLAY word
+    DM(SHOT_ST_INDEX, I3) = R2;           // forward: the first frame is START
+    R0 = DM(SHOT_P_PLAY, I4);             // PLAY word
     R0 = LSHIFT R0 BY -8;                 // mode: 0 REV, 1 REV.L, 2 FWD.L, 3 FWD
     R1 = 1;
     COMP(R0, R1);
     IF GT JUMP _shot_note_forward;
     R0 = R3 - 1;
-    DM(2, I3) = R0;                       // reverse (REV, REV.L): the first frame is END - 1
+    DM(SHOT_ST_INDEX, I3) = R0;           // reverse (REV, REV.L): the first frame is END - 1
 _shot_note_forward:
     R0 = 0;
-    DM(5, I3) = R0;                       // playing
+    DM(SHOT_ST_DONE, I3) = R0;                      // playing
 _shot_note_release:
     DK_SAMPLE_BANK_LOCK(R13);
     DK_STRACK_RELEASE(I1, R0, _shot_note_release_fault, _shot_note_released);
@@ -373,10 +389,10 @@ _shot_note_return:
 .GLOBAL _shot_desc;
 .VAR _shot_desc = DK_MAGIC;
 .VAR _shot_desc1 = 257;                  // DK_MACHINE_V1 | DK_MACHINE_STEREO (an expression is not accepted here)
-.VAR _shot_desc2 = 5;
+.VAR _shot_desc2 = SHOT_P_COUNT;
 .VAR _shot_desc3 = DK_MAX_VOICES;
-.VAR _shot_desc4 = 72;
-.VAR _shot_desc5 = 72;
+.VAR _shot_desc4 = SHOT_ST_BYTES;
+.VAR _shot_desc5 = SHOT_ST_BYTES;
 // Measured worst block (adapter included): 6239 on DT2 and 6851 on DN2, a looping 1-frame region at high pitch that wraps on every output; margin about 2%.
 .VAR _shot_desc6 = 7000;
 .VAR _shot_desc7 = 7200;

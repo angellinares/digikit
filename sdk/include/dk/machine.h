@@ -40,8 +40,10 @@
 #define DK_PARAM(MACHINE, WORD, ID, NAME, SHORT, MIN, MAX, DEF)                      \
     static const dk_desc_param dk_desc_param_##MACHINE##_##WORD DK_DESC = {          \
         .kind = DK_DESC_PARAM, .size = sizeof(dk_desc_param), .machine = #MACHINE,   \
-        .id = #ID, .word = (WORD), .min = (int32_t)((MIN) * 256 + 0.5),              \
-        .max = (int32_t)((MAX) * 256 + 0.5), .def = (int32_t)((DEF) * 256 + 0.5),    \
+        .id = #ID, .word = (WORD),                                                   \
+        .min = (int32_t)((MIN) * 256 + ((MIN) < 0 ? -0.5 : 0.5)),                    \
+        .max = (int32_t)((MAX) * 256 + ((MAX) < 0 ? -0.5 : 0.5)),                    \
+        .def = (int32_t)((DEF) * 256 + ((DEF) < 0 ? -0.5 : 0.5)),                    \
         .name = NAME, .short_name = SHORT}
 
 /* The click action of parameter word WORD of MACHINE: `void FN(uint32_t track)` runs when the knob of that parameter is clicked on the machine's page.

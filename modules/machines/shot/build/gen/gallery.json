@@ -32,11 +32,11 @@
           "name": "SHOT",
           "own_dsp": true,
           "page": {
-            "name": "SPK",
+            "name": "SHT",
             "title": "SHOT"
           },
           "position": null,
-          "short": "SPK",
+          "short": "SHT",
           "type": null
         },
         "dt2": {
@@ -77,13 +77,13 @@
           "own_dsp": false,
           "page": null,
           "position": null,
-          "short": "SPK",
+          "short": "SHT",
           "type": null
         }
       },
       "id": "shot",
       "name": "SHOT",
-      "short": "SPK"
+      "short": "SHT"
     }
   ],
   "module": "digikit/shot",

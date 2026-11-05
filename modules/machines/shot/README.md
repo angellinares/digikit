@@ -48,10 +48,21 @@ The ordinary `DK_PAGE` remains the storage/parameter schema; its fixed knob slot
   `[1, 0x63, index]` is `sample_pool_clear`; request 0x3f with body `[1, index]` returns the BE32 status (3 = ready) and, when ready, frames,
   rate, channels, token.
 
-- `src/module.c`: the machine, parameters, page and the pool table declaration; `dkm_init` resolves the table handle and starts the picker;
+## Sources
+
+- `src/module.c`: the machine, parameters, page and the pool table declarations; `dkm_init`/`fini` resolve the table handle and start the picker;
   `shot_smp_click` (the SMP click action) opens the pool list with the current entry marked; `smp_pick` sets SMP.
+- `src/pages.c`: the two native pages (draw and event callbacks). The short name and page name are SHT.
+- `src/sample_view.c`, `src/sample_view.h`: the view of one pool slot (info and peak copy).
+- `src/shot.h`: internal header shared by the C sources.
+- `src/shot_params.h`: parameter word indexes shared by C and the DSP assembly.
 - `src/dsp/shot.s`: `render`, `note_on`, the table storage and the descriptor. Every sample, mono or stereo, is read by the SDK stereo kernel
   `_dk_sample_pcm16_stereo_linear` (a mono sample passes `base_r = base_l`); there is no mono path.
+
+## Tests
+
+
+- `tests/pages.test.ts`: C host test of the pages and the pool view (`tests/pages-host.c`). The SDK widget and region tests live in `sdk/tests` (run by `sdk:test-host`).
 - `tests/test_shot_playback.py`: the DSP on the concrete core through the real adapter, against a float32 model (SMP picks the record).
 - `tests/shot-dt2.device.test.ts`, `tests/shot-dn2.device.test.ts`: the pool API, the stereo output and an SMP phase on the emulator.
 
