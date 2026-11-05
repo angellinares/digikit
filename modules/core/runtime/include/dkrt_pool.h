@@ -94,6 +94,14 @@ int32_t dkpool_window_step(const dkpool_handle *h, const uint8_t *path, uint32_t
 
 /* Adapter to runtime. result: 0, DKPOOL_E_POOL, DKPOOL_E_READ or DKPOOL_E_FORMAT. */
 void dkrt_pool_done(uint32_t req, int32_t result);
+/* Adapter to runtime: the background job queue (owner 0). step runs in the worker task and returns 1 (call again), 0 (finished) or a
+   negative error; done runs once in the UI task with the final status (-80 after a cancel). dkrt_job_post returns a job id > 0, or a
+   negative error (queue full, null step). dkrt_job_cancel returns 0 or a negative error. */
+typedef int32_t (*dkrt_job_step)(uint8_t *ctx);
+typedef void (*dkrt_job_done)(uint8_t *ctx, int32_t status);
+/* step and done are function addresses (uintptr_t, as the generated dkrt.h declares them): cast the dkrt_job_step and dkrt_job_done. */
+int32_t dkrt_job_post(uintptr_t step, uintptr_t done, uint8_t *ctx);
+int32_t dkrt_job_cancel(uint32_t id);
 /* "Backing lost": all handles are invalid (reset). */
 void dkrt_pool_lost(void);
 /* Project adapter to runtime: the current project slot changed. The runtime never reads the byte. */

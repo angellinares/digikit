@@ -28,5 +28,7 @@ const _: sig::dkrt_scan = crate::scan::dkrt_scan;
 const _: sig::dkrt_scan_reads = crate::scan::dkrt_scan_reads;
 const _: sig::dkrt_fit = crate::scan::dkrt_fit;
 const _: sig::dkrt_pool_done = crate::tracks::dkrt_pool_done;
+const _: sig::dkrt_job_post = crate::worker::dkrt_job_post;
+const _: sig::dkrt_job_cancel = crate::worker::dkrt_job_cancel;
 const _: sig::dkrt_pool_lost = crate::tracks::dkrt_pool_lost;
 const _: sig::dkrt_project_changed = crate::tracks::dkrt_project_changed;

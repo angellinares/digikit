@@ -564,6 +564,12 @@ int32_t dkrt_fit(const DkrtScan *entries, uint32_t n, const uint8_t *ticked, Dkr
 /* Adapter to runtime: the load `req` of dkpool_load finished. result is OK (the handle `out` is filled), E_POOL, E_READ or E_FORMAT. Only from dkpool_tick. */
 void dkrt_pool_done(uint32_t req, int32_t result);
 
+/* Adapter to runtime: queue a job on the background worker (owner 0). step is the address of i32 step(u8 *ctx), run in the worker task: it returns 1 to be called again, 0 when finished, or a negative error. done is the address of void done(u8 *ctx, i32 status) (or 0), called once in the UI task with the final status, or -80 after a cancel. Returns a job id > 0, E_BUSY when the queue is full or E_CONTRACT for a null step. */
+int32_t dkrt_job_post(uintptr_t step, uintptr_t done, uint8_t *ctx);
+
+/* Adapter to runtime: cancel the job id of dkrt_job_post. A queued job gets done with -80 at the next tick; a running one stops after its current step. OK or E_NOT_FOUND. */
+int32_t dkrt_job_cancel(uint32_t id);
+
 /* Adapter to runtime: the backing was lost (a stock reset), every handle is invalid. Only from dkpool_tick. */
 void dkrt_pool_lost(void);
 

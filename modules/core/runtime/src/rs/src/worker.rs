@@ -22,7 +22,8 @@ use dkrt_sdk::*;
 pub const JOB_MORE: i32 = 1;
 pub const JOB_E_CANCELLED: i32 = -80;
 
-const JOBS: usize = 8;
+/// The DT2 sample pool can have 16 requests queued at once (SP_REQS), plus module jobs.
+const JOBS: usize = 24;
 /// Time one submit may use: about 10 ms of the 1500 Hz block clock.
 const BUDGET_BLOCKS: u32 = 15;
 
@@ -228,6 +229,24 @@ pub unsafe fn post(owner: u8, step: Option<JobStep>, done: Option<JobDone>, ctx:
         }
         E_BUSY
     })
+}
+
+/// Adapter entry (owner 0): queue a job on the background worker. `step` and `done` are function addresses (`JobStep`, `JobDone`);
+/// `done` may be 0. Returns a job id > 0, `E_CONTRACT` for a null step, `E_BUSY` when the queue is full. Task context: UI task.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_job_post(step: usize, done: usize, ctx: *mut u8) -> i32 {
+    post(
+        0,
+        core::mem::transmute::<usize, Option<JobStep>>(step),
+        core::mem::transmute::<usize, Option<JobDone>>(done),
+        ctx,
+    )
+}
+
+/// Adapter entry (owner 0): cancel a job posted with `dkrt_job_post`. Returns 0 or `E_NOT_FOUND`.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_job_cancel(id: u32) -> i32 {
+    cancel(0, id)
 }
 
 /// Cancel a job of `owner`. A queued job gets its `done(JOB_E_CANCELLED)` at the next tick; a running one stops after its

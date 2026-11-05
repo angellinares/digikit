@@ -634,6 +634,13 @@
   },
   {
    "addend": 0,
+   "offset": 4,
+   "section": ".text.done",
+   "symbol": ".sec..bss.job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
    "offset": 2,
    "section": ".text.look",
    "symbol": ".sec..bss.snap",
@@ -845,343 +852,336 @@
   {
    "addend": 48,
    "offset": 10,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 16,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": "dkrt_blocks",
    "type": "cf.32"
   },
   {
    "addend": 12,
    "offset": 24,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 8,
    "offset": 30,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 16,
    "offset": 36,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 36,
    "offset": 44,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 28,
    "offset": 54,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 24,
    "offset": 60,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 20,
    "offset": 66,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 32,
    "offset": 74,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 40,
    "offset": 80,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 44,
    "offset": 86,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 94,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": "sp_peaks",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 130,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..text.look",
    "type": "cf.32"
   },
   {
    "addend": 52,
    "offset": 136,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 8,
    "offset": 150,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 60,
    "offset": 176,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 208,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.rbuf",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 278,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": "dkrt_store_read",
    "type": "cf.32"
   },
   {
    "addend": 64,
    "offset": 296,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.rbuf",
    "type": "cf.32"
   },
   {
    "addend": 60,
    "offset": 320,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 8,
    "offset": 368,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 386,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": "sp_peaks",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 416,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.pages",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 438,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.pages",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 446,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": "sp_stock_sleep",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 548,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.pages",
    "type": "cf.32"
   },
   {
    "addend": 4096,
    "offset": 574,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.pages",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 616,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.pages",
    "type": "cf.32"
   },
   {
    "addend": 52,
    "offset": 668,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 56,
    "offset": 676,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 8,
    "offset": 686,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 44,
    "offset": 692,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 28,
    "offset": 710,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 720,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": "sp_raw_send",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 782,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.sp_stuck_sends",
    "type": "cf.32"
   },
   {
    "addend": 16,
    "offset": 790,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 40,
    "offset": 802,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 12,
    "offset": 810,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 32,
    "offset": 816,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 16,
    "offset": 850,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 864,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.sp_stuck_sends",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 870,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": "dkrt_blocks",
    "type": "cf.32"
   },
   {
    "addend": 40,
    "offset": 876,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 32,
    "offset": 882,
-   "section": ".text.invoker",
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 4,
-   "offset": 904,
-   "section": ".text.invoker",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 916,
-   "section": ".text.invoker",
+   "offset": 908,
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 44,
-   "offset": 936,
-   "section": ".text.invoker",
+   "offset": 930,
+   "section": ".text.step",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 958,
-   "section": ".text.invoker",
+   "offset": 952,
+   "section": ".text.step",
    "symbol": "sp_link_dead",
    "type": "cf.32"
   },
@@ -1397,177 +1397,107 @@
   },
   {
    "addend": 0,
-   "offset": 372,
+   "offset": 370,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..text.spa_abort.part.0.constprop.0",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 390,
+   "offset": 388,
    "section": ".text.sp_xfer_tick",
    "symbol": "dkrt_pool_done",
    "type": "cf.32"
   },
   {
    "addend": 8,
-   "offset": 424,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 64,
-   "offset": 430,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 68,
-   "offset": 440,
+   "offset": 420,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 448,
+   "offset": 432,
    "section": ".text.sp_xfer_tick",
    "symbol": "sp_pool",
    "type": "cf.32"
   },
   {
    "addend": 48,
-   "offset": 458,
+   "offset": 444,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
-   "addend": 0,
-   "offset": 476,
+   "addend": 52,
+   "offset": 462,
    "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..text.invoker",
+   "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
-   "addend": 52,
-   "offset": 482,
+   "addend": 56,
+   "offset": 468,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 60,
-   "offset": 488,
+   "offset": 474,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 494,
+   "offset": 486,
    "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..text.manager",
+   "symbol": ".sec..text.done",
    "type": "cf.32"
   },
   {
-   "addend": 56,
-   "offset": 500,
+   "addend": 0,
+   "offset": 492,
    "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
+   "symbol": ".sec..text.step",
    "type": "cf.32"
   },
   {
-   "addend": 72,
-   "offset": 506,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 76,
-   "offset": 512,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 80,
-   "offset": 518,
+   "addend": 0,
+   "offset": 498,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 538,
+   "offset": 504,
    "section": ".text.sp_xfer_tick",
-   "symbol": "sp_worker_get",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 552,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
+   "symbol": "dkrt_job_post",
    "type": "cf.32"
   },
   {
    "addend": 4,
-   "offset": 560,
+   "offset": 522,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 566,
+   "offset": 528,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..bss.job",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 622,
+   "offset": 584,
    "section": ".text.sp_xfer_tick",
    "symbol": ".sec..text.spa_abort.part.0.constprop.0",
-   "type": "cf.32"
-  },
-  {
-   "addend": 80,
-   "offset": 666,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 64,
-   "offset": 674,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 680,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..rodata.sp_xfer_tick.str1.1",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 688,
-   "section": ".text.sp_xfer_tick",
-   "symbol": ".sec..bss.job",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 694,
-   "section": ".text.sp_xfer_tick",
-   "symbol": "sp_worker_queue",
    "type": "cf.32"
   },
   {
@@ -1763,10 +1693,10 @@
   },
   {
    "align": 2,
-   "hex": "202f000c5380e288660a206f0004226f0008209142804e75",
+   "hex": "700223c0000000004e75",
    "kind": "text",
-   "name": ".text.manager",
-   "size": 24
+   "name": ".text.done",
+   "size": 10
   },
   {
    "align": 2,
@@ -1784,10 +1714,10 @@
   },
   {
    "align": 2,
-   "hex": "4fefffc048d77cfc2839000000004df9000000004e9642b90000000020790000000042b900000000720b23c0000000002028000842b90000000042b90000000042b900000000e3a842b90000000042b90000000042b9000000002040d1fc0000000020080680000008004243425058883143fffeb08866f22a047c0cedad428249f900000000b4b90000000065064280600002f42279000000004aa90010660002e4223c0000ffc07e0b4c45100120390000000026000683000007ffeeab9682b2836402260120427c0b41f038ff4879000000002208eda990810c80000008006306203c00000800220353814c0518004c0408007e09204141e8023f41f00a002008eea82f0020024c050800eea82f00486900184eb9000000004fef00104a80660002a0d68245f9000000002f430038b4af00386700ff502002760be7a82239000000002f400034200190af00340c80000008006306203c000008000681000001ff7c09eca92f4100304a8167222079000000007e0b93c922280008efa92041d1fc000000002f48003c4281b081664073c07601d281b6846600008891c843f900000000b288620000ae0c8100001000660000b22e3c0000000042864bf900000000bc84660000d45282d5c56000ff622e2f0030262f0034d6814c4730030c83000001ff62aa266f003c41f33c0047f29a004283b68466065281d3c4608e3c1b7f462f47002c7f50beaf002c6f0230867f680002beaf002c6c0431460002528360d247f9000000004283204b224ab680664220010c8000001000665441f9000000000c81000010006700ff6a420611861800528160ec47f288001393880052886000ff422041d1fc00000000421052816000ff381091528358891169fffd00011169fffe10001169ffff10015488609e4203178308005280609a22390000000097cb2639000000002f4100302079000000004ab900000000670000c44aa80010660000c2203900000000e088721447f9000000005280e3a82200202f003002810ff000002f074c06080020402002d083d0880280000fffff260186800083d00000002f034e93508f4a80670652b9000000004e9623c300000000263c0000177042b900000000720123c10000000023c000000000487800644e954e94588f7202b280670000a87203b280660000902f072f39000000004e93508f4a80670652b9000000004eb90000000052b90000000023c00000000053834a8366b860444aa80010671a70f123c0000000004cd77cfc700223c0000000004fef00404e754e947201b280660a23c1000000006000fefe4a806c1276feb68066287c0123c60000000070fd60c0528bb7fc0000177062f2487800644e95588f6000fed24a806c9660d256804a8066da70fb609a52860687000010006000fdcc",
+   "hex": "4fefffc048d77cfc2839000000004df9000000004e9642b90000000020790000000042b900000000720b23c0000000002028000842b90000000042b90000000042b900000000e3a842b90000000042b90000000042b9000000002040d1fc0000000020080680000008004243425058883143fffeb08866f22a047c0cedad428249f900000000b4b90000000065064280600002f42279000000004aa90010660002e4223c0000ffc07e0b4c45100120390000000026000683000007ffeeab9682b2836402260120427c0b41f038ff4879000000002208eda990810c80000008006306203c00000800220353814c0518004c0408007e09204141e8023f41f00a002008eea82f0020024c050800eea82f00486900184eb9000000004fef00104a806600029ad68245f9000000002f430038b4af00386700ff502002760be7a82239000000002f400034200190af00340c80000008006306203c000008000681000001ff7c09eca92f4100304a8167222079000000007e0b93c922280008efa92041d1fc000000002f48003c4281b081664073c07601d281b6846600008891c843f900000000b288620000ae0c8100001000660000b22e3c0000000042864bf900000000bc84660000d45282d5c56000ff622e2f0030262f0034d6814c4730030c83000001ff62aa266f003c41f33c0047f29a004283b68466065281d3c4608e3c1b7f462f47002c7f50beaf002c6f0230867f680002beaf002c6c0431460002528360d247f9000000004283204b224ab680664220010c8000001000665441f9000000000c81000010006700ff6a420611861800528160ec47f288001393880052886000ff422041d1fc00000000421052816000ff381091528358891169fffd00011169fffe10001169ffff10015488609e4203178308005280609a22390000000097cb2639000000002f4100302079000000004ab900000000670000c44aa80010660000c2203900000000e088721447f9000000005280e3a82200202f003002810ff000002f074c06080020402002d083d0880280000fffff260186800083d00000002f034e93508f4a80670652b9000000004e9623c300000000263c0000177042b900000000720123c10000000023c000000000487800644e954e94588f7202b280670000a27203b2806600008a2f072f39000000004e93508f4a80670652b9000000004eb90000000052b90000000023c00000000053834a8366b8603e4aa80010671470f14cd77cfc23c00000000042804fef00404e754e947201b280660a23c1000000006000ff044a806c1276feb68066287c0123c60000000070fd60c6528bb7fc0000177062f2487800644e95588f6000fed84a806c9c60d256804a8066da70fb60a052860687000010006000fdd2",
    "kind": "text",
-   "name": ".text.invoker",
-   "size": 1016
+   "name": ".text.step",
+   "size": 1010
   },
   {
    "align": 2,
@@ -1804,18 +1734,11 @@
    "size": 318
   },
   {
-   "align": 1,
-   "hex": "53616d706c65506f6f6c00",
-   "kind": "data",
-   "name": ".rodata.sp_xfer_tick.str1.1",
-   "size": 11
-  },
-  {
    "align": 2,
-   "hex": "4fefffdc700248d73c3c47f900000000b0936600012c247900000000243900000000222a0004202a00082f4100204a826600023276284c03080041f90000000043ea00184bea001c219108002195080420404280d1fc0000000043f208207220119108005280b28066f0262a0008784c223c000000007a3f4c0348002244ba83651220447001d1fc00000000b09066047802208449f11800780c202c02282a41206a00147202e9a8282c0230d095b28466000192222c022c7a0ceba9d28020832849d9fc000000002600068380000000215400040c831fffffff620a7a03c0854a806700016642802140000820010680800000000c801fffffff620a7603c2834a81670001544280d3fc00000000215100102a3c0000bb802140000c214500142144001842922f0242b90000000042b9000000002f2f00244eb900000000508f26134a83660000f445f900000000428297cb284a7a01ba9266342002ed884ab408106700011e202a0008723fb280650a2f004eb900000000588f42924878fff12f2a000441f9000000004e90508f528245ea00407010b08266ba4a8b6700009c202b0008724c23cb0000000042b9000000004c01080042b9000000002040d1fc0000000043e8023023d1000000004be8022c43e8022841e80234203c0000000023d50000000023d0000000004bf90000000023d10000000023cd0000000023c00000000041f900000000429872085283b28366f6700226804eb9000000004a806676760178fd23c3000000007a0223c40000000023c5000000004cd73c3c4fef00244e7522006000fe76e48b20030680100000006000fe92e4880680100000006000fea6723fb280650a2f004eb900000000588f4aaa00106700feaa74f16000fea44a8b670c202a000c90ab000c6a00fefe264a6000fef848790000000072014879000000004879000000002f0023c1000000004eb9000000004fef00106000ff7a",
+   "hex": "4fefffdc700248d73c3c47f900000000b0936600012c247900000000243900000000222a0004202a00082f4100204a826600020c76284c03080041f90000000043ea00184bea001c219108002195080420404280d1fc0000000043f208207220119108005280b28066f0262a0008784c223c000000007a3f4c0348002244ba83651220447001d1fc00000000b09066047802208449f11800780c202c02282a41206a00147202e9a8282c0230d095b2846600016c222c022c7a0ceba9d28020832849d9fc000000002600068380000000215400040c831fffffff620a7a03c0854a806700014042802140000820010680800000000c801fffffff620a7603c2834a816700012e4280d3fc00000000215100102a3c0000bb802140000c214500142144001842922f0242b90000000042b9000000002f2f00244eb900000000508f24134a82660000ce45f90000000097cb284a7801b89266342002ed884ab40810670000fa202a00087a3fba80650a2f004eb900000000588f42924878fff12f2a000441f9000000004e90508f528245ea00407010b08266ba4a8b6778202b0008724c23cb000000004c0108002040d1fc0000000043e80230700223d10000000043e802284be8022c41e8023423d50000000023d10000000023d0000000002680700142a748790000000048790000000023c0000000004eb9000000004fef000c4a806e1072fd760223c10000000023c3000000004cd73c3c4fef00244e7522006000fe9ce48b20030680100000006000feb8e4880680100000006000fecc723fb280650a2f004eb900000000588f4aaa00106700fed074f16000feca4a8b670c202a000c90ab000c6a00ff22264a6000ff1c",
    "kind": "text",
    "name": ".text.sp_xfer_tick",
-   "size": 706
+   "size": 626
   },
   {
    "align": 2,
@@ -1829,7 +1752,7 @@
    "hex": "",
    "kind": "bss",
    "name": ".bss.job",
-   "size": 112
+   "size": 64
   },
   {
    "align": 2,
@@ -1874,7 +1797,7 @@
    "size": 122
   }
  ],
- "source_sha256": "a21b0457789b6cee541307325dd96b6c51de6ce794a0dcae3b407d7cea409271",
+ "source_sha256": "0b725069090591adc8e2d480ee4b1640433378e7f1e00cd16441f7f01accc202",
  "symbols": [
   {
    "global": false,
@@ -1962,32 +1885,20 @@
   },
   {
    "global": false,
-   "name": ".sec..rodata.sp_xfer_tick.str1.1",
-   "section": ".rodata.sp_xfer_tick.str1.1",
-   "value": 0
-  },
-  {
-   "global": false,
    "name": ".sec..text.dkpool_check",
    "section": ".text.dkpool_check",
    "value": 0
   },
   {
    "global": false,
-   "name": ".sec..text.invoker",
-   "section": ".text.invoker",
+   "name": ".sec..text.done",
+   "section": ".text.done",
    "value": 0
   },
   {
    "global": false,
    "name": ".sec..text.look",
    "section": ".text.look",
-   "value": 0
-  },
-  {
-   "global": false,
-   "name": ".sec..text.manager",
-   "section": ".text.manager",
    "value": 0
   },
   {
@@ -2036,6 +1947,12 @@
    "global": false,
    "name": ".sec..text.spa_hit.constprop.0",
    "section": ".text.spa_hit.constprop.0",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.step",
+   "section": ".text.step",
    "value": 0
   },
   {
@@ -2118,6 +2035,12 @@
   },
   {
    "global": true,
+   "name": "dkrt_job_post",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "dkrt_pool_done",
    "section": null,
    "value": 0
@@ -2136,14 +2059,14 @@
   },
   {
    "global": false,
-   "name": "hbuf",
-   "section": ".bss.hbuf",
+   "name": "done",
+   "section": ".text.done",
    "value": 0
   },
   {
    "global": false,
-   "name": "invoker",
-   "section": ".text.invoker",
+   "name": "hbuf",
+   "section": ".bss.hbuf",
    "value": 0
   },
   {
@@ -2156,12 +2079,6 @@
    "global": false,
    "name": "look",
    "section": ".text.look",
-   "value": 0
-  },
-  {
-   "global": false,
-   "name": "manager",
-   "section": ".text.manager",
    "value": 0
   },
   {
@@ -2280,18 +2197,6 @@
   },
   {
    "global": true,
-   "name": "sp_worker_get",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
-   "name": "sp_worker_queue",
-   "section": null,
-   "value": 0
-  },
-  {
-   "global": true,
    "name": "sp_xfer_cancel",
    "section": ".text.sp_xfer_cancel",
    "value": 0
@@ -2340,6 +2245,12 @@
   },
   {
    "global": false,
+   "name": "step",
+   "section": ".text.step",
+   "value": 0
+  },
+  {
+   "global": false,
    "name": "win_buf",
    "section": ".bss.win_buf",
    "value": 0
@@ -2349,8 +2260,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "2481",
-  "isa_check": "e11e046ece03321f45cb7daf0a578dff3fd23db51af1fe7ff231f110ea3489aa",
+  "instructions_redecoded": "2456",
+  "isa_check": "3eb44cd8e8886bc62bfa3e7e3c0d7f8acc9bdadf5af4f6be571da3a4e7fbbbf2",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

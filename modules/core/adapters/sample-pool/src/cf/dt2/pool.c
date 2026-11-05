@@ -52,8 +52,6 @@ typedef struct Req {
     u32 kind, slot, token, req;
     u32 pcm;      /* PCM byte length from the file header (bytes 4..8), read before the stock loader runs */
     dkpool_handle *out;
-    u32 job[4];   /* the std::function of the job: storage (2 words), manager, invoker */
-    u32 done[8];  /* an empty std::function */
     u8 path[SP_PATH];
 } Req;
 
@@ -181,36 +179,33 @@ static void run_release(Req *r)
     r->result = 0;
 }
 
-/* std::function plumbing for the worker: the invoker gets the function's storage, whose first word is the request. */
-static void invoker(const void *storage)
+/* The runtime's job queue (dkrt_job_post): one step per request, in the worker task. */
+static i32 step(u8 *ctx)
 {
-    Req *r = *(Req *const *)storage;
+    Req *r = (Req *)ctx;
     if (r->kind == RQ_LOAD)
         run_load(r);
     else
         run_release(r);
+    return 0;
+}
+
+/* In the UI task, once per job. */
+static void done(u8 *ctx, i32 status)
+{
+    Req *r = (Req *)ctx;
+    (void)status;
     __asm__ volatile("" ::: "memory");
     r->state = RQ_DONE;
 }
 
-static int manager(u32 *dest, const u32 *src, int op)
-{
-    if (op == 1 || op == 2)
-        dest[0] = src[0];
-    return 0;
-}
-
 static void post(Req *r)
 {
-    u32 i;
-    r->job[0] = (u32)r;
-    r->job[1] = 0;
-    r->job[2] = (u32)manager;
-    r->job[3] = (u32)invoker;
-    for (i = 0; i < 8; i++)
-        ((volatile u32 *)r->done)[i] = 0;   /* volatile: the compiler would turn a plain loop into a memset call */
     r->state = RQ_QUEUED;
-    dk_fw_samples_worker_queue(dk_fw_samples_worker_get(), "SamplePool", r->job, r->done);
+    if (dkrt_job_post((uintptr_t)step, (uintptr_t)done, (u8 *)r) <= 0) {   /* no queue entry: finish the request at once, dkpool_tick delivers it */
+        r->result = DKPOOL_E_READ;
+        r->state = RQ_DONE;
+    }
 }
 
 static Req *take_req(void)

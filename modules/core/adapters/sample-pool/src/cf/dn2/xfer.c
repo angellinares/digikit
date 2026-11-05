@@ -21,8 +21,6 @@ typedef uint16_t u16;
 
 extern void *sp_stock_copy(void *destination, const void *source, u32 length);
 extern void sp_stock_sleep(u32 us);                                                         /* task context; blocks the task */
-extern u32 sp_worker_get(void);                                                             /* the SampleLoader worker singleton */
-extern u32 sp_worker_queue(u32 worker, const char *name, void *job, void *done);
 
 #define SP_STOCK_REPLY 0xabcu  /* the stock reply copy is this long; the extension follows it (the wire is 0xacc bytes long) */
 #define SP_SLEEP_US 100u       /* between two looks at the acknowledgement (stock sleeps 100 after each page) */
@@ -46,8 +44,6 @@ static struct {
     spw_x x;                    /* the page state machine: the job only */
     u32 armed;                  /* the receiver was seen armed and idle (set on READY, kept by an acknowledgement) */
     u32 channels, plane_pages, first_page, frames;
-    uintptr_t fn[4];            /* the std::function of the job: storage (2 words), manager, invoker (words on the ColdFire; pointers on the host) */
-    u32 done[8];                /* an empty std::function */
 } job;
 
 /* ---- The two hooks on the stock link ---------------------------------------------------------------------------------------------------- */
@@ -170,21 +166,20 @@ static i32 run_job(void)
     return 0;
 }
 
-/* std::function plumbing for the worker (the same layout the DT2 adapter queues): the invoker gets the function's storage, whose first word
- * is unused here: there is one job. */
-static void invoker(const void *storage)
+/* The runtime's job queue (dkrt_job_post): the step runs the whole load in the worker task, and `done` runs in the UI task. */
+static i32 step(u8 *ctx)
 {
-    (void)storage;
+    (void)ctx;
     job.result = run_job();
-    __asm__ volatile("" ::: "memory");
-    job.state = J_DONE;
+    return 0;
 }
 
-static int manager(u32 *dest, const u32 *src, int op)
+/* UI task. J_RUN to J_DONE changes only here (and in start_job when nothing could be posted), so no ordering against the worker is needed. */
+static void done(u8 *ctx, i32 status)
 {
-    if (op == 1 || op == 2)
-        dest[0] = src[0];
-    return 0;
+    (void)ctx;
+    (void)status;
+    job.state = J_DONE;
 }
 
 /* ---- The UI task ------------------------------------------------------------------------------------------------------------------------ */
@@ -217,28 +212,17 @@ static void finish(i32 result)
 static void start_job(SpReq *r)
 {
     const spa_block *b = &sp_pool.blk[r->blk];
-    u32 worker, i;
     job.r = r;
     job.channels = b->channels;
     job.plane_pages = b->plane_pages;
     job.first_page = b->first_page;
     job.frames = b->frames;
-    job.fn[0] = 0;
-    job.fn[1] = 0;
-    job.fn[2] = (uintptr_t)manager;
-    job.fn[3] = (uintptr_t)invoker;
-    for (i = 0; i < 8; i++)
-        ((volatile u32 *)job.done)[i] = 0;   /* volatile: the compiler would turn a plain loop into a memset call */
     r->state = RQ_ACTIVE;
-    worker = sp_worker_get();
-    if (!worker) {   /* no worker: nothing was posted */
-        job.state = J_RUN;
+    job.state = J_RUN;
+    if (dkrt_job_post((uintptr_t)step, (uintptr_t)done, 0) <= 0) {   /* nothing was posted: finish with an error */
         job.result = DKPOOL_E_READ;
         job.state = J_DONE;
-        return;
     }
-    job.state = J_RUN;   /* last: the worker may run the job before the queue call returns */
-    sp_worker_queue(worker, "SamplePool", job.fn, job.done);
 }
 
 /* The oldest queued request, or 0. A queued request nobody waits for is finished here without touching the link. */
