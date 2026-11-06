@@ -73,7 +73,9 @@ The local `.nx/` cache is per worktree. Module `test-device` and `test-conforman
 
 Do not run test directories, full tier sweeps, or smoke `--update` across all cells while iterating. Use quick proof modes; the default test owns smoke coverage. Reserve `mise run test:full` for generated-core changes before merging to `main`. Preserve SHARC golden hashes for refactors; explain intentional updates. PCM pins in `tests/scenarios/*.json` require Em's approval.
 
-Put long runs in the background; poll with an exit condition and at most 60 seconds per call. Never use `tail -f`.
+Wait without polling. Run a command under 9 minutes in the foreground with a long tool timeout.
+For a longer run use `node tools/devtools/job.mjs start NAME -- CMD`, then repeat `node tools/devtools/job.mjs wait NAME`: it blocks up to 9 minutes and prints the exit code and last lines.
+Do not wait with `sleep`, `tail` or repeated log reads, and never use `tail -f`. Read the log only when the result asks for detail.
 
 ## Development and analysis
 
@@ -90,3 +92,4 @@ Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `nativ
 ## Worktrees
 
 Use warm lanes (`tools/devtools/lane.sh NAME [BASE]`) for parallel native edits or long measurements; small edits and reading stay in the main tree. Lanes share artifacts and the virtualenv: do not change Python dependencies there. Use a separate dev-server port per lane.
+Reuse one cargo target per lane: a new target variant name builds cold (10 to 30 minutes), a rebuild takes seconds. Run `cargo check` before a long build. Start a new branch in a warm lane rather than a new lane; a new worktree pays about 25 minutes of cold builds.

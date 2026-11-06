@@ -134,6 +134,8 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 - The number of concurrent Nx tasks and Vitest workers comes from the machine budget; see "CPU budget of the gate".
 - Nx's `summary` output reports counts and paths to full failure logs; `--output-style=static-failures-only` prints failing task output inline. No custom status router is involved.
 
+Wait without polling: `node tools/devtools/job.mjs start NAME [--timeout SEC] -- CMD ARGS...` runs a command detached and returns at once; `node tools/devtools/job.mjs wait NAME` blocks (default 540 s, `--max SEC`) and prints `job NAME: exit N after Ns` and the last lines of the log, so one call replaces a loop of `sleep` and `tail`. It exits with the job's code, 75 while the job still runs (call `wait` again), 70 if the process died, 124 on `--timeout`. `status [NAME]` lists the jobs of this worktree. State is in `out/runs/jobs/<worktree>/NAME/` (`log`, `meta.json`, `exit.json`). Nx detects agents (`isAiAgent`, which reads `CLAUDECODE` among others; `AI_AGENT` alone does not trigger it) and then prints the `summary` style, so task output appears only in the log paths it names. A person who wants a live log sets `NX_DEFAULT_OUTPUT_STYLE=stream` (or passes `--output-style=stream`).
+
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
 
@@ -479,6 +481,7 @@ Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key
 Test builds of `digi-emud` and `coupled-run` use the current PGO profile through `native_pgo.profile_for_tests`.
 A missing or stale profile prints one warning: a stale profile is still applied to `digi-emud`, and `coupled-run` builds plain.
 `DIGI_REQUIRE_PGO=1` makes this an error; the gate does not set it, because every core change makes the profile stale until a retrain.
+`mise run test` and `test:plan` (tiers `merge` and `full`) print the DN2 and DT2 profile state before the first task and repeat a stale or missing warning at the end; this never fails the gate.
 `DIGI_EMU_PGO=0` turns PGO off. Measuring tools (`coupled_ab`, `sharc_matrix`, `perf`, `fastcov`, `fast_roots`) keep their own builds.
 
 `tools/devtools/sharc_cells.py` compares host instruction counts of two built `coupled-run` binaries on runtime fixtures (`uv run python -m tools.devtools.sharc_cells A=BIN B=BIN --state dn2-reset --jobs 2 --cov`). It runs each binary at two lengths, prints steady-state counters per audio second, the B/A instruction ratio and PCM and DSP state parity (non-zero exit on a difference), and with `--cov` the fast-tier root and exit tables. It does not take the bench lock, because counters are not timing; use `coupled_ab` for the final timing A/B.
