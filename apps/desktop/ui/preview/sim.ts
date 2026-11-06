@@ -23,9 +23,11 @@ export interface SimState {
   mode: 'modules' | 'samples';
   /** The device storage can make folders (mkdir=0: it cannot). */
   mkdir: boolean;
+  /** The second file of an upload cannot be sent (putfail=1). */
+  putfail: boolean;
 }
 
-export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir'] as const;
+export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir', 'putfail'] as const;
 
 const query = new URLSearchParams(location.search);
 export const sim: SimState = {
@@ -35,6 +37,7 @@ export const sim: SimState = {
   paused: query.get('paused') === '1',
   mode: (query.get('mode') as SimState['mode']) ?? 'modules',
   mkdir: query.get('mkdir') !== '0',
+  putfail: query.get('putfail') === '1',
 };
 
 export const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

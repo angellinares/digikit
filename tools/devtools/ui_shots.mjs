@@ -128,6 +128,16 @@ const SCENES = [
       await p.wait(3000);
     },
   },
+  {
+    name: 'samples-upload-failed',
+    q: 'mode=samples&speed=12&putfail=1',
+    size: WIDE,
+    steps: async (p) => {
+      for (const n of ['kick', 'snare', 'hat']) await p.tick(`^Upload ${n}`);
+      await p.click(/^Upload/);
+      await p.wait(4000);
+    },
+  },
   { name: 'samples-narrow', q: 'mode=samples', size: MIN },
   {
     name: 'samples-narrow-uploading',

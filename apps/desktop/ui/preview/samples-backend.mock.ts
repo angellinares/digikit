@@ -29,6 +29,7 @@ export interface OpenedSamples {
   prepare: Prepare;
 }
 
+let puts = 0;
 const clean = (folder: string) => folder.replace(/^\/+|\/+$/g, '');
 const backend: SamplesBackend = {
   kind: 'stock-rpc',
@@ -62,6 +63,7 @@ const backend: SamplesBackend = {
     );
   },
   async put(folder, file, onProgress) {
+    if (sim.putfail && puts++ === 1) throw new Error(`open /tst/${file.name}: the device answered status 0`);
     const total = file.stored.length;
     const step = Math.max(1, Math.round(sim.speed * 1024 * 1024 * 0.1));
     for (let sent = 0; sent < total;) {
