@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 
@@ -674,3 +675,189 @@ def test_a_fixture_of_another_device_is_refused(tmp_path):
     write_fixture(tmp_path / "dt2")
     with pytest.raises(SystemExit, match=r"perf:fixture -- --device dn2"):
         native_pgo.load_fixture("dn2", tmp_path / "dt2")
+
+
+# --- clean -------------------------------------------------------------------------------
+
+NOW = 1_800_000_000.0
+DAY = 86400
+
+
+@pytest.fixture
+def pgo(tmp_path):
+    root = tmp_path / "pgo"
+    state = root / "dn2" / "tri"
+    (state / "profiles").mkdir(parents=True)
+    (state / "by-key").mkdir()
+    return root, state
+
+
+def age(path, days):
+    when = NOW - days * DAY
+    os.utime(path, (when, when), follow_symlinks=False)
+
+
+def profile(state, name, days):
+    path = state / "profiles" / f"{name}.profdata"
+    path.write_bytes(b"p")
+    crates = state / "profiles" / f"{name}.profdata.crates.json"
+    crates.write_text("{}")
+    age(path, days)
+    age(crates, days)
+    return path
+
+
+def entry(state, key, name, days, where=None):
+    path = state / "by-key" / f"{key}.json"
+    where = where or state / "profiles"
+    path.write_text(json.dumps({"profdata": {"path": str(where / f"{name}.profdata")}}))
+    age(path, days)
+
+
+def manifest(state, name, where=None):
+    where = where or state / "profiles"
+    (state / "manifest.json").write_text(
+        json.dumps({"profdata": {"path": str(where / f"{name}.profdata")}})
+    )
+
+
+def clean(pgo, days=14):
+    root, state = pgo
+    plan = native_pgo.plan_clean(state, days, now=NOW, root=root)
+    native_pgo.apply_clean(plan, root=root)
+    return plan
+
+
+def test_clean_keeps_old_profile_named_by_manifest_even_from_another_lane(pgo):
+    _, state = pgo
+    profile(state, "a", 90)
+    manifest(state, "a", where=pgo[0] / "elsewhere-lane" / "out" / "profiles")
+    clean(pgo)
+    assert (state / "profiles" / "a.profdata").exists()
+    assert (state / "profiles" / "a.profdata.crates.json").exists()
+
+
+def test_clean_removes_old_unreferenced_profile_and_keeps_young_one(pgo):
+    _, state = pgo
+    manifest(state, "m")
+    profile(state, "m", 90)
+    profile(state, "old", 30)
+    profile(state, "young", 2)
+    clean(pgo)
+    names = {p.name for p in (state / "profiles").iterdir()}
+    assert names == {
+        "m.profdata",
+        "m.profdata.crates.json",
+        "young.profdata",
+        "young.profdata.crates.json",
+    }
+
+
+def test_clean_evicts_by_key_beyond_newest_four_and_removes_profile_when_old(pgo):
+    _, state = pgo
+    manifest(state, "m")
+    profile(state, "m", 1)
+    for number in range(6):
+        entry(state, f"k{number}", f"p{number}", 100 - number)
+        profile(state, f"p{number}", 100 - number)
+    entry(state, "young-extra", "py", 3)  # newest, so k0..k2 fall out of the top four
+    profile(state, "py", 3)
+    clean(pgo)
+    kept = {p.stem for p in (state / "by-key").iterdir()}
+    # newest four by mtime: young-extra, k5, k4, k3; k2 and older are old and evicted
+    assert kept == {"young-extra", "k5", "k4", "k3"}
+    profiles = {p.name for p in (state / "profiles").glob("*.profdata")}
+    assert profiles == {
+        "m.profdata",
+        "py.profdata",
+        "p5.profdata",
+        "p4.profdata",
+        "p3.profdata",
+    }
+
+
+def test_clean_keeps_young_by_key_entry_beyond_four(pgo):
+    _, state = pgo
+    manifest(state, "m")
+    profile(state, "m", 1)
+    for number in range(6):
+        entry(state, f"k{number}", f"p{number}", 1 + number)
+        profile(state, f"p{number}", 1 + number)
+    clean(pgo)
+    assert len(list((state / "by-key").iterdir())) == 6
+    assert len(list((state / "profiles").glob("*.profdata"))) == 7
+
+
+def test_clean_leaves_corrupt_by_key_and_keeps_all_profiles_without_manifest(pgo):
+    _, state = pgo
+    profile(state, "a", 90)
+    (state / "by-key" / "bad.json").write_text("{not json")
+    age(state / "by-key" / "bad.json", 90)
+    plan = clean(pgo)
+    assert (state / "by-key" / "bad.json").exists()
+    assert (state / "profiles" / "a.profdata").exists()
+    assert any("bad.json" in note for note in plan.notes)
+    assert any("manifest.json unreadable" in note for note in plan.notes)
+
+
+def test_clean_removes_old_experiment_dirs_by_name_and_age(pgo):
+    _, state = pgo
+    manifest(state, "m")
+    for name in (
+        "bench-1",
+        "ab-new-bin",
+        "control-target",
+        "raw-abc",
+        "train-2",
+        "bench-young",
+    ):
+        (state / name).mkdir()
+        (state / name / "f").write_text("x")
+        age(state / name / "f", 90)
+        age(state / name, 90)
+    (state / "bench-young" / "f").write_text("touched")  # newest mtime inside is now
+    os.utime(state / "bench-young" / "f", (NOW - DAY, NOW - DAY))
+    for name in ("instrument-target", "target", "profile-1", "train-x", "bench-file"):
+        path = state / name
+        path.mkdir() if name != "bench-file" else path.write_text("x")
+        age(path, 90)
+    clean(pgo)
+    left = {p.name for p in state.iterdir()} - {"profiles", "by-key", "manifest.json"}
+    assert left == {
+        "bench-young",
+        "instrument-target",
+        "target",
+        "profile-1",
+        "train-x",
+        "bench-file",
+    }
+
+
+def test_clean_never_follows_a_symlink(pgo, tmp_path):
+    root, state = pgo
+    manifest(state, "m")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("x")
+    age(outside / "keep", 90)
+    (state / "bench-link").symlink_to(outside)
+    age(state / "bench-link", 90)
+    (state / "bench-real").mkdir()
+    (state / "bench-real" / "inner").symlink_to(outside)
+    age(state / "bench-real", 90)
+    age(state / "bench-real" / "inner", 90)
+    clean(pgo)
+    assert (outside / "keep").exists()
+    assert not (state / "bench-link").is_symlink()
+    assert not (state / "bench-real").exists()
+
+
+def test_clean_refuses_a_state_dir_outside_the_pgo_root(pgo, tmp_path):
+    root, state = pgo
+    other = tmp_path / "other"
+    (other / "profiles").mkdir(parents=True)
+    old = other / "bench-1"
+    old.mkdir()
+    age(old, 90)
+    plan = native_pgo.plan_clean(other, 14, now=NOW, root=root)
+    assert plan.items == [] and old.exists()

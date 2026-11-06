@@ -17,7 +17,7 @@ release build in the key dir itself (shared with the desktop app and the
 fast-tier examples, so the generated core is not recompiled), the profile
 builds differ by RUSTFLAGS and use ``pgo-instrument/`` and ``pgo-use/`` below it.
 
-Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
+Commands: ``train``, ``clean [--dry-run] [--days N]``, ``check``, ``plan``, ``bench --pairs N``,
 ``bench-bins A B --pairs N`` (two prebuilt workload test binaries).
 
 DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
@@ -92,6 +92,7 @@ import pathlib
 import platform
 import re
 import shutil
+import stat
 import statistics
 import subprocess
 import sys
@@ -1257,6 +1258,7 @@ def cmd_train(args: argparse.Namespace) -> None:
     print(
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} in {time.monotonic() - started:.1f} s"
     )
+    auto_clean()
 
 
 def cmd_check(_: argparse.Namespace) -> int:
@@ -1578,6 +1580,7 @@ def cmd_train_dt2(args: argparse.Namespace) -> None:
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} "
         f"in {time.monotonic() - started:.1f} s"
     )
+    auto_clean()
 
 
 def cmd_check_dt2() -> int:
@@ -1866,6 +1869,7 @@ def cmd_train_both(args: argparse.Namespace) -> None:
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} "
         f"in {time.monotonic() - started:.1f} s"
     )
+    auto_clean()
 
 
 def cmd_check_both() -> int:
@@ -2141,6 +2145,305 @@ def cmd_build(args: argparse.Namespace) -> None:
     print(binary)
 
 
+# --- clean: remove old experiment output and unreferenced profiles -------------------------
+
+CLEAN_DAYS = 14
+CLEAN_KEEP_BY_KEY = 4
+# Run :func:`clean_all` at the end of every ``train``. Off until the owner has seen a dry run.
+AUTO_CLEAN = False
+# Directories directly in a device state dir that no command reads back. ``bench-*`` and
+# ``train-N`` are written by bench and train, the others by older versions of this tool.
+CLEAN_DIR_NAMES = re.compile(r"(bench-.*|ab-.*|control-target|raw-.*|train-\d+)\Z")
+
+
+def pgo_root() -> pathlib.Path:
+    return ROOT / "out" / "native" / "pgo"
+
+
+@dataclasses.dataclass
+class CleanItem:
+    kind: str  # experiment, profile or by-key
+    group: str  # a name pattern for experiment dirs, else the kind
+    paths: list[pathlib.Path]
+    size: int
+
+
+@dataclasses.dataclass
+class CleanPlan:
+    state: pathlib.Path
+    items: list[CleanItem] = dataclasses.field(default_factory=list)
+    kept: dict[str, int] = dataclasses.field(default_factory=dict)
+    notes: list[str] = dataclasses.field(default_factory=list)
+
+    def keep(self, reason: str, count: int = 1) -> None:
+        self.kept[reason] = self.kept.get(reason, 0) + count
+
+
+def _tree_stats(path: pathlib.Path) -> tuple[float, int]:
+    """Newest mtime and disk bytes of PATH (a file, link or tree); links are never followed."""
+    seen: set[tuple[int, int]] = set()
+    newest = 0.0
+    total = 0
+
+    def visit(entry: pathlib.Path) -> None:
+        nonlocal newest, total
+        try:
+            st = entry.lstat()
+        except OSError:
+            return
+        newest = max(newest, st.st_mtime)
+        if stat.S_ISLNK(st.st_mode) or (st.st_ino, st.st_dev) in seen:
+            return
+        seen.add((st.st_ino, st.st_dev))
+        total += getattr(st, "st_blocks", 0) * 512 or st.st_size
+
+    visit(path)
+    if path.is_dir() and not path.is_symlink():
+        for base, dirs, files in os.walk(path, followlinks=False):
+            for name in (*dirs, *files):
+                visit(pathlib.Path(base) / name)
+    return newest, total
+
+
+def _inside(root: pathlib.Path, directory: pathlib.Path) -> bool:
+    real = pathlib.Path(os.path.realpath(directory))
+    return real == root or root in real.parents
+
+
+def _entries(directory: pathlib.Path) -> list[pathlib.Path]:
+    try:
+        return sorted(directory.iterdir())
+    except OSError:
+        return []
+
+
+def _profile_name(record: object) -> str | None:
+    try:
+        return pathlib.Path(str(record["profdata"]["path"])).name  # type: ignore[index]
+    except (KeyError, TypeError):
+        return None
+
+
+def plan_clean(
+    state: pathlib.Path,
+    days: float,
+    now: float | None = None,
+    root: pathlib.Path | None = None,
+) -> CleanPlan:
+    """What :func:`clean_state` would remove from one device state dir.
+
+    Age is the newest mtime anywhere inside a candidate, so anything a running training or
+    benchmark touches stays. Profiles named by manifest.json or by a kept by-key entry stay
+    (matched by file name: a manifest trained in another lane records that lane's path).
+    """
+    plan = CleanPlan(state)
+    root = pathlib.Path(os.path.realpath(root or pgo_root()))
+    cutoff = (time.time() if now is None else now) - days * 86400
+    if not _inside(root, state):
+        plan.notes.append(f"skipped: {state} resolves outside {root}")
+        return plan
+
+    # Experiment output, by name only.
+    groups: dict[str, list[CleanItem]] = {}
+    for entry in _entries(state):
+        if not CLEAN_DIR_NAMES.match(entry.name):
+            continue
+        if not entry.is_dir():  # a real directory, or a link to one
+            continue
+        newest, size = _tree_stats(entry)
+        if newest >= cutoff:
+            plan.keep("young experiment dirs")
+            continue
+        group = (
+            entry.name
+            if entry.name == "control-target"
+            else entry.name.split("-")[0] + "-*"
+        )
+        groups.setdefault(group, []).append(
+            CleanItem("experiment", group, [entry], size)
+        )
+    for group in sorted(groups):
+        plan.items.extend(groups[group])
+
+    # Profiles: the manifest and the newest by-key entries name those to keep.
+    referenced: dict[str, str] = {}
+    manifest_ok = False
+    try:
+        manifest = json.loads((state / "manifest.json").read_text())
+        name = _profile_name(manifest)
+        manifest_ok = name is not None
+        if name:
+            referenced[name] = "manifest"
+    except (OSError, ValueError):
+        pass
+    if not manifest_ok:
+        plan.notes.append("manifest.json unreadable: all profiles kept")
+
+    by_key = state / "by-key"
+    if by_key.exists() and not _inside(root, by_key):
+        plan.notes.append(f"by-key skipped: resolves outside {root}")
+    elif by_key.exists():
+        valid: list[tuple[float, pathlib.Path, str]] = []
+        for entry in _entries(by_key):
+            if entry.suffix != ".json" or entry.is_symlink() or not entry.is_file():
+                continue
+            try:
+                name = _profile_name(json.loads(entry.read_text()))
+                mtime = entry.stat().st_mtime
+            except (OSError, ValueError):
+                name = None
+            if name is None:
+                plan.notes.append(f"corrupt by-key entry left in place: {entry.name}")
+                continue
+            valid.append((mtime, entry, name))
+        valid.sort(key=lambda item: (item[0], item[1].name), reverse=True)
+        for rank, (mtime, entry, name) in enumerate(valid):
+            if rank < CLEAN_KEEP_BY_KEY or mtime >= cutoff:
+                referenced.setdefault(name, "by-key")
+                plan.keep("by-key entries")
+            else:
+                plan.items.append(
+                    CleanItem("by-key", "by-key", [entry], entry.stat().st_size)
+                )
+
+    profiles = state / "profiles"
+    if profiles.exists() and not _inside(root, profiles):
+        plan.notes.append(f"profiles skipped: resolves outside {root}")
+    elif profiles.exists():
+        files: dict[str, list[pathlib.Path]] = {}
+        for entry in _entries(profiles):
+            if entry.is_symlink() or entry.is_file():
+                for suffix in (".profdata.crates.json", ".profdata"):
+                    if entry.name.endswith(suffix) and len(entry.name) > len(suffix):
+                        base = entry.name[: -len(suffix)] + ".profdata"
+                        files.setdefault(base, []).append(entry)
+                        break
+        for base in sorted(files):
+            if base in referenced:
+                plan.keep(f"profiles named by {referenced[base]}")
+                continue
+            if not manifest_ok:
+                plan.keep("profiles kept: manifest unreadable")
+                continue
+            stats = [_tree_stats(path) for path in files[base]]
+            if max(newest for newest, _ in stats) >= cutoff:
+                plan.keep("young profiles")
+                continue
+            plan.items.append(
+                CleanItem(
+                    "profile", "profile", files[base], sum(size for _, size in stats)
+                )
+            )
+    return plan
+
+
+def apply_clean(plan: CleanPlan, root: pathlib.Path | None = None) -> list[CleanItem]:
+    """Delete the items of PLAN; the ones that were removed. A failure leaves that item."""
+    root = pathlib.Path(os.path.realpath(root or pgo_root()))
+    done = []
+    for item in plan.items:
+        try:
+            for path in item.paths:
+                if path.parent not in (
+                    plan.state,
+                    plan.state / "profiles",
+                    plan.state / "by-key",
+                ) or not _inside(root, path.parent):
+                    raise OSError(f"refusing {path}: outside {root}")
+                if path.is_symlink() or not path.is_dir():
+                    path.unlink()
+                else:
+                    shutil.rmtree(path)
+            done.append(item)
+        except OSError as error:
+            plan.notes.append(f"not removed: {item.paths[0].name}: {error}")
+    return done
+
+
+def human_bytes(size: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1000 or unit == "GB":
+            return f"{size:.0f} B" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1000
+    return ""
+
+
+def clean_states(root: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """Every ``<root>/{dn2,dt2,both}/<triple>`` state dir."""
+    root = root or pgo_root()
+    return [
+        triple
+        for device in ("dn2", "dt2", BOTH)
+        for triple in _entries(root / device)
+        if triple.is_dir() and not triple.is_symlink()
+    ]
+
+
+def summary_line(done: list[CleanItem], dry_run: bool) -> str:
+    profiles = sum(1 for item in done if item.kind == "profile")
+    experiments = sum(1 for item in done if item.kind == "experiment")
+    entries = sum(1 for item in done if item.kind == "by-key")
+    freed = sum(item.size for item in done)
+    verb = "would remove" if dry_run else "removed"
+    extra = f", {entries} by-key entries" if entries else ""
+    return (
+        f"pgo clean: {verb} {profiles} profiles, {experiments} experiment dirs"
+        f"{extra}, freed {human_bytes(freed)}"
+    )
+
+
+def print_plan(plan: CleanPlan) -> None:
+    print(f"== {plan.state}")
+    by_group: dict[str, list[CleanItem]] = {}
+    for item in plan.items:
+        by_group.setdefault(item.group, []).append(item)
+    if not by_group:
+        print("  nothing to remove")
+    for group, items in by_group.items():
+        names = [item.paths[0].name for item in items]
+        more = f" (+{len(names) - 3} more)" if len(names) > 3 else ""
+        label = {"profile": "profiles", "by-key": "by-key entries"}.get(group, group)
+        print(
+            f"  remove {label}: {len(items)}, {human_bytes(sum(i.size for i in items))}; "
+            f"first: {', '.join(names[:3])}{more}"
+        )
+    print(f"  total to free: {human_bytes(sum(item.size for item in plan.items))}")
+    for reason in sorted(plan.kept):
+        print(f"  kept {reason}: {plan.kept[reason]}")
+    for note in plan.notes:
+        print(f"  note: {note}")
+
+
+def clean_all(days: float = CLEAN_DAYS, dry_run: bool = False) -> list[CleanItem]:
+    """Clean every device state dir; prints a dry-run report or one summary line."""
+    done: list[CleanItem] = []
+    for state in clean_states():
+        plan = plan_clean(state, days)
+        if dry_run:
+            print_plan(plan)
+            done.extend(plan.items)
+        else:
+            done.extend(apply_clean(plan))
+            for note in plan.notes:
+                print(f"pgo clean: {state.parent.name}: {note}")
+    print(summary_line(done, dry_run))
+    return done
+
+
+def auto_clean() -> None:
+    """The cleanup at the end of a training: never fails it."""
+    if not AUTO_CLEAN:
+        return
+    try:
+        clean_all()
+    except Exception as error:  # noqa: BLE001
+        print(f"pgo clean failed: {error}", file=sys.stderr)
+
+
+def cmd_clean(args: argparse.Namespace) -> None:
+    clean_all(args.days, args.dry_run)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -2165,6 +2468,12 @@ def main(argv: list[str] | None = None) -> int:
         "--fixture-dt2",
         help="both: DT2 runtime fixture (default out/fixtures/runtime/dt2)",
     )
+    clean = sub.add_parser(
+        "clean",
+        help="remove old experiment dirs and unreferenced profiles under out/native/pgo",
+    )
+    clean.add_argument("--days", type=float, default=CLEAN_DAYS)
+    clean.add_argument("--dry-run", action="store_true")
     check = sub.add_parser(
         "check", help="print ok/stale/missing for the current profile"
     )
@@ -2228,6 +2537,8 @@ def main(argv: list[str] | None = None) -> int:
             cmd_train_dt2(args)
         else:
             cmd_train(args)
+    elif args.command == "clean":
+        cmd_clean(args)
     elif args.command == "coupled-build":
         cmd_coupled_build(args)
     elif args.command == "bench":
