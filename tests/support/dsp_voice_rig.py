@@ -36,7 +36,7 @@ MASK = (
     DIAG + 0x11C
 )  # `_dv_mask`: the registered types, rebuilt by voice 0 from the table
 GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
-# the contract adapter's data (`_dv_in` 24 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64, `_dv_st` 64): zero, and not used by a row of the old form
+# the contract adapter's data (`_dv_in` 24 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64, `_dv_st` 64, `_dv_call_params` 32, `_dv_trig_params` 512): zero, and not used by a row of the old form
 ADAPTER = {
     "_dv_in": DIAG + 0x300,
     "_dv_params": DIAG + 0x320,
@@ -45,6 +45,9 @@ ADAPTER = {
     "_dv_slots": DIAG + 0x3E0,
     "_dv_st": DIAG
     + 0x400,  # 16 words: the per-track stereo flag (machine contract 1.2)
+    "_dv_call_params": DIAG + 0x440,  # 8 words: the merged callback words
+    "_dv_trig_params": DIAG
+    + 0x500,  # 128 words (512 bytes): per voice/slot latch snapshots
 }
 ROW = 24  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields, the contract fields (words 16 to 19)
 RING_A, RING_B = (
