@@ -134,6 +134,7 @@ files = [
     "tools/devtools/agent_guard.py",
     "tools/devtools/emud_key.py",
     "tools/devtools/fast_roots.py",
+    "tools/devtools/sharc_cells.py",
     "tools/sharc_dev/recip_tables.py",
 ]
 mypy_path = "."
