@@ -29,6 +29,11 @@
 //! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
 //! scenario's report (`dsp_peek`), read after the scenario ends; `tools/firmware/l2canary.py` uses it.
 //!
+//! `--cold-base SHA256` (with `--dsp zero`) boots `--syx`, a patched build of the stock firmware
+//! SHA256, from reset to the ready state instead of loading `--cf-snapshot`. Use it to run a build
+//! that has no ready snapshot of its own. Without `--card-image` the runtime gives the firmware an
+//! empty +Drive.
+//!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
 //! min, mean, p50, p99, max and `over_period`, a period being one DSPI2 frame at `DIGI_CF_IPS`). On
@@ -105,6 +110,9 @@ struct Args {
     dsp_peeks: Vec<(String, u32, usize, usize)>,
     /// `--span NAME=ENTRY:EXIT`: ColdFire instruction spans between two PCs.
     spans: Vec<(String, u32, u32)>,
+    /// `--cold-base SHA256`: with `--dsp zero`, boot `--syx` from reset (a patched build of the
+    /// stock firmware SHA256) to the ready state instead of loading `--cf-snapshot`.
+    cold_base: Option<String>,
     /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
@@ -289,6 +297,7 @@ fn parse_args() -> Result<Args, String> {
         peeks: Vec::new(),
         dsp_peeks: Vec::new(),
         spans: Vec::new(),
+        cold_base: None,
         zero: false,
         trace: false,
         guard: None,
@@ -324,6 +333,7 @@ fn parse_args() -> Result<Args, String> {
             "--peek" => a.peeks.push(parse_peek(&value("--peek")?)?),
             "--dsp-peek" => a.dsp_peeks.push(parse_dsp_peek(&value("--dsp-peek")?)?),
             "--span" => a.spans.push(parse_span(&value("--span")?)?),
+            "--cold-base" => a.cold_base = Some(value("--cold-base")?),
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
@@ -354,9 +364,11 @@ fn parse_args() -> Result<Args, String> {
                     .into(),
             );
         }
-        if !a.list && a.snapshot.as_os_str().is_empty() {
-            return Err("--cf-snapshot is required".into());
+        if !a.list && a.snapshot.as_os_str().is_empty() && a.cold_base.is_none() {
+            return Err("--cf-snapshot or --cold-base is required".into());
         }
+    } else if a.cold_base.is_some() {
+        return Err("--cold-base needs --dsp zero".into());
     } else if !a.list
         && (a.image.as_os_str().is_empty()
             || a.state.as_os_str().is_empty()
@@ -711,6 +723,43 @@ fn probe(rt: &mut CoupledRuntime) -> Result<Probe, String> {
     })
 }
 
+/// Most ColdFire instructions a `--cold-base` boot may take to reach the ready state.
+const COLD_BOOT_LIMIT: u64 = 4_000_000_000;
+
+/// `--cold-base`: a patched build booted from reset with the zero DSP peer, stepped to the
+/// ready state. Its scenario clock starts there, as after a snapshot restore.
+fn cold_zero_runtime(
+    syx: &[u8],
+    card: Option<emmc_card::Card>,
+    base: &str,
+) -> Result<CoupledRuntime, String> {
+    let started = Instant::now();
+    let mut rt = CoupledRuntime::new_patched(syx, card, base)?;
+    rt.enable_zero_dsp_timing()?;
+    loop {
+        let status = rt.step_chunk(STEP_CHUNK).status;
+        if let Some(error) = status.error {
+            return Err(format!("cold boot stopped at {:#010x}: {error}", status.pc));
+        }
+        if status.ready {
+            break;
+        }
+        if status.icount > COLD_BOOT_LIMIT {
+            return Err(format!(
+                "cold boot: not ready after {} instructions (phase {})",
+                status.icount, status.phase
+            ));
+        }
+    }
+    rt.rebase_clock();
+    eprintln!(
+        "cold boot ready at {} instructions in {:.1}s",
+        rt.icount(),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(rt)
+}
+
 /// `base` with `-<name>` before its extension.
 fn wav_path_for(base: &Path, name: &str) -> PathBuf {
     let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
@@ -746,7 +795,10 @@ fn run_scenario(
         .as_deref()
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
-    let mut rt = CoupledRuntime::new(syx, card, Some(&options))?;
+    let mut rt = match &args.cold_base {
+        Some(base) => cold_zero_runtime(syx, card, base)?,
+        None => CoupledRuntime::new(syx, card, Some(&options))?,
+    };
     if let Some(spec) = &args.guard {
         let (protect, allow_pc) = elektron_native_boot::parse_guard_spec(spec)?;
         rt.set_write_guards(protect, allow_pc);
