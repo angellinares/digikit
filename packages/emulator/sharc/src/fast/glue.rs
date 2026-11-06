@@ -110,6 +110,8 @@ pub const MN: u32 = 1 << 6;
 pub const MU: u32 = 1 << 8;
 pub const MUS: u32 = 1 << 8;
 pub const STKYX_CODE: usize = 120;
+/// STKYX.AOS: a fixed-point ALU overflow.
+pub const AOS: u32 = 1 << 2;
 pub const SV: u32 = 1 << 11;
 pub const SZ: u32 = 1 << 12;
 pub const SS: u32 = 1 << 13;
@@ -554,6 +556,20 @@ fn store_mr(s: &mut St, r: &Region, ctx: &Ctx) {
     s.special_present[MRF_SLOT] = true;
 }
 
+/// Latch AOS for a kernel that ran through an overflow. Like the interpreter's
+/// `_sticky_set`: the bit becomes known and set, and without an overflow STKYX
+/// stays as it was.
+#[inline(always)]
+fn store_aos(s: &mut St, r: &Region, ctx: &Ctx) {
+    if r.aos && ctx.get32(ctx_reg_out(PSEUDO_AOS)) >> 31 != 0 {
+        let v = s.r[STKYX_CODE];
+        s.r[STKYX_CODE] = V {
+            b: v.b | AOS,
+            m: v.m | AOS,
+        };
+    }
+}
+
 /// Do all of R's register requirements hold in S?
 #[inline]
 fn regs_ok(s: &St, chk: &[RegChk]) -> bool {
@@ -953,6 +969,7 @@ pub fn run(
         }
     }
     store_mr(s, r, ctx);
+    store_aos(s, r, ctx);
     apply_flags(s, r, ctx, full, done, kk);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
@@ -1706,6 +1723,7 @@ pub fn run_cfg(
         };
     }
     store_mr(s, r, ctx);
+    store_aos(s, r, ctx);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
     ctx.ret_at = site.ret;

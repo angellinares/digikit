@@ -72,6 +72,8 @@ pub struct Region {
     /// The kernel keeps MRF in `PSEUDO_MR` (`Req::MrFull`), and writes it.
     pub mr: bool,
     pub mr_written: bool,
+    /// The kernel collects overflows in `PSEUDO_AOS`.
+    pub aos: bool,
     /// Registers the kernel reads (straight from the engine state) and the
     /// ones it writes through the context, with the instruction of the first
     /// write: the caller stores those a run wrote. (The kernel stores the
@@ -359,6 +361,7 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         cacc_unknown: out.cacc_unknown,
         mr: out.mr,
         mr_written: out.mr_written,
+        aos: out.aos,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
@@ -670,6 +673,7 @@ fn assemble_cfg(
         cacc_unknown: out.cacc_unknown,
         mr: out.mr,
         mr_written: out.mr_written,
+        aos: out.aos,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()

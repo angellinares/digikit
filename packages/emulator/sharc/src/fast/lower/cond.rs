@@ -48,7 +48,7 @@ pub const COND_FORMS: &[&str] = &[
 
 const BTF: u32 = 1 << 18;
 const MV: u32 = 1 << 7;
-const ALUSAT: u32 = 1 << 13;
+pub(super) const ALUSAT: u32 = 1 << 13;
 const SHIFT_MASK: u32 = SV | SZ | SS;
 
 /// The ASTATX bits a condition code reads, and whether it complements the

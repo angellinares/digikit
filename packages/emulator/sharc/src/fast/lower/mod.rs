@@ -1902,6 +1902,7 @@ impl Lower {
         let mr_words = PSEUDO_MR as usize..PSEUDO_MR as usize + 3;
         let mr = self.regs[mr_words.clone()].iter().any(|r| r.used);
         let mr_written = self.regs[mr_words].iter().any(|r| r.written);
+        let aos = self.regs[PSEUDO_AOS as usize].written;
         let has_helper = self
             .body
             .iter()
@@ -2015,6 +2016,7 @@ impl Lower {
             cacc_unknown,
             mr,
             mr_written,
+            aos,
             wins: self.wins,
             flags: self.flags,
             stored,
@@ -2038,6 +2040,8 @@ pub struct Lowered {
     /// The kernel keeps MRF in `PSEUDO_MR` (`Req::MrFull`), and writes it.
     pub mr: bool,
     pub mr_written: bool,
+    /// The kernel collects overflows in `PSEUDO_AOS`.
+    pub aos: bool,
     pub kernel: Kernel,
     pub regs: Vec<RegInfo>,
     pub reqs: Vec<Req>,

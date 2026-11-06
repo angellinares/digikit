@@ -2126,3 +2126,33 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
 [D] Forms 16b and 14d and `Rn = mant Fx` also lower now. On their own they gave no gain (about +0.2 to +0.5% host instructions), and a static census of what they would unblock overestimated badly. A region that stops at a PC with no entry is now refused over a healthy AOT root: this kept the root above from raising interpreted work to 26M.
 
 [O] The next blocker is the add overflow guard `fixed_alu.rs:24` in loop 0x1c4b72 (about 27% of iterations). DN2 post-reset stays below real time.
+
+## ALU overflow and appended entries in the fast tier (2026-11-07)
+
+[D] FUN_1c4b54 on DN2 post-reset runs a loop of about 13 instructions, 32 iterations for each of 24,000 calls per audio second. It adds `R2 += R1; R1 += R2` and stores a sample only past a threshold. It looks like a wrapping noise generator, so about one add in four overflows by design. With a root at 0x1c4b72, the old overflow guard left the kernel about 508k times per audio second over 768k iterations, so the root gained nothing.
+
+[D] With MODE1.ALUSAT clear and outside SIMD, a fixed add, subtract, increment, decrement or negate now wraps in the kernel. The kernel ORs each overflow word into `PSEUDO_AOS`, and `glue::store_aos` sets STKYX.AOS when the kernel returns. Such a kernel requires ALUSAT clear (`Req::Mode1`). With ALUSAT set, in SIMD, and for abs, the guard stays. Root 0x1c4b72 then runs 270 instructions per call and only leaves by its return. Its calls fall from about 520k to 24k per audio second.
+
+[D] The workload cannot check AOS: the state hash stayed equal with the latch left out. `fast_diff` covers it: `forms` starts STKYX.AOS clear, set or unknown and builds a quarter of the instances with ALUSAT set, and `cfg` starts it clear or set. With `store_aos` disabled, `forms --filter /add` gave 1811 mismatches and `cfg` 3 differing runs.
+
+[D] Appended code entered by a block or kernel exit never became an entry: `note_appended` ran only after an interpreted branch landing. The interpreter now also notes a PC in appended code that the previous interpreted instruction did not lead to. Interpreted appended instructions per audio second: post-reset 2.68M to 1.14M, first boot 2.20M to 1.14M, DT2 no real change. `fast_budgets.json` for DN2 reset is now 4.5M interpreted and 8M block entries.
+
+[D] PGO builds, steady state per audio second, A is main at 32b8af05 and B is both changes. PCM and full state are exact on every state:
+
+| state | host insns A | host insns B | B/A | interpreted A to B | block entries A to B |
+|---|---:|---:|---:|---:|---:|
+| DN2 post-reset | 34.03G | 31.58G | 0.928 | 4.61M to 3.09M | 8.67M to 6.38M |
+| DN2 first boot | 25.19G | 24.54G | 0.974 | 3.45M to 2.41M | 3.08M to 3.09M |
+| DT2 | 22.49G | 22.57G | 1.0035 | 1.80M to 1.80M | 2.17M to 2.17M |
+
+[D] Timing, DN2 post-reset, 3 s runs including startup, three alternating pairs at load 9 to 12 (not a quiet machine): DSP CPU ratio 0.829, 0.942, 0.946, median 0.942; real time 0.62x to 0.66x in the last two pairs. The first pair ran at the highest load and is not used.
+
+[O] DT2 costs 0.35% more host instructions under PGO (1.0028 plain, also with runs one at a time) with equal tier counters and cycles. The cause is not known.
+
+[O] A fully unknown STKYX shows a known-mask difference in STKYX bit 26 between the tiers after a DO: the interpreter's `_push` leaves STKYX unknown, and the fast tier knows bit 26. It predates this work and `fast_diff cfg` avoids that state. Whether real runs reach it is not checked.
+
+[D] A DN2 core regenerated from the state B profile, on main before these changes: 15.5% more host instructions on post-reset, because the root lists no longer match its regions (interpreted 9.98M). With 36 more roots: post-reset 2.2% fewer, first boot 12% more. A core from the union of state A and B profiles, with those roots, in paired 3 s runs: post-reset 0.948 host instructions and 0.921 cycles, first boot 1.076 and 1.068. Dispatches fall from 8.67M to 2.68M but fast calls rise from 1.12M to 3.39M. Not adopted: it may overlap the gain above and needs a combined measurement.
+
+[O] About 1.14M interpreted appended instructions per audio second remain. Six entries at 24,000 calls per audio second each stop at a form 14a access: `normal-word address outside the plain range` (`_static_plain` in `sharc_lowergen.py`).
+
+[O] DN2 post-reset stays below real time, which is about 23G host instructions by DT2 at 22.5G and 1.02x. Remaining estimates: AOT path length about 12% (a rough hand count), appended code about 1.4G, union core up to 5%. Their sum still falls short, so reaching it also needs more AOT work moved to the fast tier; AOT is about 60% of the total.

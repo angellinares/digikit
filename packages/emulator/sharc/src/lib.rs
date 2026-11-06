@@ -2189,6 +2189,14 @@ impl Engine {
             self.model_stats.interp_appended += (self.s.pc_sw as u32 >= self.appended_from) as u64;
             let loops_before = self.s.loops.n;
             let pc_before = self.s.pc_sw;
+            if pc_before as u32 >= self.appended_from
+                && pc_before != self.last_interp_next
+                && let Some(f) = self.fast.as_mut()
+            {
+                // Arrived here from a block or a kernel, not from the previous
+                // interpreted instruction: make it an entry as well.
+                f.note_appended(pc_before as u32);
+            }
             if self.diag_on {
                 self.diag_step(pc_before);
             }
