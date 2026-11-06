@@ -580,6 +580,30 @@ def test_a_missing_fixture_names_the_make_command(tmp_path):
         native_pgo.load_fixture("dn2", tmp_path / "none")
 
 
+def test_the_dn2_reset_fixture_is_an_extra_training_input_and_names_the_workload(
+    tmp_path, capsys
+):
+    directory = tmp_path / "dn2-reset"
+    assert native_pgo.load_reset_fixture(directory) is None
+    assert "no DN2 reset fixture" in capsys.readouterr().out
+    assert not native_pgo.reset_fixture_present(directory)
+    assert native_pgo.both_workload_name(False) == native_pgo.BOTH_WORKLOAD_NAME
+
+    write_fixture(directory)
+    provenance = json.loads((directory / "provenance.json").read_text())
+    provenance.update(device="dn2", state="reset")
+    (directory / "provenance.json").write_text(json.dumps(provenance))
+    reset = native_pgo.load_reset_fixture(directory)
+    assert reset is not None
+    assert native_pgo.reset_fixture_present(directory)
+    assert native_pgo.both_workload_name(True) != native_pgo.both_workload_name(False)
+
+    # a fixture that is present but changed is an error, not a silent skip
+    (directory / "dsp-image.bin").write_bytes(b"other")
+    with pytest.raises(SystemExit, match="provenance sha256"):
+        native_pgo.load_reset_fixture(directory)
+
+
 def test_a_fixture_of_another_device_is_refused(tmp_path):
     write_fixture(tmp_path / "dt2")
     with pytest.raises(SystemExit, match=r"perf:fixture -- --device dn2"):
