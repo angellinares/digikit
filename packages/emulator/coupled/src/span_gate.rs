@@ -133,8 +133,8 @@ pub fn summary(gate: &Value) -> Vec<String> {
             format!(
                 "  span {:<10} p50 {:>+7} max {:>+7} (limit +{}) {}",
                 r["name"].as_str().unwrap_or("?"),
-                r["extra_p50"],
-                r["extra_max"],
+                r["extra_p50"].as_i64().unwrap_or(0),
+                r["extra_max"].as_i64().unwrap_or(0),
                 r["limit"],
                 if r["ok"] == true { "ok" } else { "FAILED" }
             )
@@ -242,6 +242,14 @@ mod tests {
                 .contains("exit")
         );
         assert_eq!(check(&scenario(vec![]), "zero", &stock(), &l)["ok"], false);
+    }
+
+    #[test]
+    fn the_summary_signs_the_extra() {
+        let s = scenario(vec![span("isr", 49000, 56000)]);
+        let lines = summary(&check(&s, "zero", &stock(), &Limits::default()));
+        assert!(lines[0].contains("p50   -1000") && lines[0].contains("max   +2000"));
+        assert!(lines[0].ends_with("FAILED"));
     }
 
     #[test]
