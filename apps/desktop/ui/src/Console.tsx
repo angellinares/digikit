@@ -26,6 +26,7 @@ import {
   unseenErrors,
 } from './log-core';
 import { desktopDefaultModules } from './default-modules';
+import { pgoWarning, type BuildInfo } from './pgo-warning';
 import { createLogFollow, followSession } from './log-follow';
 import { windowShown } from './log-follow-core';
 import { followOn, logEvent, logInput, logOpen, logState, setLogOpen } from './log-state';
@@ -122,6 +123,7 @@ const PLAY = 'M4.5 2.5L12.5 8L4.5 13.5Z';
 const RESTART = 'M3 2.5V6H6.5M3 6A5.2 5.2 0 1 1 2.8 9.8';
 const CHART = 'M2 12.5L5.5 7.5L8.5 10L13.5 3.5M10.5 3.5H13.5V6.5';
 const SPEAKER = 'M2.5 6H5L8.5 3V13L5 10H2.5ZM11 5.5a3.5 3.5 0 0 1 0 5';
+const WARNING = 'M8 2.5L14.5 13.5H1.5ZM8 6.5V9.5M8 11.5V11.6';
 const UP = 'M4 10L8 6L12 10';
 const REMOTE = 'M2.5 3.5H13.5V10.5H2.5ZM6 13H10M8 10.5V13';
 // a chip with pins
@@ -154,6 +156,7 @@ export default function Console() {
   const [reloadNote, setReloadNote] = createSignal('');
   const [modulesBusy, setModulesBusy] = createSignal(false);
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
+  const [buildInfo, setBuildInfo] = createSignal<BuildInfo>();
   const [rate, setRate] = createSignal<number>();
   const [drawer, setDrawer] = createSignal(false);
   // the Log drawer: the last entry seen (the badge counts the errors after it); the filter and the list are in LogPanel.tsx
@@ -384,6 +387,9 @@ export default function Console() {
         return;
       }
       setRuntime(r);
+      void invoke<BuildInfo>('emu_build_info')
+        .then(setBuildInfo)
+        .catch(() => setBuildInfo(undefined));
       void (async () => {
         await pollSource();
         await refreshInfo();
@@ -912,6 +918,14 @@ export default function Console() {
             {rate()!.toFixed(2)}× RT
             <Meter value={rate()! * 100} tone="amber" />
           </span>
+        </Show>
+        <Show when={pgoWarning(buildInfo())}>
+          {(w) => (
+            <span class="warn pgo" title={w().title}>
+              <Icon d={WARNING} />
+              {w().label}
+            </span>
+          )}
         </Show>
         <Show when={sink()}>
           <span classList={{ warn: (sink()?.underrun_events ?? 0) > 0 }}>underruns {sink()!.underrun_events}</span>

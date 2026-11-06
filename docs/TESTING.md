@@ -301,9 +301,10 @@ Nx selects by project. `pnpm nx:pilot show projects --affected --base main` prin
 without running it.
 
 - The gate projects `gate-smoke`, `gate-card`, `gate-stock`, `gate-fx-dn2`, `gate-fx-dt2`, `gate-pins`,
-  `gate-dt2-tone` and `gate-rust-modules` (in `tools/gate/`) carry their trigger paths as positive
+  `gate-fast-roots` (`fast-roots`), `gate-dt2-tone` and `gate-rust-modules` (in `tools/gate/`) carry their trigger paths as positive
   `{workspaceRoot}` globs in their target inputs. Nx affected ignores negated (`!`) inputs, so inputs
   that decide selection must be positive globs.
+- `gate-fast-roots` replays a fixture built from the current runtime on both devices and fails when interpreted guest instructions per audio second exceed `tools/emulator/fast_budgets.json`, the sign that runtime patches bar hot generated regions.
 - Module projects with device tests depend on `regression` (harness), `digi-control` (daemons),
   `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs.
   Only modules with `test-conformance` also depend on `conformance`. A change in a dependency selects the modules that use it. The module targets

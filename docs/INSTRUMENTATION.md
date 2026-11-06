@@ -89,6 +89,12 @@ process, for example `digi-emud`. When an engine is dropped (daemon restart or e
 `.entries` (`pc count`) and `.trans` (`from to count`), the inputs of `sharc_rsgen --coverage/--entries/--transitions`. Merge them with
 `tools/sharc_dev/aot_fxprof.py --live PATH` (finding 18, "Send-FX coverage"). The daemon runs slower while it records.
 
+To find generated regions that the runtime patches bar (they run in the interpreter), capture with
+`SHARC_PROFILE_PREFIX=out/prof/cap SHARC_CODE_LOG=1 mise run wb` (the folder must exist; quit the app normally so the profile is written).
+Then run `mise run perf:fast-roots -- rank --prefix out/prof/cap --device dn2`. It ranks the regions by interpreted instructions and prints
+roots for `fallback_regions` in `tools/emulator/fast_regions.json`. Check each root for exactness. The gate target `fast-roots`
+(`mise run perf:fast-roots -- check --device dn2,dt2`) fails when the interpreted work per audio second is over `tools/emulator/fast_budgets.json`.
+
 Not in `--diag` (set the variable by hand): `SHARC_LIVE_AOT_CAPTURE_PC/_DIR/_LIMIT`
 (raw block-call snapshots), `SHARC_FAST_DUMP_ALL`, `SHARC_FAST_CL_DISASM`,
 `DIGI_LP0_LOG` (stderr), `DN2_PROFILE_LINK=1`,

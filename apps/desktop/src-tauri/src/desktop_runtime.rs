@@ -6,12 +6,15 @@
 #[allow(unused_imports)]
 pub use digi_coupled::{AudioMode, AudioOptions};
 
-/// The PGO training workload: the `coupled_ready_exactness` gate, runnable from
+/// The PGO training workload: the `coupled_ready_workload` gate without its pins, runnable from
 /// the app binary (`--pgo-train`) so the profile is trained on the same crate
 /// hashes the shipped binary has. Needs the private DN2 ready fixtures.
 #[cfg(feature = "coupled-audio")]
 pub fn pgo_training_workload() -> Result<(), String> {
-    std::panic::catch_unwind(digi_coupled::gates::coupled_ready_exactness).map_err(|payload| {
+    std::panic::catch_unwind(|| {
+        digi_coupled::gates::coupled_ready_workload();
+    })
+    .map_err(|payload| {
         payload
             .downcast_ref::<String>()
             .cloned()
@@ -29,7 +32,7 @@ mod coupled {
         #[test]
         #[ignore = "private DN2 ready fixtures and locally generated DSP; bounded 100M-instruction gate"]
         fn coupled_ready_exactness() {
-            super::super::pgo_training_workload().expect("coupled_ready_exactness");
+            gates::coupled_ready_exactness();
         }
 
         #[test]
