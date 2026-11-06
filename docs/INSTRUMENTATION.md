@@ -211,6 +211,18 @@ Stock DN2 1.12, `--dsp zero`, 10 s of `idle`: `isr` 49,541 to 50,069 instruction
 (16 trig keys held) the `isr` maximum is 54,560, 62 % of the period. In the emulator the
 handler starts every 88,000 instructions, give or take a few. So an entry is late only after a handler that ran past its period.
 
+Three options go with the spans:
+
+| option | effect |
+|---|---|
+| `--span-log PATH` | writes every pass as a JSON line `{"span", "at", "len"}`, `at` being the instruction count at the entry, with `-<scenario>` before the extension. Each span's report also gives `worst`, the index and the entry count of its longest pass. A short call span can then be placed inside the handler pass it ran in. |
+| `--cold-base SHA256` | with `--dsp zero`, boots `--syx` from reset to the ready state instead of loading `--cf-snapshot`. SHA256 names the stock firmware of a patched build. A build with no ready snapshot of its own can then run the scenarios. Without `--card-image` the runtime gives the firmware an empty +Drive. Stock DN2 1.11 reaches ready at 851,236,338 instructions. |
+| `--call PC:ARG[,ARG...]` | calls a guest function at the ready point, before the scenario (`Emulator::call_function`, gcc m68k ABI, interrupts masked, a scratch stack 1 KiB below the guest's). ARG is a number, or `*ADDR+OFF`: the long at ADDR, read at the call, plus OFF. The report lists each call's arguments, D0 and instructions. A call that does not return stops the run. |
+
+To compare a patched build with stock, run the same scenario and spans on both with `--cold-base` and compare `length` per span.
+On stock DN2 1.11 with `kb-chord16` the `evala` passes also show a stock job every 1,000 frames: +416 to +528 instructions,
+in a cycle of four.
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one
