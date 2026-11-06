@@ -207,12 +207,21 @@ pub struct FlushHit {
     pub fetch_icount: u64,
     pub writer: Writer,
     pub write_icount: u64,
+    /// Bytes of the line stored since it was last cleaned.
+    pub mask: u16,
+}
+
+/// The bits of bytes [lo, hi) of a line; 0 <= lo <= hi <= 16.
+fn byte_mask(lo: u32, hi: u32) -> u16 {
+    (((1u32 << (hi - lo)) - 1) << lo) as u16
 }
 
 #[derive(Clone, Copy)]
 struct Line {
     writer: Writer,
     icount: u64,
+    /// Bytes stored since the line was last cleaned.
+    mask: u16,
     /// A cached (copyback) store: the data cache must push it.
     need_d: bool,
     d_done: bool,
@@ -232,6 +241,8 @@ struct Flush {
     imask: [u8; SETS],
     reported: HashSet<u32>,
     hits: Vec<FlushHit>,
+    /// Fetches on a dirty line that did not overlap the stored bytes.
+    same_line_clean: u64,
 }
 
 fn set_of(line: u32) -> usize {
@@ -246,19 +257,22 @@ impl Flush {
             imask: [0; SETS],
             reported: HashSet::new(),
             hits: Vec::new(),
+            same_line_clean: 0,
         }
     }
 
-    fn store(&mut self, line: u32, writer: Writer, icount: u64, cached: bool) {
+    fn store(&mut self, line: u32, mask: u16, writer: Writer, icount: u64, cached: bool) {
         let s = set_of(line);
         let old_need = self.sets[s]
             .get(&line)
             .is_some_and(|l| l.need_d && !l.d_done);
+        let old_mask = self.sets[s].get(&line).map_or(0, |l| l.mask);
         self.sets[s].insert(
             line,
             Line {
                 writer,
                 icount,
+                mask: mask | old_mask,
                 need_d: cached || old_need,
                 d_done: false,
                 i_done: false,
@@ -541,11 +555,12 @@ impl Watch {
                 && DDR.contains(&n)
             {
                 let cached = DDR.contains(&addr) && self.cacr & CACR_DEC != 0;
-                let last = n.saturating_add(u32::from(size).saturating_sub(1));
+                let end = n.saturating_add(u32::from(size));
                 let mut line = n & !15;
                 self.seen[1] += 1;
-                while line <= last & !15 {
-                    flush.store(line, Writer::Pc(pc), icount, cached);
+                while line < end {
+                    let mask = byte_mask(n.max(line) - line, end.min(line + 16) - line);
+                    flush.store(line, mask, Writer::Pc(pc), icount, cached);
                     line += 16;
                 }
             }
@@ -572,13 +587,15 @@ impl Watch {
             self.seen[1] += 1;
             let mut line = lo.max(DDR.start) & !15;
             while line < hi.min(DDR.end) {
-                flush.store(line, Writer::Dma(src), icount, false);
+                let mask = byte_mask(lo.max(line) - line, hi.min(line + 16) - line);
+                flush.store(line, mask, Writer::Dma(src), icount, false);
                 line += 16;
             }
         }
     }
 
-    pub(crate) fn fetch(&mut self, pc: u32, icount: u64) {
+    /// An instruction of `len` bytes is fetched at `pc`.
+    pub(crate) fn fetch(&mut self, pc: u32, len: u32, icount: u64) {
         if self.cacr & CACR_IEC == 0 {
             return;
         }
@@ -586,8 +603,25 @@ impl Watch {
             return;
         };
         self.seen[2] += 1;
-        let line = normalise(pc) & !15;
-        let Some(l) = flush.sets[set_of(line)].get(&line).copied() else {
+        let lo = normalise(pc);
+        let end = lo.saturating_add(len.max(2));
+        let mut line = lo & !15;
+        let mut dirty = false;
+        let mut found = None;
+        while line < end {
+            if let Some(l) = flush.sets[set_of(line)].get(&line).copied() {
+                dirty = true;
+                if l.mask & byte_mask(lo.max(line) - line, end.min(line + 16) - line) != 0 {
+                    found = Some((line, l));
+                    break;
+                }
+            }
+            line += 16;
+        }
+        let Some((line, l)) = found else {
+            if dirty {
+                flush.same_line_clean += 1;
+            }
             return;
         };
         if flush.reported.insert(line) {
@@ -597,14 +631,16 @@ impl Watch {
                 fetch_icount: icount,
                 writer: l.writer,
                 write_icount: l.icount,
+                mask: l.mask,
             };
             flush.hits.push(hit.clone());
             // Not a write-watch event: logged, counted in `flush_hits`.
             self.line_out(&format!(
-                "{{\"t\":\"flush\",\"ic\":{icount},\"fetch_pc\":\"{pc:#010x}\",\"line\":\"{line:#010x}\",\"writer\":{{{}}},\"write_ic\":{},\"dcache_pending\":{}}}",
+                "{{\"t\":\"flush\",\"ic\":{icount},\"fetch_pc\":\"{pc:#010x}\",\"line\":\"{line:#010x}\",\"writer\":{{{}}},\"write_ic\":{},\"dcache_pending\":{},\"mask\":\"0x{:04x}\"}}",
                 hit.writer.json(),
                 hit.write_icount,
-                l.need_d && !l.d_done
+                l.need_d && !l.d_done,
+                l.mask
             ));
         }
     }
@@ -694,10 +730,11 @@ impl Watch {
             .iter()
             .map(|h| {
                 format!(
-                    "{{\"line\":\"{:#010x}\",\"fetch_pc\":\"{:#010x}\",\"writer\":{{{}}}}}",
+                    "{{\"line\":\"{:#010x}\",\"fetch_pc\":\"{:#010x}\",\"writer\":{{{}}},\"mask\":\"0x{:04x}\"}}",
                     h.line,
                     h.fetch_pc,
-                    h.writer.json()
+                    h.writer.json(),
+                    h.mask
                 )
             })
             .collect();
@@ -718,7 +755,7 @@ impl Watch {
             })
             .collect();
         let text = format!(
-            "{{\"stacks\":[{}],\"stack_epochs\":[{}],\"events\":{},\"logged\":{},\"cacr_writes\":{},\"flush_stores_tracked\":{},\"flush_fetches_checked\":{},\"cpushl\":{},\"per_pc\":[{}],\"per_dma\":[{}],\"flush_hits\":[{}]}}",
+            "{{\"stacks\":[{}],\"stack_epochs\":[{}],\"events\":{},\"logged\":{},\"cacr_writes\":{},\"flush_stores_tracked\":{},\"flush_fetches_checked\":{},\"flush_same_line_clean\":{},\"cpushl\":{},\"per_pc\":[{}],\"per_dma\":[{}],\"flush_hits\":[{}]}}",
             stacks.join(","),
             self.epoch_rows.join(","),
             self.events,
@@ -726,6 +763,7 @@ impl Watch {
             self.seen[0],
             self.seen[1],
             self.seen[2],
+            self.flush.as_ref().map_or(0, |f| f.same_line_clean),
             self.seen[3],
             per_pc.join(","),
             per_dma.join(","),
@@ -870,8 +908,8 @@ mod tests {
         let mut w = watch(&[], true);
         w.cacr_written(IEC_DEC_INV, 1);
         store_then_fetch(&mut w);
-        w.fetch(0x4600_0010, 11);
-        w.fetch(0x4600_0012, 12);
+        w.fetch(0x4600_0010, 2, 11);
+        w.fetch(0x4600_0012, 2, 12);
         let hits = w.flush_hits();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].line, 0x4600_0010);
@@ -888,7 +926,7 @@ mod tests {
         for way in 0..4 {
             w.cpushl(3, 0x4600_0010 + way);
         }
-        w.fetch(0x4600_0010, 11);
+        w.fetch(0x4600_0010, 2, 11);
         assert!(w.flush_hits().is_empty());
     }
 
@@ -901,7 +939,7 @@ mod tests {
         for way in 0..4 {
             w.cpushl(1, 0x4600_0020 + way); // data only, another set
         }
-        w.fetch(0x4600_0010, 11);
+        w.fetch(0x4600_0010, 2, 11);
         assert_eq!(w.flush_hits().len(), 1);
         let mut w = watch(&[], true);
         w.cacr_written(SET_WAY, 1);
@@ -909,7 +947,7 @@ mod tests {
         for way in 0..4 {
             w.cpushl(1, 0x4600_0010 + way); // pushed, but the I-cache still holds the old line
         }
-        w.fetch(0x4600_0010, 11);
+        w.fetch(0x4600_0010, 2, 11);
         assert_eq!(w.flush_hits().len(), 1);
     }
 
@@ -919,11 +957,11 @@ mod tests {
         w.cacr_written(IEC_DEC_INV | CACR_SPA, 1);
         store_then_fetch(&mut w);
         w.cpushl(3, 0x4600_0014);
-        w.fetch(0x4600_0010, 11);
+        w.fetch(0x4600_0010, 2, 11);
         assert!(w.flush_hits().is_empty());
         store_then_fetch(&mut w);
         w.cacr_written(IEC_DEC_INV, 12); // ICINVA | DCINVA
-        w.fetch(0x4600_0010, 13);
+        w.fetch(0x4600_0010, 2, 13);
         assert!(w.flush_hits().is_empty());
     }
 
@@ -932,14 +970,14 @@ mod tests {
         let mut w = watch(&[], true);
         store_then_fetch(&mut w); // CACR not written yet
         w.cacr_written(IEC_DEC_INV, 11);
-        w.fetch(0x4600_0010, 12);
+        w.fetch(0x4600_0010, 2, 12);
         assert!(w.flush_hits().is_empty());
         // An uncached-alias store needs only the instruction side.
         w.store(0x4000_0100, 0x4e00_0030 + ALIAS_OFFSET, 4, 0, 13);
         for way in 0..4 {
             w.cpushl(2, 0x4e00_0030 + way);
         }
-        w.fetch(0x4e00_0030, 14);
+        w.fetch(0x4e00_0030, 2, 14);
         assert!(w.flush_hits().is_empty());
     }
 
@@ -948,10 +986,71 @@ mod tests {
         let mut w = watch(&[], true);
         w.cacr_written(IEC_DEC_INV, 1);
         w.dma("esdhc-dma59", 0x4500_0000, 64, 5);
-        w.fetch(0x4500_0020, 6);
+        w.fetch(0x4500_0020, 2, 6);
         let hits = w.flush_hits();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].writer, Writer::Dma("esdhc-dma59"));
+    }
+
+    #[test]
+    fn fetch_of_a_stored_byte_is_a_hit() {
+        let mut w = watch(&[], true);
+        w.cacr_written(IEC_DEC_INV, 1);
+        store_then_fetch(&mut w);
+        w.fetch(0x4600_0010, 2, 11);
+        assert_eq!(w.flush_hits().len(), 1);
+        assert_eq!(w.flush_hits()[0].mask, 0x000f);
+    }
+
+    #[test]
+    fn extension_word_on_a_stored_byte_is_a_hit() {
+        let mut w = watch(&[], true);
+        w.cacr_written(IEC_DEC_INV, 1);
+        w.store(0x4000_0100, 0x4600_0012, 2, 0, 10);
+        w.fetch(0x4600_0010, 6, 11);
+        assert_eq!(w.flush_hits().len(), 1);
+    }
+
+    #[test]
+    fn same_line_without_overlap_is_clean_and_counted() {
+        let mut w = watch(&[], true);
+        w.cacr_written(IEC_DEC_INV, 1);
+        w.store(0x4000_0100, 0x4600_001c, 4, 0, 10);
+        w.fetch(0x4600_0010, 6, 11);
+        assert!(w.flush_hits().is_empty());
+        assert_eq!(w.flush.as_ref().unwrap().same_line_clean, 1);
+    }
+
+    #[test]
+    fn instruction_crossing_into_a_stored_line_is_a_hit() {
+        let mut w = watch(&[], true);
+        w.cacr_written(IEC_DEC_INV, 1);
+        store_then_fetch(&mut w);
+        w.fetch(0x4600_000e, 4, 11);
+        assert_eq!(w.flush_hits().len(), 1);
+        assert_eq!(w.flush_hits()[0].line, 0x4600_0010);
+    }
+
+    #[test]
+    fn a_clean_fetch_does_not_use_up_the_report() {
+        let mut w = watch(&[], true);
+        w.cacr_written(IEC_DEC_INV, 1);
+        w.store(0x4000_0100, 0x4600_001c, 4, 0, 10);
+        w.fetch(0x4600_0010, 2, 11);
+        assert!(w.flush_hits().is_empty());
+        w.fetch(0x4600_001c, 2, 12);
+        assert_eq!(w.flush_hits().len(), 1);
+    }
+
+    #[test]
+    fn dma_marks_only_its_bytes() {
+        let mut w = watch(&[], true);
+        w.cacr_written(IEC_DEC_INV, 1);
+        w.dma("x", 0x4500_0008, 4, 5);
+        w.fetch(0x4500_0000, 2, 6);
+        assert!(w.flush_hits().is_empty());
+        w.fetch(0x4500_0008, 2, 7);
+        assert_eq!(w.flush_hits().len(), 1);
     }
 }
 

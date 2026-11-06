@@ -124,21 +124,23 @@ Events (JSONL), `ic` = guest instruction count:
 ```
 {"t":"w","ic":19811920,"pc":"0x400004d2","addr":"0x44e4a5b8","size":4,"value":"0x0"}   CPU store
 {"t":"dma","ic":..,"src":"esdhc-dma59","addr":"0x..","size":512}                       DMA into RAM
-{"t":"flush","ic":..,"fetch_pc":"0x..","line":"0x..","writer":{"pc":"0x.."},"write_ic":..,"dcache_pending":true}
+{"t":"flush","ic":..,"fetch_pc":"0x..","line":"0x..","writer":{"pc":"0x.."},"write_ic":..,"dcache_pending":true,"mask":"0x000f"}
 ```
 
 DMA sources are the paths that report to `Board::take_dma_written_ranges`: `esdhc-dma59`, `dspi1-rx`, `dspi2`.
 A DMA event is reported when the runtime drains the board (after the instruction), so its `ic` can be a
 few instructions late, and it has no value. The summary has the events, a count per PC (most frequent
 first), a count per DMA source, the flush hits and work counters (`cacr_writes`, `flush_stores_tracked`,
-`flush_fetches_checked`, `cpushl`) that show the check saw traffic. `Emulator::finish_write_watch()` writes
+`flush_fetches_checked`, `flush_same_line_clean` (fetches on a dirty line that did not overlap the stored
+bytes), `cpushl`) that show the check saw traffic. A flush hit in the log and summary has `mask`, the dirty
+bytes of the line (bit n is byte n). `Emulator::finish_write_watch()` writes
 the summary at once; it is also written when the emulator is dropped.
 
 Flush check. V4 caches are not coherent on hardware (copyback data cache, separate instruction cache); the
 emulator is, so code that runs after being written without a flush works in the emulator and fails on the
-device. Each 16-byte DDR line stored to (or written by DMA) while CACR[IEC] is set is dirty until it is
-cleaned; a fetch from a dirty line is reported once per line, with the fetch PC and the last writer. A line
-is cleaned by both of:
+device. A store or DMA write marks its bytes dirty in each 16-byte DDR line it touches while CACR[IEC] is
+set. A fetch whose instruction bytes overlap dirty bytes of a line that is not yet cleaned is reported once
+per line, with the fetch PC and the last writer. Cleaning works per line. A line is cleaned by both of:
 
 - data side: a CPUSHL with dc or bc (push) after a cached store; not needed after an uncached-alias store
   or DMA; CACR[DCINVA] counts;
@@ -148,8 +150,7 @@ CPUSHL is modelled as the hardware does: with CACR[SPA] set (the stock firmware'
 register is a physical address and cleans that line; with SPA clear it names a set (bits 10:4) and a way (bits
 1:0), and a line is cleaned when all four ways of its set were done since the last store to the set. Stores
 while the instruction cache is off do not count (the reset-path loader runs before CACR is written).
-Limits: only the first word of an instruction is checked (an instruction that crosses into a dirty line is
-missed); only the DDR window `0x40000000..0x47ffffff` is tracked; stores made by host code (`poke32`, HLE) are
+Limits: all bytes of an instruction are checked, also when it crosses into the next line; only the DDR window `0x40000000..0x47ffffff` is tracked; stores made by host code (`poke32`, HLE) are
 not seen; the emulator itself does not alias the uncached view (a store through `0x48...` lands in separate
 memory, as `tools/coldfire/regions.py` already notes).
 
