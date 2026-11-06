@@ -2149,11 +2149,14 @@ def cmd_build(args: argparse.Namespace) -> None:
 
 CLEAN_DAYS = 14
 CLEAN_KEEP_BY_KEY = 4
-# Run :func:`clean_all` at the end of every ``train``. Off until the owner has seen a dry run.
-AUTO_CLEAN = False
+# Run :func:`clean_all` at the end of every ``train``.
+AUTO_CLEAN = True
 # Directories directly in a device state dir that no command reads back. ``bench-*`` and
-# ``train-N`` are written by bench and train, the others by older versions of this tool.
-CLEAN_DIR_NAMES = re.compile(r"(bench-.*|ab-.*|control-target|raw-.*|train-\d+)\Z")
+# ``train-N`` are written by bench and train, the others by older versions of this tool
+# (``target`` and ``instrument-target`` are old cargo target dirs).
+CLEAN_DIR_NAMES = re.compile(
+    r"(bench-.*|ab-.*|control-target|raw-.*|train-\d+|target|instrument-target)\Z"
+)
 
 
 def pgo_root() -> pathlib.Path:
@@ -2256,7 +2259,7 @@ def plan_clean(
             continue
         group = (
             entry.name
-            if entry.name == "control-target"
+            if entry.name.endswith("target")
             else entry.name.split("-")[0] + "-*"
         )
         groups.setdefault(group, []).append(

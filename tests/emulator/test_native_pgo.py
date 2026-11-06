@@ -817,7 +817,7 @@ def test_clean_removes_old_experiment_dirs_by_name_and_age(pgo):
         age(state / name, 90)
     (state / "bench-young" / "f").write_text("touched")  # newest mtime inside is now
     os.utime(state / "bench-young" / "f", (NOW - DAY, NOW - DAY))
-    for name in ("instrument-target", "target", "profile-1", "train-x", "bench-file"):
+    for name in ("profile-1", "other-target", "train-x", "bench-file"):
         path = state / name
         path.mkdir() if name != "bench-file" else path.write_text("x")
         age(path, 90)
@@ -825,8 +825,7 @@ def test_clean_removes_old_experiment_dirs_by_name_and_age(pgo):
     left = {p.name for p in state.iterdir()} - {"profiles", "by-key", "manifest.json"}
     assert left == {
         "bench-young",
-        "instrument-target",
-        "target",
+        "other-target",
         "profile-1",
         "train-x",
         "bench-file",
@@ -861,3 +860,13 @@ def test_clean_refuses_a_state_dir_outside_the_pgo_root(pgo, tmp_path):
     age(old, 90)
     plan = native_pgo.plan_clean(other, 14, now=NOW, root=root)
     assert plan.items == [] and old.exists()
+
+
+def test_auto_clean_failure_does_not_fail_training(monkeypatch, capsys):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(native_pgo, "AUTO_CLEAN", True)
+    monkeypatch.setattr(native_pgo, "clean_all", boom)
+    native_pgo.auto_clean()
+    assert "pgo clean failed: disk gone" in capsys.readouterr().err
