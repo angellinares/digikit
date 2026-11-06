@@ -338,6 +338,8 @@ fn form_base(form: &str) -> (u64, u64) {
         "15a" => (0xe00000000000, 0xa00000000000),
         "15b" => (0xf01c00000000, 0x900800000000),
         "14a" => (0xfc0000000000, 0x100000000000),
+        "14d" => (0xfe0000000000, 0x1a0000000000),
+        "16b" => (0xf01c00000000, 0x900400000000),
         "19a" => (0xff8000000000, 0x160000000000),
         "19a_scaled" => (0xff0000000000, 0x150000000000),
         "7b" => (0xff00007f0000, 0x0400003f0000),
@@ -380,6 +382,8 @@ enum Check {
     /// fmax / fmin: only a NaN operand declines.
     FMinMax(u32, u32),
     Logb(u32),
+    /// mant: only a NaN or an infinity declines.
+    Mant(u32),
     Scalb(u32, u32),
     Recips(u32),
     Rsqrts(u32),
@@ -425,6 +429,7 @@ fn compute_check(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> Check {
         (0, 0x8a) => Check::FComp(rx, ry),
         (0, 0xe1 | 0xe2) => Check::FMinMax(rx, ry),
         (0, 0xc1) => Check::Logb(rx),
+        (0, 0xad) => Check::Mant(rx),
         (0, 0xbd) => Check::Scalb(rx, ry),
         (0, 0xc4) => Check::Recips(rx),
         (0, 0xc5) => Check::Rsqrts(rx),
@@ -466,6 +471,7 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("fmin", 0, 0xe1),
     ("fmax", 0, 0xe2),
     ("logb", 0, 0xc1),
+    ("mant", 0, 0xad),
     ("scalb", 0, 0xbd),
     ("recips", 0, 0xc4),
     ("rsqrts", 0, 0xc5),
@@ -1042,6 +1048,79 @@ fn units_mem() -> Vec<Unit> {
             }),
         });
     }
+    // 14d: an absolute byte or short-word access. Variants: load/store, byte
+    // or short word, zero- or sign-extended (loads only); plus rows the
+    // lowering refuses (ex=1, w=1, sign-extended store).
+    for (kind, store, l, x) in [
+        ("load-byte", 0u64, 0u64, 0u64),
+        ("load-short", 0, 1, 0),
+        ("load-byte-se", 0, 0, 1),
+        ("load-short-se", 0, 1, 1),
+        ("store-byte", 1, 0, 0),
+        ("store-short", 1, 1, 0),
+        ("store-se", 1, 1, 1),
+    ] {
+        v.push(Unit {
+            form: "14d",
+            name: format!("14d/xfer/{kind}"),
+            check: Check::None,
+            make: Box::new(move |r| {
+                let (mask, base) = form_base("14d");
+                let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+                raw.set(40, 40, store);
+                raw.set(
+                    39,
+                    39,
+                    if kind == "store-se" {
+                        r.below(2) as u64
+                    } else {
+                        0
+                    },
+                );
+                raw.set(38, 38, l);
+                raw.set(
+                    37,
+                    37,
+                    if kind == "store-se" {
+                        r.below(2) as u64
+                    } else {
+                        0
+                    },
+                );
+                raw.set(36, 36, x);
+                raw.set(35, 32, r.below(16) as u64);
+                // A byte address in the data window, odd ones included.
+                let mut a = DATA_LO + r.below(0x1000);
+                if r.chance(32) {
+                    a = r.u32();
+                }
+                raw.set(31, 0, a as u64);
+                (raw.0, Check::None)
+            }),
+        });
+    }
+    // 16b: `DM(Ii, Mj) = imm16` with a post-modify.
+    v.push(Unit {
+        form: "16b",
+        name: "16b/store-imm".to_string(),
+        check: Check::None,
+        make: Box::new(move |r| {
+            let (mask, base) = form_base("16b");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            raw.set(43, 41, r.below(8) as u64);
+            raw.set(40, 38, r.below(8) as u64);
+            raw.set(37, 37, r.chance(16) as u64);
+            raw.set(33, 32, 0);
+            let data = if r.chance(4) {
+                [0, 1, 0x7fff, 0x8000, 0xffff][r.below(5) as usize]
+            } else {
+                r.below(0x1_0000)
+            };
+            raw.set(31, 16, data as u64);
+            raw.set(15, 0, 0);
+            (raw.0, Check::None)
+        }),
+    });
     // Immediate modifies.
     for hform in ["19a", "19a_scaled", "7b"] {
         v.push(Unit {
@@ -1345,6 +1424,7 @@ fn expect_special(c: Check, s: &St) -> bool {
             dn(x) || dn(y) || f(x).is_nan() || f(y).is_nan()
         }
         Check::Logb(x) => !(1..=254).contains(&((s.r[x as usize].b >> 23) & 0xff)),
+        Check::Mant(x) => (s.r[x as usize].b >> 23) & 0xff == 0xff,
         Check::Scalb(x, y) => {
             let sh = s.r[y as usize].b as i32 as i64;
             let bits = s.r[x as usize].b;
@@ -1573,7 +1653,7 @@ fn forms(args: &[String]) {
             s.r[114] = V::c(mode_build as Int);
             let nwords = match unit.form {
                 "2c" | "3c" | "21c" => 1,
-                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" | "17b" => 2,
+                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" | "16b" | "17b" => 2,
                 _ => 3,
             };
             write_code(s, raw, nwords);
@@ -2546,11 +2626,13 @@ fn mem_imm_insn(r: &mut Rng) -> Vec<u16> {
             r64.set(38, 32, r.below(13) as u64);
         }
         "14a" => r64.set(38, 32, r.below(13) as u64),
+        "14d" => r64.set(35, 32, r.below(13) as u64),
+        "16b" => r64.set(43, 41, r.below(6) as u64),
         _ => {}
     }
     raw = r64.0;
     let n = match u.form {
-        "4b" | "15b" | "7b" => 2,
+        "4b" | "15b" | "7b" | "16b" => 2,
         _ => 3,
     };
     words_of(raw, n)

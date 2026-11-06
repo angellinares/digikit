@@ -161,6 +161,7 @@ pub fn flag_mask(kind: FlagKind) -> u32 {
         | FlagKind::Isub
         | FlagKind::Logical
         | FlagKind::Fabs
+        | FlagKind::Fmant
         | FlagKind::Iabs
         | FlagKind::Compare { .. } => ALU_MASK,
         FlagKind::Fmul | FlagKind::FmulForget => MULT_MASK,
@@ -255,6 +256,16 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
         FlagKind::Fabs => {
             let mut bits = AF;
             if src[0] & 0x7fff_ffff == 0 {
+                bits |= AZ;
+            }
+            if src[1] >> 31 != 0 {
+                bits |= AS;
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::Fmant => {
+            let mut bits = AF;
+            if src[0] == 0 {
                 bits |= AZ;
             }
             if src[1] >> 31 != 0 {

@@ -2666,6 +2666,44 @@ fn fallback_only_requires_a_barred_aot_entry() {
     }
 }
 
+/// Straight-line code that runs into memory without code: the region stops
+/// at the first PC after it ("undecodable"), which is not a call, jump or loop.
+#[cfg(sharc_gen)]
+#[test]
+fn region_stopping_before_an_entry_is_refused_over_healthy_aot_only() {
+    use crate::fast::FastTier;
+    let code = [lp_add(0, 0, 2), lp_add(1, 1, 2), lp_add(3, 3, 2)];
+    let root = lp_pc(0);
+    let probe = lp_engine(&code, &[], false, &|_| {});
+    let region = crate::fast::region::build_cfg(&probe.s, root).expect("region");
+    let (stop, why) = region.cfg.as_ref().unwrap().stops[0].clone();
+    assert!(why.starts_with("undecodable"), "unexpected stop: {why}");
+    let run = |entries: &[u32], aot: &dyn Fn(u32) -> bool| {
+        let mut e = lp_engine(&code, &[], false, &|_| {});
+        let mut f =
+            crate::fast::FastEngine::new(Box::new(crate::fast::interp::InterpBackend), entries);
+        f.force_cfg(true);
+        f.run_with(&mut e.s, root, aot);
+        (f.region(root).is_some(), f.refusals())
+    };
+    // A healthy generated entry at the root, none at the stop: refused.
+    let (built, refusals) = run(&[root], &|pc| pc == root);
+    assert!(!built);
+    assert_eq!(
+        refusals,
+        vec![(root, format!("stops before an entry: {stop:#x}"))]
+    );
+    // A barred or appended root has no healthy entry: the interpreter is
+    // the alternative anyway.
+    let (built, refusals) = run(&[root], &|_| false);
+    assert!(built, "{refusals:?}");
+    // The stop PC has a generated entry, or a region of its own.
+    let (built, refusals) = run(&[root], &|pc| pc == root || pc == stop);
+    assert!(built, "{refusals:?}");
+    let (built, refusals) = run(&[root, stop], &|pc| pc == root);
+    assert!(built, "{refusals:?}");
+}
+
 #[test]
 fn fallback_continuation_cannot_bypass_code_policy() {
     for barred in [Some(vec![]), Some(vec![0]), None] {

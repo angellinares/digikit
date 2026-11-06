@@ -137,6 +137,7 @@ impl Lower {
             (0, 0xe3) => self.falu_clip(rn, rx, ry),
             (0, 0x8a) => self.falu_compare(rx, ry),
             (0, 0xc1) => self.falu_logb(rn, rx),
+            (0, 0xad) => self.falu_mant(rn, rx),
             (0, 0xbd) => self.falu_scalb(rn, rx, ry),
             (0, 0xc4) => self.falu_recips(rn, rx),
             (0, 0xc5) => self.falu_rsqrts(rn, rx),

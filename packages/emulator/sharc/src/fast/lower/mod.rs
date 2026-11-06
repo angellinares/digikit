@@ -1770,7 +1770,7 @@ impl Lower {
             "7b" => self.form_7b(d)?,
             // The call and return sequence of the stack-model firmware, in
             // cluster kernels only.
-            "16a" => self.form_16a(d)?,
+            "16a" | "16b" => self.form_16a(d)?,
             "25c_rframe" => self.form_25c()?,
             other => return refuse(format!("form {other}")),
         }
@@ -2098,7 +2098,7 @@ mod tests {
     }
 
     #[test]
-    fn type_14d_only_lowers_unsigned_short_loads_in_sisd() {
+    fn type_14d_lowers_byte_and_short_accesses_in_sisd() {
         // Each combination of d/ex/l/w/x, decoded through the real table.
         for bits in 0..32u64 {
             let raw = 0x1a00_0000_0000 | (bits << 36) | (6 << 32) | 0x25_590c;
@@ -2110,7 +2110,9 @@ mod tests {
                 let mut l = Lower::new(e, Plan::default(), 0);
                 assert_eq!(
                     l.lower_insn(0, &d).is_ok(),
-                    bits == 4 && !simd,
+                    // Bits: x=1, w=2, l=4, ex=8, d=16. Lowered: w=0, ex=0,
+                    // and no sign-extended store (d=1 with x=1).
+                    matches!(bits, 0 | 1 | 4 | 5 | 16 | 20) && !simd,
                     "opcode fields {bits:#07b}, SIMD {simd}"
                 );
             }

@@ -97,6 +97,9 @@ pub enum FlagKind {
     /// Float abs: AF set, AZ from the result bits, AN cleared, AS from the
     /// input sign (sources: result, input).
     Fabs,
+    /// Float mantissa (sources: result, input): AF set, AZ when the result is
+    /// zero, AS from the input sign, AN AC AV AI cleared.
+    Fmant,
     /// comp, compu, fcomp (source: value = eq | lt << 2 | gt << 31): AZ AN
     /// from the value, AF set for the float form, AC AV AS AI cleared. The
     /// CACC shift register is not part of this effect: the kernel tracks it
@@ -133,6 +136,7 @@ impl FlagKind {
             FlagKind::Fabs => (0, 7),
             FlagKind::Compare { float: false } => (0, 8),
             FlagKind::Compare { float: true } => (0, 9),
+            FlagKind::Fmant => (0, 10),
             FlagKind::Iabs => (0, 11),
             FlagKind::Fmul => (1, 1),
             FlagKind::FmulForget => (1, 2),
@@ -157,6 +161,7 @@ impl FlagKind {
             (0, 7) => FlagKind::Fabs,
             (0, 8) => FlagKind::Compare { float: false },
             (0, 9) => FlagKind::Compare { float: true },
+            (0, 10) => FlagKind::Fmant,
             (0, 11) => FlagKind::Iabs,
             (1, 1) => FlagKind::Fmul,
             (1, 2) => FlagKind::FmulForget,
@@ -262,6 +267,12 @@ pub trait FastTier: Send {
     /// Run the region at PC if it applies. `Some(exit code)` only when at
     /// least one instruction completed; `None` leaves the state untouched.
     fn run(&mut self, s: &mut St, pc: u32) -> Option<u32>;
+    /// `run` with a query for a healthy generated entry at a PC (one that
+    /// dispatch would run). A tier may use it at build time to refuse a
+    /// region that would strand code in the interpreter.
+    fn run_with(&mut self, s: &mut St, pc: u32, _aot: &dyn Fn(u32) -> bool) -> Option<u32> {
+        self.run(s, pc)
+    }
     /// `run` for a kernel entered straight from another kernel's exit
     /// (`Engine::step`'s continuation): only an already built region that
     /// takes the state, with no builds, rebuilds or decline accounting (the
@@ -844,9 +855,9 @@ impl FastEngine {
         self.slots[self.index(pc)?].region.as_ref()
     }
 
-    fn build(&mut self, s: &mut St, pc: u32) -> Option<()> {
+    fn build(&mut self, s: &mut St, pc: u32, aot: Option<&dyn Fn(u32) -> bool>) -> Option<()> {
         if self.tl.is_none() && self.defer_n == 0 {
-            return self.build_inner(s, pc);
+            return self.build_inner(s, pc, aot);
         }
         let (b0, c0) = (self.stats.build_ns, self.stats.compile_ns);
         let t = clock::Instant::now();
@@ -862,7 +873,7 @@ impl FastEngine {
             "first"
         };
         let (sc, si) = ix.map_or((0, 0), |i| (self.slots[i].calls, self.slots[i].insns));
-        let r = self.build_inner(s, pc);
+        let r = self.build_inner(s, pc, aot);
         let wall_us = t.elapsed().as_micros();
         if let Some(i) = ix
             && r.is_some()
@@ -922,7 +933,12 @@ impl FastEngine {
         r
     }
 
-    fn build_inner(&mut self, s: &mut St, pc: u32) -> Option<()> {
+    fn build_inner(
+        &mut self,
+        s: &mut St,
+        pc: u32,
+        aot: Option<&dyn Fn(u32) -> bool>,
+    ) -> Option<()> {
         let t0 = clock::Instant::now();
         // The remaining iterations of the active DO loop that starts here,
         // else (or when that is refused) the CFG shape from this pc.
@@ -984,6 +1000,27 @@ impl FastEngine {
                 None
             }
             Ok(mut r) => {
+                // A root over a healthy generated entry must not stop at a
+                // PC that only the interpreter would run: it would replace
+                // fast generated code with interpreted code. Roots without
+                // such an entry (barred, appended) have the interpreter as
+                // the alternative anyway.
+                if let Some(aot) = aot
+                    && aot(pc)
+                    && let Some(c) = &r.cfg
+                    && let Some((at, _)) = c.stops.iter().find(|(at, why)| {
+                        !stop_is_exempt(why) && !self.lookup.contains_key(at) && !aot(*at)
+                    })
+                {
+                    let why = format!("stops before an entry: {at:#x}");
+                    if self.log {
+                        eprintln!("fast: {pc:#x} refused: {why}");
+                    }
+                    self.stats.refused += 1;
+                    *self.stats.reasons.entry(reason_class(&why)).or_default() += 1;
+                    slot.refused = Some(why);
+                    return None;
+                }
                 let t1 = clock::Instant::now();
                 let k = self.backend.compile(&r.kernel);
                 self.stats.compile_ns += t1.elapsed().as_nanos() as u64;
@@ -1029,13 +1066,7 @@ impl FastEngine {
                             && let Some(c) = &r.cfg
                         {
                             for (at, why) in &c.stops {
-                                // Calls, jumps, loops and delay slots leave
-                                // the interpreter at another PC (an entry of
-                                // its own or not worth one).
-                                if ["call", "jump", "indirect", "delay", "loop", "zero", "DO"]
-                                    .iter()
-                                    .any(|k| why.starts_with(k))
-                                {
+                                if stop_is_exempt(why) {
                                     continue;
                                 }
                                 if let Ok(d) = region::decode_one(s, *at) {
@@ -1078,6 +1109,14 @@ impl FastEngine {
             }
         }
     }
+}
+
+/// Calls, jumps, loops and delay slots leave the interpreter at another PC
+/// (an entry of its own or not worth one): such stops are not mid-block.
+fn stop_is_exempt(why: &str) -> bool {
+    ["call", "jump", "indirect", "delay", "loop", "zero", "DO"]
+        .iter()
+        .any(|k| why.starts_with(k))
 }
 
 /// On by default (`SHARC_FAST_DYNFLAT=0` turns it off; `LO-HI`, hex PCs, limits it to a range): a region whose calls mostly
@@ -1340,7 +1379,13 @@ impl Drop for FastEngine {
 }
 
 impl FastEngine {
-    fn run_inner(&mut self, s: &mut St, pc: u32, chained: bool) -> Option<u32> {
+    fn run_inner(
+        &mut self,
+        s: &mut St,
+        pc: u32,
+        chained: bool,
+        aot: Option<&dyn Fn(u32) -> bool>,
+    ) -> Option<u32> {
         if let Some(tl) = &mut self.tl
             && s.icount >= tl.next_tick
         {
@@ -1399,7 +1444,7 @@ impl FastEngine {
                 self.drop_slot(pc);
                 return None;
             }
-            let built = self.build(s, pc);
+            let built = self.build(s, pc, aot);
             self.drain_chase();
             if built.is_none() {
                 if self.slots[ix].auto && self.slots[ix].refused.is_some() {
@@ -1650,7 +1695,7 @@ impl FastEngine {
                     };
                     let n = slot.rebuilds;
                     let old = (slot.region.take(), slot.kernel.take());
-                    if self.build(s, pc).is_some() {
+                    if self.build(s, pc, aot).is_some() {
                         let slot = &mut self.slots[ix];
                         slot.rebuilds = n;
                         if let (Some(r), Some(k)) = old {
@@ -1748,11 +1793,15 @@ impl FastTier for FastEngine {
     }
 
     fn run(&mut self, s: &mut St, pc: u32) -> Option<u32> {
-        self.run_inner(s, pc, false)
+        self.run_inner(s, pc, false, None)
+    }
+
+    fn run_with(&mut self, s: &mut St, pc: u32, aot: &dyn Fn(u32) -> bool) -> Option<u32> {
+        self.run_inner(s, pc, false, Some(aot))
     }
 
     fn run_chained(&mut self, s: &mut St, pc: u32) -> Option<u32> {
-        self.run_inner(s, pc, true)
+        self.run_inner(s, pc, true, None)
     }
 
     fn caps_chain(&self) -> bool {

@@ -1952,12 +1952,25 @@ impl Engine {
                         && (plan.fast_pc
                             || (self.fast.as_ref().is_some_and(|f| f.has_queued())
                                 && self.fast_allowed(entry_pc)));
+                    // A generated entry dispatch would run at a PC, for the
+                    // fast tier's build-time checks (see `block_plan`).
+                    let aot_code_ok = fast_eligible && self.blocks_code_ok();
+                    let (aot_dispatch, aot_barred, aot_blocks) =
+                        (&self.dispatch, &self.code_barred, self.use_blocks);
+                    let aot = |pc: u32| {
+                        aot_blocks
+                            && aot_dispatch.get_entry(pc as Int).is_some()
+                            && (aot_code_ok
+                                || aot_barred
+                                    .as_ref()
+                                    .is_some_and(|b| b.binary_search(&pc).is_err()))
+                    };
                     if let Some(f) = self.fast.as_mut().filter(|_| fast_eligible) {
                         #[cfg(feature = "region-profile")]
                         {
                             let profile_start =
                                 self.region_profile.as_ref().map(|_| Instant::now());
-                            code = f.run(&mut self.s, entry_pc);
+                            code = f.run_with(&mut self.s, entry_pc, &aot);
                             if let (Some(profile), Some(start)) =
                                 (&mut self.region_profile, profile_start)
                             {
@@ -1971,7 +1984,7 @@ impl Engine {
                         }
                         #[cfg(not(feature = "region-profile"))]
                         {
-                            code = f.run(&mut self.s, entry_pc);
+                            code = f.run_with(&mut self.s, entry_pc, &aot);
                         }
                     }
                     if code.is_some() {
