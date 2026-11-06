@@ -488,6 +488,8 @@ def check_state(
     )  # type: ignore[call-overload]
     if device == "dt2":
         components["workload"] = DT2_WORKLOAD_NAME
+    if device == BOTH:
+        components["workload"] = both_workload_name(reset_fixture_present())
     desktop = desktop_digest(hasher)
     hasher.save()
     old = manifest["components"]
@@ -1552,8 +1554,45 @@ def load_fixture(device: str, directory: pathlib.Path | str | None = None) -> Fi
     return Fixture(device, directory, files, provenance)
 
 
-def both_items(fixtures: dict[str, Fixture]) -> list[WorkItem]:
-    """The training workload of the two-core build: DN2 items, then DT2 items."""
+RESET_FIXTURE_DIR = FIXTURE_ROOT / "dn2-reset"
+
+
+def reset_fixture_present(directory: pathlib.Path | None = None) -> bool:
+    """Is there a DN2 reset-state fixture (made by `runtime_fixture.ts --state reset`)? Cheap: no hashing."""
+    try:
+        provenance = json.loads(
+            ((directory or RESET_FIXTURE_DIR) / "provenance.json").read_text()
+        )
+    except (OSError, ValueError):
+        return False
+    return provenance.get("state") == "reset"
+
+
+def load_reset_fixture(directory: pathlib.Path | None = None) -> Fixture | None:
+    """The DN2 reset-state fixture (the state after a guest soft reset, which users run), or None with one notice line.
+
+    A fixture that is present but does not match its provenance is an error (the same as the other fixtures),
+    so the workload identity never depends on a silently skipped input.
+    """
+    directory = directory or RESET_FIXTURE_DIR
+    if not reset_fixture_present(directory):
+        print(
+            f"no DN2 reset fixture at {directory}; training without it "
+            "(`node tools/devtools/runtime_fixture.ts --device dn2 --state reset`)"
+        )
+        return None
+    return load_fixture("dn2", directory)
+
+
+def both_workload_name(with_reset: bool) -> str:
+    """The workload identity of the two-core profile; it names the reset input when that is trained."""
+    return BOTH_WORKLOAD_NAME + ("+dn2-reset" if with_reset else "")
+
+
+def both_items(
+    fixtures: dict[str, Fixture], reset: Fixture | None = None
+) -> list[WorkItem]:
+    """The training workload of the two-core build: DN2 items, then DT2 items, then the replays (and the DN2 reset replay)."""
     inputs = digi_env.ready_inputs(device="dn2")
     missing = [f"{k}: {v}" for k, v in inputs.items() if not pathlib.Path(v).exists()]
     if missing:
@@ -1587,6 +1626,21 @@ def both_items(fixtures: dict[str, Fixture]) -> list[WorkItem]:
                 seconds,
             )
         )
+    if reset is not None:
+        file, name, seconds = REPLAYS["dn2"]
+        firmware = reset.files["firmware"]
+        assert firmware is not None
+        items.append(
+            WorkItem(
+                f"dn2-reset-replay-{name}",
+                "dn2",
+                file,
+                (name,),
+                reset.input_args(),
+                digi_env.base_firmware(firmware),
+                seconds,
+            )
+        )
     return items
 
 
@@ -1602,12 +1656,14 @@ def cmd_train_both(args: argparse.Namespace) -> None:
         "dn2": load_fixture("dn2", args.fixture_dn2),
         "dt2": load_fixture("dt2", args.fixture_dt2),
     }
-    items = both_items(fixtures)
+    reset = load_reset_fixture()
+    items = both_items(fixtures, reset)
     state = device_state(BOTH)
     started = time.monotonic()
     packages = local_package_dirs(BOTH_FEATURES)
     hasher = FileHasher(state / "hash-cache.json")
     components, nfiles = compute_components(packages, gen, hasher, gen2=gen2)
+    components["workload"] = both_workload_name(reset is not None)
     hasher.save()
     key = key_of(components)
     raw = state / f"raw-{key[:16]}"
@@ -1665,7 +1721,10 @@ def cmd_train_both(args: argparse.Namespace) -> None:
             }
             for item in items
         },
-        "fixtures": {device: fx.record() for device, fx in fixtures.items()},
+        "fixtures": {
+            **{device: fx.record() for device, fx in fixtures.items()},
+            **({"dn2-reset": reset.record()} if reset is not None else {}),
+        },
         "file_count": nfiles,
         "rustc_vV": rustc_version(),
         "triple": TRIPLE,

@@ -95,6 +95,8 @@ Then run `mise run perf:fast-roots -- rank --prefix out/prof/cap --device dn2`. 
 roots for `fallback_regions` in `tools/emulator/fast_regions.json`. Check each root for exactness. The gate target `fast-roots`
 (`mise run perf:fast-roots -- check --device dn2,dt2`) fails when the interpreted work per audio second is over `tools/emulator/fast_budgets.json`.
 
+Replay fixtures (`node tools/devtools/runtime_fixture.ts --device dn2`) save the state right after the first boot. Benchmarks and PGO training should also use the `reset` state (`--state reset`, default dir `out/fixtures/runtime/dn2-reset/`, DN2 only): the state after a guest soft reset, which is what a device with installed modules runs. The two-core `train` adds it as an extra input when that directory exists.
+
 Not in `--diag` (set the variable by hand): `SHARC_LIVE_AOT_CAPTURE_PC/_DIR/_LIMIT`
 (raw block-call snapshots), `SHARC_FAST_DUMP_ALL`, `SHARC_FAST_CL_DISASM`,
 `DIGI_LP0_LOG` (stderr), `DN2_PROFILE_LINK=1`,

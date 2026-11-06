@@ -14,7 +14,9 @@ entry that runs at least 10 times as many interpreted instructions as it has run
 suggested roots for exactness before they go into fast_regions.json.
 
 `check` replays a scenario on a fixture of the CURRENT runtime (cached by a content key) and fails when the
-interpreted instructions per audio second are over the budget in tools/emulator/fast_budgets.json.
+interpreted instructions per audio second (and block entries, when the budget has a limit) are over the budget in
+tools/emulator/fast_budgets.json. A device lists one case per fixture state: `first-boot` (the state after the first
+boot) and `reset` (the state after a guest soft reset, DN2 only).
 """
 
 from __future__ import annotations
@@ -241,24 +243,36 @@ class Budget:
     scenarios_file: str
     seconds: float
     max_interpreted_per_audio_s: float
+    max_block_entries_per_audio_s: float | None = None
 
 
-def load_budgets(path: pathlib.Path = BUDGETS) -> dict[str, Budget]:
+def load_budgets(
+    path: pathlib.Path = BUDGETS,
+) -> dict[str, dict[str, Budget]]:
+    """device -> fixture state ("first-boot", "reset") -> budget of that case."""
     raw = json.loads(path.read_text())
     return {
-        device: Budget(
-            str(item["scenario"]),
-            str(item["scenarios_file"]),
-            float(item["seconds"]),
-            float(item["max_interpreted_per_audio_s"]),
-        )
-        for device, item in raw.items()
+        device: {
+            state: Budget(
+                str(item["scenario"]),
+                str(item["scenarios_file"]),
+                float(item["seconds"]),
+                float(item["max_interpreted_per_audio_s"]),
+                (
+                    float(item["max_block_entries_per_audio_s"])
+                    if "max_block_entries_per_audio_s" in item
+                    else None
+                ),
+            )
+            for state, item in cases.items()
+        }
+        for device, cases in raw.items()
         if not device.startswith("_")
     }
 
 
-def interpreted_per_audio_second(report: Mapping[str, object], scenario: str) -> float:
-    """interpreter instructions / audio seconds of SCENARIO in a coupled-run report."""
+def _dsp_rate(report: Mapping[str, object], scenario: str, name: str) -> float:
+    """DSP instruction counter NAME / audio seconds of SCENARIO in a coupled-run report."""
     scenarios = report.get("scenarios")
     for sc in scenarios if isinstance(scenarios, list) else []:
         if sc.get("name") != scenario:
@@ -269,12 +283,33 @@ def interpreted_per_audio_second(report: Mapping[str, object], scenario: str) ->
             raise SystemExit(
                 f"fast_roots: scenario {scenario} has no DSP tier counts or audio time"
             )
-        return float(split["interpreter"]) / audio
+        return float(split[name]) / audio
     raise SystemExit(f"fast_roots: scenario {scenario} is not in the report")
 
 
-def over_budget(value: float, budget: Budget) -> bool:
-    return value > budget.max_interpreted_per_audio_s
+def interpreted_per_audio_second(report: Mapping[str, object], scenario: str) -> float:
+    """interpreter instructions / audio seconds of SCENARIO in a coupled-run report."""
+    return _dsp_rate(report, scenario, "interpreter")
+
+
+def block_entries_per_audio_second(
+    report: Mapping[str, object], scenario: str
+) -> float:
+    """generated-block entries / audio seconds of SCENARIO in a coupled-run report."""
+    return _dsp_rate(report, scenario, "block_entries")
+
+
+def over_budget(
+    value: float, budget: Budget, block_entries: float | None = None
+) -> list[str]:
+    """The budgets that the measured rates exceed: "interpreted" and/or "block entries" (empty: within budget)."""
+    over = []
+    if value > budget.max_interpreted_per_audio_s:
+        over.append("interpreted")
+    limit = budget.max_block_entries_per_audio_s
+    if limit is not None and block_entries is not None and block_entries > limit:
+        over.append("block entries")
+    return over
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -286,10 +321,12 @@ def fixture_key(
     stock_sha256: str,
     files: Mapping[str, pathlib.Path],
     gen_files: Mapping[str, pathlib.Path],
+    state: str = "first-boot",
 ) -> str:
-    """sha256 over the stock firmware, the tracked input files and the generated core files (names and contents)."""
+    """sha256 over the fixture state, the stock firmware, the tracked input files and the generated core files (names and contents)."""
     record = {
         "version": 1,
+        "state": state,
         "stock": stock_sha256,
         "files": sorted((name, sha256_file(p)) for name, p in files.items()),
         "gen": sorted((name, sha256_file(p)) for name, p in gen_files.items()),
@@ -308,7 +345,7 @@ def tracked_files(
     return {n: root / n for n in names if (root / n).is_file()}
 
 
-def current_key(device: str) -> str:
+def current_key(device: str, state: str = "first-boot") -> str:
     from tools.devtools import emud_key
     from tools.emulator import coupled
 
@@ -316,7 +353,7 @@ def current_key(device: str) -> str:
     if not stock.is_file():
         raise SystemExit(f"fast_roots: stock firmware {stock} is missing")
     gen = emud_key.tree_files(coupled.generated(device))
-    return fixture_key(sha256_file(stock), tracked_files(), gen)
+    return fixture_key(sha256_file(stock), tracked_files(), gen, state)
 
 
 def fixture_store(device: str) -> pathlib.Path:
@@ -325,11 +362,11 @@ def fixture_store(device: str) -> pathlib.Path:
     return verify_build.store_root() / "fixtures" / device
 
 
-def ensure_fixture(device: str) -> tuple[object, str]:
-    """(Fixture, key) of the current runtime; built on a cache miss by tools/devtools/runtime_fixture.ts."""
+def ensure_fixture(device: str, state: str = "first-boot") -> tuple[object, str]:
+    """(Fixture, key) of the current runtime in STATE; built on a cache miss by tools/devtools/runtime_fixture.ts."""
     from tools.emulator import native_pgo
 
-    key = current_key(device)
+    key = current_key(device, state)
     store = fixture_store(device)
     final = store / key
     if not final.is_dir():
@@ -337,11 +374,14 @@ def ensure_fixture(device: str) -> tuple[object, str]:
         tmp = store / f".tmp-{os.getpid()}"
         shutil.rmtree(tmp, ignore_errors=True)
         print(
-            f"fast_roots: no cached {device.upper()} fixture for key {key[:12]}; building it",
+            f"fast_roots: no cached {device.upper()} {state} fixture for key {key[:12]}; building it",
             flush=True,
         )
         done = subprocess.run(
-            ["node", "tools/devtools/runtime_fixture.ts", "--device", device, "--out", str(tmp)],
+            [
+                "node", "tools/devtools/runtime_fixture.ts",
+                "--device", device, "--state", state, "--out", str(tmp),
+            ],
             cwd=ROOT, check=False,
         )  # fmt: skip
         if done.returncode != 0:
@@ -358,14 +398,16 @@ def ensure_fixture(device: str) -> tuple[object, str]:
     return native_pgo.load_fixture(device, final), key
 
 
-def measure(device: str, budget: Budget, seconds: float) -> tuple[float, str]:
-    """Replay the budget scenario on the current runtime: (interpreted instructions per audio second, fixture key)."""
+def measure(
+    device: str, state: str, budget: Budget, seconds: float
+) -> tuple[float, float, str]:
+    """Replay the budget scenario on the current runtime: (interpreted instructions, block entries per audio second, fixture key)."""
     from tools.emulator import coupled, digi_env
 
-    fixture, key = ensure_fixture(device)
+    fixture, key = ensure_fixture(device, state)
     firmware = fixture.files["firmware"]  # type: ignore[attr-defined]
     dsp_image = fixture.files["dsp_image"]  # type: ignore[attr-defined]
-    binary = coupled.ensure_binary(True, device, dsp_image)
+    binary = coupled.ensure_binary(True, device, dsp_image, pgo=True)
     with tempfile.TemporaryDirectory(prefix="fast-roots-") as tmp:
         report = pathlib.Path(tmp) / "report.json"
         argv = [
@@ -392,9 +434,12 @@ def measure(device: str, budget: Budget, seconds: float) -> tuple[float, str]:
             raise SystemExit(
                 f"fast_roots: {device} run failed (exit {done.returncode}):\n{done.stderr[-1500:]}"
             )
-        return interpreted_per_audio_second(
-            json.loads(report.read_text()), budget.scenario
-        ), key
+        data = json.loads(report.read_text())
+        return (
+            interpreted_per_audio_second(data, budget.scenario),
+            block_entries_per_audio_second(data, budget.scenario),
+            key,
+        )
 
 
 HINT = (
@@ -402,26 +447,39 @@ HINT = (
     "(docs/INSTRUMENTATION.md) and run `mise run perf:fast-roots -- rank ...`, then add "
     "`fallback_regions` in tools/emulator/fast_regions.json."
 )
+HINT_BLOCK_ENTRIES = (
+    "Too many block entries: the generated core lacks links for hot blocks. Profile with "
+    "SHARC_PROFILE_PREFIX (docs/INSTRUMENTATION.md), merge the captures and regenerate the core."
+)
 
 
 def cmd_check(args: argparse.Namespace) -> int:
     budgets = load_budgets()
-    failed = False
+    failures: set[str] = set()
     for device in [d.strip() for d in args.device.split(",") if d.strip()]:
         if device not in budgets:
             raise SystemExit(f"fast_roots: no budget for {device} in {BUDGETS}")
-        budget = budgets[device]
-        seconds = args.seconds if args.seconds is not None else budget.seconds
-        value, key = measure(device, budget, seconds)
-        bad = over_budget(value, budget)
-        print(
-            f"{device}: {value:,.0f} interpreted instructions per audio second "
-            f"(budget {budget.max_interpreted_per_audio_s:,.0f}; fixture {key[:12]}) "
-            f"{'OVER BUDGET' if bad else 'ok'}"
-        )
-        failed = failed or bad
-    if failed:
-        print(f"fast_roots: {HINT}", file=sys.stderr)
+        for state, budget in budgets[device].items():
+            seconds = args.seconds if args.seconds is not None else budget.seconds
+            value, entries, key = measure(device, state, budget, seconds)
+            over = over_budget(value, budget, entries)
+            limit = budget.max_block_entries_per_audio_s
+            entry_text = (
+                f", {entries:,.0f} block entries (budget {limit:,.0f})"
+                if limit is not None
+                else ""
+            )
+            print(
+                f"{device} {state}: {value:,.0f} interpreted instructions per audio second "
+                f"(budget {budget.max_interpreted_per_audio_s:,.0f}){entry_text}; "
+                f"fixture {key[:12]} {'OVER BUDGET (' + ', '.join(over) + ')' if over else 'ok'}"
+            )
+            failures.update(over)
+    if failures:
+        if "interpreted" in failures:
+            print(f"fast_roots: {HINT}", file=sys.stderr)
+        if "block entries" in failures:
+            print(f"fast_roots: {HINT_BLOCK_ENTRIES}", file=sys.stderr)
         return 1
     return 0
 
