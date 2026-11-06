@@ -34,6 +34,11 @@
 //! that has no ready snapshot of its own. Without `--card-image` the runtime gives the firmware an
 //! empty +Drive.
 //!
+//! `--call PC:ARG[,ARG...]` (repeatable) calls a guest function at the ready point, before the
+//! scenario, in the given order (`Emulator::call_function`, gcc m68k ABI, interrupts masked, a
+//! scratch stack 1 KiB below the guest's). ARG is a number, or `*ADDR+OFF`: the long at ADDR,
+//! read at the call, plus OFF. The report lists each call's arguments, D0 and instructions.
+//!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
 //! min, mean, p50, p99, max and `over_period`, a period being one DSPI2 frame at `DIGI_CF_IPS`). On
@@ -113,6 +118,8 @@ struct Args {
     /// `--cold-base SHA256`: with `--dsp zero`, boot `--syx` from reset (a patched build of the
     /// stock firmware SHA256) to the ready state instead of loading `--cf-snapshot`.
     cold_base: Option<String>,
+    /// `--call PC:ARG[,ARG...]`: guest functions called at the ready point, before the scenario.
+    calls: Vec<(u32, Vec<CallArg>)>,
     /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
@@ -148,6 +155,78 @@ fn parse_num(t: &str) -> Result<u32, String> {
         None => t.parse(),
     };
     r.map_err(|_| format!("bad number {t:?}"))
+}
+
+/// One `--call` argument: a number, or the long at an address plus an offset.
+#[derive(Clone, Copy, Debug)]
+enum CallArg {
+    Value(u32),
+    Pointer { addr: u32, off: u32 },
+}
+
+/// `PC:ARG[,ARG...]`, ARG a number or `*ADDR+OFF` (the long at ADDR, read at the call, plus OFF).
+fn parse_call(spec: &str) -> Result<(u32, Vec<CallArg>), String> {
+    let (pc, rest) = spec.split_once(':').unwrap_or((spec, ""));
+    let args = rest
+        .split(',')
+        .filter(|a| !a.is_empty())
+        .map(|a| match a.strip_prefix('*') {
+            Some(p) => {
+                let (addr, off) = p.split_once('+').unwrap_or((p, "0"));
+                Ok(CallArg::Pointer {
+                    addr: parse_num(addr)?,
+                    off: parse_num(off)?,
+                })
+            }
+            None => parse_num(a).map(CallArg::Value),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok((parse_num(pc)?, args))
+}
+
+/// The address a call returns to: compared with the PC, never executed (as in `cf_call`).
+const CALL_RETURN: u32 = 0x47fd_f000;
+/// Bytes between the guest's stack pointer and the call's scratch stack.
+const CALL_STACK_GAP: u32 = 0x400;
+
+/// Run `--call`s in order with interrupts masked, on a scratch stack below the guest's.
+fn do_calls(rt: &mut CoupledRuntime, calls: &[(u32, Vec<CallArg>)]) -> Result<Value, String> {
+    let mut out = Vec::new();
+    for (pc, args) in calls {
+        let values = args
+            .iter()
+            .map(|arg| match *arg {
+                CallArg::Value(v) => Ok(v),
+                CallArg::Pointer { addr, off } => rt
+                    .peek32(addr)
+                    .map(|v| v.wrapping_add(off))
+                    .ok_or(format!("--call: cannot read {addr:#010x}")),
+            })
+            .collect::<Result<Vec<u32>, String>>()?;
+        let (_, a, _, _) = rt.cpu_regs();
+        let spec = elektron_native_boot::CallSpec {
+            pc: *pc,
+            args: values.clone(),
+            sp: (a[7] - CALL_STACK_GAP) & !3,
+            ret_pc: CALL_RETURN,
+            sr: 0x2700,
+            max_insns: 5_000_000,
+        };
+        let r = rt.call_function(&spec)?;
+        if !r.finished {
+            return Err(format!(
+                "--call {pc:#010x} did not return: pc {:#010x}, {:?}",
+                r.pc, r.error
+            ));
+        }
+        out.push(json!({
+            "pc": format!("{pc:#010x}"),
+            "args": values.iter().map(|v| format!("{v:#x}")).collect::<Vec<_>>(),
+            "d0": format!("{:#x}", r.d[0]),
+            "instructions": r.insns,
+        }));
+    }
+    Ok(Value::Array(out))
 }
 
 /// `NAME=ENTRY:EXIT`: two ColdFire PCs.
@@ -298,6 +377,7 @@ fn parse_args() -> Result<Args, String> {
         dsp_peeks: Vec::new(),
         spans: Vec::new(),
         cold_base: None,
+        calls: Vec::new(),
         zero: false,
         trace: false,
         guard: None,
@@ -334,6 +414,7 @@ fn parse_args() -> Result<Args, String> {
             "--dsp-peek" => a.dsp_peeks.push(parse_dsp_peek(&value("--dsp-peek")?)?),
             "--span" => a.spans.push(parse_span(&value("--span")?)?),
             "--cold-base" => a.cold_base = Some(value("--cold-base")?),
+            "--call" => a.calls.push(parse_call(&value("--call")?)?),
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
@@ -839,6 +920,7 @@ fn run_scenario(
         sc.instructions
     };
 
+    let calls = do_calls(&mut rt, &args.calls)?;
     #[cfg(feature = "cf-mix")]
     rt.cf_mix_reset();
     for (name, entry, exit) in &args.spans {
@@ -1104,6 +1186,7 @@ fn run_scenario(
         "peek": peek,
         "dsp_peek": dsp_peek,
         "spans": spans,
+        "calls": calls,
         "dsp_dump": dsp_dump,
         "gates": gates,
         "guard": guard,
