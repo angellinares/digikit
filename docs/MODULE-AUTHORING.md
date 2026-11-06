@@ -176,7 +176,7 @@ A machine needs DSP routines. A machine with no DSP code (a data-only clone of a
 
 | Argument | Meaning |
 | --- | --- |
-| `WORD` | The index of the word in the DSP `params`, 0 to 3. Words come in order, without gaps. |
+| `WORD` | The index of the word in the DSP `params`: 0 to 4 on the Digitakt II, 0 to 7 on the Digitone II (one word per entry of the device's `param_slots`, section 5.3). Words come in order, without gaps. |
 | `ID` | A C identifier, unique in the module. Do not rename it after a release. |
 | `NAME` | Name shown while the knob turns, 31 characters at most. |
 | `SHORT` | Label under the knob, 15 characters at most. |
@@ -412,8 +412,10 @@ Stereo machines (machine contract 1.2, additive). A machine that has two output 
 `DK_BLOCK` floats of the right channel to `in->out_r` (word 5 of `dk_voice_in`) and returns `DK_STEREO` or-ed into the status (`DK_OK | DK_STEREO`,
 `DK_DONE | DK_STEREO`) on every block. A mono 1.1 machine is unchanged: it never touches `out_r` and the adapter copies L to R. On the Digitakt II
 the adapter writes R into the odd voice of the stock voice pair (the stock engine pans the two buffers independently); the guard checks both
-blocks. On the Digitone II `out_r` is a scratch block for now and the status bit is dropped, so a stereo machine plays its L only until the shadow
-right-channel stages are production (TODO in `dsp-voice-dn2.s`). `digikit/shot` is the example.
+blocks. On the Digitone II `out_r` is a per-slot R buffer. The adapter checks R, scales it as the engine scales L, and runs each stock stage
+between the machine and the pan a second time on R ([DN2 stereo](design/dn2-stereo.md)). At most 8 slots play stereo in a block. The other
+slots play R = L. A stereo slot costs about 2,900 to 5,500 more DSP instructions per block than a mono slot (design section 3). The DN2
+emulator test of design section 8 is open. `digikit/shot` is the example.
 Do not place `note_on` at offset 0 of the image: an offset of 0 reads as "no note_on".
 
 The `dk_machine_desc` has 10 words: magic, contract, parameter count, voices (1 to 16), state bytes per voice (a multiple of 4), bytes cleared at
