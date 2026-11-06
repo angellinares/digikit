@@ -19,7 +19,8 @@ struct Span {
     exit: u32,
     open: Option<u64>,
     last_entry: Option<u64>,
-    lengths: Vec<u32>,
+    /// Each pass: the instruction count at its entry, and its length.
+    passes: Vec<(u64, u32)>,
     gaps: Vec<u32>,
     nested: u64,
     dropped: u64,
@@ -70,7 +71,7 @@ impl Spans {
             exit,
             open: None,
             last_entry: None,
-            lengths: Vec::new(),
+            passes: Vec::new(),
             gaps: Vec::new(),
             nested: 0,
             dropped: 0,
@@ -101,7 +102,11 @@ impl Spans {
                 span.open = Some(icount);
             } else if pc == span.exit {
                 if let Some(start) = span.open.take() {
-                    push(&mut span.lengths, &mut span.dropped, clamp(icount - start));
+                    if span.passes.len() < KEEP {
+                        span.passes.push((start, clamp(icount - start)));
+                    } else {
+                        span.dropped += 1;
+                    }
                 }
             }
         }
@@ -112,7 +117,7 @@ impl Spans {
         for span in &mut self.spans {
             span.open = None;
             span.last_entry = None;
-            span.lengths.clear();
+            span.passes.clear();
             span.gaps.clear();
             span.nested = 0;
             span.dropped = 0;
@@ -126,12 +131,21 @@ impl Spans {
             self.spans
                 .iter()
                 .map(|s| {
+                    let lengths: Vec<u32> = s.passes.iter().map(|p| p.1).collect();
+                    // The first pass of the greatest length: its index and its entry count.
+                    let worst = s
+                        .passes
+                        .iter()
+                        .enumerate()
+                        .max_by_key(|(i, p)| (p.1, std::cmp::Reverse(*i)))
+                        .map(|(i, p)| json!({"pass": i, "at": p.0}));
                     json!({
                         "name": s.name,
                         "entry": format!("{:#010x}", s.entry),
                         "exit": format!("{:#010x}", s.exit),
                         "period": period,
-                        "length": stats(&s.lengths, period),
+                        "length": stats(&lengths, period),
+                        "worst": worst,
                         "gap": stats(&s.gaps, period),
                         "nested": s.nested,
                         "dropped": s.dropped,
@@ -139,6 +153,15 @@ impl Spans {
                 })
                 .collect(),
         )
+    }
+}
+
+impl Spans {
+    /// Every pass of every span, in entry order per span: (name, entry count, length).
+    pub fn passes(&self) -> impl Iterator<Item = (&str, u64, u32)> + '_ {
+        self.spans
+            .iter()
+            .flat_map(|s| s.passes.iter().map(move |p| (s.name.as_str(), p.0, p.1)))
     }
 }
 
@@ -164,6 +187,12 @@ mod tests {
         assert_eq!(r[0]["gap"]["count"], 1);
         assert_eq!(r[0]["gap"]["max"], 100);
         assert_eq!(r[0]["nested"], 1);
+        assert_eq!(r[0]["worst"]["pass"], 1);
+        assert_eq!(r[0]["worst"]["at"], 110);
+        assert_eq!(
+            s.passes().collect::<Vec<_>>(),
+            [("isr", 10, 30), ("isr", 110, 60)]
+        );
         s.clear();
         assert_eq!(s.report(50)[0]["length"]["count"], 0);
     }

@@ -34,6 +34,10 @@
 //! that has no ready snapshot of its own. Without `--card-image` the runtime gives the firmware an
 //! empty +Drive.
 //!
+//! `--span-log PATH` writes every span pass as a JSON line `{"span", "at", "len"}` (`at` is the
+//! instruction count at the entry), with `-<name>` before the extension. Each span's report
+//! also gives `worst`: the index and the entry count of its longest pass.
+//!
 //! `--call PC:ARG[,ARG...]` (repeatable) calls a guest function at the ready point, before the
 //! scenario, in the given order (`Emulator::call_function`, gcc m68k ABI, interrupts masked, a
 //! scratch stack 1 KiB below the guest's). ARG is a number, or `*ADDR+OFF`: the long at ADDR,
@@ -120,6 +124,8 @@ struct Args {
     cold_base: Option<String>,
     /// `--call PC:ARG[,ARG...]`: guest functions called at the ready point, before the scenario.
     calls: Vec<(u32, Vec<CallArg>)>,
+    /// `--span-log PATH`: every span pass as a JSON line, `-<scenario>` before the extension.
+    span_log: Option<PathBuf>,
     /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
@@ -378,6 +384,7 @@ fn parse_args() -> Result<Args, String> {
         spans: Vec::new(),
         cold_base: None,
         calls: Vec::new(),
+        span_log: None,
         zero: false,
         trace: false,
         guard: None,
@@ -415,6 +422,7 @@ fn parse_args() -> Result<Args, String> {
             "--span" => a.spans.push(parse_span(&value("--span")?)?),
             "--cold-base" => a.cold_base = Some(value("--cold-base")?),
             "--call" => a.calls.push(parse_call(&value("--call")?)?),
+            "--span-log" => a.span_log = Some(value("--span-log")?.into()),
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
@@ -1051,6 +1059,15 @@ fn run_scenario(
     let peek = do_peeks(&mut rt, &args.peeks);
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
     let spans = rt.spans_report((cf_instructions_per_second() / FRAMES_PER_SECOND).round() as u64);
+    if let Some(base) = &args.span_log {
+        let path = wav_path_for(base, &sc.name);
+        let mut text = String::new();
+        for (name, at, len) in rt.span_passes() {
+            text.push_str(&json!({"span": name, "at": at, "len": len}).to_string());
+            text.push('\n');
+        }
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
     let dsp_dump = match &args.dump_dsp {
         Some(base) => {
             let path = wav_path_for(base, &sc.name);

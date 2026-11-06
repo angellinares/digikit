@@ -831,6 +831,14 @@ impl Emulator {
         self.spans.clear();
     }
 
+    /// Every recorded pass: (span name, instruction count at entry, length).
+    pub fn span_passes(&self) -> Vec<(String, u64, u32)> {
+        self.spans
+            .passes()
+            .map(|(name, at, len)| (name.to_owned(), at, len))
+            .collect()
+    }
+
     /// The spans' statistics; `period` is one handler period in instructions.
     pub fn spans_report(&self, period: u64) -> serde_json::Value {
         self.spans.report(period)
