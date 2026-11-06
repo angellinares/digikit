@@ -728,7 +728,9 @@ fn sample_pool_facts(short: &str, p: Option<AdapterSamplePool>) -> Result<Option
             ));
         }
     }
-    if p.ddr_bytes != 0 && (p.ddr_base < SAMPLE_POOL_STOCK_END || p.ddr_base + p.ddr_bytes > DSP_DDR_END) {
+    if p.ddr_bytes != 0
+        && (p.ddr_base < SAMPLE_POOL_STOCK_END || p.ddr_base + p.ddr_bytes > DSP_DDR_END)
+    {
         return Err(err!(
             "{short}: [adapter.sample_pool] the DDR range must start at or above 0x80531000 (the end of the stock writes seen, finding 106) and end at or below 0xa0000000 (the DSP's NW32 alias)"
         ));
@@ -740,7 +742,9 @@ fn sample_pool_facts(short: &str, p: Option<AdapterSamplePool>) -> Result<Option
     }
     if p.ring_r_base != 0 {
         let end = p.ring_r_base.checked_add(RING_R_BYTES);
-        let overlaps = p.ddr_bytes != 0 && p.ring_r_base < p.ddr_base + p.ddr_bytes && p.ddr_base < p.ring_r_base + RING_R_BYTES;
+        let overlaps = p.ddr_bytes != 0
+            && p.ring_r_base < p.ddr_base + p.ddr_bytes
+            && p.ddr_base < p.ring_r_base + RING_R_BYTES;
         if p.ring_r_base & 0xfff != 0
             || p.ring_r_base < SAMPLE_POOL_STOCK_END
             || end.is_none_or(|e| e > DSP_DDR_END)
@@ -1281,7 +1285,11 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
         ),
         (
             "LIMIT_SEND_SLOTS",
-            if fx.track_page == 0 { 0 } else { e.limits.send_slots },
+            if fx.track_page == 0 {
+                0
+            } else {
+                e.limits.send_slots
+            },
             "[limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one)",
         ),
     ] {

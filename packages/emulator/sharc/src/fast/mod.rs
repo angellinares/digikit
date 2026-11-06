@@ -44,6 +44,7 @@ pub mod cfg;
 pub mod decode_view;
 pub mod dump;
 #[allow(unreachable_code)]
+#[rustfmt::skip]
 pub mod gen_helpers;
 pub mod glue;
 pub mod helper;
@@ -1093,7 +1094,9 @@ fn dynflat_range() -> Option<(u32, u32)> {
         match v.as_str() {
             "" | "0" => None,
             "1" => Some((0, u32::MAX)),
-            r => r.split_once('-').and_then(|(a, b)| Some((hex(a)?, hex(b)?))),
+            r => r
+                .split_once('-')
+                .and_then(|(a, b)| Some((hex(a)?, hex(b)?))),
         }
     })
 }
@@ -1281,8 +1284,14 @@ fn chase_target(s: &St, pc: u32, why: &str) -> Option<u32> {
         return None;
     }
     let d = region::decode_one(s, pc).ok()?;
-    let digits = d.form.len() - d.form.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-    let control = matches!(&d.form[..digits], "8" | "9" | "10" | "11" | "12" | "13" | "25");
+    let digits = d.form.len()
+        - d.form
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .len();
+    let control = matches!(
+        &d.form[..digits],
+        "8" | "9" | "10" | "11" | "12" | "13" | "25"
+    );
     (!control).then(|| pc + d.len_sw)
 }
 
@@ -1675,7 +1684,10 @@ impl FastEngine {
                 && !r.dyn_pcs.is_empty()
             {
                 sl.dyn_exits += r.dyn_pcs.contains(&at) as u32;
-                if sl.calls >= 64 && sl.calls.is_power_of_two() && sl.dyn_exits as u64 * 2 >= sl.calls {
+                if sl.calls >= 64
+                    && sl.calls.is_power_of_two()
+                    && sl.dyn_exits as u64 * 2 >= sl.calls
+                {
                     let pcs: Vec<u32> = r
                         .dyn_pcs
                         .iter()

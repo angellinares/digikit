@@ -40,8 +40,8 @@ mod common;
 use elektron_native_boot::{
     Emulator,
     sharc_peer::{
-        DEFAULT_PERIOD, DN2_IDLE, DT2_IDLE, NativeDsp, SharcPeer, Shared, SharedDsp, ThreadedHandle,
-        ThreadedPeer, open_engine_patched,
+        DEFAULT_PERIOD, DN2_IDLE, DT2_IDLE, NativeDsp, SharcPeer, Shared, SharedDsp,
+        ThreadedHandle, ThreadedPeer, open_engine_patched,
     },
 };
 use sha2::{Digest, Sha256};
@@ -205,7 +205,11 @@ fn main() {
         _ => state,
     };
 
-    let idle = if env::var("DSP_DEVICE").as_deref() == Ok("dt2") { DT2_IDLE } else { DN2_IDLE };
+    let idle = if env::var("DSP_DEVICE").as_deref() == Ok("dt2") {
+        DT2_IDLE
+    } else {
+        DN2_IDLE
+    };
     let threaded = env::var("DSP_THREAD").as_deref() == Ok("1");
     let (peer, dsp, shared): (Box<dyn periph::dspi::Peer>, DspCtl, _) = if threaded {
         let (image, state) = (image.clone(), state.clone());
@@ -220,7 +224,9 @@ fn main() {
         }
         (p.boxed(), DspCtl::Worker(h), sh)
     } else {
-        let d = SharedDsp::new(open_engine_patched(&image, &state, base, None, idle).expect("DSP engine"));
+        let d = SharedDsp::new(
+            open_engine_patched(&image, &state, base, None, idle).expect("DSP engine"),
+        );
         if env::var_os("DSP_PROFILE").is_some() {
             // The interpreter profile for tools/sharc_dev/sharc_rsgen.py (option 26).
             d.0.borrow_mut().set_option(26, 1);
@@ -245,7 +251,9 @@ fn main() {
     // panel is ready, so save the snapshot at the first ready point where
     // link port 0 has been quiet for N frames with nothing queued, and hold
     // the QA inputs until then.
-    let quiet_frames: Option<usize> = env::var("SAVE_QUIET_FRAMES").ok().and_then(|v| v.parse().ok());
+    let quiet_frames: Option<usize> = env::var("SAVE_QUIET_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let (mut last_lp0, mut last_change) = ((0u64, 0u32), 0usize);
     let t0 = Instant::now();
     let mut saved = false;
@@ -280,7 +288,8 @@ fn main() {
             sh.lp0_pending == 0 && sh.frames.len() >= last_change + n
         });
         if let Some(p) = &snap_path {
-            if common::save_if_ready(&mut emu, p, &script, s.ready && quiet, &mut saved) && !attach_at_ready
+            if common::save_if_ready(&mut emu, p, &script, s.ready && quiet, &mut saved)
+                && !attach_at_ready
             {
                 let (exported, icount) = dsp.export(); // also syncs the worker
                 let mut f = DSP_MAGIC.to_vec();

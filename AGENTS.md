@@ -61,7 +61,7 @@ not complete verification. Full command details and preparation live in [testing
 | Runtime Rust | `pnpm nx:pilot run core/runtime:rust-tests`: standalone host units, no generated core or daemon prerequisites. |
 | Web Node tests | `pnpm --filter @digi/web test` |
 | Python tools | Named pytest files under `tests/<owner>/` (never a directory) and `mise run lint:py`. Typed files are listed in pyproject `[tool.mypy] files`. |
-| Device tests | One module: `pnpm nx:pilot run <module-id>:test-device` (packs, CLIs and daemons are `dependsOn` targets built on demand into `dist/`). Suites: `mise run test:stock`, `test:fx`, `test:fx:dt2`; `pnpm nx:pilot run-many -t test-conformance` runs the conformance tests. Prerequisites (daemons, ready inputs) are in [testing](docs/TESTING.md); no implicit daemon builds. No ad-hoc proof scripts. |
+| Device tests | One module: `pnpm nx:pilot run <module-id>:test-device` (packs, CLIs and daemons are `dependsOn` targets built on demand into `dist/`). Suites: `mise run test:stock`, `test:fx`, `test:fx:dt2`; `pnpm nx:pilot run-many -t test-conformance` runs the conformance tests. Prerequisites (daemons, ready inputs) are in [testing](docs/TESTING.md); these three suites run through Nx, which builds the prerequisites and reuses cached results. No ad-hoc proof scripts. |
 | One module | `mise run module:check ID`: conformance and own tests; may build or emulate. This does not prove all-module loads. |
 | Module, UI or runtime iteration | `mise run dk:dev -- ID --device dn2 --keys 'tap:...,shot:NAME'`: builds, reloads a kept daemon (UI modules swap in about 4 s; any other change boots: DN2 5 s, DT2 10 s) and writes `out/runs/devreload/<dev>/sheet.png`. Iterate on DN2, check DT2 at the end. Not a proof: finish with the owner's check. |
 
@@ -85,7 +85,7 @@ Use existing database helpers before one-off queries: `tools/coldfire/cf.py` and
 
 SHARC instruction semantics belong only in `tools/sharc_dev/sharc_core/`; trace/run tools are drivers. Changes there or in `tools/sharc_dev/sharc_transpile/`, `tools/sharc_dev/sharc_transpile_infer.py`, or `tools/sharc_dev/sharc_rsgen.py` change `CORE_FINGERPRINT` and require costly regeneration. Back up each generated directory, regenerate DN2 and DT2 using `out/native/{dn2,dt2}-audio/gen/PROVENANCE.txt`, and regenerate the shared core with `mise run gen:core`.
 
-Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py`, `sharc_regionbench.py`, `pk_modcheck` and the scenario runner already take the lock; do not wrap them again (it deadlocks). Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
+Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `native_pgo.py`, `sharc_regionbench.py`, `pk_modcheck` and the scenario runner already take the lock, and the Nx launcher (`pnpm nx:pilot`) takes it for heavy task runs; do not wrap them again (it deadlocks). Launcher outputs in `out/native/target/*/pgo-use` are reserved; experiments use another `DIGI_EMU_PGO_VARIANT`.
 
 ## Worktrees
 

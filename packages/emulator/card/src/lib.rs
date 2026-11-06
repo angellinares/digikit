@@ -142,8 +142,7 @@ impl CardIdentity {
 
     /// The 512-byte guest-native EXT_CSD.
     pub fn ext_csd(self) -> [u8; SECTOR_SIZE] {
-        let (setting_completed, enh_size, wp_group, erase_group, sec_count) =
-            self.ext_csd_fields();
+        let (setting_completed, enh_size, wp_group, erase_group, sec_count) = self.ext_csd_fields();
         let mut bytes = [0; SECTOR_SIZE];
         bytes[0x98] = setting_completed;
         bytes[0xd4..0xd8].copy_from_slice(&sec_count.to_be_bytes());

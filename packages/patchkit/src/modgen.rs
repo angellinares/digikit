@@ -205,7 +205,10 @@ mod tests {
         let files = generate(&lib, &models, "machines/t").unwrap();
         assert_eq!(files.len(), 1);
         let g: serde_json::Value = serde_json::from_str(&files[0].1).unwrap();
-        assert_eq!(g["machines"][0]["devices"]["dt2"]["knobs"][2]["param"], "t_1");
+        assert_eq!(
+            g["machines"][0]["devices"]["dt2"]["knobs"][2]["param"],
+            "t_1"
+        );
         assert_eq!(g["machines"][0]["devices"]["dn2"]["page"]["title"], "T");
         // a parameter's slot is the device's slot base plus its knob position from `param_slots`: words 0 and 1 sit on B and C
         assert_eq!(g["params"]["dn2"][0]["slot"], 26);

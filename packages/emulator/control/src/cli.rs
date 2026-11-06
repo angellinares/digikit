@@ -284,7 +284,10 @@ mod tests {
         let a = parse(&["x.syx", "--device-folders", "--no-card-sync"]).unwrap();
         assert!(a.device_folders && !a.card_sync);
         // the first load's folder is a default, not a switch
-        assert_eq!(parse(&["--mirror-dir", "m"]).unwrap().mirror_dir, Some("m".into()));
+        assert_eq!(
+            parse(&["--mirror-dir", "m"]).unwrap().mirror_dir,
+            Some("m".into())
+        );
     }
 
     #[test]
@@ -302,19 +305,49 @@ mod tests {
     #[test]
     fn also_coupled_adds_another_devices_ready_inputs() {
         let a = parse(&[
-            "x.syx", "--auto-coupled", "--dsp-image", "i", "--dsp-state", "s", "--cf-snapshot", "c", "--no-audio",
-            "--also-coupled", "i2", "s2", "c2", "y.syx",
+            "x.syx",
+            "--auto-coupled",
+            "--dsp-image",
+            "i",
+            "--dsp-state",
+            "s",
+            "--cf-snapshot",
+            "c",
+            "--no-audio",
+            "--also-coupled",
+            "i2",
+            "s2",
+            "c2",
+            "y.syx",
         ])
         .unwrap();
         assert_eq!(a.audio_alt.len(), 1);
         let alt = &a.audio_alt[0];
         assert_eq!(
             (&alt.image, &alt.state, &alt.snapshot, &alt.expected_syx),
-            (&"i2".into(), &"s2".into(), &"c2".into(), &Some("y.syx".into()))
+            (
+                &"i2".into(),
+                &"s2".into(),
+                &"c2".into(),
+                &Some("y.syx".into())
+            )
         );
         assert!(alt.automatic && !alt.playback);
         assert!(parse(&["--also-coupled", "i2", "s2", "c2", "y.syx"]).is_err());
-        assert!(parse(&["--coupled", "--dsp-image", "i", "--dsp-state", "s", "--cf-snapshot", "c", "--also-coupled", "i2"]).is_err());
+        assert!(
+            parse(&[
+                "--coupled",
+                "--dsp-image",
+                "i",
+                "--dsp-state",
+                "s",
+                "--cf-snapshot",
+                "c",
+                "--also-coupled",
+                "i2"
+            ])
+            .is_err()
+        );
         assert!(parse(&[]).unwrap().audio_alt.is_empty());
     }
 }

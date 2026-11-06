@@ -537,7 +537,12 @@ impl Kernel {
                             return err("store operand types");
                         }
                     }
-                    Inst::StoreN { base, off, v, bytes } => {
+                    Inst::StoreN {
+                        base,
+                        off,
+                        v,
+                        bytes,
+                    } => {
                         if !use_ok(base) || !use_ok(off) || !use_ok(v) {
                             return err("operand not defined");
                         }
@@ -789,9 +794,12 @@ impl Kernel {
                     }
                     Inst::Set(v, x) => w.extend([1, v.0, x]),
                     Inst::Store32 { base, off, v } => w.extend([2, base, off, v]),
-                    Inst::StoreN { base, off, v, bytes } => {
-                        w.extend([11, base, off, v, bytes as u32])
-                    }
+                    Inst::StoreN {
+                        base,
+                        off,
+                        v,
+                        bytes,
+                    } => w.extend([11, base, off, v, bytes as u32]),
                     Inst::StCtx32 { off, v } => w.extend([3, off, v]),
                     Inst::Guard { ok, k, exit } => w.extend([4, ok, k, exit]),
                     Inst::GuardAny { a, b, k, exit } => w.extend([5, a, b, k, exit]),

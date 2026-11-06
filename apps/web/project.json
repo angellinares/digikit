@@ -15,7 +15,7 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "uv run python -m tools.emulator.native_wasm --patchkit-only",
+        "command": "node tools/nx/wasm.mjs --patchkit-only",
         "cwd": "."
       }
     },

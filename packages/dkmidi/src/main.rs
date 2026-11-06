@@ -35,7 +35,12 @@ fn resolve(want: &str, names: &[String]) -> Result<String, String> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
         ["ports"] => match dkmidi::ports("dkmidi") {
             Ok(names) => names.iter().for_each(|n| println!("{n}")),
             Err(e) => die(1, &e),

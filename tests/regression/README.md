@@ -2,7 +2,7 @@
 
 Vitest suites that drive the emulator daemon (`emud`) through `@digi/test-support` and `@digi/control-client`.
 All device suites share one config, `vitest.config.ts`, with five projects. Device projects run one file at a
-time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4).
+time (the stock project may run files in parallel, `REGRESSION_JOBS`, set by the Nx launcher from its budget, default 2).
 
 ## Layout
 
@@ -16,7 +16,8 @@ time (the stock project may run files in parallel, `REGRESSION_JOBS`, default 4)
 
 Device tests for a module live in that module: `modules/**/tests/*.device.test.ts` (patched runtime on DT2 1.17
 and DN2 1.12). The owner's `project.json` lists them in `metadata.runtimeAcceptance`, with paths relative
-to that project. Runtime acceptance belongs to `modules/core/runtime/tests/project.json`
+to that project. A record with `dksampleWasm: true` makes the target depend on `dksample:wasm`, which builds
+`apps/web/public/dksample.wasm`. A record with `pythonTools: true` hashes the Python tools in `PYTHON_TOOL_SOURCES`, and `pythonTools: "client"` only those in `PYTHON_CLIENT_SOURCES` (`tools/nx/module-targets.mjs`), for tests that spawn Python tools. Runtime acceptance belongs to `modules/core/runtime/tests/project.json`
 (`core/runtime-tests`) except CF-only service commands and settings, owned by nested `service-commands/project.json`
 and `settings/project.json` (`core/runtime-service-tests` and `core/runtime-settings-tests`). Run an owner's
 `test-device` directly; `module:check core/runtime` discovers all owners. Checks that run over
@@ -42,8 +43,8 @@ Goldens are in `goldens/dt2-1.17.json`.
 | `mise run test:fx:dt2` | `fx-dt2` | 135 quick; `DIGI_FX_SWEEP=1` for 146 |
 | `pnpm test:host` | host projects | No device inputs |
 
-Filters are native Vitest file or test-name filters. The device tasks never build daemons, generated cores or
-module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/regression/junit.xml`.
+Filters are native Vitest file or test-name filters. `mise run test:stock`, `test:fx` and `test:fx:dt2` run through Nx, which builds the prerequisites and reuses cached results.
+Running `pnpm --filter @digi/regression test:*` or Vitest directly builds nothing, and missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/regression/junit.xml`.
 
 ## Prerequisites
 
@@ -55,7 +56,8 @@ module artifacts. Missing prerequisites fail. `REGRESSION_JUNIT=1` writes `out/r
   selects `digikit/debug` first, `installWithDebug` in `runtime/install.ts`); the load cells need every run-time module. The gate packs them itself. By hand:
   `pnpm nx:pilot run digikit/pluck:pack` (artifacts in `dist/modules/<dev>/<leaf>.dkm`).
 - DT2 card samples at `out/runs/patchkit/samples` (`tools.emulator.card_check.make_samples`).
-- Sample cases also need `apps/web/public/dksample.wasm` (`mise run wasm:dksample`).
+- Sample cases also need `apps/web/public/dksample.wasm`. The Nx target `dksample:wasm` builds it for records with
+  `dksampleWasm: true`; by hand use `mise run wasm:dksample`.
 - plusdrive is built by the Nx target `plusdrive-format:cli` into `dist/plusdrive/plusdrive` (`DIGI_PLUSDRIVE` overrides the path).
   There is no `DIGI_RUNTIME_CARD` variable.
 

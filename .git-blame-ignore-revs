@@ -3,3 +3,5 @@
 
 # format: run Prettier over the JS/TS workspaces
 ff05526b26fbd1a0025c3f4526b9b239b310488a
+# Format Rust with rustfmt
+a49f9cccae0b89450d086c6c1cdbcb24fface4b7

@@ -140,7 +140,9 @@ pub fn build_card(
     mut progress: impl FnMut(usize, usize),
 ) -> Result<CardInfo, String> {
     // only the DT2 has a project to seed (`Dt2Seed`)
-    let seed = (device == "dt2").then(|| Dt2Seed::from_syx(syx)).transpose()?;
+    let seed = (device == "dt2")
+        .then(|| Dt2Seed::from_syx(syx))
+        .transpose()?;
     let layout = card_layout(device)?;
     let scanned = scan_folder(dir, &layout, &mut progress)?;
     for line in &scanned.skipped {
@@ -328,7 +330,11 @@ mod tests {
         // another device: its own key and image name
         let dn2 = card_key("dn2", b"fw1", &dir, &files).unwrap();
         assert_ne!(key, dn2);
-        assert!(CardPaths::for_device(Path::new("run"), &dn2, "dn2").image.ends_with(format!("cards/{}/dn2.img", &dn2[..12])));
+        assert!(
+            CardPaths::for_device(Path::new("run"), &dn2, "dn2")
+                .image
+                .ends_with(format!("cards/{}/dn2.img", &dn2[..12]))
+        );
     }
 
     #[test]
@@ -341,7 +347,10 @@ mod tests {
         fs::write(dir.join("digikit/modules/m.dkm"), b"m").unwrap();
         fs::create_dir_all(dir.join(".mmcfs/projects")).unwrap();
         fs::write(dir.join(".mmcfs/projects/0000.bin"), b"p").unwrap();
-        assert_eq!(device_files("dn2", &dir).unwrap(), [".mmcfs/projects/0000.bin", "digikit/modules/m.dkm"]);
+        assert_eq!(
+            device_files("dn2", &dir).unwrap(),
+            [".mmcfs/projects/0000.bin", "digikit/modules/m.dkm"]
+        );
         assert!(device_files("nope", &dir).is_err());
     }
 
@@ -377,11 +386,15 @@ mod tests {
         fs::write(samples.join("digikit/m.dkm"), b"module").unwrap();
         let files = list_files(&samples).unwrap();
         let mut seen = Vec::new();
-        let (paths, cached, count) =
-            ensure_card("dt2", &dir.join("run"), &syx, &samples, &files, |done, total| {
-                seen.push((done, total))
-            })
-            .unwrap();
+        let (paths, cached, count) = ensure_card(
+            "dt2",
+            &dir.join("run"),
+            &syx,
+            &samples,
+            &files,
+            |done, total| seen.push((done, total)),
+        )
+        .unwrap();
         assert!(!cached);
         assert_eq!(count, 4);
         assert_eq!(seen.last(), Some(&(4, 6)), "{seen:?}");
@@ -408,9 +421,14 @@ mod tests {
             assert!(names.iter().any(|n| n == name), "{names:?}");
         }
         let area = plusdrive_format::card_layout("dt2").unwrap().store.unwrap();
-        let store = plusdrive_format::read_store(&image, area.first_sector, area.store_limit(), area.header_b())
-            .unwrap()
-            .unwrap();
+        let store = plusdrive_format::read_store(
+            &image,
+            area.first_sector,
+            area.store_limit(),
+            area.header_b(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(store.entries.len(), 1);
         let mut slot = [0u8; 7];
         emmc_card::RandomAccessRead::read_at(&image, (0x58000 + 2 * 0x8000) * 512, &mut slot);

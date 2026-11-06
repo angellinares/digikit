@@ -5,12 +5,12 @@ use sha2::{Digest, Sha256};
 pub const HEAD: [u8; 5] = [0xF0, 0x7D, 0x64, 0x6B, 0x01];
 pub const REPLY_BIT: u8 = 0x40;
 
-/// `MAX_CHUNK`: a PUT chunk. `MAX_REQUEST_WIRE` and `MAX_REPLY_WIRE`: the most a request (40 KiB) and a reply (1 KiB) take on the wire.
-pub use crate::gen_proto::{MAX_CHUNK, MAX_REPLY_WIRE, MAX_REQUEST_WIRE};
 pub use crate::gen_proto::{
     CMD_ABORT, CMD_BEGIN, CMD_CLEAR, CMD_DATA, CMD_DELETE, CMD_END, CMD_INFO, CMD_LIST, CMD_MKDIR,
     CMD_READ, CMD_VERIFY,
 };
+/// `MAX_CHUNK`: a PUT chunk. `MAX_REQUEST_WIRE` and `MAX_REPLY_WIRE`: the most a request (40 KiB) and a reply (1 KiB) take on the wire.
+pub use crate::gen_proto::{MAX_CHUNK, MAX_REPLY_WIRE, MAX_REQUEST_WIRE};
 pub const CLEAR_MAGIC: u32 = 0x434c_5221;
 
 /// Pack: each group of up to 7 bytes becomes a collector byte (bit `6 - n` is the top bit of byte `n`) and the 7 bytes

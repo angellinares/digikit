@@ -151,7 +151,11 @@ fn generation_needs_no_object_files() {
     assert!(m.objects.is_empty() && m.manifest.machine.is_empty());
     let mut lib = Library { modules: vec![m] };
     lib.lower(&models).unwrap();
-    assert!(modgen::generate(&lib, &models, "test/patched-pluck").unwrap().is_empty());
+    assert!(
+        modgen::generate(&lib, &models, "test/patched-pluck")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// The bundle path of the browser: the same lowering from texts (ports, manifests, objects, device files).

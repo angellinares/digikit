@@ -464,13 +464,22 @@ fn astatx_define_matches_branch_reference_for_all_value_shapes() {
     let s = state();
     let values = [
         V::UNK,
-        V { b: 0xFFFF_FFFF, m: 0 },
+        V {
+            b: 0xFFFF_FFFF,
+            m: 0,
+        },
         V::partial(0x0000_0001, 0x0000_0001),
         V::partial(0x8000_0042, 0x8000_0002),
-        V { b: 0xFFFF_FFFF, m: 0x0000_0042 },
+        V {
+            b: 0xFFFF_FFFF,
+            m: 0x0000_0042,
+        },
         V::c(0),
         V::c(0x8000_0042),
-        V { b: 0xFFFF_FFFF, m: u32::MAX },
+        V {
+            b: 0xFFFF_FFFF,
+            m: u32::MAX,
+        },
     ];
     let wide = (1i128 << 96) | (1i128 << 47) | 0x8000_0042;
     let masks = [0, 1, -1, 0x0000_0042, 0xFFFF_0000, wide, -wide];
@@ -981,7 +990,10 @@ fn interrupt_precheck_matches_full_candidate() {
             quiet += 1;
             let full =
                 crate::generated::core_g::sequencer::_interrupt_candidate(&mut s, allowed as Int);
-            assert!(matches!(full, Ok(0)), "case {case}: quiet but full check {full:?}");
+            assert!(
+                matches!(full, Ok(0)),
+                "case {case}: quiet but full check {full:?}"
+            );
         } else {
             loud += 1;
         }
@@ -1700,9 +1712,17 @@ fn lp_same(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
     }
     assert_eq!(p.loops.items(), f.loops.items(), "loop stack {why}");
     assert_eq!(p.loop_depth, f.loop_depth, "loop depth {why}");
-    assert_eq!(p.loop_slots.items(), f.loop_slots.items(), "loop slots {why}");
+    assert_eq!(
+        p.loop_slots.items(),
+        f.loop_slots.items(),
+        "loop slots {why}"
+    );
     assert_eq!(p.pc_stack.items(), f.pc_stack.items(), "pc stack {why}");
-    assert_eq!(p.call_stack.items(), f.call_stack.items(), "call stack {why}");
+    assert_eq!(
+        p.call_stack.items(),
+        f.call_stack.items(),
+        "call stack {why}"
+    );
     assert_eq!(p.pending, f.pending, "pending {why}");
     for k in 0..LP_DATA_WORDS * 4 {
         let a = p.mem.canonical_of(LP_DATA + k);
@@ -1746,7 +1766,11 @@ fn lp_compare(
             assert_eq!(plain.step(n), n, "{name}: {:?}", plain.halt);
             assert_eq!(fast.step(n), n, "{name}: {:?}", fast.halt);
             done += n;
-            lp_same(&plain, &fast, &format!("{name}: chunk {chunk}, after {done}"));
+            lp_same(
+                &plain,
+                &fast,
+                &format!("{name}: chunk {chunk}, after {done}"),
+            );
         }
         let st = fast.fast.as_ref().unwrap().fast_stats().unwrap();
         ran = ran.max(st.insns);
@@ -1800,20 +1824,20 @@ fn lp_fsub(rn: u64, rx: u64, ry: u64) -> u64 {
 #[test]
 fn fast_denormal_float_ops_match_the_interpreter() {
     let code = [
-        lp_fmul(10, 6, 6),              // 0: F10 = 1.0 * 1.0 (a normal result)
-        lp_fmul(2, 0, 1),               // 1: F2 = F0 * F1 (2^-140: denormal product)
-        lp_fmul(3, 2, 1),               // 2: F3 = F2 * F1
-        lp_fmul(4, 0, 0),               // 3: F4 = F0 * F0 (2^-200: underflow to zero)
-        lp_fmul(5, 6, 1),               // 4: F5 = F6 * F1 (a normal result)
-        lp_fmul(7, 8, 9),               // 5: F7 = F8 * F9 (a negative denormal product)
-        lp_fmul(2, 13, 6),              // 6: F2 = F13 * 1.0 (a denormal operand: zero)
-        lp_fmul(14, 13, 15),            // 7: F14 = F13 * 2^97 (a denormal operand: zero)
-        lp_fadd(3, 13, 6),              // 8: F3 = F13 + 1.0 (a denormal operand: 1.0)
-        lp_fsub(4, 11, 12),             // 9: F4 = 1.5*2^-126 - 2^-126 (a denormal difference: +0)
-        lp_fsub(5, 12, 11),             // 10: F5 = 2^-126 - 1.5*2^-126 (a negative one: -0)
-        lp_fadd(7, 11, 12),             // 11: F7 = 1.5*2^-126 + 2^-126 (normal)
-        lp_2a(0x06, 0x01, 10, 10, 6),   // 12: IF MS R10 = R10 + R6 (reads MN of the last multiply)
-        lp_jump(0x1f, lp_rel(13, 0)),   // 13: back to 0
+        lp_fmul(10, 6, 6),            // 0: F10 = 1.0 * 1.0 (a normal result)
+        lp_fmul(2, 0, 1),             // 1: F2 = F0 * F1 (2^-140: denormal product)
+        lp_fmul(3, 2, 1),             // 2: F3 = F2 * F1
+        lp_fmul(4, 0, 0),             // 3: F4 = F0 * F0 (2^-200: underflow to zero)
+        lp_fmul(5, 6, 1),             // 4: F5 = F6 * F1 (a normal result)
+        lp_fmul(7, 8, 9),             // 5: F7 = F8 * F9 (a negative denormal product)
+        lp_fmul(2, 13, 6),            // 6: F2 = F13 * 1.0 (a denormal operand: zero)
+        lp_fmul(14, 13, 15),          // 7: F14 = F13 * 2^97 (a denormal operand: zero)
+        lp_fadd(3, 13, 6),            // 8: F3 = F13 + 1.0 (a denormal operand: 1.0)
+        lp_fsub(4, 11, 12),           // 9: F4 = 1.5*2^-126 - 2^-126 (a denormal difference: +0)
+        lp_fsub(5, 12, 11),           // 10: F5 = 2^-126 - 1.5*2^-126 (a negative one: -0)
+        lp_fadd(7, 11, 12),           // 11: F7 = 1.5*2^-126 + 2^-126 (normal)
+        lp_2a(0x06, 0x01, 10, 10, 6), // 12: IF MS R10 = R10 + R6 (reads MN of the last multiply)
+        lp_jump(0x1f, lp_rel(13, 0)), // 13: back to 0
     ];
     let set = |e: &mut crate::Engine| {
         lp_regs(
@@ -1842,15 +1866,15 @@ fn fast_denormal_float_ops_match_the_interpreter() {
 #[test]
 fn fast_nested_loops_match_the_interpreter() {
     let code = [
-        lp_imm(0, 0),                 // 0: R0 = 0
-        lp_imm(1, 0),                 // 1: R1 = 0
-        lp_do(5, lp_rel(2, 7)),       // 2: DO (outer end 7) 5 times
-        lp_add(1, 1, 2),              // 3: R1 += R2
-        lp_do(3, lp_rel(4, 6)),       // 4: DO (inner end 6) 3 times
-        lp_add(0, 0, 1),              // 5: R0 += R1
-        lp_add(3, 3, 2),              // 6: R3 += R2   (inner end)
-        lp_add(4, 4, 2),              // 7: R4 += R2   (outer end)
-        lp_jump(0x1f, 0),             // 8: spin
+        lp_imm(0, 0),           // 0: R0 = 0
+        lp_imm(1, 0),           // 1: R1 = 0
+        lp_do(5, lp_rel(2, 7)), // 2: DO (outer end 7) 5 times
+        lp_add(1, 1, 2),        // 3: R1 += R2
+        lp_do(3, lp_rel(4, 6)), // 4: DO (inner end 6) 3 times
+        lp_add(0, 0, 1),        // 5: R0 += R1
+        lp_add(3, 3, 2),        // 6: R3 += R2   (inner end)
+        lp_add(4, 4, 2),        // 7: R4 += R2   (outer end)
+        lp_jump(0x1f, 0),       // 8: spin
     ];
     let set = |e: &mut crate::Engine| lp_regs(e, &[(2, 1)]);
     for entries in [0, 3, 5, 6, 7].map(|k| vec![lp_pc(k)]) {
@@ -1867,22 +1891,28 @@ fn fast_nested_loops_match_the_interpreter() {
 #[test]
 fn fast_single_iteration_and_register_count_loops_match() {
     let code = [
-        lp_imm(5, 1),                 // 0: R5 = 1
-        lp_do(1, lp_rel(1, 3)),       // 1: DO (end 3) once
-        lp_add(0, 0, 2),              // 2
-        lp_add(1, 1, 2),              // 3: end
-        lp_do_reg(5, lp_rel(4, 6)),   // 4: DO (end 6) R5 times
-        lp_add(2, 2, 6),              // 5: R2 += R6
-        lp_add(3, 3, 2),              // 6: end
-        lp_do_reg(7, lp_rel(7, 9)),   // 7: DO (end 9) R7 times
-        lp_add(4, 4, 2),              // 8
-        lp_add(5, 5, 2),              // 9: end
-        lp_jump(0x1f, 0),             // 10: spin
+        lp_imm(5, 1),               // 0: R5 = 1
+        lp_do(1, lp_rel(1, 3)),     // 1: DO (end 3) once
+        lp_add(0, 0, 2),            // 2
+        lp_add(1, 1, 2),            // 3: end
+        lp_do_reg(5, lp_rel(4, 6)), // 4: DO (end 6) R5 times
+        lp_add(2, 2, 6),            // 5: R2 += R6
+        lp_add(3, 3, 2),            // 6: end
+        lp_do_reg(7, lp_rel(7, 9)), // 7: DO (end 9) R7 times
+        lp_add(4, 4, 2),            // 8
+        lp_add(5, 5, 2),            // 9: end
+        lp_jump(0x1f, 0),           // 10: spin
     ];
     for count in [1u32, 2, 4] {
         let set = move |e: &mut crate::Engine| lp_regs(e, &[(2, 1), (6, 3), (7, count)]);
         for entries in [0, 2, 3, 5, 8, 9].map(|k| vec![lp_pc(k)]) {
-            lp_check(&format!("single {count} {entries:?}"), &code, &entries, 80, &set);
+            lp_check(
+                &format!("single {count} {entries:?}"),
+                &code,
+                &entries,
+                80,
+                &set,
+            );
         }
     }
 }
@@ -1899,24 +1929,31 @@ fn fast_register_count_loop_with_stepped_pointers_matches() {
     for same in [false, true] {
         let cnt = if same { 7 } else { 5 };
         let code = [
-            lp_imm(6, 2),                                  // 0: R6 = 2
-            lp_sub(cnt, 7, 6),                             // 1: count = R7 - R6
-            lp_do_reg(cnt, lp_rel(2, 6)),                  // 2: DO (end 6) count times
-            lp_3d(0x1f, false, true, 0, 0, 4, 0, 0),       // 3: R4 = DM(I0, M0) byte, post
-            lp_3d(0x1f, true, true, 1, 0, 4, 0, 0),        // 4: DM(I1, M0) = R4 byte, post
-            lp_add(3, 3, 4),                               // 5: R3 += R4
-            lp_add(9, 9, 2),                               // 6: R9 += R2   (end)
-            lp_3d(0x1f, false, true, 0, 0, 8, 0, 0),       // 7: R8 = DM(I0, M0) after the loop
-            lp_3d(0x1f, true, true, 1, 0, 8, 0, 0),        // 8: DM(I1, M0) = R8 after the loop
-            lp_jump(0x1f, 0),                              // 9: spin
+            lp_imm(6, 2),                            // 0: R6 = 2
+            lp_sub(cnt, 7, 6),                       // 1: count = R7 - R6
+            lp_do_reg(cnt, lp_rel(2, 6)),            // 2: DO (end 6) count times
+            lp_3d(0x1f, false, true, 0, 0, 4, 0, 0), // 3: R4 = DM(I0, M0) byte, post
+            lp_3d(0x1f, true, true, 1, 0, 4, 0, 0),  // 4: DM(I1, M0) = R4 byte, post
+            lp_add(3, 3, 4),                         // 5: R3 += R4
+            lp_add(9, 9, 2),                         // 6: R9 += R2   (end)
+            lp_3d(0x1f, false, true, 0, 0, 8, 0, 0), // 7: R8 = DM(I0, M0) after the loop
+            lp_3d(0x1f, true, true, 1, 0, 8, 0, 0),  // 8: DM(I1, M0) = R8 after the loop
+            lp_jump(0x1f, 0),                        // 9: spin
         ];
         let all: Vec<u32> = (0..10).map(lp_pc).collect();
         // The region's trip count is R7 - 2, evaluated at entry.
         let probe = lp_engine(&code, &[], false, &|e| {
-            lp_regs(e, &[(2, 1), (7, 9), (16, at(0x10)), (17, at(0x200)), (32, 1)])
+            lp_regs(
+                e,
+                &[(2, 1), (7, 9), (16, at(0x10)), (17, at(0x200)), (32, 1)],
+            )
         });
         let region = crate::fast::region::build_cfg(&probe.s, lp_pc(0)).expect("region");
-        assert_eq!(region.cfg.as_ref().unwrap().reg_n, Some((7, -2)), "same={same}");
+        assert_eq!(
+            region.cfg.as_ref().unwrap().reg_n,
+            Some((7, -2)),
+            "same={same}"
+        );
         for n in [1u32, 2, 3, 7, 40] {
             let set = move |e: &mut crate::Engine| {
                 lp_regs(
@@ -1926,7 +1963,13 @@ fn fast_register_count_loop_with_stepped_pointers_matches() {
             };
             let total = 3 * n + 12;
             for entries in [vec![0], vec![lp_pc(1)], vec![lp_pc(2)], all.clone()] {
-                lp_check(&format!("regcount same={same} n={n} {entries:?}"), &code, &entries, total, &set);
+                lp_check(
+                    &format!("regcount same={same} n={n} {entries:?}"),
+                    &code,
+                    &entries,
+                    total,
+                    &set,
+                );
             }
         }
         // A count of 1, one whose windows run past the data, and a huge one.
@@ -1937,7 +1980,13 @@ fn fast_register_count_loop_with_stepped_pointers_matches() {
                     &[(2, 1), (7, r7), (16, at(0x10)), (17, at(0x200)), (32, 1)],
                 )
             };
-            lp_compare(&format!("regcount edge same={same} r7={r7:#x}"), &code, &all, 40, &set);
+            lp_compare(
+                &format!("regcount edge same={same} r7={r7:#x}"),
+                &code,
+                &all,
+                40,
+                &set,
+            );
         }
     }
 }
@@ -1979,11 +2028,15 @@ fn fast_register_count_loop_windows_end_exactly_at_the_page_boundary() {
                     } else {
                         (at(0x10), start, start + n - 1)
                     };
-                    lp_regs(e, &[(2, 1), (7, n + 2), (16, i0), (17, i1), (18, i2), (32, 1)]);
+                    lp_regs(
+                        e,
+                        &[(2, 1), (7, n + 2), (16, i0), (17, i1), (18, i2), (32, 1)],
+                    );
                     // Distinct non-zero bytes either side of the boundary.
                     for k in 0..64u32 {
                         let ca = e.s.mem.canonical_of(end - 32 + k);
-                        e.s.mem.write_byte(ca, (k as u8).wrapping_mul(13).wrapping_add(0x55));
+                        e.s.mem
+                            .write_byte(ca, (k as u8).wrapping_mul(13).wrapping_add(0x55));
                     }
                 };
                 ran_total += lp_compare(
@@ -2014,17 +2067,17 @@ fn fast_call_slot_push_through_an_unranged_stack_pointer_matches() {
         }
     };
     let code = [
-        lp_imm(4, 3),                          // 0: R4 = 3
-        lp_3a(0x1f, true, true, 7, 7, 0),      // 1: DM(I7, M7) = R0 (post)   <- cycle head
-        lp_sub(4, 4, 2),                       // 2: R4 -= R2 (AZ)
-        lp_jump(0x10, lp_rel(3, 1)),           // 3: IF NE JUMP 1
-        lp_add(0, 0, 2),                       // 4: R0 += R2
-        lp_call_db(lp_rel(5, 9)),              // 5: CALL 9 (DB)
-        lp_16a(7, 7, 0x1234_5678),             // 6: slot 1: DM(I7, M7) = imm (post)
-        lp_add(1, 1, 2),                       // 7: slot 2: R1 += R2
-        lp_jump(0x1f, 0),                      // 8: spin (the return point)
-        lp_add(3, 3, 2),                       // 9: the callee
-        lp_jump(0x1f, 0),                      // 10: spin
+        lp_imm(4, 3),                     // 0: R4 = 3
+        lp_3a(0x1f, true, true, 7, 7, 0), // 1: DM(I7, M7) = R0 (post)   <- cycle head
+        lp_sub(4, 4, 2),                  // 2: R4 -= R2 (AZ)
+        lp_jump(0x10, lp_rel(3, 1)),      // 3: IF NE JUMP 1
+        lp_add(0, 0, 2),                  // 4: R0 += R2
+        lp_call_db(lp_rel(5, 9)),         // 5: CALL 9 (DB)
+        lp_16a(7, 7, 0x1234_5678),        // 6: slot 1: DM(I7, M7) = imm (post)
+        lp_add(1, 1, 2),                  // 7: slot 2: R1 += R2
+        lp_jump(0x1f, 0),                 // 8: spin (the return point)
+        lp_add(3, 3, 2),                  // 9: the callee
+        lp_jump(0x1f, 0),                 // 10: spin
     ];
     let all: Vec<u32> = (0..11).map(lp_pc).collect();
     // The push is lowered in the kernel (not the end of the region).
@@ -2035,7 +2088,9 @@ fn fast_call_slot_push_through_an_unranged_stack_pointer_matches() {
     let region = crate::fast::region::build_cfg(&probe.s, lp_pc(0)).expect("region");
     let stops = &region.cfg.as_ref().unwrap().stops;
     assert!(
-        !stops.iter().any(|(pc, _)| *pc == lp_pc(5) || *pc == lp_pc(6)),
+        !stops
+            .iter()
+            .any(|(pc, _)| *pc == lp_pc(5) || *pc == lp_pc(6)),
         "the call with the 16a push became a stop: {stops:?}"
     );
     for (sp, m7) in [
@@ -2049,7 +2104,13 @@ fn fast_call_slot_push_through_an_unranged_stack_pointer_matches() {
             stack_calls(e);
             lp_regs(e, &[(2, 1), (23, sp), (39, m7)])
         };
-        lp_compare(&format!("push sp={sp:#x} m7={m7:#x}"), &code, &all, 40, &set);
+        lp_compare(
+            &format!("push sp={sp:#x} m7={m7:#x}"),
+            &code,
+            &all,
+            40,
+            &set,
+        );
     }
 }
 
@@ -2062,21 +2123,27 @@ fn fast_call_slot_push_through_an_unranged_stack_pointer_matches() {
 fn fast_outer_active_loop_end_reached_from_outside_matches() {
     for count in [1u32, 2, 4] {
         let code = [
-            lp_imm(2, 1),                  // 0: R2 = 1
-            lp_do(count, lp_rel(1, 4)),    // 1: DO (end 4)
-            lp_add(0, 0, 2),               // 2
-            lp_jump(0x1f, lp_rel(3, 8)),   // 3: JUMP 8 (out of line)
-            lp_add(1, 1, 2),               // 4: loop end
-            lp_jump(0x1f, lp_rel(5, 10)),  // 5: after the loop: JUMP 10
-            0,                             // 6
-            0,                             // 7
-            lp_add(3, 3, 2),               // 8: out of line
-            lp_jump(0x1f, lp_rel(9, 4)),   // 9: JUMP 4 (the loop's end)
-            lp_jump(0x1f, 0),              // 10: spin
+            lp_imm(2, 1),                 // 0: R2 = 1
+            lp_do(count, lp_rel(1, 4)),   // 1: DO (end 4)
+            lp_add(0, 0, 2),              // 2
+            lp_jump(0x1f, lp_rel(3, 8)),  // 3: JUMP 8 (out of line)
+            lp_add(1, 1, 2),              // 4: loop end
+            lp_jump(0x1f, lp_rel(5, 10)), // 5: after the loop: JUMP 10
+            0,                            // 6
+            0,                            // 7
+            lp_add(3, 3, 2),              // 8: out of line
+            lp_jump(0x1f, lp_rel(9, 4)),  // 9: JUMP 4 (the loop's end)
+            lp_jump(0x1f, 0),             // 10: spin
         ];
         let set = |e: &mut crate::Engine| lp_regs(e, &[(2, 1)]);
         for entries in [8, 9, 4, 0].map(|k| vec![lp_pc(k)]) {
-            lp_check(&format!("dormant {count} {entries:?}"), &code, &entries, 90, &set);
+            lp_check(
+                &format!("dormant {count} {entries:?}"),
+                &code,
+                &entries,
+                90,
+                &set,
+            );
         }
     }
 }
@@ -2088,19 +2155,25 @@ fn fast_outer_active_loop_end_reached_from_outside_matches() {
 #[test]
 fn fast_stop_inside_a_loop_body_matches() {
     let code = [
-        lp_imm(2, 1),                  // 0
-        lp_do(6, lp_rel(1, 7)),        // 1: DO (end 7) 6 times
-        lp_add(0, 0, 2),               // 2
-        lp_sub(5, 5, 2),               // 3: R5 -= 1 (AZ)
-        lp_2a(0x10, 0x01, 8, 8, 2),    // 4: IF NE R8 = R8 + R2 (keeps the flags)
-        lp_imm(48, 0x25_f010),         // 5: B0 = ..., not lowered
-        lp_add(1, 1, 2),               // 6
-        lp_add(3, 3, 2),               // 7: end
-        lp_jump(0x1f, 0),              // 8: spin
+        lp_imm(2, 1),               // 0
+        lp_do(6, lp_rel(1, 7)),     // 1: DO (end 7) 6 times
+        lp_add(0, 0, 2),            // 2
+        lp_sub(5, 5, 2),            // 3: R5 -= 1 (AZ)
+        lp_2a(0x10, 0x01, 8, 8, 2), // 4: IF NE R8 = R8 + R2 (keeps the flags)
+        lp_imm(48, 0x25_f010),      // 5: B0 = ..., not lowered
+        lp_add(1, 1, 2),            // 6
+        lp_add(3, 3, 2),            // 7: end
+        lp_jump(0x1f, 0),           // 8: spin
     ];
     let set = |e: &mut crate::Engine| lp_regs(e, &[(2, 1), (5, 3)]);
     for entries in [0, 2, 3, 6, 7].map(|k| vec![lp_pc(k)]) {
-        lp_check(&format!("stop-in-body {entries:?}"), &code, &entries, 60, &set);
+        lp_check(
+            &format!("stop-in-body {entries:?}"),
+            &code,
+            &entries,
+            60,
+            &set,
+        );
     }
 }
 
@@ -2117,13 +2190,13 @@ fn fast_type_3d_matches_the_interpreter() {
             &[
                 (2, 1),
                 (6, 0x1234_5678),
-                (16, at(0x40)),  // I0
-                (17, at(0x100)), // I1
-                (18, at(0x1f0)), // I2
-                (32, 1),         // M0
-                (33, 2),         // M1
+                (16, at(0x40)),    // I0
+                (17, at(0x100)),   // I1
+                (18, at(0x1f0)),   // I2
+                (32, 1),           // M0
+                (33, 2),           // M1
                 (34, 0xffff_fffe), // M2 = -2
-                (35, 0),         // M3
+                (35, 0),           // M3
             ],
         )
     };
@@ -2131,27 +2204,33 @@ fn fast_type_3d_matches_the_interpreter() {
     for (l, x) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
         let store_ok = x == 0;
         let mut code = vec![
-            lp_3d(0x1f, false, true, 0, 0, 4, l, x),  // R4 = DM(I0, M0) post
+            lp_3d(0x1f, false, true, 0, 0, 4, l, x), // R4 = DM(I0, M0) post
             lp_3d(0x1f, false, false, 0, 1, 5, l, x), // R5 = DM(I0, M1) pre
-            lp_3d(0x1f, false, true, 2, 2, 7, l, x),  // R7 = DM(I2, M2) post
+            lp_3d(0x1f, false, true, 2, 2, 7, l, x), // R7 = DM(I2, M2) post
             lp_3d(0x1f, false, false, 0, 3, 8, l, x), // R8 = DM(I0, M3) pre
-            lp_add(9, 4, 5),                          // sets flags
+            lp_add(9, 4, 5),                         // sets flags
             lp_3d(0x00, false, true, 0, 0, 10, l, x), // IF EQ R10 = DM(I0, M0)
             lp_3d(0x10, false, true, 0, 0, 11, l, x), // IF NE R11 = DM(I0, M0)
         ];
         if store_ok {
             code.extend([
-                lp_3d(0x1f, true, true, 1, 0, 6, l, x),  // DM(I1, M0) = R6 post
+                lp_3d(0x1f, true, true, 1, 0, 6, l, x), // DM(I1, M0) = R6 post
                 lp_3d(0x1f, true, false, 1, 1, 9, l, x), // DM(I1, M1) = R9 pre
-                lp_3d(0x10, true, true, 1, 1, 6, l, x),  // IF NE DM(I1, M1) = R6
-                lp_3d(0x00, true, true, 1, 1, 6, l, x),  // IF EQ DM(I1, M1) = R6
+                lp_3d(0x10, true, true, 1, 1, 6, l, x), // IF NE DM(I1, M1) = R6
+                lp_3d(0x00, true, true, 1, 1, 6, l, x), // IF EQ DM(I1, M1) = R6
             ]);
         }
         code.push(lp_jump(0x1f, 0)); // spin
         let n = code.len() as u32;
         // Straight, from each instruction.
         let entries: Vec<u32> = (0..n).map(lp_pc).collect();
-        let ran = lp_check(&format!("3d straight l{l} x{x}"), &code, &entries, n - 1, &setup);
+        let ran = lp_check(
+            &format!("3d straight l{l} x{x}"),
+            &code,
+            &entries,
+            n - 1,
+            &setup,
+        );
         // Every 3d (and the compare between them) ran in the fast tier.
         assert_eq!(ran, u64::from(n - 1), "3d straight l{l} x{x}");
 
@@ -2168,7 +2247,13 @@ fn fast_type_3d_matches_the_interpreter() {
         let m = prog.len() as u32;
         let entries: Vec<u32> = (0..m).map(lp_pc).collect();
         lp_check(&format!("3d loop l{l} x{x}"), &prog, &entries, 120, &setup);
-        lp_check(&format!("3d loop from 0 l{l} x{x}"), &prog, &[0], 120, &setup);
+        lp_check(
+            &format!("3d loop from 0 l{l} x{x}"),
+            &prog,
+            &[0],
+            120,
+            &setup,
+        );
     }
 }
 
@@ -2255,11 +2340,11 @@ fn lp_mode1_clear(mask: u32) -> u64 {
 #[test]
 fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
     let code = [
-        lp_mode1_set(0x1000),    // 0: MODE1.IRPTEN on
-        lp_add(1, 1, 2),         // 1: R1 += R2
-        lp_add(3, 3, 2),         // 2: R3 += R2
-        lp_add(4, 4, 2),         // 3: R4 += R2
-        lp_jump(0x1f, 0),        // 4: spin
+        lp_mode1_set(0x1000), // 0: MODE1.IRPTEN on
+        lp_add(1, 1, 2),      // 1: R1 += R2
+        lp_add(3, 3, 2),      // 2: R3 += R2
+        lp_add(4, 4, 2),      // 3: R4 += R2
+        lp_jump(0x1f, 0),     // 4: spin
     ];
     // (MODE1, IRPTL, IMASK, IMASKP): the write enables a latched source;
     // the same with nesting (a source in service, a higher one latched); the
@@ -2303,7 +2388,13 @@ fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
         // Regions at every instruction, and one only at the write.
         let all: Vec<u32> = (0..5).map(lp_pc).collect();
         lp_compare(&format!("mode1 enable {name}"), &code, &all, 12, &setup);
-        let ran = lp_compare(&format!("mode1 enable {name}, at the write"), &code, &[0], 12, &setup);
+        let ran = lp_compare(
+            &format!("mode1 enable {name}, at the write"),
+            &code,
+            &[0],
+            12,
+            &setup,
+        );
         // The enabling write is never lowered (the generated core of a
         // firmware image may run its own blocks at these PCs instead).
         if name != "unchanged" {
@@ -2340,7 +2431,13 @@ fn fast_mode1_write_in_a_loop_body_is_not_carried_to_the_next_iteration() {
     let all: Vec<u32> = (0..6).map(lp_pc).collect();
     lp_compare("mode1 in a loop body, all entries", &code, &all, 40, &set);
     for entries in [vec![lp_pc(0)], vec![lp_pc(1)], vec![lp_pc(3)]] {
-        lp_compare(&format!("mode1 in a loop body {entries:?}"), &code, &entries, 40, &set);
+        lp_compare(
+            &format!("mode1 in a loop body {entries:?}"),
+            &code,
+            &entries,
+            40,
+            &set,
+        );
     }
     // A body that leaves MODE1 as it found it still runs in a region.
     let steady = [
@@ -2350,7 +2447,13 @@ fn fast_mode1_write_in_a_loop_body_is_not_carried_to_the_next_iteration() {
         lp_add(1, 1, 2),
         lp_jump(0x1f, 0),
     ];
-    lp_check("mode1 steady in a loop body", &steady, &[lp_pc(0)], 20, &set);
+    lp_check(
+        "mode1 steady in a loop body",
+        &steady,
+        &[lp_pc(0)],
+        20,
+        &set,
+    );
 }
 
 /// `Rn = FIX Fx` (compute cu 0, opcode 0xc9).
@@ -2422,10 +2525,7 @@ fn fast_reads_mode1_as_the_region_wrote_it() {
                 lp_jump(0x1f, 0),
             ],
             Box::new(move |e| {
-                lp_regs(
-                    e,
-                    &[(17, at(0x40) + 12), (32, 8), (49, 16), (65, at(0x40))],
-                );
+                lp_regs(e, &[(17, at(0x40) + 12), (32, 8), (49, 16), (65, at(0x40))]);
                 e.s.r[114] = V::c(CBUFEN as Int);
             }),
         ),
@@ -2437,10 +2537,7 @@ fn fast_reads_mode1_as_the_region_wrote_it() {
                 lp_jump(0x1f, 0),
             ],
             Box::new(move |e| {
-                lp_regs(
-                    e,
-                    &[(17, at(0x40) + 12), (32, 8), (49, 16), (65, at(0x40))],
-                );
+                lp_regs(e, &[(17, at(0x40) + 12), (32, 8), (49, 16), (65, at(0x40))]);
                 e.s.r[114] = V::c(0);
             }),
         ),
@@ -2449,7 +2546,13 @@ fn fast_reads_mode1_as_the_region_wrote_it() {
         let n = code.len() as u32;
         let all: Vec<u32> = (0..n).map(lp_pc).collect();
         lp_compare(name, code, &all, 3 * (n - 1), setup.as_ref());
-        lp_compare(&format!("{name}, region at the write"), code, &[0], 3 * (n - 1), setup.as_ref());
+        lp_compare(
+            &format!("{name}, region at the write"),
+            code,
+            &[0],
+            3 * (n - 1),
+            setup.as_ref(),
+        );
     }
 }
 
@@ -2467,15 +2570,21 @@ fn lp_modify_imm(src: u64, idis: u64, imm: u32) -> u64 {
 fn fast_modify_follows_l_written_in_the_region() {
     let at = |k: u32| LP_DATA + k;
     let code = [
-        lp_imm(49, 16),               // 0: L1 = 16
-        lp_imm(65, at(0x40)),         // 1: B1 = buffer
-        lp_modify_imm(1, 0, 8),       // 2: I1 = MODIFY(I1, 8): wraps past B1 + 16
-        lp_jump(0x1f, 0),             // 3: spin
+        lp_imm(49, 16),         // 0: L1 = 16
+        lp_imm(65, at(0x40)),   // 1: B1 = buffer
+        lp_modify_imm(1, 0, 8), // 2: I1 = MODIFY(I1, 8): wraps past B1 + 16
+        lp_jump(0x1f, 0),       // 3: spin
     ];
     let setup = move |e: &mut crate::Engine| lp_regs(e, &[(17, at(0x40) + 12)]);
     let all: Vec<u32> = (0..4).map(lp_pc).collect();
     lp_compare("modify after L write", &code, &all, 9, &setup);
-    lp_check("modify after L write, region at the write", &code, &[0], 9, &setup);
+    lp_check(
+        "modify after L write, region at the write",
+        &code,
+        &[0],
+        9,
+        &setup,
+    );
 }
 
 /// Synthetic dispatch and tier: exercise fallback policy without generated firmware.

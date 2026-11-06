@@ -122,9 +122,7 @@ def report(request):
             first = {
                 s.key: s for s in reversed(todo)
             }  # modules built from the same sources run once
-            jobs = int(
-                os.environ.get("DIGI_CONFORM_JOBS", max(1, (os.cpu_count() or 4) // 4))
-            )
+            jobs = int(os.environ.get("DIGI_JOBS", max(1, (os.cpu_count() or 4) // 4)))
             with ThreadPoolExecutor(max_workers=max(1, min(jobs, len(first)))) as pool:
                 done = dict(
                     zip(first, pool.map(_run_worker, first.values()), strict=True)

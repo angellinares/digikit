@@ -65,7 +65,8 @@ impl Mirror {
 
     /// The quiet period has run out.
     pub fn due(&self, now: Instant) -> bool {
-        self.quiet_since.is_some_and(|t| now.duration_since(t) >= QUIET)
+        self.quiet_since
+            .is_some_and(|t| now.duration_since(t) >= QUIET)
     }
 
     /// Record the outcome of a pass. A store that did not read (the guest is in the middle of an upload) is tried again after another
@@ -75,7 +76,10 @@ impl Mirror {
             Ok(report) => {
                 self.synced_writes = self.writes;
                 self.quiet_since = None;
-                self.last_sync_ms = SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| d.as_millis() as u64);
+                self.last_sync_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_millis() as u64);
                 self.error = report.issues.first().cloned();
                 self.last = json!({
                     "added": report.added, "replaced": report.replaced, "removed": report.removed,

@@ -110,7 +110,8 @@ pub fn text_sections(blob: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
             && s.sh_size(e) > 0
         {
             let sec = secs.section(object::SectionIndex(i)).map_err(bad)?;
-            let name = String::from_utf8_lossy(secs.section_name(e, sec).map_err(bad)?).into_owned();
+            let name =
+                String::from_utf8_lossy(secs.section_name(e, sec).map_err(bad)?).into_owned();
             out.push((name, s.data(e, blob).map_err(bad)?.to_vec()));
         }
     }
@@ -143,7 +144,10 @@ pub fn ar_members(blob: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
         }
         if let Some(n) = name.strip_prefix('/').and_then(|n| n.parse::<usize>().ok()) {
             let tail = longnames.get(n..).unwrap_or(&[]);
-            let end = tail.windows(2).position(|w| w == b"/\n").unwrap_or(tail.len());
+            let end = tail
+                .windows(2)
+                .position(|w| w == b"/\n")
+                .unwrap_or(tail.len());
             name = String::from_utf8_lossy(&tail[..end]).into_owned();
         }
         out.push((name.trim_end_matches('/').to_string(), body.to_vec()));

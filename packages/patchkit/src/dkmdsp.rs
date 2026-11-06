@@ -131,7 +131,11 @@ pub struct Voice {
 impl Voice {
     /// The record needs version 3.
     fn contract(&self) -> bool {
-        self.note_on != 0 || self.state_bytes != 0 || self.clear_bytes != 0 || self.voices != 0 || self.latched != 0
+        self.note_on != 0
+            || self.state_bytes != 0
+            || self.clear_bytes != 0
+            || self.voices != 0
+            || self.latched != 0
     }
 }
 
@@ -385,7 +389,9 @@ pub fn pack_with_samples(
     tracks: Option<&crate::typed::SampleTracksDef>,
 ) -> Result<Vec<u8>> {
     if bank.is_some() && tracks.is_some() {
-        return Err(err!("a module declares a sample bank or a track table, not both"));
+        return Err(err!(
+            "a module declares a sample bank or a track table, not both"
+        ));
     }
     if obj.arch != "sharc" {
         return Err(err!(
@@ -510,7 +516,10 @@ pub fn pack_with_samples(
     };
     for v in voices {
         if v.latched & !0xff != 0 || (v.latched != 0 && (v.note_on.is_none() || v.desc.is_none())) {
-            return Err(err!("voice {}: latching requires a contract note_on and an 8-bit parameter mask", v.render));
+            return Err(err!(
+                "voice {}: latching requires a contract note_on and an 8-bit parameter mask",
+                v.render
+            ));
         }
         let entry = entry_of(&v.render)?;
         let note_on = match &v.note_on {
@@ -1518,10 +1527,20 @@ mod tests {
         let bytes = pack(&object, 1, &[spec.clone()], &[]).unwrap();
         assert_eq!(DspSection::parse(&bytes).unwrap().voices[0].latched, 1);
         spec.latched = 0x100;
-        assert!(pack(&object, 1, &[spec.clone()], &[]).unwrap_err().0.contains("8-bit parameter mask"));
+        assert!(
+            pack(&object, 1, &[spec.clone()], &[])
+                .unwrap_err()
+                .0
+                .contains("8-bit parameter mask")
+        );
         spec.latched = 1;
         spec.note_on = None;
-        assert!(pack(&object, 1, &[spec], &[]).unwrap_err().0.contains("contract note_on"));
+        assert!(
+            pack(&object, 1, &[spec], &[])
+                .unwrap_err()
+                .0
+                .contains("contract note_on")
+        );
     }
 
     #[test]

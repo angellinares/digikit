@@ -6,7 +6,9 @@ pub mod state;
 pub mod time;
 pub mod timer_state;
 
-pub use board::{Board, BoardWriteError, CompletionEvent, CompletionPolicy, MIDI_UDR, SemaphoreAddresses};
+pub use board::{
+    Board, BoardWriteError, CompletionEvent, CompletionPolicy, MIDI_UDR, SemaphoreAddresses,
+};
 pub use state::{MachineState, StateError};
 pub use time::{DeviceDtimError, DevicePitError, Time, TimeError, TimerPolicy};
 

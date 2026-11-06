@@ -36,7 +36,6 @@
       ],
       "outputs": [],
       "options": {
-        "env": { "REGRESSION_JOBS": "2" },
         "command": "pnpm --filter @digi/regression test:runtime emulator/",
         "cwd": "."
       }

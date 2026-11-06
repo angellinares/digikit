@@ -22,8 +22,10 @@ fn patched(file: &str, modules: &[&str]) -> Option<Vec<u8>> {
 #[test]
 fn a_patched_image_with_a_changed_main_boots_from_its_record() {
     // test/patched-pluck adds ColdFire code, so neither the file nor the MAIN digest is a known one.
-    let Some(syx) = patched("Digitakt_II_OS1.17.syx", &["core/expansion", "test/patched-pluck"])
-    else {
+    let Some(syx) = patched(
+        "Digitakt_II_OS1.17.syx",
+        &["core/expansion", "test/patched-pluck"],
+    ) else {
         return;
     };
     let record = patchkit::verify::patch_record(&syx).unwrap().unwrap();

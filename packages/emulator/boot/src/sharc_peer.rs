@@ -19,7 +19,7 @@ use std::{
     fs::File,
     io::{BufWriter, Write},
     rc::Rc,
-    sync::{mpsc, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
     thread,
     time::Instant,
 };
@@ -248,7 +248,12 @@ fn watch_out() -> Option<String> {
     std::env::var("DIGI_DSP_WATCH_OUT").ok().or_else(|| {
         let dir = std::env::var_os("DIGI_DIAG_DIR").filter(|d| !d.is_empty())?;
         std::fs::create_dir_all(&dir).ok()?;
-        Some(std::path::Path::new(&dir).join("dspwatch.csv").to_string_lossy().into_owned())
+        Some(
+            std::path::Path::new(&dir)
+                .join("dspwatch.csv")
+                .to_string_lossy()
+                .into_owned(),
+        )
     })
 }
 
@@ -1490,12 +1495,14 @@ impl ThreadedHandle {
     /// for a byte the engine does not know).
     pub fn peek_bytes(&self, addr: u32, len: usize) -> Result<Vec<Option<u8>>, String> {
         let (ack_tx, ack_rx) = mpsc::channel();
-        let sent = self
-            .link
-            .borrow()
-            .tx
-            .as_ref()
-            .is_some_and(|c| c.send(Msg::Peek { addr, len, ack: ack_tx }).is_ok());
+        let sent = self.link.borrow().tx.as_ref().is_some_and(|c| {
+            c.send(Msg::Peek {
+                addr,
+                len,
+                ack: ack_tx,
+            })
+            .is_ok()
+        });
         if !sent {
             return Err("DSP worker has stopped".into());
         }
@@ -1790,7 +1797,8 @@ mod tests {
 
     #[test]
     fn ddr_monitor_unsupported_engine_acknowledges_error() {
-        let (_peer, handle, _) = ThreadedPeer::spawn(|| Ok(WordProbe), 5000, DN2_IDLE_RANGE).unwrap();
+        let (_peer, handle, _) =
+            ThreadedPeer::spawn(|| Ok(WordProbe), 5000, DN2_IDLE_RANGE).unwrap();
         assert!(
             handle
                 .ddr_monitor(DdrMonitorCommand::Status)
@@ -2448,7 +2456,7 @@ mod aligned_stop_tests {
         }
         assert!(new.engine.halt_reason().is_none() && old.engine.halt_reason().is_none());
         new.engine.0.export_ranges = true;
-        old.engine.0 .0.export_ranges = true;
+        old.engine.0.0.export_ranges = true;
         let (a, b) = (new.engine.export(), old.engine.export());
         assert!(a == b, "final state differs");
         eprintln!(

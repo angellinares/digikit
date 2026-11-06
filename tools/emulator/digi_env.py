@@ -4,7 +4,7 @@
 One place for the pinned Rust toolchain (read from mise.toml), the default
 paths of the private inputs, the firmware file, and the per-firmware fast-tier
 tables (tools/emulator/fast_regions.json). tools/emulator/native_emu.py, native_pgo.py,
-native_target.py, native_wasm.py and coupled.py import it.
+native_target.py and coupled.py import it.
 
     uv run python -m tools.emulator.digi_env        # print the resolved settings
 """

@@ -403,9 +403,13 @@ fn main() {
                     Input::PeekAt(addr, via) => {
                         let value = match via {
                             None => emu.peek32(*addr),
-                            Some(off) => emu.peek32(*addr).and_then(|p| emu.peek32(p.wrapping_add(*off))),
+                            Some(off) => emu
+                                .peek32(*addr)
+                                .and_then(|p| emu.peek32(p.wrapping_add(*off))),
                         };
-                        println!("{{\"peek_at\":\"{addr:#x}\",\"t\":{elapsed},\"value\":{value:?}}}");
+                        println!(
+                            "{{\"peek_at\":\"{addr:#x}\",\"t\":{elapsed},\"value\":{value:?}}}"
+                        );
                         Ok(())
                     }
                     Input::Frame(path) => emu
@@ -427,7 +431,9 @@ fn main() {
         if s.error.is_some() || s.icount >= 6_000_000_000 {
             println!(
                 "{{\"error\":{},\"icount\":{},\"pc\":\"{:#x}\"}}",
-                s.error.as_ref().map_or("null".to_string(), |e| format!("{e:?}")),
+                s.error
+                    .as_ref()
+                    .map_or("null".to_string(), |e| format!("{e:?}")),
                 s.icount,
                 s.pc
             );
@@ -461,7 +467,9 @@ fn main() {
         println!("{{\"pc\":\"{pc:#x}\",\"hits\":{hits}}}");
     }
     for ((pc, ret, arg), (hits, last)) in emu.probe_rets() {
-        println!("{{\"pc_ret\":\"{pc:#x}\",\"ret\":\"{ret:#x}\",\"arg\":\"{arg:#x}\",\"hits\":{hits},\"last\":{last}}}");
+        println!(
+            "{{\"pc_ret\":\"{pc:#x}\",\"ret\":\"{ret:#x}\",\"arg\":\"{arg:#x}\",\"hits\":{hits},\"last\":{last}}}"
+        );
     }
     for &a in &peeks {
         println!("{{\"peek\":\"{a:#x}\",\"value\":{:?}}}", emu.peek32(a));

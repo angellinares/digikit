@@ -95,15 +95,7 @@ fn digikit_menu_rows() {
     let _g = digikit();
     open_digikit();
     assert_eq!(title(), "DIGIKIT");
-    assert_eq!(
-        render(),
-        [
-            "ABOUT",
-            "HEALTH",
-            "MEMORY",
-            "MODULES"
-        ]
-    );
+    assert_eq!(render(), ["ABOUT", "HEALTH", "MEMORY", "MODULES"]);
 }
 
 #[test]

@@ -23,7 +23,8 @@
       {
         "files": ["transfer-live.device.test.ts"],
         "modules": ["digikit/debug", "test/sine"],
-        "sources": ["tools/device/dktransfer.py"]
+        "sources": ["tools/device/dktransfer.py"],
+        "pythonTools": true
       },
       {
         "files": ["samples-live.device.test.ts"],
@@ -33,7 +34,8 @@
           "packages/dk-session/src/rpcfiles.ts",
           "packages/dk-session/src/samples.ts"
         ],
-        "plusdrive": true
+        "plusdrive": true,
+        "dksampleWasm": true
       },
       {
         "files": ["samples-store-live.device.test.ts"],
@@ -42,7 +44,8 @@
           "packages/dk-session/src/dksample.ts",
           "packages/dk-session/src/rpcfiles.ts",
           "packages/dk-session/src/samples.ts"
-        ]
+        ],
+        "dksampleWasm": true
       },
       {
         "files": ["upload.device.test.ts"],
@@ -53,6 +56,7 @@
         "files": ["upload-faults.device.test.ts"],
         "modules": ["test/sine"],
         "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
+        "pythonTools": true,
         "plusdrive": true
       },
       {

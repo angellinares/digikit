@@ -5,9 +5,15 @@
 
 mod common;
 mod diagnostics;
-#[allow(dead_code, reason = "shared with the library; the CLI never sets guards")]
+#[allow(
+    dead_code,
+    reason = "shared with the library; the CLI never sets guards"
+)]
 mod guard;
-#[allow(dead_code, reason = "shared with the library; the CLI never arms the watch")]
+#[allow(
+    dead_code,
+    reason = "shared with the library; the CLI never arms the watch"
+)]
 mod watch;
 
 use common::*;
@@ -1284,10 +1290,7 @@ mod tests {
             card_blocks(image(DEFAULT_CAPACITY_BLOCKS), CardIdentity::Mlc4G),
             Ok(DEFAULT_CAPACITY_BLOCKS)
         );
-        assert_eq!(
-            card_blocks(SECTOR_SIZE as u64, CardIdentity::Small),
-            Ok(1)
-        );
+        assert_eq!(card_blocks(SECTOR_SIZE as u64, CardIdentity::Small), Ok(1));
         assert!(card_blocks(image(DEFAULT_CAPACITY_BLOCKS), CardIdentity::Small).is_err());
         assert!(card_blocks(513, CardIdentity::Slc32G).is_err());
         assert!(card_blocks(0, CardIdentity::Slc32G).is_err());

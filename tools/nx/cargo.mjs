@@ -1,7 +1,7 @@
 // Nx plugin: one project per Cargo workspace member (read from Cargo.toml files, cargo is not run).
 // Edges: path dependencies between members, in every dependency table.
 // rust-tests is cached for HERMETIC crates (direct cargo nextest into dist/cargo-tests); the others run
-// through tools/devtools/rust_ws.py uncached.
+// through tools/nx/rust-env.mjs uncached.
 import { existsSync, readFileSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { DependencyType } from '@nx/devkit';
@@ -13,8 +13,7 @@ const KINDS = ['dependencies', 'dev-dependencies', 'build-dependencies'];
 // CLI builds into dist/ (gitignored). Copy then rename: a running process keeps the old file.
 const CLI = {
   patchkit: {
-    build:
-      'uv run python -m tools.devtools.benchlock run --shared --label patchkit-cli -- cargo build -p patchkit --release --offline --target-dir dist/cargo',
+    build: 'cargo build -p patchkit --release --offline --target-dir dist/cargo',
     bin: 'patchkit',
     dir: 'patchkit',
   },
@@ -27,6 +26,7 @@ const CLI = {
 const cliTarget = ({ build, bin, dir }) => ({
   executor: 'nx:run-commands',
   cache: false,
+  parallelism: false,
   outputs: [`{workspaceRoot}/dist/${dir}/${bin}`],
   options: {
     commands: [
@@ -38,12 +38,26 @@ const cliTarget = ({ build, bin, dir }) => ({
   },
 });
 
+// Extra targets of named crates.
+const CRATE_TARGETS = {
+  dksample: {
+    wasm: {
+      executor: 'nx:run-commands',
+      cache: false,
+      description: 'Builds the dksample wasm that sample device tests load.',
+      outputs: ['{workspaceRoot}/apps/web/public/dksample.wasm'],
+      options: { command: 'node tools/nx/wasm.mjs --dksample-only', cwd: '.' },
+    },
+  },
+};
+
 // Gate helper targets. They build under dist/ or out/native; out/ is never an Nx output.
 const GATE = {
   'digi-control': {
     daemons: {
       executor: 'nx:run-commands',
       cache: false,
+      parallelism: false,
       outputs: ['{workspaceRoot}/dist/daemons.json'],
       inputs: [
         '{workspaceRoot}/tools/devtools/emud_key.py',
@@ -66,17 +80,19 @@ const GATE = {
     build: {
       executor: 'nx:run-commands',
       cache: false,
+      parallelism: false,
       options: { command: 'uv run python -m tools.emulator.coupled build', cwd: '.' },
     },
     'build-dt2': {
       executor: 'nx:run-commands',
       cache: false,
+      parallelism: false,
       options: { command: 'uv run python -m tools.emulator.coupled build --device dt2', cwd: '.' },
     },
   },
 };
 
-// Crates without tests (rust_ws also drops digiemu-desktop); no rust-tests target.
+// Crates without tests; no rust-tests target.
 const NO_TESTS = new Set([
   'sharc-stats',
   'sharc-gen',
@@ -101,6 +117,9 @@ export const HERMETIC = {
   'device-profile': ['{workspaceRoot}/devices/digitakt-ii.toml', '{workspaceRoot}/devices/digitone-ii.toml'],
   dkupload: [],
   dksample: [],
+  machine: [],
+  'sharc-rt': [],
+  dkmidi: [],
 };
 
 // Crates that compile another crate's sources by path (sharc-2 builds packages/emulator/sharc/src);
@@ -171,8 +190,16 @@ export const createNodesV2 = [
           : {
               executor: 'nx:run-commands',
               cache: false,
-              inputs: [...inputs, ...(SHARED_SOURCE[name] ?? []), ...(COMPILE_SOURCE[name] ?? [])],
-              options: { command: `uv run python -m tools.devtools.rust_ws test --packages ${name}`, cwd: '.' },
+              inputs: [
+                ...inputs,
+                '{workspaceRoot}/tools/nx/rust-env.mjs',
+                ...(SHARED_SOURCE[name] ?? []),
+                ...(COMPILE_SOURCE[name] ?? []),
+              ],
+              options: {
+                command: `node tools/nx/rust-env.mjs${name === 'sharc-native' ? ' --gen' : ''} -- cargo nextest run -p ${name} --release --locked --offline`,
+                cwd: '.',
+              },
             };
       const projects = {};
       for (const root of read(ctx.workspaceRoot, f).workspace?.members ?? []) {
@@ -184,6 +211,7 @@ export const createNodesV2 = [
           targets: {
             ...(!NO_TESTS.has(name) && { 'rust-tests': rustTests(name) }),
             ...(CLI[name] && { cli: cliTarget(CLI[name]) }),
+            ...CRATE_TARGETS[name],
             ...GATE[name],
           },
         };

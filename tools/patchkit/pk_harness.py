@@ -96,8 +96,7 @@ MIN_JOBS = 4
 
 def part_jobs(parts: int) -> int:
     """How many of PARTS independent parts of one scenario (each boots its own daemon) run at once:
-    DIGIKIT_PART_JOBS, else all of them. verify sets it to 1: a pool of N files must not start 3 or 4
-    daemons each (1.3 busy cores per daemon, measured) beyond the cores of its share."""
+    DIGIKIT_PART_JOBS, else all of them."""
     env = os.environ.get("DIGIKIT_PART_JOBS")
     return max(1, min(parts, int(env))) if env else max(1, parts)
 
@@ -120,8 +119,8 @@ def default_jobs(n: int) -> int:
     """Processes to run side by side: the free performance cores / 2 (a coupled daemon keeps two threads busy: the
     ColdFire and the DSP worker), at most MAX_JOBS, and never fewer than MIN_JOBS (bounded by the cores / 2) when
     there are two or more parts: a busy machine slows the parts down, but running them in sequence is slower.
-    DIGI_PK_JOBS (the Nx gate targets set it) replaces all that."""
-    cap = os.environ.get("DIGI_PK_JOBS")  # set by the Nx gate targets
+    DIGI_JOBS replaces all that."""
+    cap = os.environ.get("DIGI_JOBS")  # set by the Nx launcher
     if cap:
         return max(1, min(n, int(cap)))
     cores = performance_cores()

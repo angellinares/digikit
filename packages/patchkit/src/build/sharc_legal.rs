@@ -210,12 +210,17 @@ mod tests {
     /// A loop whose end is a numeric offset (`DO (PC, n)`), which the assembler does not track, so it compresses the body. The
     /// body is two NOPs of 2 bytes each (end at 4 short words) or, with `.NOCOMPRESS;`, of 6 bytes each (end at 6).
     fn numeric_loop(body: &str, end: u32) -> String {
-        format!(".SECTION/PM seg_pmco;\n_x:\n    {body}LCNTR = 4, DO (PC, {end}) UNTIL LCE;\n        NOP;\n        NOP;\n    RTS;\n")
+        format!(
+            ".SECTION/PM seg_pmco;\n_x:\n    {body}LCNTR = 4, DO (PC, {end}) UNTIL LCE;\n        NOP;\n        NOP;\n    RTS;\n"
+        )
     }
 
     #[test]
     fn a_loop_whose_end_is_compressed_is_refused_and_the_48_bit_form_passes() {
-        let e = object_from_text(&numeric_loop("", 4)).err().expect("accepted").0;
+        let e = object_from_text(&numeric_loop("", 4))
+            .err()
+            .expect("accepted")
+            .0;
         assert!(e.contains("DO loop at") && e.contains("finding 91"), "{e}");
         object_from_text(&numeric_loop(".NOCOMPRESS;\n    ", 6)).unwrap();
     }

@@ -1274,7 +1274,10 @@ mod sites {
             } else {
                 cur.b
             };
-            s.r[STKYX] = V { b, m: cur.m & !BIT26 };
+            s.r[STKYX] = V {
+                b,
+                m: cur.m & !BIT26,
+            };
         }
         if s.loops.n != loops_before || did {
             s.check_loops();
@@ -1518,13 +1521,20 @@ pub fn run_cfg(
             }
             _ => {
                 if COV_ON.load(std::sync::atomic::Ordering::Relaxed) {
-                    cov_why(|| format!("shape: return without a PC stack entry (loops {nloops} depth {} top {top:x?})", s.loop_depth));
+                    cov_why(|| {
+                        format!(
+                            "shape: return without a PC stack entry (loops {nloops} depth {} top {top:x?})",
+                            s.loop_depth
+                        )
+                    });
                 }
                 return Err(Decline::Shape);
             }
         }
     }
-    if meta.has_call && (s.call_stack.len() as Int >= s.cfg.max_call_depth || s.call_stack.len() + 2 >= MAX_CALLS)
+    if meta.has_call
+        && (s.call_stack.len() as Int >= s.cfg.max_call_depth
+            || s.call_stack.len() + 2 >= MAX_CALLS)
     {
         return Err(shape("call stack too deep"));
     }
@@ -1750,5 +1760,3 @@ pub fn run_cfg(
 ) -> Result<u32, Decline> {
     Err(Decline::Shape)
 }
-
-

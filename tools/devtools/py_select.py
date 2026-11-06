@@ -124,7 +124,6 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
             "tools/devtools/agent_guard.py",
             ".claude/settings.json",
             "tools/devtools/verify_build.py",
-            "tools/devtools/rust_ws.py",
             "tools/patchkit/pk_proofs.py",
             "tools/devtools/benchlock.py",
             "tools/devtools/test_outcomes.py",
@@ -563,28 +562,21 @@ def python_tests_command(
         "--out",
         str(out),
     ]
-    cmd = [*cmd, "--timeout", str(python_timeout())]
+    cmd = [
+        *cmd,
+        "--timeout",
+        "3600",
+    ]  # catches hangs, not slow files (test_pluck.py takes ~450 s alone)
     return [*cmd, "--jobs", str(jobs if jobs is not None else python_jobs()), *files]
 
 
 def python_jobs() -> int:
-    """Test files run at once in python-tests: DIGI_PY_JOBS, else max(2, cpus // 4)."""
-    env = os.environ.get("DIGI_PY_JOBS")
+    """Test files run at once in python-tests: DIGI_JOBS, else
+    max(2, cpus // 4)."""
+    env = os.environ.get("DIGI_JOBS")
     if env:
         return max(1, int(env))
     return max(2, (os.cpu_count() or 1) // 4)
-
-
-def python_timeout() -> int:
-    """Per-file timeout for python-tests: catches hangs, not slow files (test_pluck.py
-    takes ~450 s alone and more than 900 s under test:full load)."""
-    env = os.environ.get("DIGI_PY_TIMEOUT")
-    if env:
-        seconds = int(env)
-        if seconds < 1:
-            raise SystemExit("verify: DIGI_PY_TIMEOUT must be at least 1")
-        return seconds
-    return 3600
 
 
 def selected(args: argparse.Namespace) -> list[tuple[str, str]]:
@@ -618,8 +610,10 @@ def main(argv: list[str] | None = None) -> int:
             print("py_select: no Python tests selected")
             return 0
         args.out.mkdir(parents=True, exist_ok=True)
+        # DIGI_JOBS sets how many files run at once; if each file read it too, one run could start N*N daemons.
+        child_env = {k: v for k, v in python_env().items() if k != "DIGI_JOBS"}
         done = subprocess.run(
-            python_tests_command(args.out, tests), cwd=ROOT, env=python_env()
+            python_tests_command(args.out, tests), cwd=ROOT, env=child_env
         )
         problem = python_tests_passed(args.out)
         if done.returncode or problem is not None:

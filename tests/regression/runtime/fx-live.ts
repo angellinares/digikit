@@ -16,6 +16,7 @@ import {
 import { expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
+import { plusdriveBinary } from './card-kit.ts';
 import { daemonBinary, FIRMWARE } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
@@ -68,7 +69,7 @@ async function baseline(
     path.join(seed, 'digikit', 'selection.txt'),
     ['modules/sine.dkm', ...(wet ? ['modules/dyn-fx-gain.dkm'] : [])].join('\n') + '\n',
   );
-  const binary = path.join(root, 'out/native/target/nogen/release/plusdrive');
+  const binary = plusdriveBinary();
   if (!fs.existsSync(binary))
     throw new Error(
       `prepare prebuilt plusdrive separately: ${binary}; this fixture also needs prepared sine and gain DKMs`,

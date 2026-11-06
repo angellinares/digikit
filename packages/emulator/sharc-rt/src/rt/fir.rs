@@ -61,14 +61,38 @@ const ADDR_MASK: u32 = 0x3FFF_FFFF;
 
 /// fir.LEGACY_TCB: the load order, down from the chain pointer.
 const LEGACY_TCB: [u32; 13] = [
-    FIR_CTL2, FIR_INIDX, FIR_INMOD, FIR_INCNT, FIR_INBASE, FIR_OUTIDX, FIR_OUTMOD,
-    FIR_OUTCNT, FIR_OUTBASE, FIR_COEFIDX, FIR_COEFMOD, FIR_COEFCNT, FIR_CHNPTR,
+    FIR_CTL2,
+    FIR_INIDX,
+    FIR_INMOD,
+    FIR_INCNT,
+    FIR_INBASE,
+    FIR_OUTIDX,
+    FIR_OUTMOD,
+    FIR_OUTCNT,
+    FIR_OUTBASE,
+    FIR_COEFIDX,
+    FIR_COEFMOD,
+    FIR_COEFCNT,
+    FIR_CHNPTR,
 ];
 /// fir.ACM_TCB
 const ACM_TCB: [u32; 16] = [
-    FIR_CTL2, FIR_INIDX, FIR_INMOD, FIR_INCNT, FIR_INBASE, FIR_OUTIDX, FIR_OUTMOD,
-    FIR_OUTCNT, FIR_OUTBASE, FIR_COEFIDX, FIR_COEFMOD, FIR_COEFCNT, FIR_SGCTL, FIR_SCTL2,
-    FIR_SCTL1, FIR_CHNPTR,
+    FIR_CTL2,
+    FIR_INIDX,
+    FIR_INMOD,
+    FIR_INCNT,
+    FIR_INBASE,
+    FIR_OUTIDX,
+    FIR_OUTMOD,
+    FIR_OUTCNT,
+    FIR_OUTBASE,
+    FIR_COEFIDX,
+    FIR_COEFMOD,
+    FIR_COEFCNT,
+    FIR_SGCTL,
+    FIR_SCTL2,
+    FIR_SCTL1,
+    FIR_CHNPTR,
 ];
 
 /// fir._mmr
@@ -98,8 +122,16 @@ fn coefficients(s: &mut St, taps: u32) -> R<Vec<f32>> {
 fn window(s: &mut St, coefs: &[f32], layout: &[u32], pointer: u32, acm: bool) -> R<()> {
     let w = ((mmr(s, FIR_CTL2)? >> CTL2_WINDOW_SHIFT) & CTL2_WINDOW_MASK) + 1;
     let taps = coefs.len() as u32;
-    let (inmod, inlen, inbase) = (mmr(s, FIR_INMOD)?, mmr(s, FIR_INCNT)? & 0xFFFF, mmr(s, FIR_INBASE)? & ADDR_MASK);
-    let (outmod, outlen, outbase) = (mmr(s, FIR_OUTMOD)?, mmr(s, FIR_OUTCNT)? & 0xFFFF, mmr(s, FIR_OUTBASE)? & ADDR_MASK);
+    let (inmod, inlen, inbase) = (
+        mmr(s, FIR_INMOD)?,
+        mmr(s, FIR_INCNT)? & 0xFFFF,
+        mmr(s, FIR_INBASE)? & ADDR_MASK,
+    );
+    let (outmod, outlen, outbase) = (
+        mmr(s, FIR_OUTMOD)?,
+        mmr(s, FIR_OUTCNT)? & 0xFFFF,
+        mmr(s, FIR_OUTBASE)? & ADDR_MASK,
+    );
     let mut at = mmr(s, FIR_INIDX)? & ADDR_MASK;
     let mut outidx = mmr(s, FIR_OUTIDX)? & ADDR_MASK;
     let mut back = at;
@@ -134,7 +166,11 @@ fn window(s: &mut St, coefs: &[f32], layout: &[u32], pointer: u32, acm: bool) ->
         outidx = 0x0000_0000;
     }
     word_write(s, pointer.wrapping_sub(position(layout, FIR_INIDX)), back)?;
-    word_write(s, pointer.wrapping_sub(position(layout, FIR_OUTIDX)), outidx)?;
+    word_write(
+        s,
+        pointer.wrapping_sub(position(layout, FIR_OUTIDX)),
+        outidx,
+    )?;
     put(s, FIR_INIDX, back)?;
     put(s, FIR_OUTIDX, outidx)
 }

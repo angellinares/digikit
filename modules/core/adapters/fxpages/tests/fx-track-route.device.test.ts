@@ -18,6 +18,7 @@ import {
   trackNote,
 } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
+import { patchkitBinary } from '@digi/regression/runtime/patchkit.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { overlayWrites } from '@digi/regression/runtime/write-safety.ts';
@@ -95,7 +96,7 @@ for (const device of DEVICES) {
       const settings = async (runtime: PatchedSession, tag: string) => {
         const overlay = path.join(context.artifacts, `${tag}.overlay.bin`);
         await rpc(runtime.session, 'card.overlay', { path: overlay });
-        const binary = path.join(repoRoot(), 'out/native/target/nogen/release/patchkit');
+        const binary = patchkitBinary();
         const result = await exec(
           binary,
           ['store', 'dump', context.baseline('send').cardImage!, '--device', device, '--overlay', overlay, '--json'],

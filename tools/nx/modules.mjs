@@ -36,8 +36,6 @@ export const createNodesV2 = [
         BUILD_INPUTS.filter((input) => input !== '^production'),
         manifests,
       ),
-      '{workspaceRoot}/tools/nx/pack-inputs.mjs',
-      '{workspaceRoot}/tools/nx/cargo.mjs',
       ...packSourceInputs(ctx.workspaceRoot, byId, manifests),
     ];
     const coreManifests = [...byId.values()]
@@ -115,7 +113,7 @@ export const createNodesV2 = [
           options: {
             commands: [
               `${PK} gen --modules ${m.id} ${manifestArgs(coreManifests)} --check --scope modules`,
-              `uv run python -m tools.devtools.benchlock run --shared --label module-build -- ${PK} build ${root}`,
+              `${PK} build ${root}`,
             ],
             parallel: false,
             cwd: '.',
@@ -200,7 +198,7 @@ export const createNodesV2 = [
           outputs: [],
           options: {
             command: 'pnpm --filter @digi/regression test:conformance',
-            env: { DIGI_CONFORMANCE_MODULES: m.id, DIGI_CONFORMANCE_MANIFEST: f, REGRESSION_JOBS: '2' },
+            env: { DIGI_CONFORMANCE_MODULES: m.id, DIGI_CONFORMANCE_MANIFEST: f },
             cwd: '.',
           },
         };
@@ -241,11 +239,7 @@ export const createNodesV2 = [
             : [dependency],
         );
       const targetName = config.tags.includes('tier:full') ? 'test-device-full' : 'test-device';
-      if (targetName === 'test-device-full') target.options.env.DIGIKIT_TIER = 'full';
-      // This new target identity awaits input/output and cache-behavior evidence.
-      target.cache = false;
-      target.description =
-        'Runtime acceptance; cache temporarily disabled pending input/output and invalidation/restoration evidence.';
+      if (targetName === 'test-device-full') target.options.env = { DIGIKIT_TIER: 'full' };
       nodes.push([
         file,
         { projects: { [root]: { name: config.name, root, tags: config.tags, targets: { [targetName]: target } } } },

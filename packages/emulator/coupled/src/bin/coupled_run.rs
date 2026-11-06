@@ -52,8 +52,8 @@ use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,
     WorkerReport, common,
     scenario::{
-        DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When,
-        cf_instructions_per_second, find_scenario, fire, parse_scenario, parse_scenarios,
+        DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When, cf_instructions_per_second,
+        find_scenario, fire, parse_scenario, parse_scenarios,
     },
 };
 #[cfg(feature = "region-profile")]
@@ -206,7 +206,15 @@ fn parse_peek(spec: &str) -> Result<(String, Peek), String> {
         Some(_) => return Err("+OFF needs a leading *".into()),
         None => (parse_num(loc)?, 0),
     };
-    Ok((name.to_string(), Peek { addr, hop, off, len }))
+    Ok((
+        name.to_string(),
+        Peek {
+            addr,
+            hop,
+            off,
+            len,
+        },
+    ))
 }
 
 fn read_bytes(rt: &mut CoupledRuntime, addr: u32, len: usize) -> Option<Vec<u8>> {
@@ -312,7 +320,8 @@ fn parse_args() -> Result<Args, String> {
                 let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
                 let spec: Value =
                     serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
-                elektron_native_boot::parse_guard_spec(&spec).map_err(|e| format!("{path}: {e}"))?;
+                elektron_native_boot::parse_guard_spec(&spec)
+                    .map_err(|e| format!("{path}: {e}"))?;
                 a.guard = Some(spec);
             }
             other => return Err(format!("unknown option {other}")),
@@ -1204,10 +1213,23 @@ mod tests {
         assert_eq!(n, "br");
         assert_eq!(
             p,
-            Peek { addr: 0x8000_52a0, hop: true, off: 0x106, len: 2 }
+            Peek {
+                addr: 0x8000_52a0,
+                hop: true,
+                off: 0x106,
+                len: 2
+            }
         );
         let (_, p) = parse_peek("x=2147500000:16").unwrap();
-        assert_eq!(p, Peek { addr: 2_147_500_000, hop: false, off: 0, len: 16 });
+        assert_eq!(
+            p,
+            Peek {
+                addr: 2_147_500_000,
+                hop: false,
+                off: 0,
+                len: 16
+            }
+        );
         assert!(parse_peek("x=0x10+4:2").is_err());
         assert!(parse_peek("x=0x10").is_err());
         assert!(parse_peek("x=0x10:0").is_err());

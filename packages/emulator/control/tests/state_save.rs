@@ -10,13 +10,11 @@ use serde_json::json;
 fn dt2_syx() -> Option<PathBuf> {
     std::env::var_os("DT2_SYX").map(PathBuf::from).or_else(|| {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        ["Digitakt_II_OS1.17.syx"]
-            .iter()
-            .find_map(|name| {
-                root.ancestors()
-                    .map(|dir| dir.join("firmware").join(name))
-                    .find(|path| path.exists())
-            })
+        ["Digitakt_II_OS1.17.syx"].iter().find_map(|name| {
+            root.ancestors()
+                .map(|dir| dir.join("firmware").join(name))
+                .find(|path| path.exists())
+        })
     })
 }
 
@@ -28,14 +26,18 @@ fn digest(handle: &Handle) -> String {
 }
 
 fn run(handle: &Handle, budget: u64) {
-    handle.call("step", json!({"instructions": budget})).unwrap();
+    handle
+        .call("step", json!({"instructions": budget}))
+        .unwrap();
 }
 
 #[test]
 fn state_needs_a_firmware_and_a_path() {
     let (handle, join) = spawn(Config::new(None));
     for method in ["state.save", "state.load"] {
-        let err = handle.call(method, json!({"path": "/nonexistent/x.snap"})).unwrap_err();
+        let err = handle
+            .call(method, json!({"path": "/nonexistent/x.snap"}))
+            .unwrap_err();
         assert_eq!(err.message, "No firmware selected", "{method}");
         let err = handle.call(method, json!({})).unwrap_err();
         assert!(err.message.contains("path"), "{method}: {}", err.message);
@@ -57,7 +59,9 @@ fn a_restored_state_goes_on_as_the_saved_one_did() {
     let (a, join_a) = spawn(Config::new(None));
     a.call("firmware.load", load.clone()).unwrap();
     run(&a, 3_000_000);
-    let saved = a.call("state.save", json!({"path": file.display().to_string()})).unwrap();
+    let saved = a
+        .call("state.save", json!({"path": file.display().to_string()}))
+        .unwrap();
     assert!(saved["bytes"].as_u64().unwrap() > 1000, "{saved}");
     assert!(file.is_file() && !file.with_extension("snap.part").exists());
     let at_save = digest(&a);
@@ -68,18 +72,31 @@ fn a_restored_state_goes_on_as_the_saved_one_did() {
     // run 2: a fresh load, the snapshot, the same steps
     let (b, join_b) = spawn(Config::new(None));
     b.call("firmware.load", load.clone()).unwrap();
-    let restored = b.call("state.load", json!({"path": file.display().to_string()})).unwrap();
+    let restored = b
+        .call("state.load", json!({"path": file.display().to_string()}))
+        .unwrap();
     assert!(restored["icount"].as_u64().unwrap() > 0, "{restored}");
-    assert_eq!(digest(&b), at_save, "the restored state differs from the saved one");
+    assert_eq!(
+        digest(&b),
+        at_save,
+        "the restored state differs from the saved one"
+    );
     run(&b, 3_000_000);
     assert_eq!(digest(&b), later, "the restored run went another way");
 
     // a runtime that has run refuses a restore; a missing file is an error and changes nothing
-    let err = b.call("state.load", json!({"path": file.display().to_string()})).unwrap_err();
+    let err = b
+        .call("state.load", json!({"path": file.display().to_string()}))
+        .unwrap_err();
     assert!(err.message.contains("has not run"), "{}", err.message);
     let (c, join_c) = spawn(Config::new(None));
     c.call("firmware.load", load).unwrap();
-    let err = c.call("state.load", json!({"path": dir.join("none.snap").display().to_string()})).unwrap_err();
+    let err = c
+        .call(
+            "state.load",
+            json!({"path": dir.join("none.snap").display().to_string()}),
+        )
+        .unwrap_err();
     assert!(err.message.contains("none.snap"), "{}", err.message);
 
     for (handle, join) in [(a, join_a), (b, join_b), (c, join_c)] {

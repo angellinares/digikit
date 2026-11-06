@@ -16,6 +16,7 @@ import {
 } from '@digi/test-support';
 import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
+import { plusdriveBinary } from './card-kit.ts';
 import { FIRMWARE } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
@@ -276,7 +277,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
     {
       prepareBaseline: async (session) => {
         rememberEpoch((await bounded(() => session.status())).epoch);
-        const binary = path.join(root, 'out/native/target/nogen/release/plusdrive');
+        const binary = plusdriveBinary();
         if (!fs.existsSync(binary)) throw new Error(`prepare prebuilt plusdrive separately: ${binary}`);
         for (const [tag, preset] of Object.entries(config.presets)) {
           if (!/^[a-zA-Z0-9_-]+$/.test(tag)) throw new Error(`invalid route preset directory ${tag}`);

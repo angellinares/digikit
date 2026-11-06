@@ -13,6 +13,7 @@
           "tools/patchkit/pk_digikit_fxroute.py",
           "tools/patchkit/hook_ab.py"
         ],
+        "pythonTools": true,
         "plusdrive": true
       }
     ]

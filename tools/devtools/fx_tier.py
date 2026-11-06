@@ -130,14 +130,15 @@ def stream_process(
 
 
 def tier_jobs_budget() -> int:
-    """Coupled-run processes for all tier groups together: DIGI_TIER_JOBS, else cpus - 4."""
-    env = os.environ.get("DIGI_TIER_JOBS")
+    """Coupled-run processes for all tier groups together: DIGI_JOBS, else
+    min((cpus - 2) // 2, 6) (each coupled process keeps 2 cores busy)."""
+    env = os.environ.get("DIGI_JOBS")
     if env:
         jobs = int(env)
         if jobs < 1:
-            raise SystemExit("fx_tier: DIGI_TIER_JOBS must be at least 1")
+            raise SystemExit("fx_tier: DIGI_JOBS must be at least 1")
         return jobs
-    return max(1, (os.cpu_count() or 1) - 4)
+    return max(1, min(((os.cpu_count() or 1) - 2) // 2, 6))
 
 
 @dataclass(frozen=True)

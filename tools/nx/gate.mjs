@@ -1,6 +1,6 @@
 // Scheduling policy only: native Nx still owns task dependencies and cache inputs.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const MENU_SOURCE = 'modules/core/apps/digikit-menu/src/menu.c';
@@ -88,15 +88,86 @@ export function changedFiles(args, cwd = process.cwd()) {
   return changes;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2);
+const MERGE_TARGETS = [
+  'lint',
+  'fmt-check',
+  'rust-fmt',
+  'typecheck',
+  'test-host',
+  'test',
+  'check',
+  'build:ui',
+  'check:ui',
+  'rust-tests',
+  'catalog-check',
+  'pack',
+  'test-device',
+  'test-conformance',
+  'stock',
+  'fx',
+  'fx-no-aot',
+  'fx-dt2',
+  'python-checks',
+  'python-tests',
+  'pins',
+  'fast-roots',
+  'tier-quick',
+  'dt2-tier-quick',
+  'card',
+  'smoke',
+  'dt2-tone',
+];
+
+export const TIERS = {
+  changed: {
+    targets: ['lint', 'fmt-check', 'rust-fmt', 'typecheck', 'test-host', 'python-checks'],
+    access: 'ro',
+    narrow: false,
+  },
+  merge: { targets: MERGE_TARGETS, access: 'rw', narrow: true },
+  full: {
+    targets: [...MERGE_TARGETS, 'test-device-full', 'tier-sweep', 'dt2-tier-sweep'],
+    access: 'rw',
+    narrow: false,
+    runMany: true,
+  },
+};
+
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let args = process.argv.slice(2);
+  const tierIndex = args.findIndex((arg) => arg === '--tier' || arg.startsWith('--tier='));
+  let tier;
+  if (tierIndex >= 0) {
+    const inline = args[tierIndex].startsWith('--tier=');
+    const name = inline ? args[tierIndex].slice('--tier='.length) : args[tierIndex + 1];
+    tier = TIERS[name];
+    if (!tier) {
+      console.error(`gate: unknown tier ${name}`);
+      process.exit(2);
+    }
+    args = args.filter((_, i) => i !== tierIndex && (inline || i !== tierIndex + 1));
+    process.env.DIGI_GATE_BASE ||= 'main';
+    const targets = tier.targets.join(',');
+    args = tier.runMany ? ['-t', targets, ...args] : ['--base', process.env.DIGI_GATE_BASE, '-t', targets, ...args];
+  }
+  const explain = args.includes('--explain');
+  const wrap = (command) =>
+    tier && !explain
+      ? ['node', ['tools/nx/remote-cache.mjs', 'exec', '--access', tier.access, '--', 'pnpm', 'nx:pilot', ...command]]
+      : ['pnpm', ['nx:pilot', ...command]];
   let changes = [];
   try {
     changes = changedFiles(args);
   } catch {
     /* Uncertain change metadata keeps the broad gate. */
   }
-  const commands = gateCommands(args, changes);
+  const commands = !tier
+    ? gateCommands(args, changes)
+    : tier.runMany
+      ? [['run-many', ...args]]
+      : tier.narrow
+        ? gateCommands(args, changes)
+        : [['affected', ...args]];
   const files = [...new Set(changes.map(({ file }) => file))];
   const summary = files.slice(0, 3).join(', ') + (files.length > 3 ? ` (+${files.length - 3} files)` : '');
   const narrowed =
@@ -109,8 +180,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       : `gate: ${summary || 'unknown changes'} -> normal Nx affected selection`,
   );
   for (const command of commands) {
-    console.log(`gate: pnpm nx:pilot ${command.join(' ')}`);
-    const result = spawnSync('pnpm', ['nx:pilot', ...command], { stdio: 'inherit' });
+    const [file, fileArgs] = wrap(command);
+    console.log(`gate: ${file} ${fileArgs.join(' ')}`);
+    const result = spawnSync(file, fileArgs, { stdio: 'inherit' });
     if (result.error) throw result.error;
     if (result.status !== 0) process.exit(result.status ?? 1);
   }

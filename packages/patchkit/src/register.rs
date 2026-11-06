@@ -497,19 +497,32 @@ impl Register {
         self.check()
     }
 
-    pub fn set_native_pages(&mut self, r: &DevResolved, module: &str,
-                            symbols: &std::collections::BTreeMap<String, u32>) -> Result<()> {
+    pub fn set_native_pages(
+        &mut self,
+        r: &DevResolved,
+        module: &str,
+        symbols: &std::collections::BTreeMap<String, u32>,
+    ) -> Result<()> {
         self.native_pages.clear();
         for page in &r.native_pages {
-            let get = |name: &str| symbols.get(name).copied()
-                .ok_or_else(|| err!("native page callback {name} is not a global function of the module"));
+            let get = |name: &str| {
+                symbols.get(name).copied().ok_or_else(|| {
+                    err!("native page callback {name} is not a global function of the module")
+                })
+            };
             let mut bindings = [[0; 3]; KNOBS];
             for (out, binding) in bindings.iter_mut().zip(&page.bindings) {
                 *out = [binding.kind, binding.value, binding.position];
             }
             self.native_pages.push(NativePage {
-                version: page.version, page: page.page, flags: page.flags, type_no: machine_key(module, &page.owner), draw: get(&page.draw)?, event: get(&page.event)?,
-                title: page.title.clone(), bindings,
+                version: page.version,
+                page: page.page,
+                flags: page.flags,
+                type_no: machine_key(module, &page.owner),
+                draw: get(&page.draw)?,
+                event: get(&page.event)?,
+                title: page.title.clone(),
+                bindings,
             });
         }
         self.check()
@@ -526,43 +539,77 @@ impl Register {
         let mut owners = vec![];
         for page in &self.native_pages {
             text_ok("native page title", &page.title, MACHINE_NAME - 1)?;
-            if !self.machines.iter().any(|m| m.type_no == page.type_no) || owners.contains(&(page.type_no, page.page)) {
-                return Err(err!("native page needs a declared machine and unique native page indexes"));
+            if !self.machines.iter().any(|m| m.type_no == page.type_no)
+                || owners.contains(&(page.type_no, page.page))
+            {
+                return Err(err!(
+                    "native page needs a declared machine and unique native page indexes"
+                ));
             }
             owners.push((page.type_no, page.page));
-            let owner_pages: Vec<_> = self.native_pages.iter().filter(|p| p.type_no == page.type_no).collect();
+            let owner_pages: Vec<_> = self
+                .native_pages
+                .iter()
+                .filter(|p| p.type_no == page.type_no)
+                .collect();
             if owner_pages.iter().filter(|p| p.page == page.page).count() > 1 {
                 return Err(err!("unique native page indexes required"));
             }
-            if page.flags & !3 != 0 || (page.flags != 0 && page.version != 2) ||
-                (page.flags & 1 != 0 && page.page != 0) || (page.flags & 2 != 0 && page.page != 1) ||
-                !matches!(page.version, 1 | 2) || page.page > 1 ||
-                owner_pages.iter().any(|p| p.version != page.version) ||
-                (page.version == 1 && (page.page != 1 || owner_pages.len() != 1)) ||
-                (page.version == 2 && (owner_pages.len() != 2 || !owner_pages.iter().any(|p| p.page == 0) || !owner_pages.iter().any(|p| p.page == 1))) {
-                return Err(err!("native v2 requires exactly pages 0 and 1; cannot mix versions"));
+            if page.flags & !3 != 0
+                || (page.flags != 0 && page.version != 2)
+                || (page.flags & 1 != 0 && page.page != 0)
+                || (page.flags & 2 != 0 && page.page != 1)
+                || !matches!(page.version, 1 | 2)
+                || page.page > 1
+                || owner_pages.iter().any(|p| p.version != page.version)
+                || (page.version == 1 && (page.page != 1 || owner_pages.len() != 1))
+                || (page.version == 2
+                    && (owner_pages.len() != 2
+                        || !owner_pages.iter().any(|p| p.page == 0)
+                        || !owner_pages.iter().any(|p| p.page == 1)))
+            {
+                return Err(err!(
+                    "native v2 requires exactly pages 0 and 1; cannot mix versions"
+                ));
             }
             let mut positions = 0u32;
             let mut absent = false;
             for &[kind, value, position] in &page.bindings {
                 if kind == 0 {
-                    if value != 0 || position != 0 { return Err(err!("unused native binding must be zero")); }
+                    if value != 0 || position != 0 {
+                        return Err(err!("unused native binding must be zero"));
+                    }
                     absent = true;
                 } else {
-                    if absent || kind > 2 || position >= KNOBS as u32 || positions & (1 << position) != 0 ||
-                        (kind == 1 && value >= self.params.len() as u32) || (kind == 2 && value >= 256) {
+                    if absent
+                        || kind > 2
+                        || position >= KNOBS as u32
+                        || positions & (1 << position) != 0
+                        || (kind == 1 && value >= self.params.len() as u32)
+                        || (kind == 2 && value >= 256)
+                    {
                         return Err(err!("invalid native page binding"));
                     }
                     positions |= 1 << position;
                     if kind == 1 {
                         let param = KNOB_PARAM | value;
-                        let owned = self.machines.iter().any(|m| m.type_no == page.type_no && m.knobs.contains(&param)) ||
-                            self.pages.iter().any(|p| p.type_no == page.type_no && p.knobs.contains(&param));
-                        if !owned { return Err(err!("native page PARAM must belong to its machine")); }
+                        let owned = self
+                            .machines
+                            .iter()
+                            .any(|m| m.type_no == page.type_no && m.knobs.contains(&param))
+                            || self
+                                .pages
+                                .iter()
+                                .any(|p| p.type_no == page.type_no && p.knobs.contains(&param));
+                        if !owned {
+                            return Err(err!("native page PARAM must belong to its machine"));
+                        }
                     }
                 }
             }
-            if positions == 0 { return Err(err!("native page needs a binding")); }
+            if positions == 0 {
+                return Err(err!("native page needs a binding"));
+            }
         }
         if self.params.len() > max_params
             || self.machines.len() > max_machines
@@ -704,12 +751,35 @@ impl Register {
             put_text(&mut o, &g.title, MACHINE_NAME);
         }
         for page in &self.native_pages {
-            p32(&mut o, if page.version == 2 { KIND_NATIVE_PAGE_V2 } else { KIND_NATIVE_PAGE });
-            p32(&mut o, if page.version == 2 { LEN_NATIVE_PAGE_V2 } else { LEN_NATIVE_PAGE } as u32);
-            for value in [page.version, page.type_no, page.draw, page.event] { p32(&mut o, value); }
+            p32(
+                &mut o,
+                if page.version == 2 {
+                    KIND_NATIVE_PAGE_V2
+                } else {
+                    KIND_NATIVE_PAGE
+                },
+            );
+            p32(
+                &mut o,
+                if page.version == 2 {
+                    LEN_NATIVE_PAGE_V2
+                } else {
+                    LEN_NATIVE_PAGE
+                } as u32,
+            );
+            for value in [page.version, page.type_no, page.draw, page.event] {
+                p32(&mut o, value);
+            }
             put_text(&mut o, &page.title, MACHINE_NAME);
-            if page.version == 2 { p32(&mut o, page.page); p32(&mut o, page.flags); }
-            for binding in page.bindings { for value in binding { p32(&mut o, value); } }
+            if page.version == 2 {
+                p32(&mut o, page.page);
+                p32(&mut o, page.flags);
+            }
+            for binding in page.bindings {
+                for value in binding {
+                    p32(&mut o, value);
+                }
+            }
         }
         for e in &self.effects {
             p32(&mut o, KIND_EFFECT);
@@ -777,15 +847,27 @@ impl Register {
                 (KIND_ACTION, LEN_ACTION) => reg.actions.push((g(rec)?, g(rec + 4)?)),
                 (KIND_NATIVE_PAGE, LEN_NATIVE_PAGE) | (KIND_NATIVE_PAGE_V2, LEN_NATIVE_PAGE_V2) => {
                     let version = if kind == KIND_NATIVE_PAGE_V2 { 2 } else { 1 };
-                    if g(rec)? != version { return Err(err!("invalid native page version")); }
+                    if g(rec)? != version {
+                        return Err(err!("invalid native page version"));
+                    }
                     let page = if version == 2 { g(rec + 40)? } else { 1 };
                     let binding_offset = if version == 2 { 48 } else { 40 };
                     let mut bindings = [[0; 3]; KNOBS];
                     for (i, binding) in bindings.iter_mut().enumerate() {
-                        for (j, value) in binding.iter_mut().enumerate() { *value = g(rec + binding_offset + i * 12 + j * 4)?; }
+                        for (j, value) in binding.iter_mut().enumerate() {
+                            *value = g(rec + binding_offset + i * 12 + j * 4)?;
+                        }
                     }
-                    reg.native_pages.push(NativePage { version, page, flags: if version == 2 { g(rec + 44)? } else { 0 }, type_no: g(rec + 4)?, draw: g(rec + 8)?, event: g(rec + 12)?,
-                        title: txt(rec + 16, MACHINE_NAME)?, bindings });
+                    reg.native_pages.push(NativePage {
+                        version,
+                        page,
+                        flags: if version == 2 { g(rec + 44)? } else { 0 },
+                        type_no: g(rec + 4)?,
+                        draw: g(rec + 8)?,
+                        event: g(rec + 12)?,
+                        title: txt(rec + 16, MACHINE_NAME)?,
+                        bindings,
+                    });
                 }
                 (KIND_MACHINE, LEN_MACHINE) => {
                     let mut knobs = [0u32; KNOBS];
@@ -913,8 +995,25 @@ mod tests {
     #[test]
     fn native_page_roundtrip_and_invalid_bindings() {
         let mut r = sample();
-        r.native_pages.push(NativePage { version: 1, page: 1, flags: 0, type_no: 16, draw: 2, event: 4, title: "Native".into(),
-            bindings: [[1,0,0],[2,0,2],[0;3],[0;3],[0;3],[0;3],[0;3],[0;3]] });
+        r.native_pages.push(NativePage {
+            version: 1,
+            page: 1,
+            flags: 0,
+            type_no: 16,
+            draw: 2,
+            event: 4,
+            title: "Native".into(),
+            bindings: [
+                [1, 0, 0],
+                [2, 0, 2],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+            ],
+        });
         assert_eq!(Register::parse(&r.encode()).unwrap(), r);
         r.native_pages[0].bindings[1][2] = 0;
         assert!(r.check().unwrap_err().0.contains("binding"));
@@ -930,29 +1029,55 @@ mod tests {
     fn native_replacement_pair_roundtrips_and_rejects_missing_or_mixed_pages() {
         let mut r = sample();
         for page in 0..2 {
-            r.native_pages.push(NativePage { version:2,page,flags:0,type_no:16,draw:2,event:4,title:"Custom".into(),
-                bindings:[[1,0,7],[0;3],[0;3],[0;3],[0;3],[0;3],[0;3],[0;3]] });
+            r.native_pages.push(NativePage {
+                version: 2,
+                page,
+                flags: 0,
+                type_no: 16,
+                draw: 2,
+                event: 4,
+                title: "Custom".into(),
+                bindings: [
+                    [1, 0, 7],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                ],
+            });
         }
         assert_eq!(Register::parse(&r.encode()).unwrap(), r);
         r.native_pages[0].flags = 1;
         assert_eq!(Register::parse(&r.encode()).unwrap(), r);
-        r.native_pages[1].flags = 1; assert!(r.check().is_err());
+        r.native_pages[1].flags = 1;
+        assert!(r.check().is_err());
         r.native_pages[1].flags = 2;
         r.check().unwrap();
         assert_eq!(Register::parse(&r.encode()).unwrap(), r);
         for flags in [3, 4] {
-            r.native_pages[1].flags = flags; assert!(r.check().is_err());
+            r.native_pages[1].flags = flags;
+            assert!(r.check().is_err());
         }
         r.native_pages[1].flags = 0;
-        r.native_pages[0].flags = 2; assert!(r.check().is_err());
+        r.native_pages[0].flags = 2;
+        assert!(r.check().is_err());
         r.native_pages[0].flags = 0;
         let second = r.native_pages.pop().unwrap();
         assert!(r.check().unwrap_err().0.contains("exactly pages"));
         r.native_pages.push(second);
         r.native_pages[1].version = 1;
         assert!(r.check().unwrap_err().0.contains("cannot mix"));
-        r.native_pages[1].version = 2; r.native_pages[1].page = 0;
-        assert!(r.check().unwrap_err().0.contains("unique native page indexes"));
+        r.native_pages[1].version = 2;
+        r.native_pages[1].page = 0;
+        assert!(
+            r.check()
+                .unwrap_err()
+                .0
+                .contains("unique native page indexes")
+        );
     }
 
     #[test]
@@ -1174,7 +1299,10 @@ mod tests {
         assert_eq!(Register::parse(&b).unwrap(), r);
         // the record is 0x10 bytes: kind, length, param, offset
         let at = b.len() - 0x10 - (LEN_MACHINE);
-        assert_eq!(&b[at..at + 16], &[0, 0, 0, 5, 0, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 1, 0xc4]);
+        assert_eq!(
+            &b[at..at + 16],
+            &[0, 0, 0, 5, 0, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 1, 0xc4]
+        );
         // a param the file has not, two actions on one param, no offset
         for bad in [vec![(1, 4)], vec![(0, 4), (0, 8)], vec![(0, u32::MAX)]] {
             let mut r = sample();
