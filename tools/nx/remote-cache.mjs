@@ -1,7 +1,8 @@
 // Launcher of the shared Nx remote cache: one server for every worktree of the clone.
 // The gate writes (rw), everything else reads (ro). The Nx variables are set only when the server
 // answers, because with the server down Nx fails a green run.
-// Usage: node tools/nx/remote-cache.mjs exec --access ro|rw -- CMD [ARGS...]
+// Usage: node tools/nx/remote-cache.mjs exec --access ro|rw [--no-start] -- CMD [ARGS...]
+//        --no-start: use the server only if it already answers; start nothing, say nothing when it is down.
 //        node tools/nx/remote-cache.mjs start | status | stop
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -133,11 +134,16 @@ if (cmd === 'exec') {
     process.exit(2);
   }
   const env = cleanEnv();
-  const config = await ensure();
+  const noStart = opts.includes('--no-start');
+  let config = null;
+  if (noStart) {
+    const known = readConfig();
+    config = (await healthy(known.port)) ? known : null;
+  } else config = await ensure();
   if (config) {
     env.NX_SELF_HOSTED_REMOTE_CACHE_SERVER = `http://127.0.0.1:${config.port}`;
     env.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN = access === 'rw' ? config.token : config.readOnlyToken;
-  } else {
+  } else if (!noStart) {
     console.error(`nx remote cache unavailable (log: ${logPath}); running without it`);
   }
   const child = spawn(argv[0], argv.slice(1), { stdio: 'inherit', env, shell: false });

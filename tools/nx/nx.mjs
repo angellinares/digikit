@@ -66,6 +66,17 @@ export function needsLock(args) {
   return targets.length === 0 || !targets.every((target) => LIGHT_TARGETS.has(target));
 }
 
+// Plain launcher runs read the shared remote cache when its server already answers; they never write
+// it and never start it. `remote-cache.mjs exec` (the gate) sets the Nx variables first and wins.
+export function readsRemote(args, env) {
+  return (
+    runsTasks(args) &&
+    env.DIGI_NX_REMOTE !== '0' &&
+    !env.NX_SELF_HOSTED_REMOTE_CACHE_SERVER &&
+    !args.some((arg) => arg === '--skip-nx-cache' || arg.startsWith('--skip-nx-cache='))
+  );
+}
+
 function main() {
   const args = process.argv.slice(2);
   const cwd = process.cwd();
@@ -97,8 +108,20 @@ function main() {
       ...(needsLock(args) ? lock : []),
       ...command,
     ];
+    const remote = readsRemote(args, env);
+    if (remote)
+      command = [
+        'node',
+        fileURLToPath(new URL('remote-cache.mjs', import.meta.url)),
+        'exec',
+        '--access',
+        'ro',
+        '--no-start',
+        '--',
+        ...command,
+      ];
     console.error(
-      `nx: budget ${b.budget}: ${b.tasks} tasks, ${b.workers} vitest workers, ${b.jobs} emulators, ${b.budget} cargo jobs`,
+      `nx: budget ${b.budget}: ${b.tasks} tasks, ${b.workers} vitest workers, ${b.jobs} emulators, ${b.budget} cargo jobs${remote ? ', remote read' : ''}`,
     );
   }
   const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', env });
