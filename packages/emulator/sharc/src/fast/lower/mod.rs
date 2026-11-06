@@ -1851,6 +1851,10 @@ impl Lower {
                 match c as u32 {
                     c if c < NREGS => pre.push(Inst::Def(li, Op::St32(st_reg_b(c)))),
                     PSEUDO_FB0 => pre.push(Inst::Def(li, Op::St32(st_reg_b(118)))),
+                    // MRF words: the glue puts them into the context.
+                    c if (PSEUDO_MR..PSEUDO_MR + 3).contains(&c) => {
+                        pre.push(Inst::Def(li, Op::Ctx32(ctx_reg_in(c))))
+                    }
                     // Not fully known ASTATX: the history is not tracked; bit 0
                     // marks "no compare has run" (a compare clears it).
                     PSEUDO_CACC if !self.env.cacc_known => pre.push(Inst::Def(li, Op::CI32(1))),
@@ -1894,6 +1898,18 @@ impl Lower {
                     }
                 }
             }
+        }
+        let mr_words = PSEUDO_MR as usize..PSEUDO_MR as usize + 3;
+        let mr = self.regs[mr_words.clone()].iter().any(|r| r.used);
+        let mr_written = self.regs[mr_words].iter().any(|r| r.written);
+        let has_helper = self
+            .body
+            .iter()
+            .any(|i| matches!(i, Inst::Def(_, Op::Helper(_))));
+        if mr && has_helper {
+            // A helper reads the engine state in the middle of the kernel,
+            // where MRF is stale.
+            return refuse("MRF in a kernel with a helper call");
         }
         let kernel = Kernel {
             vars: self.vars.clone(),
@@ -1943,6 +1959,9 @@ impl Lower {
         }
         if self.need_flags_known != 0 {
             reqs.push(Req::FlagsKnown(self.need_flags_known));
+        }
+        if mr {
+            reqs.push(Req::MrFull);
         }
         // Float rounding: TRUNCATE (bit 15) is part of every requirement (the
         // core models it only in `fix`, `falu_fix`; every other float op
@@ -1994,6 +2013,8 @@ impl Lower {
             flag_groups,
             cacc: self.has_compare,
             cacc_unknown,
+            mr,
+            mr_written,
             wins: self.wins,
             flags: self.flags,
             stored,
@@ -2014,6 +2035,9 @@ pub struct Lowered {
     pub cacc: bool,
     /// See `Region::cacc_unknown`.
     pub cacc_unknown: bool,
+    /// The kernel keeps MRF in `PSEUDO_MR` (`Req::MrFull`), and writes it.
+    pub mr: bool,
+    pub mr_written: bool,
     pub kernel: Kernel,
     pub regs: Vec<RegInfo>,
     pub reqs: Vec<Req>,

@@ -76,6 +76,9 @@ pub enum FlagKind {
     Fmul,
     /// Short float multiply: MN MV MU MI become unknown.
     FmulForget,
+    /// Fixed-point MRF multiply, MAC and saturate (source: MN and MU at their
+    /// ASTATX bit positions): MN MU from the source, MV MI cleared.
+    Mfix,
     /// Adder flags of `a + b` / `a - b`; AS AI AF cleared.
     Iadd,
     Isub,
@@ -140,6 +143,7 @@ impl FlagKind {
             FlagKind::Iabs => (0, 11),
             FlagKind::Fmul => (1, 1),
             FlagKind::FmulForget => (1, 2),
+            FlagKind::Mfix => (1, 3),
             FlagKind::Shift { sv: false } => (2, 1),
             FlagKind::Shift { sv: true } => (2, 2),
             FlagKind::Fext { sv: false } => (2, 3),
@@ -165,6 +169,7 @@ impl FlagKind {
             (0, 11) => FlagKind::Iabs,
             (1, 1) => FlagKind::Fmul,
             (1, 2) => FlagKind::FmulForget,
+            (1, 3) => FlagKind::Mfix,
             (2, 1) => FlagKind::Shift { sv: false },
             (2, 2) => FlagKind::Shift { sv: true },
             (2, 3) => FlagKind::Fext { sv: false },
@@ -217,6 +222,9 @@ pub enum Req {
     /// except a compare), so there is no history to track. The counterpart of
     /// `FlagsKnown(u32::MAX)`, which the exact-shift kernel requires.
     CaccUnknown,
+    /// The multiplier accumulator MRF is present and every one of its 80 bits
+    /// is known (the kernel keeps it in `PSEUDO_MR`).
+    MrFull,
     /// The register is known and its value lies in `lo..=hi` (unsigned): an
     /// index register inside its circular buffer, which is what bounds every
     /// address the wrapped updates produce.

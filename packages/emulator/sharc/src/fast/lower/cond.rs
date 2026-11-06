@@ -27,7 +27,7 @@
 
 use super::*;
 use crate::fast::MAX_FLAG_ID;
-use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MULT_MASK, SS, SV, SZ};
+use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MU, MULT_MASK, SS, SV, SZ};
 
 /// The forms whose condition gates the whole instruction (transfer, index
 /// update and compute), as `forms_compute`/`forms_move` execute them for
@@ -453,6 +453,16 @@ impl Lower {
             }
             FlagKind::FmulForget => {
                 mask = MULT_MASK;
+            }
+            FlagKind::Mfix => {
+                // The source holds MN and MU at their bit positions; MV and
+                // MI are clear.
+                mask = MULT_MASK;
+                if want & (MN | MU) != 0 {
+                    let v = self.to_i(srcs[0]);
+                    let m = self.ci(want & (MN | MU));
+                    parts.push(self.bin(Bin::And, v, m));
+                }
             }
             FlagKind::Iadd | FlagKind::Isub => {
                 mask = ALU_MASK;

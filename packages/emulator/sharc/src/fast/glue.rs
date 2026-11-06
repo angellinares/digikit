@@ -164,7 +164,7 @@ pub fn flag_mask(kind: FlagKind) -> u32 {
         | FlagKind::Fmant
         | FlagKind::Iabs
         | FlagKind::Compare { .. } => ALU_MASK,
-        FlagKind::Fmul | FlagKind::FmulForget => MULT_MASK,
+        FlagKind::Fmul | FlagKind::FmulForget | FlagKind::Mfix => MULT_MASK,
         FlagKind::Shift { .. }
         | FlagKind::Fext { .. }
         | FlagKind::Btst
@@ -230,6 +230,8 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
             define(v, MULT_MASK, bits)
         }
         FlagKind::FmulForget => forget(v, MULT_MASK),
+        // The source holds MN and MU at their ASTATX bits; MV and MI are clear.
+        FlagKind::Mfix => define(v, MULT_MASK, src[0] & (MN | MU)),
         FlagKind::Iadd => define(v, ALU_MASK, arith_bits(src[0], src[1], false)),
         FlagKind::Isub => define(v, ALU_MASK, arith_bits(src[0], src[1], true)),
         FlagKind::Logical => {
@@ -466,7 +468,12 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
                 want: v_word(0, mask),
             },
             // CaccUnknown is checked on the engine state by `astat_ok`, not a masked compare.
-            Req::NwPlain { .. } | Req::Within { .. } | Req::BankSync | Req::CaccUnknown => continue,
+            // MrFull is checked by `mr_ok` (MRF is a `Spec`, not a register).
+            Req::NwPlain { .. }
+            | Req::Within { .. }
+            | Req::BankSync
+            | Req::CaccUnknown
+            | Req::MrFull => continue,
         };
         if !out
             .iter()
@@ -499,6 +506,52 @@ fn within_ok(s: &St, r: &Region) -> bool {
 #[inline(always)]
 fn cacc_ok(s: &St, r: &Region) -> bool {
     !r.cacc_unknown || s.r[118].m & 0xff00_0000 != 0xff00_0000
+}
+
+/// The slot of MRF in `St::special` (the first of `SPECIAL_SLOT_SYMS`).
+const MRF_SLOT: usize = 0;
+const _: () = assert!(SPECIAL_SLOT_SYMS[MRF_SLOT] == S_MRF);
+
+/// Is MRF present with all 80 bits known (`Req::MrFull`)?
+#[inline(always)]
+fn mrf_known(s: &St) -> bool {
+    s.special_present[MRF_SLOT] && matches!(s.special[MRF_SLOT], Spec::M(m) if m.known())
+}
+
+/// `Req::MrFull`: a kernel that keeps MRF in `PSEUDO_MR` runs only while MRF
+/// is fully known.
+#[inline(always)]
+fn mr_ok(s: &St, r: &Region) -> bool {
+    !r.mr || mrf_known(s)
+}
+
+/// Put MRF into the context words of `PSEUDO_MR` (the kernel's entry values).
+#[inline(always)]
+fn load_mr(s: &St, r: &Region, ctx: &mut Ctx) {
+    if !r.mr {
+        return;
+    }
+    let Spec::M(m) = s.special[MRF_SLOT] else {
+        return;
+    };
+    ctx.set32(ctx_reg_in(PSEUDO_MR), m.bits as u32);
+    ctx.set32(ctx_reg_in(PSEUDO_MR + 1), (m.bits >> 32) as u32);
+    ctx.set32(ctx_reg_in(PSEUDO_MR + 2), (m.bits >> 64) as u32 & 0xffff);
+}
+
+/// MRF after a kernel that wrote it (after the exit-0 check, so a run that
+/// completed nothing leaves the state alone). A word the run did not write
+/// holds its entry value, so all three are stored.
+#[inline(always)]
+fn store_mr(s: &mut St, r: &Region, ctx: &Ctx) {
+    if !r.mr_written {
+        return;
+    }
+    let w0 = ctx.get32(ctx_reg_out(PSEUDO_MR)) as Int;
+    let w1 = ctx.get32(ctx_reg_out(PSEUDO_MR + 1)) as Int;
+    let w2 = ctx.get32(ctx_reg_out(PSEUDO_MR + 2)) as Int & 0xffff;
+    s.special[MRF_SLOT] = Spec::M(MR::new(MR_MASK, w0 | (w1 << 32) | (w2 << 64)));
+    s.special_present[MRF_SLOT] = true;
 }
 
 /// Do all of R's register requirements hold in S?
@@ -713,6 +766,7 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
         Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
         Req::BankSync => !s.cfg.bank_model || bank_synced(s),
         Req::CaccUnknown => s.r[118].m & 0xff00_0000 != 0xff00_0000,
+        Req::MrFull => mrf_known(s),
         Req::Within { c, lo, hi } => {
             let v = s.r[c as usize];
             v.is_c() && (lo..=hi).contains(&v.b)
@@ -823,7 +877,7 @@ pub fn run(
             (1, 1)
         }
     };
-    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) {
+    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !mr_ok(s, r) || !within_ok(s, r) {
         return Err(Decline::Req);
     }
     if !nw_ok(s, r, iters) {
@@ -865,6 +919,7 @@ pub fn run(
     }
     ctx.set32(CTX_ITERS, iters as u32);
     set_flat(ctx, s);
+    load_mr(s, r, ctx);
     // SAFETY: static windows cover every access of `iters` iterations by the
     // lowering's range analysis. Guarded read windows are resolved here and
     // each dynamic address is checked before its load and instruction commit.
@@ -897,6 +952,7 @@ pub fn run(
             };
         }
     }
+    store_mr(s, r, ctx);
     apply_flags(s, r, ctx, full, done, kk);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
@@ -1564,7 +1620,12 @@ pub fn run_cfg(
         None => rem_top.max(1),
     };
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
-    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters) {
+    if !regs_ok(s, &r.chk)
+        || !cacc_ok(s, r)
+        || !mr_ok(s, r)
+        || !within_ok(s, r)
+        || !nw_ok(s, r, iters)
+    {
         return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);
@@ -1618,6 +1679,7 @@ pub fn run_cfg(
     }
     ctx.set32(CTX_BUDGET, avail.min(1 << 31) as u32);
     set_flat(ctx, s);
+    load_mr(s, r, ctx);
     // SAFETY: static windows cover every access by the lowering's range
     // analysis. Guarded read windows are resolved here and each dynamic
     // address is checked before its load and instruction commit. The kernel
@@ -1643,6 +1705,7 @@ pub fn run_cfg(
             m: u32::MAX,
         };
     }
+    store_mr(s, r, ctx);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
     ctx.ret_at = site.ret;

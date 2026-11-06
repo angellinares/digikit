@@ -23,7 +23,7 @@ use sharc_native::fast::ir::{CompiledKernel, KernelBackend};
 use sharc_native::fast::region::{Region, build_straight};
 use sharc_native::fast::{FastEngine, FastTier};
 use sharc_native::mem::Mem;
-use sharc_native::rt::{Int, Loop, NUREG, Pending, Spec, St, V};
+use sharc_native::rt::{Int, Loop, MR, MR_MASK, NUREG, Pending, Spec, St, V};
 use sharc_native::{Engine, exec_insn};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -391,6 +391,10 @@ enum Check {
     Fix(u32, Option<u32>, bool),
     FloatBy(u32, u32),
     MulSsi(u32, u32),
+    /// MRF = RX * RY (SSF) and MRF = MRF + RX * RY (SSF): a result that does not
+    /// fit 64 signed bits sets MV, which leaves the kernel.
+    MrMul(u32, u32),
+    MrMac(u32, u32),
     /// Fixed-point add, subtract, increment, decrement, negate, abs: an overflow
     /// leaves the kernel (the interpreter latches AOS and saturates with ALUSAT).
     IAdd(u32, u32),
@@ -438,6 +442,8 @@ fn compute_check(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> Check {
         (0, 0xdd) => Check::Fix(rx, Some(ry), true),
         (0, 0xda) => Check::FloatBy(rx, ry),
         (1, 0x70) => Check::MulSsi(rx, ry),
+        (1, 0x7c) => Check::MrMul(rx, ry),
+        (1, 0xbc) => Check::MrMac(rx, ry),
         _ => Check::None,
     }
 }
@@ -480,6 +486,9 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("trunc_by", 0, 0xdd),
     ("float_by", 0, 0xda),
     ("mul_ssi", 1, 0x70),
+    ("mrf=mul ssf", 1, 0x7c),
+    ("mrf+=mul ssf", 1, 0xbc),
+    ("sat mrf sf", 1, 0x09),
     ("lshift_r", 2, 0x00),
     ("ashift_r", 2, 0x04),
     ("lshift_or_r", 2, 0x20),
@@ -1482,7 +1491,73 @@ fn expect_special(c: Check, s: &St) -> bool {
             let p = (s.r[x as usize].b as i32 as i64) * (s.r[y as usize].b as i32 as i64);
             p != p as i32 as i64
         }
+        Check::MrMul(x, y) => mr_leaves(s, None, x, y),
+        Check::MrMac(x, y) => match mr_signed(s) {
+            Some(acc) => mr_leaves(s, Some(acc), x, y),
+            None => false,
+        },
     }
+}
+
+/// MRF as a signed 80-bit value, when it is present and fully known.
+fn mr_signed(s: &St) -> Option<i128> {
+    if !s.special_present[0] {
+        return None;
+    }
+    match s.special[0] {
+        Spec::M(m) => m.signed(),
+        _ => None,
+    }
+}
+
+/// `acc + 2 * x * y` (acc 0 for a plain multiply) wrapped to 80 bits is outside
+/// the signed 64-bit range: MV is set.
+fn mr_leaves(s: &St, acc: Option<i128>, x: u32, y: u32) -> bool {
+    let p = (s.r[x as usize].b as i32 as i128) * (s.r[y as usize].b as i32 as i128);
+    let raw = (acc.unwrap_or(0) + 2 * p) & MR_MASK;
+    let v = if raw >> 79 & 1 == 1 {
+        raw - (1 << 80)
+    } else {
+        raw
+    };
+    !(-(1i128 << 63)..(1i128 << 63)).contains(&v)
+}
+
+/// MRF for a trial of an MRF unit: edge values, random values, and now and
+/// then an accumulator that is not fully known or absent (a requirement fails).
+fn randomise_mr(s: &mut St, r: &mut Rng) {
+    let edge: [i128; 12] = [
+        0,
+        1,
+        -1,
+        (1 << 63) - 1,
+        -(1 << 63),
+        1 << 63,
+        1 << 79,
+        -(1 << 79),
+        0xffff_ffff,
+        0xffff_ffff << 32,
+        0x7fff << 64,
+        -(1 << 63) - 1,
+    ];
+    let v: i128 = match r.below(3) {
+        0 => edge[r.below(edge.len() as u32) as usize],
+        1 => (r.u32() as i128) | ((r.u32() as i128) << 32) | ((r.u32() as i128) << 64),
+        _ => {
+            let k = edge[r.below(edge.len() as u32) as usize];
+            k.wrapping_add(r.below(5) as i128 - 2)
+        }
+    };
+    let bits = v & MR_MASK;
+    s.special_present[0] = true;
+    s.special[0] = match r.below(16) {
+        0 => Spec::M(MR::new(MR_MASK & !(1 << r.below(80)), bits)),
+        1 => {
+            s.special_present[0] = false;
+            Spec::V(V::UNK)
+        }
+        _ => Spec::M(MR::new(MR_MASK, bits)),
+    };
 }
 
 // -- conditions ---------------------------------------------------------------------
@@ -1692,6 +1767,9 @@ fn forms(args: &[String]) {
                     flip = Some(32 + k as u8);
                 }
                 randomise(s, &mut rng, &st_ms);
+                if unit.name.contains("mrf") {
+                    randomise_mr(s, &mut rng);
+                }
                 let mut lflip = None;
                 if trial % 50 == 24 {
                     // A circular buffer is set up on a random index register.
@@ -1760,6 +1838,7 @@ fn forms(args: &[String]) {
                         Req::Mode1 { mask, value } => s.r[114].b & mask != value,
                         // Built for unknown CACC history: declines when it is known.
                         Req::CaccUnknown => s.r[118].m & 0xff00_0000 == 0xff00_0000,
+                        Req::MrFull => mr_signed(s).is_none(),
                         Req::Within { c, lo, hi } => {
                             Some(c) == unknown || !(lo..=hi).contains(&s.r[c as usize].b)
                         }
@@ -1827,7 +1906,9 @@ fn forms(args: &[String]) {
                                 unit.name, raw, region.reqs, region.wins
                             );
                         }
-                        if !req_fail {
+                        // A load at a wild address has no plain window: a
+                        // legitimate decline.
+                        if !req_fail && !matches!(d, Decline::Window) {
                             bad.push(format!("declined {d:?} with the requirements met"));
                         }
                         bad.extend(diff(&s0, &fastsnap));
@@ -1880,7 +1961,9 @@ fn forms(args: &[String]) {
             // Conditional index updates (post-modify) have no address range.
             // MODIFY forms are refused when L != 0 (--circ).
             let modify = matches!(unit.form, "7a" | "7b" | "19a" | "19a_scaled");
-            if !cond_mode && !(circ_mode && modify) {
+            // A sign-extended 14d store is always refused: the core stops on it too.
+            let never_lowers = unit.name == "14d/xfer/store-se";
+            if !never_lowers && !cond_mode && !(circ_mode && modify) {
                 total_mismatch += 1;
             }
         }

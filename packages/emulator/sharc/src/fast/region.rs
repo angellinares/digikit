@@ -69,6 +69,9 @@ pub struct Region {
     /// (`Req::CaccUnknown`): `PSEUDO_CACC` starts as the sentinel 1 and the
     /// compares' history is not tracked (`glue::apply_cacc`).
     pub cacc_unknown: bool,
+    /// The kernel keeps MRF in `PSEUDO_MR` (`Req::MrFull`), and writes it.
+    pub mr: bool,
+    pub mr_written: bool,
     /// Registers the kernel reads (straight from the engine state) and the
     /// ones it writes through the context, with the instruction of the first
     /// write: the caller stores those a run wrote. (The kernel stores the
@@ -342,13 +345,20 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
+            .filter(|q| {
+                matches!(
+                    q,
+                    Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown | Req::MrFull
+                )
+            })
             .copied()
             .collect(),
         flag_v: out.flag_v,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
         cacc_unknown: out.cacc_unknown,
+        mr: out.mr,
+        mr_written: out.mr_written,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
@@ -646,13 +656,20 @@ fn assemble_cfg(
         bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
+            .filter(|q| {
+                matches!(
+                    q,
+                    Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown | Req::MrFull
+                )
+            })
             .copied()
             .collect(),
         flag_v: true,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
         cacc_unknown: out.cacc_unknown,
+        mr: out.mr,
+        mr_written: out.mr_written,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()

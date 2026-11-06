@@ -206,8 +206,6 @@ export default function Console() {
     seen.entries.forEach(logInput);
   };
 
-  /** Set when a default-modules install has started since the app opened (boot() or the startup check). */
-  let defaultsStarted = false;
   /** What the running image got from the runtime patch, for the header. */
   const refreshInfo = async () => {
     try {
@@ -269,10 +267,7 @@ export default function Console() {
       // another firmware may be another device: its card folder and its memory (the runtime needs a moment to load its modules)
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
-      if (s && bootRuntime()) {
-        defaultsStarted = true;
-        void installDefaultModules(s.device);
-      }
+      if (s && bootRuntime()) void installDefaultModules(s.device);
     } catch (e) {
       setError(message(e));
       logInput(failureEntry('firmware', `loading ${name}`, message(e)));
@@ -400,13 +395,6 @@ export default function Console() {
         await refreshInfo();
         // The app starts with the runtime patched in; a user who turned that off gets the startup file as it is.
         if (!bootRuntime() && info()?.runtime?.set) await reload('Started without the runtime at');
-        // The launcher may have started the session with the runtime already: boot() did not run, so install the default modules here.
-        // Not when boot() already started the install (a load during startup).
-        const s = status();
-        if (s && bootRuntime() && info()?.runtime?.set && !defaultsStarted) {
-          defaultsStarted = true;
-          void installDefaultModules(s.device);
-        }
       })();
       timers.push(window.setInterval(() => void pollSource(), 1000));
       timers.push(window.setInterval(() => void pollAudio(), 1000));
