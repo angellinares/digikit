@@ -249,9 +249,46 @@ export function samplesBar(uploads: Uploads, base: Uploads, running: boolean): B
       ? `${current.state === 'verifying' ? 'Verifying' : 'Uploading'} ${current.name} (${ok + failed + 1} of ${n})`
       : 'Preparing…';
   else if (failed) message = `${ok} of ${n} uploaded, ${failed} failed.`;
+  else if (ok === 0) message = 'Nothing was uploaded.';
+  else if (ok < n) message = `${ok} of ${n} uploaded.`;
   else message = `Uploaded ${plural(ok)}, verified.`;
+  // a run that ended with files not finished (stopped between the queue and the end) is not a success either
+  const unfinished = !running && !failed && ok < n;
   const fraction = total ? Math.min(1, finished / total) : running ? 0 : 1;
-  return { fraction: running ? fraction : failed ? fraction : 1, failed: failed > 0, message, sent, total };
+  return {
+    fraction: running ? fraction : failed || unfinished ? fraction : 1,
+    failed: failed > 0 || unfinished,
+    message,
+    sent,
+    total,
+  };
+}
+
+/** The uploads that a run touched (`base` is what `uploads` held when it started). */
+const touched = (uploads: Uploads, base: Uploads): Upload[] =>
+  Object.entries(uploads)
+    .filter(([key, u]) => base[key] !== u)
+    .map(([, u]) => u);
+
+/** One line per file of a run, for the Log: `a: verified`, `b: not sent: ...`, `c: failed: <message>`. */
+export function uploadLines(uploads: Uploads, base: Uploads): string[] {
+  return touched(uploads, base).map((u) => {
+    const why = u.message.split('\n')[0] ?? '';
+    if (u.state === 'ok') return `${u.name}: verified`;
+    if (u.state === 'failed') return why.startsWith('not sent:') ? `${u.name}: ${why}` : `${u.name}: failed: ${why}`;
+    return `${u.name}: not finished`;
+  });
+}
+
+/** The error of a run in which a file was not verified, or undefined when all were:
+ * `Uploading failed: <first failed message> (1 of 3 sent, 2 not sent)`. */
+export function uploadFailure(uploads: Uploads, base: Uploads): string | undefined {
+  const mine = touched(uploads, base);
+  const ok = mine.filter((u) => u.state === 'ok').length;
+  if (!mine.length || ok === mine.length) return undefined;
+  const first = mine.find((u) => u.state === 'failed');
+  const why = first ? (first.message.split('\n')[0] ?? '') : 'the run ended before every file was sent';
+  return `Uploading failed: ${why} (${ok} of ${mine.length} sent, ${mine.length - ok} not sent)`;
 }
 
 /** The uploads without the given device paths (their files were deleted). */

@@ -336,13 +336,27 @@ export function transferEntry(run: TransferRun): LogInput {
   const detail = run.lines.length ? { detail: run.lines.join('\n') } : {};
   if (run.cancelled)
     return { source: 'transfer', level: 'info', text: `${run.what.toLowerCase()} cancelled`, ...detail };
-  if (run.error !== undefined)
+  if (run.error !== undefined) {
+    // a run that already words its error as "<What> failed: ..." is not prefixed twice
+    const first = run.error.split('\n')[0] ?? '';
+    const own = `${run.what} failed: `;
     return {
       source: 'transfer',
       level: 'error',
-      text: `${run.what.toLowerCase()} failed: ${run.error.split('\n')[0]}`,
+      text: first.startsWith(own)
+        ? run.what.toLowerCase() + first.slice(run.what.length)
+        : `${run.what.toLowerCase()} failed: ${first}`,
       ...detail,
     };
+  }
+  // an upload run of the Samples mode: one line per file (`a: verified`)
+  const files =
+    run.what === 'Uploading' ? run.lines.filter((l) => /: (verified|not sent|failed|not finished)/.test(l)) : [];
+  if (files.length) {
+    const n = files.filter((l) => l.endsWith(': verified')).length;
+    const text = `${PAST.Uploading} ${n} file${n === 1 ? '' : 's'} on ${run.target}${n === files.length ? ', verified' : ''}`;
+    return { source: 'transfer', level: n === files.length ? 'info' : 'error', text, ...detail };
+  }
   const sent = run.lines.filter((l) => /^Uploading .* bytes\)$/.test(l)).length;
   const skipped = run.lines.filter((l) => /already on the card/.test(l)).length;
   const counts = [sent ? `sent ${sent}` : '', skipped ? `skipped ${skipped}` : ''].filter(Boolean).join(', ');

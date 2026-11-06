@@ -26,6 +26,7 @@ import {
   planUpload,
   sampleRows,
   selectedRows,
+  uploadFailure,
   uploadItems,
   type LocalRow,
   type UploadItem,
@@ -137,11 +138,15 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
       const o = await openDeviceSamples();
       if (mkdirs.length && !(await o.backend.canMkdir())) throw new Error(noFoldersMessage(o.name));
       setNote('');
-      setUploadBase(uploads());
+      const base = uploads();
+      setUploadBase(base);
       await uploadItems(o.backend, o.prepare, mkdirs, items, (e) => {
         noteActivity();
         setUploads((u) => applyUpload(u, e));
       });
+      // the real error of a file is on the row only; the run shows and logs it, and the selection stays for a retry
+      const failure = uploadFailure(uploads(), base);
+      if (failure) throw new Error(failure);
       done = true;
     });
     return done;

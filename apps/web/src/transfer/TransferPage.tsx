@@ -66,7 +66,7 @@ export default function TransferPage(): JSX.Element {
       transferEnv().logRun({
         what,
         target: targetLabel(target()),
-        lines: modules ? log() : [],
+        lines: modules ? log() : (transferEnv().extras?.samples?.lines?.() ?? []),
         message: modules ? progress()?.message : undefined,
         ...(failure === undefined
           ? {}

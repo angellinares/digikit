@@ -76,6 +76,8 @@ export interface SamplesSlot {
   reset(): void;
   /** The bar along the bottom for a running or finished upload. */
   bar(busy: string): { info: BarInfo; running: boolean } | undefined;
+  /** One line per file of the last upload run, for the Log. */
+  lines?(): string[];
   /** The light poll of the chosen folder: true when its listing changed (and the pane reads again). */
   localChanged(): Promise<boolean>;
 }

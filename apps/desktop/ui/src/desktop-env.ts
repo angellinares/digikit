@@ -12,7 +12,7 @@ import { logInput } from './log-state';
 import { transferEntry } from './log-core';
 import { closeMidiPort, listMidiPorts, MidiPortTransport, openMidiPort } from './midi-transport';
 import { deviceStorage, listLocalNow, readLocal, readSamples } from './samples-backend';
-import { samplesBar } from './samples-core';
+import { samplesBar, uploadLines } from './samples-core';
 import {
   localEntries,
   localFolder,
@@ -51,6 +51,7 @@ const samples: SamplesSlot = {
     const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading');
     return info ? { info, running: busy === 'Uploading' } : undefined;
   },
+  lines: () => uploadLines(uploads(), uploadBase()),
   async localChanged() {
     if (!localFolder()) return false;
     const now = await listLocalNow();

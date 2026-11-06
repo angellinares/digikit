@@ -234,6 +234,27 @@ test('a transfer run counts the files sent and skipped', () => {
   assert.equal(ok.detail, lines.join('\n'));
   const failed = transferEntry({ what: 'Uploading', target: 'the emulator', error: 'no reply\nmore', lines: [] });
   assert.deepEqual([failed.level, failed.text], ['error', 'uploading failed: no reply']);
+  // a sample upload run: counts come from the file lines, "verified" only when every file is
+  const sent = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    lines: ['a: verified', 'b: verified', 'c: verified'],
+  });
+  assert.deepEqual([sent.level, sent.text], ['info', 'uploaded 3 files on Emulator, verified']);
+  const none = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    lines: ['a: not sent: the folder x could not be made'],
+  });
+  assert.deepEqual([none.level, none.text], ['error', 'uploaded 0 files on Emulator']);
+  // the error of a run that words it as "Uploading failed: ..." is not prefixed twice
+  const own = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    error: 'Uploading failed: open /tst/a: the device answered status 0 (1 of 3 sent, 2 not sent)',
+    lines: ['a: failed: open /tst/a: the device answered status 0'],
+  });
+  assert.equal(own.text, 'uploading failed: open /tst/a: the device answered status 0 (1 of 3 sent, 2 not sent)');
 });
 
 test('a fault, a stall and a DSP halt are logged once, when they start', () => {

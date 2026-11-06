@@ -226,6 +226,10 @@ test('the bottom bar of a samples upload: only what this run touched, one messag
   bar = samplesBar(u, base, false)!;
   assert.deepEqual([bar.failed, bar.message], [true, '2 of 3 uploaded, 1 failed.']);
   assert.equal(samplesBar(u, base, false)!.sent, 4000, 'the bytes of a failed file are not counted as sent');
+  // files queued that never ran (the run stopped): not "Uploaded 0 files, verified."
+  const queued = ev(base, { event: 'queued', name: 'q', bytes: 100 });
+  bar = samplesBar(queued, base, false)!;
+  assert.deepEqual([bar.failed, bar.message], [true, 'Nothing was uploaded.']);
 });
 
 // ---- the selection of a list, like a file explorer (select-core.ts) ----------------------------------------------------------------------

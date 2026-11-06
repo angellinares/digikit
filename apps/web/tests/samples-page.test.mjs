@@ -24,7 +24,9 @@ import {
   sampleRows,
   selectedRows,
   uploadFiles,
+  uploadFailure,
   uploadItems,
+  uploadLines,
   uploadStatus,
 } from '../../desktop/ui/src/samples-core.ts';
 
@@ -246,6 +248,26 @@ test('a failed send stops the run: the files after it are marked not sent', asyn
   assert.match(u['drums/two'].message, /E_FULL: no space/);
   assert.equal(u['drums/three.wav'].message, 'not sent: the upload of two failed');
   assert.deepEqual(b.calls, ['put drums/one', 'verify drums/one', 'put drums/two']);
+});
+
+test('a run with a failed file has one error line with the first message and the counts, and one Log line per file', async () => {
+  const b = fakeBackend({ failPut: 'two' });
+  const u = await run(b, ['one.wav', 'two.wav', 'three.wav']);
+  assert.equal(
+    uploadFailure(u, {}),
+    'Uploading failed: E_FULL: no space (1 of 3 sent, 2 not sent)'.replace(
+      'E_FULL: no space',
+      u['drums/two'].message.split('\n')[0],
+    ),
+  );
+  assert.deepEqual(uploadLines(u, {}), [
+    'one: verified',
+    `two: failed: ${u['drums/two'].message}`,
+    'three.wav: not sent: the upload of two failed',
+  ]);
+  const ok = await run(fakeBackend({}), ['one.wav']);
+  assert.equal(uploadFailure(ok, {}), undefined);
+  assert.equal(uploadFailure(ok, ok), undefined, 'files an earlier run left are not this run');
 });
 
 test('the Card panel groups the store files by top folder', () => {
