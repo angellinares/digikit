@@ -23,6 +23,7 @@ mod runtime;
 #[cfg(feature = "sharc")]
 pub mod sharc_peer;
 mod softfloat;
+mod spans;
 pub mod spikelog;
 mod telemetry;
 mod watch;

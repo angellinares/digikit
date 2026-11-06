@@ -189,6 +189,28 @@ inside LOAD/UNLOAD requests; `--stack-stock` does it for the stock SETTINGS and 
 tools.coldfire.frame_depth modules/core/runtime/build/runtime.dko.json dkrt_load` adds the other side: the static worst-case depth of a
 module's functions from their frame sizes and calls (findings 34).
 
+## Instruction spans (ColdFire)
+
+`coupled-run --span NAME=ENTRY:EXIT` (repeatable) counts the ColdFire instructions from the PC ENTRY to the PC EXIT on each pass.
+It also counts the instructions from one entry to the next. The count starts with the sample phase. The exit instruction is not
+counted. An exit with no open entry is ignored, and a second entry before the exit counts as `nested`. The instrument
+(`boot/src/spans.rs`, `Emulator::add_span`) reads no guest state.
+
+The report has `spans`: one object per span, with `length` and `gap` (`count`, `min`, `mean`, `p50`, `p99`, `max`,
+`over_period`). `period` is one DSPI2 frame in instructions at `DIGI_CF_IPS` (88,000 at 132e6). A length or a gap above
+it counts in `over_period`.
+
+DN2 1.11 and 1.12 have the vector-191 handler and evaluator A at the same PCs ([finding 04](findings/04-coldfire-dsp-link.md)):
+
+| span | PCs | what it counts |
+|---|---|---|
+| `isr` | `0x40025e36:0x40027bc6` | the whole handler, from its first instruction to its only `rte` |
+| `evala` | `0x400272d4:0x400272da` | the call of evaluator A and its return |
+
+Stock DN2 1.12, `--dsp zero`, 10 s of `idle`: `isr` 49,541 to 50,069 instructions, `evala` 7,841 to 8,369. With `kb-chord16`
+(16 trig keys held) the `isr` maximum is 54,560, 62 % of the period. In the emulator the
+handler starts every 88,000 instructions, give or take a few. So an entry is late only after a handler that ran past its period.
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one
@@ -199,6 +221,8 @@ module's functions from their frame sizes and calls (findings 34).
   lookups on that path are read once (`OnceLock`). The other env lookups in `fast/` run at build or
   decline-reporting time only.
 - Boot: `sharc_peer` reads its diagnostics once at start.
+- Instruction spans: with no span the runtime tests one `is_empty` at each PC it already observes. A span adds its two PCs to
+  the observed set.
 - Write-watch and flush check: the store path of `LoggingBus` tests one `bool` (`WriteGuards::armed`), the
   same single predictable branch the write guards already had (they tested `protect.is_empty()`); the work is
   in a cold out-of-line function. The decode-cache-miss fetch path tests the same flag. `Bus::cpushl` and

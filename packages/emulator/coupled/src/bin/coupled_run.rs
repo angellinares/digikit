@@ -29,6 +29,12 @@
 //! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
 //! scenario's report (`dsp_peek`), read after the scenario ends; `tools/firmware/l2canary.py` uses it.
 //!
+//! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
+//! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
+//! min, mean, p50, p99, max and `over_period`, a period being one DSPI2 frame at `DIGI_CF_IPS`). On
+//! DN2 1.11 and 1.12 the vector-191 handler is `isr=0x40025e36:0x40027bc6` (its only `rte`), and
+//! evaluator A is `evala=0x400272d4:0x400272da` (finding 04).
+//!
 //! `--replay FILE` runs only the scenario in FILE (a scenario object, or a desktop
 //! diagnostics export carrying a `recorded_scenario`); it ignores `--scenario` and
 //! the scenarios file. `--wav PATH` writes the emulator's own PCM to PATH (a float
@@ -97,6 +103,8 @@ struct Args {
     peeks: Vec<(String, Peek)>,
     /// `--dsp-peek NAME=ADDR:LEN`: DSP memory ranges hashed at the end of each scenario.
     dsp_peeks: Vec<(String, u32, usize, usize)>,
+    /// `--span NAME=ENTRY:EXIT`: ColdFire instruction spans between two PCs.
+    spans: Vec<(String, u32, u32)>,
     /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
@@ -132,6 +140,16 @@ fn parse_num(t: &str) -> Result<u32, String> {
         None => t.parse(),
     };
     r.map_err(|_| format!("bad number {t:?}"))
+}
+
+/// `NAME=ENTRY:EXIT`: two ColdFire PCs.
+fn parse_span(spec: &str) -> Result<(String, u32, u32), String> {
+    let (name, rest) = spec.split_once('=').ok_or("--span needs NAME=ENTRY:EXIT")?;
+    let (entry, exit) = rest.split_once(':').ok_or("--span needs ENTRY:EXIT")?;
+    if name.is_empty() {
+        return Err("--span needs a NAME".into());
+    }
+    Ok((name.to_owned(), parse_num(entry)?, parse_num(exit)?))
 }
 
 /// `NAME=ADDR:LEN[:BLOCK]`: BLOCK (a power of two, at most LEN) also lists a hash of every
@@ -270,6 +288,7 @@ fn parse_args() -> Result<Args, String> {
         card: None,
         peeks: Vec::new(),
         dsp_peeks: Vec::new(),
+        spans: Vec::new(),
         zero: false,
         trace: false,
         guard: None,
@@ -304,6 +323,7 @@ fn parse_args() -> Result<Args, String> {
             "--replay" => a.replay = Some(value("--replay")?.into()),
             "--peek" => a.peeks.push(parse_peek(&value("--peek")?)?),
             "--dsp-peek" => a.dsp_peeks.push(parse_dsp_peek(&value("--dsp-peek")?)?),
+            "--span" => a.spans.push(parse_span(&value("--span")?)?),
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
@@ -769,6 +789,9 @@ fn run_scenario(
 
     #[cfg(feature = "cf-mix")]
     rt.cf_mix_reset();
+    for (name, entry, exit) in &args.spans {
+        rt.add_span(name, *entry, *exit);
+    }
     let start = probe(&mut rt)?;
     let initial_audio_health = rt.audio_report().unwrap_or(Value::Null);
     let start_health = json!({
@@ -893,6 +916,7 @@ fn run_scenario(
     }
     let peek = do_peeks(&mut rt, &args.peeks);
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
+    let spans = rt.spans_report((cf_instructions_per_second() / FRAMES_PER_SECOND).round() as u64);
     let dsp_dump = match &args.dump_dsp {
         Some(base) => {
             let path = wav_path_for(base, &sc.name);
@@ -1027,6 +1051,7 @@ fn run_scenario(
         "pcm": pcm,
         "peek": peek,
         "dsp_peek": dsp_peek,
+        "spans": spans,
         "dsp_dump": dsp_dump,
         "gates": gates,
         "guard": guard,
