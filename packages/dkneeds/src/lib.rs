@@ -14,6 +14,7 @@
 //! the records. The only input the answer needs from outside is the device's limits, which [`Needs`] is compared with elsewhere (`dkrt_fit`).
 #![no_std]
 
+#[rustfmt::skip]
 mod gen_limits;
 /// The loader's format limits, from `[limits.format]` of sdk/sdk.toml (`HEADER`, `DSP_HEADER`, `MAX_RECORDS`, `MAX_RELOCS`, `MAX_IMPORTS`,
 /// `MAX_CF_IMPORTS`, `SLOTS`, `MAX_VOICES`, `MAX_FX`, `MAX_STATE_VOICES`, `MAX_STATE_BYTES`, `GRANULE`, `DSP_SLACK`, `ARENA_HDR`).
@@ -387,7 +388,9 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
                 }
                 for i in 0..nreloc {
                     let r = word(src, off + reloc_off + i * 8)?;
-                    if u64::from(r) < u64::from(b) + u64::from(len) && u64::from(r) + 6 > u64::from(b) {
+                    if u64::from(r) < u64::from(b) + u64::from(len)
+                        && u64::from(r) + 6 > u64::from(b)
+                    {
                         return Err(Error::Dsp);
                     }
                 }
@@ -426,7 +429,8 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
             }
             for i in 0..nreloc {
                 let r = word(src, off + reloc_off + i * 8)?;
-                if u64::from(r) < u64::from(descriptor) + 16 && u64::from(r) + 6 > u64::from(descriptor)
+                if u64::from(r) < u64::from(descriptor) + 16
+                    && u64::from(r) + 6 > u64::from(descriptor)
                 {
                     return Err(Error::Dsp);
                 }

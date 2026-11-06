@@ -54,7 +54,10 @@ fn get16(b: &[u8], at: usize) -> u32 {
     ((b[at] as u32) << 8) | (b[at + 1] as u32)
 }
 fn get32(b: &[u8], at: usize) -> u32 {
-    ((b[at] as u32) << 24) | ((b[at + 1] as u32) << 16) | ((b[at + 2] as u32) << 8) | (b[at + 3] as u32)
+    ((b[at] as u32) << 24)
+        | ((b[at + 1] as u32) << 16)
+        | ((b[at + 2] as u32) << 8)
+        | (b[at + 3] as u32)
 }
 
 /// The crc32 of a record of `used` bytes: bytes 0..14, then bytes 18..used. `b` holds at least `used` bytes.
@@ -150,7 +153,12 @@ pub fn entry_at(b: &[u8], used: usize, at: usize) -> Option<Entry> {
     if vl > VALUE_MAX || vs + vl > used || !valid_key(&b[ks..ks + kl]) {
         return None;
     }
-    Some(Entry { at, key: (ks, kl), value: (vs, vl), end: vs + vl })
+    Some(Entry {
+        at,
+        key: (ks, kl),
+        value: (vs, vl),
+        end: vs + vl,
+    })
 }
 
 /// A record that is whole: header, crc32 and every entry (no key twice) checked. Returns its `seq` and `used`.
@@ -166,7 +174,10 @@ pub fn check(b: &[u8]) -> Option<(u32, usize)> {
         let mut o = HEADER;
         while o < at {
             let f = entry_at(b, u, o)?;
-            if same(&b[f.key.0..f.key.0 + f.key.1], &b[e.key.0..e.key.0 + e.key.1]) {
+            if same(
+                &b[f.key.0..f.key.0 + f.key.1],
+                &b[e.key.0..e.key.0 + e.key.1],
+            ) {
                 return None;
             }
             o = f.end;
@@ -210,7 +221,11 @@ pub struct Iter<'a> {
 }
 
 pub fn iter(b: &[u8], used: usize) -> Iter<'_> {
-    Iter { b, used, at: HEADER }
+    Iter {
+        b,
+        used,
+        at: HEADER,
+    }
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -218,7 +233,10 @@ impl<'a> Iterator for Iter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let e = entry_at(self.b, self.used, self.at)?;
         self.at = e.end;
-        Some((&self.b[e.key.0..e.key.0 + e.key.1], &self.b[e.value.0..e.value.0 + e.value.1]))
+        Some((
+            &self.b[e.key.0..e.key.0 + e.key.1],
+            &self.b[e.value.0..e.value.0 + e.value.1],
+        ))
     }
 }
 
@@ -364,7 +382,12 @@ pub struct Loaded {
 /// Read the settings area of the card: both copies' first sectors (`hdr`: 512 bytes, 16-byte aligned), then the one with the higher `seq` in full
 /// into `buf` (`AREA` bytes, 16-byte aligned). A copy whose full read or check fails is skipped for the other one. No valid copy: `buf` becomes an
 /// empty record with `seq` 0 and the result has `copy == NONE`. `Err(E_READ)` when a read fails (`buf` is then an empty record too).
-pub unsafe fn load(io: &Io, lay: &Layout, hdr: *mut u8, buf: &mut [u8; AREA]) -> Result<Loaded, i32> {
+pub unsafe fn load(
+    io: &Io,
+    lay: &Layout,
+    hdr: *mut u8,
+    buf: &mut [u8; AREA],
+) -> Result<Loaded, i32> {
     let start = [lay.set_a(), lay.set_b()];
     let mut seqs = [0u32; 2];
     let mut useds = [0usize; 2];
@@ -383,7 +406,11 @@ pub unsafe fn load(io: &Io, lay: &Layout, hdr: *mut u8, buf: &mut [u8; AREA]) ->
         c += 1;
     }
     // the order: the higher seq first, A first when equal
-    let first = if cand[1] && (!cand[0] || seqs[1] > seqs[0]) { 1 } else { 0 };
+    let first = if cand[1] && (!cand[0] || seqs[1] > seqs[0]) {
+        1
+    } else {
+        0
+    };
     let order = [first, 1 - first];
     let mut k = 0;
     while k < 2 {
@@ -398,7 +425,14 @@ pub unsafe fn load(io: &Io, lay: &Layout, hdr: *mut u8, buf: &mut [u8; AREA]) ->
             continue;
         }
         match check(&buf[..]) {
-            Some((seq, u)) => return Ok(Loaded { copy: c as u32, seq, used: u as u32, damaged }),
+            Some((seq, u)) => {
+                return Ok(Loaded {
+                    copy: c as u32,
+                    seq,
+                    used: u as u32,
+                    damaged,
+                })
+            }
             None => damaged += 1,
         }
     }
@@ -406,7 +440,12 @@ pub unsafe fn load(io: &Io, lay: &Layout, hdr: *mut u8, buf: &mut [u8; AREA]) ->
     if failed {
         return Err(E_READ);
     }
-    Ok(Loaded { copy: NONE, seq: 0, used: HEADER as u32, damaged })
+    Ok(Loaded {
+        copy: NONE,
+        seq: 0,
+        used: HEADER as u32,
+        damaged,
+    })
 }
 
 /// Write the record in `buf` (sealed: its `seq` and crc32 are final) to copy `copy` (0 or 1): the sectors it needs, not the whole area.

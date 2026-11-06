@@ -116,7 +116,14 @@ impl FileStream {
             return Ok(0);
         }
         let count = core::cmp::min(sectors_of(left), chunk_sectors(cap));
-        let r = read_sectors(&self.io, &self.lay, self.entry.first + self.offset / 512, count, dst, cap);
+        let r = read_sectors(
+            &self.io,
+            &self.lay,
+            self.entry.first + self.offset / 512,
+            count,
+            dst,
+            cap,
+        );
         if r != OK {
             return self.fail(r);
         }

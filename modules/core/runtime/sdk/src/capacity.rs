@@ -2,11 +2,20 @@
 //! runtime (`src/rs`) calls these with its own tables, so the host tests see the same decisions the device takes.
 //!
 //! ColdFire rules: no `match` on integers, no `core::fmt`.
-use crate::{E_DSP_ROWS, E_LOADED, E_PAGE_FULL, E_PARAM_FULL, E_TABLE_FULL, E_TOO_BIG, E_TYPE_RANGE, OK};
+use crate::{
+    E_DSP_ROWS, E_LOADED, E_PAGE_FULL, E_PARAM_FULL, E_TABLE_FULL, E_TOO_BIG, E_TYPE_RANGE, OK,
+};
 
 /// First fit: the lowest offset in `0..total` whose byte address (`base + offset`) is `align`-aligned (a power of two) and whose `len` bytes touch
 /// none of the ranges `offs[i] .. offs[i] + lens[i]` (a range of length 0 is unused). `None` when no offset fits.
-pub fn first_fit(base: u32, total: u32, offs: &[u32], lens: &[u32], len: u32, align: u32) -> Option<u32> {
+pub fn first_fit(
+    base: u32,
+    total: u32,
+    offs: &[u32],
+    lens: &[u32],
+    len: u32,
+    align: u32,
+) -> Option<u32> {
     let mut cand = 0u32;
     loop {
         let b = (base + cand + align - 1) & !(align - 1);
@@ -106,7 +115,11 @@ pub fn read_fit(size: u32, cap: u32) -> i32 {
 
 /// The module record for a new load among `count` records: the first record that is not `used`. `E_LOADED` when a used record satisfies `same`
 /// (checked only for used records, in order, before any free record that follows is considered); `E_TABLE_FULL` when every record is used.
-pub fn pick_record<U: Fn(usize) -> bool, S: Fn(usize) -> bool>(count: usize, used: U, same: S) -> Result<usize, i32> {
+pub fn pick_record<U: Fn(usize) -> bool, S: Fn(usize) -> bool>(
+    count: usize,
+    used: U,
+    same: S,
+) -> Result<usize, i32> {
     let mut rec = count;
     let mut i = 0;
     while i < count {

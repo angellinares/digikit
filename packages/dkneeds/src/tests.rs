@@ -218,9 +218,17 @@ fn effect_records_take_effect_slots_and_their_state() {
     assert_eq!((n.fx_slots, n.dsp_area), (1, 64));
     let n = of(&dkm(4, 0, &[], &dsp_section_v4(64, 0, &[8, 12, 16]))).unwrap();
     assert_eq!(n.fx_slots, 3);
-    assert_eq!(n.dsp_area, (64u32 + 8 + 16 + 16).div_ceil(GRANULE) * GRANULE);
+    assert_eq!(
+        n.dsp_area,
+        (64u32 + 8 + 16 + 16).div_ceil(GRANULE) * GRANULE
+    );
     // versions before 4 take no slot
-    assert_eq!(of(&dkm(4, 0, &[], &dsp_section(3, 8, 0, &[(0, 0)]))).unwrap().fx_slots, 0);
+    assert_eq!(
+        of(&dkm(4, 0, &[], &dsp_section(3, 8, 0, &[(0, 0)])))
+            .unwrap()
+            .fx_slots,
+        0
+    );
     // more than DK_FX_MAX records, a table outside the section and an absurd state are refused
     let f = dkm(4, 0, &[], &dsp_section_v4(8, 0, &[0, 0, 0, 0, 0]));
     assert_eq!(of(&f), Err(Error::Dsp));
@@ -228,7 +236,12 @@ fn effect_records_take_effect_slots_and_their_state() {
     put(&mut bad, 0x34, 0x1000);
     assert_eq!(of(&dkm(4, 0, &[], &bad)), Err(Error::Dsp));
     assert_eq!(
-        of(&dkm(4, 0, &[], &dsp_section_v4(8, 0, &[MAX_STATE_BYTES + 4]))),
+        of(&dkm(
+            4,
+            0,
+            &[],
+            &dsp_section_v4(8, 0, &[MAX_STATE_BYTES + 4])
+        )),
         Err(Error::Dsp)
     );
 }
