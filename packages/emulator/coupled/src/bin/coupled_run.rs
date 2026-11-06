@@ -29,6 +29,20 @@
 //! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
 //! scenario's report (`dsp_peek`), read after the scenario ends; `tools/firmware/l2canary.py` uses it.
 //!
+//! `--cold-base SHA256` (with `--dsp zero`) boots `--syx`, a patched build of the stock firmware
+//! SHA256, from reset to the ready state instead of loading `--cf-snapshot`. Use it to run a build
+//! that has no ready snapshot of its own. Without `--card-image` the runtime gives the firmware an
+//! empty +Drive.
+//!
+//! `--span-log PATH` writes every span pass as a JSON line `{"span", "at", "len"}` (`at` is the
+//! instruction count at the entry), with `-<name>` before the extension. Each span's report
+//! also gives `worst`: the index and the entry count of its longest pass.
+//!
+//! `--call PC:ARG[,ARG...]` (repeatable) calls a guest function at the ready point, before the
+//! scenario, in the given order (`Emulator::call_function`, gcc m68k ABI, interrupts masked, a
+//! scratch stack 1 KiB below the guest's). ARG is a number, or `*ADDR+OFF`: the long at ADDR,
+//! read at the call, plus OFF. The report lists each call's arguments, D0 and instructions.
+//!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
 //! min, mean, p50, p99, max and `over_period`, a period being one DSPI2 frame at `DIGI_CF_IPS`). On
@@ -105,6 +119,13 @@ struct Args {
     dsp_peeks: Vec<(String, u32, usize, usize)>,
     /// `--span NAME=ENTRY:EXIT`: ColdFire instruction spans between two PCs.
     spans: Vec<(String, u32, u32)>,
+    /// `--cold-base SHA256`: with `--dsp zero`, boot `--syx` from reset (a patched build of the
+    /// stock firmware SHA256) to the ready state instead of loading `--cf-snapshot`.
+    cold_base: Option<String>,
+    /// `--call PC:ARG[,ARG...]`: guest functions called at the ready point, before the scenario.
+    calls: Vec<(u32, Vec<CallArg>)>,
+    /// `--span-log PATH`: every span pass as a JSON line, `-<scenario>` before the extension.
+    span_log: Option<PathBuf>,
     /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
@@ -140,6 +161,78 @@ fn parse_num(t: &str) -> Result<u32, String> {
         None => t.parse(),
     };
     r.map_err(|_| format!("bad number {t:?}"))
+}
+
+/// One `--call` argument: a number, or the long at an address plus an offset.
+#[derive(Clone, Copy, Debug)]
+enum CallArg {
+    Value(u32),
+    Pointer { addr: u32, off: u32 },
+}
+
+/// `PC:ARG[,ARG...]`, ARG a number or `*ADDR+OFF` (the long at ADDR, read at the call, plus OFF).
+fn parse_call(spec: &str) -> Result<(u32, Vec<CallArg>), String> {
+    let (pc, rest) = spec.split_once(':').unwrap_or((spec, ""));
+    let args = rest
+        .split(',')
+        .filter(|a| !a.is_empty())
+        .map(|a| match a.strip_prefix('*') {
+            Some(p) => {
+                let (addr, off) = p.split_once('+').unwrap_or((p, "0"));
+                Ok(CallArg::Pointer {
+                    addr: parse_num(addr)?,
+                    off: parse_num(off)?,
+                })
+            }
+            None => parse_num(a).map(CallArg::Value),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok((parse_num(pc)?, args))
+}
+
+/// The address a call returns to: compared with the PC, never executed (as in `cf_call`).
+const CALL_RETURN: u32 = 0x47fd_f000;
+/// Bytes between the guest's stack pointer and the call's scratch stack.
+const CALL_STACK_GAP: u32 = 0x400;
+
+/// Run `--call`s in order with interrupts masked, on a scratch stack below the guest's.
+fn do_calls(rt: &mut CoupledRuntime, calls: &[(u32, Vec<CallArg>)]) -> Result<Value, String> {
+    let mut out = Vec::new();
+    for (pc, args) in calls {
+        let values = args
+            .iter()
+            .map(|arg| match *arg {
+                CallArg::Value(v) => Ok(v),
+                CallArg::Pointer { addr, off } => rt
+                    .peek32(addr)
+                    .map(|v| v.wrapping_add(off))
+                    .ok_or(format!("--call: cannot read {addr:#010x}")),
+            })
+            .collect::<Result<Vec<u32>, String>>()?;
+        let (_, a, _, _) = rt.cpu_regs();
+        let spec = elektron_native_boot::CallSpec {
+            pc: *pc,
+            args: values.clone(),
+            sp: (a[7] - CALL_STACK_GAP) & !3,
+            ret_pc: CALL_RETURN,
+            sr: 0x2700,
+            max_insns: 5_000_000,
+        };
+        let r = rt.call_function(&spec)?;
+        if !r.finished {
+            return Err(format!(
+                "--call {pc:#010x} did not return: pc {:#010x}, {:?}",
+                r.pc, r.error
+            ));
+        }
+        out.push(json!({
+            "pc": format!("{pc:#010x}"),
+            "args": values.iter().map(|v| format!("{v:#x}")).collect::<Vec<_>>(),
+            "d0": format!("{:#x}", r.d[0]),
+            "instructions": r.insns,
+        }));
+    }
+    Ok(Value::Array(out))
 }
 
 /// `NAME=ENTRY:EXIT`: two ColdFire PCs.
@@ -289,6 +382,9 @@ fn parse_args() -> Result<Args, String> {
         peeks: Vec::new(),
         dsp_peeks: Vec::new(),
         spans: Vec::new(),
+        cold_base: None,
+        calls: Vec::new(),
+        span_log: None,
         zero: false,
         trace: false,
         guard: None,
@@ -324,6 +420,9 @@ fn parse_args() -> Result<Args, String> {
             "--peek" => a.peeks.push(parse_peek(&value("--peek")?)?),
             "--dsp-peek" => a.dsp_peeks.push(parse_dsp_peek(&value("--dsp-peek")?)?),
             "--span" => a.spans.push(parse_span(&value("--span")?)?),
+            "--cold-base" => a.cold_base = Some(value("--cold-base")?),
+            "--call" => a.calls.push(parse_call(&value("--call")?)?),
+            "--span-log" => a.span_log = Some(value("--span-log")?.into()),
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
@@ -354,9 +453,11 @@ fn parse_args() -> Result<Args, String> {
                     .into(),
             );
         }
-        if !a.list && a.snapshot.as_os_str().is_empty() {
-            return Err("--cf-snapshot is required".into());
+        if !a.list && a.snapshot.as_os_str().is_empty() && a.cold_base.is_none() {
+            return Err("--cf-snapshot or --cold-base is required".into());
         }
+    } else if a.cold_base.is_some() {
+        return Err("--cold-base needs --dsp zero".into());
     } else if !a.list
         && (a.image.as_os_str().is_empty()
             || a.state.as_os_str().is_empty()
@@ -711,6 +812,43 @@ fn probe(rt: &mut CoupledRuntime) -> Result<Probe, String> {
     })
 }
 
+/// Most ColdFire instructions a `--cold-base` boot may take to reach the ready state.
+const COLD_BOOT_LIMIT: u64 = 4_000_000_000;
+
+/// `--cold-base`: a patched build booted from reset with the zero DSP peer, stepped to the
+/// ready state. Its scenario clock starts there, as after a snapshot restore.
+fn cold_zero_runtime(
+    syx: &[u8],
+    card: Option<emmc_card::Card>,
+    base: &str,
+) -> Result<CoupledRuntime, String> {
+    let started = Instant::now();
+    let mut rt = CoupledRuntime::new_patched(syx, card, base)?;
+    rt.enable_zero_dsp_timing()?;
+    loop {
+        let status = rt.step_chunk(STEP_CHUNK).status;
+        if let Some(error) = status.error {
+            return Err(format!("cold boot stopped at {:#010x}: {error}", status.pc));
+        }
+        if status.ready {
+            break;
+        }
+        if status.icount > COLD_BOOT_LIMIT {
+            return Err(format!(
+                "cold boot: not ready after {} instructions (phase {})",
+                status.icount, status.phase
+            ));
+        }
+    }
+    rt.rebase_clock();
+    eprintln!(
+        "cold boot ready at {} instructions in {:.1}s",
+        rt.icount(),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(rt)
+}
+
 /// `base` with `-<name>` before its extension.
 fn wav_path_for(base: &Path, name: &str) -> PathBuf {
     let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
@@ -746,7 +884,10 @@ fn run_scenario(
         .as_deref()
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
-    let mut rt = CoupledRuntime::new(syx, card, Some(&options))?;
+    let mut rt = match &args.cold_base {
+        Some(base) => cold_zero_runtime(syx, card, base)?,
+        None => CoupledRuntime::new(syx, card, Some(&options))?,
+    };
     if let Some(spec) = &args.guard {
         let (protect, allow_pc) = elektron_native_boot::parse_guard_spec(spec)?;
         rt.set_write_guards(protect, allow_pc);
@@ -787,6 +928,7 @@ fn run_scenario(
         sc.instructions
     };
 
+    let calls = do_calls(&mut rt, &args.calls)?;
     #[cfg(feature = "cf-mix")]
     rt.cf_mix_reset();
     for (name, entry, exit) in &args.spans {
@@ -917,6 +1059,15 @@ fn run_scenario(
     let peek = do_peeks(&mut rt, &args.peeks);
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
     let spans = rt.spans_report((cf_instructions_per_second() / FRAMES_PER_SECOND).round() as u64);
+    if let Some(base) = &args.span_log {
+        let path = wav_path_for(base, &sc.name);
+        let mut text = String::new();
+        for (name, at, len) in rt.span_passes() {
+            text.push_str(&json!({"span": name, "at": at, "len": len}).to_string());
+            text.push('\n');
+        }
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
     let dsp_dump = match &args.dump_dsp {
         Some(base) => {
             let path = wav_path_for(base, &sc.name);
@@ -1052,6 +1203,7 @@ fn run_scenario(
         "peek": peek,
         "dsp_peek": dsp_peek,
         "spans": spans,
+        "calls": calls,
         "dsp_dump": dsp_dump,
         "gates": gates,
         "guard": guard,
