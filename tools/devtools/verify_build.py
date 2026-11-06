@@ -44,11 +44,12 @@ def cargo_target_dir(binary: Path) -> Path:
 def build_one(device: str, syx: Path) -> tuple[Path, Path]:
     """Build the daemon of DEVICE as `daemons` does: (release binary, cargo target dir)."""
     pgo = pk_emud_pgo.native_pgo
-    profile, state, message = pgo.profile_for_tests(
-        device, pk_emud_pgo.generated_core(device)
-    )
+    gen = pk_emud_pgo.generated_core(device)
+    profile, state, message = pgo.profile_for_tests(device, gen)
     stale = (
-        profile is None and state != "off" and pgo.current_profile(device) is not None
+        profile is None
+        and state != "off"
+        and pgo.current_profile(device, gen) is not None
     )
     pgo.report_profile(device, state, message, applied=stale)
     if profile is None and not stale:

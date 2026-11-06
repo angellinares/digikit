@@ -79,7 +79,7 @@ def test_mise_task_edits_preserve_key_but_rust_pin_changes_do_not(
     monkeypatch.setattr(
         pk_emud_pgo, "generated_core", lambda _device: seed.gen_dirs["gen"]
     )
-    monkeypatch.setattr(native_pgo, "current_profile", lambda _device: None)
+    monkeypatch.setattr(native_pgo, "current_profile", lambda _device, _gen=None: None)
 
     before = emud_key.key_of(emud_key.inputs("dn2", {}))
     mise.write_text(mise.read_text() + '\n[tasks.example]\nrun = "echo changed"\n')

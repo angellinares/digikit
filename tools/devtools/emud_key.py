@@ -225,7 +225,7 @@ def inputs(device: str, environ: Mapping[str, str] | None = None) -> EmudInputs:
     flags["SHARC_REGIONBENCH_SOL"] = environ.get("SHARC_REGIONBENCH_SOL", "")
     if sol := environ.get("SHARC_REGIONBENCH_SOL"):
         files["env:SHARC_REGIONBENCH_SOL"] = Path(sol)
-    profile = native_pgo.current_profile(device)
+    profile = native_pgo.current_profile(device, gen_dirs["gen"])
     profdata = Path(profile) if profile else None
     if profdata:
         flags["rustflags"] = native_pgo.profile_use_flags(

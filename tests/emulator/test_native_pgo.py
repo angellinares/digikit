@@ -244,6 +244,70 @@ def test_dt2_state_reads_the_dt2_manifest(tree, monkeypatch):
     assert native_pgo.current_profile("dt2") == str(tree / "state" / "p.profdata")
 
 
+def trained_here(tree, name="lane.profdata"):
+    """Write by-key/<key>.json for the tree as it is now, with its own profile file."""
+    state_dir = tree / "state"
+    hasher = native_pgo.FileHasher(state_dir / "hash-cache.json")
+    components, _ = native_pgo.compute_components(PACKAGES, tree / "gen", hasher)
+    profdata = state_dir / name
+    profdata.write_bytes(b"lane profile")
+    manifest = {
+        "key": native_pgo.key_of(components),
+        "components": components,
+        "packages": PACKAGES,
+        "desktop_sha256": native_pgo.desktop_digest(hasher),
+        "profdata": {"path": str(profdata)},
+    }
+    native_pgo.write_json_atomic(
+        native_pgo.by_key_dir() / f"{manifest['key']}.json", manifest
+    )
+    return profdata
+
+
+def test_exact_key_match_uses_its_profile_while_the_shared_manifest_is_partial(tree):
+    (tree / "packages/emulator/sharc/lib.rs").write_text("a lane edit")
+    assert state(tree)[0] == "partial"
+    lane = trained_here(tree)
+    assert state(tree) == ("ok", str(lane), False)
+    assert native_pgo.current_profile(gen=tree / "gen") == str(lane)
+
+
+def test_key_miss_falls_back_to_the_shared_manifest(tree):
+    trained_here(tree)  # the key of the tree as trained
+    (tree / "packages/emulator/sharc/lib.rs").write_text("another edit")
+    status, detail, _ = state(tree)
+    assert (status, detail) == ("partial", "changed: sources")
+    assert native_pgo.current_profile(gen=tree / "gen") == str(
+        tree / "state" / "p.profdata"
+    )
+
+
+def test_exact_match_without_its_profile_file_is_not_used(tree):
+    (tree / "packages/emulator/sharc/lib.rs").write_text("a lane edit")
+    trained_here(tree).unlink()
+    assert state(tree)[0] == "partial"
+
+
+def test_linked_worktree_training_leaves_the_shared_manifest(tree, monkeypatch, capsys):
+    shared = (tree / "state" / "manifest.json").read_text()
+    manifest = {"key": "k" * 64, "profdata": {"path": "x"}}
+    monkeypatch.setattr(native_pgo, "in_linked_worktree", lambda: True)
+    native_pgo.save_manifest("dn2", manifest)
+    assert (tree / "state" / "manifest.json").read_text() == shared
+    assert native_pgo.read_by_key("dn2", "k" * 64) == manifest
+    assert "manifest.json is unchanged" in capsys.readouterr().out
+    native_pgo.save_manifest("dn2", manifest, set_current=True)
+    assert native_pgo.read_manifest() == manifest
+
+
+def test_main_worktree_training_writes_both(tree, monkeypatch):
+    manifest = {"key": "m" * 64, "profdata": {"path": "x"}}
+    monkeypatch.setattr(native_pgo, "in_linked_worktree", lambda: False)
+    native_pgo.save_manifest("dn2", manifest)
+    assert native_pgo.read_manifest() == manifest
+    assert native_pgo.read_by_key("dn2", "m" * 64) == manifest
+
+
 # --- crate-hash guard -------------------------------------------------------------
 
 PROFILE_TEXT = """Counters:
