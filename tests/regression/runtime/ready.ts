@@ -56,7 +56,9 @@ export async function expectRuntimeUi(
   artifacts: string,
   options: { fresh?: boolean; afterEpoch?: number; timeout?: number; paused?: boolean } = {},
 ): Promise<number> {
-  const timeout = options.timeout ?? 45_000;
+  // Wall time is only a hang guard: readiness is the firmware state polled below. A DN2 reboot takes 45-75 s of wall time
+  // under load, so the guard matches the lifecycle deadline of reloadRuntimeBaseline (120 s).
+  const timeout = options.timeout ?? 120_000;
   const deadline = Date.now() + timeout;
   const base = planSymbol(plan, 'DKRT_BOOT');
   let status: Awaited<ReturnType<Session['status']>> | undefined;
