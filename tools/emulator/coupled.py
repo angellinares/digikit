@@ -41,7 +41,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 from tools.devtools import render_cache  # noqa: E402
-from tools.emulator import digi_env, native_target  # noqa: E402
+from tools.emulator import digi_env, native_pgo, native_target  # noqa: E402
 
 TOOLCHAIN = digi_env.TOOLCHAIN
 DEFAULT_FEATURES = "coupled-audio"
@@ -200,8 +200,30 @@ def feature_variant(features: str | None = None) -> str:
     return "feat-" + "+".join(names)
 
 
-def binary_path(device: str = "dn2", image=None) -> pathlib.Path:
-    target = native_target.target_dir(generated(device, image), feature_variant())
+def pgo_dir(gen, device):
+    """The target dir of the PGO coupled-run: the same one `native_pgo coupled-build` uses."""
+    return native_target.target_dir(gen, "pgo-cr-" + device)
+
+
+def pgo_profile(device, gen):
+    """The usable profile, state and message. Only the default feature set gets a profile."""
+    if feature_variant() or os.environ.get("SHARC_GEN_DIR_2"):
+        return None, "off", ""
+    return native_pgo.profile_for_tests(device, gen)
+
+
+def binary_path(device: str = "dn2", image=None, pgo: bool = False) -> pathlib.Path:
+    gen = generated(device, image)
+    if pgo and pgo_profile(device, gen)[0]:
+        found = (
+            pgo_dir(gen, device)
+            / digi_env.TRIPLE
+            / "release"
+            / digi_env.exe_name(BINARY_NAME)
+        )
+        if found.is_file():
+            return found
+    target = native_target.target_dir(gen, feature_variant())
     return target / "release" / digi_env.exe_name(BINARY_NAME)
 
 
@@ -209,9 +231,21 @@ def cargo(args: list[str]) -> list[str]:
     return ["rustup", "run", TOOLCHAIN, "cargo", *args]
 
 
-def build(device: str = "dn2", image=None) -> pathlib.Path:
+def build(device: str = "dn2", image=None, pgo: bool = False) -> pathlib.Path:
     gen = generated(device, image)
     digi_env.check_generated(gen)
+    if pgo:
+        profile, state, message = pgo_profile(device, gen)
+        native_pgo.report_profile(device, state, message, applied=False)
+        if profile:
+            pgo_target = pgo_dir(gen, device)
+            pgo_target.mkdir(parents=True, exist_ok=True)
+            return native_pgo.build_coupled(
+                pgo_target,
+                native_pgo.profile_use_flags(profile),
+                gen,
+                pgo_target / "build.log",
+            )
     target = native_target.target_dir(gen, feature_variant())
     env = {**digi_env.rust_env(), "SHARC_GEN_DIR": str(gen)}
     command = cargo(
@@ -233,10 +267,15 @@ def build(device: str = "dn2", image=None) -> pathlib.Path:
     return binary
 
 
-def ensure_binary(no_build: bool, device: str = "dn2", image=None) -> pathlib.Path:
+def ensure_binary(
+    no_build: bool, device: str = "dn2", image=None, pgo: bool = False
+) -> pathlib.Path:
     if not no_build:
-        return build(device, image)
-    binary = binary_path(device, image)
+        return build(device, image, pgo)
+    if pgo:
+        profile, state, message = pgo_profile(device, generated(device, image))
+        native_pgo.report_profile(device, state, message, applied=False)
+    binary = binary_path(device, image, pgo)
     if not binary.is_file():
         raise SystemExit(f"coupled: no binary at {binary} (drop --no-build)")
     return binary
@@ -487,7 +526,7 @@ def run_batch(
     ``binary`` skips the build step."""
     parsed = digi_env.parse_diag(diag or "")
     if binary is None:
-        binary = ensure_binary(no_build, device)
+        binary = ensure_binary(no_build, device, pgo=True)
     run_dir = pathlib.Path(run_dir)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     scn = str(scenario_path(scenarios_file))
@@ -671,7 +710,7 @@ def run_parallel(binary: pathlib.Path, args) -> int:
 
 
 def cmd_build(args) -> int:
-    binary = build(getattr(args, "device", "dn2"))
+    binary = build(getattr(args, "device", "dn2"), pgo=True)
     print(binary)
     return 0
 
@@ -687,7 +726,7 @@ def cmd_scenario(args) -> int:
     want_dump(args)
     if getattr(args, "check_generated", False):
         digi_env.check_generated(generated(getattr(args, "device", "dn2")))
-    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
+    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"), pgo=True)
     if not args.names and not args.all:
         raise SystemExit("coupled: give scenario names or --all")
     # No --scenario means every scenario of the file; coupled-run exits 2 on
@@ -713,7 +752,7 @@ def cmd_cache(args) -> int:
 
 def cmd_replay(args) -> int:
     want_dump(args)
-    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
+    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"), pgo=True)
     return run_and_report(binary, ["--replay", args.file], args)
 
 

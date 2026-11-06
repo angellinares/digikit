@@ -74,7 +74,10 @@ impl Sha {
         } else {
             while i < 16 {
                 let q = p.add(i * 4);
-                w[i] = ((*q as u32) << 24) | ((*q.add(1) as u32) << 16) | ((*q.add(2) as u32) << 8) | (*q.add(3) as u32);
+                w[i] = ((*q as u32) << 24)
+                    | ((*q.add(1) as u32) << 16)
+                    | ((*q.add(2) as u32) << 8)
+                    | (*q.add(3) as u32);
                 i += 1;
             }
         }

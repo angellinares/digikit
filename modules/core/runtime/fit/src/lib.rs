@@ -285,7 +285,10 @@ pub fn size_k(out: &mut [u8], n: u32) {
 }
 
 /// The names of the CAPACITY kinds a fit can be short of, by kind number (0 and the kinds that cannot be short: empty).
-const SHORT_NAME: [&str; 13] = ["", "MODULES", "SELECTED", "CPU", "FILE", "DSP", "MACHINES", "VOICES", "PARAMS", "PAGES", "FX", "", ""];
+const SHORT_NAME: [&str; 13] = [
+    "", "MODULES", "SELECTED", "CPU", "FILE", "DSP", "MACHINES", "VOICES", "PARAMS", "PAGES", "FX",
+    "", "",
+];
 
 /// What is short, in K for bytes and as numbers for rows and slots (the need rounded up, what is free rounded down): `DSP 400K > 254K FREE`, in a
 /// popup; `compact` for a list row: `DSP 400K>254K`. `out` is zero-filled first.
@@ -295,16 +298,29 @@ pub fn short_text(out: &mut [u8], s: &Short, compact: bool) {
     }
     let mut t = Out { b: out, n: 0 };
     let k = s.kind as usize;
-    t.s(if k < 13 { SHORT_NAME[k].as_bytes() } else { b"" }).s(b" ");
+    t.s(if k < 13 {
+        SHORT_NAME[k].as_bytes()
+    } else {
+        b""
+    })
+    .s(b" ");
     let bytes = s.kind == CAPK_ARENA || s.kind == CAPK_DSP_AREA || s.kind == CAPK_STAGE;
     let gt: &[u8] = if compact { b">" } else { b" > " };
     if bytes {
-        t.num(s.need.div_ceil(1024)).s(b"K").s(gt).num(s.free / 1024).s(b"K");
+        t.num(s.need.div_ceil(1024))
+            .s(b"K")
+            .s(gt)
+            .num(s.free / 1024)
+            .s(b"K");
     } else {
         t.num(s.need).s(gt).num(s.free);
     }
     if !compact {
-        t.s(if s.kind == CAPK_STAGE { b" MAX" } else { b" FREE" });
+        t.s(if s.kind == CAPK_STAGE {
+            b" MAX"
+        } else {
+            b" FREE"
+        });
     }
 }
 
@@ -314,7 +330,11 @@ pub fn short_text(out: &mut [u8], s: &Short, compact: bool) {
 pub fn fit_set(caps: &mut [DkrtCap], entries: &[DkrtScan], ticked: &[u8], out: &mut DkrtFitOut) {
     // SAFETY: `DkrtFitOut` is plain integers; all zero is a valid value
     unsafe { core::ptr::write_bytes(out as *mut DkrtFitOut, 0, 1) };
-    let n = if entries.len() > SCAN_MAX { SCAN_MAX } else { entries.len() };
+    let n = if entries.len() > SCAN_MAX {
+        SCAN_MAX
+    } else {
+        entries.len()
+    };
     out.count = n as u32;
     empty(caps);
     let tick = |i: usize| i < ticked.len() && ticked[i] != 0;
@@ -364,6 +384,6 @@ pub fn fit_set(caps: &mut [DkrtCap], entries: &[DkrtScan], ticked: &[u8], out: &
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod scan_tests;
+#[cfg(test)]
+mod tests;

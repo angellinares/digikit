@@ -123,6 +123,47 @@ def test_blocktrans_roots_follow_env_then_table(monkeypatch, tmp_path):
     assert native_pgo.blocktrans_roots() == "0x2"
 
 
+@pytest.fixture
+def supported(monkeypatch):
+    monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
+
+
+def test_profile_for_tests_ok_returns_the_profile(tree, supported):
+    profile, status, message = native_pgo.profile_for_tests("dn2", tree / "gen", {})
+    assert (profile, status, message) == (str(tree / "state" / "p.profdata"), "ok", "")
+
+
+def test_profile_for_tests_partial_returns_profile_and_notice(tree, supported):
+    (tree / "packages/emulator/sharc/lib.rs").write_text("a changed")
+    profile, status, message = native_pgo.profile_for_tests("dn2", tree / "gen", {})
+    assert (profile, status) == (str(tree / "state" / "p.profdata"), "partial")
+    assert message == native_pgo.PARTIAL_NOTICE
+
+
+def test_profile_for_tests_stale_and_missing_return_no_profile(tree, supported):
+    (tree / "gen/core.rs").write_text("new core")
+    profile, status, message = native_pgo.profile_for_tests("dn2", tree / "gen", {})
+    assert (profile, status) == (None, "stale")
+    assert "changed: generated" in message
+    (tree / "state" / "manifest.json").unlink()
+    profile, status, message = native_pgo.profile_for_tests("dn2", tree / "gen", {})
+    assert (profile, status) == (None, "missing")
+    assert "Retrain" in message
+
+
+def test_profile_for_tests_off_when_opted_out(tree, supported):
+    env = {"DIGI_EMU_PGO": "0"}
+    assert native_pgo.profile_for_tests("dn2", tree / "gen", env) == (None, "off", "")
+
+
+def test_report_profile_require_pgo_is_fatal_for_stale_only(capsys):
+    env = {"DIGI_REQUIRE_PGO": "1"}
+    with pytest.raises(SystemExit, match="DIGI_REQUIRE_PGO"):
+        native_pgo.report_profile("dn2", "stale", "WARNING: x", False, env)
+    native_pgo.report_profile("dn2", "partial", "partly stale", False, env)
+    assert "partly stale" in capsys.readouterr().err
+
+
 def test_current_profile_returns_the_file_even_when_stale(tree):
     (tree / "packages/emulator/sharc/lib.rs").write_text("a changed")
     (tree / "gen/core.rs").write_text("new core")

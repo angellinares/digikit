@@ -41,7 +41,14 @@ pub struct FileId {
 pub const ID_HASH_VALID: u32 = 1;
 impl FileId {
     pub const fn empty() -> Self {
-        Self { root: 0, size: 0, mtime: 0, flags: 0, hash_kind: 0, hash: [0; 32] }
+        Self {
+            root: 0,
+            size: 0,
+            mtime: 0,
+            flags: 0,
+            hash_kind: 0,
+            hash: [0; 32],
+        }
     }
     /// Same file content by identity: the listing hash when both have one, else size and mtime.
     pub fn same(&self, o: &FileId) -> bool {
@@ -136,9 +143,21 @@ pub trait Env {
 #[derive(Clone, Copy, Debug)]
 pub enum Note {
     /// A load finished and its handle is usable.
-    Loaded { client: u32, entry: u32, frames: u32, base_l: u32, token: u32 },
+    Loaded {
+        client: u32,
+        entry: u32,
+        frames: u32,
+        base_l: u32,
+        token: u32,
+    },
     /// A handle was dropped. `reason`: 1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed (check result in the high 16 bits). `count`: drops so far.
-    Invalid { client: u32, entry: u32, reason: u32, token: u32, count: u32 },
+    Invalid {
+        client: u32,
+        entry: u32,
+        reason: u32,
+        token: u32,
+        count: u32,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -167,7 +186,15 @@ const ENTRY0: Entry = Entry {
     id: FileId::empty(),
     pathkey: 0,
     req: 0,
-    handle: Handle { id: 0, token: 0, base_l: 0, base_r: 0, frames: 0, rate: 0, channels: 0 },
+    handle: Handle {
+        id: 0,
+        token: 0,
+        base_l: 0,
+        base_r: 0,
+        frames: 0,
+        rate: 0,
+        channels: 0,
+    },
     cancelled: false,
 };
 
@@ -217,10 +244,20 @@ const TRACK0: Track = Track {
     bound: None,
     loading: None,
     snap: FileId::empty(),
-    pend: Inspect { id: FileId::empty(), frames: 0, rate: 0, channels: 0 },
+    pend: Inspect {
+        id: FileId::empty(),
+        frames: 0,
+        rate: 0,
+        channels: 0,
+    },
     pathkey: 0,
     token: 0,
-    published: Info { frames: 0, rate: 0, channels: 0, token: 0 },
+    published: Info {
+        frames: 0,
+        rate: 0,
+        channels: 0,
+        token: 0,
+    },
     reload: false,
     fresh: false,
     closed: false,
@@ -232,7 +269,10 @@ struct Sel {
     len: u8,
     path: [u8; SEL_PATH],
 }
-const SEL0: Sel = Sel { len: 0, path: [0; SEL_PATH] };
+const SEL0: Sel = Sel {
+    len: 0,
+    path: [0; SEL_PATH],
+};
 #[derive(Clone, Copy)]
 struct Proj<const CL: usize> {
     used: bool,
@@ -249,7 +289,11 @@ pub fn rooted(root: &[u8], path: &[u8], out: &mut [u8; PATH]) -> Result<usize, i
         return Err(E_SEL_PATH);
     }
     let path = &path[..n];
-    let prefix: &[u8] = if root == ROOT_DT2 && path[0] == b'/' { b"" } else { root };
+    let prefix: &[u8] = if root == ROOT_DT2 && path[0] == b'/' {
+        b""
+    } else {
+        root
+    };
     let total = prefix.len() + n;
     if total >= PATH {
         return Err(E_SEL_PATH);
@@ -261,14 +305,26 @@ pub fn rooted(root: &[u8], path: &[u8], out: &mut [u8; PATH]) -> Result<usize, i
 
 /// Identity of a store file (DN2: `samples/...` of the digikit store): its size and the sha256 of its table entry, as the listing row gives them.
 pub fn store_identity(size: u32, sha: &[u8; 32]) -> FileId {
-    FileId { root: crate::files::SAMPLES, size, mtime: 0, flags: ID_HASH_VALID, hash_kind: crate::files::HASH_SHA256, hash: *sha }
+    FileId {
+        root: crate::files::SAMPLES,
+        size,
+        mtime: 0,
+        flags: ID_HASH_VALID,
+        hash_kind: crate::files::HASH_SHA256,
+        hash: *sha,
+    }
 }
 
 /// Header check and identity of a store file from its table entry (`size`, `sha`) and its first 64 bytes: the native header parse that
 /// DT2 uses (`sample::native_header`), so both devices accept the same files. No PCM is read.
 pub fn store_inspect(size: u32, sha: &[u8; 32], head: &[u8; 64]) -> Result<Inspect, i32> {
     let (frames, channels) = crate::sample::native_header(head, size)?;
-    Ok(Inspect { id: store_identity(size, sha), frames, rate: crate::sample::RATE, channels })
+    Ok(Inspect {
+        id: store_identity(size, sha),
+        frames,
+        rate: crate::sample::RATE,
+        channels,
+    })
 }
 
 /// The root-relative form of a stored (device-rooted) path: the root cut off when it is there.
@@ -300,7 +356,12 @@ pub struct Core<const CL: usize, const EN: usize, const PR: usize> {
 
 impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
     pub const fn new() -> Self {
-        let mut proj = [Proj { used: false, slot: NO_SLOT, age: 0, sel: [[SEL0; TRACKS]; CL] }; PR];
+        let mut proj = [Proj {
+            used: false,
+            slot: NO_SLOT,
+            age: 0,
+            sel: [[SEL0; TRACKS]; CL],
+        }; PR];
         proj[0].used = true;
         Self {
             open: [false; CL],
@@ -320,7 +381,13 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         self.drops = self.drops.wrapping_add(1);
         let count = self.drops;
         if count <= 64 || count & 63 == 0 {
-            env.note(Note::Invalid { client, entry: e as u32, reason, token, count });
+            env.note(Note::Invalid {
+                client,
+                entry: e as u32,
+                reason,
+                token,
+                count,
+            });
         }
     }
 
@@ -449,7 +516,11 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         t.status = UNUSED;
         t.reload = false;
         t.ticks = 0;
-        t.phase = if t.bound.is_some() || t.loading.is_some() { Phase::Unbinding } else { Phase::Idle };
+        t.phase = if t.bound.is_some() || t.loading.is_some() {
+            Phase::Unbinding
+        } else {
+            Phase::Idle
+        };
         0
     }
 
@@ -476,9 +547,13 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
     /// tokens are distinct; never allow an earlier published generation through.
     pub fn peak_handle(&self, client: usize, track: usize, token: u32) -> Result<Handle, i32> {
         let info = self.info(client, track)?;
-        if info.token != token { return Err(E_NOT_FOUND); }
+        if info.token != token {
+            return Err(E_NOT_FOUND);
+        }
         let entry = self.tracks[client][track].bound.ok_or(E_NOT_FOUND)?;
-        if self.entries[entry].state != EState::Ready { return Err(E_NOT_FOUND); }
+        if self.entries[entry].state != EState::Ready {
+            return Err(E_NOT_FOUND);
+        }
         Ok(self.entries[entry].handle)
     }
 
@@ -502,7 +577,11 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         }
         for e in self.entries.iter_mut() {
             if e.state == EState::Loading && e.req == req {
-                e.state = if result == 0 { EState::Ready } else { EState::Failed(result) };
+                e.state = if result == 0 {
+                    EState::Ready
+                } else {
+                    EState::Failed(result)
+                };
                 return;
             }
         }
@@ -592,7 +671,12 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
                     }
                     best
                 });
-                self.proj[victim] = Proj { used: true, slot, age: 0, sel: [[SEL0; TRACKS]; CL] };
+                self.proj[victim] = Proj {
+                    used: true,
+                    slot,
+                    age: 0,
+                    sel: [[SEL0; TRACKS]; CL],
+                };
                 victim
             }
         };
@@ -617,7 +701,9 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
                 }
             }
             for k in 0..TRACKS {
-                if proj.sel[c][k].len == 0 && (self.tracks[c][k].status != UNUSED || self.tracks[c][k].bound.is_some()) {
+                if proj.sel[c][k].len == 0
+                    && (self.tracks[c][k].status != UNUSED || self.tracks[c][k].bound.is_some())
+                {
                     self.unbind_at(c, k);
                 }
             }
@@ -714,7 +800,12 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
             let t = &mut self.tracks[c][k];
             t.phase = Phase::Idle;
             t.closed = false;
-            t.published = Info { frames: 0, rate: 0, channels: 0, token: 0 };
+            t.published = Info {
+                frames: 0,
+                rate: 0,
+                channels: 0,
+                token: 0,
+            };
         }
     }
 
@@ -781,7 +872,11 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         t.closed = false;
         t.ticks = 0;
         // CLOSE the old generation now; other tracks are untouched.
-        t.phase = if t.bound.is_some() { Phase::Closing } else { Phase::Binding };
+        t.phase = if t.bound.is_some() {
+            Phase::Closing
+        } else {
+            Phase::Binding
+        };
         if t.phase == Phase::Closing {
             self.step(c, k, env);
         }
@@ -832,7 +927,15 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         let plen = self.tracks[c][k].plen;
         let mut path = [0u8; PATH];
         path[..plen].copy_from_slice(&self.tracks[c][k].path[..plen]);
-        self.entries[slot] = Entry { state: EState::Loading, refs: 1, id: info.id, pathkey, req, handle: Handle::default(), cancelled: false };
+        self.entries[slot] = Entry {
+            state: EState::Loading,
+            refs: 1,
+            id: info.id,
+            pathkey,
+            req,
+            handle: Handle::default(),
+            cancelled: false,
+        };
         let r = env.load(req, &info.id, &path[..plen], &mut self.entries[slot].handle);
         let reload = self.tracks[c][k].reload;
         match r {
@@ -860,7 +963,11 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
         let st = self.entries[e].state;
         if st == EState::Loading {
         } else if let EState::Failed(code) = st {
-            let code = if self.tracks[c][k].reload { E_LOST } else { code };
+            let code = if self.tracks[c][k].reload {
+                E_LOST
+            } else {
+                code
+            };
             self.fail(c, k, code, env);
         } else if st == EState::Dead {
             // Lost while loading: start the request again from the path.
@@ -873,7 +980,11 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
                 let plen = self.tracks[c][k].plen;
                 let mut path = [0u8; PATH];
                 path[..plen].copy_from_slice(&self.tracks[c][k].path[..plen]);
-                let snap = if self.tracks[c][k].reload { self.tracks[c][k].snap } else { self.tracks[c][k].pend.id };
+                let snap = if self.tracks[c][k].reload {
+                    self.tracks[c][k].snap
+                } else {
+                    self.tracks[c][k].pend.id
+                };
                 match env.stat(&path[..plen]) {
                     Ok(id) if id.same(&snap) => {}
                     _ => return self.fail(c, k, E_CHANGED, env),
@@ -897,7 +1008,13 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
                 return;
             }
             if self.tracks[c][k].fresh {
-                env.note(Note::Loaded { client: c as u32, entry: e as u32, frames: h.frames, base_l: h.base_l, token: h.token });
+                env.note(Note::Loaded {
+                    client: c as u32,
+                    entry: e as u32,
+                    frames: h.frames,
+                    base_l: h.base_l,
+                    token: h.token,
+                });
             }
             let Some(next) = self.next_token.checked_add(1) else {
                 return self.fail(c, k, E_NOMEM, env);
@@ -920,7 +1037,12 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
             t.bound = Some(e);
             t.snap = t.pend.id;
             t.token = token;
-            t.published = Info { frames: rec.frames, rate: rec.rate, channels: rec.channels, token };
+            t.published = Info {
+                frames: rec.frames,
+                rate: rec.rate,
+                channels: rec.channels,
+                token,
+            };
             t.phase = Phase::Publishing;
             t.ticks = 0;
             t.reload = false;
@@ -967,7 +1089,9 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
             }
         }
         self.tick(env);
-        let done = (0..TRACKS).all(|k| self.tracks[client][k].phase == Phase::Idle && self.tracks[client][k].bound.is_none());
+        let done = (0..TRACKS).all(|k| {
+            self.tracks[client][k].phase == Phase::Idle && self.tracks[client][k].bound.is_none()
+        });
         if done {
             self.open[client] = false;
             self.tracks[client] = [TRACK0; TRACKS];
@@ -980,10 +1104,15 @@ impl<const CL: usize, const EN: usize, const PR: usize> Core<CL, EN, PR> {
 
     /// Entries in use (for the UI and tests).
     pub fn entries_used(&self) -> usize {
-        self.entries.iter().filter(|e| e.state != EState::Free).count()
+        self.entries
+            .iter()
+            .filter(|e| e.state != EState::Free)
+            .count()
     }
     pub fn refs(&self, client: usize, track: usize) -> Option<u32> {
-        self.tracks[client][track].bound.map(|e| self.entries[e].refs)
+        self.tracks[client][track]
+            .bound
+            .map(|e| self.entries[e].refs)
     }
 }
 

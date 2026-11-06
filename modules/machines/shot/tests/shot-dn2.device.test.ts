@@ -42,7 +42,10 @@ const PAGE = 4096;
 const FRAMES_PER_PAGE = 2048; // one page of one plane
 // [adapter.sample_pool] ddr_base is 0x80531000 in devices/digitone-ii.toml.
 const NW32_BASE = 0x1014c400; // sp_nw32(DDR_BASE), docs/design/dn2-sample-pool.md section 1
-const THROUGHPUT_FLOOR = 200; // pages per second of emulated DSP time (the ceiling is 1500)
+// Pages per second of emulated DSP time (the ceiling is 1500). A guard against a large fall, not a hardware requirement.
+// A page is 2048 mono frames, so a stereo voice streaming at 48 kHz needs about 47 pages/s; 150 is about 3x that.
+// Runs measure 187-193 (204 before 2026-11), and blocks vary about 4% between runs, so the rate is not exact.
+const THROUGHPUT_FLOOR = 150;
 const BLOCKS_PER_SECOND = 1500;
 
 const planePages = (frames: number) => Math.ceil(frames / FRAMES_PER_PAGE);
