@@ -13,6 +13,7 @@ description = "Install the Python and web dependencies"
 # --- desktop emulator ---
 
 [workbench]
+alias = "wb"
 depends = ["module:pack-all", "wasm:patchkit"]
 run = "uv run python -m tools.emulator.native_emu"
 description = "Build once and run the desktop emulator (DN2 and DT2 audio when both local input sets are ready; DIGI_EMU_SECOND_CORE=0 selects one core); the digikit runtime is patched into a stock firmware unless `-- --no-runtime` (the header checkbox Boot with digikit runtime decides for Open and Reload); `-- --build-only` builds without launching. The +Drive is plus_drive/<device>/ when it exists (`-- --plus-drive DIR` picks another folder, `--samples DIR` is the same option; the firmware's changes are exported back to the folder on exit, `-- --no-sync` turns that off)"
@@ -59,10 +60,10 @@ description = "Check the browser core renders a scenario's PCM byte-identical to
 run = "cargo build -p dkmidi --release --offline --target-dir \"$(SHARC_GEN_DIR= uv run python -m tools.emulator.native_target dir)\""
 description = "Build the dkmidi MIDI bridge (the workbench's MIDI port code on stdin and stdout) into the nogen target dir, where tools/devtools/wb.mjs looks"
 
-[wb]
+["wb:cli"]
 depends = ["dkmidi:build"]
 run = "node tools/devtools/wb.mjs"
-description = "Workbench actions from the command line through the workbench's own code: mise run wb -- samples put FILE... --folder F | samples ls | info | ports"
+description = "Workbench actions from the command line through the workbench's own code: mise run wb:cli -- samples put FILE... --folder F | samples ls | info | ports"
 
 # --- scenarios (tests/scenarios/README.md) ---
 
