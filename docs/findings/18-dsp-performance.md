@@ -2118,3 +2118,11 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
 - The PGO training workload no longer checks pins. The gate `coupled_ready_exactness` reads its PCM expectation from
   tests/scenarios/dn2.json and no longer checks the DSP export hash, whose literal was stale since 2026-11-01 (the pre-
   and post-#291 builds give the same export).
+
+## Multiply-accumulate in the fast tier (2026-11-06)
+
+[D] After a soft reset DN2 runs a sample interpolation loop in FUN_1c44ae (hardware DO, about 64 iterations of 42 instructions, 1.5M AOT entries per audio second). The fast tier stopped at its first `MRF = Rx*Ry`, because kernels held no MR state. Kernels now hold MRF as three pseudo words and lower `MRF = Rx*Ry (SSF)`, `MRF = MRF + Rx*Ry (SSF)` and `Rn = SAT MRF (SF)`, SISD only; an MV result leaves the kernel. The DN2 fast root 0x1c451c then retires about 2,400 instructions per call. Plain build, DN2 post-reset, per audio second: 42.20G to 37.81G host instructions, 13.28M to 8.67M block entries, exact PCM and state. No change on DN2 first-boot or DT2.
+
+[D] Forms 16b and 14d and `Rn = mant Fx` also lower now. On their own they gave no gain (about +0.2 to +0.5% host instructions), and a static census of what they would unblock overestimated badly. A region that stops at a PC with no entry is now refused over a healthy AOT root: this kept the root above from raising interpreted work to 26M.
+
+[O] The next blocker is the add overflow guard `fixed_alu.rs:24` in loop 0x1c4b72 (about 27% of iterations). DN2 post-reset stays below real time.

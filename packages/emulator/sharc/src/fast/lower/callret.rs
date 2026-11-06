@@ -38,18 +38,25 @@ impl Lower {
     /// 16a: `DM(Ii, Mm) = imm32` with a post-modify of Ii by Mm. The `by` and
     /// `sl` variants and the PM space (g) are refused.
     pub fn form_16a(&mut self, d: &Dec) -> LR<()> {
-        if d.field("by") != Some(0) || d.field("sl") != Some(0) {
+        let is_16a = d.form == "16a";
+        if is_16a && (d.field("by") != Some(0) || d.field("sl") != Some(0)) {
             return refuse("16a by/sl");
         }
         if d.field("g") != Some(0) {
-            return refuse("16a in PM space");
+            return refuse("16a/16b in PM space");
         }
         if !self.env.assume_nw32 {
             return refuse("assume_nw32 off");
         }
         let i = d.field("i").ok_or(Refuse("16a i".into()))? as u32;
         let m = d.field("m").ok_or(Refuse("16a m".into()))? as u32;
-        let value = d.wide("data").ok_or(Refuse("16a data".into()))?;
+        // 16b has a 16-bit immediate, sign-extended to 32 bits.
+        let value = if is_16a {
+            d.wide("data").ok_or(Refuse("16a data".into()))?
+        } else {
+            let lo = d.get("data[15:0]").ok_or(Refuse("16b data".into()))?;
+            lo as u16 as i16 as i32 as u32
+        };
         let (ic, mc) = (16 + i, 32 + m);
         // A normal-word store of a constant with a post-modify: the ordinary
         // transfer, so an index register with no static range (I7, the

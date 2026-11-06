@@ -336,6 +336,8 @@ def test_fallback_configuration_reports_change_without_invalidating_profile(
 @pytest.fixture
 def both(tree, monkeypatch):
     """The tree with a second generated core and a manifest trained for device `both`."""
+    # The real shared out/ may hold a reset fixture; it must not change this workload.
+    monkeypatch.setattr(native_pgo, "RESET_FIXTURE_DIR", tree / "no-reset-fixture")
     (tree / "gen2").mkdir()
     (tree / "gen2/core.rs").write_text("dt2 core")
     state_both = tree / "state-both"

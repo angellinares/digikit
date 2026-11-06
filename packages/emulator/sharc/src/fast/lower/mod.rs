@@ -1770,7 +1770,7 @@ impl Lower {
             "7b" => self.form_7b(d)?,
             // The call and return sequence of the stack-model firmware, in
             // cluster kernels only.
-            "16a" => self.form_16a(d)?,
+            "16a" | "16b" => self.form_16a(d)?,
             "25c_rframe" => self.form_25c()?,
             other => return refuse(format!("form {other}")),
         }
@@ -1851,6 +1851,10 @@ impl Lower {
                 match c as u32 {
                     c if c < NREGS => pre.push(Inst::Def(li, Op::St32(st_reg_b(c)))),
                     PSEUDO_FB0 => pre.push(Inst::Def(li, Op::St32(st_reg_b(118)))),
+                    // MRF words: the glue puts them into the context.
+                    c if (PSEUDO_MR..PSEUDO_MR + 3).contains(&c) => {
+                        pre.push(Inst::Def(li, Op::Ctx32(ctx_reg_in(c))))
+                    }
                     // Not fully known ASTATX: the history is not tracked; bit 0
                     // marks "no compare has run" (a compare clears it).
                     PSEUDO_CACC if !self.env.cacc_known => pre.push(Inst::Def(li, Op::CI32(1))),
@@ -1894,6 +1898,18 @@ impl Lower {
                     }
                 }
             }
+        }
+        let mr_words = PSEUDO_MR as usize..PSEUDO_MR as usize + 3;
+        let mr = self.regs[mr_words.clone()].iter().any(|r| r.used);
+        let mr_written = self.regs[mr_words].iter().any(|r| r.written);
+        let has_helper = self
+            .body
+            .iter()
+            .any(|i| matches!(i, Inst::Def(_, Op::Helper(_))));
+        if mr && has_helper {
+            // A helper reads the engine state in the middle of the kernel,
+            // where MRF is stale.
+            return refuse("MRF in a kernel with a helper call");
         }
         let kernel = Kernel {
             vars: self.vars.clone(),
@@ -1943,6 +1959,9 @@ impl Lower {
         }
         if self.need_flags_known != 0 {
             reqs.push(Req::FlagsKnown(self.need_flags_known));
+        }
+        if mr {
+            reqs.push(Req::MrFull);
         }
         // Float rounding: TRUNCATE (bit 15) is part of every requirement (the
         // core models it only in `fix`, `falu_fix`; every other float op
@@ -1994,6 +2013,8 @@ impl Lower {
             flag_groups,
             cacc: self.has_compare,
             cacc_unknown,
+            mr,
+            mr_written,
             wins: self.wins,
             flags: self.flags,
             stored,
@@ -2014,6 +2035,9 @@ pub struct Lowered {
     pub cacc: bool,
     /// See `Region::cacc_unknown`.
     pub cacc_unknown: bool,
+    /// The kernel keeps MRF in `PSEUDO_MR` (`Req::MrFull`), and writes it.
+    pub mr: bool,
+    pub mr_written: bool,
     pub kernel: Kernel,
     pub regs: Vec<RegInfo>,
     pub reqs: Vec<Req>,
@@ -2098,7 +2122,7 @@ mod tests {
     }
 
     #[test]
-    fn type_14d_only_lowers_unsigned_short_loads_in_sisd() {
+    fn type_14d_lowers_byte_and_short_accesses_in_sisd() {
         // Each combination of d/ex/l/w/x, decoded through the real table.
         for bits in 0..32u64 {
             let raw = 0x1a00_0000_0000 | (bits << 36) | (6 << 32) | 0x25_590c;
@@ -2110,7 +2134,9 @@ mod tests {
                 let mut l = Lower::new(e, Plan::default(), 0);
                 assert_eq!(
                     l.lower_insn(0, &d).is_ok(),
-                    bits == 4 && !simd,
+                    // Bits: x=1, w=2, l=4, ex=8, d=16. Lowered: w=0, ex=0,
+                    // and no sign-extended store (d=1 with x=1).
+                    matches!(bits, 0 | 1 | 4 | 5 | 16 | 20) && !simd,
                     "opcode fields {bits:#07b}, SIMD {simd}"
                 );
             }
