@@ -3,7 +3,11 @@
 
 State lives under ``out/native/pgo/dn2/<host-triple>/`` (ignored by git):
 
-    manifest.json          what the current profile was trained from
+    manifest.json          what the profile of the last main-tree training was trained from
+    by-key/<key>.json      the same record per profile key; every training writes one, and a
+                           lane's training writes only this (``train --set-current`` also
+                           overwrites manifest.json). Readers use the by-key file of the
+                           tree's current key when there is one (status ok), else manifest.json.
     profiles/<sha>.profdata  merged profile, content addressed
     bench-<time>/          copied binaries, logs, bench.tsv, summary.json
 
@@ -108,7 +112,9 @@ BOTH_WORKLOAD_NAME = "both-v1"
 TEST_NAME = "desktop_runtime::coupled::tests::coupled_ready_exactness"
 WORKLOAD = "desktop-bin"
 EXPECTED_FRAMES = 1139
-TRAIN_RUNS = 4
+# The workload is deterministic: one pass gave host instruction counts within 0.03% of four
+# on dn2-reset, dn2 and dt2 (sharc_cells, 2026-11-07), so training runs it once.
+TRAIN_RUNS = 1
 FLAGS_TEMPLATE = "-Cprofile-use={profdata}"
 SKIP_DIRS = {"target", ".git", "node_modules"}
 SKIP_FILES = {".DS_Store"}
