@@ -344,8 +344,11 @@ without running it.
 
 All worktrees of a clone share one Cacheiro server on `127.0.0.1:47311`. Its state is in
 `<git common dir>/nx-remote-cache` (config with a read/write and a read-only token, mode 0600).
-`mise run test` and `test:full` write; `test:changed` reads. `tools/nx/remote-cache.mjs` starts the
-server on demand (`status` and `stop` subcommands) and sets the Nx variables only when it answers.
+`mise run test` and `test:full` write; `test:changed` reads. Plain `pnpm nx:pilot run ...` also reads (read-only
+token, `, remote read` on its stderr line) when the server already answers: it starts nothing, adds no write path and
+trusts exactly what `test:changed` trusts. `--skip-nx-cache` or `DIGI_NX_REMOTE=0` turns it off. `tools/nx/remote-cache.mjs`
+starts the server on demand for the gate (`status` and `stop` subcommands) and sets the Nx variables only when it answers.
+The store has a 14-day TTL swept daily and no size cap.
 
 Cached targets: module `test-device` and `test-conformance`. Inputs: the module and its graph deps,
 the outputs of the pack, CLI and daemon targets, the toolchain, the emulator env switches, the harness
