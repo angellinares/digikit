@@ -24,7 +24,7 @@ Status: backlog after the SHOT sampler (branch `sdk/dsp-sampler-discovery`), col
 
 10. **LP0 transport:** decide the SPI wire-size change (0xabc to 0xacc), then read back the reserved DDR range on hardware (canary probe module, 2 restarts), then add core/sample-pool to the DN2 `device` patch set.
 11. DN2 stereo is capped at 8 slots until one `tools/devtools/coupled_ab.py` A/B.
-12. The DN2 transport runs 204 pages/s in the emulator; the hardware rate is unknown.
+12. The DN2 transport runs 204 pages/s in the emulator; the hardware rate is unknown. The emulator now measures 187-193 pages/s and the test floor is 150; the cause of the fall from 204 is not found.
 13. `modules/machines/shot/tests/shot-dn2.device.test.ts` fails with "no reply from the device" during the upload stage under host load (seen before and after the main merge; passed on a rerun once).
 
 ## SDK
