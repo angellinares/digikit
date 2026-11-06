@@ -11,8 +11,8 @@
       "scenario": "trig1-hold",
       "scenarios_file": "tests/scenarios/dn2.json",
       "seconds": 3,
-      "max_interpreted_per_audio_s": 6000000,
-      "max_block_entries_per_audio_s": 17000000
+      "max_interpreted_per_audio_s": 4500000,
+      "max_block_entries_per_audio_s": 8000000
     }
   },
   "dt2": {
