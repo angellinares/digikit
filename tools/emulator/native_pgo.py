@@ -1133,6 +1133,21 @@ def require_inputs(gen: pathlib.Path) -> None:
             raise SystemExit(f"missing private input {path}")
 
 
+def fresh_raw_dir(target: pathlib.Path) -> pathlib.Path:
+    """An empty directory for the training's .profraw files, inside the instrumented target dir.
+
+    Its path is part of the instrumented build's RUSTFLAGS (``-Cprofile-generate=``), and
+    cargo rebuilds every crate, the 80 MB generated core included, when the flags change.
+    A path named by the profile key changed with every source edit; this one is stable per
+    target dir (a worktree has its own), so only the edited crates rebuild. It is cleared at
+    the start of each training so files of an earlier one never mix in.
+    """
+    raw = target / "profraw"
+    shutil.rmtree(raw, ignore_errors=True)
+    raw.mkdir(parents=True)
+    return raw
+
+
 def cmd_train(args: argparse.Namespace) -> None:
     gen = generated_dir()
     require_inputs(gen)
@@ -1157,11 +1172,10 @@ def cmd_train(args: argparse.Namespace) -> None:
     key = key_of(components)
     t = phase("key", t)
 
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
+    target = native_target().target_dir(gen, "pgo-instrument")
+    raw = fresh_raw_dir(target)
     binary = build_tests(
-        native_target().target_dir(gen, "pgo-instrument"),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1491,12 +1505,11 @@ def cmd_train_dt2(args: argparse.Namespace) -> None:
     components["workload"] = DT2_WORKLOAD_NAME
     hasher.save()
     key = key_of(components)
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
     variant = args.variant or "pgo-dt2-instrument"
+    target = native_target().target_dir(gen, variant)
+    raw = fresh_raw_dir(target)
     binary = build_coupled(
-        native_target().target_dir(gen, variant),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1767,12 +1780,11 @@ def cmd_train_both(args: argparse.Namespace) -> None:
     components["workload"] = both_workload_name(reset is not None)
     hasher.save()
     key = key_of(components)
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
     variant = args.variant or "pgo-both-instrument"
+    target = native_target().target_dir(gen, variant, gen2)
+    raw = fresh_raw_dir(target)
     binary = build_coupled(
-        native_target().target_dir(gen, variant, gen2),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
