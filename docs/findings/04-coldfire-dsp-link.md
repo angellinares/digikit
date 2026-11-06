@@ -3173,3 +3173,36 @@ from `0xda`. The per-track CFADE word on DN2 was not examined; a master-bus modu
 **Not done:** the per-track blocks of either device were not swept for unread words (machine-dependent reads); the
 audio-input words of the Fx block (`0x70a..0x71e` DT2) need a scenario with an input; DN2 Fx indices 70-100 not
 mapped; the hook itself reading a knob end to end needs the patched MAIN of Phase 3 (the poke is the same wire word).
+
+## DN2 1.11: a frame sent late in a narrow window was lost (2026-11-05) **[D][O]**
+
+Measured once on a DN2 unit on OS 1.11, with a 1.11 mod build with LFO 4. This has not been second-checked.
+
+**The send.** The vector-191 handler (`0x40025e36`) runs 1,500 times a second (0.667 ms). It sends the frame at `0x80005e60` through `FUN_400cf7be`. The send has no handshake with the DSP (read from the code). The note-on mask is frame byte 34 (`0x80005e82`). The note-off mask is frame byte 36 (`0x80005e84`).
+
+**The log.** A USB probe logger read three things:
+
+- the time of each send
+- the masks of each send
+- the DSP's totals of the masks it applied
+
+"Gap" below is the time from the previous send to this send. A gap above 0.667 ms means the handler ran late.
+
+**What was measured:**
+
+| run | pattern | handler peak | late sends | lost | gaps of the lost sends | gaps of the kept sends |
+|---|---|---|---|---|---|---|
+| A | stock machine (type 3) | 117.7 % | 65 | 24 | 0.739 to 0.772 ms | 0.710 to 0.739 ms (37), 0.773 to 0.788 ms (4) |
+| B | a second pattern | 111.2 % | 13 | 3 | 0.742 to 0.745 ms | 0.718 to 0.732 ms (10) |
+| control | as A, the same build without LFO 4 | 97.3 % | 0 | 0 | none | none |
+
+- "Lost" means that the DSP's totals did not rise by the masks of that send. So the DSP did not apply its note-on or note-off.
+- So a frame sent in this window was lost: a gap of about 0.739 to 0.772 ms, about 0.034 ms wide. Frames sent before the window and after it arrived. At 0.739 ms, 2 frames arrived and 1 was lost.
+- A lost note-off leaves the voice sounding. In run A the owner saw a note that kept sounding after STOP.
+- In the control, the handler never ran late, and no frame was lost.
+
+**Open.**
+
+- Every lost frame was on a mod build. The mods made the handler run late. The send itself is stock code. The case on pure stock is untested: no run logged the masks on a stock build.
+- The cause is a guess. The DSP receives the frame in a ring at `0x2c29d0` or `0x2c39d0` (section "DN2 1.11 TX frame" above). A send in the window may collide with the DSP's change between the two pages. This was not measured.
+- The window was measured on one unit and two patterns only.
