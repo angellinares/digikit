@@ -3,7 +3,11 @@
 
 State lives under ``out/native/pgo/dn2/<host-triple>/`` (ignored by git):
 
-    manifest.json          what the current profile was trained from
+    manifest.json          what the profile of the last main-tree training was trained from
+    by-key/<key>.json      the same record per profile key; every training writes one, and a
+                           lane's training writes only this (``train --set-current`` also
+                           overwrites manifest.json). Readers use the by-key file of the
+                           tree's current key when there is one (status ok), else manifest.json.
     profiles/<sha>.profdata  merged profile, content addressed
     bench-<time>/          copied binaries, logs, bench.tsv, summary.json
 
@@ -108,7 +112,9 @@ BOTH_WORKLOAD_NAME = "both-v1"
 TEST_NAME = "desktop_runtime::coupled::tests::coupled_ready_exactness"
 WORKLOAD = "desktop-bin"
 EXPECTED_FRAMES = 1139
-TRAIN_RUNS = 4
+# The workload is deterministic: one pass gave host instruction counts within 0.03% of four
+# on dn2-reset, dn2 and dt2 (sharc_cells, 2026-11-07), so training runs it once.
+TRAIN_RUNS = 1
 FLAGS_TEMPLATE = "-Cprofile-use={profdata}"
 SKIP_DIRS = {"target", ".git", "node_modules"}
 SKIP_FILES = {".DS_Store"}
@@ -418,10 +424,58 @@ def device_state(device: str = "dn2") -> pathlib.Path:
 
 
 def read_manifest(device: str = "dn2") -> dict[str, object] | None:
+    """The shared ``manifest.json`` of a device: the profile of the last main-tree trainer."""
     try:
         return json.loads((device_state(device) / "manifest.json").read_text())
     except (OSError, ValueError):
         return None
+
+
+def by_key_dir(device: str = "dn2") -> pathlib.Path:
+    return device_state(device) / "by-key"
+
+
+def read_by_key(device: str, key: str) -> dict[str, object] | None:
+    """The manifest of the profile trained for exactly KEY, or None."""
+    try:
+        return json.loads((by_key_dir(device) / f"{key}.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def write_json_atomic(path: pathlib.Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def in_linked_worktree() -> bool:
+    """True in a linked git worktree (a lane), as native_target decides it."""
+    return bool(native_target().IS_WORKTREE)
+
+
+def save_manifest(
+    device: str, manifest: dict[str, object], set_current: bool = False
+) -> None:
+    """Record a trained profile: always ``by-key/<key>.json``, and ``manifest.json``
+    from the main tree or with SET_CURRENT.
+
+    ``manifest.json`` is one file per device that every worktree reads, so a lane
+    that trained must not take it over silently. Its profile stays reachable: any
+    tree whose current key equals the trained key finds it in by-key (see :func:`resolve`).
+    """
+    state = device_state(device)
+    key = str(manifest["key"])
+    write_json_atomic(by_key_dir(device) / f"{key}.json", manifest)
+    if set_current or not in_linked_worktree():
+        write_json_atomic(state / "manifest.json", manifest)
+        print(f"wrote by-key/{key[:16]}.json and manifest.json")
+    else:
+        print(
+            f"linked worktree: wrote by-key/{key[:16]}.json only; manifest.json "
+            "is unchanged (--set-current overwrites it)"
+        )
 
 
 def profdata_path(manifest: dict[str, object], device: str = "dn2") -> pathlib.Path:
@@ -436,9 +490,14 @@ def profdata_path(manifest: dict[str, object], device: str = "dn2") -> pathlib.P
     return local if local.is_file() else path
 
 
-def current_profile(device: str = "dn2") -> str | None:
-    """The manifest's profile file if it still exists (even when stale)."""
-    manifest = read_manifest(device)
+def current_profile(
+    device: str = "dn2",
+    gen: pathlib.Path | None = None,
+    gen2: pathlib.Path | None = None,
+) -> str | None:
+    """The profile file for this tree (exact by-key match, else the shared manifest's, even
+    when stale), or None."""
+    manifest = resolve(device, gen, gen2).manifest
     if not manifest:
         return None
     path = profdata_path(manifest, device)
@@ -448,6 +507,93 @@ def current_profile(device: str = "dn2") -> str | None:
 def desktop_digest(hasher: FileHasher) -> str:
     """Digest of the desktop crate: recorded for reporting, not part of the key."""
     return tree_digest(hasher, ROOT / DESKTOP_DIR, ROOT, set())[0]
+
+
+@dataclasses.dataclass
+class Resolved:
+    """The profile chosen for this tree: its manifest (None when missing) and how well it fits."""
+
+    manifest: dict[str, object] | None
+    status: str  # ok, partial, stale or missing
+    detail: str
+    desktop_changed: bool = False
+
+
+def resolve(
+    device: str = "dn2",
+    gen: pathlib.Path | None = None,
+    gen2: pathlib.Path | None = None,
+    fast: str = "",
+    blocktrans: str = "",
+) -> Resolved:
+    """Choose the profile of DEVICE for this tree.
+
+    1. Compute the current key. The package list comes from the shared manifest
+       (no extra metadata call). If ``by-key/<key>.json`` exists and its profile
+       file is there, that is an exact match: ``ok``. A key covers every input
+       listed in compute_components, so an exact match cannot be stale. It does not
+       cover the fixtures' content (only the workload name), the fast-region lists
+       or the apps/ crates; a profile trained on other fixtures or lists is at worst
+       slightly less tuned, never wrong (LLVM drops counters of changed functions).
+    2. Otherwise the shared manifest decides as before: ok, partial (only the
+       sources digest differs) or stale. If the package list itself changed (a
+       crate added or removed), the computed key matches no by-key file and the
+       shared manifest answers; that is safe, it only loses the exact match.
+
+    DEVICE selects the profile (``train --device``); a DT2 profile's key also
+    carries the DT2 workload name. For ``both``, GEN is the DN2 core (slot 1) and
+    GEN2 the DT2 core (slot 2); they default to the registered cores.
+    """
+    manifest = read_manifest(device)
+    if manifest is None:
+        return Resolved(None, "missing", "no manifest")
+    if not toolchain_dir().is_dir():
+        profdata = profdata_path(manifest, device)
+        if not profdata.is_file():
+            return Resolved(None, "missing", f"profile file {profdata} is gone")
+        return Resolved(
+            manifest, "stale", f"rustup toolchain {TOOLCHAIN} is not installed"
+        )
+    hasher = FileHasher(device_state(device) / "hash-cache.json")
+    if device == BOTH:
+        default1, default2 = both_generated()
+        gen, gen2 = gen or default1, gen2 or default2
+    gen = gen or generated_dir()
+    components, _ = compute_components(
+        list(manifest["packages"]),  # type: ignore[call-overload]
+        gen,
+        hasher,
+        fast,
+        blocktrans,
+        gen2 if device == BOTH else None,
+    )
+    if device == "dt2":
+        components["workload"] = DT2_WORKLOAD_NAME
+    if device == BOTH:
+        components["workload"] = both_workload_name(reset_fixture_present())
+    desktop = desktop_digest(hasher)
+    hasher.save()
+    exact = read_by_key(device, key_of(components))
+    if exact is not None and profdata_path(exact, device).is_file():
+        return Resolved(
+            exact,
+            "ok",
+            str(profdata_path(exact, device)),
+            exact.get("desktop_sha256") != desktop,
+        )
+    profdata = profdata_path(manifest, device)
+    if not profdata.is_file():
+        return Resolved(None, "missing", f"profile file {profdata} is gone")
+    old = manifest["components"]
+    changed = [name for name, value in components.items() if old.get(name) != value]  # type: ignore[attr-defined]
+    if changed == ["sources"]:
+        # Engine or tool edits only: LLVM skips profile data of changed functions.
+        return Resolved(manifest, "partial", "changed: sources")
+    if changed:
+        return Resolved(manifest, "stale", "changed: " + ", ".join(changed))
+    return Resolved(
+        manifest, "ok", str(profdata), manifest.get("desktop_sha256") != desktop
+    )
 
 
 def check_state(
@@ -461,45 +607,10 @@ def check_state(
 
     partial: only the sources digest differs (the profile is still used);
     stale: the rustc or generated core (or any other component) differs.
-
-    DEVICE selects the profile (``train --device``); a DT2 profile's key also
-    carries the DT2 workload name. For ``both``, GEN is the DN2 core (slot 1) and
-    GEN2 the DT2 core (slot 2); they default to the registered cores.
+    See :func:`resolve` for the exact by-key match.
     """
-    manifest = read_manifest(device)
-    if manifest is None:
-        return "missing", "no manifest", False
-    profdata = profdata_path(manifest, device)
-    if not profdata.is_file():
-        return "missing", f"profile file {profdata} is gone", False
-    if not toolchain_dir().is_dir():
-        return "stale", f"rustup toolchain {TOOLCHAIN} is not installed", False
-    hasher = FileHasher(device_state(device) / "hash-cache.json")
-    if device == BOTH:
-        default1, default2 = both_generated()
-        gen, gen2 = gen or default1, gen2 or default2
-    components, _ = compute_components(
-        list(manifest["packages"]),
-        gen or generated_dir(),
-        hasher,
-        fast,
-        blocktrans,
-        gen2 if device == BOTH else None,
-    )  # type: ignore[call-overload]
-    if device == "dt2":
-        components["workload"] = DT2_WORKLOAD_NAME
-    if device == BOTH:
-        components["workload"] = both_workload_name(reset_fixture_present())
-    desktop = desktop_digest(hasher)
-    hasher.save()
-    old = manifest["components"]
-    changed = [name for name, value in components.items() if old.get(name) != value]  # type: ignore[attr-defined]
-    if changed == ["sources"]:
-        # Engine or tool edits only: LLVM skips profile data of changed functions.
-        return "partial", "changed: sources", False
-    if changed:
-        return "stale", "changed: " + ", ".join(changed), False
-    return "ok", str(profdata), manifest.get("desktop_sha256") != desktop
+    r = resolve(device, gen, gen2, fast, blocktrans)
+    return r.status, r.detail, r.desktop_changed
 
 
 def check(
@@ -603,16 +714,18 @@ def profile_for_tests(
     environ = os.environ if environ is None else environ
     if environ.get("DIGI_EMU_PGO") == "0" or not supported_host():
         return None, "off", ""
-    status, detail = check(
+    r = resolve(
+        device,
         gen,
+        None,
         environ.get("SHARC_FAST_REGIONS", ""),
         environ.get("SHARC_BLOCKTRANS", ""),
-        device,
     )
-    if status == "ok":
-        return current_profile(device), status, ""
-    if status == "partial":
-        return current_profile(device), status, PARTIAL_NOTICE
+    status, detail = r.status, r.detail
+    if status in ("ok", "partial"):
+        path = profdata_path(r.manifest, device) if r.manifest else None  # type: ignore[arg-type]
+        profile = str(path) if path and path.is_file() else None
+        return profile, status, PARTIAL_NOTICE if status == "partial" else ""
     return (
         None,
         status,
@@ -714,7 +827,11 @@ def launch_plan(
     if status == "stale":
         return None, stale_notice(detail, device)
     if status == "partial":
-        profile = current_profile(device)
+        profile = current_profile(
+            device,
+            generated_dir(environ),
+            second_generated(environ) if device == BOTH else None,
+        )
         if profile:
             return plan_for(profile, environ), PARTIAL_NOTICE
         return None, fallback_notice("missing", "profile file is gone", device)
@@ -1022,6 +1139,21 @@ def require_inputs(gen: pathlib.Path) -> None:
             raise SystemExit(f"missing private input {path}")
 
 
+def fresh_raw_dir(target: pathlib.Path) -> pathlib.Path:
+    """An empty directory for the training's .profraw files, inside the instrumented target dir.
+
+    Its path is part of the instrumented build's RUSTFLAGS (``-Cprofile-generate=``), and
+    cargo rebuilds every crate, the 80 MB generated core included, when the flags change.
+    A path named by the profile key changed with every source edit; this one is stable per
+    target dir (a worktree has its own), so only the edited crates rebuild. It is cleared at
+    the start of each training so files of an earlier one never mix in.
+    """
+    raw = target / "profraw"
+    shutil.rmtree(raw, ignore_errors=True)
+    raw.mkdir(parents=True)
+    return raw
+
+
 def cmd_train(args: argparse.Namespace) -> None:
     gen = generated_dir()
     require_inputs(gen)
@@ -1046,11 +1178,10 @@ def cmd_train(args: argparse.Namespace) -> None:
     key = key_of(components)
     t = phase("key", t)
 
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
+    target = native_target().target_dir(gen, "pgo-instrument")
+    raw = fresh_raw_dir(target)
     binary = build_tests(
-        native_target().target_dir(gen, "pgo-instrument"),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1122,7 +1253,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         "phase_seconds": timings,
         "created": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    (state / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    save_manifest("dn2", manifest, args.set_current)
     print(
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} in {time.monotonic() - started:.1f} s"
     )
@@ -1130,8 +1261,9 @@ def cmd_train(args: argparse.Namespace) -> None:
 
 def cmd_check(_: argparse.Namespace) -> int:
     began = time.monotonic()
-    status, detail, desktop = check_state(None, fast_regions(), blocktrans_roots())
-    manifest = read_manifest() or {}
+    r = resolve("dn2", None, None, fast_regions(), blocktrans_roots())
+    status, detail, desktop = r.status, r.detail, r.desktop_changed
+    manifest = r.manifest or {}
     fast_changed = status == "ok" and (
         manifest.get("fast_regions", "") != fast_regions()
         or manifest.get("fallback_regions", "") != fallback_regions()
@@ -1153,11 +1285,6 @@ def cmd_check(_: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    manifest = read_manifest(args.device)
-    profdata = profdata_path(manifest, args.device) if manifest else None
-    if profdata is None or not profdata.is_file():
-        print("no trained profile to verify against")
-        return 1
     environ = os.environ
     if args.device == BOTH:
         gen, gen2 = both_generated()
@@ -1166,6 +1293,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
             "SHARC_GEN_DIR": str(gen),
             "SHARC_GEN_DIR_2": str(gen2),
         }
+    profile = current_profile(args.device)
+    profdata = pathlib.Path(profile) if profile else None
+    if profdata is None:
+        print("no trained profile to verify against")
+        return 1
     binary = pathlib.Path(args.binary) if args.binary else pgo_binary(environ)
     if not binary.is_file():
         print(f"no binary at {binary}")
@@ -1379,12 +1511,11 @@ def cmd_train_dt2(args: argparse.Namespace) -> None:
     components["workload"] = DT2_WORKLOAD_NAME
     hasher.save()
     key = key_of(components)
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
     variant = args.variant or "pgo-dt2-instrument"
+    target = native_target().target_dir(gen, variant)
+    raw = fresh_raw_dir(target)
     binary = build_coupled(
-        native_target().target_dir(gen, variant),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1442,7 +1573,7 @@ def cmd_train_dt2(args: argparse.Namespace) -> None:
         "run_seconds": seconds,
         "created": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    (state / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    save_manifest("dt2", manifest, args.set_current)
     print(
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} "
         f"in {time.monotonic() - started:.1f} s"
@@ -1450,26 +1581,15 @@ def cmd_train_dt2(args: argparse.Namespace) -> None:
 
 
 def cmd_check_dt2() -> int:
-    manifest = read_manifest("dt2")
-    if manifest is None:
-        print("missing (no manifest)")
+    r = resolve("dt2", dt2_generated())
+    if r.status == "missing":
+        print(f"missing ({r.detail})")
         return 1
-    profdata = profdata_path(manifest, "dt2")
-    if not profdata.is_file():
-        print(f"missing (profile file {profdata} is gone)")
-        return 1
-    hasher = FileHasher(state_dir(device="dt2") / "hash-cache.json")
-    components, _ = compute_components(
-        list(manifest["packages"]),  # type: ignore[call-overload]
-        dt2_generated(),
-        hasher,
-    )
-    components["workload"] = DT2_WORKLOAD_NAME
-    hasher.save()
-    old = manifest["components"]
-    changed = [n for n, v in components.items() if old.get(n) != v]  # type: ignore[attr-defined]
-    print(f"stale changed: {', '.join(changed)}" if changed else f"ok {profdata}")
-    return 1 if changed else 0
+    if r.status == "ok":
+        print(f"ok {r.detail}")
+        return 0
+    print(f"stale {r.detail}" if r.status == "stale" else f"{r.status} {r.detail}")
+    return 1
 
 
 # --- both: the two-core build, instrumented coupled-run -------------------------
@@ -1666,12 +1786,11 @@ def cmd_train_both(args: argparse.Namespace) -> None:
     components["workload"] = both_workload_name(reset is not None)
     hasher.save()
     key = key_of(components)
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
     variant = args.variant or "pgo-both-instrument"
+    target = native_target().target_dir(gen, variant, gen2)
+    raw = fresh_raw_dir(target)
     binary = build_coupled(
-        native_target().target_dir(gen, variant, gen2),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1742,7 +1861,7 @@ def cmd_train_both(args: argparse.Namespace) -> None:
         "run_seconds": seconds,
         "created": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    (state / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    save_manifest(BOTH, manifest, args.set_current)
     print(
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} "
         f"in {time.monotonic() - started:.1f} s"
@@ -1775,10 +1894,9 @@ def cmd_coupled_build(args: argparse.Namespace) -> None:
     flags = None
     profile = args.profile
     if profile == "current":
-        manifest = read_manifest(args.device)
-        if manifest is None:
-            raise SystemExit(f"no {args.device} manifest")
-        profile = str(profdata_path(manifest, args.device))
+        profile = current_profile(args.device, gen, gen2)
+        if profile is None:
+            raise SystemExit(f"no {args.device} profile")
     if profile:
         profile = str(pathlib.Path(profile).resolve())
         flags = profile_use_flags(profile)
@@ -2030,6 +2148,11 @@ def main(argv: list[str] | None = None) -> int:
         "train", help="build instrumented, run the workload, merge a profile"
     )
     train.add_argument("--runs", type=int, default=TRAIN_RUNS)
+    train.add_argument(
+        "--set-current",
+        action="store_true",
+        help="from a linked worktree: also overwrite the shared manifest.json (default: by-key only)",
+    )
     train.add_argument("--device", choices=["dn2", "dt2", BOTH], default="dn2")
     train.add_argument(
         "--variant", help="dt2, both: target-dir variant of the instrumented build"
