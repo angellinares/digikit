@@ -223,6 +223,35 @@ To compare a patched build with stock, run the same scenario and spans on both w
 On stock DN2 1.11 with `kb-chord16` the `evala` passes also show a stock job every 1,000 frames: +416 to +528 instructions,
 in a cycle of four.
 
+### Gate against stock
+
+`--span-baseline STOCK.json` gates each scenario's spans against an earlier stock report. A span fails when its `p50` or its
+`max` is more than its limit above stock. The limit is 1,000 instructions per frame. `--span-max NAME=N` (repeatable) sets
+another limit for one span. The result is `gates.span_gate` in each scenario's report. A failure fails the run (exit 2), and
+the console shows one line per span.
+
+1. Run stock once with the scenarios and spans. Keep its report:
+
+   ```text
+   coupled-run --syx Digitone_II_OS1.11.syx --dsp zero --cold-base 2af43e65… \
+     --scenario idle --scenario kb-chord16 --scenario dn2-rec-play \
+     --span isr=0x40025e36:0x40027bc6 --span evala=0x400272d4:0x400272da --out stock-111.json
+   ```
+
+2. Run the patched build with the same options and `--span-baseline stock-111.json`.
+
+The gate fails, and does not pass in silence, when it cannot compare the two reports:
+
+- the stock report has no scenario or no span of the same name
+- the span PCs or the period are different
+- the DSP mode is different
+- the two scenario lengths are more than one period apart
+
+Two builds can end the same scenario a few instructions apart, so the gate accepts a difference of up to one period.
+
+The gate compares instruction counts, not cycles. A limit in instructions is a first step. The limit can change when a
+measurement in cycles is available.
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one

@@ -43,6 +43,11 @@
 //! scratch stack 1 KiB below the guest's). ARG is a number, or `*ADDR+OFF`: the long at ADDR,
 //! read at the call, plus OFF. The report lists each call's arguments, D0 and instructions.
 //!
+//! `--span-baseline STOCK.json` gates each scenario's spans against the same scenario and spans
+//! in an earlier stock report (`--out` of a stock run with the same options). A span fails when
+//! its `p50` or its `max` is more than its limit above stock: `--span-max NAME=N` (repeatable),
+//! else 1,000 instructions. The result is `gates.span_gate`, and a failure fails the run (exit 2).
+//!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
 //! min, mean, p50, p99, max and `over_period`, a period being one DSPI2 frame at `DIGI_CF_IPS`). On
@@ -75,6 +80,7 @@ use digi_coupled::{
         DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When, cf_instructions_per_second,
         find_scenario, fire, parse_scenario, parse_scenarios,
     },
+    span_gate::{self, Limits},
 };
 #[cfg(feature = "region-profile")]
 use digi_coupled::{RegionCost, RegionProfile};
@@ -126,6 +132,10 @@ struct Args {
     calls: Vec<(u32, Vec<CallArg>)>,
     /// `--span-log PATH`: every span pass as a JSON line, `-<scenario>` before the extension.
     span_log: Option<PathBuf>,
+    /// `--span-baseline STOCK.json`: the stock report the spans are gated against.
+    span_baseline: Option<Value>,
+    /// `--span-max NAME=N`: the extra instructions over stock a span may add.
+    span_limits: Limits,
     /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
@@ -385,6 +395,8 @@ fn parse_args() -> Result<Args, String> {
         cold_base: None,
         calls: Vec::new(),
         span_log: None,
+        span_baseline: None,
+        span_limits: Limits::default(),
         zero: false,
         trace: false,
         guard: None,
@@ -423,6 +435,16 @@ fn parse_args() -> Result<Args, String> {
             "--cold-base" => a.cold_base = Some(value("--cold-base")?),
             "--call" => a.calls.push(parse_call(&value("--call")?)?),
             "--span-log" => a.span_log = Some(value("--span-log")?.into()),
+            "--span-baseline" => {
+                let path = value("--span-baseline")?;
+                let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+                a.span_baseline =
+                    Some(serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?);
+            }
+            "--span-max" => a
+                .span_limits
+                .per_span
+                .push(span_gate::parse_limit(&value("--span-max")?)?),
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
@@ -445,6 +467,12 @@ fn parse_args() -> Result<Args, String> {
             }
             other => return Err(format!("unknown option {other}")),
         }
+    }
+    if a.span_baseline.is_some() && a.spans.is_empty() {
+        return Err("--span-baseline needs at least one --span".into());
+    }
+    if !a.span_limits.per_span.is_empty() && a.span_baseline.is_none() {
+        return Err("--span-max needs --span-baseline".into());
     }
     if a.zero {
         if a.playback || a.profile_regions || a.profile_execution {
@@ -1283,8 +1311,18 @@ fn real_main() -> Result<bool, String> {
                 base.to_path_buf()
             }
         });
-        let r = run_scenario(&args, &syx, sc, wav.as_deref())?;
+        let mut r = run_scenario(&args, &syx, sc, wav.as_deref())?;
+        if let Some(stock) = &args.span_baseline {
+            let dsp = if args.zero { "zero" } else { "sharc" };
+            let gate = span_gate::check(&r, dsp, stock, &args.span_limits);
+            let ok = r["gates"]["ok"] == true && gate["ok"] == true;
+            r["gates"]["span_gate"] = gate;
+            r["gates"]["ok"] = json!(ok);
+        }
         println!("{}", summary_line(&r));
+        for line in span_gate::summary(&r["gates"]["span_gate"]) {
+            println!("{line}");
+        }
         results.push(r);
     }
     let ok = results.iter().all(|r| r["gates"]["ok"] == true);

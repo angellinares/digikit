@@ -23,6 +23,7 @@ pub mod cold;
 #[cfg(feature = "coupled-audio")]
 pub mod dsp_core;
 pub mod scenario;
+pub mod span_gate;
 /// Most inputs kept for replay.
 const INPUT_LOG_LIMIT: usize = 100_000;
 /// Sink events kept in the periodic UI status report.
