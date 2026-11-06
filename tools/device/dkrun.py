@@ -140,7 +140,11 @@ def restart_and_wait(
         wait_boot()
     old = up
     up = wait_new_boot(
-        connect or (lambda: old), sleep, now=now, connect_closes=connect is not None
+        connect or (lambda: old),
+        sleep,
+        now=now,
+        connect_closes=connect is not None,
+        booted=wait_boot is not None,
     )
     if connect is not None:
         _close(old)
@@ -188,11 +192,16 @@ def wait_new_boot(
     timeout_s: float = 90.0,
     now: Callable[[], float] = time.monotonic,
     connect_closes: bool = True,
+    booted: bool = False,
 ) -> D.Uploader:
-    """Poll until the log of the device is the log of a new boot (the debug module, which `run` selects, provides it; an INFO without the LOG capability is the old boot). The port may vanish and return (USB re-enumerates): every failure is
-    a reason to wait and connect again."""
+    """Poll until the device has booted again. With the debug module (which `run` selects) the log tells a new boot from the old one.
+    Without it there is no log (INFO has no LOG capability), so the device counts as booted when it answers again after a failed read
+    (the port is silent while it resets), or when the caller already stepped past the reset (`booted`). The TypeScript `waitForBoot`
+    (packages/dk-session/src/dkupload-core.ts) uses the same rule. The port may vanish and return (USB re-enumerates): every failure
+    is a reason to wait and connect again."""
     end = now() + timeout_s
     last: Exception | None = None
+    silent = False
     while now() < end:
         up = None
         try:
@@ -202,8 +211,11 @@ def wait_new_boot(
                 _, _, evs = L.read_all(up)
                 if restarted(evs):
                     return up
+            elif silent or booted:
+                return up
         except (TimeoutError, OSError, SystemExit, D.UploadError) as e:
             last = e
+            silent = True
         if connect_closes:
             _close(up)
         sleep(0.5)
