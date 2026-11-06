@@ -252,6 +252,8 @@ pub struct Emulator {
     observed_outside_main: bool,
     /// Host-requested PC hit counters (`probe_pcs`), for headless diagnosis.
     probe_hits: BTreeMap<u32, u64>,
+    /// Host-requested instruction spans between two PCs (`add_span`).
+    spans: crate::spans::Spans,
     /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
     irq1_pending: bool,
     /// A CPU exception runs the guest's handler instead of stopping the run with an error (the digikit runtime's crash capture,
@@ -614,6 +616,7 @@ impl Emulator {
             observed_pcs: Vec::new(),
             observed_outside_main: false,
             probe_hits: BTreeMap::new(),
+            spans: crate::spans::Spans::default(),
             irq1_pending: false,
             deliver_exceptions: false,
             probe_rets: BTreeMap::new(),
@@ -814,6 +817,23 @@ impl Emulator {
             self.probe_hits.entry(pc).or_insert(0);
         }
         self.rebuild_watch();
+    }
+
+    /// Record the instructions from `entry` to `exit` on each pass, and between two entries
+    /// (diagnostics; reads no guest state and changes no behaviour). See `spans.rs`.
+    pub fn add_span(&mut self, name: &str, entry: u32, exit: u32) {
+        self.spans.add(name, entry, exit);
+        self.rebuild_watch();
+    }
+
+    /// Forget the passes recorded so far.
+    pub fn clear_spans(&mut self) {
+        self.spans.clear();
+    }
+
+    /// The spans' statistics; `period` is one handler period in instructions.
+    pub fn spans_report(&self, period: u64) -> serde_json::Value {
+        self.spans.report(period)
     }
 
     /// ((pc, word at the stack top), (hits, last icount)).
@@ -1636,6 +1656,7 @@ impl Emulator {
         ]);
         pcs.extend(self.softfloat.entries());
         pcs.extend(self.probe_hits.keys().copied());
+        pcs.extend(self.spans.pcs());
         if self.midi.usb.enabled {
             pcs.extend(
                 [self.midi.usb.tx_fn, self.midi.usb.ret_pc]
@@ -2205,6 +2226,9 @@ impl Emulator {
     fn observe_marks(&mut self, pc: u32) {
         if self.midi.usb.enabled {
             self.observe_usb(pc);
+        }
+        if !self.spans.is_empty() {
+            self.spans.observe(pc, self.cpu.icount);
         }
         if let Some(hits) = self.probe_hits.get_mut(&pc) {
             *hits += 1;
