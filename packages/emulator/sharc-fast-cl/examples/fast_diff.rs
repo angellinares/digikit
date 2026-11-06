@@ -395,8 +395,10 @@ enum Check {
     /// fit 64 signed bits sets MV, which leaves the kernel.
     MrMul(u32, u32),
     MrMac(u32, u32),
-    /// Fixed-point add, subtract, increment, decrement, negate, abs: an overflow
-    /// leaves the kernel (the interpreter latches AOS and saturates with ALUSAT).
+    /// Fixed-point add, subtract, increment, decrement, negate, abs: an add,
+    /// subtract, increment, decrement or negate overflow leaves the kernel only
+    /// when built with ALUSAT set; abs always does (the interpreter latches AOS
+    /// and saturates with ALUSAT).
     IAdd(u32, u32),
     ISub(u32, u32),
     IInc(u32),
@@ -1202,6 +1204,9 @@ fn rand_int(r: &mut Rng) -> u32 {
 /// ASTATX bits) unknown, so the unknown-CACC kernel variants are exercised.
 static ASTAT_MIX: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static KNOWN_FLAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// `forms` only: STKYX.AOS may also start unknown. The `cfg` mode keeps it
+/// known: a fully unknown STKYX differs in bit 26 between the tiers.
+static STKY_UNKNOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Mostly ordinary float values (long kernel runs), a few special ones.
 static CALM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// `--circ`: the circular-buffer configuration of `randomise` (below).
@@ -1324,6 +1329,28 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
         m
     };
     s.r[118] = V { b: r.u32() & m, m };
+    // STKYX.AOS clear or set, and in `forms` also unknown: the kernel's latch is
+    // compared in each.
+    let arms = if STKY_UNKNOWN.load(std::sync::atomic::Ordering::Relaxed) {
+        3
+    } else {
+        2
+    };
+    let stky = s.r[120];
+    s.r[120] = match r.below(arms) {
+        0 => V {
+            b: stky.b & !4,
+            m: stky.m | 4,
+        },
+        1 => V {
+            b: stky.b | 4,
+            m: stky.m | 4,
+        },
+        _ => V {
+            b: stky.b & !4,
+            m: stky.m & !4,
+        },
+    };
     // Data window contents: floats and ints.
     for k in 0..DATA_LEN / 4 {
         let w = if calm && !r.chance(24) {
@@ -1370,7 +1397,7 @@ fn reg(s: &St, code: u32) -> i32 {
     s.r[code as usize].b as i32
 }
 
-fn expect_special(c: Check, s: &St) -> bool {
+fn expect_special(c: Check, s: &St, built_alusat: bool) -> bool {
     let f = |code: u32| f32::from_bits(s.r[code as usize].b);
     let dn = |code: u32| is_denormal(s.r[code as usize].b);
     match c {
@@ -1386,12 +1413,12 @@ fn expect_special(c: Check, s: &St) -> bool {
         }
         Check::IAdd(x, y) => {
             let r = reg(s, x).checked_add(reg(s, y));
-            r.is_none()
+            built_alusat && r.is_none()
         }
-        Check::ISub(x, y) => reg(s, x).checked_sub(reg(s, y)).is_none(),
-        Check::IInc(x) => reg(s, x).checked_add(1).is_none(),
-        Check::IDec(x) => reg(s, x).checked_sub(1).is_none(),
-        Check::INeg(x) => reg(s, x).checked_neg().is_none(),
+        Check::ISub(x, y) => built_alusat && reg(s, x).checked_sub(reg(s, y)).is_none(),
+        Check::IInc(x) => built_alusat && reg(s, x).checked_add(1).is_none(),
+        Check::IDec(x) => built_alusat && reg(s, x).checked_sub(1).is_none(),
+        Check::INeg(x) => built_alusat && reg(s, x).checked_neg().is_none(),
         Check::IAbs(x) => reg(s, x).checked_abs().is_none(),
         Check::FMul(x, y) => dn(x) || dn(y) || mul_leaves(f(x), f(y)),
         Check::FNeg(x) => dn(x) || not_finite((-f(x)).to_bits()),
@@ -1660,6 +1687,7 @@ fn forms(args: &[String]) {
     let truncate_mode = args.iter().any(|a| a == "--truncate");
     CIRC.store(circ_mode, std::sync::atomic::Ordering::Relaxed);
     KNOWN_FLAGS.store(cond_mode, std::sync::atomic::Ordering::Relaxed);
+    STKY_UNKNOWN.store(true, std::sync::atomic::Ordering::Relaxed);
     let mut be = backend(flag(args, "--backend").unwrap_or("cl"));
     let mut e = open(&image, &state, CLOCK_BASE);
     e.enable_runtime_decode(Mem::read_sw);
@@ -1725,6 +1753,10 @@ fn forms(args: &[String]) {
             if circ_mode && rng.chance(4) {
                 mode_build &= !(1 << 24);
             }
+            // ALUSAT set in a quarter of the instances: overflows leave the kernel.
+            if rng.chance(4) {
+                mode_build |= 1 << 13;
+            }
             s.r[114] = V::c(mode_build as Int);
             let nwords = match unit.form {
                 "2c" | "3c" | "21c" => 1,
@@ -1786,8 +1818,13 @@ fn forms(args: &[String]) {
                 // With --circ CBUFEN flips as well.
                 let mode_flip = trial % 37 == 36;
                 let cb_flip = circ_mode && trial % 11 == 10;
+                // ALUSAT flipping must fail a kernel that ran through overflows.
+                let sat_flip = trial % 41 == 40;
                 s.r[114] = V::c(
-                    (mode_build ^ ((mode_flip as u32) << 15) ^ ((cb_flip as u32) << 24)) as Int,
+                    (mode_build
+                        ^ ((mode_flip as u32) << 15)
+                        ^ ((cb_flip as u32) << 24)
+                        ^ ((sat_flip as u32) << 13)) as Int,
                 );
                 let mut bflip = None;
                 if circ_mode && trial % 29 == 28 {
@@ -1808,7 +1845,8 @@ fn forms(args: &[String]) {
                 s.limit = s.icount + 1000;
                 let s0 = Snap::take(s);
                 let executes = pred(cond, s.r[118], s.r[114].b);
-                let special = expect_special(check, s) && executes != Some(false);
+                let special = expect_special(check, s, mode_build & (1 << 13) != 0)
+                    && executes != Some(false);
                 let insn = sharc_native::rt::bnd::decode_at(s, (), None, CODE_PC as Int)
                     .expect("decode of the assembled instruction");
                 let res = exec_insn(s, insn);
@@ -3348,7 +3386,7 @@ fn cfgprog(args: &[String]) {
                 let (_, pc_lo) = pair(&mut ei, &mut ef, st_seed, mode1, lo);
                 println!(
                     "      state before it: interp ASTATx {:?} STKYx {:?}, fast ASTATx {:?} STKYx {:?}",
-                    ei.s.r[118], ei.s.r[119], ef.s.r[118], ef.s.r[119]
+                    ei.s.r[118], ei.s.r[120], ef.s.r[118], ef.s.r[120]
                 );
                 println!(
                     "      at budget {lo}: pc interp {:#x} fast {:#x}, icount {} {}",
