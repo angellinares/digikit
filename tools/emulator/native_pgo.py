@@ -589,6 +589,59 @@ def train_hint(device: str = "dn2") -> str:
     )
 
 
+def profile_for_tests(
+    device: str,
+    gen: pathlib.Path,
+    environ: dict[str, str] | os._Environ[str] | None = None,
+) -> tuple[str | None, str, str]:
+    """(profile or None, state, message) for a test build of DEVICE's core GEN.
+
+    state is ok, partial, stale, missing or off. It reads and reports nothing else; see report_profile.
+    """
+    environ = os.environ if environ is None else environ
+    if environ.get("DIGI_EMU_PGO") == "0" or not supported_host():
+        return None, "off", ""
+    status, detail = check(
+        gen,
+        environ.get("SHARC_FAST_REGIONS", ""),
+        environ.get("SHARC_BLOCKTRANS", ""),
+        device,
+    )
+    if status == "ok":
+        return current_profile(device), status, ""
+    if status == "partial":
+        return current_profile(device), status, PARTIAL_NOTICE
+    return (
+        None,
+        status,
+        f"WARNING: native PGO: profile {status} ({detail}). Retrain: {train_hint(device)}",
+    )
+
+
+def report_profile(
+    device: str,
+    state: str,
+    message: str,
+    applied: bool,
+    environ: dict[str, str] | os._Environ[str] | None = None,
+) -> None:
+    """One loud stderr line for a stale or missing profile. DIGI_REQUIRE_PGO=1 makes it fatal."""
+    environ = os.environ if environ is None else environ
+    if state in ("stale", "missing"):
+        suffix = (
+            "; using the stale profile"
+            if applied
+            else "; building without PGO (about 30% slower DSP)"
+        )
+        print(message + suffix, file=sys.stderr, flush=True)
+        if environ.get("DIGI_REQUIRE_PGO") == "1":
+            raise SystemExit(
+                f"DIGI_REQUIRE_PGO=1: the PGO profile for {device} is {state}"
+            )
+    elif state == "partial":
+        print(message, file=sys.stderr, flush=True)
+
+
 def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
     if status == "skipped":
         return f"WARNING: native PGO: skipped ({detail}); building without PGO"

@@ -476,6 +476,11 @@ Formatting changes the daemon key and the PGO key, so the PGO profile needs a re
   read it when `DIGI_EMUD_*` is unset. The builds use the daemon store (`<git common dir>/emud-cache`,
   `tools/devtools/verify_build.py`).
 
+Test builds of `digi-emud` and `coupled-run` use the current PGO profile through `native_pgo.profile_for_tests`.
+A missing or stale profile prints one warning: a stale profile is still applied to `digi-emud`, and `coupled-run` builds plain.
+`DIGI_REQUIRE_PGO=1` makes this an error; the gate does not set it, because every core change makes the profile stale until a retrain.
+`DIGI_EMU_PGO=0` turns PGO off. Measuring tools (`coupled_ab`, `sharc_matrix`, `perf`, `fastcov`, `fast_roots`) keep their own builds.
+
 ## Render cache
 
 Scenario renders are cached under `out/cache/renders/` (`tools/devtools/render_cache.py`). The key
