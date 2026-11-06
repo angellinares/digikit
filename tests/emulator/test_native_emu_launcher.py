@@ -423,6 +423,30 @@ def test_rustflags_skip_warns_and_never_trains(pgo, capsys):
     assert capsys.readouterr().err.startswith("WARNING: native PGO: skipped")
 
 
+def test_stale_profile_is_reported_to_the_child(pgo):
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is None
+    assert scope["pgo_env"]() == {
+        "DIGI_PGO_STATUS": "stale",
+        "DIGI_PGO_DETAIL": "changed: sources",
+    }
+
+
+def test_current_profile_is_reported_ok_without_detail(pgo):
+    pgo.states = [("ok", "/p/abc.profdata")]
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is not None
+    assert scope["pgo_env"]() == {"DIGI_PGO_STATUS": "ok", "DIGI_PGO_DETAIL": ""}
+
+
+def test_pgo_opt_out_reports_nothing(pgo, monkeypatch):
+    pgo.states = [("off", "")]
+    monkeypatch.setenv("DIGI_EMU_PGO", "0")
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is None
+    assert scope["pgo_env"]() == {}
+
+
 def dt2_syx(monkeypatch, tmp_path):
     syx = tmp_path / "dt2.syx"
     syx.write_bytes(b"dt2")

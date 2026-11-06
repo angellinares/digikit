@@ -399,6 +399,26 @@ def train_profile(device: str = "dn2") -> str:
     return f"training failed (exit {done.returncode})" if done.returncode else ""
 
 
+PGO_REPORT: dict[str, str] = {}
+
+
+def pgo_env() -> dict[str, str]:
+    """DIGI_PGO_STATUS and DIGI_PGO_DETAIL for the child, from the last pgo_plan; empty when unknown."""
+    if not PGO_REPORT:
+        return {}
+    return {
+        "DIGI_PGO_STATUS": PGO_REPORT["status"],
+        "DIGI_PGO_DETAIL": PGO_REPORT["detail"],
+    }
+
+
+def note_pgo(status: str, detail: str) -> None:
+    """Remember the PGO state of this launch (partial counts as ok; an ok detail is a path, so it is dropped)."""
+    if status in ("ok", "partial"):
+        status, detail = "ok", ""
+    PGO_REPORT.update(status=status, detail=detail)
+
+
 def pgo_plan(args: list[str]) -> object | None:
     """Profile-use plan for the coupled build, or None for the ordinary build.
 
@@ -411,6 +431,7 @@ def pgo_plan(args: list[str]) -> object | None:
     way); DIGI_EMU_PGO=0 skips PGO. Any failure falls back to the ordinary
     build with a WARNING line: launching is never blocked.
     """
+    PGO_REPORT.clear()
     if "--coupled" not in args and "--auto-coupled" not in args:
         return None
     try:
@@ -440,20 +461,25 @@ def pgo_plan(args: list[str]) -> object | None:
                 else:
                     status, detail = native_pgo.pgo_state(environ, device)
         elif status == "stale":
+            note_pgo(status, detail)
             print(native_pgo.stale_notice(detail, device), file=sys.stderr)
             return None
         else:
+            note_pgo(status, detail)
             print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
             return None
     if status == "partial":
         profile = native_pgo.current_profile(device)
         if profile:
+            note_pgo(status, detail)
             print(native_pgo.PARTIAL_NOTICE, file=sys.stderr)
             return native_pgo.plan_for(profile, environ)
         status, detail = "missing", "profile file is gone"
     if status != "ok":
+        note_pgo(status, detail)
         print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
         return None
+    note_pgo(status, detail)
     print(
         f"native PGO: using {device.upper() + ' ' if device != 'dn2' else ''}profile "
         + pathlib.Path(detail).name,
@@ -515,6 +541,7 @@ def verify_pgo(command: list[str], env: dict[str, str], device: str = "dn2") -> 
             "both": PGO_MISMATCH_WARNING_BOTH,
         }.get(device, PGO_MISMATCH_WARNING)
         print(warning, file=sys.stderr, flush=True)
+        note_pgo("mismatch", "profile does not match this build")
 
 
 def daemon_command(args: list[str]) -> list[str]:
@@ -816,6 +843,8 @@ def main(args: list[str] | None = None) -> None:
     if build_only:
         print(binary)
         return
+    if not daemon:
+        env.update(pgo_env())
     subprocess.run([str(binary), *args], cwd=ROOT, check=True, env=env)
 
 
