@@ -2086,3 +2086,35 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
   hot straight-line code. Real work 10%, float flush and classify 23%, flags 22%, spills 12%, loop end 10%, dead
   Result tests 9%, memory checks 7%, other 8%. Undo copies, PC guards and budget checks fold away.
 - **[O]** Candidates: lazy flags, canonical floats, memory-test layout, loop-end index width.
+
+## Runtime patches bar hot regions on DN2 (2026-11-06)
+
+- **[D]** Live Workbench DN2 session at 947d2765 with valid PGO: 0.48-0.57x real time, DSP CPU 1.73-2.06 s per audio s,
+  13.5M interpreted guest instructions per audio s. The fixtures in out/fixtures/runtime dated from 2026-11-01 and
+  reported 8 differing PCs and 33 barred entries. The current runtime reports 44 and 106; most new PCs lie in
+  FUN_1c8ef1. `packages/emulator/sharc/src/code_diff.rs` bars all entries of a region with a changed block, so unchanged
+  code in those regions runs in the interpreter. DT2 is unaffected: 10 PCs, 44 barred, 1.8M interpreted per audio s, and
+  extra roots give no gain.
+- **[D]** 58.6% of the interpreted instructions were one region, 0x1c9aea..0x1c9b30: a DO loop of about 496 iterations
+  once per audio block that applies two gain ramps and writes through an offset table.
+- **[D]** Fix: DN2 `fallback_regions` in tools/emulator/fast_regions.json (20 roots). The loop-body roots (0x1c9b0d,
+  0x1c9b12) give nearly all of the gain; the region entry alone does not. Fresh-fixture coupled run, PGO build, steady
+  state per audio s:
+
+  | cell | host insns | cycles | interpreted |
+  |---|---:|---:|---:|
+  | held, before | 39.11G | 5.15G | 13.5M |
+  | held, after | 25.89G | 4.34G | 3.9M |
+  | idle, before | 39.24G | 7.07G | 13.5M |
+  | idle, after | 25.98G | 4.42G | 3.9M |
+
+  PCM and full state are exact. Live Workbench, single 15 s samples at load about 5: 0.57x to 0.83x, CPU 1.73 to 1.19 s
+  per audio s.
+- **[O]** DN2 stays above real time on a busy host; the remaining interpreted work is about 4M instructions per audio s.
+- Tooling: `tools/devtools/fast_roots.py` (`rank` from a capture; `check` against `tools/emulator/fast_budgets.json` on a
+  fixture built from the current runtime and cached by content key); gate `gate-fast-roots`. **[D]** Without the roots
+  the guard fails at 13.4M against a 5M budget; with them it passes at 4.03M, and DT2 passes at 1.85M. Repeat runs give
+  equal counts.
+- The PGO training workload no longer checks pins. The gate `coupled_ready_exactness` reads its PCM expectation from
+  tests/scenarios/dn2.json and no longer checks the DSP export hash, whose literal was stale since 2026-11-01 (the pre-
+  and post-#291 builds give the same export).
