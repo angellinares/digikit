@@ -124,14 +124,71 @@ export const TIERS = {
     access: 'ro',
     narrow: false,
   },
-  merge: { targets: MERGE_TARGETS, access: 'rw', narrow: true },
+  merge: { targets: MERGE_TARGETS, access: 'rw', narrow: true, pgo: true },
   full: {
     targets: [...MERGE_TARGETS, 'test-device-full', 'tier-sweep', 'dt2-tier-sweep'],
     access: 'rw',
     narrow: false,
     runMany: true,
+    pgo: true,
   },
 };
+
+// The gate's emulators (daemons and coupled-run) use the per-device PGO profile of DN2 and DT2.
+export function pgoRead(device) {
+  const result = spawnSync('uv', ['run', 'python', '-m', 'tools.emulator.native_pgo', 'check', '--device', device], {
+    encoding: 'utf8',
+    timeout: 60000,
+  });
+  const out = (result.stdout || '').trim().split('\n').filter(Boolean).at(-1) || '';
+  // DT2 reports a sources-only change as "stale changed: sources"; the profile tools treat it as partial.
+  if (/^partly stale|^stale changed: sources$/.test(out)) return { state: 'partial', detail: 'sources' };
+  if (out.startsWith('ok')) return { state: 'ok', detail: '' };
+  const stale = out.match(/^stale (?:changed: )?(.*)/);
+  if (stale) return { state: 'stale', detail: stale[1] };
+  if (out.startsWith('missing'))
+    return { state: 'missing', detail: out.replace(/^missing\s*\(?/, '').replace(/\)$/, '') };
+  return { state: 'unknown', detail: out || `check exited with ${result.status}` };
+}
+
+// Prints one line per device before the first task; returns the warning lines to repeat at the end.
+export function pgoReport(read = pgoRead, env = process.env) {
+  if (env.DIGI_EMU_PGO === '0') {
+    console.log('gate: PGO off (DIGI_EMU_PGO=0); daemons and coupled-run build without PGO');
+    return [];
+  }
+  const warnings = [];
+  for (const device of ['dn2', 'dt2']) {
+    let result;
+    try {
+      result = read(device);
+    } catch (error) {
+      result = { state: 'unknown', detail: String(error.message || error) };
+    }
+    const { state, detail } = result;
+    const note = detail ? ` (${detail})` : '';
+    if (state === 'ok') console.log(`gate: PGO ${device}: current; daemons and coupled-run use the profile`);
+    else if (state === 'partial')
+      console.log(`gate: PGO ${device}: partly stale (${detail}); daemons and coupled-run use the profile`);
+    else if (state === 'stale') {
+      console.log(`gate: PGO ${device}: stale${note}; daemons use the stale profile, coupled-run builds plain`);
+      warnings.push(
+        `WARNING: PGO ${device} profile is stale${note}.`,
+        '  Affected: daemons use the stale profile; coupled-run builds without PGO (about 30% slower DSP).',
+        `  Retrain: mise run perf:pgo:${device}`,
+      );
+    } else if (state === 'missing') {
+      console.log(`gate: PGO ${device}: missing${note}; daemons and coupled-run build without PGO`);
+      warnings.push(
+        `WARNING: PGO ${device} profile is missing${note}.`,
+        '  Affected: daemons and coupled-run build without PGO (about 30% slower DSP).',
+        `  Retrain: mise run perf:pgo:${device}`,
+      );
+    } else console.log(`gate: PGO ${device}: status unknown${note}`);
+  }
+  for (const line of warnings) console.log(line);
+  return warnings;
+}
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let args = process.argv.slice(2);
@@ -151,6 +208,19 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     args = tier.runMany ? ['-t', targets, ...args] : ['--base', process.env.DIGI_GATE_BASE, '-t', targets, ...args];
   }
   const explain = args.includes('--explain');
+  if (tier?.pgo) {
+    try {
+      const warnings = pgoReport();
+      if (warnings.length) {
+        process.on('exit', () => {
+          console.log('gate: PGO status again, from the start of the gate:');
+          for (const line of warnings) console.log(line);
+        });
+      }
+    } catch {
+      /* The PGO status is advice and never fails the gate. */
+    }
+  }
   const wrap = (command) =>
     tier && !explain
       ? ['node', ['tools/nx/remote-cache.mjs', 'exec', '--access', tier.access, '--', 'pnpm', 'nx:pilot', ...command]]
