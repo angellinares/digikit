@@ -3,7 +3,7 @@
 // (guest instructions, the real-time factor of the run) and what the protocol costs (round trips, polling). A dev tool: tools/devtools/upload_bench.py starts
 // the daemon and runs this. By hand:
 //
-//     node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P] [--check-sizes N,N,...]
+//     node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--depth N] [--path P] [--check-sizes N,N,...]
 //
 // One JSON line per run on stdout: wall seconds and MB/s of the upload and of VERIFY, guest instructions per file byte, the real-time factor.
 // With `--check-sizes` instead one line per file size and no timing: the hash and 8-in-7 paths of the runtime against the host's file hash.
@@ -15,13 +15,14 @@ const [socketPath, ...flags] = process.argv.slice(2);
 const flag = (name, dflt) => (flags.includes(name) ? flags[flags.indexOf(name) + 1] : dflt);
 if (!socketPath) {
   console.error(
-    'usage: node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P] [--check-sizes N,N,...]',
+    'usage: node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--depth N] [--path P] [--check-sizes N,N,...]',
   );
   process.exit(2);
 }
 const bytes = Number(flag('--bytes', 8_000_000));
 const chunk = Number(flag('--chunk', 32768));
 const runs = Number(flag('--runs', 1));
+const depth = Number(flag('--depth', 0)); // DATA requests in flight; 0: the transport's default
 const piece = Number(flag('--verify-piece', 1 << 20));
 const path = flag('--path', 'bench/file');
 
@@ -104,7 +105,7 @@ await new Promise((r) => setTimeout(r, 4000));
 const idle1 = await snap();
 const bg = (idle1.icount - idle0.icount - (idle1.idle - idle0.idle)) / (idle1.audio - idle0.audio);
 const work = (r, bytes) => +((r.busy_insn - bg * r.audio_s) / bytes).toFixed(1);
-const session = new DkSession(t, { timeoutMs: 60000, chunk });
+const session = new DkSession(t, { timeoutMs: 60000, chunk, ...(depth > 0 ? { depth } : {}) });
 const info = await session.info();
 const data = Uint8Array.from(randomBytes(bytes));
 for (let run = 0; run < runs; run++) {

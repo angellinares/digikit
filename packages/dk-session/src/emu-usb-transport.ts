@@ -12,6 +12,8 @@ const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, '
 const bytesOf = (h: string) => Uint8Array.from(h.match(/../g) ?? [], (x) => parseInt(x, 16));
 /** The emulator's USB takes any size of MidiRpc write: 16 KiB a request makes a +Drive file about twice as fast as 2 KiB (the firmware's work per request, and the guest idle between requests). */
 export const EMU_RPC_CHUNK = 16384;
+/** The emulator's runtime takes the next DATA request while it writes the last: two in flight (finding 43). The one place to change it. */
+export const EMU_DATA_DEPTH = 2;
 
 /**
  * `stepInstructions`: for a paused daemon (`Emu.spawn`, a boot rig), where time passes only when stepped. An empty poll
@@ -34,6 +36,7 @@ export class EmuUsbTransport implements DkTransport {
   private readonly pollMs: number;
   private readonly stepInstructions: number;
   readonly rpcChunk = EMU_RPC_CHUNK;
+  readonly dataDepth = EMU_DATA_DEPTH;
   private rx: Uint8Array = new Uint8Array();
   private ready: Uint8Array[] = [];
 

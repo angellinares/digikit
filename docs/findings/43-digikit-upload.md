@@ -164,8 +164,8 @@ instructions per second) and the controller thread's CPU seconds.
 - **Guest CPU** (decides everything): the firmware's own load is 79 M of the 132 M instructions of every model second (audio interrupt, UI loop; measured with no
   traffic, `bg_insn_per_audio_s`), so 53 M are free. DATA costs, per file byte (the instructions of a phase less that load), about 51 since store version 4:
   the firmware's SysEx chain, the 8-in-7 unpack and the reply, 44; the card write is 1.5 because the block write is a host call; the file hash 7 (section "The file hash
-  of the store", below). That is a ceiling of about **1.0 MB/s in model time**; the 8 MB run reached 0.80 (9.97 model seconds), the rest being the wait between two requests
-  (about 10 ms of 41 ms for a 32 KiB chunk). VERIFY (read back and hash) is 7.1 per byte: 7.4 MB/s in model time. Before version 4 the file hash was SHA-256 at 99 per byte
+  of the store", below). That is a ceiling of about **1.0 MB/s in model time**; the 8 MB run at one request in flight reached 0.80 (9.97 model seconds), the rest being the wait between two requests
+  (about 10 ms of 41 ms for a 32 KiB chunk); with two in flight it reaches 1.14 (section "Two requests in flight", below), so the 1.0 is about 10 % low. VERIFY (read back and hash) is 7.1 per byte: 7.4 MB/s in model time. Before version 4 the file hash was SHA-256 at 99 per byte
   (ColdFire has no rotate: 6,300 instructions a block): DATA 143, 0.32 MB/s, VERIFY 99, 0.53 MB/s.
 - **The real device** has 190 M instructions per second and 37 to 47 % firmware load (finding 42), so 101 to 120 M are free: estimates (the eMMC program time and the
   USB path were not measured), for the digikit store about 2.0 to 2.3 MB/s for the guest's work alone and 1.2 to 1.4 MB/s with the 10 ms a chunk of wait that the model shows
@@ -174,12 +174,73 @@ instructions per second) and the controller thread's CPU seconds.
   finding 42 measured on a real DT2 is the same. USB high-speed bulk (35 MB/s) is not the limit; if the port ran at full speed it would be (about 0.8 MB/s of payload
   after the 3/4 event packing and 7/8).
 
+### Two requests in flight (lane upload-depth, 2026-11-07) **[D]**
+
+`DkSession.put` (TypeScript: the desktop app, the web page, the tools and the device tests) keeps `depth` DATA requests in flight. The depth comes from the transport (`dkupload-core.ts`
+`DkTransport.dataDepth`, default 1; `EmuUsbTransport` sets `EMU_DATA_DEPTH = 2`, the one place to change it; `DkSessionOptions.depth` overrides). A transport to a device leaves it out: depth 2 is
+**not enabled on hardware**. The Rust `packages/dkupload` `Session` already kept two in flight (`put.rs`) and was not changed. DT2 samples use the stock MidiRpc and were not touched.
+
+**Does depth 2 stall the main loop? No [D].** DN2 1.12, 8,000,000 bytes, 32 KiB chunks, hash verified, a fresh daemon for each run, `stall.mjs` and `stall2.mjs` in `out/native/runs/20261107-depth/`
+(a `status` poll every 100 ms for the heartbeat): depth 1, 319 heartbeat passes in 10.0 model seconds (31.9 a second), no `stall` event; depth 2 (two runs), 205 and 198 passes in 6.74 and 6.71
+seconds (30.4 and 29.5 a second), no event, the longest gap between two polls that saw a pass 0.17 s (depth 1: 0.06; the poll is 0.1 s). The `stall_count` that rose 0, 1, 3 in the first
+measurement (`20261107-bugs/upload-speed/depth.log`) was misread: that script took the count after each upload and VERIFY (of the whole 8 MB file in one request) and DELETE ran in between. In
+one daemon (put at depth 1, VERIFY, DELETE, put at depth 2, ... twice) every `stall` event (1,001 ms) followed a whole-file VERIFY, never a put. A VERIFY of a file this large in one request holds
+the MIDI task for 1.07 s of model time (7.4 MB/s) whatever the depth; hosts verify in ranges of 1 MiB (0.14 s each), as `verifyFile` and the bench do. **[O]** a depth of 3 was not
+measured again (the first measurement's count for it is not attributable).
+
+**Why it does not stall (static + the run).** The handler runs in the MIDI task (`dkrt_midi_rx` from the hook; `cmd_data` calls `store::write_sectors` inline: a second request cannot be handled
+while the first is written, it can only *arrive*). Arriving needs no MIDI task: the USB ISR and the deferred-call task assemble the SysEx into 151-byte blocks of the 160 KiB pool (1,024 blocks,
+finding 42 section 3) and queue the message at F7. A 32 KiB chunk is 37.5 kB on the wire, about 250 blocks, so two requests hold about 500 blocks (half the pool); the host never sends a third before the
+first reply, so the pool cannot run empty (the assembler task would wait on its semaphore) and the 128 KiB gather limit applies to one message. The MIDI task sleeps on its queue between messages
+and the firmware's other tasks run when it pends; the UI loop passes at the same 30 Hz in both depths. The DATA reply is one 16-byte transfer, so the TX ring (4 KiB) and its pool of 32 never see more than
+two of ours: `tx_room` drops a reply only when the host does not read (finding 43, "No unbounded spin on a reply"); a dropped reply is a lost reply, which the host handles (below). The runtime's DATA rule
+(next offset, or the exact repeat of the last chunk) is what makes it safe: a request that arrives after a failed one gets `E_OFFSET`, and nothing out of order is written.
+
+**Decision: safe on the emulator, not provable for hardware.** What the emulator does not show: the real USB MIDI driver of the host may hand both messages to EP1 OUT at once (the emulator's delivery,
+384 bytes per microframe, is gentler); whether the eMMC program time of the real block write pends the MIDI task (yielding) or spins; whether the real DPC task shares work with the assembler. The memory
+argument (half the pool) and the in-order rule hold on any link, so a protocol failure is not expected, but nothing ran on a device. Hence the flag: depth 2 on `EmuUsbTransport`, depth 1 on the
+real MIDI transports until a device run (set `dataDepth = 2` on that transport, or `depth` in the session options, to try it; the Rust host's two in flight is the same experiment). No runtime change.
+
+**Host rules.** DATA does not take the one-at-a-time turn per request: `put` sends its chunks in windows of 8 (`WINDOW_CHUNKS`) and holds the turn for one window, so another request (a Log poll, the
+`emulatorSession` reader) waits for 8 chunks at most (about 0.3 s of model time, 0.5 s wall) where it waited for one chunk before; the window drains between turns. Replies are matched by seq; a stale
+reply (an earlier retry) is ignored as before. An ok reply to a later request proves the earlier ones were done (the device takes a chunk only at its next offset), so a lost reply with a request behind
+it needs no resend. A lost reply with nothing behind it, or both lost: a timeout, then the unacknowledged chunks are sent again one at a time from the first, with the normal retries; the runtime
+accepts the next chunk or the exact repeat of the last, so an `E_OFFSET` for a chunk that has a later one behind it means it was done. An error reply (`E_OFFSET`, `E_WRITE`, ...) stops the sending,
+the replies still in flight are awaited for 2 s, the first error is thrown and `put` sends ABORT as before. `onProgress` reports acknowledged bytes and never goes back. `cancelPending` ends the put at
+once (both requests are left unanswered), ABORT follows on the new signal and the session is usable. A failed or lost END is handled as before.
+
+**Tests.** Host: `packages/dk-session/tests/put-depth.test.ts` (a fake device with the runtime's DATA rule: order and depth, the depth from the transport, sizes 0 to 16 chunks, a lost reply with and
+without a request behind it, both lost, `E_WRITE` and `E_OFFSET` mid-window, cancel mid-window, another request between windows). Device, DT2 1.17 and DN2 1.12:
+`modules/core/runtime/tests/upload-depth.device.test.ts` (sizes and VERIFY, the card read by plusdrive, a flipped bit gives `E_HASH` and commits nothing, a lost reply in both forms); the other upload device tests
+now run at depth 2 too, as the harness uses `EmuUsbTransport`.
+
+**Measured** (DN2 1.12, the digikit store, `upload_bench` and the app's path `bench.mjs`, paired on fresh daemons of one build, order 1 2 2 1, load average 3.7 to 4.9 on 16 cores, `--no-lock`: `measure.log`):
+
+| | depth 1 | depth 2 |
+|---|---|---|
+| 8,000,000 bytes: wall s, MB/s | 18.20 and 17.89, 0.44 and 0.45 | 12.61 and 12.54, 0.63 and 0.64 |
+| model seconds, MB/s of model time | 9.98 and 10.09, 0.80 and 0.79 | 6.97 and 7.01, 1.15 and 1.14 |
+| real-time factor | 0.55, 0.56 | 0.55, 0.56 |
+| `stall_count` (put, then VERIFY in 1 MiB ranges) | 0, 0 | 0, 0 |
+| VERIFY wall s | 1.9, 2.0 | 1.9, 1.9 |
+| 50 files of 500,042 bytes (18.1 MB stored) through `uploadItems`: wall s | 51.5, 49.3 | 37.4, 37.8 |
+| the same: model s, rtf, END (50 files) | 27.7 and 28.4, 0.54 and 0.57, 2.5 and 2.3 s | 21.3 and 21.2, 0.57 and 0.56, 2.3 and 2.4 s |
+| the same: failed, VERIFY not ok | 0, 0 | 0, 0 |
+
+Depth 2 is 43 % faster in model time and 29 % in wall time for the large file; 26 % in wall time for 50 files (VERIFY, END, BEGIN and LIST are unchanged, and DATA is a smaller share of that run). The raw-frame run had
+1.22 at depth 2: the difference, about 4 %, is the drain between windows (31 of them, one wait each); a window of 16 would halve it and make another request wait longer. END (the time of a commit) and the
+VERIFY figures did not change.
+
+**Estimate for the device (not measured; the method of "The ceiling").** At depth 2 the wait of 10 ms a chunk is gone, so the rate is the guest's work alone: 2.0 to 2.3 MB/s for the digikit store
+(before: 1.2 to 1.4, with the wait), less the eMMC program time and the USB path that nothing here measured. A 50 MB sample would take about 25 s rather than 40 s; a module of 100 kB is the same
+(one chunk of three, END dominates).
+
 ### Left **[O]**
 
 - The cap itself: the DSP worker at 1.7 CPU seconds per audio second (DN2) while nothing plays; a faster DSP tier, or a mode that does not render audio during a transfer,
   would be the next lever for wall time.
 - Guest work: the firmware's own SysEx chain (event task, assembler, gather: about 40 to 60 instructions a byte) needs the tier-1 hook of step 7 above (hardware-only
-  proof). With the file hash at 7 it is now most of the 51 instructions a byte; a window of two requests would hide the wait between chunks (about a quarter of an upload in the model).
+  proof). With the file hash at 7 it is now most of the 51 instructions a byte. The wait between chunks is hidden by two requests in flight (done, section "Two requests in flight").
 - A host-side shortcut (writing the store through the card model, no guest) would be instant in the workbench but tests nothing of the protocol; not done.
 - On a device nothing was measured: the real USB MIDI path, a larger RPC chunk on hardware, and the eMMC program time.
 
@@ -213,7 +274,7 @@ FILEHASH, bit 12). `.dkm` files keep their own header SHA-256 (the loader checks
 
 ## Open **[O]**
 
-- Nothing ran on a device. The python-rtmidi transport is untested against hardware. Whether the real MIDI task handles a 37 kB SysEx
+- Nothing ran on a device (depth 2 included: the real MIDI transports stay at one request in flight, "Two requests in flight"). The python-rtmidi transport is untested against hardware. Whether the real MIDI task handles a 37 kB SysEx
   without the host's pacing (the 160 KiB block pool and the DPC queue) is a hardware question; the emulator's delivery is gentler than a
   host driver.
 - **[C]** The three items that stood here (a reply into a full TX ring, the menu's reader against a commit, the CLEAR double fault) are

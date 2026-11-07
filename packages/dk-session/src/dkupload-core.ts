@@ -57,6 +57,11 @@ export interface DkTransport {
    * A link to a device leaves it out.
    */
   readonly rpcChunk?: number;
+  /**
+   * DATA requests of the digikit upload this link keeps in flight (`DkSession.put`); 1 when left out. The device takes the next request
+   * while it writes the last one (finding 43, "Two requests in flight"). A link to a device leaves it out until that has run on hardware.
+   */
+  readonly dataDepth?: number;
 }
 
 const cancelledError = () => new DkError({ error: 'cancelled', kind: 'cancelled' });
@@ -602,7 +607,14 @@ export interface DkSessionOptions {
   retries?: number;
   /** Bytes of a DATA chunk (a multiple of 512, at most 32 KiB). */
   chunk?: number;
+  /** DATA requests in flight for `put`, 1 or more; default: the transport's `dataDepth`, else 1. */
+  depth?: number;
 }
+
+/** DATA chunks `put` sends under one turn when the depth is above 1; the window drains between turns so that other requests get theirs. */
+const WINDOW_CHUNKS = 8;
+/** The wait for the replies still in flight once a DATA request has failed. */
+const SETTLE_MS = 2000;
 
 export const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 4).getUint32(0);
 const u16 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 2).getUint16(0);
@@ -705,6 +717,7 @@ export class DkSession {
   private timeoutMs: number;
   private retries: number;
   private chunk: number;
+  private depth: number;
   private fileHashOk = false;
   private turn: Promise<unknown> = Promise.resolve();
   /** Aborted by `cancelPending`: the requests made before it (waiting for a reply or for their turn) fail with kind `cancelled`. */
@@ -714,6 +727,7 @@ export class DkSession {
     this.timeoutMs = options.timeoutMs ?? 6000;
     this.retries = options.retries ?? 2;
     this.chunk = options.chunk ?? MAX_CHUNK;
+    this.depth = Math.max(1, Math.floor(options.depth ?? transport.dataDepth ?? 1));
   }
 
   /** The transport's `rpcChunk`: how much data one MidiRpc write may carry on this link, or undefined (use the default). */
@@ -739,10 +753,72 @@ export class DkSession {
 
   /** One request and its reply (any status), after the requests queued before it. A timeout sends the request again with a new seq. */
   request(cmd: number, body: Uint8Array = new Uint8Array(), quick = false): Promise<RawReply> {
+    return this.withTurn((signal) => this.exchange(cmd, body, quick, signal));
+  }
+
+  /** `fn` alone on the link, after the requests queued before it. */
+  private withTurn<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const signal = this.ctl.signal;
-    const next = this.turn.then(() => this.exchange(cmd, body, quick, signal));
+    const next = this.turn.then(() => {
+      if (signal.aborted) throw cancelledError();
+      return fn(signal);
+    });
     this.turn = next.catch(() => {});
     return next;
+  }
+
+  /**
+   * The DATA requests of `chunks` (consecutive, in order) with up to `depth` in flight, under the caller's turn. `acked` is called once per chunk the
+   * device has taken, in order. Replies are matched by seq. The device takes a chunk only at its next offset (or as the exact repeat of the last), so:
+   * an ok reply to a later request proves the earlier ones were done (their replies were lost); an error reply stops the sending, the replies still
+   * in flight are awaited for `SETTLE_MS`, and the first error is thrown. A timeout stops the sending and sends the unacknowledged chunks again one
+   * at a time from the first (`exchange`, with its retries): an E_OFFSET for one that has a later one behind it means it was done.
+   */
+  private async dataWindow(
+    chunks: { off: number; body: Uint8Array }[],
+    acked: (i: number) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const flight: number[] = []; // seqs of the requests in flight, oldest first; chunk `done + k` for flight[k]
+    let done = 0;
+    let sent = 0;
+    let failure: { i: number; r: RawReply } | null = null;
+    let deadline = 0;
+    while (done < chunks.length) {
+      while (!failure && sent < chunks.length && sent - done < this.depth) {
+        const seq = this.takeSeq();
+        await abortable(Promise.resolve(this.t.send(frame(GCMD.DATA, seq, chunks[sent]!.body))), signal);
+        flight.push(seq);
+        sent++;
+        if (flight.length === 1) deadline = Date.now() + this.timeoutMs;
+      }
+      if (flight.length === 0) break; // an error and nothing more in flight
+      const left = (failure ? Math.min(deadline, Date.now() + SETTLE_MS) : deadline) - Date.now();
+      const raw = left > 0 ? await abortable(this.t.recv(left, signal), signal) : null;
+      if (!raw) {
+        if (failure) break;
+        // a timeout: what is in flight is sent again, one request at a time
+        for (let i = done; i < sent; i++) {
+          const c = chunks[i]!;
+          const r = await this.exchange(GCMD.DATA, c.body, false, signal);
+          if (r.status !== 0 && !(statusName(r.status) === 'E_OFFSET' && i < sent - 1))
+            throw deviceError(`data at ${c.off}`, r.status, r.body);
+          acked(i);
+        }
+        flight.length = 0;
+        done = sent;
+        continue;
+      }
+      const r = parseReply(raw);
+      const k = r && r.cmd === GCMD.DATA ? flight.indexOf(r.seq) : -1;
+      if (!r || k < 0) continue; // a stale reply (an earlier retry) or something else
+      if (r.status !== 0) failure ??= { i: done + k, r };
+      else if (!failure) for (let n = 0; n <= k; n++) acked(done + n);
+      flight.splice(0, k + 1);
+      done += k + 1;
+      deadline = Date.now() + this.timeoutMs;
+    }
+    if (failure) throw deviceError(`data at ${chunks[failure.i]!.off}`, failure.r.status, failure.r.body);
   }
 
   private async exchange(cmd: number, body: Uint8Array, quick: boolean, signal: AbortSignal): Promise<RawReply> {
@@ -1066,11 +1142,29 @@ export class DkSession {
     const hash = fileHash(data);
     try {
       await this.ok(GCMD.BEGIN, 'begin', concat(p, be32(data.length), hash));
-      for (let off = 0; off < data.length; off += this.chunk) {
-        const part = data.subarray(off, Math.min(data.length, off + this.chunk));
-        // a request that timed out is sent again (the device takes the exact repeat of the last chunk as done)
-        await this.ok(GCMD.DATA, `data at ${off}`, concat(be32(off), part));
-        onProgress(off + part.length, data.length);
+      if (this.depth === 1) {
+        for (let off = 0; off < data.length; off += this.chunk) {
+          const part = data.subarray(off, Math.min(data.length, off + this.chunk));
+          // a request that timed out is sent again (the device takes the exact repeat of the last chunk as done)
+          await this.ok(GCMD.DATA, `data at ${off}`, concat(be32(off), part));
+          onProgress(off + part.length, data.length);
+        }
+      } else {
+        // `depth` requests in flight, WINDOW_CHUNKS under one turn (the window drains between turns, so another request waits for 8 chunks at most)
+        for (let at = 0; at < data.length;) {
+          const chunks: { off: number; body: Uint8Array }[] = [];
+          for (let off = at; off < data.length && chunks.length < WINDOW_CHUNKS; off += this.chunk) {
+            chunks.push({ off, body: concat(be32(off), data.subarray(off, Math.min(data.length, off + this.chunk))) });
+          }
+          await this.withTurn((signal) =>
+            this.dataWindow(
+              chunks,
+              (i) => onProgress(chunks[i]!.off + chunks[i]!.body.length - 4, data.length),
+              signal,
+            ),
+          );
+          at = chunks[chunks.length - 1]!.off + this.chunk;
+        }
       }
       if (data.length === 0) onProgress(0, 0);
       try {
