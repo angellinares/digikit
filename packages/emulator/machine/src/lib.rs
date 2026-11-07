@@ -7,7 +7,7 @@ pub mod time;
 pub mod timer_state;
 
 pub use board::{
-    Board, BoardWriteError, CompletionEvent, CompletionPolicy, MIDI_TX_CHAN, MIDI_TX_SOURCE,
+    Board, BoardWriteError, CompletionEvent, CompletionPolicy, DTCN0, MIDI_TX_CHAN, MIDI_TX_SOURCE,
     MIDI_TX_VECTOR, MIDI_UDR, SemaphoreAddresses,
 };
 pub use state::{MachineState, StateError};

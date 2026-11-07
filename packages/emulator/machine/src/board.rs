@@ -38,6 +38,11 @@ type RamPage = Box<[u8]>;
 /// UART9 (MIDI DIN) data register: the firmware sends MIDI by byte stores here, or through eDMA
 /// channel 37 (finding 25).
 pub const MIDI_UDR: u32 = 0xec07_400c;
+/// DMA timer 0's counter (DTCN0, MCF5441XRM chapter 39). Stock DN2 1.11 reads it as a free-running
+/// clock, and nothing in the main OS starts the timer: code before the main OS does.
+pub const DTCN0: u32 = 0xfc07_000c;
+/// The bus clock DTCN0 counts in the [`Board::enable_dtcn0`] model (`periph::pit::F_BUS`).
+const DTCN0_HZ: u128 = 132_000_000;
 /// eDMA channel that drains the DN2 MIDI DIN transmit ring into [`MIDI_UDR`] (finding 25).
 pub const MIDI_TX_CHAN: usize = 37;
 /// Its major-loop interrupt: INTC1 source 29, vector 157.
@@ -185,6 +190,10 @@ pub struct Board {
     /// Bytes the guest stored to the MIDI DIN UART (UART9) data register, by itself or through
     /// eDMA channel 37. Host observation only: not part of a checkpoint.
     midi_tx: Vec<u8>,
+    /// `enable_dtcn0`: DTCN0 reads the bus clock since reset, from `clock`.
+    dtcn0: bool,
+    /// The guest's instruction count, set by the host before each instruction.
+    clock: u64,
     /// eDMA channel 37 (MIDI DIN transmit): a major loop runs whole at its SERQ write.
     midi_tx37: edma::TxChannel,
     /// Bytes of the channel-37 transfers started since the host last took them. The host times
@@ -428,6 +437,8 @@ impl Board {
             sd_gate: None,
             uart_tx: vec![],
             midi_tx: vec![],
+            dtcn0: false,
+            clock: 0,
             midi_tx37: edma::TxChannel::new(MIDI_TX_CHAN, u16::from(MIDI_TX_VECTOR)),
             midi_tx37_started: 0,
             dspi1_irq: false,
@@ -939,6 +950,24 @@ impl Board {
     pub fn take_midi_tx(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.midi_tx)
     }
+    /// Model DTCN0 as a counter of the bus clock since reset, read from the instruction count the
+    /// host sets with [`Board::set_clock`] (one bus tick per instruction at 132 MHz). This assumes
+    /// the configuration that code before the main OS sets up. Off by default.
+    pub fn enable_dtcn0(&mut self) {
+        self.dtcn0 = true;
+    }
+
+    /// The guest's instruction count: the host sets it before each instruction.
+    #[inline(always)]
+    pub fn set_clock(&mut self, icount: u64) {
+        self.clock = icount;
+    }
+
+    fn dtcn0_value(&self) -> u32 {
+        let ips = u128::from(periph::clock::cf_ips().max(1));
+        (u128::from(self.clock) * DTCN0_HZ / ips) as u32
+    }
+
     /// Return the bytes of the eDMA channel-37 transfers started since the prior call (0: none).
     /// Each transfer has already moved its bytes into the MIDI output; the host raises the
     /// completion interrupt (`MIDI_TX_VECTOR`) after their wire time.
@@ -1532,6 +1561,9 @@ impl Board {
     }
 
     fn read_inner_unforced(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
+        if self.dtcn0 && addr == DTCN0 && size == 4 {
+            return Ok(self.dtcn0_value());
+        }
         if Time::owns(addr) {
             return self
                 .time
