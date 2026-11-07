@@ -32,7 +32,7 @@ import { install, libraryModule } from '../../../../apps/web/src/modules/dktrans
  */
 
 const SECTOR = 512;
-const MOD_PATH = 'modules/sine.dkm';
+const MOD_PATH = 'modules/c-demo.dkm';
 const sectorsOf = (n: number) => Math.ceil(n / SECTOR);
 const padded = (b: Buffer) => Buffer.concat([b, Buffer.alloc(sectorsOf(b.length) * SECTOR - b.length)]);
 
@@ -66,14 +66,14 @@ const oldSectors = (v3: Record<number, Buffer>, first: number, card: string): nu
 
 cardRigs(
   'store format 4',
-  { uploads: true, relaxFs: true, roots: RT, symbols: CARD_SYMBOLS },
+  { dsp: 'zero', uploads: true, relaxFs: true, roots: RT, symbols: CARD_SYMBOLS },
   (h) => {
     const store = cardStore(h.device);
     const headerB = deviceProfile(h.device).card.store.header_b_sector;
     /** The modules the runtime reports loaded (protocol calls run on the paused daemon). */
     const names = async (rt: PatchedSession) => (await h.usb(rt, (dk) => dk.modules())).map((m) => m.name);
-    const sine = h.mod('test/sine');
-    const bytes = () => fs.readFileSync(sine.file);
+    const demo = h.mod('test/c-demo');
+    const bytes = () => fs.readFileSync(demo.file);
     const dump = async (card: string) =>
       JSON.parse((await patchkit(['store', 'dump', card, ...overlayArgs(card), '--device', h.device, '--json'])).stdout);
 
@@ -81,7 +81,7 @@ cardRigs(
       'a flipped byte on the card: VERIFY reports it and the module is not loaded',
       async () => {
         const good = bytes();
-        let rt: PatchedSession = await h.load('hash-good', { modules: [sine], selection: [MOD_PATH] });
+        let rt: PatchedSession = await h.load('hash-good', { modules: [demo], selection: [MOD_PATH] });
         expect(await bootInfoLoaded(rt.session, h.plan), 'the builder\'s hash is the runtime\'s: the module loads').toMatchObject({
           count: 1,
           loaded: 1,
@@ -168,7 +168,7 @@ cardRigs(
         rt = await h.restart(rt);
         facts.loadedAfterRestart = await names(rt);
         facts.selectionAfterRestart = (await h.records()).map((r: SelRecord | null) => r && r.paths);
-        expect(await names(rt), 'the kept selection loads the uploaded module').toEqual(['test/sine']);
+        expect(await names(rt), 'the kept selection loads the uploaded module').toEqual(['test/c-demo']);
 
         // again: a second file, and what the old bytes are then
         expect(await statusOf(() => h.usb(rt, (dk) => dk.put('modules/b.dkm', blob(3000, 5))))).toBe(0);

@@ -40,7 +40,7 @@
       },
       {
         "files": ["store-format.device.test.ts"],
-        "modules": ["test/sine"],
+        "modules": ["test/c-demo"],
         "sources": ["apps/web/src/firmware/default-modules-core.ts", "apps/web/src/modules/dktransfer.ts"],
         "plusdrive": true
       },
