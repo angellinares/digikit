@@ -60,6 +60,8 @@ export interface TransferRun {
   /** The error text of a failed run. */
   error?: string;
   cancelled?: boolean;
+  /** A cancelled upload run: what it did (`87 of 357 uploaded, 270 not sent`). */
+  counts?: string;
   /** The text the progress bar ended with. */
   message?: string;
   /** The events of the run (Modules mode), one line each. */
@@ -76,6 +78,8 @@ export interface SamplesSlot {
   reset(): void;
   /** The bar along the bottom for a running or finished upload. */
   bar(busy: string): { info: BarInfo; running: boolean } | undefined;
+  /** One line per file of the last upload run, for the Log. */
+  lines?(): string[];
   /** The light poll of the chosen folder: true when its listing changed (and the pane reads again). */
   localChanged(): Promise<boolean>;
 }

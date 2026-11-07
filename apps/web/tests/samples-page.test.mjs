@@ -6,8 +6,11 @@ import { fileGroups, nameInGroup } from '../../desktop/ui/src/card-core.ts';
 import { sourceKind } from '@digi/dk-session/dksample';
 import {
   applyUpload,
+  confirmDeleteLabel,
   crumbs,
+  deletePartLine,
   deleteRows,
+  deletingLine,
   dropUploads,
   folderNameError,
   joinPath,
@@ -24,7 +27,10 @@ import {
   sampleRows,
   selectedRows,
   uploadFiles,
+  uploadCancelled,
+  uploadFailure,
   uploadItems,
+  uploadLines,
   uploadStatus,
 } from '../../desktop/ui/src/samples-core.ts';
 
@@ -144,6 +150,9 @@ test('events build the upload state, and a file that could not be prepared fails
   u = applyUpload(u, { event: 'failed', folder: 'd', name: 'bad.wav', source: 'bad.wav', message: 'not a usable WAV' });
   assert.deepEqual([u['d/bad.wav'].kind, u['d/bad.wav'].state, u['d/bad.wav'].source], ['none', 'failed', 'bad.wav']);
   assert.deepEqual(Object.keys(dropUploads(u, ['d/kick'])), ['d/bad.wav']);
+  // a folder takes its files with it, and not a sibling that only starts with the same letters
+  const nested = { 'Foo/a': u['d/kick'], 'Foo/sub/b': u['d/kick'], 'Foobar/x': u['d/kick'] };
+  assert.deepEqual(Object.keys(dropUploads(nested, ['Foo'])), ['Foobar/x']);
 });
 
 test('which files convert: the label says what was done', () => {
@@ -246,6 +255,111 @@ test('a failed send stops the run: the files after it are marked not sent', asyn
   assert.match(u['drums/two'].message, /E_FULL: no space/);
   assert.equal(u['drums/three.wav'].message, 'not sent: the upload of two failed');
   assert.deepEqual(b.calls, ['put drums/one', 'verify drums/one', 'put drums/two']);
+});
+
+test('a run with a failed file has one error line with the first message and the counts, and one Log line per file', async () => {
+  const b = fakeBackend({ failPut: 'two' });
+  const u = await run(b, ['one.wav', 'two.wav', 'three.wav']);
+  assert.equal(
+    uploadFailure(u, {}),
+    'Uploading failed: E_FULL: no space (1 of 3 sent, 2 not sent)'.replace(
+      'E_FULL: no space',
+      u['drums/two'].message.split('\n')[0],
+    ),
+  );
+  assert.deepEqual(uploadLines(u, {}), [
+    'one: verified',
+    `two: failed: ${u['drums/two'].message}`,
+    'three.wav: not sent: the upload of two failed',
+  ]);
+  const ok = await run(fakeBackend({}), ['one.wav']);
+  assert.equal(uploadFailure(ok, {}), undefined);
+  assert.equal(uploadFailure(ok, ok), undefined, 'files an earlier run left are not this run');
+});
+
+const cancelError = () => Object.assign(new Error('cancelled'), { kind: 'cancelled' });
+const names = (u) => Object.values(u).map((x) => [x.name, x.state]);
+
+test('Cancel between files: the file after the cancel and all later files are not sent, none fails, a verified file stays ok', async () => {
+  let stop = false;
+  const b = fakeBackend({});
+  const verify = b.verify;
+  b.verify = async (f, p) => {
+    const v = await verify(f, p);
+    if (p.name === 'one') stop = true; // the user presses Cancel while the first file ends
+    return v;
+  };
+  let u = {};
+  await uploadFiles(
+    b,
+    prepare,
+    'drums',
+    ['one.wav', 'two.wav', 'three.wav'].map((n) => ({ name: n, data: new Uint8Array(10) })),
+    (e) => (u = applyUpload(u, e)),
+    () => stop,
+  );
+  assert.deepEqual(names(u), [
+    ['one', 'ok'],
+    ['two.wav', 'cancelled'],
+    ['three.wav', 'cancelled'],
+  ]);
+  assert.deepEqual(b.calls, ['put drums/one', 'verify drums/one'], 'no later file starts');
+  assert.equal(uploadFailure(u, {}), undefined);
+  assert.equal(uploadCancelled(u, {}), '1 of 3 uploaded, 2 not sent');
+  assert.deepEqual(uploadLines(u, {}), [
+    'one: verified',
+    'two.wav: not sent: cancelled',
+    'three.wav: not sent: cancelled',
+  ]);
+});
+
+test('Cancel in the middle of a file: its put fails as cancelled, it is cancelled (not failed), and the rest are not sent', async () => {
+  const b = fakeBackend({});
+  b.put = async (f, p, onProgress) => {
+    b.calls.push(`put ${f}/${p.name}`);
+    onProgress(5, 10);
+    if (p.name === 'two') throw cancelError();
+    onProgress(10, 10);
+  };
+  const u = await run(b, ['one.wav', 'two.wav', 'three.wav']);
+  assert.deepEqual(names(u), [
+    ['one', 'ok'],
+    ['two', 'cancelled'],
+    ['three.wav', 'cancelled'],
+  ]);
+  assert.equal(u['drums/two'].sent, 5, 'what went is kept on the row');
+  assert.equal(u['drums/two'].message, 'cancelled while sending');
+  assert.deepEqual(b.calls, ['put drums/one', 'verify drums/one', 'put drums/two']);
+  assert.equal(uploadFailure(u, {}), undefined);
+  assert.equal(uploadCancelled(u, {}), '1 of 3 uploaded, 2 not sent');
+});
+
+test('Cancel while a file is verified: it was sent, not verified, and cancelled', async () => {
+  const b = fakeBackend({});
+  b.verify = async () => {
+    throw cancelError();
+  };
+  const u = await run(b, ['one.wav', 'two.wav']);
+  assert.deepEqual(names(u), [
+    ['one', 'cancelled'],
+    ['two.wav', 'cancelled'],
+  ]);
+  assert.equal(u['drums/one'].message, 'sent, not verified: cancelled');
+});
+
+test('a real failure and a cancel in one run is still a failure', async () => {
+  let u = {};
+  await uploadFiles(
+    fakeBackend({}),
+    prepare,
+    'drums',
+    ['x.bad.wav', 'two.wav'].map((n) => ({ name: n, data: new Uint8Array(10) })),
+    (e) => (u = applyUpload(u, e)),
+    () => false,
+  );
+  u = applyUpload(u, { event: 'cancelled', folder: 'drums', name: 'two', message: 'cancelled while sending' });
+  assert.match(uploadFailure(u, {}), /^Uploading failed: not a usable WAV/);
+  assert.equal(uploadCancelled(u, {}), undefined);
 });
 
 test('the Card panel groups the store files by top folder', () => {
@@ -564,4 +678,14 @@ test('a folder row: pending while an upload fills it, with the state of the uplo
   assert.equal(folderStatus({ 'f/a': up('f/a', 'ok', 5, 5) }, 'f').kind, 'ok');
   const mixed = folderStatus({ 'f/a': up('f/a', 'ok', 5, 5), 'f/b': up('f/b', 'failed', 0, 5) }, 'f');
   assert.deepEqual([mixed.kind, mixed.message], ['failed', '1 of 2 files failed']);
+});
+
+test('the delete texts: progress, what is left, and the armed button for a folder', () => {
+  assert.equal(deletingLine(20, 357), 'Deleting 20 of 357');
+  assert.equal(deletingLine(2, 9, 'Drums'), 'Deleting Drums: 2 of 9');
+  assert.equal(deletePartLine(20, 357), '20 of 357 files deleted, 337 left');
+  assert.equal(deletePartLine(0, 1), '0 of 1 file deleted, 1 left');
+  assert.equal(confirmDeleteLabel([file('a')]), undefined);
+  assert.equal(confirmDeleteLabel([folder('d')]), 'Delete this folder and everything in it?');
+  assert.match(confirmDeleteLabel([folder('d'), file('a')]), /^Delete 2 items, folders with everything/);
 });

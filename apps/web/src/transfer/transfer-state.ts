@@ -61,3 +61,35 @@ export const [sourceId, setSourceId] = createSignal<string>();
 
 /** The smoothed speed of the running transfer in bytes per second (the bottom bar sets it; the rows of the file being sent show it). */
 export const [liveRate, setLiveRate] = createSignal<number>();
+
+/** The page's one busy action ('' when none) and its error line. They live here, not in the page: leaving the page unmounts it while a job
+ * goes on, and the page that comes back must see the job (the buttons stay off, no second job, no read) and show its error. */
+export const [busy, setBusy] = createSignal('');
+export const [error, setError] = createSignal('');
+let readAgain = false;
+let stopAsked = false;
+
+/** Start the one busy action `what`; false when another job runs (a read asked for then runs when that job ends: see `endJob`). */
+export function beginJob(what: string): boolean {
+  if (busy()) {
+    if (what === 'Reading') readAgain = true;
+    return false;
+  }
+  setBusy(what);
+  stopAsked = false;
+  return true;
+}
+
+/** The user asked to stop the running job (its Cancel button): a job that loops over files checks this before the next one. */
+export const askStop = (): void => {
+  stopAsked = true;
+};
+export const stopWasAsked = (): boolean => stopAsked;
+
+/** End the busy action; true when a read was asked for during it. */
+export function endJob(): boolean {
+  setBusy('');
+  const again = readAgain;
+  readAgain = false;
+  return again;
+}

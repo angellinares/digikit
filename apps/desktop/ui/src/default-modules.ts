@@ -38,3 +38,16 @@ export const desktopDefaultModules: NonNullable<FirmwareEnv['defaultModules']> =
     return asked(() => installDefaults(sessionOps(s, library), ids, progress));
   },
 };
+
+/**
+ * Whether the first runtime status after launch starts the default-modules install. A launch with the runtime ticked has the firmware loaded
+ * by the app's Rust side, so `boot()` never runs; `started` stops a second install when an early load already began one.
+ */
+export function shouldInstallAtStart(s: {
+  runtimeOn: boolean;
+  runtimeSet: boolean;
+  started: boolean;
+  hasStatus: boolean;
+}): boolean {
+  return s.runtimeOn && s.runtimeSet && !s.started && s.hasStatus;
+}

@@ -6,11 +6,21 @@ import { Show, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import LivePanel, { type LivePanelApi } from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
 import type { DkSession, RemoteState } from '@digi/dk-session';
-import { deviceOfPort, infoDue, isRemoteMissing, remoteNotice, remoteRuntime, remoteStateWanted } from './remote-core';
+import {
+  deviceOfPort,
+  infoDue,
+  isRemoteMissing,
+  leaveCancels,
+  remoteNotice,
+  remotePaused,
+  remoteRuntime,
+  remoteStateWanted,
+} from './remote-core';
 import { windowShown } from './log-follow-core';
 import SidePanels from './SidePanels';
 import TargetSelect from '@web/transfer/TargetSelect';
 import { cancelPending, resetSession, session, target, targetLabel } from '@web/transfer/target';
+import { busy } from '@web/transfer/transfer-state';
 import { failureLine } from '@web/transfer/wait-core';
 import './remote-page.css';
 
@@ -36,8 +46,8 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
   /** Screen loop: one Screenshot after the other; an error shows and the loop tries again slowly. */
   const screenLoop = async () => {
     while (alive) {
-      // nothing is asked of the device while the window is hidden
-      if (!windowShown()) {
+      // nothing is asked of the device while the window is hidden or a Transfer job uses the session
+      if (!windowShown() || remotePaused(busy())) {
         await new Promise((r) => setTimeout(r, HIDDEN_MS));
         continue;
       }
@@ -62,7 +72,7 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
     let infoKey = '';
     let infoAt: number | undefined;
     while (alive) {
-      if (!windowShown()) {
+      if (!windowShown() || remotePaused(busy())) {
         await new Promise((r) => setTimeout(r, HIDDEN_MS));
         continue;
       }
@@ -97,8 +107,9 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
   });
   onCleanup(() => {
     alive = false;
-    // a poll that waits for a silent device must not hold up the next page's requests (they take turns on the session)
-    cancelPending();
+    // a poll that waits for a silent device must not hold up the next page's requests (they take turns on the session); a Transfer job's
+    // requests are not ours to cancel
+    if (leaveCancels(busy())) cancelPending();
     live?.releaseAll();
     // let go of the keys the page pressed (the module remembers them)
     if (state())
@@ -120,6 +131,11 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
         <span class="sp" />
         <TargetSelect onError={setScreenError} />
       </header>
+      <Show when={remotePaused(busy())}>
+        <p class="note" role="status">
+          Paused during the transfer.
+        </p>
+      </Show>
       <Show when={notice()}>
         <p class="note" role="status">
           {notice()}

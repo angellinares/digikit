@@ -234,3 +234,103 @@ test('digikit: a large file is verified in ranges and reports where the first on
   const longer = await dev.verify('', f);
   assert.deepEqual([longer.ok, longer.message], [false, 'the device file has another size']);
 });
+
+// ---- removeTree: a folder with everything in it --------------------------------------------------------------------------------
+
+/** A device with `Foo/a`, `Foo/sub/deep/b`, `Foo/sub/c` and the sibling `Foobar/x` (the same prefix without the slash). */
+async function tree(kind) {
+  const h = session();
+  const dev = openSamples(kind, { session: h.s, hashOf });
+  for (const [folder, name] of [
+    ['Foo', 'a'],
+    ['Foo/sub/deep', 'b'],
+    ['Foo/sub', 'c'],
+    ['Foobar', 'x'],
+  ])
+    await dev.put(folder, prepared(name, 300), () => {});
+  return { ...h, dev };
+}
+const names = async (dev, folder) => (await dev.list(folder)).map((e) => e.name).sort();
+
+for (const kind of ['stock-rpc', 'digikit']) {
+  test(`${kind}: removeTree removes the nested files and the folder, and keeps a sibling with the same prefix`, async () => {
+    const { dev } = await tree(kind);
+    const seen = [];
+    const r = await dev.removeTree('Foo', { onProgress: (d, t) => seen.push([d, t]) });
+    assert.deepEqual(r, { removed: 3, total: 3, stopped: false });
+    assert.deepEqual(seen, [
+      [0, 3],
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+    assert.deepEqual(
+      (await names(dev, '')).filter((n) => n.startsWith('Foo')),
+      ['Foobar'],
+    );
+    assert.deepEqual(await names(dev, 'Foobar'), ['x']);
+  });
+
+  test(`${kind}: removeTree of an empty folder, and not of the top`, async () => {
+    const { dev } = await tree(kind);
+    if (kind === 'digikit') {
+      await dev.mkdir('Empty');
+      assert.ok((await names(dev, '')).includes('Empty'));
+    } else await dev.mkdir('Empty');
+    assert.deepEqual(await dev.removeTree('Empty'), { removed: 0, total: 0, stopped: false });
+    assert.ok(!(await names(dev, '')).includes('Empty'));
+    await assert.rejects(dev.removeTree(''), /not the top/);
+    await assert.rejects(dev.removeTree('/'), /not the top/);
+  });
+
+  test(`${kind}: removeTree stops between two files when asked, and a second call finishes`, async () => {
+    const { dev } = await tree(kind);
+    let done = 0;
+    const r = await dev.removeTree('Foo', { onProgress: (d) => (done = d), shouldStop: () => done >= 1 });
+    assert.deepEqual(r, { removed: 1, total: 3, stopped: true });
+    assert.equal((await dev.removeTree('Foo')).total, 2);
+    assert.deepEqual(
+      (await names(dev, '')).filter((n) => n.startsWith('Foo')),
+      ['Foobar'],
+    );
+  });
+}
+
+test('digikit: removeTree removes a folder entry inside, tolerates E_NOFILE on the implied folder, and names a failing file', async () => {
+  const { dev, store } = await tree('digikit');
+  await dev.mkdir('Foo/empty');
+  store.dirs.add('samples/Foo'); // the folder has an entry of its own, too
+  const r = await dev.removeTree('Foo');
+  assert.equal(r.total, 3);
+  assert.ok(![...store.files.keys(), ...store.dirs].some((p) => p.startsWith('samples/Foo/') || p === 'samples/Foo'));
+  assert.ok(store.files.has('samples/Foobar/x'));
+  // only implied folder: the delete of `samples/Foo` itself says E_NOFILE and counts as gone
+  const again = await tree('digikit');
+  assert.equal((await again.dev.removeTree('Foo')).removed, 3);
+  // a file that fails: the message names it, and what was removed before stays removed
+  const bad = await tree('digikit');
+  const del = bad.store.delete.bind(bad.store);
+  bad.store.delete = async (path) => {
+    if (path.endsWith('/c')) throw new DkError({ error: 'rm: E_IO', kind: 'device', status: 'E_IO' });
+    return del(path);
+  };
+  await assert.rejects(bad.dev.removeTree('Foo'), /samples\/Foo\/sub\/c: rm: E_IO/);
+  assert.ok(bad.store.files.has('samples/Foo/sub/c'));
+  assert.ok(bad.store.files.has('samples/Foobar/x'));
+});
+
+test('stock-rpc: removeTree names the file the +Drive refuses, and a cancelled request passes as it is', async () => {
+  const { dev, drive } = await tree('stock-rpc');
+  // the file `/Foo/sub/c` vanishes after the listing: DeleteFile answers no
+  await assert.rejects(
+    dev.removeTree('Foo', { onProgress: (d) => d === 1 && drive.files.delete('/Foo/sub/c') }),
+    /\/Foo\/sub\/c: remove \/Foo\/sub\/c/,
+  );
+  assert.ok(drive.files.has('/Foobar/x'));
+  const cancelled = Object.assign(new Error('Cancelled.'), { kind: 'cancelled' });
+  const { dev: d2, s } = await tree('stock-rpc');
+  const rpc = s.rpc;
+  let n = 0;
+  s.rpc = (...a) => (++n > 4 ? Promise.reject(cancelled) : rpc(...a));
+  await assert.rejects(d2.removeTree('Foo'), (e) => e === cancelled);
+});

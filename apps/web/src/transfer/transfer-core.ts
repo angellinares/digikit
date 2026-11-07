@@ -375,3 +375,8 @@ export function deleteDoneText(view: TransferView, paths: string[]): string {
   const base = `Deleted ${paths.length} file${paths.length === 1 ? '' : 's'}.`;
   return loaded.length ? `${base} ${loaded.join(', ')}: deleted; unloads at restart.` : base;
 }
+
+/** A job that writes to the device (the target cannot change under it); reading and waiting can be left by choosing another target. */
+export function writing(busy: string): boolean {
+  return busy !== '' && busy !== 'Reading';
+}

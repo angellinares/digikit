@@ -1,9 +1,10 @@
 // The pure logic of the Samples mode of the Transfer page (no DOM, no Tauri): folder paths and breadcrumbs, the rows of the local folder and of
 // the device's folder with the state of each upload, and the upload run over a samples backend (packages/dk-session/src/samples.ts).
 // Written without TS-only runtime syntax so node can import it (apps/web/tests/samples-page.test.mjs).
-import { errorLine } from '../../../web/src/modules/backend.ts';
+import { errorLine, isCancelled } from '../../../web/src/modules/backend.ts';
 import type { Prepared } from '@digi/dk-session/dksample';
 import type { SampleEntry, SamplesBackend } from '@digi/dk-session/samples';
+import { fmtRate } from '../../../web/src/transfer/rate-core.ts';
 import type { BarInfo, RowStatus, RowTag } from '../../../web/src/transfer/transfer-core.ts';
 
 // ---- folders ----------------------------------------------------------------------------------------------------------------------
@@ -108,7 +109,8 @@ export const selectedRows = (rows: LocalRow[], selected: ReadonlySet<string>): L
 
 // ---- uploads ----------------------------------------------------------------------------------------------------------------------
 
-/** One file of an upload run, from "waiting" to its result. A file that could not be prepared (a broken WAV) is `failed` with kind `none`. */
+/** One file of an upload run, from "waiting" to its result. A file that could not be prepared (a broken WAV) is `failed` with kind `none`.
+ * `cancelled`: the user stopped the run before the file was verified (the message says how far it got). */
 export interface Upload {
   folder: string;
   /** The name on the device (a WAV loses its extension). */
@@ -116,7 +118,7 @@ export interface Upload {
   /** The name of the local file. */
   source: string;
   kind: Prepared['kind'] | 'none';
-  state: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'failed';
+  state: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'failed' | 'cancelled';
   sent: number;
   bytes: number;
   /** The compared message of the verify (the tooltip of the chip), or the error. */
@@ -140,7 +142,8 @@ export type UploadEvent =
   | { event: 'progress'; folder: string; name: string; sent: number; bytes: number }
   | { event: 'verifying'; folder: string; name: string }
   | { event: 'verified'; folder: string; name: string; ok: boolean; message: string }
-  | { event: 'failed'; folder: string; name: string; source?: string; message: string };
+  | { event: 'failed'; folder: string; name: string; source?: string; message: string }
+  | { event: 'cancelled'; folder: string; name: string; message: string };
 
 /** The uploads after one more event (a new object). A queued file has the size of the local file and the local name; `prepared` gives it the
  * name and size it has on the device, in the same place of the list. */
@@ -158,7 +161,7 @@ export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
   };
   switch (e.event) {
     case 'queued':
-      return { ...u, [key]: { ...base, bytes: e.bytes, state: 'waiting' } };
+      return { ...u, [key]: { ...base, bytes: e.bytes, state: 'waiting', sent: 0, message: '' } };
     case 'prepared': {
       const next: Upload = { ...base, source: e.source, kind: e.kind, bytes: e.bytes, state: 'waiting' };
       const was = e.queued !== undefined && e.queued !== e.name ? joinPath(e.folder, e.queued) : '';
@@ -174,6 +177,8 @@ export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
       return { ...u, [key]: { ...base, state: e.ok ? 'ok' : 'failed', message: e.message } };
     case 'failed':
       return { ...u, [key]: { ...base, state: 'failed', message: e.message } };
+    case 'cancelled':
+      return { ...u, [key]: { ...base, state: 'cancelled', message: e.message } };
   }
 }
 
@@ -192,7 +197,7 @@ export function kindTag(kind: Upload['kind']): RowTag | undefined {
 }
 
 /** What a row of the device list shows for its upload: the shape of the Modules page (`RowStatus`), plus waiting and the tooltip. */
-export type SampleStatus = (RowStatus | { kind: 'waiting' }) & { message: string };
+export type SampleStatus = (RowStatus | { kind: 'waiting' } | { kind: 'cancelled' }) & { message: string };
 export function uploadStatus(u: Upload | undefined): SampleStatus | undefined {
   if (!u) return undefined;
   const message = u.message;
@@ -209,36 +214,32 @@ export function uploadStatus(u: Upload | undefined): SampleStatus | undefined {
       return { kind: 'ok', message };
     case 'failed':
       return { kind: 'failed', message };
+    case 'cancelled':
+      return { kind: 'cancelled', message };
   }
 }
 
+/** "87 of 357 uploaded, 270 not sent": what a stopped run did. */
+export const cancelledCounts = (ok: number, n: number): string => `${ok} of ${n} uploaded, ${n - ok} not sent`;
+
 /** The bar of an upload run: the uploads that this run touched (`base` is what `uploads` held when the run started; an entry that is the very
- * same object was not touched). `running`: the run is still going, so the message names the file. No entry: no bar (undefined). */
-export function samplesBar(uploads: Uploads, base: Uploads, running: boolean): BarInfo | undefined {
+ * same object was not touched). `running`: the run is still going, so the message names the file. `average`: bytes per second of the whole
+ * run, for the end text. A cancelled run is not red, and the bar shows the bytes that went, never more. No entry: no bar (undefined). */
+export function samplesBar(uploads: Uploads, base: Uploads, running: boolean, average?: number): BarInfo | undefined {
   const mine = Object.entries(uploads).filter(([key, u]) => base[key] !== u);
   if (!mine.length) return undefined;
   let sent = 0;
   let total = 0;
-  let finished = 0;
   let ok = 0;
   let failed = 0;
+  let cancelled = 0;
   for (const [, u] of mine) {
     total += u.bytes;
-    if (u.state === 'ok') {
-      ok++;
-      sent += u.bytes;
-      finished += u.bytes;
-    } else if (u.state === 'failed') {
-      failed++;
-      sent += u.sent;
-      finished += u.bytes;
-    } else if (u.state === 'verifying') {
-      sent += u.bytes;
-      finished += u.bytes;
-    } else if (u.state === 'uploading') {
-      sent += u.sent;
-      finished += u.sent;
-    }
+    if (u.state === 'ok' || u.state === 'verifying') sent += u.bytes;
+    else if (u.state !== 'waiting') sent += u.sent;
+    if (u.state === 'ok') ok++;
+    else if (u.state === 'failed') failed++;
+    else if (u.state === 'cancelled') cancelled++;
   }
   const n = mine.length;
   const current = mine.find(([, u]) => u.state === 'uploading' || u.state === 'verifying')?.[1];
@@ -246,19 +247,83 @@ export function samplesBar(uploads: Uploads, base: Uploads, running: boolean): B
   let message: string;
   if (running)
     message = current
-      ? `${current.state === 'verifying' ? 'Verifying' : 'Uploading'} ${current.name} (${ok + failed + 1} of ${n})`
+      ? `${current.state === 'verifying' ? 'Verifying' : 'Uploading'} ${current.name} (${ok + failed + cancelled + 1} of ${n})`
       : 'Preparing…';
   else if (failed) message = `${ok} of ${n} uploaded, ${failed} failed.`;
+  else if (cancelled) message = `Cancelled: ${cancelledCounts(ok, n)}.`;
+  else if (ok === 0) message = 'Nothing was uploaded.';
+  else if (ok < n) message = `${ok} of ${n} uploaded.`;
   else message = `Uploaded ${plural(ok)}, verified.`;
-  const fraction = total ? Math.min(1, finished / total) : running ? 0 : 1;
-  return { fraction: running ? fraction : failed ? fraction : 1, failed: failed > 0, message, sent, total };
+  if (!running && average !== undefined && sent > 0) message += ` · ${fmtRate(average)} average`;
+  // a run that ended with files not finished (stopped between the queue and the end) is not a success either
+  const unfinished = !running && !failed && !cancelled && ok < n;
+  const fraction = total ? Math.min(1, sent / total) : running ? 0 : 1;
+  return {
+    fraction: running || failed || cancelled || unfinished ? fraction : 1,
+    failed: failed > 0 || unfinished,
+    message,
+    sent,
+    total,
+  };
 }
 
-/** The uploads without the given device paths (their files were deleted). */
+/** The uploads that a run touched (`base` is what `uploads` held when it started). */
+const touched = (uploads: Uploads, base: Uploads): Upload[] =>
+  Object.entries(uploads)
+    .filter(([key, u]) => base[key] !== u)
+    .map(([, u]) => u);
+
+/** One line per file of a run, for the Log: `a: verified`, `b: not sent: ...`, `c: failed: <message>`, `d: cancelled while sending`. */
+export function uploadLines(uploads: Uploads, base: Uploads): string[] {
+  return touched(uploads, base).map((u) => {
+    const why = u.message.split('\n')[0] ?? '';
+    if (u.state === 'ok') return `${u.name}: verified`;
+    if (u.state === 'cancelled') return `${u.name}: ${why}`;
+    if (u.state === 'failed') return why.startsWith('not sent:') ? `${u.name}: ${why}` : `${u.name}: failed: ${why}`;
+    return `${u.name}: not finished`;
+  });
+}
+
+/** The error of a run in which a file failed or the run ended early, or undefined when all were verified or the user cancelled:
+ * `Uploading failed: <first failed message> (1 of 3 sent, 2 not sent)`. A cancelled run is `uploadCancelled`. */
+export function uploadFailure(uploads: Uploads, base: Uploads): string | undefined {
+  const mine = touched(uploads, base);
+  const ok = mine.filter((u) => u.state === 'ok').length;
+  const first = mine.find((u) => u.state === 'failed');
+  if (!mine.length || (!first && mine.every((u) => u.state === 'ok' || u.state === 'cancelled'))) return undefined;
+  const why = first ? (first.message.split('\n')[0] ?? '') : 'the run ended before every file was sent';
+  return `Uploading failed: ${why} (${ok} of ${mine.length} sent, ${mine.length - ok} not sent)`;
+}
+
+/** What the run did when the user stopped it and no file failed (`87 of 357 uploaded, 270 not sent`), else undefined. */
+export function uploadCancelled(uploads: Uploads, base: Uploads): string | undefined {
+  const mine = touched(uploads, base);
+  if (uploadFailure(uploads, base) || !mine.some((u) => u.state === 'cancelled')) return undefined;
+  return cancelledCounts(mine.filter((u) => u.state === 'ok').length, mine.length);
+}
+
+/** The uploads without the given device paths and, for a folder, everything under it (`Foo/` does not match `Foobar/`): their files were deleted. */
 export function dropUploads(u: Uploads, paths: string[]): Uploads {
   const out = { ...u };
-  for (const p of paths) delete out[p];
+  for (const key of Object.keys(out)) if (paths.some((p) => key === p || key.startsWith(`${p}/`))) delete out[key];
   return out;
+}
+
+/** The line while a folder is deleted: `Deleting 20 of 357`, with the folder's name when several rows go. */
+export const deletingLine = (done: number, total: number, folder?: string): string =>
+  `Deleting ${folder ? `${folder}: ` : ''}${done} of ${total}`;
+
+/** What a stopped or failed delete says: how many files went and what remains. */
+export const deletePartLine = (done: number, total: number): string =>
+  `${done} of ${total} file${total === 1 ? '' : 's'} deleted, ${total - done} left`;
+
+/** The text of the armed Delete button when a folder is ticked: its contents go too. */
+export function confirmDeleteLabel(rows: { kind: 'file' | 'folder' }[]): string | undefined {
+  const folders = rows.filter((r) => r.kind === 'folder').length;
+  if (!folders) return undefined;
+  return rows.length === 1
+    ? 'Delete this folder and everything in it?'
+    : `Delete ${rows.length} items, folders with everything in them?`;
 }
 
 // ---- the device's folder ----------------------------------------------------------------------------------------------------------
@@ -279,7 +344,7 @@ export interface SampleRow {
 export function folderStatus(uploads: Uploads, folder: string): SampleStatus | undefined {
   const inside = Object.values(uploads).filter((u) => u.folder === folder || u.folder.startsWith(`${folder}/`));
   if (!inside.length) return undefined;
-  const open = inside.filter((u) => u.state !== 'ok' && u.state !== 'failed');
+  const open = inside.filter((u) => u.state !== 'ok' && u.state !== 'failed' && u.state !== 'cancelled');
   if (open.length) {
     const bytes = inside.reduce((a, u) => a + u.bytes, 0);
     const sent = inside.reduce((a, u) => a + (u.state === 'ok' || u.state === 'verifying' ? u.bytes : u.sent), 0);
@@ -288,8 +353,10 @@ export function folderStatus(uploads: Uploads, folder: string): SampleStatus | u
       : { kind: 'uploading', sent, bytes, message: '' };
   }
   const bad = inside.filter((u) => u.state === 'failed');
-  return bad.length
-    ? { kind: 'failed', message: `${bad.length} of ${inside.length} files failed` }
+  if (bad.length) return { kind: 'failed', message: `${bad.length} of ${inside.length} files failed` };
+  const stopped = inside.filter((u) => u.state === 'cancelled');
+  return stopped.length
+    ? { kind: 'cancelled', message: `${stopped.length} of ${inside.length} files not sent` }
     : { kind: 'ok', message: `${inside.length} file${inside.length === 1 ? '' : 's'} verified` };
 }
 
@@ -422,7 +489,9 @@ const under = (folder: string, parent: string) => folder === parent || folder.st
  * Make the folders (those that the device does not have yet), then put the files: each is read, prepared (a WAV converted), sent with its
  * progress, then verified against what was sent. Every file is queued first, so the global bar knows the whole run. A file that cannot be read
  * or prepared fails alone; a folder that cannot be made fails the files inside it; a failed send stops the run (the device or the link is gone)
- * and the files after it fail as not sent. Every step is an event; nothing throws.
+ * and the files after it fail as not sent. `stop` says the user cancelled: no later file starts, and a cancelled request ends the run the
+ * same way. A file that the cancel cut off, and every file not started, ends `cancelled` (not failed); a file verified before stays `ok`.
+ * Every step is an event; nothing throws.
  */
 export async function uploadItems(
   backend: Pick<SamplesBackend, 'put' | 'verify'> & Partial<Pick<SamplesBackend, 'list' | 'mkdir'>>,
@@ -430,10 +499,13 @@ export async function uploadItems(
   mkdirs: readonly string[],
   items: readonly UploadItem[],
   emit: (e: UploadEvent) => void,
+  stop: () => boolean = () => false,
 ): Promise<void> {
   for (const it of items) emit({ event: 'queued', folder: it.folder, name: it.name, bytes: it.size });
   const lost = new Map<string, string>();
+  let cancelled = false;
   for (const dir of mkdirs) {
+    if (stop()) break;
     const parent = parentOf(dir);
     const inLost = [...lost.keys()].find((l) => under(dir, l));
     if (inLost) {
@@ -444,12 +516,21 @@ export async function uploadItems(
       const have = await backend.list?.(parent);
       if (!have?.some((e) => e.name === dir.split('/').pop() && e.kind === 'folder')) await backend.mkdir?.(dir);
     } catch (e) {
+      if (isCancelled(e)) {
+        cancelled = true;
+        break;
+      }
       lost.set(dir, `the folder ${dir} could not be made: ${errorLine(e)}`);
     }
   }
   let stopped = '';
   for (const it of items) {
     const { folder } = it;
+    if (cancelled || stop()) {
+      cancelled = true;
+      emit({ event: 'cancelled', folder, name: it.name, message: 'not sent: cancelled' });
+      continue;
+    }
     const why = [...lost.entries()].find(([dir]) => under(folder, dir))?.[1];
     if (why || stopped) {
       emit({ event: 'failed', folder, name: it.name, source: it.name, message: `not sent: ${why ?? stopped}` });
@@ -471,9 +552,20 @@ export async function uploadItems(
       emit({ event: 'failed', folder, name: it.name, source: it.name, message: errorLine(e) });
       continue;
     }
+    // the cancel came while the file was read: nothing of it was sent
+    if (stop()) {
+      cancelled = true;
+      emit({ event: 'cancelled', folder, name: p.name, message: 'not sent: cancelled' });
+      continue;
+    }
     try {
       await backend.put(folder, p, (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }));
     } catch (e) {
+      if (isCancelled(e)) {
+        cancelled = true;
+        emit({ event: 'cancelled', folder, name: p.name, message: 'cancelled while sending' });
+        continue;
+      }
       emit({ event: 'failed', folder, name: p.name, message: errorLine(e) });
       stopped = `the upload of ${p.name} failed`;
       continue;
@@ -483,6 +575,11 @@ export async function uploadItems(
       const v = await backend.verify(folder, p);
       emit({ event: 'verified', folder, name: p.name, ok: v.ok, message: `${v.message}\n${v.compared}` });
     } catch (e) {
+      if (isCancelled(e)) {
+        cancelled = true;
+        emit({ event: 'cancelled', folder, name: p.name, message: 'sent, not verified: cancelled' });
+        continue;
+      }
       emit({ event: 'failed', folder, name: p.name, message: errorLine(e) });
     }
   }
@@ -495,6 +592,7 @@ export const uploadFiles = (
   folder: string,
   files: { name: string; data: Uint8Array }[],
   emit: (e: UploadEvent) => void,
+  stop?: () => boolean,
 ): Promise<void> =>
   uploadItems(
     backend,
@@ -502,4 +600,5 @@ export const uploadFiles = (
     [],
     files.map((f) => ({ folder, name: f.name, size: f.data.length, read: async () => f.data })),
     emit,
+    stop,
   );

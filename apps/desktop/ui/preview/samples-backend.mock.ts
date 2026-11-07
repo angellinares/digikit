@@ -29,6 +29,7 @@ export interface OpenedSamples {
   prepare: Prepare;
 }
 
+let puts = 0;
 const clean = (folder: string) => folder.replace(/^\/+|\/+$/g, '');
 const backend: SamplesBackend = {
   kind: 'stock-rpc',
@@ -61,7 +62,35 @@ const backend: SamplesBackend = {
       (sampleTree.get(parent) ?? []).filter((e) => e.name !== f.split('/').pop()),
     );
   },
+  async removeTree(folder, o) {
+    const root = clean(folder);
+    const files: [string, string][] = [];
+    const dirs: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of sampleTree.get(dir) ?? []) {
+        if (e.kind === 'folder') walk(`${dir}/${e.name}`);
+        else files.push([dir, e.name]);
+      }
+      dirs.push(dir);
+    };
+    walk(root);
+    o?.onProgress?.(0, files.length);
+    let removed = 0;
+    for (const [dir, name] of files) {
+      if (o?.shouldStop?.()) return { removed, total: files.length, stopped: true };
+      await delay(150);
+      sampleTree.set(
+        dir,
+        (sampleTree.get(dir) ?? []).filter((e) => e.name !== name),
+      );
+      removed++;
+      o?.onProgress?.(removed, files.length);
+    }
+    for (const d of dirs) await backend.rmdir(d);
+    return { removed, total: files.length, stopped: false };
+  },
   async put(folder, file, onProgress) {
+    if (sim.putfail && puts++ === 1) throw new Error(`open /tst/${file.name}: the device answered status 0`);
     const total = file.stored.length;
     const step = Math.max(1, Math.round(sim.speed * 1024 * 1024 * 0.1));
     for (let sent = 0; sent < total;) {

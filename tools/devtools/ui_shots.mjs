@@ -110,6 +110,27 @@ const SCENES = [
   },
   { name: 'samples', q: 'mode=samples', size: WIDE },
   {
+    // a folder with files: the armed Delete says its contents go; the second click shows the progress line with Cancel
+    name: 'samples-delete-folder-armed',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Delete (Drums)$');
+      await p.click(/^Delete/);
+    },
+  },
+  {
+    name: 'samples-delete-folder-running',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Delete (Drums)$');
+      await p.click(/^Delete/);
+      await p.click(/^Delete this folder/);
+      await p.wait(200);
+    },
+  },
+  {
     name: 'samples-select-partial',
     q: 'mode=samples',
     size: WIDE,
@@ -126,6 +147,16 @@ const SCENES = [
       await p.tick('^Upload (kick|snare|hat)');
       await p.click(/^Upload/);
       await p.wait(3000);
+    },
+  },
+  {
+    name: 'samples-upload-failed',
+    q: 'mode=samples&speed=12&putfail=1',
+    size: WIDE,
+    steps: async (p) => {
+      for (const n of ['kick', 'snare', 'hat']) await p.tick(`^Upload ${n}`);
+      await p.click(/^Upload/);
+      await p.wait(4000);
     },
   },
   { name: 'samples-narrow', q: 'mode=samples', size: MIN },
@@ -1065,6 +1096,9 @@ try {
       note = ` (step failed: ${e.message})`;
       failed++;
     }
+    // the bar's text, when the scene shows one (a speed is only proof if it reads right)
+    const stats = await p.eval("document.querySelector('.bar .stats')?.textContent ?? ''").catch(() => '');
+    if (stats) note += ` [.stats: ${stats}]`;
     const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
     const file = path.join(out, `${prefix ? `${prefix}-` : ''}${scene.name}.png`);
     fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));

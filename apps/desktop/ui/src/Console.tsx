@@ -25,7 +25,7 @@ import {
   reloadFailureEntry,
   unseenErrors,
 } from './log-core';
-import { desktopDefaultModules } from './default-modules';
+import { desktopDefaultModules, shouldInstallAtStart } from './default-modules';
 import { pgoWarning, type BuildInfo } from './pgo-warning';
 import { createLogFollow, followSession } from './log-follow';
 import { windowShown } from './log-follow-core';
@@ -189,6 +189,24 @@ export default function Console() {
   };
   const panel = () => panels[device()];
 
+  /** Set when a default-modules install has started since the app opened (boot() or the first status of a startup with the runtime). */
+  let defaultsStarted = false;
+  /** The app can start the firmware with the runtime itself (boot() does not run): install once the status and the runtime info are both known. */
+  const startDefaultsAtLaunch = () => {
+    const s = status();
+    if (
+      s &&
+      shouldInstallAtStart({
+        runtimeOn: bootRuntime(),
+        runtimeSet: !!info()?.runtime?.set,
+        started: defaultsStarted,
+        hasStatus: true,
+      })
+    ) {
+      defaultsStarted = true;
+      void installDefaultModules(s.device);
+    }
+  };
   const update = (event: RuntimeUpdate) => {
     if (event.type === 'error') {
       setError(event.error);
@@ -196,6 +214,7 @@ export default function Console() {
     }
     live?.show(event.snapshot);
     setStatus(event.snapshot.status);
+    startDefaultsAtLaunch();
     setError(event.snapshot.status.error ?? '');
     watchHealth({ error: event.snapshot.status.error });
   };
@@ -267,7 +286,10 @@ export default function Console() {
       // another firmware may be another device: its card folder and its memory (the runtime needs a moment to load its modules)
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
-      if (s && bootRuntime()) void installDefaultModules(s.device);
+      if (s && bootRuntime()) {
+        defaultsStarted = true;
+        void installDefaultModules(s.device);
+      }
     } catch (e) {
       setError(message(e));
       logInput(failureEntry('firmware', `loading ${name}`, message(e)));
@@ -393,6 +415,8 @@ export default function Console() {
       void (async () => {
         await pollSource();
         await refreshInfo();
+        // the pump may deliver no later snapshot (a hidden window): check once here, now that the runtime info is known
+        startDefaultsAtLaunch();
         // The app starts with the runtime patched in; a user who turned that off gets the startup file as it is.
         if (!bootRuntime() && info()?.runtime?.set) await reload('Started without the runtime at');
       })();

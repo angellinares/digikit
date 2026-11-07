@@ -1,7 +1,8 @@
-// The speed and the time left of a transfer (pure; apps/desktop/ui/tests/transfer-page-ui.test.ts): the rate is smoothed over the last ~2 s of
-// progress, so one slow or fast chunk does not make the number jump.
+// The speed and the time left of a transfer (pure; apps/desktop/ui/tests/transfer-page-ui.test.ts): the rate is smoothed over the last ~5 s of
+// progress, so one slow or fast chunk does not make the number jump. Time without new bytes (BEGIN, END, VERIFY, a stall) counts in the
+// time of the window, so it pulls the number down; the window is long enough that the VERIFY of one file does not empty it.
 
-export const RATE_WINDOW_MS = 2000;
+export const RATE_WINDOW_MS = 5000;
 /** Below this span between the first and last sample the rate is not known yet (one chunk says nothing). */
 const MIN_SPAN_MS = 300;
 
@@ -47,7 +48,7 @@ export function fmtRate(bytesPerSecond: number): string {
 
 /** Seconds left at `rate`, or undefined when the rate is unknown or zero. */
 export const etaSeconds = (remainingBytes: number, rate: number | undefined): number | undefined =>
-  rate && rate > 0 && remainingBytes >= 0 ? remainingBytes / rate : undefined;
+  rate !== undefined && rate > 0 && remainingBytes >= 0 ? remainingBytes / rate : undefined;
 
 /** "12 s left", "1 min 5 s left", "about 2 h left" (a long estimate is rounded). */
 export function fmtEta(seconds: number): string {
@@ -57,10 +58,10 @@ export function fmtEta(seconds: number): string {
   return `about ${Math.round(s / 3600)} h left`;
 }
 
-/** The right-hand text of the progress bar: the percent, then the speed and the time left when they are known and the transfer runs. */
+/** The right-hand text of the progress bar: the percent, then the speed (also `0 B/s` in a stall) and the time left while the transfer runs. */
 export function statsLine(percent: number, running: boolean, rate: number | undefined, remainingBytes: number): string {
   const parts = [`${percent}%`];
-  if (running && rate !== undefined && rate > 0) {
+  if (running && rate !== undefined) {
     parts.push(fmtRate(rate));
     const eta = etaSeconds(remainingBytes, rate);
     if (eta !== undefined && remainingBytes > 0) parts.push(fmtEta(eta));
