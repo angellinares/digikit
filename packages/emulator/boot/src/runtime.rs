@@ -486,8 +486,8 @@ impl Emulator {
             }
         };
         let mut board = Board::new(card, semaphores, CompletionPolicy::Oracle);
-        // `DIGI_DTCN0=bus`: DMA timer 0's counter runs at the bus clock (`Board::enable_dtcn0`).
-        if std::env::var("DIGI_DTCN0").is_ok_and(|v| v == "bus") {
+        // DMA timer 0's counter runs at the bus clock (`Board::enable_dtcn0`), see `dtcn0_on`.
+        if dtcn0_on(&device.short, std::env::var("DIGI_DTCN0").ok().as_deref())? {
             board.enable_dtcn0();
         }
         board
@@ -3327,6 +3327,18 @@ fn idle_advance_limit(remaining: u32, passes: u64, now: u64, deadline: Option<u6
     u64::from(remaining).min(before_yield).min(before_timer) as u32
 }
 
+/// Whether DMA timer 0's counter runs at the bus clock (finding 07). On by default on DN2, where
+/// the pinned PCM holds with it. Off by default on other devices, where it is not checked.
+/// `DIGI_DTCN0=bus` turns it on, `DIGI_DTCN0=off` turns it off.
+fn dtcn0_on(device: &str, env: Option<&str>) -> Result<bool, String> {
+    match env {
+        None => Ok(device == "dn2"),
+        Some("bus") => Ok(true),
+        Some("off") => Ok(false),
+        Some(other) => Err(format!("DIGI_DTCN0={other}: use bus or off")),
+    }
+}
+
 /// Opt-in machine snapshot ("DT2SNP01"). It holds the mutable run state at a
 /// `step_chunk` boundary: CPU, board (RAM, DMA/DSPI/SSI link, eSDHC and card,
 /// timers), input queue, frame trackers and the counters that gate
@@ -3865,6 +3877,15 @@ fn resolve_fused_loops(main: &[u8]) -> Vec<(u32, Loop, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dtcn0_runs_by_default_on_dn2_only() {
+        assert_eq!(dtcn0_on("dn2", None), Ok(true));
+        assert_eq!(dtcn0_on("dt2", None), Ok(false));
+        assert_eq!(dtcn0_on("dn2", Some("off")), Ok(false));
+        assert_eq!(dtcn0_on("dt2", Some("bus")), Ok(true));
+        assert!(dtcn0_on("dn2", Some("on")).is_err());
+    }
 
     #[test]
     fn write_ram_keeps_the_bytes_around_an_unaligned_range() {
