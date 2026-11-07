@@ -7034,3 +7034,39 @@ PLL writes are read statically, not executed (core 264 MHz rests on the measured
 stalls only between adjacent instructions; one dependent-register reading of the manual's stall text; misaligned-operand Table 3-12 and the EMAC saturation +1
 are not modelled. A second agent checked about 150 table cells against Tables 3-13 to 3-20: one error (a mispredicted Bcc
 cost 9 instead of 8 in total), corrected; no other cell mismatched.
+
+## DMA timer 0's counter: stock reads it, the main OS never starts it (2026-11-07) **[D]** **[C]**
+
+Stock DN2 1.11 reads DTCN0 (`0xfc07000c`, DMA timer 0's counter) as a free-running clock. Ten loads of that address
+are in the MAIN OS:
+
+- `0x400ceb82`: an elapsed time against the value stored at `[0x424388a8]`.
+- `0x400d0c84`: timestamps into the table at `0x4244140c`, with DTCN2.
+- `0x400db99e` and `0x400db9c6`: in a loop that reads the panel UART's status.
+- `0x4010d4a6` and `0x4010d690`: an elapsed time shifted right by 12.
+- `0x4011f69c`, `0x4011f9d6`, `0x4011fc54` and `0x40120544`: timestamps into queued messages.
+
+Nothing in the MAIN OS writes DMA timer 0. A write watch on `0xfc070000`-`0xfc07000f` saw no write from reset to ready
+and after. The same watch on DMA timer 2 saw one write, DTMR2 = `0x0007` at `0x400cec90`. So code before the main OS
+starts timer 0. The update file has no such code, and its rate is not known from the image.
+
+The emulator has no DTCN model: `periph/src/dtim.rs` keeps it as a plain register, and the runtime attaches DMA timers 3
+and 1 only. So DTCN0 reads 0, and code that measures time with it sees none pass.
+
+`DIGI_DTCN0=bus` turns on a model (`machine::Board::enable_dtcn0`). DTCN0 then reads the bus clock since reset at
+132 MHz, one tick per instruction at the default `DIGI_CF_IPS`, and wraps at 2^32. The rate is an assumption. The
+runtime gives the board the instruction count before each instruction, where it already sets the bus's count.
+
+Stock DN2 1.11, `--cold-base`, `--dsp zero`, with the model:
+
+- The cold boot reaches ready at the same instruction as without the model, 851,236,338.
+- DTCN0 at the end of a run equals the run's instruction count. Between 0.2 s and 1.0 s of `idle` it advances
+  105,749,995 ticks, which is 0.8 s at 132 MHz.
+- On `load-turns` the read at `0x4011fc54` runs 640 times, once per encoder turn. The read at `0x400ceb82` runs 6 times.
+- The seven scenarios of the span gate are `idle`, `kb-chord16`, `dn2-rec-play` and the four load scenarios of #317.
+  With the model they give the same `isr` and `evala` spans and the same run lengths as without it. The screen and LED
+  hashes are the same in every chunk, and so is the wall time.
+
+Not checked: the pinned PCM scenarios of `tests/scenarios/dn2.json`, which need the SHARC. The model stays off by
+default until they are checked.
+
