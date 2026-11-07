@@ -23,3 +23,5 @@ export const [sampleTicks, setSampleTicks] = createSignal<Set<string>>(new Set()
 export const [uploads, setUploads] = createSignal<Uploads>({});
 /** The uploads as they were when the running (or last) samples upload started: the bar counts what changed since. */
 export const [uploadBase, setUploadBase] = createSignal<Uploads>({});
+/** The speed of the running upload (bytes per second) and the average of the last run; undefined: none to show. */
+export const [uploadSpeed, setUploadSpeed] = createSignal<{ rate?: number; average?: number }>({});

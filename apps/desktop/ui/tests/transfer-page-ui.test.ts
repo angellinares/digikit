@@ -9,7 +9,7 @@ import { test } from 'vitest';
 import { instrument } from '../../../web/src/transfer/activity.ts';
 import { createRate, etaSeconds, fmtEta, fmtRate, statsLine } from '../../../web/src/transfer/rate-core.ts';
 import { FOCUS_GAP_MS, canAutoRefresh, focusReadDue, listingChanged } from '../../../web/src/transfer/refresh-core.ts';
-import { applyUpload, samplesBar } from '../src/samples-core.ts';
+import { applyUpload, formatRate, samplesBar, speedTracker } from '../src/samples-core.ts';
 import {
   MARQUEE_SLOP,
   ROWS_TYPE,
@@ -230,6 +230,49 @@ test('the bottom bar of a samples upload: only what this run touched, one messag
   const queued = ev(base, { event: 'queued', name: 'q', bytes: 100 });
   bar = samplesBar(queued, base, false)!;
   assert.deepEqual([bar.failed, bar.message], [true, 'Nothing was uploaded.']);
+});
+
+test('the speed of an upload: a 5 s window, nothing in the first second, a stall pulls it down, the text', () => {
+  let now = 10_000;
+  const t = speedTracker(() => now);
+  assert.equal(t.rate(), undefined, 'zero time: nothing');
+  now += 500;
+  t.sample(500_000);
+  assert.equal(t.rate(), undefined, 'under a second of data: nothing');
+  now += 500;
+  t.sample(1_000_000);
+  assert.equal(t.rate(), 1_000_000, '1 MB in 1 s');
+  for (let i = 0; i < 10; i++) {
+    now += 1000;
+    t.sample(1_000_000 + (i + 1) * 100_000);
+  }
+  assert.equal(t.rate(), 100_000, 'the window forgets the fast start');
+  // no new bytes (VERIFY, a stall): the number falls with the time, then reaches 0
+  now += 2500;
+  assert.equal(Math.round(t.rate()!), 54_545, 'the anchor is the last point before the window: 300 KB in 5.5 s');
+  now += 5000;
+  assert.equal(t.rate(), 0);
+  assert.equal(t.average(2_000_000), 2_000_000 / 18.5, 'average over the whole run');
+  assert.equal(t.average(0), undefined);
+  assert.deepEqual(
+    [formatRate(412_000), formatRate(999_400), formatRate(1_000_000), formatRate(1_240_000), formatRate(0)],
+    ['412 KB/s', '999 KB/s', '1.00 MB/s', '1.24 MB/s', '0 KB/s'],
+  );
+  // in the bar: the speed while running (with a file), the average at the end
+  const ev = (u: Uploads, e: UploadEventWithoutFolder) => applyUpload(u, { folder: 'd', ...e });
+  let u = ev({}, { event: 'prepared', name: 'k', source: 'k.wav', kind: 'converted', bytes: 1000 });
+  u = ev(u, { event: 'progress', name: 'k', sent: 500, bytes: 1000 });
+  assert.equal(samplesBar(u, {}, true, { rate: 412_000 })!.message, 'Uploading k (1 of 1) · 412 KB/s');
+  assert.equal(samplesBar(u, {}, true, {})!.message, 'Uploading k (1 of 1)');
+  u = ev(u, { event: 'verified', name: 'k', ok: true, message: '' });
+  assert.equal(
+    samplesBar(u, {}, false, { average: 1_240_000 })!.message,
+    'Uploaded 1 file, verified. · 1.24 MB/s average',
+  );
+  u = ev(u, { event: 'prepared', name: 'x', source: 'x.wav', kind: 'converted', bytes: 100 });
+  u = ev(u, { event: 'failed', name: 'x', message: 'bad' });
+  assert.equal(samplesBar(u, {}, false, { average: 8000 })!.message, '1 of 2 uploaded, 1 failed. · 8 KB/s average');
+  assert.equal(samplesBar(u, {}, false, {})!.message, '1 of 2 uploaded, 1 failed.');
 });
 
 // ---- the selection of a list, like a file explorer (select-core.ts) ----------------------------------------------------------------------

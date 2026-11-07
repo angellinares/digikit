@@ -212,9 +212,50 @@ export function uploadStatus(u: Upload | undefined): SampleStatus | undefined {
   }
 }
 
+/** A transfer rate in bytes per second as text: `412 KB/s` below 1 MB/s, `1.24 MB/s` above (base 1000). */
+export function formatRate(bytesPerSecond: number): string {
+  const kb = Math.round(bytesPerSecond / 1000);
+  return kb < 1000 ? `${kb} KB/s` : `${(bytesPerSecond / 1e6).toFixed(2)} MB/s`;
+}
+
+/** Real transfer speed of a run: feed it the total bytes sent so far (`sample`) as events come; ask `rate` at any time. `rate` counts the
+ * bytes of the last `windowMs` against the time since then, so time without new bytes (BEGIN, END, VERIFY, a stall) pulls it down.
+ * Undefined until `minMs` have passed since the start. `clock` gives milliseconds. */
+export function speedTracker(clock: () => number, windowMs = 5000, minMs = 1000) {
+  const start = clock();
+  const points: { t: number; bytes: number }[] = [{ t: start, bytes: 0 }];
+  return {
+    sample(bytes: number) {
+      points.push({ t: clock(), bytes });
+      // keep one point at or before the window start as its anchor
+      const cutoff = clock() - windowMs;
+      while (points.length > 2 && (points[1] as { t: number }).t <= cutoff) points.shift();
+    },
+    rate(): number | undefined {
+      const now = clock();
+      if (now - start < minMs) return undefined;
+      const cutoff = now - windowMs;
+      let anchor = points[0] as { t: number; bytes: number };
+      for (const p of points) if (p.t <= cutoff) anchor = p;
+      const last = points[points.length - 1] as { t: number; bytes: number };
+      return now > anchor.t ? Math.max(0, last.bytes - anchor.bytes) / ((now - anchor.t) / 1000) : undefined;
+    },
+    /** Bytes per second over the whole run so far, with the `bytes` that it sent. */
+    average(bytes: number): number | undefined {
+      const ms = clock() - start;
+      return bytes > 0 && ms > 0 ? bytes / (ms / 1000) : undefined;
+    },
+  };
+}
+
 /** The bar of an upload run: the uploads that this run touched (`base` is what `uploads` held when the run started; an entry that is the very
  * same object was not touched). `running`: the run is still going, so the message names the file. No entry: no bar (undefined). */
-export function samplesBar(uploads: Uploads, base: Uploads, running: boolean): BarInfo | undefined {
+export function samplesBar(
+  uploads: Uploads,
+  base: Uploads,
+  running: boolean,
+  speed: { rate?: number; average?: number } = {},
+): BarInfo | undefined {
   const mine = Object.entries(uploads).filter(([key, u]) => base[key] !== u);
   if (!mine.length) return undefined;
   let sent = 0;
@@ -252,6 +293,8 @@ export function samplesBar(uploads: Uploads, base: Uploads, running: boolean): B
   else if (ok === 0) message = 'Nothing was uploaded.';
   else if (ok < n) message = `${ok} of ${n} uploaded.`;
   else message = `Uploaded ${plural(ok)}, verified.`;
+  if (running && speed.rate !== undefined && current) message += ` · ${formatRate(speed.rate)}`;
+  if (!running && speed.average !== undefined && sent > 0) message += ` · ${formatRate(speed.average)} average`;
   // a run that ended with files not finished (stopped between the queue and the end) is not a success either
   const unfinished = !running && !failed && ok < n;
   const fraction = total ? Math.min(1, finished / total) : running ? 0 : 1;

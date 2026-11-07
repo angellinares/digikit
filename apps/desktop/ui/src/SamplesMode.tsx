@@ -25,7 +25,9 @@ import {
   parentOf,
   planUpload,
   sampleRows,
+  samplesBar,
   selectedRows,
+  speedTracker,
   uploadFailure,
   uploadItems,
   type LocalRow,
@@ -68,6 +70,7 @@ import {
   setSampleFolder,
   setSampleTicks,
   setUploadBase,
+  setUploadSpeed,
   setUploads,
   uploads,
 } from './samples-state';
@@ -140,10 +143,22 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
       setNote('');
       const base = uploads();
       setUploadBase(base);
-      await uploadItems(o.backend, o.prepare, mkdirs, items, (e) => {
-        noteActivity();
-        setUploads((u) => applyUpload(u, e));
-      });
+      const sentNow = (running: boolean) => samplesBar(uploads(), base, running)?.sent ?? 0;
+      const speed = speedTracker(Date.now);
+      setUploadSpeed({});
+      // the timer lets the number fall while no event comes (a stall, VERIFY)
+      const timer = setInterval(() => setUploadSpeed({ rate: speed.rate() }), 1000);
+      try {
+        await uploadItems(o.backend, o.prepare, mkdirs, items, (e) => {
+          noteActivity();
+          setUploads((u) => applyUpload(u, e));
+          speed.sample(sentNow(true));
+          setUploadSpeed({ rate: speed.rate() });
+        });
+      } finally {
+        clearInterval(timer);
+        setUploadSpeed({ average: speed.average(sentNow(false)) });
+      }
       // the real error of a file is on the row only; the run shows and logs it, and the selection stays for a retry
       const failure = uploadFailure(uploads(), base);
       if (failure) throw new Error(failure);
