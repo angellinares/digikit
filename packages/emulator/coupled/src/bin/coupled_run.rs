@@ -1089,6 +1089,15 @@ fn run_scenario(
             .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     let peek = do_peeks(&mut rt, &args.peeks);
+    let midi_out = rt.take_midi_out();
+    let midi = {
+        let status = rt.midi_status();
+        json!({
+            "in_bytes": status.rx_bytes, "in_irqs": status.rx_irqs, "in_queued": status.queued,
+            "out_bytes": midi_out.len(), "out_transfers": status.tx_dma, "out_irqs": status.tx_irqs,
+            "out_head": midi_out.iter().take(48).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" "),
+        })
+    };
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
     let spans = rt.spans_report((cf_instructions_per_second() / FRAMES_PER_SECOND).round() as u64);
     if let Some(base) = &args.span_log {
@@ -1239,6 +1248,7 @@ fn run_scenario(
         "dsp_dump": dsp_dump,
         "gates": gates,
         "guard": guard,
+        "midi": midi,
         "trace": if args.trace { Value::Array(trace) } else { Value::Null },
     }))
 }
@@ -1419,7 +1429,10 @@ mod tests {
                 "load-seq16",
                 "load-turns",
                 "load-ptn-switch",
-                "load-kb-roll"
+                "load-kb-roll",
+                "load-midi-flood",
+                "load-lfo3",
+                "load-midi-out"
             ]
         );
         let defaults = parse_scenarios(DEFAULT_SCENARIOS).unwrap();
