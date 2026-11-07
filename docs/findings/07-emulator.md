@@ -7089,6 +7089,10 @@ by 1 or 16, then a prescaler of 1 to 256. The others are the timer's input pin a
 The MCF5441x data sheet (Rev. 8, tables 1 and 2) rates the core at 250 MHz at most, and the bus at the core divided by 2.
 The only speed grade is 250 MHz.
 
+A photograph of a DN2 board shows the part at U1: MCF54415CMJ250, mask set 0N51E. The suffix 250 is that speed grade.
+For an MCF54415 the CIR is expected to give PIN `0x0A0` (`docs/refs/dspi2-edma-blocker-and-register-sources.md`). No read on a unit
+checks it yet.
+
 Another section of this finding shows the bus clock of 132 MHz: "The intro is meant to run at 15.00 fps, and the bus
 clock is 132 MHz".
 
