@@ -7067,6 +7067,14 @@ Stock DN2 1.11, `--cold-base`, `--dsp zero`, with the model:
   With the model they give the same `isr` and `evala` spans and the same run lengths as without it. The screen and LED
   hashes are the same in every chunk, and so is the wall time.
 
-Not checked: the pinned PCM scenarios of `tests/scenarios/dn2.json`, which need the SHARC. The model stays off by
-default until they are checked.
+Stock DN2 1.12 has ten loads of DTCN0 too. The pinned PCM scenarios of `tests/scenarios/dn2.json` run on 1.12 from
+the ready snapshot, with `--dsp sharc`, in WSL:
+
+- `exactness-100m`, `trig1-noqa-40m`, `trig1-taps` and `trig1-tap-release` keep their pinned hashes with the model
+  and without it.
+- The model is live on this path. At the end of a 0.2 s run DTCN0 reads `0x34513185` with it, and 0 without it.
+- The reads run. In 3 s of `trig1-tap-release`, 8 reads of DTCN0 ran at 3 sites: `0x400cece8` (3 times),
+  `0x4011fcb8` (4 times) and `0x4011f97e` (once). The PCM is the same as without the model.
+
+The model stays off by default. The 132 MHz rate is still an assumption.
 
