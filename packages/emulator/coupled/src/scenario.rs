@@ -144,7 +144,7 @@ pub fn fire(rt: &mut crate::CoupledRuntime, action: Action) -> Result<(), String
     match action {
         Action::Button { code, down } => rt.button(code, down),
         Action::Turn { encoder, detents } => rt.turn(encoder, detents),
-        Action::Midi { len, bytes } => rt.midi_in(&bytes[..usize::from(len)]),
+        Action::Midi { len, bytes } => rt.midi_in_at_wire_rate(&bytes[..usize::from(len)]),
     }
 }
 

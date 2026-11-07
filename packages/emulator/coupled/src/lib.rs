@@ -442,18 +442,9 @@ impl CoupledRuntime {
         Ok(())
     }
 
-    /// The bytes the guest sent on MIDI DIN since the prior call.
-    pub fn take_midi_out(&mut self) -> Vec<u8> {
-        self.emulator.take_midi_out()
-    }
-
-    /// The MIDI DIN and USB counters.
-    pub fn midi_status(&self) -> elektron_native_boot::midi::MidiStatus {
-        self.emulator.midi_status()
-    }
-
-    /// Queue bytes on the MIDI DIN input, one byte per wire time (31,250 baud), recording them for replay.
-    pub fn midi_in(&mut self, bytes: &[u8]) -> Result<(), String> {
+    /// Queue bytes on the MIDI DIN input, one byte per wire time (31,250 baud), recording them for replay
+    /// (a scenario's `midi` event). `Emulator::midi_in` takes its own period and records nothing.
+    pub fn midi_in_at_wire_rate(&mut self, bytes: &[u8]) -> Result<(), String> {
         let ips = elektron_native_boot::clock::cf_ips();
         let period =
             elektron_native_boot::clock::scale_instr(elektron_native_boot::midi::WIRE_PERIOD, ips);
