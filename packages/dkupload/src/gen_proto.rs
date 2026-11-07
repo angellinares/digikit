@@ -64,6 +64,7 @@ pub const CAP_VERIFY: u32 = 1 << 8;
 pub const CAP_SERVICE_CMDS: u32 = 1 << 9;
 pub const CAP_FOLDERS: u32 = 1 << 10;
 pub const CAP_SETTINGS: u32 = 1 << 11;
+pub const CAP_FILEHASH: u32 = 1 << 12;
 pub const CAPK_MODULES: u8 = 1;
 pub const CAPK_SELECTION: u8 = 2;
 pub const CAPK_ARENA: u8 = 3;

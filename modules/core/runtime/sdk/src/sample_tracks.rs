@@ -303,14 +303,14 @@ pub fn rooted(root: &[u8], path: &[u8], out: &mut [u8; PATH]) -> Result<usize, i
     Ok(total)
 }
 
-/// Identity of a store file (DN2: `samples/...` of the digikit store): its size and the sha256 of its table entry, as the listing row gives them.
+/// Identity of a store file (DN2: `samples/...` of the digikit store): its size and the file hash of its table entry (`HASH_ELEKTRON32`, the same kind and value as the listing row and as a DT2 file), as the listing row gives them.
 pub fn store_identity(size: u32, sha: &[u8; 32]) -> FileId {
     FileId {
         root: crate::files::SAMPLES,
         size,
         mtime: 0,
         flags: ID_HASH_VALID,
-        hash_kind: crate::files::HASH_SHA256,
+        hash_kind: crate::files::HASH_ELEKTRON32,
         hash: *sha,
     }
 }

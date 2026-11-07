@@ -362,7 +362,7 @@ impl Backend {
                     row.kind = FILE;
                     row.flags = SIZE_VALID | HASH_VALID;
                     row.size_bytes = value.entry.size;
-                    row.hash_kind = HASH_SHA256;
+                    row.hash_kind = HASH_ELEKTRON32;
                     row.hash = value.entry.sha;
                 }
                 return Ok(Outcome::Row(row));

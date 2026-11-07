@@ -933,7 +933,7 @@ E_FULL = { code = -52, text = "not enough free sectors in the store" }
 E_STATE = { code = -53, text = "no upload open (or not in this state)" }
 E_OFFSET = { code = -54, text = "offset is neither the next byte nor a retry" }
 E_LENGTH = { code = -55, text = "bad chunk length, or the file would pass its size" }
-E_HASH = { code = -56, text = "the staged file does not match the sha256 of BEGIN" }
+E_HASH = { code = -56, text = "the staged file does not match the file hash of BEGIN" }
 E_WRITE = { code = -57, text = "the firmware's block write failed" }
 E_READ = { code = -58, text = "the firmware's block read failed" }
 E_NOFILE = { code = -59, text = "that path is not in the store" }
@@ -959,8 +959,9 @@ CAPACITY = 6
 READ = 7
 VERIFY = 8
 SERVICE_CMDS = 9    # modules register commands (Api.register_cmds)
-FOLDERS = 10        # LIST takes a prefix, MKDIR, CAPACITY kind STORE (store format 3)
+FOLDERS = 10        # LIST takes a prefix, MKDIR, CAPACITY kind STORE
 SETTINGS = 11       # the SETTINGS command (read the settings record), CAPACITY kind SETTINGS
+FILEHASH = 12       # store format 4: the 32-byte hash of BEGIN, END, LIST and VERIFY is the content hash (4 bytes, big-endian, then 28 zeros), not a SHA-256
 
 [capacity.kinds]   # the `kind` byte of a CAPACITY entry (u8 kind, u32 limit, u32 used, u32 largest); additive: a number is never reused
 MODULES = 1         # module records; used: loaded; largest: 0
@@ -1029,7 +1030,7 @@ value = "u8x16"
 E_NOT_FOUND = { code = -1, text = "no store, or no such file or module" }
 E_BAD_STORE = { code = -2, text = "store header or table check failed" }
 E_READ = { code = -3, text = "the firmware's block read failed" }
-E_SHA = { code = -4, text = "store or .dkm sha256 does not match" }
+E_SHA = { code = -4, text = "store file hash or .dkm sha256 does not match" }
 E_FORMAT = { code = -5, text = "bad magic, version, bounds or alignment of the .dkm" }
 E_RUNTIME = { code = -6, text = "the module needs a newer runtime" }  # reserved
 E_IMPORT = { code = -7, text = "an import name is not in the runtime's table" }

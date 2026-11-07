@@ -1,9 +1,9 @@
 //! The runtime's use of the module and sample store: the format, the reader and the writer are `dkrt_sdk::store` (docs/design/digikit-store.md); this
-//! file adds the area of this device, the staging buffer, the file's sha256 check, `Api::store_read` and the list the DIGIKIT menu shows. Reads go
+//! file adds the area of this device, the staging buffer, the file's hash check, `Api::store_read` and the list the DIGIKIT menu shows. Reads go
 //! through the firmware's block read (16-byte aligned buffers, multiples of 512 bytes, at most 0x10000 per call). The table is never held whole: it is
 //! scanned through the staging buffer.
 
-use crate::sha256::sha256;
+use crate::hash32;
 use crate::{DKRT_STAGE, STAGE_BYTES};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::store::{self, Hdr, Io, Layout, Table, KIND_FILE};
@@ -50,7 +50,7 @@ pub fn reader() -> Io {
     Io { rd: block_read, wr: no_write }
 }
 
-/// Where a file is and what its table entry says its sha256 is.
+/// Where a file is and what its table entry says its file hash slot is.
 pub struct File {
     pub first: u32,
     pub size: u32,
@@ -116,7 +116,7 @@ pub unsafe fn read_head(f: &File, head: &mut [u8; 64]) -> Result<(), i32> {
     Ok(())
 }
 
-/// Read the file `f` into the staging buffer and check the table's sha256. The file is then at `stage()`.
+/// Read the file `f` into the staging buffer and check the table's file hash. The file is then at `stage()`.
 pub unsafe fn load_to_stage(f: &File) -> i32 {
     let r = capacity::stage_fit(f.size, STAGE_BYTES as u32);
     if r != OK {
@@ -129,9 +129,7 @@ pub unsafe fn load_to_stage(f: &File) -> i32 {
     if r != OK {
         return r;
     }
-    let mut got = [0u8; 32];
-    sha256(buf, f.size, got.as_mut_ptr());
-    if got != f.sha {
+    if hash32::slot_of(buf, f.size) != f.sha {
         return E_SHA;
     }
     OK

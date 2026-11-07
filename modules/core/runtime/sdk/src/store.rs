@@ -1,4 +1,4 @@
-//! The module and sample store, version 3 (docs/design/digikit-store.md): the format, the readers and the one writer (a copy-on-commit
+//! The module and sample store, version 4 (docs/design/digikit-store.md): the format, the readers and the one writer (a copy-on-commit
 //! table), shared by the runtime and by tests on the host. `#![no_std]` and ColdFire rules: no `match` on integers, no `core::fmt`, no
 //! unchecked slice indexing in a loop that a card error can lengthen.
 //!
@@ -20,7 +20,8 @@ use crate::proto::{E_FULL, E_WRITE};
 use crate::{E_BAD_STORE, E_NOT_FOUND, E_READ, OK};
 
 pub const MAGIC: u32 = 0x444b_5354; // "DKST"
-pub const VERSION: u32 = 3;
+/// Version 4: the entry's 32-byte hash slot holds the +Drive content hash (`hash | 1`, big-endian, then 28 zeros), not a SHA-256.
+pub const VERSION: u32 = 4;
 /// Bytes of a table entry, and of its path field (NUL-terminated inside: a path has at most 159 bytes).
 pub const ENTRY: usize = 256;
 pub const PATH_BYTES: usize = 160;
@@ -231,7 +232,7 @@ impl Hdr {
     }
 }
 
-/// Decode a header sector: the magic, version 3 and the CRC over bytes 0..508. `None` when any fails.
+/// Decode a header sector: the magic, version 4 and the CRC over bytes 0..508. `None` when any fails.
 pub unsafe fn parse_header(p: *const u8) -> Option<Hdr> {
     if be32(p) != MAGIC || be32(p.add(4)) != VERSION || be32(p.add(508)) != crc32_of(p, 508) {
         return None;
@@ -295,7 +296,18 @@ unsafe fn header_at(io: &Io, lay: &Layout, rel: u32, scratch: *mut u8) -> Option
     parse_header(scratch).filter(|h| plausible(lay, h))
 }
 
-/// Read both headers (two sectors into `scratch`, 512 bytes, 16-byte aligned). `Err(E_NOT_FOUND)`: no store (neither sector has the magic);
+/// Does this header sector carry our magic and the current version?
+unsafe fn ours(p: *const u8) -> bool {
+    be32(p) == MAGIC && be32(p.add(4)) == VERSION
+}
+
+/// Does a header sector hold a store of another version (our magic, not version 4)? Such a store counts as no store: readers see none, and the
+/// first upload makes a version 4 one over it.
+pub unsafe fn old_header(p: *const u8) -> bool {
+    be32(p) == MAGIC && be32(p.add(4)) != VERSION
+}
+
+/// Read both headers (two sectors into `scratch`, 512 bytes, 16-byte aligned). `Err(E_NOT_FOUND)`: no store (neither sector has our magic and version; an older version is no store);
 /// `Err(E_BAD_STORE)`: a header is there but neither copy is usable.
 pub unsafe fn open_headers(
     io: &Io,
@@ -306,7 +318,7 @@ pub unsafe fn open_headers(
     if r != OK {
         return Err(r);
     }
-    let a_magic = be32(scratch) == MAGIC;
+    let a_magic = ours(scratch);
     let a = parse_header(scratch).filter(|h| plausible(lay, h));
     let b = header_at(io, lay, lay.header_b(), scratch);
     if a.is_none() && b.is_none() {
@@ -502,6 +514,7 @@ pub struct Entry {
     pub first: u32,
     pub size: u32,
     pub kind: u8,
+    /// The hash slot: the file's content hash, big-endian, then 28 zeros (`hash32::slot`); all zero for a folder.
     pub sha: [u8; 32],
 }
 
@@ -634,7 +647,7 @@ pub unsafe fn find(
 
 /// Copy one complete file into caller-owned storage, with fail-closed generation
 /// checks around lookup and read. Unlike `stable`, exhaustion never returns an
-/// unverified result. `hash` must compute SHA-256 of the supplied retained bytes.
+/// unverified result. `hash` must compute the file hash slot (`hash32::slot`) of the supplied retained bytes.
 ///
 /// # Safety
 /// `path` is NUL terminated. All buffers are private to this operation, disjoint,
@@ -707,9 +720,6 @@ pub unsafe fn snapshot<F: FnMut(&[u8]) -> [u8; 32]>(
         tries += 1;
     }
 }
-
-/// Bounded file reads with explicit digest completion.
-pub mod stream;
 
 /// Internal bounded metadata enumeration; no public C SDK contract.
 pub mod catalog;

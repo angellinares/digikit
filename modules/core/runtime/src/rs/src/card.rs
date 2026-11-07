@@ -99,14 +99,14 @@ pub(crate) unsafe fn blank(p: *const u8) -> bool {
     true
 }
 
-/// Is the sector at absolute `sector` one of ours (a valid store header, or for the record sectors a valid selection copy)? `None`: the read failed.
+/// Is the sector at absolute `sector` one of ours (a valid store header, or one of another version: that store counts as empty; for the record sectors a valid selection copy)? `None`: the read failed.
 unsafe fn ours_at(sector: u32, kind: u32) -> Option<bool> {
     let buf = stage();
     if block_read(sector, 512, buf) != 0 {
         return None;
     }
     Some(if kind == 0 {
-        store::parse_header(buf).is_some()
+        store::parse_header(buf).is_some() || store::old_header(buf)
     } else {
         sel::decode(&*(buf as *const [u8; 512])).is_some()
     })
