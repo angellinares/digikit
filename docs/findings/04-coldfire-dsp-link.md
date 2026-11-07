@@ -3211,8 +3211,8 @@ Measured once on a DN2 unit on OS 1.11, with a 1.11 mod build with LFO 4. This h
 
 Measured once on a DN2 unit on OS 1.11, with stock and the USB probe mod. This has not been second-checked.
 
-The probe times the vector-191 handler with DTCN0, from entry to exit. DTCN0 counts the internal bus clock, which the probe
-measured at 132.00 MHz. The unit ran a new project. The emulator ran the same states on stock 1.11 with `--span`
+The probe times the vector-191 handler with DTCN0, from entry to exit. The probe measured DTCN0 at 132.00 MHz (finding
+07). The unit ran a new project. The emulator ran the same states on stock 1.11 with `--span`
 (`docs/INSTRUMENTATION.md`, "Calibration against a unit").
 
 | state | unit, % of a frame | emulator, % of a period |

@@ -326,8 +326,8 @@ measurement in cycles is available.
 
 #### Calibration against a unit
 
-A DN2 unit with stock 1.11 and the USB probe mod timed its audio handler with DTCN0. DTCN0 counts the internal bus clock,
-measured at 132.00 MHz on that unit. The unit ran a new project, read for 10 s or more in each state. The emulator ran the
+A DN2 unit with stock 1.11 and the USB probe mod timed its audio handler with DTCN0. DTCN0 ran at
+132.00 MHz on that unit (finding 07). The unit ran a new project, read for 10 s or more in each state. The emulator ran the
 same states on stock 1.11 (`--cold-base`, `--dsp zero`):
 
 | state | unit, % of a frame | emulator, % of a period | unit ticks per instruction |

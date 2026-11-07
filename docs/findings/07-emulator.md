@@ -7081,11 +7081,18 @@ for any device. Another value stops the run with an error. On DT2 it stays off b
 checked with it. With the default, stock 1.11 `load-turns` gates +0 against the stock report made without the model.
 
 **The rate, measured (2026-11-07).** The USB probe mod reads DTCN0 against the frame count on a unit. On the owner's unit
-DTCN0 runs at 132.00 MHz, the model's rate. The MCF5441x Reference Manual (chapter 39, DTMRn) gives the DMA timers' clock:
-the internal bus clock divided by 1 or 16, then a prescaler of 1 to 256. So the bus runs at 132 MHz on that unit.
+DTCN0 runs at 132.00 MHz, the model's rate: 88,000 ticks for each frame.
 
-The manual rates the part at 250 MHz for the core and 125 MHz for the bus. A 132 MHz bus is above that rating. The core clock
-on the unit is not measured.
+The MCF5441x Reference Manual (chapter 39, DTMRn) gives three clocks for a DMA timer. One is the internal bus clock divided
+by 1 or 16, then a prescaler of 1 to 256. The others are the timer's input pin and the IEEE 1588 timebase.
+
+The MCF5441x data sheet (Rev. 8, tables 1 and 2) rates the core at 250 MHz at most, and the bus at the core divided by 2. The only speed
+grade is 250 MHz. So a bus at 132 MHz is above the rating.
+
+Which clock timer 0 counts is not known. Nothing in the MAIN OS writes DTMR0, and the update file has no code that does.
+
+The bootstrap section writes one field of PLL_DR, OUTDIV3 = 6 (the eSDHC clock). The core and bus dividers come from the
+reset configuration, which the update file does not hold. A read of DTMR0 and PLL_DR on a unit can tell.
 
 **DTCN2.** Stock writes DTMR2 = `0x0007`: RST = 1, CLK = 11, PS = 0. CLK = 11 selects the DT2IN pin (falling edge). So
 DMA timer 2 counts an external signal, and the bus clock cannot model it.
