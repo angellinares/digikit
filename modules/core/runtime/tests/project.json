@@ -59,6 +59,11 @@
         "plusdrive": true
       },
       {
+        "files": ["upload-depth.device.test.ts"],
+        "modules": [],
+        "plusdrive": true
+      },
+      {
         "files": ["upload-faults.device.test.ts"],
         "modules": ["test/sine"],
         "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],

@@ -103,7 +103,9 @@ Behaviour the first draft left open (lane r4, built and tested):
 
 DATA rules: `offset` equals the next expected byte, or the offset of the previous chunk with the same length (a retry; the
 reply is ok and nothing is written again). The length is 1 to 32768 and a multiple of 512, except for the chunk that ends the
-file. The host may keep at most 2 DATA requests in flight; replies come in order.
+file. The host may keep at most 2 DATA requests in flight; replies come in order. A host with 2 in flight treats a reply to a later request as proof that the earlier ones were done, and after a
+timeout sends the unacknowledged chunks again one at a time from the first (an `E_OFFSET` for one with a later chunk behind it means it was done). The TypeScript `DkSession` keeps 1 in flight unless the
+transport says `dataDepth` (the emulator's USB: 2); the real MIDI transports stay at 1 until it has run on a device (finding 43, "Two requests in flight").
 
 ## Service commands (runtime 0.2.5, capability bit 9)
 
