@@ -5,7 +5,8 @@
 //!   DSP_STATE  canonical SHRD state blob (a DN2 continuation; private)
 //!   DSP_IMAGE  packed loader image: `uv run python -m tools.sharc_dev.sharc_pack_image dn2-1.12 OUT`
 //!   OUT.wav    48 kHz stereo 32-bit float; OUT.q31 raw words; OUT.csv per frame
-//! env: NOTE_EVENTS=trig|play (see common/mod.rs), DSP_PERIOD (instructions
+//! env: BASE_SHA256=SHA: SYX is a patched build of that stock firmware.
+//!   NOTE_EVENTS=trig|play (see common/mod.rs), DSP_PERIOD (instructions
 //!   per frame, default 666667), DSP_CLOCK_BASE (default 573627620),
 //!   DSP_ATTACH=start|ready (default start: the DSP sees every frame from the
 //!   first one; ready: zero replies and no DSP time until the panel is ready).
@@ -243,7 +244,12 @@ fn main() {
     // CARD_IMAGE=FILE: boot from that +Drive image (the card the snapshot is for).
     let card = env::var_os("CARD_IMAGE")
         .map(|p| elektron_native_boot::card_file::card_from_image(p.as_ref()).unwrap());
-    let mut emu = Emulator::new(&syx, card).unwrap();
+    // BASE_SHA256=SHA: SYX is a patched build of that stock firmware (`Emulator::new_patched`).
+    let mut emu = match env::var("BASE_SHA256") {
+        Ok(base) => Emulator::new_patched(&syx, card, &base),
+        Err(_) => Emulator::new(&syx, card),
+    }
+    .unwrap();
     emu.enable_ssi_diagnostic(96_000).unwrap();
 
     let mut script = common::Script::from_env();
