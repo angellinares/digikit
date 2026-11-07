@@ -38,6 +38,12 @@
         "dksampleWasm": true
       },
       {
+        "files": ["store-format.device.test.ts"],
+        "modules": ["test/sine"],
+        "sources": ["apps/web/src/firmware/default-modules-core.ts", "apps/web/src/modules/dktransfer.ts"],
+        "plusdrive": true
+      },
+      {
         "files": ["samples-store-live.device.test.ts"],
         "modules": [],
         "sources": [

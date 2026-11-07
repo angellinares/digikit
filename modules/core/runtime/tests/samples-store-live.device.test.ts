@@ -9,7 +9,7 @@ import { sampleWav } from '@digi/regression/runtime/fixtures.ts';
 import { liveProtocol } from '@digi/regression/runtime/protocol.ts';
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
-import { hexSha256 } from '@digi/dk-session';
+import { fileHashHex } from '@digi/dk-session';
 import { openSamples } from '@digi/dk-session/samples';
 
 async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
@@ -75,11 +75,11 @@ async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
 
     const ok = await dev.verify('drums', prep);
     check(
-      'VERIFY: the device sha256 of the stored file equals the host sha256 of the bytes sent',
+      'VERIFY: the device hash of the stored file equals the host hash of the bytes sent',
       ok.ok &&
         ok.device === ok.host &&
-        ok.message === 'device sha256 matches' &&
-        ok.host === (await hexSha256(prep.stored)),
+        ok.message === 'device hash matches' &&
+        ok.host === fileHashHex(prep.stored),
       JSON.stringify(ok),
     );
     const wrong = { ...prep, stored: Uint8Array.from(prep.stored) };
@@ -87,7 +87,7 @@ async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
     const bad = await dev.verify('drums', wrong);
     check(
       'a different content reports failed',
-      !bad.ok && bad.device === ok.host && bad.host !== ok.host && bad.message === 'device sha256 differs',
+      !bad.ok && bad.device === ok.host && bad.host !== ok.host && bad.message === 'device hash differs',
       JSON.stringify(bad),
     );
     const none = await dev.verify('drums', { ...prep, name: 'nothing' });
@@ -132,7 +132,7 @@ async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
       join(out, 'result.json'),
       JSON.stringify({
         path: 'samples/drums/test',
-        sha256: after.host,
+        hash: after.host,
         size: prep.stored.length,
         compared: after.compared,
       }),

@@ -1,9 +1,8 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { bytesOfHex, concat, be32, hexOf, type DkEntry, type DkSession } from '@digi/dk-session';
+import { bytesOfHex, concat, be32, fileHash, hexOf, type DkEntry, type DkSession } from '@digi/dk-session';
 import { repoRoot, resolveInputs, type Device, type Session } from '@digi/test-support';
 import { parse } from 'smol-toml';
 import { describe, expect, test } from 'vitest';
@@ -22,7 +21,8 @@ import { overlayRecords } from './write-safety.ts';
 const exec = promisify(execFile);
 export { GCMD };
 
-export const shaBytes = (b: Uint8Array): Uint8Array => createHash('sha256').update(b).digest();
+/** The hash slot BEGIN carries for `b` (the host's `fileHash`). */
+export const shaBytes = fileHash;
 const text = new TextEncoder();
 /** A NUL-terminated path. */
 export const cstr = (p: string): Uint8Array => concat(text.encode(p), Uint8Array.of(0));
@@ -42,7 +42,7 @@ export function runtimeVersion(): number {
 // ---- files, the device's LIST and the card ------------------------------------------------------------------------------------------
 
 export const deviceListing = async (dk: DkSession, prefix?: string): Promise<Listing> =>
-  Object.fromEntries((await dk.list(prefix)).map((e: DkEntry) => [e.path, [e.size, e.sha256]]));
+  Object.fromEntries((await dk.list(prefix)).map((e: DkEntry) => [e.path, [e.size, e.hash]]));
 export const clearFiles = (files: Files): void => {
   for (const p of Object.keys(files)) delete files[p];
 };

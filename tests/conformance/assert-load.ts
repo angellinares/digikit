@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { hexSha256, type DkLogEvent } from '@digi/dk-session';
+import { fileHashHex, type DkLogEvent } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
@@ -23,7 +23,7 @@ export async function expectModuleLoad(
   // The debug module is loaded next to every module (the cell reads its LOG); for the debug module itself, once.
   const names = [...new Set([DEBUG_MODULE, module.id])];
   const paths = [...new Set(['modules/debug.dkm', storePath])].sort();
-  const hash = await hexSha256(bytes);
+  const hash = fileHashHex(bytes);
   const artifacts = path.join(liveArtifacts(session, 'module-load'), module.id.split('/')[1]!);
   fs.mkdirSync(artifacts, { recursive: true });
 
@@ -44,7 +44,7 @@ export async function expectModuleLoad(
   expect(entries.find((entry) => entry.path === storePath)).toEqual({
     path: storePath,
     size: bytes.length,
-    sha256: hash,
+    hash,
   });
   expect(entries.map((entry) => entry.path).sort(), 'the store holds the two module files (any order)').toEqual(paths);
   expect(await dk.verifyFile(storePath, bytes), 'module bytes survive reboot').toBe(true);

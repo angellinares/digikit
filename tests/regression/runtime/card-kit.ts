@@ -1,10 +1,9 @@
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import zlib from 'node:zlib';
-import { DkError } from '@digi/dk-session';
+import { DkError, fileHashHex } from '@digi/dk-session';
 import { LOAD_STATUS, STATUS } from '../../../packages/dk-session/src/gen_proto.ts';
 import { repoRoot, type Device, type Session } from '@digi/test-support';
 import { cardStore } from './device-data.ts';
@@ -124,7 +123,7 @@ export function claimHeader(device: Device): Buffer {
   const { first, end } = cardStore(device);
   const b = Buffer.alloc(SECTOR);
   b.write('DKST', 0, 'latin1');
-  [3, 0, 0, 1, 0, 1, 1, end - first].forEach((v, i) => b.writeUInt32BE(v >>> 0, 4 + 4 * i));
+  [4, 0, 0, 1, 0, 1, 1, end - first].forEach((v, i) => b.writeUInt32BE(v >>> 0, 4 + 4 * i));
   b.writeUInt32BE(zlib.crc32(b.subarray(0, 508)), 508);
   return b;
 }
@@ -205,10 +204,11 @@ export interface StoreEntry {
   dir: boolean;
   firstSector: number;
   size: number;
-  sha256: string;
+  /** The entry's hash slot (hex), as `fileHashHex` gives it. */
+  hash: string;
 }
 
-/** `plusdrive store ls`: the header line (used sectors, version, seq, header copy) and the files with their sha256. Fails on a card with no store. */
+/** `plusdrive store ls`: the header line (used sectors, version, seq, header copy) and the files with their hash slot. Fails on a card with no store. */
 export async function storeList(cardImage: string, device: Device): Promise<{ head: string; entries: StoreEntry[] }> {
   const { stdout } = await exec(
     plusdriveBinary(),
@@ -226,7 +226,7 @@ export async function storeList(cardImage: string, device: Device): Promise<{ he
       dir,
       firstSector: dir ? 0 : Number(first),
       size: Number(size),
-      sha256: dir ? '' : sha,
+      hash: dir ? '' : sha,
     };
   });
   return { head: head!, entries };
@@ -388,7 +388,8 @@ export async function statusOf(op: () => Promise<unknown>): Promise<number> {
   }
 }
 
-export const sha = (b: Uint8Array): string => createHash('sha256').update(b).digest('hex');
+/** The store's hash slot of `b` (hex): what LIST, VERIFY and the card's table say of it. */
+export const sha = (b: Uint8Array): string => fileHashHex(b);
 
 /** Deterministic bytes with every value (the 8-in-7 packing needs the high bits): mulberry32 of `seed`. */
 export function blob(n: number, seed: number): Buffer {
@@ -408,11 +409,11 @@ export function blob(n: number, seed: number): Buffer {
 export type Files = Record<string, Buffer>;
 export type Listing = Record<string, [number, string]>;
 
-/** {path: [size, sha256]} of the files sent. */
+/** {path: [size, hash]} of the files sent. */
 export const listing = (files: Files): Listing =>
   Object.fromEntries(Object.entries(files).map(([p, b]) => [p, [b.length, sha(b)]]));
 
-/** The files of a card's store as `plusdrive store ls --cat` reads them (their sha256 is checked there), and the reader's header line. A card the reader cannot read gives no files. */
+/** The files of a card's store as `plusdrive store ls --cat` reads them (their hash is checked there), and the reader's header line. A card the reader cannot read gives no files. */
 export async function cardView(cardFile: string, device: Device): Promise<{ files: Files; head: string }> {
   let store: Awaited<ReturnType<typeof storeList>>;
   try {

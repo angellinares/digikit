@@ -58,7 +58,7 @@ async function expectCard(rig: CardRig, label: string, files: Files): Promise<vo
   expect(listing(view.files), `${label}: the card, read by plusdrive, holds the same bytes ${view.head}`).toEqual(
     listing(files),
   );
-  check(`${label}: store version 3`, view.head.includes('version=3'), view.head);
+  check(`${label}: store version 4`, view.head.includes('version=4'), view.head);
 }
 
 // ---- ops and quick ------------------------------------------------------------------------------------------------------------------
@@ -87,7 +87,7 @@ async function readChecks(rig: CardRig, file: string, data: Buffer): Promise<voi
   for (let off = 0; off < data.length; off += 768) parts.push(Buffer.from((await dk.read(file, off, 768)).bytes));
   check('READ: the whole file by 768-byte reads', Buffer.concat(parts).equals(data));
   check(
-    'VERIFY: the device sha256 of the file on the card equals the local one',
+    'VERIFY: the device hash of the file on the card equals the local one',
     (await dk.verify(file)) === sha(data),
   );
   const missing = await statusOf(() => dk.verify('modules/none.dkm'));
@@ -188,7 +188,7 @@ async function opsFull(rig: CardRig, files: Files): Promise<void> {
 
   // E_HASH: nothing is committed
   const bad = await putWithHash(rig, 'modules/bad.dkm', blob(40_000, 10), shaBytes(text.encode('not the file')));
-  check('a wrong sha256: E_HASH', bad === -56, String(bad));
+  check('a wrong file hash: E_HASH', bad === -56, String(bad));
   check('an upload ended by END is closed', !(await dk.info()).upload_open);
   await expectCard(rig, 'after E_HASH (nothing committed)', files);
 
@@ -290,14 +290,14 @@ async function folders(rig: CardRig): Promise<void> {
   const verify = async (label: string, dirs: string[]): Promise<Record<string, number>> => {
     const store = await rig.ls(`fold-${++step}`);
     const listed = await dk.list();
-    const isFolder = (e: { size: number; sha256: string }) => e.size === 0 && e.sha256 === zeroHash;
+    const isFolder = (e: { size: number; hash: string }) => e.size === 0 && e.hash === zeroHash;
     expect(
-      Object.fromEntries(listed.filter((e) => !isFolder(e)).map((e) => [e.path, [e.size, e.sha256]])),
+      Object.fromEntries(listed.filter((e) => !isFolder(e)).map((e) => [e.path, [e.size, e.hash]])),
       `${label}: LIST equals the files sent`,
     ).toEqual(listing(files));
     const onCard = store.entries.filter((e) => !e.dir);
     expect(
-      Object.fromEntries(onCard.map((e) => [e.path, [e.size, e.sha256]])),
+      Object.fromEntries(onCard.map((e) => [e.path, [e.size, e.hash]])),
       `${label}: the card, read by plusdrive, lists the same files and sizes ${store.head}`,
     ).toEqual(listing(files));
     const folderNames = listed.filter((e) => isFolder(e) && !(e.path in files)).map((e) => e.path);
