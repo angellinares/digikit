@@ -32,7 +32,8 @@
         "sources": [
           "packages/dk-session/src/dksample.ts",
           "packages/dk-session/src/rpcfiles.ts",
-          "packages/dk-session/src/samples.ts"
+          "packages/dk-session/src/samples.ts",
+          "apps/desktop/ui/src/samples-core.ts"
         ],
         "plusdrive": true,
         "dksampleWasm": true
@@ -49,7 +50,8 @@
         "sources": [
           "packages/dk-session/src/dksample.ts",
           "packages/dk-session/src/rpcfiles.ts",
-          "packages/dk-session/src/samples.ts"
+          "packages/dk-session/src/samples.ts",
+          "apps/desktop/ui/src/samples-core.ts"
         ],
         "dksampleWasm": true
       },

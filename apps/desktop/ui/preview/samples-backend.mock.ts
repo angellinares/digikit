@@ -89,6 +89,9 @@ const backend: SamplesBackend = {
     for (const d of dirs) await backend.rmdir(d);
     return { removed, total: files.length, stopped: false };
   },
+  sameOnDevice(file) {
+    return sim.skip.split(',').includes(file.name);
+  },
   async put(folder, file, onProgress) {
     if (sim.putfail && puts++ === 1) throw new Error(`open /tst/${file.name}: the device answered status 0`);
     const total = file.stored.length;

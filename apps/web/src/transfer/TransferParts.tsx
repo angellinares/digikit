@@ -25,7 +25,7 @@ export interface CancelledRun {
 
 /** What the page shows beside a file while it is sent: a bar, or a chip; `message` is the tooltip of the chip. */
 export interface ChipStatus {
-  kind: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'failed' | 'cancelled';
+  kind: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'same' | 'failed' | 'cancelled';
   sent?: number;
   bytes?: number;
   message?: string;
@@ -48,6 +48,11 @@ export function Chip(props: { status: ChipStatus }): JSX.Element {
       <Show when={props.status.kind === 'ok'}>
         <span class="check ok" title={props.status.message}>
           verified
+        </span>
+      </Show>
+      <Show when={props.status.kind === 'same'}>
+        <span class="check ok" title={props.status.message}>
+          on device
         </span>
       </Show>
       <Show when={props.status.kind === 'failed'}>

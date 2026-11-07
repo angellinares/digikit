@@ -150,6 +150,17 @@ const SCENES = [
     },
   },
   {
+    // a resumed upload: two of the three files are on the device already, the third is sent
+    name: 'samples-upload-skip',
+    q: 'mode=samples&speed=12&skip=kick_punchy,snare_tight_01',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Upload (kick_punchy|snare_tight_01|hat_closed_a)\\.wav');
+      await p.click(/^Upload/);
+      await p.wait(4000);
+    },
+  },
+  {
     name: 'samples-upload-failed',
     q: 'mode=samples&speed=12&putfail=1',
     size: WIDE,

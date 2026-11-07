@@ -145,7 +145,8 @@ export function tickedFit(view: TransferView, ticks: Set<string>): { text: strin
           : `The ${rows.length} ticked modules fit the device together.`,
       tone: 'ok',
     };
-  const name = rows[short.index].label ?? rows[short.index].name;
+  const row = rows[short.index] as (typeof rows)[number];
+  const name = row.label ?? row.name;
   return {
     text:
       short.index === 0

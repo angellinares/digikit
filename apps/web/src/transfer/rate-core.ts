@@ -26,8 +26,8 @@ export function createRate(windowMs: number = RATE_WINDOW_MS): Rate {
     rate(now) {
       const live = samples.filter((s) => s.t >= now - windowMs);
       if (live.length === 0) return samples.length ? 0 : undefined;
-      const first = live[0];
-      const last = live[live.length - 1];
+      const first = live[0] as { t: number; b: number };
+      const last = live[live.length - 1] as { t: number; b: number };
       // a stalled transfer: measure up to now, so the number falls instead of freezing
       const end = now - last.t > MIN_SPAN_MS ? now : last.t;
       if (end - first.t < MIN_SPAN_MS) return undefined;
