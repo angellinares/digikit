@@ -230,11 +230,48 @@ in a cycle of four.
 another limit for one span. The result is `gates.span_gate` in each scenario's report. A failure fails the run (exit 2), and
 the console shows one line per span.
 
+The gate also checks late entries. A pass that runs past its period (`overrun`, from `length.over_period`) makes the next
+entry late. A late entry makes `gap.max` longer, the longest time from one entry to the next. A span fails when its
+`gap.max` is more than its limit above stock's, or when it has more overruns than stock. In the emulator a handler entry
+drifts by a few dozen instructions around its period (stock `isr` `gap.max` is 88,013 to 88,056). So the gate does not count
+the gaps over the period.
+
+A run stops at the first chunk boundary past its length. So two builds can end the same scenario up to one chunk (250,000
+instructions) apart. The gate accepts a difference of up to one chunk and one period.
+
+The gate set is seven scenarios: `idle`, `kb-chord16` and `dn2-rec-play` from `tests/scenarios/dn2.json`, and four load
+scenarios from `tests/scenarios/dn2-load.json`:
+
+| scenario | load | checked on stock 1.11 |
+|---|---|---|
+| `load-seq16` | a trig on all 16 steps of all 16 tracks, then PLAY for 8 s | 64 frames start a note on all 16 tracks (mask `0xffff`), one every 0.125 s |
+| `load-turns` | the SRC page, Trig 1 held, then each encoder A to H 40 detents up and 40 down, one detent every 1M instructions | the screen changes 120 times |
+| `load-ptn-switch` | 8 pattern changes while stopped, one every 0.5 s | the kit pointer `0x800052a0` takes 8 values, each written twice, then pattern 1's kit again |
+| `load-kb-roll` | keyboard mode, a key down every 1M instructions over the 13 trig keys that play a note, 792 notes | 792 frames each start one note, from 0.457 s to 6.45 s, on all 16 voices in turn |
+
+In keyboard mode trig keys 1, 4 and 8 start no note. So `kb-chord16`, with all 16 keys held, starts 13 voices.
+
+Stock DN2 1.11 on the gate set (`--cold-base`, `--dsp zero`, instructions per pass):
+
+| scenario | `isr` p50 | `isr` max | `evala` p50 | `evala` max |
+|---|---|---|---|---|
+| `idle` | 49,553 | 50,075 | 7,841 | 8,369 |
+| `kb-chord16` | 49,860 | 54,566 | 7,841 | 8,369 |
+| `dn2-rec-play` | 49,553 | 52,567 | 7,841 | 8,369 |
+| `load-seq16` | 49,643 | 82,102 | 7,905 | 8,913 |
+| `load-turns` | 49,553 | 50,762 | 7,841 | 8,369 |
+| `load-ptn-switch` | 49,611 | 50,075 | 7,841 | 8,369 |
+| `load-kb-roll` | 50,024 | 51,507 | 7,904 | 8,369 |
+
+On `load-seq16` the longest stock `isr` pass is 82,102 instructions, 93 % of the period. On the other scenarios it is 62 % at most.
+
 1. Run stock once with the scenarios and spans. Keep its report:
 
    ```text
    coupled-run --syx Digitone_II_OS1.11.syx --dsp zero --cold-base 2af43e65… \
-     --scenario idle --scenario kb-chord16 --scenario dn2-rec-play \
+     --scenarios tests/scenarios/dn2.json --scenarios tests/scenarios/dn2-load.json \
+     --scenario idle --scenario kb-chord16 --scenario dn2-rec-play --scenario load-seq16 \
+     --scenario load-turns --scenario load-ptn-switch --scenario load-kb-roll \
      --span isr=0x40025e36:0x40027bc6 --span evala=0x400272d4:0x400272da --out stock-111.json
    ```
 
@@ -245,9 +282,7 @@ The gate fails, and does not pass in silence, when it cannot compare the two rep
 - the stock report has no scenario or no span of the same name
 - the span PCs or the period are different
 - the DSP mode is different
-- the two scenario lengths are more than one period apart
-
-Two builds can end the same scenario a few instructions apart, so the gate accepts a difference of up to one period.
+- the two scenario lengths are more than one chunk and one period apart
 
 The gate compares instruction counts, not cycles. A limit in instructions is a first step. The limit can change when a
 measurement in cycles is available.
