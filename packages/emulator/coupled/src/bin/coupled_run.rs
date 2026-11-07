@@ -29,10 +29,19 @@
 //! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
 //! scenario's report (`dsp_peek`), read after the scenario ends; `tools/firmware/l2canary.py` uses it.
 //!
-//! `--cold-base SHA256` (with `--dsp zero`) boots `--syx`, a patched build of the stock firmware
-//! SHA256, from reset to the ready state instead of loading `--cf-snapshot`. Use it to run a build
-//! that has no ready snapshot of its own. Without `--card-image` the runtime gives the firmware an
-//! empty +Drive.
+//! `--cold-base SHA256` runs `--syx`, a patched build of the stock firmware SHA256, that has no
+//! ready snapshot of its own. With `--dsp zero` each scenario boots it from reset to the ready
+//! state instead of loading `--cf-snapshot`. Without `--card-image` the runtime gives the
+//! firmware an empty +Drive.
+//!
+//! With `--dsp sharc`, `--cold-base` takes `--dsp-image IMAGE --dsp-cold-idle FILE`: the packed
+//! image and the DSP's first idle rest (`dsp_cold`), both made from the build's own section 7
+//! (steps 1 to 3 of `tools/emulator/ready.py`). The run boots the build once from reset with the
+//! SHARC on the DSPI2 link (`cold::boot_patched_to_ready`), and each scenario restores that ready
+//! pair. `--cold-save DIR` keeps the pair (and `boot-fault.json` of a boot that faults). A later
+//! run gives the pair as `--cf-snapshot DIR/digi-audio-m5.snap --dsp-state
+//! DIR/digi-audio-m5.snap.dsp` with the same `--cold-base` and `--dsp-image`, and does not boot.
+//! The report's `cold_boot` gives the boot's instructions, DSP frames and wall time.
 //!
 //! `--span-log PATH` writes every span pass as a JSON line `{"span", "at", "len"}` (`at` is the
 //! instruction count at the entry), with `-<name>` before the extension. Each span's report
@@ -88,7 +97,7 @@
 
 use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,
-    WorkerReport, common,
+    WorkerReport, cold, common,
     scenario::{
         DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When, cf_instructions_per_second,
         find_scenario, fire, parse_scenario, parse_scenarios,
@@ -139,9 +148,15 @@ struct Args {
     dsp_peeks: Vec<(String, u32, usize, usize)>,
     /// `--span NAME=ENTRY:EXIT`: ColdFire instruction spans between two PCs.
     spans: Vec<(String, u32, u32)>,
-    /// `--cold-base SHA256`: with `--dsp zero`, boot `--syx` from reset (a patched build of the
-    /// stock firmware SHA256) to the ready state instead of loading `--cf-snapshot`.
+    /// `--cold-base SHA256`: `--syx` is a patched build of the stock firmware SHA256. With
+    /// `--dsp zero` each scenario boots it from reset. With `--dsp sharc` the run boots it once
+    /// from reset with the DSP of `--dsp-cold-idle`, or restores a pair saved by an earlier run.
     cold_base: Option<String>,
+    /// `--dsp-cold-idle FILE`: the DSP's state at its first idle rest (`dsp_cold`'s output) for
+    /// the `--cold-base` boot with `--dsp sharc`.
+    cold_idle: Option<PathBuf>,
+    /// `--cold-save DIR`: where the `--cold-base` boot with `--dsp sharc` keeps its ready pair.
+    cold_save: Option<PathBuf>,
     /// `--call PC:ARG[,ARG...]`: guest functions called at the ready point, before the scenario.
     calls: Vec<(u32, Vec<CallArg>)>,
     /// `--span-log PATH`: every span pass as a JSON line, `-<scenario>` before the extension.
@@ -492,6 +507,10 @@ fn do_peeks(rt: &mut CoupledRuntime, peeks: &[(String, Peek)]) -> Value {
 }
 
 fn parse_args() -> Result<Args, String> {
+    parse_args_from(std::env::args().skip(1))
+}
+
+fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut a = Args {
         syx: "firmware/Digitone_II_OS1.12.syx".into(),
         image: PathBuf::new(),
@@ -518,6 +537,8 @@ fn parse_args() -> Result<Args, String> {
         dsp_peeks: Vec::new(),
         spans: Vec::new(),
         cold_base: None,
+        cold_idle: None,
+        cold_save: None,
         calls: Vec::new(),
         span_log: None,
         late_send: None,
@@ -530,7 +551,7 @@ fn parse_args() -> Result<Args, String> {
         trace: false,
         guard: None,
     };
-    let mut it = std::env::args().skip(1);
+    let mut it = args.into_iter();
     while let Some(flag) = it.next() {
         let mut value = |what: &str| it.next().ok_or(format!("{what} needs a value"));
         match flag.as_str() {
@@ -562,6 +583,8 @@ fn parse_args() -> Result<Args, String> {
             "--dsp-peek" => a.dsp_peeks.push(parse_dsp_peek(&value("--dsp-peek")?)?),
             "--span" => a.spans.push(parse_span(&value("--span")?)?),
             "--cold-base" => a.cold_base = Some(value("--cold-base")?),
+            "--dsp-cold-idle" => a.cold_idle = Some(value("--dsp-cold-idle")?.into()),
+            "--cold-save" => a.cold_save = Some(value("--cold-save")?.into()),
             "--call" => a.calls.push(parse_call(&value("--call")?)?),
             "--span-log" => a.span_log = Some(value("--span-log")?.into()),
             "--late-send-window" => {
@@ -624,16 +647,47 @@ fn parse_args() -> Result<Args, String> {
         if !a.list && a.snapshot.as_os_str().is_empty() && a.cold_base.is_none() {
             return Err("--cf-snapshot or --cold-base is required".into());
         }
-    } else if a.cold_base.is_some() {
-        return Err("--cold-base needs --dsp zero".into());
-    } else if !a.list
-        && (a.image.as_os_str().is_empty()
-            || a.state.as_os_str().is_empty()
-            || a.snapshot.as_os_str().is_empty())
-    {
-        return Err("--dsp-image, --dsp-state and --cf-snapshot are required".into());
+    }
+    if (a.cold_idle.is_some() || a.cold_save.is_some()) && (a.zero || a.cold_base.is_none()) {
+        return Err("--dsp-cold-idle and --cold-save need --cold-base with --dsp sharc".into());
+    }
+    if !a.zero && !a.list {
+        check_sharc_inputs(&a)?;
     }
     Ok(a)
+}
+
+/// The DSP inputs of a `--dsp sharc` run. A stock build restores `--cf-snapshot` and
+/// `--dsp-state`. A `--cold-base` build boots once with `--dsp-cold-idle`, or restores the pair
+/// that such a boot saved.
+fn check_sharc_inputs(a: &Args) -> Result<(), String> {
+    let set = |p: &Path| !p.as_os_str().is_empty();
+    if a.cold_base.is_none() {
+        if set(&a.image) && set(&a.state) && set(&a.snapshot) {
+            return Ok(());
+        }
+        return Err("--dsp-image, --dsp-state and --cf-snapshot are required".into());
+    }
+    if a.dsp_patch.is_some() {
+        return Err("--cold-base with --dsp sharc takes the DSP from --dsp-image: make the image from the build's own section 7, not with --dsp-patch".into());
+    }
+    if !set(&a.image) {
+        return Err("--cold-base with --dsp sharc needs --dsp-image".into());
+    }
+    if a.cold_save.is_some() && a.cold_idle.is_none() {
+        return Err("--cold-save needs --dsp-cold-idle".into());
+    }
+    match (a.cold_idle.is_some(), set(&a.snapshot), set(&a.state)) {
+        (true, false, false) | (false, true, true) => Ok(()),
+        (true, _, _) => Err(
+            "--dsp-cold-idle boots the build: leave out --cf-snapshot and --dsp-state".into(),
+        ),
+        (false, false, false) => Err(
+            "--cold-base with --dsp sharc needs --dsp-cold-idle, or --cf-snapshot and --dsp-state of a saved pair"
+                .into(),
+        ),
+        _ => Err("a saved pair needs both --cf-snapshot and --dsp-state".into()),
+    }
 }
 
 fn percentile(sorted: &[u32], p: f64) -> u32 {
@@ -1017,6 +1071,62 @@ fn cold_zero_runtime(
     Ok(rt)
 }
 
+/// `--cold-base` with `--dsp sharc` and `--dsp-cold-idle`: boot the patched build once from
+/// reset with the SHARC on the DSPI2 link, and save the ready pair in `dir`. Each scenario then
+/// restores the pair (`CoupledRuntime::new_patched_audio`).
+fn cold_sharc_boot(
+    args: &Args,
+    syx: &[u8],
+    base: &str,
+    cold_idle: &Path,
+    dir: &Path,
+) -> Result<cold::ColdReport, String> {
+    let card = args
+        .card
+        .as_deref()
+        .map(elektron_native_boot::card_file::card_from_image)
+        .transpose()?;
+    let inputs = cold::ColdInputs {
+        image: args.image.clone(),
+        cold_idle: cold_idle.to_path_buf(),
+        cold_state: None,
+        dsp_patch: None,
+        relax_fs_check: false,
+        reset_out: None,
+        keep_ram: None,
+    };
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut next = 0;
+    let report = cold::boot_patched_to_ready(syx, card, base, &inputs, dir, &cancel, |p| {
+        if p.icount >= next {
+            eprintln!(
+                "cold boot: {} M instructions, {} DSP frames, {:.0} s",
+                p.icount / 1_000_000,
+                p.frames,
+                p.wall_seconds
+            );
+            next = p.icount + 200_000_000;
+        }
+    })?;
+    eprintln!(
+        "cold boot ready at {} instructions, {} DSP frames, in {:.1}s (pair in {})",
+        report.icount,
+        report.frames,
+        report.wall_seconds,
+        dir.display()
+    );
+    Ok(report)
+}
+
+/// A directory removed when dropped: the ready pair of a run without `--cold-save`.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 /// `base` with `-<name>` before its extension.
 fn wav_path_for(base: &Path, name: &str) -> PathBuf {
     let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
@@ -1052,9 +1162,11 @@ fn run_scenario(
         .as_deref()
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
-    let mut rt = match &args.cold_base {
-        Some(base) => cold_zero_runtime(syx, card, base)?,
-        None => CoupledRuntime::new(syx, card, Some(&options))?,
+    let mut rt = match (&args.cold_base, args.zero) {
+        (Some(base), true) => cold_zero_runtime(syx, card, base)?,
+        // The pair of `cold_sharc_boot` or of an earlier `--cold-save`.
+        (Some(base), false) => CoupledRuntime::new_patched_audio(syx, card, base, &options)?,
+        (None, _) => CoupledRuntime::new(syx, card, Some(&options))?,
     };
     if let Some(spec) = &args.guard {
         let (protect, allow_pc) = elektron_native_boot::parse_guard_spec(spec)?;
@@ -1432,7 +1544,7 @@ fn summary_line(r: &Value) -> String {
 }
 
 fn real_main() -> Result<bool, String> {
-    let args = parse_args()?;
+    let mut args = parse_args()?;
     if args.profile_regions && !cfg!(feature = "region-profile") {
         return Err(
             "--profile-regions needs a diagnostic rebuild with --features coupled-audio,region-profile"
@@ -1488,6 +1600,29 @@ fn real_main() -> Result<bool, String> {
         .filter(|s| args.replay.is_some() || args.names.is_empty() || args.names.contains(&s.name))
         .collect();
     let syx = std::fs::read(&args.syx).map_err(|e| format!("{}: {e}", args.syx.display()))?;
+    let mut cold_boot = Value::Null;
+    let mut _temp = None;
+    if let (Some(base), false, Some(idle)) =
+        (args.cold_base.clone(), args.zero, args.cold_idle.clone())
+    {
+        let dir = match &args.cold_save {
+            Some(dir) => dir.clone(),
+            None => {
+                let dir = std::env::temp_dir().join(format!("coupled-run-{}", std::process::id()));
+                _temp = Some(TempDir(dir.clone()));
+                dir
+            }
+        };
+        let r = cold_sharc_boot(&args, &syx, &base, &idle, &dir)?;
+        cold_boot = json!({
+            "icount": r.icount,
+            "dsp_frames": r.frames,
+            "wall_seconds": r.wall_seconds,
+            "saved": args.cold_save.as_ref().map(|_| dir.display().to_string()),
+        });
+        args.snapshot = r.snapshot;
+        args.state = r.dsp;
+    }
     let mut results = Vec::new();
     let several = chosen.len() > 1;
     for sc in chosen {
@@ -1524,6 +1659,7 @@ fn real_main() -> Result<bool, String> {
             "DSP_IDLE_SKIP": std::env::var("DSP_IDLE_SKIP").ok(),
         },
         "dsp": if args.zero { "zero" } else { "sharc" },
+        "cold_boot": cold_boot,
         "audio_mode": args.audio_mode.name(),
         "pcm_tap": args.pcm_tap,
         "link_timing": args.link_timing,
@@ -1729,5 +1865,80 @@ mod tests {
         assert_eq!(split["fast_tier"], 200);
         assert_eq!(split["other"], 0);
         assert_eq!(split["idle_skip"], 400);
+    }
+
+    fn parse(args: &[&str]) -> Result<Args, String> {
+        parse_args_from(args.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn cold_base_with_the_sharc_boots_once_or_restores_a_saved_pair() {
+        let base = [
+            "--dsp",
+            "sharc",
+            "--cold-base",
+            "ab12",
+            "--dsp-image",
+            "i.bin",
+        ];
+        let with = |more: &[&str]| parse(&[&base[..], more].concat());
+        let boot = with(&["--dsp-cold-idle", "c.dsp", "--cold-save", "pair"]).unwrap();
+        assert_eq!(boot.cold_idle, Some("c.dsp".into()));
+        assert_eq!(boot.cold_save, Some("pair".into()));
+        assert!(with(&["--cf-snapshot", "p.snap", "--dsp-state", "p.snap.dsp"]).is_ok());
+
+        let err = |more: &[&str]| with(more).err().unwrap();
+        assert!(err(&[]).contains("needs --dsp-cold-idle, or --cf-snapshot"));
+        assert!(err(&["--dsp-cold-idle", "c", "--cf-snapshot", "p"]).contains("leave out"));
+        assert!(err(&["--cf-snapshot", "p.snap"]).contains("both --cf-snapshot and --dsp-state"));
+        assert!(
+            err(&["--cf-snapshot", "p", "--dsp-state", "d", "--cold-save", "x"])
+                .contains("--cold-save needs --dsp-cold-idle")
+        );
+        assert!(err(&["--dsp-cold-idle", "c", "--dsp-patch", "p.json"]).contains("--dsp-patch"));
+        let no_image = parse(&[
+            "--dsp",
+            "sharc",
+            "--cold-base",
+            "ab12",
+            "--dsp-cold-idle",
+            "c",
+        ]);
+        assert!(no_image.err().unwrap().contains("needs --dsp-image"));
+    }
+
+    #[test]
+    fn the_cold_boot_inputs_need_cold_base_with_the_sharc() {
+        let zero = parse(&[
+            "--dsp",
+            "zero",
+            "--cold-base",
+            "ab12",
+            "--dsp-cold-idle",
+            "c",
+        ]);
+        assert!(
+            zero.err()
+                .unwrap()
+                .contains("need --cold-base with --dsp sharc")
+        );
+        let stock = parse(&[
+            "--dsp-image",
+            "i",
+            "--dsp-state",
+            "s",
+            "--cf-snapshot",
+            "p",
+            "--cold-save",
+            "d",
+        ]);
+        assert!(
+            stock
+                .err()
+                .unwrap()
+                .contains("need --cold-base with --dsp sharc")
+        );
+        assert!(parse(&["--dsp", "zero", "--cold-base", "ab12"]).is_ok());
+        assert!(parse(&["--dsp-image", "i", "--dsp-state", "s", "--cf-snapshot", "p"]).is_ok());
     }
 }

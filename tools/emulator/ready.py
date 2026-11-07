@@ -2,7 +2,7 @@
 """Build a device's ready inputs from the .syx alone (no captured state).
 
     uv run python -m tools.emulator.ready dn2|dt2 [--out DIR] [--syx SYX]
-                                 [--card-image IMG] [--force]
+                                 [--card-image IMG] [--base-sha256 SHA] [--force]
     mise run emu:ready -- dt2 [--card-image IMG]
 
 Steps (each skipped when its output exists and --force is not given):
@@ -92,6 +92,12 @@ def main(argv: list[str]) -> int:
         "instruction count, which would shift every PCM hash)",
     )
     p.add_argument("--card-image", type=pathlib.Path)
+    p.add_argument(
+        "--base-sha256",
+        help="--syx is a patched build of the stock firmware with this SHA-256: "
+        "the ColdFire boot accepts it (sharc_live's BASE_SHA256). Restore the result "
+        "with coupled-run --cold-base SHA --dsp sharc",
+    )
     p.add_argument("--force", action="store_true")
     a = p.parse_args(argv)
     cfg = DEVICES[a.device]
@@ -189,6 +195,8 @@ def main(argv: list[str]) -> int:
         }
         if a.card_image is not None:
             live_env["CARD_IMAGE"] = str(a.card_image)
+        if a.base_sha256:
+            live_env["BASE_SHA256"] = a.base_sha256.lower()
         with benchlock.hold("shared", "ready CF boot"):
             subprocess.run(
                 [
@@ -219,6 +227,7 @@ def main(argv: list[str]) -> int:
                 "image": image_name,
                 "intc_force": False,
                 "card_image": str(a.card_image) if a.card_image else None,
+                "base_sha256": a.base_sha256.lower() if a.base_sha256 else None,
             },
             indent=1,
         )

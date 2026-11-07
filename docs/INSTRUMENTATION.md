@@ -217,12 +217,72 @@ Three options go with the spans:
 | option | effect |
 |---|---|
 | `--span-log PATH` | writes every pass as a JSON line `{"span", "at", "len"}`, `at` being the instruction count at the entry, with `-<scenario>` before the extension. Each span's report also gives `worst`, the index and the entry count of its longest pass. A short call span can then be placed inside the handler pass it ran in. |
-| `--cold-base SHA256` | with `--dsp zero`, boots `--syx` from reset to the ready state instead of loading `--cf-snapshot`. SHA256 names the stock firmware of a patched build. A build with no ready snapshot of its own can then run the scenarios. Without `--card-image` the runtime gives the firmware an empty +Drive. Stock DN2 1.11 reaches ready at 851,236,338 instructions. |
+| `--cold-base SHA256` | with `--dsp zero`, boots `--syx` from reset to the ready state instead of loading `--cf-snapshot`. SHA256 names the stock firmware of a patched build. A build with no ready snapshot of its own can then run the scenarios. Without `--card-image` the runtime gives the firmware an empty +Drive. Stock DN2 1.11 reaches ready at 851,236,338 instructions. With `--dsp sharc`, see "A patched build with the SHARC". |
 | `--call PC:ARG[,ARG...]` | calls a guest function at the ready point, before the scenario (`Emulator::call_function`, gcc m68k ABI, interrupts masked, a scratch stack 1 KiB below the guest's). ARG is a number, or `*ADDR+OFF`: the long at ADDR, read at the call, plus OFF. The report lists each call's arguments, D0 and instructions. A call that does not return stops the run. |
 
 To compare a patched build with stock, run the same scenario and spans on both with `--cold-base` and compare `length` per span.
 On stock DN2 1.11 with `kb-chord16` the `evala` passes also show a stock job every 1,000 frames: +416 to +528 instructions,
 in a cycle of four.
+
+### A patched build with the SHARC
+
+`--cold-base` with `--dsp sharc` runs a patched build with the SHARC on the DSPI2 link. The run boots the build once from
+reset, and each scenario then starts from that ready state.
+
+1. Make the DSP inputs from the build's own section 7. `tools/emulator/ready.py` writes them in its steps 1 to 3:
+
+   ```text
+   uv run python -m tools.emulator.ready dn2 --syx BUILD.syx --out DIR --base-sha256 STOCK_SHA256
+   ```
+
+   - `DIR/digi-audio-dn2-image.bin`: the packed image.
+   - `DIR/cold-idle.dsp`: the DSP's first idle rest.
+   - With `--base-sha256`, step 4 also boots the build (`sharc_live`, `BASE_SHA256`) and saves the ready pair in `DIR`.
+
+2. Boot the build and run the scenarios:
+
+   ```text
+   coupled-run --syx BUILD.syx --cold-base STOCK_SHA256 --dsp sharc \
+     --dsp-image DIR/digi-audio-dn2-image.bin --dsp-cold-idle DIR/cold-idle.dsp \
+     [--card-image CARD.img] [--cold-save PAIR] --scenario NAME ...
+   ```
+
+   - The boot is `cold::boot_patched_to_ready`. Each scenario restores its pair (`CoupledRuntime::new_patched_audio`).
+   - `--cold-save PAIR` keeps the pair. Without it the pair goes to a temporary folder, and the run removes it at the end.
+   - A boot that faults writes `boot-fault.json` in the pair folder. Give `--cold-save` to keep that file.
+   - The report's `cold_boot` gives the boot's instructions, DSP frames, wall time and the saved folder.
+
+3. Run again from a saved pair, without a boot. Give the pair in place of `--dsp-cold-idle`:
+
+   ```text
+   coupled-run --syx BUILD.syx --cold-base STOCK_SHA256 --dsp sharc --dsp-image DIR/digi-audio-dn2-image.bin \
+     --cf-snapshot PAIR/digi-audio-m5.snap --dsp-state PAIR/digi-audio-m5.snap.dsp [--card-image CARD.img] ...
+   ```
+
+   The pair of step 1 (`--base-sha256`) works here too.
+
+Use the same `--card-image` for the boot and for each run from its pair. The ColdFire snapshot holds the card's
+sample list in RAM.
+
+`--dsp-patch` does not go with `--cold-base` and `--dsp sharc`. The image gives the build's DSP code. Nothing checks that
+the image and `cold-idle.dsp` come from the section 7 of `--syx`.
+
+The boot runs with the process's `DIGI_INTC_FORCE` (default on). `ready.py` boots with `DIGI_INTC_FORCE=0`, as for the
+stock ready states.
+
+Measured: a local patched build of stock DN2 1.11 with a changed section 7, the shared core (no AOT blocks), in WSL:
+
+| step | result |
+|---|---|
+| boot to ready | 854,728,145 ColdFire instructions, 4,718 DSP frames, 830 s |
+| 1 s of `idle` after the boot | 307 s, PCM `f1c0c5c0…`, RMS 0 |
+| 1 s of `idle` from the saved pair | 300 s, the same PCM |
+| 1.5 s of `trig1-taps` from the saved pair | 387 s, RMS 0.0154, peak 0.056, sound from the 0.4 s window to the 1.2 s window |
+| `ready.py --base-sha256`, step 4 only | 713 s, 4,744 DSP frames, every reply nonzero. 1 s of `idle` from its pair runs in 235 s |
+
+The `trig1-taps` run fails only its PCM pin, which is for stock DN2 1.12.
+
+The DSP started at about 600 M instructions: the boot ran 414 M instructions in 13 s, and the next 205 M took 352 s.
 
 ### Gate against stock
 
