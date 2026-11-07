@@ -8,12 +8,15 @@
 // uploaded unchanged. Each upload is verified against the bytes sent. The page speaks the protocol in TypeScript over the selected target; the
 // local files come through the native `local_*` commands (local.rs); no process is started.
 import { For, Show, createSignal, type JSX } from 'solid-js';
-import { errorLine, formatBytes } from '@web/modules/backend';
+import { errorLine, formatBytes, isCancelled } from '@web/modules/backend';
 import { openDeviceSamples, labelOf, listLocalAt, pickFolder, readLocalFile } from './samples-backend';
 import {
   applyUpload,
+  confirmDeleteLabel,
   crumbs,
+  deletePartLine,
   deleteRows,
+  deletingLine,
   dropUploads,
   folderNameError,
   joinPath,
@@ -52,7 +55,7 @@ import { ROWS_TYPE, dropFolder } from '@web/transfer/select-core';
 import { noteActivity } from '@web/transfer/activity';
 import { countLabel } from '@web/transfer/transfer-core';
 import SplitPane from '@web/transfer/SplitPane';
-import { deviceInfo, stopWasAsked } from '@web/transfer/transfer-state';
+import { askStop, deviceInfo, stopWasAsked } from '@web/transfer/transfer-state';
 import {
   addedFiles,
   localEntries,
@@ -83,6 +86,8 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
   const [newName, setNewName] = createSignal('');
   let input: HTMLInputElement | undefined;
   const confirm = createConfirm();
+  /** The progress line of a folder delete (empty when none runs). */
+  const [deleting, setDeleting] = createSignal('');
 
   // ---- On your computer ------------------------------------------------------------------------------------------------------------
   const lrows = () =>
@@ -257,18 +262,47 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
   const rows = () => sampleRows(sampleFolder(), sampleEntries() ?? [], uploads());
   const nDelete = () => deleteRows(rows(), sampleTicks()).length;
   const removeSelected = () =>
-    run('Deleting', async () => {
+    run('Deleting', async (): Promise<void | CancelledRun> => {
       const { backend } = await openDeviceSamples();
       const gone = deleteRows(rows(), sampleTicks());
-      for (const r of gone) {
-        if (r.kind === 'folder') await backend.rmdir(r.path);
-        else await backend.remove(sampleFolder(), r.name);
-        setUploads((u) => dropUploads(u, [r.path]));
+      setNote('');
+      let done = 0;
+      let total = 0;
+      const forget = (path: string) => {
+        setUploads((u) => dropUploads(u, [path]));
         setSampleTicks((t) => {
           const next = new Set(t);
-          next.delete(r.path);
+          next.delete(path);
           return next;
         });
+      };
+      try {
+        for (const r of gone) {
+          if (r.kind === 'folder') {
+            // the folder's files one by one, then the folder: Cancel stops between two files
+            const res = await backend.removeTree(r.path, {
+              onProgress: (d, t) => {
+                done = d;
+                total = t;
+                setDeleting(deletingLine(d, t, gone.length > 1 ? r.name : undefined));
+              },
+              shouldStop: stopWasAsked,
+            });
+            if (res.stopped) return { cancelled: `${r.name}: ${deletePartLine(res.removed, res.total)}` };
+          } else {
+            if (stopWasAsked()) return { cancelled: `${r.name} and later rows not deleted` };
+            await backend.remove(sampleFolder(), r.name);
+          }
+          forget(r.path);
+          done = total = 0;
+        }
+      } catch (e) {
+        // the Cancel of the wait notice ends the request in flight; a failure names the file and says what is left of the folder
+        if (isCancelled(e)) return { cancelled: total ? deletePartLine(done, total) : 'stopped' };
+        if (total) throw new Error(`${errorLine(e)} (${deletePartLine(done, total)})`, { cause: e });
+        throw e;
+      } finally {
+        setDeleting('');
       }
       setNote(`Deleted ${gone.length} item${gone.length === 1 ? '' : 's'}.`);
     });
@@ -435,7 +469,8 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
               n={nDelete()}
               busy={busy()}
               confirming={confirm.confirming()}
-              title="Delete the selected files and empty folders from the device"
+              confirmLabel={confirmDeleteLabel(deleteRows(rows(), sampleTicks()))}
+              title="Delete the selected files and folders, with everything in them, from the device"
               onClick={() => confirm.click(() => void removeSelected())}
             />
           </>
@@ -448,6 +483,14 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
           label="Folder on the device"
           onOpen={open}
         />
+        <Show when={deleting()}>
+          <p class="empty note" role="status">
+            <span>{deleting()}</span>{' '}
+            <button type="button" class="act small" onClick={askStop}>
+              Cancel
+            </button>
+          </p>
+        </Show>
         <Show when={sampleFolder()}>
           <UpRow
             disabled={writing(busy())}

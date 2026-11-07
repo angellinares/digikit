@@ -6,8 +6,11 @@ import { fileGroups, nameInGroup } from '../../desktop/ui/src/card-core.ts';
 import { sourceKind } from '@digi/dk-session/dksample';
 import {
   applyUpload,
+  confirmDeleteLabel,
   crumbs,
+  deletePartLine,
   deleteRows,
+  deletingLine,
   dropUploads,
   folderNameError,
   joinPath,
@@ -147,6 +150,9 @@ test('events build the upload state, and a file that could not be prepared fails
   u = applyUpload(u, { event: 'failed', folder: 'd', name: 'bad.wav', source: 'bad.wav', message: 'not a usable WAV' });
   assert.deepEqual([u['d/bad.wav'].kind, u['d/bad.wav'].state, u['d/bad.wav'].source], ['none', 'failed', 'bad.wav']);
   assert.deepEqual(Object.keys(dropUploads(u, ['d/kick'])), ['d/bad.wav']);
+  // a folder takes its files with it, and not a sibling that only starts with the same letters
+  const nested = { 'Foo/a': u['d/kick'], 'Foo/sub/b': u['d/kick'], 'Foobar/x': u['d/kick'] };
+  assert.deepEqual(Object.keys(dropUploads(nested, ['Foo'])), ['Foobar/x']);
 });
 
 test('which files convert: the label says what was done', () => {
@@ -672,4 +678,14 @@ test('a folder row: pending while an upload fills it, with the state of the uplo
   assert.equal(folderStatus({ 'f/a': up('f/a', 'ok', 5, 5) }, 'f').kind, 'ok');
   const mixed = folderStatus({ 'f/a': up('f/a', 'ok', 5, 5), 'f/b': up('f/b', 'failed', 0, 5) }, 'f');
   assert.deepEqual([mixed.kind, mixed.message], ['failed', '1 of 2 files failed']);
+});
+
+test('the delete texts: progress, what is left, and the armed button for a folder', () => {
+  assert.equal(deletingLine(20, 357), 'Deleting 20 of 357');
+  assert.equal(deletingLine(2, 9, 'Drums'), 'Deleting Drums: 2 of 9');
+  assert.equal(deletePartLine(20, 357), '20 of 357 files deleted, 337 left');
+  assert.equal(deletePartLine(0, 1), '0 of 1 file deleted, 1 left');
+  assert.equal(confirmDeleteLabel([file('a')]), undefined);
+  assert.equal(confirmDeleteLabel([folder('d')]), 'Delete this folder and everything in it?');
+  assert.match(confirmDeleteLabel([folder('d'), file('a')]), /^Delete 2 items, folders with everything/);
 });

@@ -302,11 +302,28 @@ export function uploadCancelled(uploads: Uploads, base: Uploads): string | undef
   return cancelledCounts(mine.filter((u) => u.state === 'ok').length, mine.length);
 }
 
-/** The uploads without the given device paths (their files were deleted). */
+/** The uploads without the given device paths and, for a folder, everything under it (`Foo/` does not match `Foobar/`): their files were deleted. */
 export function dropUploads(u: Uploads, paths: string[]): Uploads {
   const out = { ...u };
-  for (const p of paths) delete out[p];
+  for (const key of Object.keys(out)) if (paths.some((p) => key === p || key.startsWith(`${p}/`))) delete out[key];
   return out;
+}
+
+/** The line while a folder is deleted: `Deleting 20 of 357`, with the folder's name when several rows go. */
+export const deletingLine = (done: number, total: number, folder?: string): string =>
+  `Deleting ${folder ? `${folder}: ` : ''}${done} of ${total}`;
+
+/** What a stopped or failed delete says: how many files went and what remains. */
+export const deletePartLine = (done: number, total: number): string =>
+  `${done} of ${total} file${total === 1 ? '' : 's'} deleted, ${total - done} left`;
+
+/** The text of the armed Delete button when a folder is ticked: its contents go too. */
+export function confirmDeleteLabel(rows: { kind: 'file' | 'folder' }[]): string | undefined {
+  const folders = rows.filter((r) => r.kind === 'folder').length;
+  if (!folders) return undefined;
+  return rows.length === 1
+    ? 'Delete this folder and everything in it?'
+    : `Delete ${rows.length} items, folders with everything in them?`;
 }
 
 // ---- the device's folder ----------------------------------------------------------------------------------------------------------

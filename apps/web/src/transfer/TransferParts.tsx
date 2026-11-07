@@ -266,6 +266,8 @@ export function DeleteButton(props: {
   n: number;
   busy: string;
   confirming: boolean;
+  /** The text once armed, when "Confirm delete (n)" is not enough (a folder goes with its contents). */
+  confirmLabel?: string;
   title: string;
   onClick: () => void;
 }): JSX.Element {
@@ -278,7 +280,11 @@ export function DeleteButton(props: {
       title={props.n ? props.title : 'Tick the rows to delete'}
       onClick={props.onClick}
     >
-      {props.busy === 'Deleting' ? 'Deleting…' : deleteLabel(props.n, props.confirming)}
+      {props.busy === 'Deleting'
+        ? 'Deleting…'
+        : props.confirming && props.confirmLabel
+          ? props.confirmLabel
+          : deleteLabel(props.n, props.confirming)}
     </button>
   );
 }

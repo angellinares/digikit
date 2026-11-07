@@ -38,6 +38,19 @@ export interface SampleVerified {
   message: string;
 }
 
+export interface RemoveTreeOptions {
+  /** Called with (files removed, files to remove) before the first file and after each one. */
+  onProgress?: (done: number, total: number) => void;
+  /** Asked before each file; true stops the delete there (the folders stay). */
+  shouldStop?: () => boolean;
+}
+export interface RemoveTreeResult {
+  removed: number;
+  total: number;
+  /** `shouldStop` ended the delete before all files were removed. */
+  stopped: boolean;
+}
+
 export interface SamplesBackend {
   readonly kind: SamplesKind;
   /** The files and folders directly in `folder` ('' is the top). */
@@ -48,6 +61,8 @@ export interface SamplesBackend {
   mkdir(folder: string): Promise<void>;
   /** Remove an empty folder. */
   rmdir(folder: string): Promise<void>;
+  /** Remove a folder and everything in it, file by file, then the folders. A failure names the file; a cancelled request is rethrown as it is. */
+  removeTree(folder: string, o?: RemoveTreeOptions): Promise<RemoveTreeResult>;
   put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void): Promise<void>;
   /** Compare the stored file with `file` (a device that does not have it, or has other bytes, reports `ok` false). */
   verify(folder: string, file: Prepared): Promise<SampleVerified>;
@@ -81,6 +96,18 @@ const join = (folder: string, name: string) => {
   const f = clean(folder);
   return f ? `${f}/${name}` : name;
 };
+/** A failure of one file names the file; the user's cancel passes as it is (`isCancelled` reads its kind). */
+function namedFailure(path: string, e: unknown): unknown {
+  if ((e as { kind?: string } | null)?.kind === 'cancelled') return e;
+  const msg = e instanceof Error ? e.message : String(e);
+  return new Error(`${path}: ${msg}`, { cause: e });
+}
+/** The top of the device is not a folder to delete. */
+function treeRoot(folder: string): string {
+  const f = clean(folder);
+  if (!f) throw new DkError({ error: 'removeTree needs a folder, not the top', kind: 'usage' });
+  return f;
+}
 const hex8 = (n: number) => (n >>> 0).toString(16).padStart(8, '0');
 
 // ---- the +Drive over MidiRpc ----------------------------------------------------------------------------------------------------
@@ -113,6 +140,38 @@ class RpcSamples implements SamplesBackend {
   }
   rmdir(folder: string) {
     return this.files.rmdir(clean(folder));
+  }
+  async removeTree(folder: string, o: RemoveTreeOptions = {}) {
+    const root = `/${treeRoot(folder)}`;
+    const files: string[] = [];
+    const dirs: string[] = []; // a folder after the folders in it
+    const walk = async (dir: string) => {
+      for (const e of await this.files.readDir(dir)) {
+        if (e.kind === 'D') await walk(`${dir}/${e.name}`);
+        else files.push(`${dir}/${e.name}`);
+      }
+      dirs.push(dir);
+    };
+    await walk(root);
+    o.onProgress?.(0, files.length);
+    let removed = 0;
+    for (const f of files) {
+      if (o.shouldStop?.()) return { removed, total: files.length, stopped: true };
+      try {
+        await this.files.remove(f);
+      } catch (e) {
+        throw namedFailure(f, e);
+      }
+      removed++;
+      o.onProgress?.(removed, files.length);
+    }
+    for (const d of dirs)
+      try {
+        await this.files.rmdir(d);
+      } catch (e) {
+        throw namedFailure(d, e);
+      }
+    return { removed, total: files.length, stopped: false };
   }
   async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void) {
     await this.files.write(join(folder, file.name), file.bytes, onProgress);
@@ -196,6 +255,36 @@ class StoreSamples implements SamplesBackend {
   async rmdir(folder: string) {
     // a folder entry is an entry of the store; a folder with files in it is only implied by their paths (nothing to delete)
     await this.s.delete(this.path(folder));
+  }
+  async removeTree(folder: string, o: RemoveTreeOptions = {}) {
+    const top = this.path(treeRoot(folder));
+    const prefix = `${top}/`; // the slash keeps `Foo` from matching `Foobar/...`
+    const inside = (await this.under(prefix)).filter((e) => e.path.startsWith(prefix));
+    const files = inside.filter((e) => !isFolderEntry(e)).map((e) => e.path);
+    // folder entries inside the folder, the deepest first
+    const dirs = inside
+      .filter(isFolderEntry)
+      .map((e) => e.path)
+      .sort((a, b) => b.split('/').length - a.split('/').length);
+    // a folder with files is only implied by their paths, so it vanishes with its last file: "not in the store" means gone
+    const del = async (path: string) => {
+      try {
+        await this.s.delete(path);
+      } catch (e) {
+        if ((e as { status?: string } | null)?.status !== 'E_NOFILE') throw namedFailure(path, e);
+      }
+    };
+    o.onProgress?.(0, files.length);
+    let removed = 0;
+    for (const f of files) {
+      if (o.shouldStop?.()) return { removed, total: files.length, stopped: true };
+      await del(f);
+      removed++;
+      o.onProgress?.(removed, files.length);
+    }
+    for (const d of dirs) await del(d);
+    await del(top);
+    return { removed, total: files.length, stopped: false };
   }
   async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void) {
     return this.s.put(this.path(join(folder, file.name)), file.stored, onProgress);

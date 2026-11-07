@@ -110,6 +110,27 @@ const SCENES = [
   },
   { name: 'samples', q: 'mode=samples', size: WIDE },
   {
+    // a folder with files: the armed Delete says its contents go; the second click shows the progress line with Cancel
+    name: 'samples-delete-folder-armed',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Delete (Drums)$');
+      await p.click(/^Delete/);
+    },
+  },
+  {
+    name: 'samples-delete-folder-running',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Delete (Drums)$');
+      await p.click(/^Delete/);
+      await p.click(/^Delete this folder/);
+      await p.wait(200);
+    },
+  },
+  {
     name: 'samples-select-partial',
     q: 'mode=samples',
     size: WIDE,
