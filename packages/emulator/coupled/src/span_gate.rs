@@ -11,9 +11,16 @@
 //! stock. In the emulator a handler entry drifts by a few dozen instructions around its period,
 //! so the gate does not count gaps over the period.
 //!
+//! The gate also checks the passes over the period at the unit's speed
+//! (`length.over_unit_period`: a pass's length times the report's `unit_scale`, above the period).
+//! On one unit a heavy pass took about 1.21 timer ticks per emulator instruction, so a build can
+//! run late on a unit before it runs late here. A build fails a span when it has more of these
+//! passes than stock. Two reports with another `unit_scale` cannot be compared, and neither can
+//! a stock report made before the count: run stock again.
+//!
 //! The gate fails, and does not pass in silence, when the stock report cannot be compared: no
 //! scenario of the same name, no span of the same name, other span PCs, another period, another
-//! DSP mode, or scenario lengths more than one chunk and one period apart.
+//! unit scale, another DSP mode, or scenario lengths more than one chunk and one period apart.
 
 use serde_json::{Value, json};
 
@@ -96,7 +103,7 @@ pub fn check(scenario: &Value, dsp: &str, stock: &Value, limits: &Limits) -> Val
                 "the stock report has no span {span_name} in {name}"
             ));
         };
-        for key in ["entry", "exit", "period"] {
+        for key in ["entry", "exit", "period", "unit_scale"] {
             if span[key] != stock_span[key] {
                 return fail(format!(
                     "span {span_name}: {key} is {} in the stock report and {} here",
@@ -122,14 +129,18 @@ pub fn check(scenario: &Value, dsp: &str, stock: &Value, limits: &Limits) -> Val
         let gap_max = |s: &Value| s["gap"]["max"].as_u64().unwrap_or(0);
         let (gap_max, stock_gap_max) = (gap_max(span), gap_max(stock_span));
         let extra_gap_max = extra(gap_max, stock_gap_max);
+        let unit_overrun = |s: &Value| s["length"]["over_unit_period"].as_u64().unwrap_or(0);
+        let (unit_overrun, stock_unit_overrun) = (unit_overrun(span), unit_overrun(stock_span));
         rows.push(json!({
             "name": span_name, "limit": limit,
             "stock_p50": stock_p50, "p50": p50, "extra_p50": extra_p50,
             "stock_max": stock_max, "max": max, "extra_max": extra_max,
             "stock_overrun": stock_overrun, "overrun": overrun,
             "stock_gap_max": stock_gap_max, "gap_max": gap_max, "extra_gap_max": extra_gap_max,
+            "stock_unit_overrun": stock_unit_overrun, "unit_overrun": unit_overrun,
             "ok": extra_p50 <= limit as i64 && extra_max <= limit as i64
-                && extra_gap_max <= limit as i64 && overrun <= stock_overrun,
+                && extra_gap_max <= limit as i64 && overrun <= stock_overrun
+                && unit_overrun <= stock_unit_overrun,
         }));
     }
     let ok = rows.iter().all(|r| r["ok"] == true);
@@ -147,7 +158,7 @@ pub fn summary(gate: &Value) -> Vec<String> {
         .flatten()
         .map(|r| {
             format!(
-                "  span {:<10} p50 {:>+7} max {:>+7} gap {:>+7} (limit +{}) overrun {}/{} {}",
+                "  span {:<10} p50 {:>+7} max {:>+7} gap {:>+7} (limit +{}) overrun {}/{} unit {}/{} {}",
                 r["name"].as_str().unwrap_or("?"),
                 r["extra_p50"].as_i64().unwrap_or(0),
                 r["extra_max"].as_i64().unwrap_or(0),
@@ -155,6 +166,8 @@ pub fn summary(gate: &Value) -> Vec<String> {
                 r["limit"],
                 r["overrun"],
                 r["stock_overrun"],
+                r["unit_overrun"],
+                r["stock_unit_overrun"],
                 if r["ok"] == true { "ok" } else { "FAILED" }
             )
         })
@@ -280,6 +293,31 @@ mod tests {
         assert_eq!(g["spans"][0]["extra_gap_max"], 1001);
         late["gap"]["max"] = json!(89056);
         assert_eq!(check(&scenario(vec![late]), "zero", &drift, &l)["ok"], true);
+    }
+
+    #[test]
+    fn an_overrun_at_the_unit_speed_fails() {
+        let l = Limits::default();
+        // Stock itself has one pass over the period at the unit's speed (the first step after PLAY).
+        let mut base = stock();
+        base["scenarios"][0]["spans"][0]["length"]["over_unit_period"] = json!(1);
+        base["scenarios"][0]["spans"][0]["unit_scale"] = json!(1.21);
+        let mut build = span("isr", 50000, 54000);
+        build["unit_scale"] = json!(1.21);
+        build["length"]["over_unit_period"] = json!(1);
+        assert_eq!(
+            check(&scenario(vec![build.clone()]), "zero", &base, &l)["ok"],
+            true
+        );
+        build["length"]["over_unit_period"] = json!(2);
+        let g = check(&scenario(vec![build.clone()]), "zero", &base, &l);
+        assert_eq!(g["ok"], false);
+        assert_eq!(g["spans"][0]["unit_overrun"], 2);
+        assert_eq!(g["spans"][0]["stock_unit_overrun"], 1);
+        // Another scale, or a stock report from before the count, cannot be compared.
+        build["unit_scale"] = json!(1.0);
+        let g = check(&scenario(vec![build]), "zero", &base, &l);
+        assert!(g["error"].as_str().unwrap().contains("unit_scale"));
     }
 
     #[test]

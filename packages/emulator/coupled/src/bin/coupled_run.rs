@@ -48,6 +48,8 @@
 //! its `p50` or its `max` is more than its limit above stock: `--span-max NAME=N` (repeatable),
 //! else 1,000 instructions. A span also fails when its longest gap is more than its limit above
 //! stock's, or when it has more passes over its period than stock. The result is `gates.span_gate`, and a failure fails the run (exit 2).
+//! It also fails when it has more passes over the period at the unit's speed than stock
+//! (`length.over_unit_period`: length x `--unit-scale`, default 1.21, above the period).
 //! `tests/scenarios/dn2-load.json` holds the load scenarios for the gate. `--scenarios` is
 //! repeatable, so one run can take `dn2.json` and `dn2-load.json`.
 //!
@@ -150,6 +152,8 @@ struct Args {
     drop_late_sends: bool,
     /// `--drop-sends N[,N...]`: exchange numbers to drop whatever their gap.
     drop_sends: Vec<u64>,
+    /// `--unit-scale X`: the unit's DTCN0 ticks per emulator instruction in a heavy handler pass.
+    unit_scale: f64,
     /// `--span-baseline STOCK.json`: the stock report the spans are gated against.
     span_baseline: Option<Value>,
     /// `--span-max NAME=N`: the extra instructions over stock a span may add.
@@ -323,6 +327,19 @@ fn midi_out_events(log: &[(u64, Vec<u8>)], wire: u64) -> Value {
         }
     }
     Value::Array(events)
+}
+
+/// The unit's DTCN0 ticks per emulator instruction in a heavy pass of the DN2 1.11 audio handler.
+/// Measured on one unit with stock 1.11 and a 16-track pattern at 120 BPM: the step passes take
+/// 91 to 100 % of a frame on the unit and 68,000 to 70,000 instructions here (`INSTRUMENTATION.md`).
+const UNIT_SCALE: f64 = 1.21;
+
+/// `X`: a positive scale.
+fn parse_unit_scale(spec: &str) -> Result<f64, String> {
+    match spec.trim().parse::<f64>() {
+        Ok(x) if x.is_finite() && x > 0.0 => Ok(x),
+        _ => Err(format!("--unit-scale: {spec} is not a positive number")),
+    }
 }
 
 /// `N[,N...]`: exchange numbers, 1 or more.
@@ -506,6 +523,7 @@ fn parse_args() -> Result<Args, String> {
         late_send: None,
         drop_late_sends: false,
         drop_sends: Vec::new(),
+        unit_scale: UNIT_SCALE,
         span_baseline: None,
         span_limits: Limits::default(),
         zero: false,
@@ -550,6 +568,7 @@ fn parse_args() -> Result<Args, String> {
                 a.late_send = Some(parse_late_send(&value("--late-send-window")?)?)
             }
             "--drop-late-sends" => a.drop_late_sends = true,
+            "--unit-scale" => a.unit_scale = parse_unit_scale(&value("--unit-scale")?)?,
             "--drop-sends" => a
                 .drop_sends
                 .extend(parse_drop_sends(&value("--drop-sends")?)?),
@@ -1238,7 +1257,10 @@ fn run_scenario(
         })
     };
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
-    let spans = rt.spans_report((cf_instructions_per_second() / FRAMES_PER_SECOND).round() as u64);
+    let spans = rt.spans_report(
+        (cf_instructions_per_second() / FRAMES_PER_SECOND).round() as u64,
+        args.unit_scale,
+    );
     if let Some(base) = &args.span_log {
         let path = wav_path_for(base, &sc.name);
         let mut text = String::new();
@@ -1645,6 +1667,9 @@ mod tests {
         assert_eq!(parse_drop_sends("120,7").unwrap(), [120, 7]);
         assert!(parse_drop_sends("0").is_err());
         assert!(parse_drop_sends("x").is_err());
+        assert_eq!(parse_unit_scale("1.21").unwrap(), 1.21);
+        assert!(parse_unit_scale("0").is_err());
+        assert!(parse_unit_scale("-1").is_err());
     }
 
     #[test]

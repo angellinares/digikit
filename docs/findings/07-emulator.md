@@ -7078,6 +7078,32 @@ the ready snapshot, with `--dsp sharc`, in WSL:
 
 Since 2026-11-07 the model is on by default on DN2. `DIGI_DTCN0=off` turns it off, and `DIGI_DTCN0=bus` turns it on
 for any device. Another value stops the run with an error. On DT2 it stays off by default, because no DT2 run was
-checked with it. The 132 MHz rate is still an assumption. With the default, stock 1.11 `load-turns` gates +0 against
-the stock report made without the model.
+checked with it. With the default, stock 1.11 `load-turns` gates +0 against the stock report made without the model.
+
+**The rate, measured (2026-11-07).** The USB probe mod reads DTCN0 against the frame count on a unit. On the owner's unit
+DTCN0 runs at 132.00 MHz, the model's rate: 88,000 ticks for each frame.
+
+The MCF5441x Reference Manual (chapter 39, DTMRn) gives three clocks for a DMA timer. One is the internal bus clock divided
+by 1 or 16, then a prescaler of 1 to 256. The others are the timer's input pin and the IEEE 1588 timebase.
+
+The MCF5441x data sheet (Rev. 8, tables 1 and 2) rates the core at 250 MHz at most, and the bus at the core divided by 2.
+The only speed grade is 250 MHz.
+
+Another section of this finding shows the bus clock of 132 MHz: "The intro is meant to run at 15.00 fps, and the bus
+clock is 132 MHz".
+
+The MIDI port adds one more check. Stock's MIDI UART init (`0x40002844`, UART9 at `0xec074000`) is called with
+31,250 baud (`0x7a12`, at `0x400ced9c`). It writes UBG2 = 132,000,000 / (32 x 31,250) = 132. At a 125 MHz bus that
+divider gives 29,593 baud, 5.3 % slow.
+
+The MIDI specification allows 1 %. At 5.3 % a receiver samples the last bits of a byte near their edges. So it would
+likely lose bytes. DIN MIDI works on stock units.
+
+So the bus runs at about 132 MHz, above the data sheet's 125 MHz, and the core at 264 MHz if it is twice the bus. DTCN0 at
+132.00 MHz then counts the bus clock divided by 1, with a prescaler of 1. Nothing in the update file writes DTMR0, so a
+read of DTMR0 and PLL_DR on a unit is still the direct check. The bootstrap section writes one field of PLL_DR only,
+OUTDIV3 = 6 (the eSDHC clock). The core and bus dividers come from the reset configuration.
+
+**DTCN2.** Stock writes DTMR2 = `0x0007`: RST = 1, CLK = 11, PS = 0. CLK = 11 selects the DT2IN pin (falling edge). So
+DMA timer 2 counts an external signal, and the bus clock cannot model it.
 
