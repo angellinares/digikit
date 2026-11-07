@@ -6,7 +6,10 @@
 //! MIDI parser. The emulator has no UART9 model: it does what the channel would do (store the byte into the
 //! ring, advance DADDR) and offers the vector, one byte per wire time. Output: the driver stores bytes straight
 //! into the data register (its status register reads back the value the driver wrote, 0xdd: always ready), which
-//! `Board` records.
+//! `Board` records. DN2 1.11 also sends through a 4 KiB ring that eDMA channel 37 drains into the data register
+//! (the ring write `FUN_40002612`, the completion handler `0x40002102` on vector 157). `Board` runs the channel's
+//! major loop at its SERQ write and records the bytes. The runtime offers vector 157 (INTC1 source 29) once the
+//! bytes' wire time has passed, so the driver can start its next transfer.
 
 use std::collections::VecDeque;
 
@@ -91,12 +94,18 @@ pub(crate) struct MidiPort {
     pub rx_bytes: u64,
     pub rx_irqs: u64,
     pub tx_bytes: u64,
+    /// An eDMA channel-37 transfer is on the wire: its completion interrupt is due at this count.
+    pub tx_due: Option<u64>,
+    /// Channel-37 transfers started, and their completion interrupts taken.
+    pub tx_dma: u64,
+    pub tx_irqs: u64,
 }
 
 impl MidiPort {
     #[inline]
     pub fn busy(&self) -> bool {
         self.pending
+            || self.tx_due.is_some()
             || !self.queue.is_empty()
             || self.usb.active.is_some()
             || !self.usb.queue.is_empty()
@@ -106,6 +115,13 @@ impl MidiPort {
     #[inline]
     pub fn din_busy(&self) -> bool {
         self.pending || !self.queue.is_empty()
+    }
+
+    /// A DIN output transfer is on the wire: its completion interrupt is due in the returned number of instructions
+    /// (`Some(0)`: due now). The fast paths run up to that count, as for the USB input.
+    #[inline]
+    pub fn tx_due_in(&self, icount: u64) -> Option<u64> {
+        self.tx_due.map(|due| due.saturating_sub(icount))
     }
 
     /// The USB input is idle until the guest's instruction count reaches the returned value: the next callback call is not due (a call
@@ -128,6 +144,9 @@ pub struct MidiStatus {
     pub rx_irqs: u64,
     /// Bytes the guest sent so far (taken with `take_midi_out`, or still pending).
     pub tx_bytes: u64,
+    /// eDMA channel-37 transfers started, and their completion interrupts the guest took.
+    pub tx_dma: u64,
+    pub tx_irqs: u64,
     /// USB bytes still queued, handed over so far, callback calls, and bytes the firmware sent to USB (not yet taken).
     pub usb_queued: usize,
     pub usb_in_bytes: u64,
