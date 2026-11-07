@@ -1,5 +1,5 @@
 // Module build and acceptance target inputs and factories.
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 // Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
 export const PK = 'dist/patchkit/patchkit --root .';
@@ -157,4 +157,24 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
       cwd: '.',
     },
   };
+};
+
+// One cached target per test file, so an edit or a failure in one file reruns only that file.
+// `name` stays the target everything selects: a no-op parent of the per-file targets.
+export const deviceTargets = (name, root, tests, recs, imageInput, importInputs, uploadable = false) => {
+  if (tests.length === 1) return { [name]: deviceTarget(root, tests, recs, imageInput, importInputs, uploadable) };
+  const targets = {};
+  for (const test of tests) {
+    const child = `${name}--${basename(test, '.device.test.ts')}`;
+    if (targets[child]) throw new Error(`Two device tests of ${root} map to ${child}`);
+    const own = recs.filter((rec) => rec.files?.includes(test));
+    const target = deviceTarget(root, [test], own.length ? own : recs, imageInput, importInputs, uploadable);
+    // A sibling test file is not an input. This file's own closure comes from importInputs.
+    target.inputs.push('!{projectRoot}/**/*.device.test.ts');
+    targets[child] = target;
+  }
+  // Nx selects a target by its inputs, so the parent keeps the inputs of the whole project.
+  const { inputs } = deviceTarget(root, tests, recs, imageInput, importInputs, uploadable);
+  targets[name] = { executor: 'nx:noop', inputs, dependsOn: Object.keys(targets) };
+  return targets;
 };

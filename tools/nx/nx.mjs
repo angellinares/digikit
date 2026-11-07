@@ -8,19 +8,31 @@ import { fileURLToPath } from 'node:url';
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
-export function budget(cores, override) {
+export function budget(work, override) {
   let b;
   if (override !== undefined && override !== '') {
     b = Number(override);
     if (!Number.isInteger(b) || b < 1) throw new Error(`DIGI_BUDGET must be a positive integer, got ${override}`);
   } else {
-    b = Math.max(2, cores - 2);
+    b = Math.max(2, work);
   }
-  const tasks = clamp(Math.floor(b / 4), 1, 3);
-  const workers = clamp(Math.floor(b / (tasks * 2)), 1, 2);
+  // One emulator keeps 2 cores busy. One task per 3 cores keeps the machine usable.
+  const tasks = clamp(Math.floor(b / 3), 1, 4);
+  const workers = 1;
   const threads = Math.ceil(b / tasks);
   const jobs = clamp(Math.floor(b / 2), 1, 6);
   return { budget: b, tasks, workers, threads, jobs };
+}
+
+// Cores for our work: the performance cores on Apple Silicon, so the efficiency cores stay
+// free for the rest of the machine. Otherwise all cores but two.
+function workCores() {
+  if (process.platform === 'darwin') {
+    const { stdout } = spawnSync('sysctl', ['-n', 'hw.perflevel0.logicalcpu'], { encoding: 'utf8' });
+    const performance = Number(stdout);
+    if (performance > 0) return performance;
+  }
+  return availableParallelism() - 2;
 }
 
 export function runsTasks(args) {
@@ -82,7 +94,7 @@ function main() {
   const cwd = process.cwd();
   let b;
   try {
-    b = budget(availableParallelism(), process.env.DIGI_BUDGET);
+    b = budget(workCores(), process.env.DIGI_BUDGET);
   } catch (error) {
     console.error(`nx: ${error.message}`);
     process.exit(2);

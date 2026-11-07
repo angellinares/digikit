@@ -44,7 +44,8 @@ export const createDependencies = (_opts, ctx) => {
       const hasDeviceTests = !!(
         p.targets?.['test-device']?.options?.command ||
         p.targets?.['test-device-full']?.options?.command ||
-        p.targets?.['test-conformance']
+        p.targets?.['test-conformance'] ||
+        Object.keys(p.targets ?? {}).some((name) => /^test-device(-full)?--/.test(name))
       );
       const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices'] : [];
       // Runtime acceptance records name the fixture/content modules loaded by device tests.

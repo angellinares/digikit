@@ -87,7 +87,7 @@ For a proposed file, invoke `pnpm nx:pilot affected --files=path/to/file -t TARG
 Nx rejects `--files` together with the main command's `--base`.
 
 Control-client, test-support, dk-session, desktop-host and regression-host targets use local result
-caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). The gate runs two tasks concurrently; device targets set `REGRESSION_JOBS=2`. Other Nx targets: `pack` (patchkit pack for each device, building stale module objects on demand, into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
+caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). A project with several device test files has one cached target per file, `test-device--<file>`, and `test-device` is their no-op parent; a project with one file has only `test-device`. Tasks and Vitest workers follow the CPU budget below. Other Nx targets: `pack` (patchkit pack for each device, building stale module objects on demand, into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
 generated WASM and optional inputs outside the cache boundary. Cache use assumes a frozen installation. New test helpers, environment
 reads or external inputs require input/output review and scoped invalidation/restoration evidence before relying on cached results. The
 [bounded cache observations](findings/nx-pilot.md) include dependency failure/restoration probes;
@@ -455,15 +455,17 @@ The no-AOT halves of `tier-quick` and `tier-sweep` use `NO_AOT_SUBSET` in `tools
 ## CPU budget of the gate
 
 `pnpm nx:pilot` runs `tools/nx/nx.mjs`, the one Nx launcher. It computes a budget from the machine:
-B = max(2, cores - 2), or `DIGI_BUDGET=N`. A value already set in the environment wins over the derived one.
+B = the performance core count on Apple Silicon, otherwise cores - 2, with a minimum of 2, or `DIGI_BUDGET=N`. A value already set in the environment wins over the derived one.
 
 | Setting | Formula | 4 cores | 8 cores | 12 cores | 16 cores |
 | --- | --- | --- | --- | --- | --- |
-| Nx tasks | clamp(floor(B/4), 1, 3) | 1 | 1 | 2 | 3 |
-| `REGRESSION_JOBS` (Vitest workers per task) | clamp(floor(B/(tasks*2)), 1, 2) | 1 | 2 | 2 | 2 |
+| Nx tasks (`NX_PARALLEL`) | clamp(floor(B/3), 1, 4) | 1 | 2 | 3 | 4 |
+| `REGRESSION_JOBS` (Vitest workers per task) | 1 | 1 | 1 | 1 | 1 |
 | `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 1 | 3 | 5 | 6 |
 | `CARGO_BUILD_JOBS` | B | 2 | 6 | 10 | 14 |
-| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 6 | 5 | 5 |
+| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 3 | 4 | 4 |
+
+On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 4 tasks, 6 emulators for gate targets that run alone.
 
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
 
