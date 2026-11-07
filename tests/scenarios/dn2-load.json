@@ -25098,6 +25098,570 @@
           "detents": -1
         }
       ]
+    },
+    {
+      "name": "load-sysex-send",
+      "description": "Load: NO, then SETTINGS > SYSEX DUMP > SYSEX SEND, the active project to USB+MIDI. The SysEx streams on MIDI DIN through the 4 KiB ring at the wire rate, and the sender waits for space with interrupts open. The run ends 4 s after the last key.",
+      "instructions": 832000000,
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 40000000,
+          "button": 8,
+          "down": true
+        },
+        {
+          "at_instr": 44000000,
+          "button": 8,
+          "down": false
+        },
+        {
+          "at_instr": 64000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 68000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 88000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 92000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 112000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 116000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 136000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 140000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 160000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 164000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 184000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 188000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 208000000,
+          "button": 15,
+          "down": true
+        },
+        {
+          "at_instr": 212000000,
+          "button": 15,
+          "down": false
+        },
+        {
+          "at_instr": 232000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 236000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 256000000,
+          "button": 15,
+          "down": true
+        },
+        {
+          "at_instr": 260000000,
+          "button": 15,
+          "down": false
+        },
+        {
+          "at_instr": 280000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 284000000,
+          "button": 10,
+          "down": false
+        }
+      ]
+    },
+    {
+      "name": "load-sysex-keys",
+      "description": "Load: NO, TRIG KEY DEST set to INT+EXT in PORT CONFIG, three trig keys (the control), then the SysEx project send to USB+MIDI, and 12 trig keys one every 0.5 s from +908M instructions while the SysEx streams. Each key sends a note on MIDI DIN, through the same ring as the SysEx. The run ends 1 s after the last key.",
+      "instructions": 1832000000,
+      "events": [
+        {
+          "at_instr": 0,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 1000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 40000000,
+          "button": 8,
+          "down": true
+        },
+        {
+          "at_instr": 44000000,
+          "button": 8,
+          "down": false
+        },
+        {
+          "at_instr": 64000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 68000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 88000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 92000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 112000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 116000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 136000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 140000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 160000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 164000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 184000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 188000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 208000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 212000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 232000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 236000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 256000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 260000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 280000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 284000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 304000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 308000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 328000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 332000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 352000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 356000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 376000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 380000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 400000000,
+          "button": 15,
+          "down": true
+        },
+        {
+          "at_instr": 404000000,
+          "button": 15,
+          "down": false
+        },
+        {
+          "at_instr": 424000000,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 428000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 448000000,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 452000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 472000000,
+          "button": 12,
+          "down": true
+        },
+        {
+          "at_instr": 476000000,
+          "button": 12,
+          "down": false
+        },
+        {
+          "at_instr": 496000000,
+          "button": 26,
+          "down": true
+        },
+        {
+          "at_instr": 516000000,
+          "button": 26,
+          "down": false
+        },
+        {
+          "at_instr": 536000000,
+          "button": 27,
+          "down": true
+        },
+        {
+          "at_instr": 556000000,
+          "button": 27,
+          "down": false
+        },
+        {
+          "at_instr": 576000000,
+          "button": 29,
+          "down": true
+        },
+        {
+          "at_instr": 596000000,
+          "button": 29,
+          "down": false
+        },
+        {
+          "at_instr": 656000000,
+          "button": 8,
+          "down": true
+        },
+        {
+          "at_instr": 660000000,
+          "button": 8,
+          "down": false
+        },
+        {
+          "at_instr": 680000000,
+          "button": 14,
+          "down": true
+        },
+        {
+          "at_instr": 684000000,
+          "button": 14,
+          "down": false
+        },
+        {
+          "at_instr": 704000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 708000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 728000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 732000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 752000000,
+          "button": 15,
+          "down": true
+        },
+        {
+          "at_instr": 756000000,
+          "button": 15,
+          "down": false
+        },
+        {
+          "at_instr": 776000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 780000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 800000000,
+          "button": 15,
+          "down": true
+        },
+        {
+          "at_instr": 804000000,
+          "button": 15,
+          "down": false
+        },
+        {
+          "at_instr": 824000000,
+          "button": 10,
+          "down": true
+        },
+        {
+          "at_instr": 828000000,
+          "button": 10,
+          "down": false
+        },
+        {
+          "at_instr": 908000000,
+          "button": 26,
+          "down": true
+        },
+        {
+          "at_instr": 928000000,
+          "button": 26,
+          "down": false
+        },
+        {
+          "at_instr": 974000000,
+          "button": 27,
+          "down": true
+        },
+        {
+          "at_instr": 994000000,
+          "button": 27,
+          "down": false
+        },
+        {
+          "at_instr": 1040000000,
+          "button": 29,
+          "down": true
+        },
+        {
+          "at_instr": 1060000000,
+          "button": 29,
+          "down": false
+        },
+        {
+          "at_instr": 1106000000,
+          "button": 30,
+          "down": true
+        },
+        {
+          "at_instr": 1126000000,
+          "button": 30,
+          "down": false
+        },
+        {
+          "at_instr": 1172000000,
+          "button": 31,
+          "down": true
+        },
+        {
+          "at_instr": 1192000000,
+          "button": 31,
+          "down": false
+        },
+        {
+          "at_instr": 1238000000,
+          "button": 33,
+          "down": true
+        },
+        {
+          "at_instr": 1258000000,
+          "button": 33,
+          "down": false
+        },
+        {
+          "at_instr": 1304000000,
+          "button": 26,
+          "down": true
+        },
+        {
+          "at_instr": 1324000000,
+          "button": 26,
+          "down": false
+        },
+        {
+          "at_instr": 1370000000,
+          "button": 27,
+          "down": true
+        },
+        {
+          "at_instr": 1390000000,
+          "button": 27,
+          "down": false
+        },
+        {
+          "at_instr": 1436000000,
+          "button": 29,
+          "down": true
+        },
+        {
+          "at_instr": 1456000000,
+          "button": 29,
+          "down": false
+        },
+        {
+          "at_instr": 1502000000,
+          "button": 30,
+          "down": true
+        },
+        {
+          "at_instr": 1522000000,
+          "button": 30,
+          "down": false
+        },
+        {
+          "at_instr": 1568000000,
+          "button": 31,
+          "down": true
+        },
+        {
+          "at_instr": 1588000000,
+          "button": 31,
+          "down": false
+        },
+        {
+          "at_instr": 1634000000,
+          "button": 33,
+          "down": true
+        },
+        {
+          "at_instr": 1654000000,
+          "button": 33,
+          "down": false
+        }
+      ]
     }
   ]
 }

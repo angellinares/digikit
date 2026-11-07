@@ -111,6 +111,14 @@ The firmware's MIDI driver is `FUN_40002844` (DT2 1.16; the same code at the sam
     in the free-space wait (at `0x4000264a`) after about 4096 bytes. With the model, one send ends with the in-flight flag
     at 0 and read index = write index = 12. 300 sends end with both indexes at 3600 (0xe10).
   - Seven scenarios without DIN output give the same span counts as before the model.
+- DN2 1.11 puts channel messages inside a SysEx dump **[D]** (2026-11-07, emulator only). The SysEx project send (SETTINGS >
+  SYSEX DUMP > SYSEX SEND, USB+MIDI) streams the dump through the DIN ring that other MIDI output uses. In the scenario TRIG
+  KEY DEST is INT+EXT.
+  A trig key during the dump then writes its note on and note off into the ring between SysEx bytes.
+  - So on the wire the note sits inside the SysEx message. A receiver ends a SysEx at any status byte other than a
+    real-time one, so the rest of the dump no longer reaches it as SysEx. Not checked on a unit.
+  - The note waits behind the SysEx bytes in the ring: 82 to 1,169 ms after its key (626 ms on average), against 3.8 to
+    5.6 ms before the dump. Scenario `load-sysex-keys` in `tests/scenarios/dn2-load.json`, `midi.out_events` in the report.
 - Proof: `din_midi` sends 28 bytes (note on/off, CC, a Sample Dump inquiry `F0 7E 7F 06 01 F7`, a MidiRpc Ping): 28
   interrupts, the parser `FUN_4011d1f6` 28 times, consume index equal to the byte count. The Sample Dump inquiry got no reply
   on DIN out (no DIN output bytes in any run: the firmware sent none).

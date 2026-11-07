@@ -239,7 +239,7 @@ the gaps over the period.
 A run stops at the first chunk boundary past its length. So two builds can end the same scenario up to one chunk (250,000
 instructions) apart. The gate accepts a difference of up to one chunk and one period.
 
-The gate set is ten scenarios: `idle`, `kb-chord16` and `dn2-rec-play` from `tests/scenarios/dn2.json`, and seven load
+The gate set is twelve scenarios: `idle`, `kb-chord16` and `dn2-rec-play` from `tests/scenarios/dn2.json`, and nine load
 scenarios from `tests/scenarios/dn2-load.json`:
 
 | scenario | load | checked on stock 1.11 |
@@ -251,6 +251,8 @@ scenarios from `tests/scenarios/dn2-load.json`:
 | `load-midi-flood` | MIDI DIN input at the full wire rate for about 2 s on channel 10: 417 events of 15 bytes (note on, CC 48, note off, CC 49, note on) | 6,255 bytes, each taken by the receive interrupt. A 4 s version started 1,666 notes and 833 note offs |
 | `load-lfo3` | each MOD page: SPD and MULT to their maximum, DEST one step and YES, DEPTH to its maximum, then Trig 1 held for 3 s | 15 bytes of track 1's sound change, in three LFO blocks 0x10 apart |
 | `load-midi-out` | SETTINGS > MIDI CONFIG > PORT CONFIG, ENCODER DEST to INT+EXT, then encoders A and B 40 detents up and 40 down | ENCODER DEST reads 1. The turns send 84 bytes on MIDI DIN (CC 48 and CC 49 on channel 10), in 28 channel-37 transfers |
+| `load-sysex-send` | SETTINGS > SYSEX DUMP > SYSEX SEND, the active project to USB+MIDI, then 4 s | 16,128 bytes of SysEx on MIDI DIN (`f0 00 20 3c …`) in 8 transfers. The dump is longer than the 4 KiB ring, so the sender waits for space |
+| `load-sysex-keys` | TRIG KEY DEST to INT+EXT, three trig keys, the SysEx project send, then 12 trig keys one every 0.5 s while it streams | 15 note ons and 15 note offs on MIDI DIN. The 12 during the SysEx are inside the SysEx stream |
 
 In keyboard mode trig keys 1, 4 and 8 start no note. So `kb-chord16`, with all 16 keys held, starts 13 voices.
 
@@ -268,6 +270,8 @@ Stock DN2 1.11 on the gate set (`--cold-base`, `--dsp zero`, instructions per pa
 | `load-midi-flood` | 49,960 | 51,394 | 7,841 | 8,369 |
 | `load-lfo3` | 49,579 | 50,826 | 7,873 | 8,193 |
 | `load-midi-out` | 49,547 | 50,826 | 7,841 | 8,369 |
+| `load-sysex-send` | 49,553 | 50,075 | 7,841 | 8,369 |
+| `load-sysex-keys` | 49,553 | 51,985 | 7,841 | 8,369 |
 
 On `load-seq16` the longest stock `isr` pass is 82,102 instructions, 93 % of the period. On the other scenarios it is 62 % at most.
 
@@ -279,6 +283,17 @@ MIDI DIN input keeps the fast paths off while bytes wait. So `load-midi-flood` t
 
 The report of each scenario has `midi`. It gives the bytes and interrupts of the DIN input. It also gives the bytes, transfers
 and completion interrupts of the DIN output, with the first 48 output bytes.
+
+`midi.out_events` lists the channel messages of the DIN output (status 0x80 to 0xEF and their data bytes), at most 2,000.
+Each has `at`, the instruction count from ready when its status byte is on the wire, within one chunk (250,000
+instructions). A message that the sender put inside a SysEx message has `in_sysex`. A receiver ends the SysEx at its status
+byte.
+
+On `load-sysex-keys` a note on leaves 3.8 to 5.6 ms after its key before the SysEx. During the SysEx it waits behind the
+SysEx bytes in the ring: 82 to 1,169 ms, 626 ms on average. The notes leave in groups about every 1.29 s.
+
+On `load-sysex-send` the longest `gap` of `isr` is 88,891 instructions, against 88,056 on `idle`. So a handler entry starts up
+to 835 instructions later than on `idle`. The cause is not traced.
 
 1. Run stock once with the scenarios and spans. Keep its report:
 
