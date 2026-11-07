@@ -126,23 +126,25 @@ def has_cap(info: dict[str, Any], name: str) -> bool:
     return since is not None and info["runtime"] >= since
 
 
-def file_hash(data: bytes) -> bytes:
-    """The store's hash slot of a file (BEGIN, LIST, VERIFY): the +Drive content hash (`dksample::content_hash`, a lookup3 variant over big-endian
-    words, seed 0x43fa243a) `| 1`, 4 bytes big-endian, then 28 zeros. The same value as `dksample::file_hash` (Rust), `fileHash` (TypeScript) and
-    the runtime's `hash32.rs`."""
-    m = 0xFFFFFFFF
+class FileHasher:
+    """The store's hash slot of a file, streaming (BEGIN, LIST, VERIFY): the +Drive content hash (`dksample::content_hash`, a lookup3 variant over
+    big-endian words, seed 0x43fa243a) `| 1`, 4 bytes big-endian, then 28 zeros. The same value as `dksample::file_hash` (Rust), `fileHash`
+    (TypeScript) and the runtime's `hash32.rs`, with the same carry: the variant keeps the last 1 to 12 bytes for the tail, so a block is mixed
+    only when more than 12 bytes are known and up to 12 bytes wait between updates."""
 
-    def rot(x: int, n: int) -> int:
-        return ((x << n) | (x >> (32 - n))) & m
+    M = 0xFFFFFFFF
 
-    def tail(d: bytes) -> int:
-        return struct.unpack(">I", d.ljust(4, b"\0"))[0]
+    def __init__(self) -> None:
+        self.a = self.b = self.c = 0x43FA243A
+        self.carry = b""
 
-    a = b = c = 0x43FA243A
-    n = len(data)
-    off = 0
-    while n > 12:
-        k0, k1, k2 = struct.unpack_from(">III", data, off)
+    @classmethod
+    def _rot(cls, x: int, n: int) -> int:
+        return ((x << n) | (x >> (32 - n))) & cls.M
+
+    def _mix(self, k0: int, k1: int, k2: int) -> None:
+        m, rot = self.M, self._rot
+        a, b, c = self.a, self.b, self.c
         c = (c + k2) & m
         t2 = (k1 + b + c) & m
         u1 = rot(c, 4) ^ ((k0 + a - c) & m)
@@ -154,30 +156,47 @@ def file_hash(data: bytes) -> bytes:
         u4 = ((t3 - u3) & m) ^ rot(u3, 16)
         a = (t2b + u4) & m
         u5 = ((t4 - u4) & m) ^ rot(u4, 19)
-        b = (a + u5) & m
-        c = ((t2b - u5) & m) ^ rot(u5, 4)
-        off += 12
-        n -= 12
-    h = c
-    if n:
-        d = data[off:]
-        if n <= 4:
-            a = (a + tail(d)) & m
-        elif n <= 8:
-            a = (a + struct.unpack(">I", d[:4])[0]) & m
-            b = (b + tail(d[4:])) & m
-        else:
-            a = (a + struct.unpack(">I", d[:4])[0]) & m
-            b = (b + struct.unpack(">I", d[4:8])[0]) & m
-            c = (c + tail(d[8:])) & m
-        u1 = ((b ^ c) - rot(b, 14)) & m
-        u2 = ((u1 ^ a) - rot(u1, 11)) & m
-        u3 = ((u2 ^ b) - rot(u2, 25)) & m
-        u4 = ((u3 ^ u1) - rot(u3, 16)) & m
-        a2 = ((u4 ^ u2) - rot(u4, 4)) & m
-        b2 = ((a2 ^ u3) - rot(a2, 14)) & m
-        h = ((b2 ^ u4) - rot(b2, 24)) & m
-    return struct.pack(">I", h | 1) + bytes(28)
+        self.a, self.b, self.c = a, (a + u5) & m, ((t2b - u5) & m) ^ rot(u5, 4)
+
+    def update(self, data: bytes) -> None:
+        buf = self.carry + data
+        off = 0
+        while len(buf) - off > 12:
+            self._mix(*struct.unpack_from(">III", buf, off))
+            off += 12
+        self.carry = buf[off:]
+
+    def digest(self) -> bytes:
+        m, rot = self.M, self._rot
+        a, b, c = self.a, self.b, self.c
+        d, n = self.carry, len(self.carry)
+        h = c
+        if n:
+            word = lambda x: struct.unpack(">I", x.ljust(4, b"\0"))[0]  # noqa: E731
+            if n <= 4:
+                a = (a + word(d)) & m
+            elif n <= 8:
+                a = (a + word(d[:4])) & m
+                b = (b + word(d[4:])) & m
+            else:
+                a = (a + word(d[:4])) & m
+                b = (b + word(d[4:8])) & m
+                c = (c + word(d[8:])) & m
+            u1 = ((b ^ c) - rot(b, 14)) & m
+            u2 = ((u1 ^ a) - rot(u1, 11)) & m
+            u3 = ((u2 ^ b) - rot(u2, 25)) & m
+            u4 = ((u3 ^ u1) - rot(u3, 16)) & m
+            a2 = ((u4 ^ u2) - rot(u4, 4)) & m
+            b2 = ((a2 ^ u3) - rot(a2, 14)) & m
+            h = ((b2 ^ u4) - rot(b2, 24)) & m
+        return struct.pack(">I", h | 1) + bytes(28)
+
+
+def file_hash(data: bytes) -> bytes:
+    """The hash slot of `data` (see `FileHasher`)."""
+    h = FileHasher()
+    h.update(data)
+    return h.digest()
 
 
 class UploadError(RuntimeError):
@@ -728,15 +747,20 @@ class Uploader:
         src: Path,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
-        """`put` from a file on disk: the file is read whole for its hash (this tool's hash is pure Python: use the workbench for large samples), then the chunks are read from disk."""
-        data = src.read_bytes()
-        self._put(
-            path,
-            len(data),
-            lambda off, n: data[off : off + n],
-            file_hash(data),
-            progress,
-        )
+        """`put` from a file on disk without holding it in memory (a sample can be hundreds of MB): one pass feeds the streaming hash, one reads the chunks.
+        The hash is pure Python, so a large sample takes a while: the workbench is the tool for those."""
+        h = FileHasher()
+        size = 0
+        with src.open("rb") as f:
+            while block := f.read(1 << 20):
+                h.update(block)
+                size += len(block)
+
+            def read_at(off: int, n: int) -> bytes:
+                f.seek(off)
+                return f.read(n)
+
+            self._put(path, size, read_at, h.digest(), progress)
 
     def _put(
         self,

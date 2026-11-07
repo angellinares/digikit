@@ -595,3 +595,25 @@ def test_a_runtime_without_the_file_hash_capability_is_refused_at_once():
         ):
             call()
     assert set(seen) == {D.CMD_INFO}
+
+
+def test_file_hasher_streams_like_the_whole_file_for_any_split():
+    """The carry of up to 12 bytes between updates: any split of the input gives the hash of the whole (the runtime's `Hash32` rule)."""
+    import random
+
+    rnd = random.Random(7)
+    for n in [0, 1, 11, 12, 13, 24, 25, 100, 511, 512, 513, 4096, 32775]:
+        data = bytes((i * 7 + 3) & 255 for i in range(n))
+        want = D.file_hash(data)
+        for _ in range(12):
+            cuts = sorted(rnd.randint(0, n) for _ in range(rnd.randint(0, 6)))
+            h = D.FileHasher()
+            at = 0
+            for c in [*cuts, n]:
+                h.update(data[at:c])
+                at = c
+            assert h.digest() == want, (n, cuts)
+        h = D.FileHasher()  # DATA chunks: multiples of 512, the last one short
+        for at in range(0, n, 512):
+            h.update(data[at : at + 512])
+        assert h.digest() == want, n
