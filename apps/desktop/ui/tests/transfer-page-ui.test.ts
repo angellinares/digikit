@@ -31,6 +31,7 @@ import {
   toggleAll,
 } from '../../../web/src/transfer/select-core.ts';
 import { countLabel, applyEvent, modulesBar, startProgress } from '../../../web/src/transfer/transfer-core.ts';
+import { beginJob, busy, endJob, error, setError } from '../../../web/src/transfer/transfer-state.ts';
 import { WAIT_QUIET_MS, createActivity, waitShown } from '../../../web/src/transfer/wait-core.ts';
 
 test('select all: none, some or all of the visible rows; a click ticks all, or clears them when all are ticked', () => {
@@ -395,4 +396,34 @@ test('drop targets: the folder row the drop is on, else the open folder; rows of
   assert.equal(dragKind(['text/plain']), 'none');
   assert.equal(dragKind(undefined), 'none');
   assert.equal(dragKind(['Files', ROWS_TYPE]), 'rows', 'our own drag wins');
+});
+
+test('the busy action outlives the page: a page that comes back during an upload sees it, and its end clears it once', () => {
+  assert.equal(beginJob('Uploading'), true);
+  // a second page (a new mount) reads busy from the shared state: the bar stays running, the buttons stay off, no job starts
+  assert.equal(busy(), 'Uploading');
+  let u = applyUpload(
+    {},
+    { folder: 'd', event: 'prepared', name: 'k', source: 'k.wav', kind: 'converted', bytes: 1000 },
+  );
+  u = applyUpload(u, { folder: 'd', event: 'progress', name: 'k', sent: 500, bytes: 1000 });
+  assert.equal(
+    samplesBar(u, {}, busy() === 'Uploading')!.message,
+    'Uploading k (1 of 1)',
+    'still running, not "1 of 1 uploaded."',
+  );
+  assert.equal(beginJob('Uploading'), false, 'no second upload');
+  assert.equal(beginJob('Deleting'), false);
+  assert.equal(busy(), 'Uploading', 'a refused job does not change the running one');
+  // a failure that arrives after the new page was made is on the error line it shows
+  setError('Cancelled.');
+  assert.equal(error(), 'Cancelled.');
+  // a read asked for during the job is remembered and runs once at its end
+  assert.equal(beginJob('Reading'), false);
+  assert.equal(endJob(), true);
+  assert.equal(busy(), '');
+  assert.equal(beginJob('Reading'), true);
+  assert.equal(endJob(), false, 'the read is asked for once');
+  assert.equal(busy(), '');
+  setError('');
 });

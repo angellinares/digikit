@@ -21,10 +21,15 @@ import { MODES, modulesBar, parseMode, storageLine } from './transfer-core';
 import { writing, type PageCtx } from './TransferParts';
 import {
   activeMode,
+  beginJob,
+  busy,
+  endJob,
+  error,
   log,
   progress,
   setDelTicks,
   setDeviceInfo,
+  setError,
   setLastView,
   setMode,
   setTicks,
@@ -42,63 +47,56 @@ async function read(): Promise<void> {
   setDeviceInfo({ name: await env.deviceName(v.device), runtime: v.runtime, storage: storageLine(v) });
 }
 
+/** The one busy action. It is not made by the page: a job goes on when the page is left, and the old and the new page share it. */
+const run = async (what: string, f: () => Promise<void>) => {
+  if (!beginJob(what)) return;
+  noteActivity();
+  setError('');
+  // after a cancel or a "no reply" the device is not asked again at once (that would wait the whole time a second time)
+  let skipRead = false;
+  // a read is not logged (the page reads by itself); every other run is, with its result
+  const logRun = (failure?: unknown) => {
+    if (what === 'Reading') return;
+    const modules = activeMode() === 'modules';
+    transferEnv().logRun({
+      what,
+      target: targetLabel(target()),
+      lines: modules ? log() : (transferEnv().extras?.samples?.lines?.() ?? []),
+      message: modules ? progress()?.message : undefined,
+      ...(failure === undefined
+        ? {}
+        : { error: failureLine(failure, targetLabel(target())), cancelled: isCancelled(failure) }),
+    });
+  };
+  try {
+    await f();
+    logRun();
+  } catch (e) {
+    skipRead = isCancelled(e) || isTimeout(e);
+    setError(failureLine(e, targetLabel(target())));
+    logRun(e);
+  } finally {
+    if (!skipRead)
+      try {
+        await read();
+      } catch (e) {
+        if (!error()) setError(failureLine(e, targetLabel(target())));
+      }
+    if (endJob()) void run('Reading', async () => {});
+    transferEnv().extras?.onJobEnd?.();
+  }
+};
+
 export default function TransferPage(): JSX.Element {
-  const [busy, setBusy] = createSignal('');
-  const [error, setError] = createSignal('');
   const [reload, setReload] = createSignal(0);
 
-  // a read asked for while another job runs (another target or mode during a wait) runs when that job ends
-  let readAgain = false;
-  const run = async (what: string, f: () => Promise<void>) => {
-    if (busy()) {
-      if (what === 'Reading') readAgain = true;
-      return;
-    }
-    setBusy(what);
-    noteActivity();
-    setError('');
-    // after a cancel or a "no reply" the device is not asked again at once (that would wait the whole time a second time)
-    let skipRead = false;
-    // a read is not logged (the page reads by itself); every other run is, with its result
-    const logRun = (failure?: unknown) => {
-      if (what === 'Reading') return;
-      const modules = activeMode() === 'modules';
-      transferEnv().logRun({
-        what,
-        target: targetLabel(target()),
-        lines: modules ? log() : (transferEnv().extras?.samples?.lines?.() ?? []),
-        message: modules ? progress()?.message : undefined,
-        ...(failure === undefined
-          ? {}
-          : { error: failureLine(failure, targetLabel(target())), cancelled: isCancelled(failure) }),
-      });
-    };
-    try {
-      await f();
-      logRun();
-    } catch (e) {
-      skipRead = isCancelled(e) || isTimeout(e);
-      setError(failureLine(e, targetLabel(target())));
-      logRun(e);
-    } finally {
-      if (!skipRead)
-        try {
-          await read();
-        } catch (e) {
-          if (!error()) setError(failureLine(e, targetLabel(target())));
-        }
-      setBusy('');
-      if (readAgain) {
-        readAgain = false;
-        void run('Reading', async () => {});
-      }
-      transferEnv().extras?.onJobEnd?.();
-    }
-  };
   const ctx: PageCtx = { busy, run, setError, reload };
   const readNow = () => void run('Reading', async () => {});
 
-  onMount(() => void run('Reading', async () => {}));
+  // back on the page during a job: that job's end reads; a read now would only wait behind it
+  onMount(() => {
+    if (!busy()) void run('Reading', async () => {});
+  });
   // another target: what was read from the old one is not shown; read the new one
   createEffect(
     on(
