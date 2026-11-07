@@ -61,7 +61,7 @@
     "fx": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build"],
       "inputs": ["fxDn2"],
       "options": {
@@ -73,7 +73,7 @@
     "fx-no-aot": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build"],
       "inputs": ["fxDn2"],
       "options": {

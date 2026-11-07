@@ -149,6 +149,7 @@ module set (`--stop` ends it), runs the key script from the main screen, and wri
 steps or inline text (`tap:KEY`, `wait:MS`, `turn:ENC A:BY`, `shot:NAME`, `*N` repeats). The workbench has the same call as the Reload
 modules button (⇧⌘R), with `build: true`: it builds the stale objects of the session's modules first (ColdFire and SHARC+; docs/CONTROL.md). `dk:dev` builds in its own step
 and reloads without `build`.
+While iterating, run one device with a Vitest name filter on a per-file or single-file target: `pnpm nx:pilot run <project>:test-device--<file> -- -t 'DN2 1.12'` (or `'DT2 1.17'`). The filter is part of the cache key, so a filtered result never stands in for a full one. It does not reach the files through the no-op `test-device` parent, and the ui-demo, ui-preview and conformance titles use lowercase device names.
 `--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
 
 For a no-argument DN2 preview, `mise run dk:menu` opens the real DIGIKIT menu in a visible browser faceplate;
@@ -473,7 +474,7 @@ Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key
   targets are light (`lint`, `fmt-check`, `rust-fmt`, `typecheck`, `test-host`, `check`, `check:ui`,
   `build:ui`, `python-checks`): those take no lock. `show`, `graph`, `--graph` and `--explain` take no lock. Nx has no per-kind limit: a target with `parallelism: false`
   (cargo build targets `cli`, `daemons`, `digi-coupled:build`, `build-dt2`) runs alone.
-- `DIGI_JOBS` is the only job variable; the `fx`, `fx-no-aot` and `fx-dt2` targets set it to 1.
+- `DIGI_JOBS` is the only job variable; the `fx`, `fx-no-aot` and `fx-dt2` targets set it to 1. Each runs one emulator, so these three may run beside other tasks; the other gate targets with their own job counts run alone (`parallelism: false`).
   `DIGIKIT_PART_JOBS` stays. One coupled emulator process keeps 2 cores busy.
 - A no-progress watchdog (`tests/regression/watchdog.ts`) is on by default. It closes a
   daemon whose DSP frames, main loop hits and audio frames stay the same for 120 s of wall time
