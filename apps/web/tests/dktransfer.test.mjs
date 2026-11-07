@@ -25,6 +25,7 @@ import {
   restartDevice,
   uploadProgress,
 } from '../src/modules/dktransfer.ts';
+import { openSamples } from '@digi/dk-session/samples';
 import { parseSoftwareVersion } from '../src/transfer/connection-core.ts';
 import { FakeDevice, concat, hex, sha } from './fakedevice.mjs';
 import { useFitWasm } from './fit-wasm.ts';
@@ -463,6 +464,29 @@ test('LIST by prefix pages through the matches; MKDIR makes a folder entry that 
   await assert.rejects(s.mkdir('modules/a.dkm'), (e) => e instanceof DkError && e.status === 'E_PATH');
   await s.delete('samples/one.wav');
   assert.equal((await s.list('samples/')).length, 3);
+});
+
+test('the samples listing of a folder with many files pages through and carries the hashes; a truncated reply gives a short listing, never a wrong match', async () => {
+  const dev = new FakeDevice();
+  const s = session(dev);
+  const file = (i) => {
+    const stored = new Uint8Array(40 + i).map((_, k) => (k * 3 + i) & 255);
+    return { name: `s${i}`, bytes: stored.subarray(0, stored.length - 16), stored, kind: 'native' };
+  };
+  const samples = openSamples('digikit', { session: s });
+  for (let i = 0; i < 25; i++) await samples.put('d', file(i));
+  const all = await samples.list('d');
+  assert.equal(all.length, 25, 'every page was read (two entries per reply)');
+  for (let i = 0; i < 25; i++) assert.equal(samples.sameOnDevice(file(i), all), true, `s${i}`);
+  // the same size, other bytes
+  const other = file(3);
+  other.stored = other.stored.map((b, k) => (k === 20 ? b ^ 1 : b));
+  assert.equal(samples.sameOnDevice(other, all), false);
+  // a reply that has no entries while the total says more: the listing is short, and the files it lacks are not "the same"
+  dev.pageSize = 0;
+  const cut = await samples.list('d');
+  assert.equal(cut.length, 0);
+  assert.equal(samples.sameOnDevice(file(1), cut), false);
 });
 
 test('VERIFY of a range, and verifyFile in pieces', async () => {

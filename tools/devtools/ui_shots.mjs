@@ -150,14 +150,14 @@ const SCENES = [
     },
   },
   {
-    // a resumed upload: kick and snare are on the device already, hat is sent
+    // a resumed upload: two of the three files are on the device already, the third is sent
     name: 'samples-upload-skip',
-    q: 'mode=samples&speed=0.6&skip=kick,snare',
+    q: 'mode=samples&speed=12&skip=kick_punchy,snare_tight_01',
     size: WIDE,
     steps: async (p) => {
-      for (const n of ['kick', 'snare', 'hat']) await p.tick(`^Upload ${n}`);
+      await p.tick('^Upload (kick_punchy|snare_tight_01|hat_closed_a)\\.wav');
       await p.click(/^Upload/);
-      await p.wait(2500);
+      await p.wait(4000);
     },
   },
   {

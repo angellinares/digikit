@@ -426,7 +426,7 @@ export function sampleRows(folder: string, entries: SampleEntry[], uploads: Uplo
       if (!have.has(path))
         rows.push({ name: u.name, path, kind: 'file', size: u.bytes, pending: true, status: uploadStatus(u) });
     } else if (u.folder.startsWith(prefix)) {
-      const name = u.folder.slice(prefix.length).split('/')[0];
+      const name = u.folder.slice(prefix.length).split('/')[0] as string;
       const sub = joinPath(folder, name);
       if (!have.has(sub)) {
         have.add(sub);

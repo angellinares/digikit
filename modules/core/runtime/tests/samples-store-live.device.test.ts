@@ -11,7 +11,7 @@ import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { fileHashHex } from '@digi/dk-session';
 import { openSamples } from '@digi/dk-session/samples';
-import { expectRemoveTree } from './samples-tree.ts';
+import { expectRemoveTree, expectSkipOnUpload } from './samples-tree.ts';
 
 async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
   await expectRuntimeReady(session);
@@ -149,6 +149,7 @@ async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
 
     // removeTree on the real store (a scratch folder only)
     await expectRemoveTree(dev, (name) => prepareUpload(sample, `${name}.wav`, wav));
+    await expectSkipOnUpload(dev, wav, (name, w) => prepareUpload(sample, `${name}.wav`, w));
   } finally {
     protocol.cancelPending();
   }
