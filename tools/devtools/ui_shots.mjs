@@ -1075,6 +1075,9 @@ try {
       note = ` (step failed: ${e.message})`;
       failed++;
     }
+    // the bar's text, when the scene shows one (a speed is only proof if it reads right)
+    const stats = await p.eval("document.querySelector('.bar .stats')?.textContent ?? ''").catch(() => '');
+    if (stats) note += ` [.stats: ${stats}]`;
     const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
     const file = path.join(out, `${prefix ? `${prefix}-` : ''}${scene.name}.png`);
     fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
