@@ -239,7 +239,7 @@ the gaps over the period.
 A run stops at the first chunk boundary past its length. So two builds can end the same scenario up to one chunk (250,000
 instructions) apart. The gate accepts a difference of up to one chunk and one period.
 
-The gate set is seven scenarios: `idle`, `kb-chord16` and `dn2-rec-play` from `tests/scenarios/dn2.json`, and four load
+The gate set is ten scenarios: `idle`, `kb-chord16` and `dn2-rec-play` from `tests/scenarios/dn2.json`, and seven load
 scenarios from `tests/scenarios/dn2-load.json`:
 
 | scenario | load | checked on stock 1.11 |
@@ -248,6 +248,9 @@ scenarios from `tests/scenarios/dn2-load.json`:
 | `load-turns` | the SRC page, Trig 1 held, then each encoder A to H 40 detents up and 40 down, one detent every 1M instructions | the screen changes 120 times |
 | `load-ptn-switch` | 8 pattern changes while stopped, one every 0.5 s | the kit pointer `0x800052a0` takes 8 values, each written twice, then pattern 1's kit again |
 | `load-kb-roll` | keyboard mode, a key down every 1M instructions over the 13 trig keys that play a note, 792 notes | 792 frames each start one note, from 0.457 s to 6.45 s, on all 16 voices in turn |
+| `load-midi-flood` | MIDI DIN input at the full wire rate for about 2 s on channel 10: 417 events of 15 bytes (note on, CC 48, note off, CC 49, note on) | 6,255 bytes, each taken by the receive interrupt. A 4 s version started 1,666 notes and 833 note offs |
+| `load-lfo3` | each MOD page: SPD and MULT to their maximum, DEST one step and YES, DEPTH to its maximum, then Trig 1 held for 3 s | 15 bytes of track 1's sound change, in three LFO blocks 0x10 apart |
+| `load-midi-out` | SETTINGS > MIDI CONFIG > PORT CONFIG, ENCODER DEST to INT+EXT, then encoders A and B 40 detents up and 40 down | ENCODER DEST reads 1. The turns send 84 bytes on MIDI DIN (CC 48 and CC 49 on channel 10), in 28 channel-37 transfers |
 
 In keyboard mode trig keys 1, 4 and 8 start no note. So `kb-chord16`, with all 16 keys held, starts 13 voices.
 
@@ -262,8 +265,20 @@ Stock DN2 1.11 on the gate set (`--cold-base`, `--dsp zero`, instructions per pa
 | `load-turns` | 49,553 | 50,762 | 7,841 | 8,369 |
 | `load-ptn-switch` | 49,611 | 50,075 | 7,841 | 8,369 |
 | `load-kb-roll` | 50,024 | 51,507 | 7,904 | 8,369 |
+| `load-midi-flood` | 49,960 | 51,394 | 7,841 | 8,369 |
+| `load-lfo3` | 49,579 | 50,826 | 7,873 | 8,193 |
+| `load-midi-out` | 49,547 | 50,826 | 7,841 | 8,369 |
 
 On `load-seq16` the longest stock `isr` pass is 82,102 instructions, 93 % of the period. On the other scenarios it is 62 % at most.
+
+The stock LFOs add no ColdFire work. On `load-lfo3`, `evala` over the last 2.5 s has a median of 7,905, the same as a
+control that only opens the MOD pages and holds Trig 1. With `--dsp zero` the DSP does not run, so the stock LFOs run on the
+DSP. Use `load-lfo3` with `--dsp sharc` for the DSP load.
+
+MIDI DIN input keeps the fast paths off while bytes wait. So `load-midi-flood` takes about 57 s of wall time for 3.5 s.
+
+The report of each scenario has `midi`. It gives the bytes and interrupts of the DIN input. It also gives the bytes, transfers
+and completion interrupts of the DIN output, with the first 48 output bytes.
 
 1. Run stock once with the scenarios and spans. Keep its report:
 

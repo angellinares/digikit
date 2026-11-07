@@ -442,6 +442,17 @@ impl CoupledRuntime {
         Ok(())
     }
 
+    /// Queue bytes on the MIDI DIN input, one byte per wire time (31,250 baud), recording them for replay
+    /// (a scenario's `midi` event). `Emulator::midi_in` takes its own period and records nothing.
+    pub fn midi_in_at_wire_rate(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let ips = elektron_native_boot::clock::cf_ips();
+        let period =
+            elektron_native_boot::clock::scale_instr(elektron_native_boot::midi::WIRE_PERIOD, ips);
+        self.emulator.midi_in(bytes, period)?;
+        self.record_input(json!({"midi": bytes}));
+        Ok(())
+    }
+
     /// ColdFire instructions since this runtime was ready (the clock
     /// scenario events use).
     pub fn elapsed_instructions(&self) -> u64 {
