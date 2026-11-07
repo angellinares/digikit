@@ -254,6 +254,8 @@ pub struct Emulator {
     probe_hits: BTreeMap<u32, u64>,
     /// Host-requested instruction spans between two PCs (`add_span`).
     spans: crate::spans::Spans,
+    /// Late frame sends (`set_late_send`, off by default).
+    late_send: Option<crate::late_send::LateSend>,
     /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
     irq1_pending: bool,
     /// A CPU exception runs the guest's handler instead of stopping the run with an error (the digikit runtime's crash capture,
@@ -617,6 +619,7 @@ impl Emulator {
             observed_outside_main: false,
             probe_hits: BTreeMap::new(),
             spans: crate::spans::Spans::default(),
+            late_send: None,
             irq1_pending: false,
             deliver_exceptions: false,
             probe_rets: BTreeMap::new(),
@@ -842,6 +845,28 @@ impl Emulator {
     /// The spans' statistics; `period` is one handler period in instructions.
     pub fn spans_report(&self, period: u64) -> serde_json::Value {
         self.spans.report(period)
+    }
+
+    /// Flag each pass of the send call at `pc` whose gap from the previous pass is `lo..=hi`
+    /// instructions (`late_send`). With `drop` a flagged frame does not reach the DSP side: the DSP
+    /// gets the previous frame again. Install the DSP peer first.
+    pub fn set_late_send(&mut self, pc: u32, lo: u64, hi: u64, drop: bool) {
+        let mut late = crate::late_send::LateSend::new(pc, lo, hi);
+        if drop {
+            let inner = std::mem::replace(
+                &mut self.bus.board.dma.peer,
+                Box::new(periph::dspi::ZeroPeer),
+            );
+            self.bus.board.dma.peer = late.drop_peer(inner);
+        }
+        self.late_send = Some(late);
+        self.rebuild_watch();
+    }
+
+    pub fn late_send_report(&self) -> Option<serde_json::Value> {
+        self.late_send
+            .as_ref()
+            .map(crate::late_send::LateSend::report)
     }
 
     /// ((pc, word at the stack top), (hits, last icount)).
@@ -1671,6 +1696,7 @@ impl Emulator {
         pcs.extend(self.softfloat.entries());
         pcs.extend(self.probe_hits.keys().copied());
         pcs.extend(self.spans.pcs());
+        pcs.extend(self.late_send.as_ref().map(|l| l.pc()));
         if self.midi.usb.enabled {
             pcs.extend(
                 [self.midi.usb.tx_fn, self.midi.usb.ret_pc]
@@ -2255,6 +2281,9 @@ impl Emulator {
         }
         if !self.spans.is_empty() {
             self.spans.observe(pc, self.cpu.icount);
+        }
+        if let Some(late) = &mut self.late_send {
+            late.observe(pc, self.cpu.icount);
         }
         if let Some(hits) = self.probe_hits.get_mut(&pc) {
             *hits += 1;
