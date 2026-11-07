@@ -5,6 +5,8 @@ import { promisify } from 'node:util';
 import { repoRoot, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
+import { openSamples } from '@digi/dk-session/samples';
+import { expectRemoveTree } from './samples-tree.ts';
 import { RpcFiles, putVerified, verifyWritten } from '@digi/dk-session/rpcfiles';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { liveArtifacts, liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
@@ -172,6 +174,11 @@ async function expectSamplesLive({ session }: PatchedSession): Promise<void> {
     check('StorageSpace shrank by the file', after.free < space.free, `${space.free} -> ${after.free}`);
 
     await expectSampleCard(session, out, verified.firmware!);
+
+    // removeTree through the backend the page uses, on the real +Drive (a scratch folder only)
+    await expectRemoveTree(openSamples('stock-rpc', { session: protocol as never, hashOf }), (name) =>
+      prepareUpload(sample, `${name}.wav`, wav),
+    );
   } finally {
     protocol.cancelPending();
   }
