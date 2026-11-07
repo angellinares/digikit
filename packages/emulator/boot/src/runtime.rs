@@ -486,6 +486,10 @@ impl Emulator {
             }
         };
         let mut board = Board::new(card, semaphores, CompletionPolicy::Oracle);
+        // `DIGI_DTCN0=bus`: DMA timer 0's counter runs at the bus clock (`Board::enable_dtcn0`).
+        if std::env::var("DIGI_DTCN0").is_ok_and(|v| v == "bus") {
+            board.enable_dtcn0();
+        }
         board
             .enable_sd_gate(false)
             .map_err(|e| format!("SdGateEnable({e:?})"))?;
@@ -1495,6 +1499,7 @@ impl Emulator {
         self.ram_clear_fast_forwarded_instructions = skipped;
         self.bus.current_pc = clear.loop_pc + 10;
         self.bus.current_icount = done - 1;
+        self.bus.board.set_clock(self.bus.current_icount);
         if let Err(error) = self.service_ssi(done) {
             self.set_error(error);
         }
@@ -1646,6 +1651,7 @@ impl Emulator {
         self.idle_passes = passes;
         self.idle_fast_forwarded_instructions = skipped;
         self.bus.current_icount = done - 1;
+        self.bus.board.set_clock(self.bus.current_icount);
         if let Err(error) = self.service_ssi(done) {
             self.set_error(error);
         }
@@ -1870,6 +1876,7 @@ impl Emulator {
                 late.set_icount(self.cpu.icount);
             }
             self.bus.current_icount = before;
+            self.bus.board.set_clock(before);
             self.bus.clear();
             self.bus.current_pc = pc;
             let result = self.cpu.step_inline(&mut self.bus);
@@ -1998,6 +2005,7 @@ impl Emulator {
             capture.set_icount(last);
         }
         self.bus.current_icount = last + calls;
+        self.bus.board.set_clock(self.bus.current_icount);
         self.bus.current_pc = head + offsets[offsets.len() - 1];
         iterations * per
     }
@@ -2036,7 +2044,10 @@ impl Emulator {
             late.set_icount(self.cpu.icount);
         }
         match self.oracle_ticks() {
-            Ok(ticks) => self.bus.current_icount = ticks,
+            Ok(ticks) => {
+                self.bus.current_icount = ticks;
+                self.bus.board.set_clock(ticks);
+            }
             Err(error) => {
                 self.set_error(error);
                 return;
@@ -3630,6 +3641,7 @@ impl Emulator {
         r.tag("BUS_")?;
         self.bus.current_pc = r.u32()?;
         self.bus.current_icount = r.u64()?;
+        self.bus.board.set_clock(self.bus.current_icount);
         self.bus.access_dropped = r.u64()?;
         let cacr = self.cpu.ctrl.cacr;
         if let Some(w) = self.bus.guards.watch_mut() {
