@@ -7053,7 +7053,7 @@ starts timer 0. The update file has no such code, and its rate is not known from
 The emulator has no DTCN model: `periph/src/dtim.rs` keeps it as a plain register, and the runtime attaches DMA timers 3
 and 1 only. So DTCN0 reads 0, and code that measures time with it sees none pass.
 
-`DIGI_DTCN0=bus` turns on a model (`machine::Board::enable_dtcn0`). DTCN0 then reads the bus clock since reset at
+`DIGI_DTCN0=bus` turns on a model (`machine::Board::enable_dtcn0`). On DN2 it is now the default (see the end of this section). DTCN0 then reads the bus clock since reset at
 132 MHz, one tick per instruction at the default `DIGI_CF_IPS`, and wraps at 2^32. The rate is an assumption. The
 runtime gives the board the instruction count before each instruction, where it already sets the bus's count.
 
@@ -7076,5 +7076,8 @@ the ready snapshot, with `--dsp sharc`, in WSL:
 - The reads run. In 3 s of `trig1-tap-release`, 8 reads of DTCN0 ran at 3 sites: `0x400cece8` (3 times),
   `0x4011fcb8` (4 times) and `0x4011f97e` (once). The PCM is the same as without the model.
 
-The model stays off by default. The 132 MHz rate is still an assumption.
+Since 2026-11-07 the model is on by default on DN2. `DIGI_DTCN0=off` turns it off, and `DIGI_DTCN0=bus` turns it on
+for any device. Another value stops the run with an error. On DT2 it stays off by default, because no DT2 run was
+checked with it. The 132 MHz rate is still an assumption. With the default, stock 1.11 `load-turns` gates +0 against
+the stock report made without the model.
 
