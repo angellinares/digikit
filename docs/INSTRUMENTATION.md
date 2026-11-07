@@ -341,6 +341,28 @@ A local patched build that runs one handler pass past its period on `load-seq16`
 gap is 95,080 instructions (0.720 ms). On a unit, frames sent 0.739 to 0.772 ms after the previous one were lost. Emulated
 time is not the unit's time, so a window from the unit needs a calibration first.
 
+#### Drop a chosen frame
+
+On stock every gap is one period, so a window cannot pick one frame. `--drop-sends N[,N...]` drops the chosen exchanges by
+number, whatever their gap. Exchange 1 is the first of the run. It needs no window. The report's `late_send.dropped_at`
+gives each dropped exchange with its instruction count.
+
+To find a frame, log the frames with `DIGI_DSPI_LOG` and read them
+with `tools/emulator/dspi_log.py`. Log frame N-1 is exchange N.
+
+Stock DN2 1.12, `trig1-tap-release` from the ready snapshot, `--dsp sharc`, `--seconds 3`:
+
+- Frame 682 carries the note-on mask (byte 35) and frame 1137 the note-off mask (byte 37). The masks are one byte later
+  than in the 1.11 frame of finding 04.
+- **Note-off dropped** (`--drop-sends 1138`). The DSP gets frame 1136 again, so it never gets the note-off. Its replies
+  differ from frame 1140 to the end. The voice keeps sounding: the 100 ms RMS stays at 0.029 from 0.8 s to the end of the
+  run. Without the drop it falls to 0.000 by 1.1 s. This is the stuck note of finding 04.
+- **Control: a frame with no note event dropped** (`--drop-sends 2001`). That frame is the same as the frame before it.
+  The PCM is the same as without the drop (`e029639a…`).
+
+So a test can check that a build survives a lost note-off. It drops the frame with the note-off, and checks that no
+voice sounds at the end.
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one
