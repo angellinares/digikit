@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 import type { RuntimeBaseline } from '@digi/test-support';
 
@@ -19,7 +22,12 @@ vi.mock('@digi/test-support', async (original) => ({ ...(await original<object>(
 import { withReusablePatchedSession } from '../support.ts';
 
 async function fixture(
-  options: { startDelay?: number; hangPreparation?: boolean; afterClose?: (session: unknown) => Promise<void> } = {},
+  options: {
+    startDelay?: number;
+    hangPreparation?: boolean;
+    afterClose?: (session: unknown) => Promise<void>;
+    tempDirs?: () => string[];
+  } = {},
 ) {
   vi.resetAllMocks();
   const calls: string[] = [];
@@ -58,6 +66,7 @@ async function fixture(
       },
       finishCase: finish,
       afterClose: options.afterClose,
+      tempDirs: options.tempDirs,
     },
   );
   const beforeAll = fake.beforeAll.mock.calls[0]![0] as () => Promise<void>;
@@ -73,7 +82,7 @@ async function fixture(
     call,
     finish,
     baseline,
-    afterEach: () => afterEach({ task: { result: { state: 'pass' } } }),
+    afterEach: (state = 'pass') => afterEach({ task: { result: { state } } }),
     afterAll,
   };
 }
@@ -160,4 +169,23 @@ test('post-close evidence waits for owned shutdown and runs once after a failed 
   await closed;
   await f.afterAll();
   expect(checked).toHaveBeenCalledExactlyOnceWith(f.session);
+});
+
+test('the fixture removes its temp dirs when the file ends clean and keeps them when a test failed', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-temp-rule-'));
+  try {
+    const dir = (name: string) => fs.mkdirSync(path.join(root, name)) ?? path.join(root, name);
+    const clean = dir('clean');
+    const first = await fixture({ tempDirs: () => [clean] });
+    await first.afterEach();
+    await first.afterAll();
+    expect(fs.existsSync(clean)).toBe(false);
+    const failed = dir('failed');
+    const second = await fixture({ tempDirs: () => [failed] });
+    await second.afterEach('fail');
+    await second.afterAll();
+    expect(fs.existsSync(failed)).toBe(true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

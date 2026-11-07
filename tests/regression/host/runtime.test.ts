@@ -169,12 +169,13 @@ for (const failure of ['firmwareLoad', 'watchdogConfig', 'call'] as const) {
   });
 }
 
-test('daemon spawn failure removes the owned temporary run directory', async () => {
+test('daemon spawn failure keeps the owned temporary run directory for diagnostics', async () => {
   fake.spawn.mockRejectedValueOnce(new Error('spawn failed'));
   await expect(startPatchedSession({ device: 'dn2', firmware: '1.12' })).rejects.toThrow('spawn failed');
   const runDir = fake.spawn.mock.calls[0]?.[0].runDir;
   expect(runDir).toBeTruthy();
-  expect(fs.existsSync(runDir)).toBe(false);
+  expect(fs.existsSync(runDir)).toBe(true);
+  fs.rmSync(runDir, { recursive: true, force: true });
 });
 
 test('runtime startup deadline closes a hung load before rejecting', async () => {
@@ -202,7 +203,8 @@ test('runtime startup deadline closes a hung load before rejecting', async () =>
     finishClose();
     await result;
     const runDir = fake.spawn.mock.calls[0]?.[0].runDir;
-    expect(fs.existsSync(runDir)).toBe(false);
+    expect(fs.existsSync(runDir), 'a failed startup keeps the run dir').toBe(true);
+    fs.rmSync(runDir, { recursive: true, force: true });
   } finally {
     vi.useRealTimers();
   }
@@ -363,7 +365,7 @@ test('startup prepares instrumentation before spawn and preserves coupled defaul
   }
 });
 
-test('failed environment preparation removes the owned directory without spawning', async () => {
+test('failed environment preparation keeps the owned directory and does not spawn', async () => {
   let directory = '';
   await expect(
     Session.start({
@@ -378,7 +380,8 @@ test('failed environment preparation removes the owned directory without spawnin
     }),
   ).rejects.toThrow('offline plan failed');
   expect(fake.spawn).not.toHaveBeenCalled();
-  expect(fs.existsSync(directory)).toBe(false);
+  expect(fs.existsSync(directory)).toBe(true);
+  fs.rmSync(directory, { recursive: true, force: true });
 });
 
 test('expired environment preparation cannot spawn a late daemon', async () => {
@@ -404,7 +407,8 @@ test('expired environment preparation cannot spawn a late daemon', async () => {
     finish({ DIGI_FLUSH_CHECK: '1' });
     await vi.advanceTimersByTimeAsync(0);
     expect(fake.spawn).not.toHaveBeenCalled();
-    expect(fs.existsSync(directory)).toBe(false);
+    expect(fs.existsSync(directory)).toBe(true);
+    fs.rmSync(directory, { recursive: true, force: true });
   } finally {
     vi.useRealTimers();
   }

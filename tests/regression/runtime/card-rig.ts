@@ -297,7 +297,8 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         await bounded(() => expectNoGuardHits(session));
         if (!o.faults) await bounded(() => session.expectNoFault(`case ${closed}`));
       },
-      afterClose: async (session) => {
+      tempDirs: () => [artifacts],
+      afterClose: async () => {
         const report = runtimeSafety(device, watchOutput, overlays, Math.max(1, epochs.size));
         record(artifacts, 'lifetime-safety', report);
         expect(report.write_events, 'write-watch on cf.expansion over every boot: no stray write').toBe(0);
@@ -323,8 +324,6 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
             );
           }
         o.onClose?.(rig, report);
-        // The artifacts dir is ours. Keep it with the session dir when that is kept (a failed run).
-        if (!fs.existsSync(session.runDir)) fs.rmSync(artifacts, { recursive: true, force: true });
       },
     },
     scope,

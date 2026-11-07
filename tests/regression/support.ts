@@ -36,6 +36,9 @@ export function withSession(opts: SessionOptions & { restart?: boolean }): Sessi
     const binary = opts.binary ?? (process.env.DIGI_EMUD ? undefined : daemonBinary(opts.device));
     session = await Session.start({ ...opts, binary });
   });
+  afterEach((context) => {
+    if (context.task.result?.state === 'fail') session?.keepDiagnostics();
+  });
   afterAll(async () => {
     await session?.close();
   });
@@ -94,6 +97,7 @@ export async function startPatchedSession(
     };
   } catch (err) {
     watchdog.stop();
+    session.keepDiagnostics();
     await timePhase('session.shutdown', () => session.close(), context);
     throw err;
   }
@@ -145,6 +149,9 @@ export function withPatchedSession(
   beforeAll(async () => {
     runtime = await startPatchedSession(opts, scope);
   });
+  afterEach((context) => {
+    if (context.task.result?.state === 'fail') runtime?.session.keepDiagnostics();
+  });
   afterAll(async () => {
     await runtime?.close();
   });
@@ -174,6 +181,8 @@ export function withReusablePatchedSession(
     finishCase: (runtime: RuntimeCase) => Promise<void>;
     /** Validate process-lifetime artifacts only after the owned daemon has closed, even on a failed case. */
     afterClose?: (session: Session) => Promise<void>;
+    /** Temporary directories of the fixture (artifacts): removed when the file ends clean, kept (and printed) when it failed. */
+    tempDirs?: () => string[];
   },
   scope = 'reused runtime',
 ): { readonly runtime: RuntimeCase; reload(baseline: RuntimeBaseline): Promise<RuntimeCase> } {
@@ -189,6 +198,13 @@ export function withReusablePatchedSession(
   const releaseClaim = () => {
     claim?.release(failed);
     claim = undefined;
+  };
+  const disposeTemp = () => {
+    for (const dir of lifecycle.tempDirs?.() ?? []) {
+      if (!dir || !fs.existsSync(dir)) continue;
+      if (failed) console.info(`kept run dir for diagnostics: ${dir}`);
+      else fs.rmSync(dir, { recursive: true, force: true });
+    }
   };
   const loadCase = async (next: RuntimeBaseline): Promise<RuntimeCase> => {
     const context = { scope, device: opts.device, session: randomUUID() };
@@ -299,7 +315,10 @@ export function withReusablePatchedSession(
   afterAll(async () => {
     watchdog?.stop();
     invalidate?.();
-    if (!session || checkedClose) return releaseClaim();
+    if (!session || checkedClose) {
+      releaseClaim();
+      return disposeTemp();
+    }
     checkedClose = true;
     const errors: unknown[] = [];
     try {
@@ -314,6 +333,7 @@ export function withReusablePatchedSession(
     }
     if (errors.length) failed = true;
     releaseClaim();
+    disposeTemp();
     if (errors.length) throw aggregate(errors, 'runtime shutdown or post-close evidence failed');
   });
   return {

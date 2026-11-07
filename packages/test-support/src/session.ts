@@ -229,13 +229,15 @@ export class Session {
       return await (expired ? Promise.race([started, expired]) : started);
     } catch (err) {
       controller?.abort(err);
-      if (session) await session.close();
-      else {
+      if (session) {
+        session.keepDiagnostics();
+        await session.close();
+      } else {
         // A spawn still connecting owns the child: its abort path waits for exit. If a handle
         // arrives after expiry, the signal check rejects and we close that late handle too.
         const lateSession = await started.catch(() => session);
         if (lateSession) await lateSession.close();
-        else if (ownedDir) fs.rmSync(ownedDir, { recursive: true, force: true });
+        else if (ownedDir) console.info(`kept run dir for diagnostics: ${ownedDir}`); // the daemon did not start: its stderr is there
       }
       throw err;
     } finally {
@@ -470,14 +472,22 @@ export class Session {
     if (problems.length) throw new Error(`fault${where ? ` at ${where}` : ''}: ${problems.join('; ')}`);
   }
 
-  /** Quit the daemon and remove an owned temporary run directory. */
+  /** A test, hook or check failed: `close` keeps the temporary run directory (if this session made one) and prints its path. */
+  keepDiagnostics(): void {
+    this.#preserveDiagnostics = true;
+  }
+
+  /** Quit the daemon and remove an owned temporary run directory, unless diagnostics are kept (`keepDiagnostics`, `preserveDiagnostics`). */
   close(options: { preserveDiagnostics?: boolean } = {}): Promise<void> {
     if (options.preserveDiagnostics) this.#preserveDiagnostics = true;
     return (this.#closing ??= (async () => {
       try {
         await this.#daemon.close();
       } finally {
-        if (this.#ownedDir && !this.#preserveDiagnostics) fs.rmSync(this.#ownedDir, { recursive: true, force: true });
+        // The one rule for a run dir that Session.start made itself: a clean close removes it, a failed one keeps it.
+        if (this.#ownedDir && this.#preserveDiagnostics)
+          console.info(`kept run dir for diagnostics: ${this.#ownedDir}`);
+        else if (this.#ownedDir) fs.rmSync(this.#ownedDir, { recursive: true, force: true });
       }
     })());
   }

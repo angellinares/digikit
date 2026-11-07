@@ -531,6 +531,7 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
         return config.initial === 'wet' ? wet : dry;
       },
       finishCase: (runtime) => collectEvidence(runtime, `case-${++closed}`),
+      tempDirs: () => [artifacts],
       afterClose: async () => {
         const report = runtimeSafety(device, watchOutput, overlays, epochs.size);
         record(artifacts, 'lifetime-safety', report);

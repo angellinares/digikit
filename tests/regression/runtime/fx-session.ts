@@ -346,6 +346,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
         return baselines.get(config.initial)!;
       },
       finishCase: (runtime) => collectEvidence(runtime, `case-${++closed}`),
+      tempDirs: () => [artifacts],
       afterClose: async () => {
         const results = await Promise.allSettled([
           (async () => {
