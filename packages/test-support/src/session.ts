@@ -277,6 +277,11 @@ export class Session {
       if (!roots.some((root) => inside(root, directory) && inside(root, image))) {
         throw new Error('runtime baseline card must be in a fixture-owned child directory of runDir or the card cache');
       }
+      // A card of the cache that a session loads is in use: eviction goes by the dir's mtime.
+      if (fs.existsSync(cardCacheRoot()) && inside(fs.realpathSync(cardCacheRoot()), directory)) {
+        const now = new Date();
+        fs.utimesSync(directory, now, now);
+      }
       // The card's own `overlay.bin` (its test writes) is part of the baseline: the daemon applies it on load.
       if (!fs.statSync(image).isFile()) throw new Error('runtime baseline must be a card image file');
       if (!baseline.guard) throw new Error('runtime baseline requires an explicit scenario guard policy');

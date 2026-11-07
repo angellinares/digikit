@@ -33,7 +33,6 @@ vi.mock('../runtime/fx-live.ts', async (original) => ({
   analysisJson: fake.analysis,
   evidence: fake.evidence,
 }));
-vi.mock('../runtime/devices.ts', async (original) => ({ ...(await original<object>()), snapshotRunDir: () => ({}) }));
 vi.mock('../runtime/ready.ts', async (original) => ({ ...(await original<object>()), expectRuntimeUi: fake.ready }));
 import { withRouteFxSession } from '../runtime/fx-route-live.ts';
 import {

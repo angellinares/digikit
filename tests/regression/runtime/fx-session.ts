@@ -18,7 +18,7 @@ import { aggregate, withReusablePatchedSession, type PatchedSession } from '../s
 import { record } from './artifacts.ts';
 import { cachedCard, cardKey, fileSha } from './card-cache.ts';
 import { plusdriveBinary } from './card-kit.ts';
-import { FIRMWARE, snapshotRunDir } from './devices.ts';
+import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
@@ -252,7 +252,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
-      ...snapshotRunDir(device),
+      runDirClaim: () => claimRunDir(device),
       env: async () => {
         artifacts = fs.mkdtempSync(path.join(os.tmpdir(), `digi-fx-${name}-${device}-`));
         console.info('FX route safety artifacts:', artifacts);
@@ -289,15 +289,8 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
           )
             throw new Error(`invalid route preset selection ${tag}`);
           const files = inventory.map((id, index) => ({ name: `m${index}.dkm`, file: moduleArtifact(device, id) }));
-          const settingsTool = path.join(root, 'tools/patchkit/pk_digikit_fxroutes.py');
-          // One card per preset in the card cache: the same inputs give the same card (and snapshot) in every run.
-          const key = cardKey(device, {
-            kind: 'fx-route-preset',
-            modules: files.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
-            selection: preset.selection,
-            settings: preset.settings?.length ? { entries: preset.settings, tool: fileSha(settingsTool) } : null,
-          });
-          const cardImage = await cachedCard(key, async (work) => {
+          // The card is built in WORK (`<work>/card/card.img`).
+          const produce = async (work: string) => {
             const seed = path.join(work, 'seed');
             const destination = path.join(seed, 'digikit', 'modules');
             fs.mkdirSync(destination, { recursive: true });
@@ -324,7 +317,23 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
               );
             }
             return out;
-          });
+          };
+          // A card with settings goes through the Python seed-card tool, whose imports the key does not cover: it is built in
+          // the run dir each time. Other presets are built once into the card cache: equal inputs give the same card (and snapshot).
+          let cardImage: string;
+          if (preset.settings?.length) {
+            const work = path.join(session.runDir, tag);
+            fs.rmSync(work, { recursive: true, force: true });
+            fs.mkdirSync(work, { recursive: true });
+            cardImage = await produce(work);
+          } else {
+            const key = cardKey(device, {
+              kind: 'fx-route-preset',
+              modules: files.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
+              selection: preset.selection,
+            });
+            cardImage = await cachedCard(key, produce);
+          }
           const boot = planSymbol(prepared.plan, 'DKRT_BOOT');
           if (!prepared.preparedImage) throw new Error('explicit route plan lacks prepared image identity');
           baselines.set(tag, {

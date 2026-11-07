@@ -18,7 +18,7 @@ import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession } fr
 import { record } from './artifacts.ts';
 import { plusdriveBinary } from './card-kit.ts';
 import { cachedCard, cardKey, fileSha } from './card-cache.ts';
-import { daemonBinary, FIRMWARE, snapshotRunDir } from './devices.ts';
+import { daemonBinary, FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { deviceProfile } from './device-data.ts';
@@ -505,7 +505,7 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
-      ...snapshotRunDir(device),
+      runDirClaim: () => claimRunDir(device),
       env: async () => {
         artifacts = fs.mkdtempSync(path.join(os.tmpdir(), `digi-fx-reuse-${device}-`));
         console.info('FX safety artifacts:', artifacts);

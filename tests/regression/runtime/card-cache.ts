@@ -47,11 +47,12 @@ function canonical(value: unknown): string {
   });
 }
 
-/** The tools that build a card: the plusdrive binary and the device profiles it reads. */
+/** The tools that build a card: the plusdrive binary and the device profiles it reads (every .toml file below devices/). */
 function toolIdentity(): { plusdrive: string; profiles: Record<string, string> } {
   const dir = path.join(repoRoot(), 'devices');
   const profiles: Record<string, string> = {};
-  for (const name of fs.readdirSync(dir).sort())
+  // Every .toml file below devices/: the profiles and the firmware ports below devices/ports/.
+  for (const name of fs.readdirSync(dir, { recursive: true, encoding: 'utf8' }).sort())
     if (name.endsWith('.toml')) profiles[name] = fileSha(path.join(dir, name));
   return { plusdrive: fileSha(plusdriveBinary()), profiles };
 }
