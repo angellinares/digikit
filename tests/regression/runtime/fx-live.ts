@@ -73,13 +73,14 @@ async function baseline(
     selection,
   });
   const cardImage = await cachedCard(key, async (work) => {
-    const seed = path.join(work, 'seed');
+    // The seed stays in the card dir: tests read the built modules from it.
+    const seed = path.join(work, 'card', 'seed');
     const modules = path.join(seed, 'digikit', 'modules');
     fs.mkdirSync(modules, { recursive: true });
     for (const f of files) fs.copyFileSync(f.file, path.join(modules, f.name));
     fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), selection.join('\n') + '\n');
     const out = path.join(work, 'card', 'card.img');
-    fs.mkdirSync(path.dirname(out));
+    fs.mkdirSync(path.dirname(out), { recursive: true });
     const built = await exec(binary, ['build', seed, '-o', out, '--device', device], { cwd: root, timeout: 30_000 });
     record(artifacts, `card-${tag}`, { stdout: built.stdout, stderr: built.stderr });
     return out;

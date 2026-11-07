@@ -18,7 +18,7 @@ export function daemonKey(binary: string): string | undefined {
 /** Card dirs kept in the card cache (newest by mtime). */
 const CARDS_KEEP = 32;
 /** A card dir touched within this time is never evicted: another worker may have loaded it. */
-const CARDS_MIN_AGE_MS = 30 * 60_000;
+const CARDS_MIN_AGE_MS = 120 * 60_000;
 /** A work or temp dir of a card build older than this is a leftover of a killed run. */
 const WORK_MAX_AGE_MS = 60 * 60_000;
 

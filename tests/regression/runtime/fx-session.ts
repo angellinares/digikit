@@ -291,13 +291,14 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
           const files = inventory.map((id, index) => ({ name: `m${index}.dkm`, file: moduleArtifact(device, id) }));
           // The card is built in WORK (`<work>/card/card.img`).
           const produce = async (work: string) => {
-            const seed = path.join(work, 'seed');
+            // The seed stays in the card dir: tests read the built modules from it.
+            const seed = path.join(work, 'card', 'seed');
             const destination = path.join(seed, 'digikit', 'modules');
             fs.mkdirSync(destination, { recursive: true });
             for (const f of files) fs.copyFileSync(f.file, path.join(destination, f.name));
             fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), preset.selection.join('\n') + '\n');
             const out = path.join(work, 'card', 'card.img');
-            fs.mkdirSync(path.dirname(out));
+            fs.mkdirSync(path.dirname(out), { recursive: true });
             const built = await exec(binary, ['build', seed, '-o', out, '--device', device], {
               cwd: root,
               timeout: 30_000,

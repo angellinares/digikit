@@ -244,6 +244,7 @@ export function withReusablePatchedSession(
       runtime = undefined;
     }
     if (errors.length) {
+      failed = true;
       try {
         fs.writeFileSync(
           path.join(session!.runDir, 'runtime-case-error.json'),

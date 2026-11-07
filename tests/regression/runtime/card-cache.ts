@@ -13,7 +13,7 @@ import { plusdriveBinary } from './card-kit.ts';
  */
 
 /** Change it when the way a card is built changes in a way that the other key parts do not show. */
-const FORMAT = 'card-cache-1';
+const FORMAT = 'card-cache-2';
 
 const shaCache = new Map<string, { sig: string; sha: string }>();
 
@@ -91,10 +91,18 @@ export async function cachedCard(key: string, produce: (work: string) => Promise
   const work = fs.mkdtempSync(path.join(root, '.work-'));
   try {
     const made = await produce(work);
+    const dir = path.dirname(made);
     for (const name of ['card.img', 'overlay.bin']) {
-      const file = path.join(path.dirname(made), name);
+      const file = path.join(dir, name);
       if (fs.existsSync(file)) fs.chmodSync(file, 0o444);
     }
+    // The build's seed dir may stay in the card dir (tests read its files): read-only too.
+    const seed = path.join(dir, 'seed');
+    if (fs.existsSync(seed))
+      for (const name of fs.readdirSync(seed, { recursive: true, encoding: 'utf8' })) {
+        const file = path.join(seed, name);
+        if (fs.statSync(file).isFile()) fs.chmodSync(file, 0o444);
+      }
     try {
       fs.renameSync(path.dirname(made), final);
     } catch (error) {
