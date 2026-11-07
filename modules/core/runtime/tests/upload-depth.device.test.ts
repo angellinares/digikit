@@ -25,7 +25,10 @@ class Link implements DkTransport {
   dropReplyOf = -1;
   private readonly seqs: number[] = [];
   private dropSeq = -1;
-  constructor(private readonly base: EmuUsbTransport) {}
+  private readonly base: EmuUsbTransport;
+  constructor(base: EmuUsbTransport) {
+    this.base = base;
+  }
   async send(msg: Uint8Array): Promise<void> {
     if (msg[5] === DATA) {
       const n = this.dataSent++;
@@ -33,7 +36,10 @@ class Link implements DkTransport {
       this.maxOutstanding = Math.max(this.maxOutstanding, this.outstanding);
       if (n === this.flipAtRequest) {
         msg = Uint8Array.from(msg);
-        msg[7 + 8 * 20 + 3] ^= 1; // a data byte of the 8-in-7 packing (not a collector byte), well inside the chunk
+        const at = 7 + 8 * 20 + 3; // a data byte of the 8-in-7 packing (not a collector byte), well inside the chunk
+        const byte = msg[at];
+        if (byte === undefined) throw new Error(`DATA request too short to flip byte ${at}: ${msg.length} bytes`);
+        msg[at] = byte ^ 1;
       }
       if (n === this.dropReplyOf) this.dropSeq = msg[6]!;
       this.seqs.push(msg[6]!);
