@@ -78,9 +78,9 @@ export function needsLock(args) {
   return targets.length === 0 || !targets.every((target) => LIGHT_TARGETS.has(target));
 }
 
-// Plain launcher runs read the shared remote cache when its server already answers; they never write
-// it and never start it. `remote-cache.mjs exec` (the gate) sets the Nx variables first and wins.
-export function readsRemote(args, env) {
+// Plain launcher runs read and write the shared remote cache when its server already answers; they
+// never start it. `remote-cache.mjs exec` (the gate) sets the Nx variables first and wins.
+export function usesRemote(args, env) {
   return (
     runsTasks(args) &&
     env.DIGI_NX_REMOTE !== '0' &&
@@ -120,20 +120,20 @@ function main() {
       ...(needsLock(args) ? lock : []),
       ...command,
     ];
-    const remote = readsRemote(args, env);
+    const remote = usesRemote(args, env);
     if (remote)
       command = [
         'node',
         fileURLToPath(new URL('remote-cache.mjs', import.meta.url)),
         'exec',
         '--access',
-        'ro',
+        'rw',
         '--no-start',
         '--',
         ...command,
       ];
     console.error(
-      `nx: budget ${b.budget}: ${b.tasks} tasks, ${b.workers} vitest workers, ${b.jobs} emulators, ${b.budget} cargo jobs${remote ? ', remote read' : ''}`,
+      `nx: budget ${b.budget}: ${b.tasks} tasks, ${b.workers} vitest workers, ${b.jobs} emulators, ${b.budget} cargo jobs${remote ? ', remote' : ''}`,
     );
   }
   const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', env });

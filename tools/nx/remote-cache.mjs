@@ -1,5 +1,5 @@
 // Launcher of the shared Nx remote cache: one server for every worktree of the clone.
-// The gate writes (rw), everything else reads (ro). The Nx variables are set only when the server
+// The gate and plain launcher runs read and write (rw); ro is for read-only callers. The Nx variables are set only when the server
 // answers, because with the server down Nx fails a green run.
 // Usage: node tools/nx/remote-cache.mjs exec --access ro|rw [--no-start] -- CMD [ARGS...]
 //        --no-start: use the server only if it already answers; start nothing, say nothing when it is down.
