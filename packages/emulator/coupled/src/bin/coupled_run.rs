@@ -46,8 +46,8 @@
 //! `--span-baseline STOCK.json` gates each scenario's spans against the same scenario and spans
 //! in an earlier stock report (`--out` of a stock run with the same options). A span fails when
 //! its `p50` or its `max` is more than its limit above stock: `--span-max NAME=N` (repeatable),
-//! else 1,000 instructions. A span also fails when it has more passes over its period, or more
-//! late entries, than stock. The result is `gates.span_gate`, and a failure fails the run (exit 2).
+//! else 1,000 instructions. A span also fails when its longest gap is more than its limit above
+//! stock's, or when it has more passes over its period than stock. The result is `gates.span_gate`, and a failure fails the run (exit 2).
 //! `tests/scenarios/dn2-load.json` holds the load scenarios for the gate. `--scenarios` is
 //! repeatable, so one run can take `dn2.json` and `dn2-load.json`.
 //!

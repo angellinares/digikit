@@ -5,13 +5,15 @@
 //! (`max`). A build passes a span when neither number is more than the span's limit above stock.
 //! Instruction counts are not cycles, so the gate uses only the difference from stock.
 //!
-//! The gate also counts late passes. A pass that runs past its period (`length.over_period`)
-//! makes the next entry late (`gap.over_period`). A build fails a span when it has more of
-//! either count than stock has.
+//! The gate also checks late entries. `gap.max` is the longest time from one entry to the next,
+//! so a late entry makes it longer. A build fails a span when its `gap.max` is more than the
+//! limit above stock's, or when it has more passes past the period (`length.over_period`) than
+//! stock. In the emulator a handler entry drifts by a few dozen instructions around its period,
+//! so the gate does not count gaps over the period.
 //!
 //! The gate fails, and does not pass in silence, when the stock report cannot be compared: no
 //! scenario of the same name, no span of the same name, other span PCs, another period, another
-//! DSP mode, or a scenario length more than one period from stock's.
+//! DSP mode, or scenario lengths more than one chunk and one period apart.
 
 use serde_json::{Value, json};
 
@@ -69,16 +71,17 @@ pub fn check(scenario: &Value, dsp: &str, stock: &Value, limits: &Limits) -> Val
     let Some(spans) = scenario["spans"].as_array().filter(|s| !s.is_empty()) else {
         return fail(format!("scenario {name} has no spans to gate"));
     };
-    // Two builds can end the same scenario a few instructions apart, so the lengths must agree
-    // to within one period.
+    // A run stops at the first chunk boundary past its length, and `--call` work is not counted.
+    // So two builds can end the same scenario up to one chunk apart, plus a few instructions.
     let period = spans[0]["period"].as_u64().unwrap_or(0);
+    let slack = u64::from(crate::STEP_CHUNK) + period;
     let length = |s: &Value| s["guest_instructions"].as_u64();
     match (length(base), length(scenario)) {
-        (Some(a), Some(b)) if a.abs_diff(b) <= period => {}
+        (Some(a), Some(b)) if a.abs_diff(b) <= slack => {}
         (a, b) => {
             return fail(format!(
                 "scenario {name} ran {a:?} instructions in the stock report and {b:?} here, \
-                 more than one period ({period}) apart"
+                 more than one chunk and one period ({slack}) apart"
             ));
         }
     }
@@ -113,18 +116,20 @@ pub fn check(scenario: &Value, dsp: &str, stock: &Value, limits: &Limits) -> Val
         let limit = limits.for_span(span_name);
         let extra = |a: u64, b: u64| a as i64 - b as i64;
         let (extra_p50, extra_max) = (extra(p50, stock_p50), extra(max, stock_max));
-        // An empty `gap` has no `over_period`: no entry followed another, so none was late.
-        let over = |s: &Value, k: &str| s[k]["over_period"].as_u64().unwrap_or(0);
-        let (overrun, stock_overrun) = (over(span, "length"), over(stock_span, "length"));
-        let (late, stock_late) = (over(span, "gap"), over(stock_span, "gap"));
+        let overrun = |s: &Value| s["length"]["over_period"].as_u64().unwrap_or(0);
+        let (overrun, stock_overrun) = (overrun(span), overrun(stock_span));
+        // An empty `gap` (one pass or none) has no `max`: there is no entry to be late.
+        let gap_max = |s: &Value| s["gap"]["max"].as_u64().unwrap_or(0);
+        let (gap_max, stock_gap_max) = (gap_max(span), gap_max(stock_span));
+        let extra_gap_max = extra(gap_max, stock_gap_max);
         rows.push(json!({
             "name": span_name, "limit": limit,
             "stock_p50": stock_p50, "p50": p50, "extra_p50": extra_p50,
             "stock_max": stock_max, "max": max, "extra_max": extra_max,
             "stock_overrun": stock_overrun, "overrun": overrun,
-            "stock_late": stock_late, "late": late,
+            "stock_gap_max": stock_gap_max, "gap_max": gap_max, "extra_gap_max": extra_gap_max,
             "ok": extra_p50 <= limit as i64 && extra_max <= limit as i64
-                && overrun <= stock_overrun && late <= stock_late,
+                && extra_gap_max <= limit as i64 && overrun <= stock_overrun,
         }));
     }
     let ok = rows.iter().all(|r| r["ok"] == true);
@@ -142,15 +147,14 @@ pub fn summary(gate: &Value) -> Vec<String> {
         .flatten()
         .map(|r| {
             format!(
-                "  span {:<10} p50 {:>+7} max {:>+7} (limit +{}) overrun {}/{} late {}/{} {}",
+                "  span {:<10} p50 {:>+7} max {:>+7} gap {:>+7} (limit +{}) overrun {}/{} {}",
                 r["name"].as_str().unwrap_or("?"),
                 r["extra_p50"].as_i64().unwrap_or(0),
                 r["extra_max"].as_i64().unwrap_or(0),
+                r["extra_gap_max"].as_i64().unwrap_or(0),
                 r["limit"],
                 r["overrun"],
                 r["stock_overrun"],
-                r["late"],
-                r["stock_late"],
                 if r["ok"] == true { "ok" } else { "FAILED" }
             )
         })
@@ -230,10 +234,10 @@ mod tests {
                 .contains("no scenario")
         );
         let mut close = stock();
-        close["scenarios"][0]["guest_instructions"] = json!(264_000_000u64 + 88_000);
+        close["scenarios"][0]["guest_instructions"] = json!(264_000_000u64 + 250_000 + 88_000);
         assert_eq!(check(&s, "zero", &close, &l)["ok"], true);
         let mut longer = stock();
-        longer["scenarios"][0]["guest_instructions"] = json!(264_000_000u64 + 88_001);
+        longer["scenarios"][0]["guest_instructions"] = json!(264_000_000u64 + 250_000 + 88_001);
         assert!(
             check(&s, "zero", &longer, &l)["error"]
                 .as_str()
@@ -260,36 +264,22 @@ mod tests {
     }
 
     #[test]
-    fn a_late_pass_fails_when_stock_has_none() {
+    fn an_overrun_or_a_late_entry_fails() {
+        let l = Limits::default();
         let mut overran = span("isr", 50000, 54000);
         overran["length"]["over_period"] = json!(1);
-        let g = check(
-            &scenario(vec![overran]),
-            "zero",
-            &stock(),
-            &Limits::default(),
-        );
+        let g = check(&scenario(vec![overran]), "zero", &stock(), &l);
         assert_eq!(g["ok"], false);
         assert_eq!(g["spans"][0]["overrun"], 1);
+        let mut drift = stock();
+        drift["scenarios"][0]["spans"][0]["gap"] = json!({"count": 9, "max": 88056});
         let mut late = span("isr", 50000, 54000);
-        late["gap"] = json!({"count": 9, "over_period": 2});
-        let g = check(
-            &scenario(vec![late.clone()]),
-            "zero",
-            &stock(),
-            &Limits::default(),
-        );
+        late["gap"] = json!({"count": 9, "max": 89057});
+        let g = check(&scenario(vec![late.clone()]), "zero", &drift, &l);
         assert_eq!(g["ok"], false);
-        assert_eq!(g["spans"][0]["late"], 2);
-        let mut also_late = stock();
-        also_late["scenarios"][0]["spans"][0]["gap"] = json!({"count": 9, "over_period": 2});
-        let g = check(
-            &scenario(vec![late]),
-            "zero",
-            &also_late,
-            &Limits::default(),
-        );
-        assert_eq!(g["ok"], true);
+        assert_eq!(g["spans"][0]["extra_gap_max"], 1001);
+        late["gap"]["max"] = json!(89056);
+        assert_eq!(check(&scenario(vec![late]), "zero", &drift, &l)["ok"], true);
     }
 
     #[test]
