@@ -13,14 +13,15 @@ import AutoRefresh from './AutoRefresh';
 import ConnectionBadge from './ConnectionBadge';
 import { transferEnv } from './env';
 import ModulesMode from './ModulesMode';
-import { target, targetLabel } from './target';
+import { cancelPending, target, targetLabel } from './target';
 import SourcePanel from './SourcePanel';
 import { transferBackend } from './transfer-backend';
 import TransferBar from './TransferBar';
 import { MODES, modulesBar, parseMode, storageLine } from './transfer-core';
-import { writing, type PageCtx } from './TransferParts';
+import { writing, type CancelledRun, type PageCtx } from './TransferParts';
 import {
   activeMode,
+  askStop,
   beginJob,
   busy,
   endJob,
@@ -48,14 +49,14 @@ async function read(): Promise<void> {
 }
 
 /** The one busy action. It is not made by the page: a job goes on when the page is left, and the old and the new page share it. */
-const run = async (what: string, f: () => Promise<void>) => {
+const run = async (what: string, f: () => Promise<void | CancelledRun>) => {
   if (!beginJob(what)) return;
   noteActivity();
   setError('');
   // after a cancel or a "no reply" the device is not asked again at once (that would wait the whole time a second time)
   let skipRead = false;
   // a read is not logged (the page reads by itself); every other run is, with its result
-  const logRun = (failure?: unknown) => {
+  const logRun = (failure?: unknown, cancelled?: string) => {
     if (what === 'Reading') return;
     const modules = activeMode() === 'modules';
     transferEnv().logRun({
@@ -64,13 +65,16 @@ const run = async (what: string, f: () => Promise<void>) => {
       lines: modules ? log() : (transferEnv().extras?.samples?.lines?.() ?? []),
       message: modules ? progress()?.message : undefined,
       ...(failure === undefined
-        ? {}
+        ? cancelled === undefined
+          ? {}
+          : { cancelled: true, counts: cancelled }
         : { error: failureLine(failure, targetLabel(target())), cancelled: isCancelled(failure) }),
     });
   };
   try {
-    await f();
-    logRun();
+    // a job that the user stopped is not a failure: no error line, the log says so, and both sides are read again
+    const result = await f();
+    logRun(undefined, result ? result.cancelled : undefined);
   } catch (e) {
     skipRead = isCancelled(e) || isTimeout(e);
     setError(failureLine(e, targetLabel(target())));
@@ -85,6 +89,16 @@ const run = async (what: string, f: () => Promise<void>) => {
     if (endJob()) void run('Reading', async () => {});
     transferEnv().extras?.onJobEnd?.();
   }
+};
+
+/** The jobs whose Cancel is safe: a file is atomic on the card (the store changes at END only, and a cut-off upload is ABORTed), so a cancel
+ * leaves the files that were verified and none half done. Delete and Restart are short and have nothing to stop in the middle. */
+const cancellable = (what: string): boolean => what === 'Uploading' || what === 'Installing';
+
+/** Stop the running job: no later file starts, and every request that waits on the session ends as cancelled. */
+const cancelJob = (): void => {
+  askStop();
+  cancelPending();
 };
 
 export default function TransferPage(): JSX.Element {
@@ -155,7 +169,7 @@ export default function TransferPage(): JSX.Element {
       </header>
       <AutoRefresh busy={busy} read={readNow} rescanPorts={() => setReload((n) => n + 1)} />
 
-      <WaitNotice active={!!busy()} />
+      <WaitNotice active={!!busy()} cancel={!cancellable(busy())} />
 
       <Show when={error()}>
         <p class="err" role="alert">
@@ -175,7 +189,11 @@ export default function TransferPage(): JSX.Element {
         </Match>
       </Switch>
 
-      <Show when={bar()}>{(b) => <TransferBar bar={b().info} running={b().running} />}</Show>
+      <Show when={bar()}>
+        {(b) => (
+          <TransferBar bar={b().info} running={b().running} onCancel={cancellable(busy()) ? cancelJob : undefined} />
+        )}
+      </Show>
       <Show when={activeMode() === 'modules' && log().length && !bar()}>
         <pre class="log">{log().join('\n')}</pre>
       </Show>

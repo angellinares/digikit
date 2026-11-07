@@ -21,7 +21,7 @@ import {
   setSampleTicks,
   setUploads,
   uploadBase,
-  uploadSpeed,
+  uploadAverage,
   uploads,
 } from './samples-state';
 import SamplesMode from './SamplesMode';
@@ -49,7 +49,7 @@ const samples: SamplesSlot = {
     setUploads({});
   },
   bar(busy) {
-    const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading', uploadSpeed());
+    const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading', uploadAverage());
     return info ? { info, running: busy === 'Uploading' } : undefined;
   },
   lines: () => uploadLines(uploads(), uploadBase()),

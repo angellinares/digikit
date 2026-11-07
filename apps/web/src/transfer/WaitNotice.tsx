@@ -6,7 +6,8 @@ import { quietMs } from './activity';
 import { cancelPending, target, targetLabel } from './target';
 import { waitShown, waitingLine } from './wait-core';
 
-export default function WaitNotice(props: { active: boolean }): JSX.Element {
+/** `cancel` false: the page has its own Cancel while the job runs (the bar's), so this line only says what it waits for. */
+export default function WaitNotice(props: { active: boolean; cancel?: boolean }): JSX.Element {
   const [quiet, setQuiet] = createSignal<number>();
   const timer = window.setInterval(() => setQuiet(quietMs()), 250);
   onCleanup(() => window.clearInterval(timer));
@@ -21,9 +22,11 @@ export default function WaitNotice(props: { active: boolean }): JSX.Element {
     <Show when={waitShown(props.active, quiet())}>
       <p class="wait" role="status">
         <span>{waitingLine(targetLabel(target()))}</span>
-        <button type="button" class="act small" onClick={cancelPending}>
-          Cancel
-        </button>
+        <Show when={props.cancel !== false}>
+          <button type="button" class="act small" onClick={cancelPending}>
+            Cancel
+          </button>
+        </Show>
       </p>
     </Show>
   );

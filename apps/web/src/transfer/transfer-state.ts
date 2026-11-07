@@ -67,6 +67,7 @@ export const [liveRate, setLiveRate] = createSignal<number>();
 export const [busy, setBusy] = createSignal('');
 export const [error, setError] = createSignal('');
 let readAgain = false;
+let stopAsked = false;
 
 /** Start the one busy action `what`; false when another job runs (a read asked for then runs when that job ends: see `endJob`). */
 export function beginJob(what: string): boolean {
@@ -75,8 +76,15 @@ export function beginJob(what: string): boolean {
     return false;
   }
   setBusy(what);
+  stopAsked = false;
   return true;
 }
+
+/** The user asked to stop the running job (its Cancel button): a job that loops over files checks this before the next one. */
+export const askStop = (): void => {
+  stopAsked = true;
+};
+export const stopWasAsked = (): boolean => stopAsked;
 
 /** End the busy action; true when a read was asked for during it. */
 export function endJob(): boolean {

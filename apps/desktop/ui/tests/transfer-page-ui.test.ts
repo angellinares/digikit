@@ -9,7 +9,14 @@ import { test } from 'vitest';
 import { instrument } from '../../../web/src/transfer/activity.ts';
 import { createRate, etaSeconds, fmtEta, fmtRate, statsLine } from '../../../web/src/transfer/rate-core.ts';
 import { FOCUS_GAP_MS, canAutoRefresh, focusReadDue, listingChanged } from '../../../web/src/transfer/refresh-core.ts';
-import { applyUpload, formatRate, samplesBar, speedTracker } from '../src/samples-core.ts';
+import {
+  applyUpload,
+  samplesBar,
+  uploadCancelled,
+  uploadFailure,
+  uploadLines,
+  uploadStatus,
+} from '../src/samples-core.ts';
 import {
   MARQUEE_SLOP,
   ROWS_TYPE,
@@ -61,8 +68,8 @@ test('button counts: in parentheses, none when nothing is ticked', () => {
   assert.equal(countLabel('Install', 12), 'Install (12)');
 });
 
-test('the rate is smoothed over the last 2 s and falls when the transfer stops', () => {
-  const r = createRate();
+test('the rate is smoothed over the window and falls when the transfer stops', () => {
+  const r = createRate(2000);
   assert.equal(r.rate(0), undefined, 'nothing yet');
   r.add(0, 0);
   assert.equal(r.rate(100), undefined, 'one sample, or too short a span, says nothing');
@@ -233,47 +240,64 @@ test('the bottom bar of a samples upload: only what this run touched, one messag
   assert.deepEqual([bar.failed, bar.message], [true, 'Nothing was uploaded.']);
 });
 
-test('the speed of an upload: a 5 s window, nothing in the first second, a stall pulls it down, the text', () => {
-  let now = 10_000;
-  const t = speedTracker(() => now);
-  assert.equal(t.rate(), undefined, 'zero time: nothing');
-  now += 500;
-  t.sample(500_000);
-  assert.equal(t.rate(), undefined, 'under a second of data: nothing');
-  now += 500;
-  t.sample(1_000_000);
-  assert.equal(t.rate(), 1_000_000, '1 MB in 1 s');
-  for (let i = 0; i < 10; i++) {
-    now += 1000;
-    t.sample(1_000_000 + (i + 1) * 100_000);
+test('the speed in the bar: BEGIN, END and VERIFY count as time, so a stall pulls it down; it shows in a stall too', () => {
+  // one file after the other: bytes come in bursts (DATA), then a gap with no byte event (END, VERIFY, BEGIN of the next)
+  const r = createRate();
+  let sent = 0;
+  for (let t = 0; t <= 1000; t += 100) {
+    r.add(t, sent);
+    sent += 50_000;
   }
-  assert.equal(t.rate(), 100_000, 'the window forgets the fast start');
-  // no new bytes (VERIFY, a stall): the number falls with the time, then reaches 0
-  now += 2500;
-  assert.equal(Math.round(t.rate()!), 54_545, 'the anchor is the last point before the window: 300 KB in 5.5 s');
-  now += 5000;
-  assert.equal(t.rate(), 0);
-  assert.equal(t.average(2_000_000), 2_000_000 / 18.5, 'average over the whole run');
-  assert.equal(t.average(0), undefined);
-  assert.deepEqual(
-    [formatRate(412_000), formatRate(999_400), formatRate(1_000_000), formatRate(1_240_000), formatRate(0)],
-    ['412 KB/s', '999 KB/s', '1.00 MB/s', '1.24 MB/s', '0 KB/s'],
-  );
-  // in the bar: the speed while running (with a file), the average at the end
+  const busyRate = r.rate(1000)!;
+  assert.ok(busyRate > 400_000 && busyRate < 600_000, String(busyRate));
+  // VERIFY: no byte for 3 s. The number falls, and the bar still shows it (a 2 s window would be empty here and statsLine would hide it)
+  const stalled = r.rate(4000)!;
+  assert.ok(stalled > 0 && stalled < busyRate / 3, String(stalled));
+  assert.match(statsLine(3, true, stalled, 1_000_000), /^3% · \d+ KB\/s · /);
+  // a stall as long as the window: 0 B/s, shown, with no time left
+  assert.equal(r.rate(20_000), 0);
+  assert.equal(statsLine(3, true, 0, 1_000_000), '3% · 0 B/s');
+});
+
+test('the bar of an upload: the bytes that went, a cancel is not red and not 100%, the end text has the average', () => {
   const ev = (u: Uploads, e: UploadEventWithoutFolder) => applyUpload(u, { folder: 'd', ...e });
-  let u = ev({}, { event: 'prepared', name: 'k', source: 'k.wav', kind: 'converted', bytes: 1000 });
-  u = ev(u, { event: 'progress', name: 'k', sent: 500, bytes: 1000 });
-  assert.equal(samplesBar(u, {}, true, { rate: 412_000 })!.message, 'Uploading k (1 of 1) · 412 KB/s');
-  assert.equal(samplesBar(u, {}, true, {})!.message, 'Uploading k (1 of 1)');
-  u = ev(u, { event: 'verified', name: 'k', ok: true, message: '' });
-  assert.equal(
-    samplesBar(u, {}, false, { average: 1_240_000 })!.message,
-    'Uploaded 1 file, verified. · 1.24 MB/s average',
+  let u: Uploads = {};
+  for (const n of ['a', 'b', 'c']) u = ev(u, { event: 'queued', name: n, bytes: 1000 });
+  u = ev(u, { event: 'progress', name: 'a', sent: 1000, bytes: 1000 });
+  u = ev(u, { event: 'verified', name: 'a', ok: true, message: '' });
+  u = ev(u, { event: 'progress', name: 'b', sent: 400, bytes: 1000 });
+  assert.equal(samplesBar(u, {}, true)!.message, 'Uploading b (2 of 3)');
+  assert.equal(samplesBar(u, {}, true, 5000)!.message, 'Uploading b (2 of 3)', 'the average is for the end text');
+  // the user cancels: b is cut off, c was not started
+  u = ev(u, { event: 'cancelled', name: 'b', message: 'cancelled while sending' });
+  u = ev(u, { event: 'cancelled', name: 'c', message: 'not sent: cancelled' });
+  const cut = samplesBar(u, {}, false, 8000)!;
+  assert.equal(cut.message, 'Cancelled: 1 of 3 uploaded, 2 not sent. · 8 KB/s average');
+  assert.equal(cut.failed, false, 'not red');
+  assert.equal(cut.sent, 1400);
+  assert.equal(cut.fraction, 1400 / 3000, 'the real fraction');
+  assert.equal(uploadFailure(u, {}), undefined, 'a cancelled run is not an error');
+  assert.equal(uploadCancelled(u, {}), '1 of 3 uploaded, 2 not sent');
+  assert.deepEqual(uploadLines(u, {}), ['a: verified', 'b: cancelled while sending', 'c: not sent: cancelled']);
+  assert.equal(uploadStatus(u['d/b'])!.kind, 'cancelled');
+  // a failed file with the rest not sent stays a failure, and its fraction is not 100% either
+  let f: Uploads = {};
+  for (const n of ['a', 'b']) f = ev(f, { event: 'queued', name: n, bytes: 1000 });
+  f = ev(f, { event: 'progress', name: 'a', sent: 300, bytes: 1000 });
+  f = ev(f, { event: 'failed', name: 'a', message: 'E_FULL' });
+  f = ev(f, { event: 'failed', name: 'b', message: 'not sent: the upload of a failed' });
+  const bad = samplesBar(f, {}, false)!;
+  assert.deepEqual([bad.failed, bad.fraction, bad.message], [true, 0.15, '0 of 2 uploaded, 2 failed.']);
+  assert.equal(uploadCancelled(f, {}), undefined);
+  assert.match(uploadFailure(f, {})!, /^Uploading failed: E_FULL \(0 of 2 sent, 2 not sent\)$/);
+  // a full run is 100% with the average
+  let ok: Uploads = ev({}, { event: 'queued', name: 'k', bytes: 1000 });
+  ok = ev(ok, { event: 'verified', name: 'k', ok: true, message: '' });
+  const done = samplesBar(ok, {}, false, 1_240_000)!;
+  assert.deepEqual(
+    [done.fraction, done.failed, done.message],
+    [1, false, 'Uploaded 1 file, verified. · 1.2 MB/s average'],
   );
-  u = ev(u, { event: 'prepared', name: 'x', source: 'x.wav', kind: 'converted', bytes: 100 });
-  u = ev(u, { event: 'failed', name: 'x', message: 'bad' });
-  assert.equal(samplesBar(u, {}, false, { average: 8000 })!.message, '1 of 2 uploaded, 1 failed. · 8 KB/s average');
-  assert.equal(samplesBar(u, {}, false, {})!.message, '1 of 2 uploaded, 1 failed.');
 });
 
 // ---- the selection of a list, like a file explorer (select-core.ts) ----------------------------------------------------------------------

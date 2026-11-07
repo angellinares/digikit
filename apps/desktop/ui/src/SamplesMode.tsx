@@ -27,7 +27,7 @@ import {
   sampleRows,
   samplesBar,
   selectedRows,
-  speedTracker,
+  uploadCancelled,
   uploadFailure,
   uploadItems,
   type LocalRow,
@@ -44,6 +44,7 @@ import {
   createConfirm,
   writing,
   droppedFiles,
+  type CancelledRun,
   type PageCtx,
 } from '@web/transfer/TransferParts';
 import { createPaneSelect } from '@web/transfer/pane-select';
@@ -51,7 +52,7 @@ import { ROWS_TYPE, dropFolder } from '@web/transfer/select-core';
 import { noteActivity } from '@web/transfer/activity';
 import { countLabel } from '@web/transfer/transfer-core';
 import SplitPane from '@web/transfer/SplitPane';
-import { deviceInfo } from '@web/transfer/transfer-state';
+import { deviceInfo, stopWasAsked } from '@web/transfer/transfer-state';
 import {
   addedFiles,
   localEntries,
@@ -69,8 +70,8 @@ import {
   setLocalTicks,
   setSampleFolder,
   setSampleTicks,
+  setUploadAverage,
   setUploadBase,
-  setUploadSpeed,
   setUploads,
   uploads,
 } from './samples-state';
@@ -137,31 +138,34 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
   /** Send `items` (and make `mkdirs` first) into the device; the bar counts them all. */
   const send = async (mkdirs: string[], items: UploadItem[]): Promise<boolean> => {
     let done = false;
-    await run('Uploading', async () => {
+    await run('Uploading', async (): Promise<void | CancelledRun> => {
       const o = await openDeviceSamples();
       if (mkdirs.length && !(await o.backend.canMkdir())) throw new Error(noFoldersMessage(o.name));
       setNote('');
       const base = uploads();
       setUploadBase(base);
-      const sentNow = (running: boolean) => samplesBar(uploads(), base, running)?.sent ?? 0;
-      const speed = speedTracker(Date.now);
-      setUploadSpeed({});
-      // the timer lets the number fall while no event comes (a stall, VERIFY)
-      const timer = setInterval(() => setUploadSpeed({ rate: speed.rate() }), 1000);
-      try {
-        await uploadItems(o.backend, o.prepare, mkdirs, items, (e) => {
+      const started = Date.now();
+      setUploadAverage(undefined);
+      await uploadItems(
+        o.backend,
+        o.prepare,
+        mkdirs,
+        items,
+        (e) => {
           noteActivity();
           setUploads((u) => applyUpload(u, e));
-          speed.sample(sentNow(true));
-          setUploadSpeed({ rate: speed.rate() });
-        });
-      } finally {
-        clearInterval(timer);
-        setUploadSpeed({ average: speed.average(sentNow(false)) });
-      }
+        },
+        stopWasAsked,
+      );
+      // the run's bytes over its time, for the end text of the bar
+      const sent = samplesBar(uploads(), base, false)?.sent ?? 0;
+      setUploadAverage(sent > 0 && Date.now() > started ? sent / ((Date.now() - started) / 1000) : undefined);
       // the real error of a file is on the row only; the run shows and logs it, and the selection stays for a retry
       const failure = uploadFailure(uploads(), base);
       if (failure) throw new Error(failure);
+      // stopped by the user: not an error; the bar and the Log say what was done, and the selection stays for a retry
+      const stopped = uploadCancelled(uploads(), base);
+      if (stopped) return { cancelled: stopped };
       done = true;
     });
     return done;

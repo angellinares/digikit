@@ -255,6 +255,16 @@ test('a transfer run counts the files sent and skipped', () => {
     lines: ['a: failed: open /tst/a: the device answered status 0'],
   });
   assert.equal(own.text, 'uploading failed: open /tst/a: the device answered status 0 (1 of 3 sent, 2 not sent)');
+  // a cancelled run is an info entry with its counts and the line of each file
+  const stopped = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    cancelled: true,
+    counts: '1 of 3 uploaded, 2 not sent',
+    lines: ['a: verified', 'b: cancelled while sending', 'c: not sent: cancelled'],
+  });
+  assert.deepEqual([stopped.level, stopped.text], ['info', 'uploading cancelled: 1 of 3 uploaded, 2 not sent']);
+  assert.match(stopped.detail ?? '', /b: cancelled while sending/);
 });
 
 test('a fault, a stall and a DSP halt are logged once, when they start', () => {

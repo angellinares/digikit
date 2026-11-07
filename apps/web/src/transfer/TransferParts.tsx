@@ -12,15 +12,20 @@ import { deviceInfo, liveRate } from './transfer-state';
 export interface PageCtx {
   busy: () => string;
   /** Run `f` as the page's one busy action; an error shows, and both sides are read again either way. */
-  run: (what: string, f: () => Promise<void>) => Promise<void>;
+  run: (what: string, f: () => Promise<void | CancelledRun>) => Promise<void>;
   setError: (m: string) => void;
   /** Changes when the page reads by itself (the target selector reads the MIDI ports again). */
   reload: () => number;
 }
 
+/** What a job that the user stopped returns (it is not a failure): what it did, as the log says it (`87 of 357 uploaded, 270 not sent`). */
+export interface CancelledRun {
+  cancelled: string;
+}
+
 /** What the page shows beside a file while it is sent: a bar, or a chip; `message` is the tooltip of the chip. */
 export interface ChipStatus {
-  kind: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'failed';
+  kind: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'failed' | 'cancelled';
   sent?: number;
   bytes?: number;
   message?: string;
@@ -48,6 +53,11 @@ export function Chip(props: { status: ChipStatus }): JSX.Element {
       <Show when={props.status.kind === 'failed'}>
         <span class="check bad" title={props.status.message}>
           failed
+        </span>
+      </Show>
+      <Show when={props.status.kind === 'cancelled'}>
+        <span class="check idle" title={props.status.message}>
+          cancelled
         </span>
       </Show>
       <Show when={props.status.kind === 'uploading'}>

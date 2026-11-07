@@ -335,7 +335,12 @@ const PAST: Record<string, string> = {
 export function transferEntry(run: TransferRun): LogInput {
   const detail = run.lines.length ? { detail: run.lines.join('\n') } : {};
   if (run.cancelled)
-    return { source: 'transfer', level: 'info', text: `${run.what.toLowerCase()} cancelled`, ...detail };
+    return {
+      source: 'transfer',
+      level: 'info',
+      text: `${run.what.toLowerCase()} cancelled${run.counts ? `: ${run.counts}` : ''}`,
+      ...detail,
+    };
   if (run.error !== undefined) {
     // a run that already words its error as "<What> failed: ..." is not prefixed twice
     const first = run.error.split('\n')[0] ?? '';

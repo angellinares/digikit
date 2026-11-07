@@ -60,6 +60,8 @@ export interface TransferRun {
   /** The error text of a failed run. */
   error?: string;
   cancelled?: boolean;
+  /** A cancelled upload run: what it did (`87 of 357 uploaded, 270 not sent`). */
+  counts?: string;
   /** The text the progress bar ended with. */
   message?: string;
   /** The events of the run (Modules mode), one line each. */
