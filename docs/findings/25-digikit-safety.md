@@ -96,6 +96,21 @@ The firmware's MIDI driver is `FUN_40002844` (DT2 1.16; the same code at the sam
   vector 156 when the guest's INTC mask, IPL and stack allow it, one byte per 42,240 instructions (320 us at 132 M
   instructions per second) unless told otherwise. `Board` records byte stores to 0xec07400c (`take_midi_tx`). The queue
   disables the idle and RAM-clear fast paths while it is not empty. Not in a checkpoint.
+- DN2 1.11 transmit through eDMA channel 37 **[D]** **[C]** (2026-11-07). The stock MIDI sender `FUN_401231a4(length, bytes, port)`
+  sends port 3 (DIN) through the ring write `FUN_40002612(length, bytes)`. The ring holds 4096 bytes (base `[0x4058d580]`, write
+  index `0x4058d590`, read index `0x4058d58c`, pending `0x4058d594`, in-flight flag `0x4058d578`).
+  - The ring write waits for free space at `0x40002622`. It then programs TCD37 and writes 37 to SERQ. TCD37 reads the ring (SMOD 12, one byte per
+  minor loop) and writes 0xec07400c. CITER is the byte count, with an interrupt at major loop done.
+  - The completion handler is `0x40002102` (vector 157, INTC1 source 29, installed at `0x400029f8`). It clears the channel interrupt and advances
+  the read index. Then it starts the next transfer for the pending bytes, or clears the in-flight flag.
+  - Emulator: `Board` runs channel 37's major loop at its SERQ write when its destination is 0xec07400c. The bytes go to
+    `take_midi_tx`, the same output as direct stores. The runtime offers vector 157 when the bytes' wire time has passed
+    (42,240 instructions a byte) and the guest's INTC mask, IPL and stack allow it. The fast paths run up to that count.
+    `save_state` refuses while a transfer is on the wire.
+  - Before this model the channel did nothing. One stock send left the in-flight flag at 1. 400 sends of 12 bytes stopped
+    in the free-space wait (at `0x4000264a`) after about 4096 bytes. With the model, one send ends with the in-flight flag
+    at 0 and read index = write index = 12. 300 sends end with both indexes at 3600 (0xe10).
+  - Seven scenarios without DIN output give the same span counts as before the model.
 - Proof: `din_midi` sends 28 bytes (note on/off, CC, a Sample Dump inquiry `F0 7E 7F 06 01 F7`, a MidiRpc Ping): 28
   interrupts, the parser `FUN_4011d1f6` 28 times, consume index equal to the byte count. The Sample Dump inquiry got no reply
   on DIN out (no DIN output bytes in any run: the firmware sent none).

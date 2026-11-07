@@ -1554,6 +1554,12 @@ impl Emulator {
             Some(due_in) => due_in,
             None => u64::MAX,
         };
+        // A MIDI DIN output transfer on the wire: idle up to the instruction that makes its completion due.
+        let usb_wait = match self.midi.tx_due_in(self.cpu.icount) {
+            Some(0) => return 0,
+            Some(due_in) => usb_wait.min(due_in),
+            None => usb_wait,
+        };
         if let Some(counter) = counter {
             let mut code = [0x52, 0xb9, 0, 0, 0, 0, 0x60, 0xf8];
             code[2..6].copy_from_slice(&counter.to_be_bytes());
@@ -1780,6 +1786,14 @@ impl Emulator {
             } else {
                 limit = limit.min(self.cpu.icount.wrapping_add(calls).saturating_add(due_in));
             }
+        }
+        // A MIDI DIN output transfer on the wire: run up to the instruction that makes its completion due, then let `step_once`
+        // offer the interrupt.
+        if let Some(due_in) = self.midi.tx_due_in(self.cpu.icount) {
+            if due_in == 0 {
+                return 0;
+            }
+            limit = limit.min(self.cpu.icount.wrapping_add(calls).saturating_add(due_in));
         }
         let epoch = self.bus.board.mmio_epoch();
         let last_pc_offset = self.main.len().saturating_sub(6);
@@ -2093,9 +2107,13 @@ impl Emulator {
             }
         }
         if self.midi.busy() {
-            let delivered = match self.service_midi() {
+            let delivered = match self.service_midi_tx() {
                 Ok(true) => Ok(true),
-                Ok(false) => self.service_usb(),
+                Ok(false) => match self.service_midi() {
+                    Ok(true) => Ok(true),
+                    Ok(false) => self.service_usb(),
+                    Err(error) => Err(error),
+                },
                 Err(error) => Err(error),
             };
             match delivered {
@@ -2350,6 +2368,14 @@ impl Emulator {
                 EventKind::DmaWrite,
                 (u64::from(address) << 32) | bytes as u64,
             );
+        }
+        let started = self.bus.board.take_midi_tx_started();
+        if started != 0 {
+            let per_byte =
+                periph::clock::scale_instr(crate::midi::WIRE_PERIOD, periph::clock::cf_ips());
+            let from = self.midi.tx_due.unwrap_or(0).max(self.cpu.icount);
+            self.midi.tx_due = Some(from + started * per_byte);
+            self.midi.tx_dma += 1;
         }
         let uart = self.bus.board.take_uart_tx();
         let uart_bytes = uart.len() as u64;
@@ -2687,10 +2713,75 @@ impl Emulator {
             rx_bytes: self.midi.rx_bytes,
             rx_irqs: self.midi.rx_irqs,
             tx_bytes: self.midi.tx_bytes,
+            tx_dma: self.midi.tx_dma,
+            tx_irqs: self.midi.tx_irqs,
             usb_queued: self.midi.usb.queue.iter().map(Vec::len).sum(),
             usb_in_bytes: self.midi.usb.in_bytes,
             usb_calls: self.midi.usb.calls,
             usb_out_bytes: self.midi.usb.out.len(),
+        }
+    }
+
+    /// The completion interrupt of an eDMA channel-37 transfer (MIDI DIN output), once its wire time has passed and the
+    /// guest's mask, priority level and stack allow it. The handler starts the next transfer, if any, at its SERQ write.
+    fn service_midi_tx(&mut self) -> Result<bool, String> {
+        use machine::{MIDI_TX_SOURCE, MIDI_TX_VECTOR};
+        match self.midi.tx_due {
+            Some(due) if self.cpu.icount >= due => {}
+            _ => return Ok(false),
+        }
+        let level = self
+            .bus
+            .board
+            .read8(INTC1_BASE + 0x40 + MIDI_TX_SOURCE)
+            .map_err(|_| "midi TX ICR")?
+            & 7;
+        let imrl = self
+            .bus
+            .board
+            .read32(INTC1_BASE + 0x0c)
+            .map_err(|_| "midi TX IMRL")?;
+        if level == 0
+            || (imrl >> MIDI_TX_SOURCE) & 1 != 0
+            || ((self.cpu.sr >> 8) & 7) >= u16::from(level)
+        {
+            return Ok(false);
+        }
+        let handler = self
+            .bus
+            .board
+            .read32(
+                self.cpu
+                    .ctrl
+                    .vbr
+                    .wrapping_add(4 * u32::from(MIDI_TX_VECTOR)),
+            )
+            .map_err(|_| "midi TX vector")?;
+        if !(MAIN_LOAD..MAIN_LOAD + self.main.len() as u32).contains(&handler) {
+            return Ok(false);
+        }
+        let stack = if self.cpu.sr & 0x2000 == 0 && self.cpu.ctrl.cacr & 0x20 != 0 {
+            self.cpu.other_a7
+        } else {
+            self.cpu.a[7]
+        };
+        let frame = (stack & !3).wrapping_sub(8);
+        if !self.bus.board.can_write_ram_range(frame, 8) {
+            return Ok(false);
+        }
+        match self.cpu.take_interrupt(
+            &mut self.bus.board,
+            MIDI_TX_VECTOR,
+            Some(level),
+            InterruptPolicy::Oracle,
+        ) {
+            Ok(true) => {
+                self.midi.tx_irqs += 1;
+                self.midi.tx_due = None;
+                Ok(true)
+            }
+            Ok(false) => Err("MIDI TX handler rejected".into()),
+            Err(error) => Err(format!("MIDI TX delivery poisoned({error:?})")),
         }
     }
 
@@ -3290,6 +3381,9 @@ impl Emulator {
         }
         if self.irq1_pending {
             return Err("a DSPI1 peer interrupt is pending".into());
+        }
+        if self.midi.tx_due.is_some() {
+            return Err("a MIDI DIN output transfer is on the wire".into());
         }
         self.cpu.resolve_nzv();
         if self.cpu.fpu.is_some() || self.cpu.last_unimplemented.is_some() {
