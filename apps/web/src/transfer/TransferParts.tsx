@@ -5,7 +5,7 @@ import TargetSelect from './TargetSelect';
 import { fmtRate } from './rate-core';
 import type { PaneSelect } from './pane-select';
 import { dragKind, selectState, toggleAll } from './select-core';
-import { deleteLabel, freeLine, type RowTag } from './transfer-core';
+import { deleteLabel, freeLine, writing, type RowTag } from './transfer-core';
 import { deviceInfo, liveRate } from './transfer-state';
 
 /** What the page gives each mode: the one busy action, and the error line. */
@@ -352,10 +352,7 @@ export function LocalPane(props: {
   );
 }
 
-/** A job that writes to the device (the target cannot change under it); reading and waiting can be left by choosing another target. */
-export function writing(busy: string): boolean {
-  return busy !== '' && busy !== 'Reading';
-}
+export { writing };
 
 /** What a drop on the right column carries: rows of the local list (our own drag) or files from outside, and the device folder it was dropped
  * on (undefined: the open folder). */
