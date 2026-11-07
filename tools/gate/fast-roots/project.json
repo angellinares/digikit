@@ -2,13 +2,56 @@
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "gate-fast-roots",
   "description": "Interpreted DSP work per audio second of the patched runtime stays within tools/emulator/fast_budgets.json.",
+  "namedInputs": {
+    "fixtureKey": [
+      "{workspaceRoot}/modules/core/**/module.toml",
+      "{workspaceRoot}/modules/core/**/src/**",
+      "{workspaceRoot}/modules/core/**/build/**",
+      "{workspaceRoot}/modules/core/**/include/**",
+      "{workspaceRoot}/modules/core/**/host/Cargo.toml",
+      "{workspaceRoot}/modules/core/**/host/build.rs",
+      "{workspaceRoot}/modules/core/**/host/src/**",
+      "{workspaceRoot}/modules/core/fw/inc/**",
+      "{workspaceRoot}/modules/core/fw/rs/**",
+      "{workspaceRoot}/modules/core/fw/reference.json",
+      "{workspaceRoot}/modules/core/runtime/abi.toml",
+      "{workspaceRoot}/modules/core/runtime/fit/**",
+      "{workspaceRoot}/modules/core/runtime/sdk/**",
+      "{workspaceRoot}/modules/core/adapters/machines/types.toml",
+      "{workspaceRoot}/packages/patchkit/Cargo.toml",
+      "{workspaceRoot}/packages/patchkit/build.rs",
+      "{workspaceRoot}/packages/patchkit/src/**",
+      "{workspaceRoot}/devices/*.toml",
+      "{workspaceRoot}/devices/*.json",
+      "{workspaceRoot}/devices/fw/**/*.toml",
+      "{workspaceRoot}/devices/ports/**",
+      "{workspaceRoot}/tools/devtools/runtime_fixture.ts"
+    ]
+  },
   "targets": {
+    "fixtures": {
+      "executor": "nx:run-commands",
+      "description": "Builds the runtime fixtures of the fast-roots check when the store has no entry for their key, with the daemon from digi-control:daemons. A store hit takes about a second.",
+      "cache": false,
+      "parallelism": false,
+      "inputs": ["fixtureKey", "{workspaceRoot}/tools/devtools/fast_roots.py"],
+      "dependsOn": ["digi-control:daemons"],
+      "options": {
+        "command": "uv run python -m tools.devtools.fast_roots fixtures --device dn2,dt2",
+        "cwd": "."
+      }
+    },
     "fast-roots": {
       "executor": "nx:run-commands",
       "cache": false,
       "parallelism": false,
-      "dependsOn": ["digi-coupled:build", "digi-coupled:build-dt2"],
+      "dependsOn": [
+        "fixtures",
+        "digi-coupled:build",
+        "digi-coupled:build-dt2"
+      ],
       "inputs": [
+        "fixtureKey",
         "{workspaceRoot}/tools/__init__.py",
         "{workspaceRoot}/tools/emulator/coupled.py",
         "{workspaceRoot}/tools/emulator/digi_env.py",
@@ -22,7 +65,6 @@
         "{workspaceRoot}/tools/devtools/benchlock.py",
         "{workspaceRoot}/tools/devtools/portable_flock.py",
         "{workspaceRoot}/tools/devtools/fast_roots.py",
-        "{workspaceRoot}/tools/devtools/runtime_fixture.ts",
         "{workspaceRoot}/tools/sharc_dev/sharc_core/**/*.py",
         "{workspaceRoot}/tools/sharc_dev/sharc_transpile/**/*.py",
         "{workspaceRoot}/tools/sharc_dev/sharc_transpile_infer.py",
@@ -42,9 +84,6 @@
         "{workspaceRoot}/packages/emulator/sharc-stats/**/*",
         "{workspaceRoot}/packages/emulator/sharc-gen/**/*",
         "{workspaceRoot}/packages/emulator/sharc-fast-cl/**/*",
-        "{workspaceRoot}/modules/core/**",
-        "{workspaceRoot}/packages/patchkit/**",
-        "{workspaceRoot}/devices/**",
         "{workspaceRoot}/tests/scenarios/dn2.json",
         "{workspaceRoot}/tests/scenarios/dt2.json",
         "{workspaceRoot}/sdk/sdk.toml",

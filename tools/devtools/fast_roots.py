@@ -2,6 +2,7 @@
 
     uv run python -m tools.devtools.fast_roots rank  --prefix PREFIX --device dn2|dt2 [--gen DIR] [--min-pct 0.3] [--json]
     uv run python -m tools.devtools.fast_roots check --device dn2,dt2 [--seconds 3]
+    uv run python -m tools.devtools.fast_roots fixtures --device dn2,dt2
 
 A patched PC bars every entry of its generated region (packages/emulator/sharc/src/code_diff.rs), so the
 code of that region runs in the interpreter. `fallback_regions` in tools/emulator/fast_regions.json arm
@@ -17,6 +18,8 @@ suggested roots for exactness before they go into fast_regions.json.
 interpreted instructions per audio second (and block entries, when the budget has a limit) are over the budget in
 tools/emulator/fast_budgets.json. A device lists one case per fixture state: `first-boot` (the state after the first
 boot) and `reset` (the state after a guest soft reset, DN2 only).
+
+`fixtures` only builds or restores the fixtures of the same cases, and prints one line for each.
 """
 
 from __future__ import annotations
@@ -47,13 +50,27 @@ RUN_TIMEOUT = 900.0
 
 # Stock firmware of the fixture (same table as packages/test-support/src/inputs.ts).
 STOCK_SYX = {"dn2": "Digitone_II_OS1.12.syx", "dt2": "Digitakt_II_OS1.17.syx"}
-# Tracked inputs of a fixture: the runtime that is patched in, the patcher, the device anchors and the maker.
-KEY_PATHS = (
-    "modules/core",
-    "packages/patchkit",
-    "devices",
-    "tools/devtools/runtime_fixture.ts",
-)
+PROJECT = ROOT / "tools" / "gate" / "fast-roots" / "project.json"
+
+
+def key_specs() -> list[str]:
+    """Git pathspecs of the files in the fixture key: the fixtureKey input of the gate project."""
+    inputs = json.loads(PROJECT.read_text())["namedInputs"]["fixtureKey"]
+    return [":(glob)" + str(entry).removeprefix("{workspaceRoot}/") for entry in inputs]
+
+
+def daemon_env() -> dict[str, str]:
+    """DIGI_EMUD_<DEV> from dist/daemons.json (written by digi-control:daemons), so a fixture
+    boots the Nx-built daemon instead of building its own. Empty when the file is absent."""
+    path = ROOT / "dist" / "daemons.json"
+    if not path.exists():
+        return {}
+    return {
+        name: value
+        for name, value in json.loads(path.read_text()).items()
+        if pathlib.Path(value).exists()
+    }
+
 
 # Rank
 
@@ -336,10 +353,13 @@ def fixture_key(
 
 
 def tracked_files(
-    paths: Iterable[str] = KEY_PATHS, root: pathlib.Path = ROOT
+    specs: Iterable[str] | None = None, root: pathlib.Path = ROOT
 ) -> dict[str, pathlib.Path]:
+    if specs is None:
+        specs = key_specs()
     done = subprocess.run(
-        ["git", "ls-files", "-z", "--", *paths], cwd=root, check=True, capture_output=True
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *specs],
+        cwd=root, check=True, capture_output=True,
     )  # fmt: skip
     names = sorted(set(done.stdout.decode().split("\0")) - {""})
     return {n: root / n for n in names if (root / n).is_file()}
@@ -369,7 +389,9 @@ def ensure_fixture(device: str, state: str = "first-boot") -> tuple[object, str]
     key = current_key(device, state)
     store = fixture_store(device)
     final = store / key
-    if not final.is_dir():
+    if final.is_dir():
+        (final / "key.txt").touch()
+    else:
         store.mkdir(parents=True, exist_ok=True)
         tmp = store / f".tmp-{os.getpid()}"
         shutil.rmtree(tmp, ignore_errors=True)
@@ -382,19 +404,23 @@ def ensure_fixture(device: str, state: str = "first-boot") -> tuple[object, str]
                 "node", "tools/devtools/runtime_fixture.ts",
                 "--device", device, "--state", state, "--out", str(tmp),
             ],
-            cwd=ROOT, check=False,
+            cwd=ROOT, check=False, env={**os.environ, **daemon_env()},
         )  # fmt: skip
         if done.returncode != 0:
             shutil.rmtree(tmp, ignore_errors=True)
             raise SystemExit(
                 f"fast_roots: runtime_fixture failed for {device} (exit {done.returncode})"
             )
+        (tmp / "key.txt").write_text(key + "\n")
         try:
             os.rename(tmp, final)
         except OSError:
             shutil.rmtree(tmp, ignore_errors=True)  # another run was first
             if not final.is_dir():
                 raise
+        from tools.devtools import verify_build
+
+        verify_build.evict(store, key)
     return native_pgo.load_fixture(device, final), key
 
 
@@ -484,6 +510,17 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fixtures(args: argparse.Namespace) -> int:
+    budgets = load_budgets()
+    for device in [d.strip() for d in args.device.split(",") if d.strip()]:
+        if device not in budgets:
+            raise SystemExit(f"fast_roots: no budget for {device} in {BUDGETS}")
+        for state in budgets[device]:
+            _fixture, key = ensure_fixture(device, state)
+            print(f"{device} {state}: fixture {key[:12]}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -498,8 +535,12 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("check", help="check interpreted work against the budgets")
     check.add_argument("--device", required=True, help="dn2, dt2 or dn2,dt2")
     check.add_argument("--seconds", type=float, help="override the budget's run length")
+    fixtures = sub.add_parser("fixtures", help="build or restore the fixtures only")
+    fixtures.add_argument("--device", required=True, help="dn2, dt2 or dn2,dt2")
     args = ap.parse_args(argv)
-    return cmd_rank(args) if args.cmd == "rank" else cmd_check(args)
+    if args.cmd == "rank":
+        return cmd_rank(args)
+    return cmd_fixtures(args) if args.cmd == "fixtures" else cmd_check(args)
 
 
 if __name__ == "__main__":
