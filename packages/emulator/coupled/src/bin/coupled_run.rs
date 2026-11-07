@@ -51,12 +51,11 @@
 //! `tests/scenarios/dn2-load.json` holds the load scenarios for the gate. `--scenarios` is
 //! repeatable, so one run can take `dn2.json` and `dn2-load.json`.
 //!
-//! `--late-send-window PC:LO,HI` flags each pass of the send function at PC whose gap from the previous
-//! pass is LO to HI ms of emulated time (at `DIGI_CF_IPS`: 0.667 ms is one period). The report gives
-//! `late_send`: the sends, the flagged ones and their counts. Watch the send function's entry, not
-//! its call, which a build can move: `0x400cf7be` on DN2 1.11, `0x400cf922` on 1.12.
-//! `--drop-late-sends` also drops each flagged frame: the DSP side gets the previous frame again (a
-//! model of the loss on a unit, finding 04).
+//! `--late-send-window LO,HI` times each DSPI2 exchange, when a frame goes to the DSP side, and
+//! flags each frame whose gap from the previous exchange is LO to HI ms of emulated time (at
+//! `DIGI_CF_IPS`: 0.667 ms is one period). The report gives `late_send`: the frames, the flagged
+//! ones and their counts. `--drop-late-sends` also drops each flagged frame: the DSP side gets the
+//! previous frame again (a model of the loss on a unit, finding 04).
 //!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
@@ -143,8 +142,8 @@ struct Args {
     calls: Vec<(u32, Vec<CallArg>)>,
     /// `--span-log PATH`: every span pass as a JSON line, `-<scenario>` before the extension.
     span_log: Option<PathBuf>,
-    /// `--late-send-window PC:LO,HI`: the send call and the gap window in ms.
-    late_send: Option<(u32, f64, f64)>,
+    /// `--late-send-window LO,HI`: the gap window in ms.
+    late_send: Option<(f64, f64)>,
     /// `--drop-late-sends`: the DSP side does not receive a flagged frame.
     drop_late_sends: bool,
     /// `--span-baseline STOCK.json`: the stock report the spans are gated against.
@@ -261,11 +260,8 @@ fn do_calls(rt: &mut CoupledRuntime, calls: &[(u32, Vec<CallArg>)]) -> Result<Va
 }
 
 /// `NAME=ENTRY:EXIT`: two ColdFire PCs.
-fn parse_late_send(spec: &str) -> Result<(u32, f64, f64), String> {
-    let (pc, window) = spec
-        .split_once(':')
-        .ok_or("--late-send-window needs PC:LO,HI")?;
-    let (lo, hi) = window
+fn parse_late_send(spec: &str) -> Result<(f64, f64), String> {
+    let (lo, hi) = spec
         .split_once(',')
         .ok_or("--late-send-window needs LO,HI in ms")?;
     let ms = |v: &str| {
@@ -278,7 +274,7 @@ fn parse_late_send(spec: &str) -> Result<(u32, f64, f64), String> {
     if lo > hi {
         return Err("--late-send-window needs LO <= HI".into());
     }
-    Ok((parse_num(pc)?, lo, hi))
+    Ok((lo, hi))
 }
 
 fn parse_span(spec: &str) -> Result<(String, u32, u32), String> {
@@ -1006,9 +1002,9 @@ fn run_scenario(
     for (name, entry, exit) in &args.spans {
         rt.add_span(name, *entry, *exit);
     }
-    if let Some((pc, lo, hi)) = args.late_send {
+    if let Some((lo, hi)) = args.late_send {
         let instr = |ms: f64| (ms / 1000.0 * cf_instructions_per_second()).round() as u64;
-        rt.set_late_send(pc, instr(lo), instr(hi), args.drop_late_sends);
+        rt.set_late_send(instr(lo), instr(hi), args.drop_late_sends);
     }
     let start = probe(&mut rt)?;
     let initial_audio_health = rt.audio_report().unwrap_or(Value::Null);
@@ -1506,14 +1502,10 @@ mod tests {
 
     #[test]
     fn late_send_windows_parse() {
-        assert_eq!(
-            parse_late_send("0x40025e9e:0.739,0.772").unwrap(),
-            (0x4002_5e9e, 0.739, 0.772)
-        );
-        assert!(parse_late_send("0x40025e9e").is_err());
-        assert!(parse_late_send("0x40025e9e:0.8").is_err());
-        assert!(parse_late_send("0x40025e9e:0.8,0.7").is_err());
-        assert!(parse_late_send("0x40025e9e:-1,0.7").is_err());
+        assert_eq!(parse_late_send("0.739,0.772").unwrap(), (0.739, 0.772));
+        assert!(parse_late_send("0.8").is_err());
+        assert!(parse_late_send("0.8,0.7").is_err());
+        assert!(parse_late_send("-1,0.7").is_err());
     }
 
     #[test]
