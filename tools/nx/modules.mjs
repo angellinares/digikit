@@ -5,7 +5,14 @@
 import { globSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { read, records, packDevices, isUploadable, dkm, manifestClosure, manifestArgs } from './module-manifests.mjs';
-import { PK, IMAGE_BUILD, BUILD_INPUTS, DEVICE_INPUTS, deviceTarget, scopedManifestInputs } from './module-targets.mjs';
+import {
+  PK,
+  IMAGE_BUILD,
+  BUILD_INPUTS,
+  DEVICE_INPUTS,
+  deviceTargets,
+  scopedManifestInputs,
+} from './module-targets.mjs';
 import { packSourceInputs } from './pack-inputs.mjs';
 import { testImportInputs } from './test-imports.mjs';
 
@@ -178,7 +185,10 @@ export const createNodesV2 = [
           },
         };
       if (shipped && deviceTests.length)
-        targets['test-device'] = deviceTarget(root, deviceTests, recs, imageInput, importInputs, uploadable);
+        Object.assign(
+          targets,
+          deviceTargets('test-device', root, deviceTests, recs, imageInput, importInputs, uploadable),
+        );
       // The rule is `isUploadable` in this file: the shared conformance suite loads these.
       if (uploadable)
         targets['test-conformance'] = {
@@ -225,25 +235,26 @@ export const createNodesV2 = [
       const patchIds = patchRoots.length
         ? manifestClosure(byId, patchRoots).map((file) => read(ctx.workspaceRoot, file).module.id)
         : undefined;
-      const target = deviceTarget(
+      const targetName = config.tags.includes('tier:full') ? 'test-device-full' : 'test-device';
+      const targets = deviceTargets(
+        targetName,
         root,
         tests,
         recs,
         patchIds ? { input: 'production', projects: patchIds } : imageInput,
         importInputs,
       );
-      if (patchIds)
-        target.dependsOn = target.dependsOn.flatMap((dependency) =>
-          dependency === IMAGE_BUILD
-            ? patchIds.filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`)
-            : [dependency],
-        );
-      const targetName = config.tags.includes('tier:full') ? 'test-device-full' : 'test-device';
-      if (targetName === 'test-device-full') target.options.env = { DIGIKIT_TIER: 'full' };
-      nodes.push([
-        file,
-        { projects: { [root]: { name: config.name, root, tags: config.tags, targets: { [targetName]: target } } } },
-      ]);
+      for (const target of Object.values(targets)) {
+        if (!target.options) continue; // the no-op parent
+        if (patchIds)
+          target.dependsOn = target.dependsOn.flatMap((dependency) =>
+            dependency === IMAGE_BUILD
+              ? patchIds.filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`)
+              : [dependency],
+          );
+        if (targetName === 'test-device-full') target.options.env = { DIGIKIT_TIER: 'full' };
+      }
+      nodes.push([file, { projects: { [root]: { name: config.name, root, tags: config.tags, targets } } }]);
     }
     if (matched.includes('tests/regression/project.json'))
       nodes.push([

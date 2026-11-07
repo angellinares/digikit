@@ -288,13 +288,17 @@ it('keeps every gated runtime device file in exactly one owner command', () => {
     );
   const actual = owners
     .flatMap((owner) => {
-      const target = owner.targets['test-device'] ?? owner.targets['test-device-full'];
-      const command = target.options?.command ?? '';
-      const files = (command.match(/\S+\.device\.test\.ts/g) ?? []).map((file) =>
-        resolve(root, 'tests/regression', file),
+      const targets = Object.entries(owner.targets)
+        .filter(([name, target]) => /^test-device(-full)?(--|$)/.test(name) && target.options?.command)
+        .map(([, target]) => target);
+      const files = targets.flatMap((target) =>
+        (target.options.command.match(/\S+\.device\.test\.ts/g) ?? []).map((file) =>
+          resolve(root, 'tests/regression', file),
+        ),
       );
+      const inputs = targets.flatMap((target) => target.inputs);
       const sources = new Set((owner.metadata?.runtimeAcceptance ?? []).flatMap((rec) => rec.sources ?? []));
-      for (const source of sources) expect(target.inputs).toContain(`{workspaceRoot}/${source}`);
+      for (const source of sources) expect(inputs).toContain(`{workspaceRoot}/${source}`);
       for (const rec of owner.metadata?.runtimeAcceptance ?? [])
         for (const file of rec.files ?? []) expect(files).toContain(join(root, owner.root, file));
       return files;
@@ -367,7 +371,8 @@ describe('workspace selection', () => {
     const manual = 'modules/core/runtime/tests/memaudit-module.manual.device.test.ts';
     expect(existsSync(join(root, manual))).toBe(true);
     for (const { data } of Object.values(workspace.nodes))
-      expect(data.targets['test-device']?.options?.command ?? '').not.toContain('.manual.device.test.ts');
+      for (const target of Object.values(data.targets))
+        expect(target.options?.command ?? '').not.toContain('.manual.device.test.ts');
   });
 
   it('retains core manifest selection for producers and their image consumers', () => {

@@ -62,7 +62,7 @@
     "fx-dt2": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build-dt2"],
       "inputs": ["fxDt2"],
       "options": {
