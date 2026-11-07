@@ -191,6 +191,22 @@ export default function Console() {
 
   /** Set when a default-modules install has started since the app opened (boot() or the first status of a startup with the runtime). */
   let defaultsStarted = false;
+  /** The app can start the firmware with the runtime itself (boot() does not run): install once the status and the runtime info are both known. */
+  const startDefaultsAtLaunch = () => {
+    const s = status();
+    if (
+      s &&
+      shouldInstallAtStart({
+        runtimeOn: bootRuntime(),
+        runtimeSet: !!info()?.runtime?.set,
+        started: defaultsStarted,
+        hasStatus: true,
+      })
+    ) {
+      defaultsStarted = true;
+      void installDefaultModules(s.device);
+    }
+  };
   const update = (event: RuntimeUpdate) => {
     if (event.type === 'error') {
       setError(event.error);
@@ -198,18 +214,7 @@ export default function Console() {
     }
     live?.show(event.snapshot);
     setStatus(event.snapshot.status);
-    // The app can start the firmware with the runtime itself (boot() does not run): install from the first status with the runtime set.
-    if (
-      shouldInstallAtStart({
-        runtimeOn: bootRuntime(),
-        runtimeSet: !!info()?.runtime?.set,
-        started: defaultsStarted,
-        hasStatus: !!event.snapshot.status,
-      })
-    ) {
-      defaultsStarted = true;
-      void installDefaultModules(event.snapshot.status.device);
-    }
+    startDefaultsAtLaunch();
     setError(event.snapshot.status.error ?? '');
     watchHealth({ error: event.snapshot.status.error });
   };
@@ -410,6 +415,8 @@ export default function Console() {
       void (async () => {
         await pollSource();
         await refreshInfo();
+        // the pump may deliver no later snapshot (a hidden window): check once here, now that the runtime info is known
+        startDefaultsAtLaunch();
         // The app starts with the runtime patched in; a user who turned that off gets the startup file as it is.
         if (!bootRuntime() && info()?.runtime?.set) await reload('Started without the runtime at');
       })();
