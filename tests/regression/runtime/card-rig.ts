@@ -17,11 +17,12 @@ import {
   type CardOptions,
   type SelRecord,
 } from './card-kit.ts';
+import { cachedCard, cachedCardId, cardKey, fileSha } from './card-cache.ts';
 import { uploadStore } from './device-data.ts';
 import { advance, bounded, options, rpc } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
 import { record } from './artifacts.ts';
-import { DEVICES, FIRMWARE, FULL_TIER } from './devices.ts';
+import { DEVICES, FIRMWARE, FULL_TIER, snapshotRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { RING_SYMBOLS } from './runtime-menu.ts';
@@ -226,19 +227,32 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     name: `modules/${as ?? id.split('/').at(-1)}.dkm`,
     file: moduleArtifact(device, id),
   });
-  const build = (session: Session, tag: string, spec: CardSpec = {}) => {
-    const { modules = [], ...rest } = spec;
-    return buildCard(device, {
+  /**
+   * A card of `spec`. It is built once into the card cache under a name of its inputs, so the same spec gives the same file in every run and
+   * the daemon finds its snapshot. A card on a `base` outside the cache has no stable name: it is built in a fresh directory of the run dir.
+   */
+  const build = async (session: Session, tag: string, spec: CardSpec = {}) => {
+    const { modules = [], name: _name, ...rest } = spec;
+    const options = {
       ...(o.project ? { syx: resolveInputs(device, FIRMWARE[device]).syx } : {}),
       ...rest,
-      dir: freshDir(session, tag),
       modules: modules.map((m) => (typeof m === 'string' ? mod(m) : m)),
+    };
+    const base = options.base ? cachedCardId(options.base) : undefined;
+    if (options.base && !base) return buildCard(device, { ...options, dir: freshDir(session, tag) });
+    const key = cardKey(device, {
+      ...options,
+      syx: options.syx ? fileSha(options.syx) : undefined,
+      modules: options.modules.map((m) => ({ name: m.name, sha: fileSha(m.file) })),
+      base,
     });
+    return cachedCard(key, (work) => buildCard(device, { ...options, dir: work, name: 'card' }));
   };
 
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
+      ...snapshotRunDir(device),
       ...(o.stallMs !== undefined ? { stallMs: o.stallMs } : {}),
       dsp: o.initial === 'small' ? 'cold' : o.dsp,
       env: async () => {

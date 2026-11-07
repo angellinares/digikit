@@ -15,6 +15,7 @@ import {
 } from '@digi/control-client';
 import {
   coupledEnv,
+  repoRoot,
   resolveInputs,
   validateRuntimeInputs,
   validatePreparedRuntimeImage,
@@ -22,6 +23,10 @@ import {
   type PreparedRuntimeImage,
 } from './inputs.ts';
 import { button, encoder } from './keys.ts';
+
+/** Content-named card images that the device tests share between runs (tests/regression/runtime/card-cache.ts; `DIGI_CARD_CACHE` moves it for host tests). A baseline card may live here. */
+export const cardCacheRoot = (): string =>
+  process.env.DIGI_CARD_CACHE || path.join(repoRoot(), 'dist/session-cache/cards');
 
 /** ColdFire instructions per emulated millisecond (the oracle clock). */
 export const MS = 132_000;
@@ -258,17 +263,19 @@ export class Session {
     const checked = <T>(operation: () => Promise<T>) => withinRuntimeDeadline(deadline, operation);
     let lastStatus: StatusResult | undefined;
     try {
-      const root = fs.realpathSync(this.runDir);
+      const roots = [this.runDir, cardCacheRoot()]
+        .filter((dir) => fs.existsSync(dir))
+        .map((dir) => fs.realpathSync(dir));
       const directory = fs.realpathSync(path.dirname(baseline.cardImage));
       const image = fs.realpathSync(baseline.cardImage);
-      const inside = (file: string) => {
+      const inside = (root: string, file: string) => {
         const relative = path.relative(root, file);
         return (
           Boolean(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
         );
       };
-      if (!inside(directory) || !inside(image)) {
-        throw new Error('runtime baseline card must be in a fixture-owned child directory of runDir');
+      if (!roots.some((root) => inside(root, directory) && inside(root, image))) {
+        throw new Error('runtime baseline card must be in a fixture-owned child directory of runDir or the card cache');
       }
       // The card's own `overlay.bin` (its test writes) is part of the baseline: the daemon applies it on load.
       if (!fs.statSync(image).isFile()) throw new Error('runtime baseline must be a card image file');

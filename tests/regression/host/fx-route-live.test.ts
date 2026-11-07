@@ -33,6 +33,7 @@ vi.mock('../runtime/fx-live.ts', async (original) => ({
   analysisJson: fake.analysis,
   evidence: fake.evidence,
 }));
+vi.mock('../runtime/devices.ts', async (original) => ({ ...(await original<object>()), snapshotRunDir: () => ({}) }));
 vi.mock('../runtime/ready.ts', async (original) => ({ ...(await original<object>()), expectRuntimeUi: fake.ready }));
 import { withRouteFxSession } from '../runtime/fx-route-live.ts';
 import {
@@ -73,6 +74,10 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
     fs.mkdirSync(path.join(modulesRoot, 'dt2'), { recursive: true });
     ids.forEach((id) => fs.writeFileSync(path.join(modulesRoot, 'dt2', `${id}.dkm`), id));
     vi.stubEnv('DIGI_RUNTIME_MODULES', modulesRoot);
+    // The card cache and the card builder binary of this test (the cache hashes the binary).
+    vi.stubEnv('DIGI_CARD_CACHE', path.join(directory, 'cards'));
+    fs.writeFileSync(path.join(directory, 'plusdrive'), 'plusdrive');
+    vi.stubEnv('DIGI_PLUSDRIVE', path.join(directory, 'plusdrive'));
     const plan: RuntimePlan = {
       base: { device: 'dt2', version: '1.17', syx_sha256: 'a'.repeat(64) },
       modules: ['core/runtime'],
@@ -86,12 +91,26 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
       modules: plan.modules,
     };
     fake.prepare.mockResolvedValue({ plan, preparedImage, planFile: '/prepared.plan.json', syx: '/prepared.syx' });
-    fake.analysis.mockImplementation(async (_module: string, args: string[]) =>
-      args[0] === 'profile' ? { fx_slots: 3, send_slots: 2, track_type_word: 1234 } : {},
-    );
+    fake.analysis.mockImplementation(async (_module: string, args: string[]) => {
+      if (args[0] === 'seed-card') settings.push(JSON.parse(fs.readFileSync(args[5]!, 'utf8')));
+      return args[0] === 'profile' ? { fx_slots: 3, send_slots: 2, track_type_word: 1234 } : {};
+    });
     fake.watchEnv.mockReturnValue({ DIGI_WRITE_WATCH: '0x1000-0x2000' });
     fake.safety.mockReturnValue({ pass: true });
-    fake.exec.mockResolvedValue({ stdout: '', stderr: '' });
+    // The card is built in a work directory that is gone afterwards: read what the build is given when it runs.
+    const seeds: { modules: string[]; contents: string[]; selection: string }[] = [];
+    const settings: unknown[] = [];
+    fake.exec.mockImplementation(async (_binary: string, args: string[]) => {
+      const seed = args[1]!;
+      seeds.push({
+        modules: fs.readdirSync(path.join(seed, 'digikit/modules')),
+        contents: fs
+          .readdirSync(path.join(seed, 'digikit/modules'))
+          .map((name) => fs.readFileSync(path.join(seed, 'digikit/modules', name), 'utf8')),
+        selection: fs.readFileSync(path.join(seed, 'digikit/selection.txt'), 'utf8'),
+      });
+      return { stdout: '', stderr: '' };
+    });
     const presets = {
       dry: { selection: ['modules/m0.dkm'] },
       wet: {
@@ -118,17 +137,10 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
       await opts.env();
       const session = { runDir: directory, status: vi.fn(async () => ({ epoch: 1 })) } as unknown as Session;
       await lifecycle.prepareBaseline(session);
-      for (const tag of ['dry', 'wet']) {
-        expect(fs.readdirSync(path.join(directory, tag, 'seed/digikit/modules'))).toEqual(
-          Array.from({ length: count }, (_, i) => `m${i}.dkm`),
-        );
-      }
-      expect(fs.readFileSync(path.join(directory, 'wet/seed/digikit/selection.txt'), 'utf8')).toBe(
-        plain ? 'modules/m0.dkm\n' : 'modules/m0.dkm\nmodules/m1.dkm\n',
-      );
-      expect(JSON.parse(fs.readFileSync(path.join(directory, 'wet/settings.json'), 'utf8'))).toEqual([
-        { key: 'fx/route/test/effect', value_hex: '01' },
-      ]);
+      const modules = Array.from({ length: count }, (_, i) => `m${i}.dkm`);
+      expect(seeds.map((s) => s.modules)).toEqual([modules, modules]);
+      expect(seeds[1]!.selection).toBe(plain ? 'modules/m0.dkm\n' : 'modules/m0.dkm\nmodules/m1.dkm\n');
+      expect(settings).toEqual([[{ key: 'fx/route/test/effect', value_hex: '01' }]]);
       expect(result.baseline('wet').preparedImage).toBe(preparedImage);
       expect(() => result.baseline('absent')).toThrow('unknown');
       expect(result.slots).toBe(3);
@@ -177,12 +189,7 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
         ...(plain || image === 'track-base' ? [] : ['core/fxpages']),
         ...(image === 'routes' ? ['core/digikit-menu'] : []),
       ]);
-      expect(fs.readFileSync(path.join(directory, 'dry/seed/digikit/modules/m0.dkm'), 'utf8')).toBe('sine');
-      expect(
-        ids.map((_, index) =>
-          fs.readFileSync(path.join(directory, 'dry/seed/digikit/modules', `m${index}.dkm`), 'utf8'),
-        ),
-      ).toEqual(ids);
+      expect(seeds[0]!.contents).toEqual(ids);
       await lifecycle.finishCase({ session });
       expect(fake.evidence).toHaveBeenCalledWith({ session }, artifacts, 'case-1', [], false);
       await lifecycle.afterClose();

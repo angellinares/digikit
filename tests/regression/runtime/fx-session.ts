@@ -16,8 +16,9 @@ import {
 } from '@digi/test-support';
 import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
+import { cachedCard, cardKey, fileSha } from './card-cache.ts';
 import { plusdriveBinary } from './card-kit.ts';
-import { FIRMWARE } from './devices.ts';
+import { FIRMWARE, snapshotRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
@@ -251,6 +252,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
+      ...snapshotRunDir(device),
       env: async () => {
         artifacts = fs.mkdtempSync(path.join(os.tmpdir(), `digi-fx-${name}-${device}-`));
         console.info('FX route safety artifacts:', artifacts);
@@ -286,30 +288,43 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
             preset.selection.some((file) => !inventory.some((_, index) => file === `modules/m${index}.dkm`))
           )
             throw new Error(`invalid route preset selection ${tag}`);
-          const directory = path.join(session.runDir, tag);
-          const seed = path.join(directory, 'seed');
-          const destination = path.join(seed, 'digikit', 'modules');
-          fs.mkdirSync(destination, { recursive: true });
-          inventory.forEach((id, index) =>
-            fs.copyFileSync(moduleArtifact(device, id), path.join(destination, `m${index}.dkm`)),
-          );
-          fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), preset.selection.join('\n') + '\n');
-          const cardImage = path.join(directory, 'card.img');
-          const built = await exec(binary, ['build', seed, '-o', cardImage, '--device', device], {
-            cwd: root,
-            timeout: 30_000,
+          const files = inventory.map((id, index) => ({ name: `m${index}.dkm`, file: moduleArtifact(device, id) }));
+          const settingsTool = path.join(root, 'tools/patchkit/pk_digikit_fxroutes.py');
+          // One card per preset in the card cache: the same inputs give the same card (and snapshot) in every run.
+          const key = cardKey(device, {
+            kind: 'fx-route-preset',
+            modules: files.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
+            selection: preset.selection,
+            settings: preset.settings?.length ? { entries: preset.settings, tool: fileSha(settingsTool) } : null,
           });
-          record(artifacts, `card-${tag}`, { stdout: built.stdout, stderr: built.stderr });
-          if (preset.settings?.length) {
-            const entries = path.join(directory, 'settings.json');
-            fs.writeFileSync(entries, JSON.stringify(preset.settings.map(([key, value_hex]) => ({ key, value_hex }))));
-            await analysisJson(
-              'tools.patchkit.pk_digikit_fxroutes',
-              ['seed-card', cardImage, '--device', device, '--entries', entries],
-              artifacts,
-              `settings-${tag}`,
-            );
-          }
+          const cardImage = await cachedCard(key, async (work) => {
+            const seed = path.join(work, 'seed');
+            const destination = path.join(seed, 'digikit', 'modules');
+            fs.mkdirSync(destination, { recursive: true });
+            for (const f of files) fs.copyFileSync(f.file, path.join(destination, f.name));
+            fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), preset.selection.join('\n') + '\n');
+            const out = path.join(work, 'card', 'card.img');
+            fs.mkdirSync(path.dirname(out));
+            const built = await exec(binary, ['build', seed, '-o', out, '--device', device], {
+              cwd: root,
+              timeout: 30_000,
+            });
+            record(artifacts, `card-${tag}`, { stdout: built.stdout, stderr: built.stderr });
+            if (preset.settings?.length) {
+              const entries = path.join(work, 'settings.json');
+              fs.writeFileSync(
+                entries,
+                JSON.stringify(preset.settings.map(([key, value_hex]) => ({ key, value_hex }))),
+              );
+              await analysisJson(
+                'tools.patchkit.pk_digikit_fxroutes',
+                ['seed-card', out, '--device', device, '--entries', entries],
+                artifacts,
+                `settings-${tag}`,
+              );
+            }
+            return out;
+          });
           const boot = planSymbol(prepared.plan, 'DKRT_BOOT');
           if (!prepared.preparedImage) throw new Error('explicit route plan lacks prepared image identity');
           baselines.set(tag, {
