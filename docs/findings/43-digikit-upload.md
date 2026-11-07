@@ -107,22 +107,13 @@ the scenario is 12 to 21 s of one process.
 
 ## Rate in the emulator **[D]**
 
-**[C]** Later changes: the runtime hashes the bytes as DATA brings them, and END no longer reads the file back (see "Upload speed in the emulator" below for the current figures: 154 instructions a byte for DATA, 99 for VERIFY).
+The runtime hashes the bytes as DATA brings them, and END does not read the file back. The current figures are in "Upload speed in the emulator" below: DATA about 51 instructions a byte, VERIFY 7
+(store version 4, the +Drive content hash; with SHA-256 they were 143 and 99). A 1 MiB file at 132 M instructions per second and a real core's 190 M: delivery of 384 bytes per 16,500 instructions (a high-speed
+microframe) and 384 per 1,500 give the same count, so the device's work is the limit, not the delivery. The first implementation (a bytewise SHA-256) took about 570 instructions a byte, 91 % of it the hash.
 
-A 1 MiB file, CF-only rig, DT2 1.17 and DN2 1.12 (the same numbers on both), delivery of 384 bytes per 16,500 instructions (a high-speed
-microframe) and 384 per 1,500 give the same count, so the device's work is the limit, not the delivery:
-
-| phase | instructions per file byte |
-|---|---|
-| DATA (stock assembler from the cable-0 callback, gather, 8-in-7 unpack, block write) | about 49 |
-| END (read the staged file back, SHA-256, table, headers) | about 519 |
-| whole upload | about 570 |
-
-At the emulated 132 M instructions per second that is 0.23 MB/s, and at a real core's 190 M instructions per second about 0.33 MB/s.
 **This is not a device rate**: the emulator does not model the eMMC program time, the cache misses, the USB packet split (stage 2) or the
-other firmware load. **SHA-256 is 91 % of the cost** (my Rust implementation: bytewise buffer, a 64-word schedule, no unrolling);
-a module is 4 to 100 kB, so a complete upload takes well under a second of CPU, and the check cannot be dropped (the END reply is the proof
-that the card holds the file). A faster hash loop is a small job if it ever matters **[O]**.
+other firmware load. A module is 4 to 100 kB, so a complete upload takes well under a second of CPU, and the check cannot be dropped (the END reply is the proof
+that the card holds the file).
 
 ## Step 7: can the runtime take its own SysEx before the firmware's chain? (static, report only) **[D]**
 
@@ -171,75 +162,54 @@ instructions per second) and the controller thread's CPU seconds.
 - **USB model**: `midi.usb.in` hands 384 bytes per 16,500 instructions: 3.0 MB/s on the wire, 2.6 MB/s after 8-in-7. The guest reaches 0.35 MB/s of it, so the model
   is not the limit, and the delivery period is not an artifact worth removing.
 - **Guest CPU** (decides everything): the firmware's own load is 79 M of the 132 M instructions of every model second (audio interrupt, UI loop; measured with no
-  traffic, `bg_insn_per_audio_s`), so 53 M are free. DATA costs, per file byte (the instructions of a phase less that load): about 170 before this work, 143 after
-  (SHA-256 99; the rest, 44: the firmware's SysEx chain, the 8-in-7 unpack, the reply; the card write is 1.5 because the block write is a host call; the 181 that
-  `upload_bench` printed for the old daemon counts about 11 of idle spin, which that daemon did not skip while USB input was queued). That is a ceiling of
-  **0.31 MB/s before, 0.37 MB/s after, in model time**. VERIFY (read back and hash) is 112, now 99 per byte: 0.47, now 0.53 MB/s. ColdFire has no rotate, so the 64
-  rounds of SHA-256 take about 6,300 instructions a block; a hand-written block function would save about 20 % of that (**[O]** not done: 8 % of an upload).
-- **The real device** has 190 M instructions per second and 37 to 47 % firmware load (finding 42): about 0.75 MB/s now (0.6 before) for the digikit store, 1.0 to
-  1.2 MB/s for VERIFY. The stock +Drive write takes 2.76 model seconds a MB at 16 KiB requests (5.4 at 2 KiB): 0.36 MB/s of model time, 0.52 MB/s at the real clock, and the 0.5 MB/s that
+  traffic, `bg_insn_per_audio_s`), so 53 M are free. DATA costs, per file byte (the instructions of a phase less that load), about 51 since store version 4:
+  the firmware's SysEx chain, the 8-in-7 unpack and the reply, 44; the card write is 1.5 because the block write is a host call; the file hash 7 (section "The file hash
+  of the store", below). That is a ceiling of about **1.0 MB/s in model time**; the 8 MB run reached 0.80 (9.97 model seconds), the rest being the wait between two requests
+  (about 10 ms of 41 ms for a 32 KiB chunk). VERIFY (read back and hash) is 7.1 per byte: 7.4 MB/s in model time. Before version 4 the file hash was SHA-256 at 99 per byte
+  (ColdFire has no rotate: 6,300 instructions a block): DATA 143, 0.32 MB/s, VERIFY 99, 0.53 MB/s.
+- **The real device** has 190 M instructions per second and 37 to 47 % firmware load (finding 42), so 101 to 120 M are free: estimates (the eMMC program time and the
+  USB path were not measured), for the digikit store about 2.0 to 2.3 MB/s for the guest's work alone and 1.2 to 1.4 MB/s with the 10 ms a chunk of wait that the model shows
+  (1.4 to 1.6 if that wait scales with the clock); VERIFY 14 to 17 MB/s; upload and VERIFY together 1.7 to 2.0 MB/s. Before version 4: 0.7 to 0.8 MB/s (0.57 to 0.65 with the wait),
+  VERIFY 1.0 to 1.2, together 0.42 to 0.49. The stock +Drive write takes 2.76 model seconds a MB at 16 KiB requests (5.4 at 2 KiB): 0.36 MB/s of model time, 0.52 MB/s at the real clock, and the 0.5 MB/s that
   finding 42 measured on a real DT2 is the same. USB high-speed bulk (35 MB/s) is not the limit; if the port ran at full speed it would be (about 0.8 MB/s of payload
   after the 3/4 event packing and 7/8).
-
-### Where the 22 s of a 2 MB upload went (before)
-
-Wall 22.3 s = model time 6.9 s / real-time factor 0.31.
-- **Protocol: 4 to 12 %.** One request is in flight, so the guest waits between chunks. Chunks of 4, 8 and 32 KiB take 9.3, 6.5 and 5.8 model seconds for 2 MB
-  (all at 143 instructions a byte of work): 4 to 11 ms of model time per request, 0.25 to 0.7 s of the 5.8 s at 32 KiB. It is not the host: 3.3 ms of
-  `midi.usb.in` per chunk, and polling every 1 ms instead of 10 ms gives the same model time (6.49 and 6.53 s at 8 KiB). It is the firmware's own latency from the end of a
-  message to the reply (task wake-up, message handling). A window of two requests could hide part of it (at most the 4 to 12 %); not done, see below.
-- **The rest is the emulator running below real time, of two kinds.** (1) The coupled emulator cannot run faster than 0.54 to 0.59 times real time on this host even with
-  the guest idle: the DSP emulation costs 1.7 CPU seconds per audio second (`dsp_cpu_per_audio_s`), so the DSP worker is the cap (about 11.9 s of the 22.3; after the
-  fixes the upload runs at it: rtf 0.58). (2) The
-  ColdFire thread needed 18.8 CPU seconds for the 6.9 model seconds (84 % of the wall), 2.7 s per model second where the idle firmware needs 0.5: two emulator
-  artifacts, below.
-- **The guest's work** is the rest of the model time (6.9 s for 2 MB at 0.29 MB/s): that part is the same on a device and is what the instruction cuts reduce.
-
-### Root causes and fixes **[D]** (the 7.7 MiB upload went from 89 s to 40 s)
-
-1. **The decode cache evicted a whole 4 KiB page on every write into it** (`DecodeCache::invalidate`, `packages/emulator/coldfire/src/cpu.rs`). The digikit
-   health module's idle loop (`addq.l #1,health_idle_line; bra.s`) keeps its counter in the page of its own code (0x467d9000 on the DN2). Each pass of the loop that the
-   idle skip does not take (the first pass of every window, every pass while a USB call waits) wrote the counter, evicted the page, and the next fetch allocated and
-   filled a new 64 KiB page: 6.7 million evictions per MB uploaded (counted with a temporary counter in `invalidate`), `DecodePage::new` alone was 16 % of the controller
-   thread (`sample`). A write now clears only the cached instructions it overlaps (those that start up to 4 bytes before it, which can be on the page before), and
-   `covers` (the fused loops' check) answers the same question. An external DMA write still evicts whole pages (`invalidate_page`). 256 direct-mapped pages also let the
-   firmware and the runtime (same low index bits) evict each other, 37 k times a MB: 0.6 % of the evictions, left as it is. `DecodeCache` compares equal to any other
-   (it is not machine state; a counting-loop test that compared two cores was the only user of the derived equality). 5 tests in `packages/emulator/coldfire/tests/decode_cache.rs`.
-2. **The batched fast path (`run_fast`) and the idle skip (`advance_idle`) were off while any USB input was queued** (`MidiPort::busy`): every instruction of an upload
-   went through `step_once` (134 ns an instruction against 9 in `run_fast`, 55 M instructions and half the controller's CPU for 1 MB). Now both run while the next call
-   is not due (the run ends at the instruction that makes it due) and while a due call waits for the interrupt mask (the loop's own IPL check ends the run); the call
-   is handed over at the same instruction as before. Checked with `state.digest {"arch": true}` (new: the digest without the three counters of how the instructions were
-   run) against a daemon built from the old source, boot paused to a fixed `icount`, 6 `run_until` points through a BEGIN/DATA/END upload: equal at all 6, `usb_calls`,
-   `usb_in` and the reply bytes equal. The DIN input keeps the one-instruction loop.
-3. **The runtime's DATA path**: SHA-256 written as `(x ^ x>>a ^ x>>b)>>c ^ (x ^ x<<d ^ x<<e)<<f` for the four sigma functions (the identities were checked for 100,000 random words),
-   message words read whole when 4-byte aligned (the ColdFire is big-endian), and the 8-in-7 unpack unrolled for whole groups: the hash takes 112 to 99 instructions a byte
-   (VERIFY, `work_insn_per_byte`), DATA 27 fewer (181 to 154 with the old, unskipped idle spin still counted).
-4. **DT2 +Drive**: a WriteFileV1 request costs the stock firmware about 6 ms of model time of its own plus 2.3 us a byte (11 ms for 2 KiB, 44 ms for 16 KiB), and the guest idled 36 to 39 %
-   of the time between 2 KiB requests (12 % at 16 KiB). `DkTransport.rpcChunk` (new, optional) lets a link say how much one request may carry; the emulator transports (`EmuUsbTransport`, `emu_midi.mjs`)
-   say 16 KiB, `RpcFiles` takes it unless the caller gives a chunk, a device link keeps `RPC_CHUNK` = 2048 (what the real USB path takes is still **[O]**, finding 42).
-   Not changed: pipelining (the guest is busy 88 % of the time at 16 KiB and 4 to 12 % of an upload is the per-request latency, so a window of two can win that much at
-   most; the firmware accepts it, finding 42, and the Python tool `dkupload.py` keeps two in flight; a pipeline needs the runtime to keep a message queued while it
-   writes the last one, which is a change to the part of the runtime that has no hardware proof).
-
-### A/B **[D]** (paired, alternating, 3 pairs each; before = the commit this lane started from, daemon and runtime)
-
-| | before | after |
-|---|---|---|
-| DN2 digikit store, 8.07 MB, 32 KiB chunks: upload | 88.6 to 90.0 s, 0.091 MB/s, rtf 0.31 | 40.2 to 40.4 s, 0.200 MB/s, rtf 0.58 (2.2 times) |
-| same, VERIFY (1 MiB ranges) | 29.0 to 29.3 s, 0.277 MB/s, rtf 0.58 | 25.7 to 25.8 s, 0.313 MB/s, rtf 0.585 (1.13 times) |
-| DT2 +Drive, 1 MB, 2 KiB requests | 25.1 to 25.3 s, 0.040 MB/s, rtf 0.21 | 21.6 s, 0.046 MB/s, rtf 0.25 (the emulator fixes alone) |
-| DT2 +Drive, 1 MB, 16 KiB requests | 15.1 to 15.2 s, 0.066 MB/s (old emulator) | 11.1 s, 0.090 MB/s (2.3 times the old default) |
-
-VERIFY, the DN2 upload now and the DT2 runs sit on the DSP cap (rtf 0.58 and 0.25 are the rates of the idle emulator on this host), so only fewer model seconds shorten them.
 
 ### Left **[O]**
 
 - The cap itself: the DSP worker at 1.7 CPU seconds per audio second (DN2) while nothing plays; a faster DSP tier, or a mode that does not render audio during a transfer,
   would be the next lever for wall time.
 - Guest work: the firmware's own SysEx chain (event task, assembler, gather: about 40 to 60 instructions a byte) needs the tier-1 hook of step 7 above (hardware-only
-  proof); SHA-256 by hand about 20 % of the hash. Together about 143 to 100 instructions a byte.
+  proof). With the file hash at 7 it is now most of the 51 instructions a byte; a window of two requests would hide the wait between chunks (about a quarter of an upload in the model).
 - A host-side shortcut (writing the store through the card model, no guest) would be instant in the workbench but tests nothing of the protocol; not done.
 - On a device nothing was measured: the real USB MIDI path, a larger RPC chunk on hardware, and the eMMC program time.
+
+### The file hash of the store (store version 4, lane fast-hash, 2026-11-07) **[D]**
+
+The table's 32-byte slot, BEGIN, END, LIST and VERIFY carry the +Drive content hash `hash | 1` (`dksample::content_hash`, a lookup3 variant over big-endian words) as 4 big-endian bytes and
+28 zeros, not a SHA-256 (docs/design/digikit-store.md; the runtime's `hash32.rs`, `dksample::file_hash`, `fileHash` in dk-session, `file_hash` in `tools/device/dkupload.py`; capability
+FILEHASH, bit 12). `.dkm` files keep their own header SHA-256 (the loader checks it). Paired runs on this host (DN2 1.12, digikit store, one file of 8,000,000 bytes of generated data, 32 KiB chunks, load average 4 to 6 on 16 cores;
+`out/native/runs/20261107-hash/final-base.jsonl` and `final-new.jsonl`; the same session, daemon and bench, only the runtime and the host hash differ):
+
+| | SHA-256 (origin/main) | file hash (version 4) |
+|---|---|---|
+| DATA, work instructions per file byte (as the bench prints) | 142.9 | 43.8 (about 51: see below) |
+| DATA, model seconds, MB/s in model time | 24.63, 0.325 | 9.97, 0.802 |
+| DATA, wall seconds, real-time factor | 43.7, 0.563 | 18.4, 0.542 |
+| VERIFY, work instructions per file byte | 99.0 | 7.1 |
+| VERIFY, model seconds, MB/s in model time | 15.06, 0.531 | 1.09, 7.37 |
+| VERIFY, wall seconds, real-time factor | 26.6, 0.566 | 1.97, 0.551 |
+| `stall_count` after DATA, after VERIFY (cumulative) | 0, 8 | 0, 0 |
+| `bg_insn_per_audio_s` | 79.41 M | 79.35 M |
+
+- The hash costs about 7 ColdFire instructions a byte: 7.1 measured in VERIFY (a saturated phase; it includes the card-read loop), and about 6.7 counted in the object's inner loop (80 instructions for each 12-byte block).
+  The printed 43.8 for DATA is too low: the guest now waits for the host between chunks, and the idle load is subtracted for the whole phase. DATA is the 44 of the SysEx chain plus 7, about 51.
+- The code is `Hash32::update`, 796 bytes (1,430 bytes with `finish`, `slot` and the rest); the SHA-256 block function (7,112 bytes) stays in the runtime for the `.dkm` header check. Whether this fits the instruction cache was not measured.
+- Correctness: unit vectors against `dksample` for lengths 0 to 64, 511, 512, 513, 4096, 32775 and random splits; 13 file sizes uploaded and checked whole and in 4,096-byte ranges on the device against the host's hash;
+  the hash of the TypeScript, Python and Rust hosts agrees (the web mock, `dkupload` and the device tests). A flipped byte on the card is reported by VERIFY (another hash) and by the load (`E_SHA`) on both devices; an END with a wrong hash is `E_HASH`.
+- A store of another version counts as no store (the old table has SHA-256 slots): readers see none, the card stays ours, the first upload writes version 4 over it. The flash scenario with a real version 3 store, both devices: the boot goes on, LIST is empty,
+  the selection record (`modules/sine.dkm`) and the settings record stay, the first upload makes version 4 and a restart loads the module from the kept selection. The old header A and B, the old table sector and the old file sectors are all
+  overwritten by the first upload (the new file takes the first gap, the new table follows; the old header B is rewritten as a version 4 header). `patchkit store dump` and `plusdrive store ls` refuse a version 3 store ("unknown version").
+- The DT2 samples go through the stock MidiRpc into the +Drive and were not changed: one run (1 MB, 2 KiB requests, 857 guest instructions a byte, stored and hash-checked) still works.
 
 ## Open **[O]**
 
@@ -249,7 +219,7 @@ VERIFY, the DN2 upload now and the DT2 runs sit on the DSP cap (rtf 0.58 and 0.2
 - **[C]** The three items that stood here (a reply into a full TX ring, the menu's reader against a commit, the CLEAR double fault) are
   closed in the last section ("Phase 8 safety"). What stays open from them: the TX analysis is static and the emulator does not model the
   USB IN endpoint, so a host that really never reads has not been run **[O]**; nothing ran on a device.
-- SHA-256 speed (above). A store is limited to 256 files for upload commands.
+- A store is limited to 256 files for upload commands.
 - The exporter treats a store file named like a deleted folder file by the three-way rule only; a card built from an older folder than
   the one the export meets is reported as `kept`.
 

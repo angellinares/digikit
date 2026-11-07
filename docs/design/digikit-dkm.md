@@ -201,7 +201,7 @@ type 0's (finding 30). A machine that clones SAMPLE, like `pluck`, is right alre
 
 ## What the loader checks, in order (nothing is written to the arena before the last one)
 
-1. Store: header, table checksum, the path, the table's sha256 of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
+1. Store: header, table checksum, the path, the table's file hash of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
 2. Magic, format 1, size fields equal the file (`E_FORMAT`); the file's own sha256 (`E_SHA`).
 3. Contracts (0x38): for each contract the module declares (major not 0), its major equals the runtime's and its minor is not above the runtime's (`E_CONTRACT`: built for another SDK contract, rebuild the module). `runtime_min` is not checked.
 4. Name, alignment, table bounds, reloc kinds and offsets, slot numbers and function offsets (`E_FORMAT`).

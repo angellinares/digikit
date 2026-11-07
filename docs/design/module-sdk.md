@@ -422,7 +422,7 @@ into the open. DN2 needs per-device `voices` in `[limits]` if the memory is to b
 ### 6.4 What INFO and LIST report
 
 INFO (`upload.rs:470-493`, `digikit-upload.md:61`) keeps its layout (commands are only added; protocol 1). Proposal: a new command `MODULES` (index -> id, version, types, cf range,
-dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and `sha256`. INFO's flags gain "a module is disabled".
+dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and the file `hash`. INFO's flags gain "a module is disabled".
 `dkrt_module` (`lib.rs:671`) returns the same record through the C ABI so the DIGIKIT menu can show it (`digikit-runtime.md:58`).
 
 ### 6.5 What fits (built, docs/plans/what-fits.md)
