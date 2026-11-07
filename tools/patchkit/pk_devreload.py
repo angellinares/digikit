@@ -438,7 +438,7 @@ def upload_store(emu: Emu, candidate: Path, prepared: dict[str, Any]) -> None:
         if header is None:
             raise H.HarnessError("preview pack has no DKM header")
         dkrun.upload_if_changed(up, path, data)
-        if up.verify(path) != hashlib.sha256(data).hexdigest():
+        if up.verify(path) != dkupload.file_hash(data).hex():
             raise H.HarnessError("preview module did not verify on the mounted card")
         # A preview selects one module explicitly; all other card contents stay.
         print("preview: upload verified; selecting module", flush=True)

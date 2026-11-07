@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from tools.device import dkupload
 from tools.firmware import config
 from tools.patchkit import pk_devreload as dev
 from tools.patchkit import pk_dkrt
@@ -733,7 +734,7 @@ def test_uploaded_preview_keeps_saved_overlay_when_daemon_is_absent(
 def test_upload_store_waits_for_boot_and_module_without_debug_log(
     monkeypatch, tmp_path, capsys, failure
 ):
-    from tools.device import dkrun, dktransfer, dkupload
+    from tools.device import dkrun, dktransfer
 
     source = tmp_path / "plus_drive/digikit/modules/voice.dkm"
     source.parent.mkdir(parents=True)
@@ -757,7 +758,7 @@ def test_upload_store_waits_for_boot_and_module_without_debug_log(
             [{"kind": "firmware.loaded", "ok": failure != "boot"}],
         ]
     up = Mock()
-    up.verify.return_value = dev.hashlib.sha256(source.read_bytes()).hexdigest()
+    up.verify.return_value = dkupload.file_hash(source.read_bytes()).hex()
     up.modules.side_effect = (
         None
         if failure == "missing"

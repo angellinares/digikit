@@ -2371,7 +2371,7 @@ impl Actor {
         }
     }
 
-    /// `card.folder`: the module store's folder: its path, the files under `digikit/` with size and sha256, the time of the last pass
+    /// `card.folder`: the module store's folder: its path, the files under `digikit/` with size and file hash, the time of the last pass
     /// (ms since the epoch) and what it did, and whether the card has writes the folder does not hold yet. And the folder's place in
     /// the device's choice: `device`, `default_folder`, `custom` (the user chose the folder), `chosen_missing` (a saved choice whose
     /// folder is gone: the default is used), `next_folder` (what the next load uses) and `reload_needed` (it is not `folder`: a device
