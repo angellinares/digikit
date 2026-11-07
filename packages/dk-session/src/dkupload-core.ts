@@ -30,8 +30,8 @@ export interface DkInfo {
 export interface DkEntry {
   path: string;
   size: number;
-  /** hex */
-  sha256: string;
+  /** The file's hash slot, hex (64 characters): the content hash, 4 bytes, then 28 zeros (`fileHashHex`); all zero for a folder. */
+  hash: string;
 }
 export interface DkReply {
   cmd: number;
@@ -200,7 +200,7 @@ export class Dk {
     total: number;
     seq: number;
     end_retried: boolean;
-    sha256: string;
+    hash: string;
   } {
     if (this.x.dk_put_state(h) !== 0) this.fail();
     return this.json();
@@ -348,7 +348,7 @@ export class DkClient {
       this.seq = state.seq;
       // A lost END reply, then E_STATE for the second END: the first one committed. Look the file up.
       if (e instanceof DkError && e.status === 'E_STATE' && state.phase === 'end' && state.end_retried) {
-        const found = (await this.list()).some((x) => x.path === path && x.sha256 === state.sha256);
+        const found = (await this.list()).some((x) => x.path === path && x.hash === state.hash);
         if (found) return;
       } else if (!(e instanceof DkError && e.kind === 'transport')) {
         await this.abort().catch(() => {});
@@ -369,9 +369,9 @@ export class DkClient {
   }
 }
 
-/** The store entries that no file of the library (path and sha256 in hex) matches: a repack would lose them. */
-export function repackMissing(listing: DkEntry[], library: { path: string; sha256: string }[]): string[] {
-  return listing.filter((e) => !library.some((l) => l.path === e.path && l.sha256 === e.sha256)).map((e) => e.path);
+/** The store entries that no file of the library (path and `fileHashHex`) matches: a repack would lose them. */
+export function repackMissing(listing: DkEntry[], library: { path: string; hash: string }[]): string[] {
+  return listing.filter((e) => !library.some((l) => l.path === e.path && l.hash === e.hash)).map((e) => e.path);
 }
 
 /** The store path of a module file: `modules/<name>`. */
@@ -379,10 +379,70 @@ export function storePath(fileName: string): string {
   return `modules/${fileName.replace(/[^\x20-\x7e]/g, '_').replace(/\//g, '_')}`;
 }
 
-export async function hexSha256(bytes: Uint8Array): Promise<string> {
-  const d = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
-  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, '0')).join('');
+/**
+ * The store's hash slot of a file (BEGIN, LIST, VERIFY): the +Drive content hash (`dksample::content_hash`, a lookup3 variant over big-endian
+ * words, seed 0x43fa243a) `| 1`, 4 bytes big-endian, then 28 zeros. Never 0, so a folder's all-zero slot is not a file's. The same value as
+ * `dksample::file_hash` (Rust) and the runtime's `hash32.rs`.
+ */
+export function fileHash(data: Uint8Array): Uint8Array {
+  const rot = (x: number, n: number) => (x << n) | (x >>> (32 - n));
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  let a = 0x43fa243a | 0;
+  let b = a;
+  let c = a;
+  const tail = (at: number, n: number) => {
+    let w = 0;
+    for (let i = 0; i < n; i++) w |= data[at + i]! << (24 - 8 * i);
+    return w;
+  };
+  let at = 0;
+  let n = data.length;
+  while (n > 12) {
+    c = (c + dv.getUint32(at + 8)) | 0;
+    const t2 = (dv.getUint32(at + 4) + b + c) | 0;
+    const u1 = rot(c, 4) ^ ((dv.getUint32(at) + a - c) | 0);
+    const t3 = (t2 + u1) | 0;
+    const u2 = ((dv.getUint32(at + 4) + b - u1) | 0) ^ rot(u1, 6);
+    const t4 = (t3 + u2) | 0;
+    const u3 = ((t2 - u2) | 0) ^ rot(u2, 8);
+    const t2b = (t4 + u3) | 0;
+    const u4 = ((t3 - u3) | 0) ^ rot(u3, 16);
+    a = (t2b + u4) | 0;
+    const u5 = ((t4 - u4) | 0) ^ rot(u4, 19);
+    b = (a + u5) | 0;
+    c = ((t2b - u5) | 0) ^ rot(u5, 4);
+    at += 12;
+    n -= 12;
+  }
+  let h = c;
+  if (n > 0) {
+    if (n <= 4) a = (a + tail(at, n)) | 0;
+    else if (n <= 8) {
+      a = (a + dv.getUint32(at)) | 0;
+      b = (b + tail(at + 4, n - 4)) | 0;
+    } else {
+      a = (a + dv.getUint32(at)) | 0;
+      b = (b + dv.getUint32(at + 4)) | 0;
+      c = (c + tail(at + 8, n - 8)) | 0;
+    }
+    const u1 = ((b ^ c) - rot(b, 14)) | 0;
+    const u2 = ((u1 ^ a) - rot(u1, 11)) | 0;
+    const u3 = ((u2 ^ b) - rot(u2, 25)) | 0;
+    const u4 = ((u3 ^ u1) - rot(u3, 16)) | 0;
+    const a2 = ((u4 ^ u2) - rot(u4, 4)) | 0;
+    const b2 = ((a2 ^ u3) - rot(a2, 14)) | 0;
+    h = ((b2 ^ u4) - rot(b2, 24)) | 0;
+  }
+  const slot = new Uint8Array(32);
+  new DataView(slot.buffer).setUint32(0, (h | 1) >>> 0);
+  return slot;
 }
+
+/** `fileHash` as hex: the form of `DkEntry.hash` and of what `DkSession.verify` returns. */
+export const fileHashHex = (data: Uint8Array): string => hexOf(fileHash(data));
+
+/** What a host says to a runtime without the FILEHASH capability: its store keeps SHA-256, this host sends the content hash. */
+export const OLD_STORE = 'Update the firmware: this runtime uses the old store format';
 
 // ---- the pure TypeScript client ------------------------------------------------------------------------------------------------
 
@@ -645,6 +705,7 @@ export class DkSession {
   private timeoutMs: number;
   private retries: number;
   private chunk: number;
+  private fileHashOk = false;
   private turn: Promise<unknown> = Promise.resolve();
   /** Aborted by `cancelPending`: the requests made before it (waiting for a reply or for their turn) fail with kind `cancelled`. */
   private ctl = new AbortController();
@@ -708,6 +769,13 @@ export class DkSession {
     return r.body;
   }
 
+  /** Fail at once, with `OLD_STORE`, for a runtime whose store keeps SHA-256 (asked once, before the first command that carries a file hash). */
+  private async needFileHash(): Promise<void> {
+    if (this.fileHashOk) return;
+    if (!hasCap(await this.info(), 'FILEHASH')) throw new DkError({ error: OLD_STORE, kind: 'request' });
+    this.fileHashOk = true;
+  }
+
   /** `quick`: one INFO with a short timeout and no retries (a probe for a device that may not run the runtime). */
   async info(quick = false): Promise<DkInfoFull> {
     const b = await this.ok(GCMD.INFO, 'info', undefined, quick);
@@ -745,9 +813,10 @@ export class DkSession {
 
   /**
    * The store's entries, or (`prefix`, runtime 0.3.0, capability FOLDERS) those whose path starts with it. A folder with nothing in it is an
-   * entry of size 0 and a zero sha256.
+   * entry of size 0 and a zero hash.
    */
   async list(prefix?: string): Promise<DkEntry[]> {
+    await this.needFileHash();
     const out: DkEntry[] = [];
     const tail = prefix ? concat(text.encode(prefix), Uint8Array.of(0)) : new Uint8Array();
     for (;;) {
@@ -757,7 +826,7 @@ export class DkSession {
       let at = 5;
       for (let i = 0; i < n; i++) {
         const [path, next] = cstr(b, at);
-        out.push({ path, size: u32(b, next), sha256: hexOf(b.subarray(next + 4, next + 36)) });
+        out.push({ path, size: u32(b, next), hash: hexOf(b.subarray(next + 4, next + 36)) });
         at = next + 36;
       }
       if (n === 0 || out.length >= total) return out;
@@ -839,11 +908,11 @@ export class DkSession {
     return (await this.read(path, 0, HEADER_BYTES)).bytes;
   }
   /**
-   * VERIFY (runtime 0.2.4): the sha256 (hex) of a store file, computed by the device from a fresh read of the card. With `offset` (a multiple of
-   * 512) and `length` (runtime 0.3.0): of that range, so a large file is checked in pieces (the device spends about 120 ColdFire instructions a
-   * byte: a request for all of a large file can outlast the timeout).
+   * VERIFY (runtime 0.2.4): the hash slot (hex, `fileHashHex`) of a store file, computed by the device from a fresh read of the card. With `offset`
+   * (a multiple of 512) and `length` (runtime 0.3.0): of that range, so a large file is checked in pieces.
    */
   async verify(path: string, offset?: number, length?: number): Promise<string> {
+    await this.needFileHash();
     let body = concat(text.encode(path), Uint8Array.of(0));
     if (offset !== undefined) body = concat(body, be32(offset), be32(length ?? 0));
     const b = await this.ok(GCMD.VERIFY, 'verify', body);
@@ -857,10 +926,10 @@ export class DkSession {
     piece = 1 << 20,
     onProgress: (done: number, total: number) => void = () => {},
   ): Promise<boolean> {
-    if (data.length === 0) return (await this.verify(path)) === (await hexSha256(data));
+    if (data.length === 0) return (await this.verify(path)) === fileHashHex(data);
     for (let off = 0; off < data.length; off += piece) {
       const part = data.subarray(off, Math.min(data.length, off + piece));
-      if ((await this.verify(path, off, part.length)) !== (await hexSha256(part))) return false;
+      if ((await this.verify(path, off, part.length)) !== fileHashHex(part)) return false;
       onProgress(off + part.length, data.length);
     }
     return true;
@@ -993,9 +1062,10 @@ export class DkSession {
     onProgress: (sent: number, total: number) => void = () => {},
   ): Promise<void> {
     const p = concat(text.encode(path), Uint8Array.of(0));
-    const sha = new Uint8Array(await crypto.subtle.digest('SHA-256', data as BufferSource));
+    await this.needFileHash();
+    const hash = fileHash(data);
     try {
-      await this.ok(GCMD.BEGIN, 'begin', concat(p, be32(data.length), sha));
+      await this.ok(GCMD.BEGIN, 'begin', concat(p, be32(data.length), hash));
       for (let off = 0; off < data.length; off += this.chunk) {
         const part = data.subarray(off, Math.min(data.length, off + this.chunk));
         // a request that timed out is sent again (the device takes the exact repeat of the last chunk as done)
@@ -1008,7 +1078,7 @@ export class DkSession {
       } catch (e) {
         // A lost END reply, then E_STATE for the repeat: the first END committed. Look the file up.
         if (!(e instanceof DkError && e.status === 'E_STATE')) throw e;
-        const have = (await this.list()).some((x) => x.path === path && x.sha256 === hexOf(sha));
+        const have = (await this.list()).some((x) => x.path === path && x.hash === hexOf(hash));
         if (!have) throw e;
       }
     } catch (e) {

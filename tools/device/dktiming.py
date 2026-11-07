@@ -5,7 +5,7 @@ the monotonic high-resolution clock (time.perf_counter: time.monotonic ticks in 
 
     bytes, wall seconds (BEGIN to the END reply), DATA seconds (first DATA sent to the last DATA reply), KB/s (1 KB = 1000 bytes) over the
     DATA phase and over the wall time, and per DATA request the mean and p95 of send time (the transport took the message) and of
-    send-to-reply (the reply arrived), and the END reply time (the device checks the file's sha256 there).
+    send-to-reply (the reply arrived), and the END reply time (the device checks the file's hash there).
 
 With two requests in flight a reply's send-to-reply includes the time the request waited behind the one before it.
 """

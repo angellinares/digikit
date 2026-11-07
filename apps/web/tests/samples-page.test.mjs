@@ -139,8 +139,8 @@ test('events build the upload state, and a file that could not be prepared fails
   assert.equal(u['d/kick'].state, 'uploading');
   u = applyUpload(u, { event: 'verifying', folder: 'd', name: 'kick' });
   assert.deepEqual([u['d/kick'].state, u['d/kick'].sent], ['verifying', 100]);
-  u = applyUpload(u, { event: 'verified', folder: 'd', name: 'kick', ok: false, message: 'device sha256 differs' });
-  assert.deepEqual([u['d/kick'].state, u['d/kick'].message], ['failed', 'device sha256 differs']);
+  u = applyUpload(u, { event: 'verified', folder: 'd', name: 'kick', ok: false, message: 'device hash differs' });
+  assert.deepEqual([u['d/kick'].state, u['d/kick'].message], ['failed', 'device hash differs']);
   u = applyUpload(u, { event: 'failed', folder: 'd', name: 'bad.wav', source: 'bad.wav', message: 'not a usable WAV' });
   assert.deepEqual([u['d/bad.wav'].kind, u['d/bad.wav'].state, u['d/bad.wav'].source], ['none', 'failed', 'bad.wav']);
   assert.deepEqual(Object.keys(dropUploads(u, ['d/kick'])), ['d/bad.wav']);
@@ -179,8 +179,8 @@ const fakeBackend = ({ failPut = '', failVerify = '' } = {}) => {
       calls.push(`verify ${folderName}/${p.name}`);
       return {
         ok: p.name !== failVerify,
-        message: p.name === failVerify ? 'device sha256 differs' : 'device sha256 matches',
-        compared: 'sha256 of the stored file',
+        message: p.name === failVerify ? 'device hash differs' : 'device hash matches',
+        compared: 'hash of the stored file',
       };
     },
   };
@@ -219,9 +219,9 @@ test('an upload run: prepare, put with progress, verify; a broken WAV fails alon
       ['notes.txt', 'unchanged', 'ok'],
     ],
   );
-  assert.equal(u['drums/kick'].message, 'device sha256 matches\nsha256 of the stored file');
+  assert.equal(u['drums/kick'].message, 'device hash matches\nhash of the stored file');
   assert.match(u['drums/x.bad.wav'].message, /not a usable WAV/);
-  assert.equal(u['drums/snare'].message, 'device sha256 differs\nsha256 of the stored file');
+  assert.equal(u['drums/snare'].message, 'device hash differs\nhash of the stored file');
   assert.deepEqual(b.calls, [
     'put drums/kick',
     'verify drums/kick',
@@ -255,10 +255,10 @@ test('the Card panel groups the store files by top folder', () => {
     last_sync: null,
     error: null,
     files: [
-      { path: 'samples/drums/kick', bytes: 300, sha256: 'c' },
-      { path: 'modules/pluck.dkm', bytes: 100, sha256: 'a' },
-      { path: 'samples/snare', bytes: 50, sha256: 'b' },
-      { path: 'top.bin', bytes: 1, sha256: 'd' },
+      { path: 'samples/drums/kick', bytes: 300, hash: 'c' },
+      { path: 'modules/pluck.dkm', bytes: 100, hash: 'a' },
+      { path: 'samples/snare', bytes: 50, hash: 'b' },
+      { path: 'top.bin', bytes: 1, hash: 'd' },
     ],
   };
   const g = fileGroups(card);

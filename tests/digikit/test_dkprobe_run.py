@@ -47,11 +47,7 @@ class FakeDevice(FakeUp):
         }
 
     def ls(self):
-        import hashlib
-
-        return [
-            (p, len(b), hashlib.sha256(b).hexdigest()) for p, b in self.store.items()
-        ]
+        return [(p, len(b), R.D.file_hash(b).hex()) for p, b in self.store.items()]
 
     def put(self, path, data, progress=None):
         self.store[path] = data

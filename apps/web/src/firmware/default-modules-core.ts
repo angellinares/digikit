@@ -41,11 +41,10 @@ export const defaultsLabel = (ticked: number): string => `Default modules (${tic
 
 /** A default module failed: `id` is the module, `message` the reason. */
 export class DefaultModuleError extends Error {
-  constructor(
-    readonly id: string,
-    reason: string,
-  ) {
+  readonly id: string;
+  constructor(id: string, reason: string) {
     super(`${id}: ${reason}`);
+    this.id = id;
     this.name = 'DefaultModuleError';
   }
 }

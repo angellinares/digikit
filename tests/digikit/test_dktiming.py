@@ -3,6 +3,7 @@ tools/device/winmidi.py that run without Windows. No emulator, no device."""
 
 import ctypes
 import json
+import struct
 
 import pytest
 
@@ -13,7 +14,18 @@ from tools.firmware.build import encode_8in7
 
 
 def _ok_reply(msg: bytes) -> bytes:
-    return msg[:4] + bytes([1, msg[5] | 0x40, msg[6]]) + encode_8in7(b"\x00") + b"\xf7"
+    body = b"\x00"
+    if (
+        msg[5] == D.CMD_INFO
+    ):  # an INFO with the capability bits (the file hash among them), as the runtime sends them
+        body += (
+            struct.pack(">HH", 1, 0x300)
+            + b"p\0"
+            + struct.pack(">IIB", 100, 32768, 0)
+            + bytes(8)
+        )
+        body += struct.pack(">II", 0x300, 1 << D.CAP["FILEHASH"])
+    return msg[:4] + bytes([1, msg[5] | 0x40, msg[6]]) + encode_8in7(body) + b"\xf7"
 
 
 class Clock:
@@ -47,7 +59,9 @@ class Device:
 def test_depth_one_put_times_each_request_and_reply():
     clock = Clock()
     t = T.TimedTransport(Device(clock, send_s=0.010, work_s=0.030), clock=clock)
-    D.Uploader(t, chunk=1024, depth=1).put("a.bin", bytes(4096))
+    up = D.Uploader(t, chunk=1024, depth=1)
+    up._file_hash_ok = True
+    up.put("a.bin", bytes(4096))
     cmds = [(e["dir"], e["cmd"]) for e in t.events]
     assert cmds == [("tx", "BEGIN"), ("rx", "BEGIN")] + [
         ("tx", "DATA"),
@@ -69,7 +83,9 @@ def test_depth_two_overlaps_the_send_with_the_device_work():
     def data_s(depth: int) -> float:
         clock = Clock()
         t = T.TimedTransport(Device(clock, send_s=0.020, work_s=0.020), clock=clock)
-        D.Uploader(t, chunk=512, depth=depth).put("a.bin", bytes(512 * 8))
+        up = D.Uploader(t, chunk=512, depth=depth)
+        up._file_hash_ok = True
+        up.put("a.bin", bytes(512 * 8))
         return T.summary(t.events, 512 * 8)["data_s"]
 
     assert data_s(1) == pytest.approx(8 * 0.040)
@@ -107,7 +123,9 @@ def test_a_transport_stamp_on_arrival_wins_over_the_return_time():
             return r
 
     t = T.TimedTransport(Stamped(clock, 0.0, 0.010), clock=clock)
-    D.Uploader(t, chunk=512, depth=1).put("a.bin", bytes(512))
+    up = D.Uploader(t, chunk=512, depth=1)
+    up._file_hash_ok = True
+    up.put("a.bin", bytes(512))
     assert T.summary(t.events, 512)["rtt_mean_ms"] == pytest.approx(10.0)
 
 
@@ -159,9 +177,9 @@ def test_cli_put_with_chunk_depth_and_timing_over_the_emulator_transport(
         and "DATA stepped 2000000 instructions" in out[1]
     )
     ev = [json.loads(x) for x in log.read_text().splitlines()]
-    assert [e["cmd"] for e in ev if e["dir"] == "tx"] == ["BEGIN"] + ["DATA"] * 5 + [
-        "END"
-    ]
+    assert [e["cmd"] for e in ev if e["dir"] == "tx"] == ["INFO", "BEGIN"] + [
+        "DATA"
+    ] * 5 + ["END"]
     assert all("stepped" in e for e in ev)
     bad = tmp_path / "bad.jsonl"
     with pytest.raises(SystemExit) as e:

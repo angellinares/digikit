@@ -59,6 +59,7 @@ def test_a_put_is_begin_data_end_with_two_in_flight():
             return self.queue.pop(0)
 
     up = D.Uploader(Fake(), chunk=512)
+    up._file_hash_ok = True
     up.put("a.bin", bytes(512 * 5 + 7))
     cmds = [c for c, _ in sent]
     assert cmds == [D.CMD_BEGIN] + [D.CMD_DATA] * 6 + [D.CMD_END]
@@ -410,12 +411,10 @@ def test_read_errors_are_the_upload_statuses():
 
 
 def test_verify_request_and_reply():
-    import hashlib
-
     from tools.device.midisniff import unpack_8in7
     from tools.firmware.build import encode_8in7
 
-    sha = hashlib.sha256(b"abc").digest()
+    sha = D.file_hash(b"abc")
     seen = []
 
     class Fake:
@@ -430,6 +429,7 @@ def test_verify_request_and_reply():
             return m[:4] + bytes([1, m[5] | 0x40, m[6]]) + encode_8in7(out) + b"\xf7"
 
     up = D.Uploader(Fake())
+    up._file_hash_ok = True
     assert D.CMD_VERIFY == 0x17 and D.CAP["VERIFY"] == 8
     assert up.verify("modules/a.dkm") == sha.hex()
     assert seen[-1] == (0x17, b"modules/a.dkm\0")
@@ -440,7 +440,6 @@ def test_verify_request_and_reply():
 
 def test_folders_prefix_lists_ranged_verify_and_a_streamed_put(tmp_path):
     """Runtime 0.3.0: LIST with a prefix, MKDIR, VERIFY of a range, STORE in KiB, and `put_file` reads the file in pieces."""
-    import hashlib
     import struct
 
     from tools.device.midisniff import unpack_8in7
@@ -465,7 +464,7 @@ def test_folders_prefix_lists_ranged_verify_and_a_streamed_put(tmp_path):
                     out += p.encode() + b"\0" + struct.pack(">I", n) + h
                 out = b"\0" + out
             elif cmd == D.CMD_VERIFY:
-                out = b"\0" + hashlib.sha256(body).digest()
+                out = b"\0" + D.file_hash(body)
             else:
                 out = b"\0"
             self.queue.append(
@@ -476,6 +475,7 @@ def test_folders_prefix_lists_ranged_verify_and_a_streamed_put(tmp_path):
             return self.queue.pop(0)
 
     up = D.Uploader(Fake())
+    up._file_hash_ok = True
     assert [p for p, _, _ in up.ls("samples/")] == ["samples/a.wav", "samples/b"]
     assert seen[-1] == (D.CMD_LIST, struct.pack(">I", 0) + b"samples/\0")
     up.ls()
@@ -487,7 +487,7 @@ def test_folders_prefix_lists_ranged_verify_and_a_streamed_put(tmp_path):
     assert D.capacity_lines({"STORE": {"limit": 1000, "used": 10, "largest": 0}}) == [
         "capacity store: 10/1000 KiB"
     ]
-    # put_file: BEGIN carries the size and the sha256 of the whole file; the chunks are read from disk
+    # put_file: BEGIN carries the size and the file hash of the whole file; the chunks are read from disk
     src = tmp_path / "s.bin"
     data = bytes(range(256)) * 300  # 76,800 bytes: three chunks of 32 KiB
     src.write_bytes(data)
@@ -495,12 +495,9 @@ def test_folders_prefix_lists_ranged_verify_and_a_streamed_put(tmp_path):
     up.put_file("samples/s.bin", src)
     cmds = [c for c, _ in seen]
     assert cmds[0] == D.CMD_BEGIN and cmds[-1] == D.CMD_END
-    assert (
-        seen[0][1]
-        == b"samples/s.bin\0"
-        + struct.pack(">I", len(data))
-        + hashlib.sha256(data).digest()
-    )
+    assert seen[0][1] == b"samples/s.bin\0" + struct.pack(
+        ">I", len(data)
+    ) + D.file_hash(data)
     got = b"".join(b[4:] for c, b in seen if c == D.CMD_DATA)
     assert got == data
 
@@ -543,3 +540,58 @@ def test_remote_commands_use_the_generated_numbers_and_pace_a_turn():
         + ["REMOTE_TURN"] * 4
         + ["REMOTE_RELEASE"]
     ]
+
+
+def test_file_hash_is_the_odd_content_hash_then_28_zeros():
+    """The vectors of `dksample::file_hash` (the same table as packages/dk-session/tests/file-hash.test.ts)."""
+    want = {
+        0: "43fa243b",
+        1: "82ea421b",
+        5: "dc43f42f",
+        13: "ef8c52e1",
+        25: "36603f21",
+        1000: "ed9b9ced",
+        32775: "fc7a664d",
+    }
+    for n, h in want.items():
+        assert (
+            D.file_hash(bytes((i * 7 + 3) & 255 for i in range(n))).hex()
+            == h + "0" * 56
+        ), n
+    assert D.file_hash(b"abc").hex() == "49bec845" + "0" * 56
+
+
+def test_a_runtime_without_the_file_hash_capability_is_refused_at_once():
+    import struct
+
+    from tools.firmware.build import encode_8in7
+
+    seen = []
+
+    class Old:
+        def send(self, msg):
+            self.msg = msg
+            seen.append(msg[5])
+
+        def recv(self):
+            m = self.msg
+            # INFO of a runtime with the log range, runtime32 and caps (VERIFY only)
+            info = (
+                b"\0"
+                + struct.pack(">HH", 1, 0x300)
+                + b"p\0"
+                + struct.pack(">II", 100, 32768)
+                + b"\0"
+                + bytes(8)
+            )
+            info += struct.pack(">II", 0x300, 1 << D.CAP["VERIFY"])
+            return m[:4] + bytes([1, m[5] | 0x40, m[6]]) + encode_8in7(info) + b"\xf7"
+
+    up = D.Uploader(Old())
+    for call in (lambda: up.put("a.bin", b"x"), up.ls, lambda: up.verify("a.bin")):
+        with pytest.raises(
+            D.UploadError,
+            match="Update the firmware: this runtime uses the old store format",
+        ):
+            call()
+    assert set(seen) == {D.CMD_INFO}

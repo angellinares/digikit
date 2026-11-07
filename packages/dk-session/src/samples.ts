@@ -3,7 +3,7 @@
 //   "digikit"    the `samples/` folder of the digikit store, the runtime's SysEx commands (`DkSession`; the Digitone II)
 // Both take the file `prepareUpload` (dksample.ts) makes, the same native sample file, so a sampling engine reads one format. The result of a verify has one
 // shape on both: what the device keeps against what the host sent. Written without TS-only runtime syntax so node can import it.
-import { DkError, hasCap, hexSha256, storeSpace } from './dkupload-core.ts';
+import { DkError, fileHashHex, hasCap, storeSpace } from './dkupload-core.ts';
 import type { DkEntry, DkInfoFull, DkSession } from './dkupload-core.ts';
 import type { Prepared } from './dksample.ts';
 import { RpcFiles, verifyWritten } from './rpcfiles.ts';
@@ -33,7 +33,7 @@ export interface SampleVerified {
   sent: number;
   /** Offset of the first range that differs (digikit), else null. */
   mismatchAt: number | null;
-  /** What was compared, and a line for the page: "device sha256 matches", "device content hash matches", or why not. */
+  /** What was compared, and a line for the page: "device hash matches", "device content hash matches", or why not. */
   compared: string;
   message: string;
 }
@@ -143,10 +143,10 @@ class RpcSamples implements SamplesBackend {
 
 /** The folder of the store that holds samples. */
 export const STORE_FOLDER = 'samples';
-/** VERIFY covers at most this many bytes of a file at a time (the device hashes about 2 MB a second: a request for a large file would outlast the timeout). */
+/** VERIFY covers at most this many bytes of a file at a time (one request for a whole large file could outlast the timeout). */
 export const VERIFY_PIECE = 1 << 20;
 
-const isFolderEntry = (e: DkEntry) => e.size === 0 && /^0+$/.test(e.sha256);
+const isFolderEntry = (e: DkEntry) => e.size === 0 && /^0+$/.test(e.hash);
 
 class StoreSamples implements SamplesBackend {
   readonly kind = 'digikit' as const;
@@ -203,13 +203,13 @@ class StoreSamples implements SamplesBackend {
   async verify(folder: string, file: Prepared): Promise<SampleVerified> {
     const path = this.path(join(folder, file.name));
     const want = file.stored;
-    const host = await hexSha256(want);
+    const host = fileHashHex(want);
     const entry = (await this.under(path)).find((e) => e.path === path && !isFolderEntry(e));
     const base = {
       host,
       sent: want.length,
       mismatchAt: null,
-      compared: 'the device sha256 of the stored file, read from the card (VERIFY), with the sha256 of the bytes sent',
+      compared: 'the device hash of the stored file, read from the card (VERIFY), with the hash of the bytes sent',
     };
     if (!entry) return { ...base, ok: false, device: null, size: null, message: 'the device does not have the file' };
     // one VERIFY for a small file, ranges of VERIFY_PIECE for a large one (all the ranges equal: the whole file is equal)
@@ -219,7 +219,7 @@ class StoreSamples implements SamplesBackend {
       const part = want.subarray(off, Math.min(want.length, off + VERIFY_PIECE));
       const whole = want.length <= VERIFY_PIECE;
       const got = whole ? await this.s.verify(path) : await this.s.verify(path, off, part.length);
-      if (got !== (whole ? host : await hexSha256(part))) {
+      if (got !== (whole ? host : fileHashHex(part))) {
         device = got;
         mismatchAt = off;
         break;
@@ -233,10 +233,10 @@ class StoreSamples implements SamplesBackend {
       size: entry.size,
       mismatchAt,
       message: ok
-        ? 'device sha256 matches'
+        ? 'device hash matches'
         : mismatchAt === null
           ? 'the device file has another size'
-          : 'device sha256 differs',
+          : 'device hash differs',
     };
   }
   async remove(folder: string, name: string) {
