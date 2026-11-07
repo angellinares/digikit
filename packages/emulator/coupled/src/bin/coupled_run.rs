@@ -55,7 +55,9 @@
 //! flags each frame whose gap from the previous exchange is LO to HI ms of emulated time (at
 //! `DIGI_CF_IPS`: 0.667 ms is one period). The report gives `late_send`: the frames, the flagged
 //! ones and their counts. `--drop-late-sends` also drops each flagged frame: the DSP side gets the
-//! previous frame again (a model of the loss on a unit, finding 04).
+//! previous frame again (a model of the loss on a unit, finding 04). `--drop-sends N[,N...]` drops
+//! the chosen exchanges by number (1 is the first of the run), whatever their gap. The report's
+//! `late_send.dropped_at` gives each dropped exchange with its instruction count.
 //!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
@@ -146,6 +148,8 @@ struct Args {
     late_send: Option<(f64, f64)>,
     /// `--drop-late-sends`: the DSP side does not receive a flagged frame.
     drop_late_sends: bool,
+    /// `--drop-sends N[,N...]`: exchange numbers to drop whatever their gap.
+    drop_sends: Vec<u64>,
     /// `--span-baseline STOCK.json`: the stock report the spans are gated against.
     span_baseline: Option<Value>,
     /// `--span-max NAME=N`: the extra instructions over stock a span may add.
@@ -321,6 +325,18 @@ fn midi_out_events(log: &[(u64, Vec<u8>)], wire: u64) -> Value {
     Value::Array(events)
 }
 
+/// `N[,N...]`: exchange numbers, 1 or more.
+fn parse_drop_sends(spec: &str) -> Result<Vec<u64>, String> {
+    spec.split(',')
+        .map(|v| match v.trim().parse::<u64>() {
+            Ok(n) if n >= 1 => Ok(n),
+            _ => Err(format!(
+                "--drop-sends: {v} is not an exchange number (1 or more)"
+            )),
+        })
+        .collect()
+}
+
 fn parse_late_send(spec: &str) -> Result<(f64, f64), String> {
     let (lo, hi) = spec
         .split_once(',')
@@ -489,6 +505,7 @@ fn parse_args() -> Result<Args, String> {
         span_log: None,
         late_send: None,
         drop_late_sends: false,
+        drop_sends: Vec::new(),
         span_baseline: None,
         span_limits: Limits::default(),
         zero: false,
@@ -533,6 +550,9 @@ fn parse_args() -> Result<Args, String> {
                 a.late_send = Some(parse_late_send(&value("--late-send-window")?)?)
             }
             "--drop-late-sends" => a.drop_late_sends = true,
+            "--drop-sends" => a
+                .drop_sends
+                .extend(parse_drop_sends(&value("--drop-sends")?)?),
             "--span-baseline" => {
                 let path = value("--span-baseline")?;
                 let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
@@ -1063,9 +1083,13 @@ fn run_scenario(
     for (name, entry, exit) in &args.spans {
         rt.add_span(name, *entry, *exit);
     }
-    if let Some((lo, hi)) = args.late_send {
+    if args.late_send.is_some() || !args.drop_sends.is_empty() {
         let instr = |ms: f64| (ms / 1000.0 * cf_instructions_per_second()).round() as u64;
-        rt.set_late_send(instr(lo), instr(hi), args.drop_late_sends);
+        // No window: an empty one (LO > HI) flags nothing, and only the chosen sends drop.
+        let (lo, hi) = args
+            .late_send
+            .map_or((1, 0), |(lo, hi)| (instr(lo), instr(hi)));
+        rt.set_late_send(lo, hi, args.drop_late_sends, args.drop_sends.clone());
     }
     let start = probe(&mut rt)?;
     let initial_audio_health = rt.audio_report().unwrap_or(Value::Null);
@@ -1618,6 +1642,9 @@ mod tests {
         assert!(parse_late_send("0.8").is_err());
         assert!(parse_late_send("0.8,0.7").is_err());
         assert!(parse_late_send("-1,0.7").is_err());
+        assert_eq!(parse_drop_sends("120,7").unwrap(), [120, 7]);
+        assert!(parse_drop_sends("0").is_err());
+        assert!(parse_drop_sends("x").is_err());
     }
 
     #[test]

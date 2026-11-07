@@ -853,13 +853,14 @@ impl Emulator {
 
     /// Time each DSPI2 exchange (`late_send`): flag the frames whose gap from the previous
     /// exchange is `lo..=hi` instructions. With `drop` a flagged frame does not reach the DSP side:
-    /// the DSP gets the previous frame again. Install the DSP peer first: this wraps it.
-    pub fn set_late_send(&mut self, lo: u64, hi: u64, drop: bool) {
+    /// the DSP gets the previous frame again. Each exchange numbered in `drop_sends` (1 is the
+    /// first after this call) is dropped too. Install the DSP peer first: this wraps it.
+    pub fn set_late_send(&mut self, lo: u64, hi: u64, drop: bool, drop_sends: Vec<u64>) {
         let inner = std::mem::replace(
             &mut self.bus.board.dma.peer,
             Box::new(periph::dspi::ZeroPeer),
         );
-        let (late, peer) = crate::late_send::LateSend::wrap(inner, lo, hi, drop);
+        let (late, peer) = crate::late_send::LateSend::wrap(inner, lo, hi, drop, drop_sends);
         late.set_icount(self.cpu.icount);
         self.bus.board.dma.peer = peer;
         self.late_send = Some(late);
