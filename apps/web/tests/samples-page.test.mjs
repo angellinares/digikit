@@ -689,3 +689,190 @@ test('the delete texts: progress, what is left, and the armed button for a folde
   assert.equal(confirmDeleteLabel([folder('d')]), 'Delete this folder and everything in it?');
   assert.match(confirmDeleteLabel([folder('d'), file('a')]), /^Delete 2 items, folders with everything/);
 });
+
+// ---- skipping what the device holds already ----------------------------------------------------------------------------------------
+
+/** A backend with a device: `have` is folder -> name -> bytes. `sameOnDevice` compares size and bytes as the real backends compare size and hash. */
+const deviceBackend = (have = {}, { failList = null, cancelList = null } = {}) => {
+  const calls = [];
+  const base = fakeBackend();
+
+  return {
+    calls,
+    put: async (f, p, o) => {
+      calls.push(`put ${f}/${p.name}`);
+      return base.put(f, p, o);
+    },
+    verify: async (f, p) => {
+      calls.push(`verify ${f}/${p.name}`);
+      return base.verify(f, p);
+    },
+    async list(f) {
+      calls.push(`list ${f}`);
+      if (f === failList) throw new Error('{"error":"E_BUSY: card busy","kind":"device"}');
+      if (f === cancelList) throw cancelError();
+      return Object.entries(have[f] ?? {}).map(([name, b]) => ({
+        name,
+        kind: 'file',
+        size: b.length,
+        hash: b.join(','),
+      }));
+    },
+    sameOnDevice: (p, listing) =>
+      listing.some((e) => e.name === p.name && e.size === p.stored.length && e.hash === p.stored.join(',')),
+    async mkdir(f) {
+      calls.push(`mkdir ${f}`);
+    },
+  };
+};
+const bytesOf = (n, fill) => new Uint8Array(n).fill(fill);
+const filled = (folderPath, name, n, fill) => ({
+  folder: folderPath,
+  name,
+  size: n,
+  read: async () => bytesOf(n, fill),
+});
+const runAll = async (backend, mkdirs, items, stop) => {
+  let u = {};
+  const events = [];
+  await uploadItems(
+    backend,
+    prepare,
+    mkdirs,
+    items,
+    (e) => {
+      events.push(e);
+      u = applyUpload(u, e);
+    },
+    stop,
+  );
+  return { u, events };
+};
+
+test('a file that the device holds with the same bytes is skipped: no put, no verify, its own state, a Log line, counted as done', async () => {
+  const b = deviceBackend({ d: { a: bytesOf(10, 1), b: bytesOf(10, 2) } });
+  const { u } = await runAll(b, [], [filled('d', 'a', 10, 1), filled('d', 'b', 10, 9), filled('d', 'c', 10, 3)]);
+  assert.deepEqual(names(u), [
+    ['a', 'same'],
+    ['b', 'ok'],
+    ['c', 'ok'],
+  ]);
+  assert.deepEqual(b.calls, ['list d', 'put d/b', 'verify d/b', 'put d/c', 'verify d/c']);
+  assert.equal(u['d/a'].sent, 10);
+  assert.match(u['d/a'].message, /delete it and upload it again/);
+  assert.deepEqual(uploadLines(u, {}), ['a: already on the device', 'b: verified', 'c: verified']);
+  assert.equal(uploadFailure(u, {}), undefined);
+  assert.equal(uploadCancelled(u, {}), undefined);
+  assert.equal(uploadStatus(u['d/a']).kind, 'same');
+});
+
+test('the same name with another size, or other bytes of the same size, uploads and replaces', async () => {
+  const b = deviceBackend({ d: { a: bytesOf(10, 1), b: bytesOf(10, 2) } });
+  const { u } = await runAll(b, [], [filled('d', 'a', 11, 1), filled('d', 'b', 10, 3)]);
+  assert.deepEqual(names(u), [
+    ['a', 'ok'],
+    ['b', 'ok'],
+  ]);
+  assert.deepEqual(b.calls, ['list d', 'put d/a', 'verify d/a', 'put d/b', 'verify d/b']);
+});
+
+test('a WAV is compared as the device holds it: the converted file, under the name without the extension', async () => {
+  const b = deviceBackend({ d: { kick: bytesOf(10, 1) } });
+  const { u } = await runAll(b, [], [filled('d', 'kick.wav', 10, 1)]);
+  assert.deepEqual(names(u), [['kick', 'same']]);
+});
+
+test('each folder is listed once per run: 357 files in 3 folders are 3 listings', async () => {
+  const b = deviceBackend({ f0: { x: bytesOf(4, 7) } });
+  const items = [];
+  for (let i = 0; i < 357; i++) items.push(filled(`f${i % 3}`, `s${i}`, 4, 1));
+  const { u } = await runAll(b, [], items);
+  assert.equal(b.calls.filter((c) => c.startsWith('list ')).length, 3);
+  assert.equal(Object.values(u).filter((x) => x.state === 'ok').length, 357);
+});
+
+test('folders made by the run are not listed; a folder the device has is listed once, by the folder step and the compare together', async () => {
+  const b = deviceBackend({ '': { z: bytesOf(1, 1) }, loops: { a: bytesOf(10, 1) } });
+  b.list = ((list) => async (f) => {
+    const r = await list(f);
+    return f === '' ? [...r, { name: 'loops', kind: 'folder', size: 0 }] : r;
+  })(b.list);
+  const { u } = await runAll(
+    b,
+    ['loops', 'fresh'],
+    [filled('loops', 'a', 10, 1), filled('fresh', 'n', 10, 1), filled('fresh', 'm', 10, 2)],
+  );
+  assert.deepEqual(names(u), [
+    ['a', 'same'],
+    ['n', 'ok'],
+    ['m', 'ok'],
+  ]);
+  assert.deepEqual(
+    b.calls.filter((c) => c.startsWith('list ')),
+    ['list ', 'list loops'],
+  );
+  assert.deepEqual(
+    b.calls.filter((c) => c.startsWith('mkdir')),
+    ['mkdir fresh'],
+  );
+});
+
+test('a folder the device does not have: nothing to skip, everything uploads', async () => {
+  const b = deviceBackend({});
+  const { u } = await runAll(b, [], [filled('new', 'a', 10, 1)]);
+  assert.deepEqual(names(u), [['a', 'ok']]);
+});
+
+test('a listing that fails does not fail the run: the files upload, and one note says why', async () => {
+  const b = deviceBackend({ d: { a: bytesOf(10, 1) } }, { failList: 'd' });
+  const { u, events } = await runAll(b, [], [filled('d', 'a', 10, 1), filled('d', 'b', 10, 2)]);
+  assert.deepEqual(names(u), [
+    ['a', 'ok'],
+    ['b', 'ok'],
+  ]);
+  const notes = events.filter((e) => e.event === 'note');
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].message, /^d: could not list it, so every file goes: E_BUSY: card busy/);
+  assert.equal(uploadFailure(u, {}), undefined);
+  assert.equal(b.calls.filter((c) => c === 'list d').length, 1, 'a failed listing is not tried again for each file');
+});
+
+test('a backend without sameOnDevice or list uploads everything as before', async () => {
+  const b = folderBackend();
+  const { u } = await runAll(b, [], [filled('d', 'a', 10, 1)]);
+  assert.deepEqual(names(u), [['a', 'ok']]);
+  assert.ok(!b.calls.includes('list d'));
+});
+
+test('Cancel while a folder is listed: that file and the rest are cancelled, files skipped before stay skipped', async () => {
+  const b = deviceBackend({ d: { a: bytesOf(10, 1) } }, { cancelList: 'e' });
+  const { u } = await runAll(b, [], [filled('d', 'a', 10, 1), filled('e', 'b', 10, 1), filled('e', 'c', 10, 1)]);
+  assert.deepEqual(names(u), [
+    ['a', 'same'],
+    ['b', 'cancelled'],
+    ['c', 'cancelled'],
+  ]);
+  assert.equal(uploadFailure(u, {}), undefined);
+  assert.equal(uploadCancelled(u, {}), '0 of 3 uploaded, 1 already on the device, 2 not sent');
+  assert.ok(!b.calls.some((c) => c.startsWith('put')));
+});
+
+test('Cancel between skipped files stops the run', async () => {
+  let stop = false;
+  const b = deviceBackend({ d: { a: bytesOf(10, 1), b: bytesOf(10, 1), c: bytesOf(10, 1) } });
+  const { u } = await runAll(
+    b,
+    [],
+    [
+      filled('d', 'a', 10, 1),
+      { ...filled('d', 'b', 10, 1), read: async () => ((stop = true), bytesOf(10, 1)) },
+      filled('d', 'c', 10, 1),
+    ],
+    () => stop,
+  );
+  assert.deepEqual(names(u), [
+    ['a', 'same'],
+    ['b', 'cancelled'],
+    ['c', 'cancelled'],
+  ]);
+});

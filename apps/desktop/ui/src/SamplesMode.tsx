@@ -75,6 +75,7 @@ import {
   setSampleTicks,
   setUploadAverage,
   setUploadBase,
+  setUploadNotes,
   setUploads,
   uploads,
 } from './samples-state';
@@ -149,6 +150,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
       setNote('');
       const base = uploads();
       setUploadBase(base);
+      setUploadNotes([]);
       const started = Date.now();
       setUploadAverage(undefined);
       await uploadItems(
@@ -158,6 +160,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
         items,
         (e) => {
           noteActivity();
+          if (e.event === 'note') setUploadNotes((n) => [...n, e.message]);
           setUploads((u) => applyUpload(u, e));
         },
         stopWasAsked,

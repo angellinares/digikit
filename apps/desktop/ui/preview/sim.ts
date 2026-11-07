@@ -25,9 +25,11 @@ export interface SimState {
   mkdir: boolean;
   /** The second file of an upload cannot be sent (putfail=1). */
   putfail: boolean;
+  /** Names (comma separated) of files that the fake device holds already with the same bytes: an upload skips them (skip=kick,snare). */
+  skip: string;
 }
 
-export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir', 'putfail'] as const;
+export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir', 'putfail', 'skip'] as const;
 
 const query = new URLSearchParams(location.search);
 export const sim: SimState = {
@@ -38,6 +40,7 @@ export const sim: SimState = {
   mode: (query.get('mode') as SimState['mode']) ?? 'modules',
   mkdir: query.get('mkdir') !== '0',
   putfail: query.get('putfail') === '1',
+  skip: query.get('skip') ?? '',
 };
 
 export const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

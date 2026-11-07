@@ -150,6 +150,17 @@ const SCENES = [
     },
   },
   {
+    // a resumed upload: kick and snare are on the device already, hat is sent
+    name: 'samples-upload-skip',
+    q: 'mode=samples&speed=0.6&skip=kick,snare',
+    size: WIDE,
+    steps: async (p) => {
+      for (const n of ['kick', 'snare', 'hat']) await p.tick(`^Upload ${n}`);
+      await p.click(/^Upload/);
+      await p.wait(2500);
+    },
+  },
+  {
     name: 'samples-upload-failed',
     q: 'mode=samples&speed=12&putfail=1',
     size: WIDE,

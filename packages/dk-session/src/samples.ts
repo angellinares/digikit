@@ -3,19 +3,21 @@
 //   "digikit"    the `samples/` folder of the digikit store, the runtime's SysEx commands (`DkSession`; the Digitone II)
 // Both take the file `prepareUpload` (dksample.ts) makes, the same native sample file, so a sampling engine reads one format. The result of a verify has one
 // shape on both: what the device keeps against what the host sent. Written without TS-only runtime syntax so node can import it.
-import { DkError, fileHashHex, hasCap, storeSpace } from './dkupload-core.ts';
+import { DkError, concat, fileHashHex, hasCap, storeSpace } from './dkupload-core.ts';
 import type { DkEntry, DkInfoFull, DkSession } from './dkupload-core.ts';
 import type { Prepared } from './dksample.ts';
-import { RpcFiles, verifyWritten } from './rpcfiles.ts';
+import { RpcFiles, TRAILER, verifyWritten } from './rpcfiles.ts';
 import type { RpcPort } from './rpcfiles.ts';
 
 export type SamplesKind = 'stock-rpc' | 'digikit';
 
-/** A file or a folder of the listing; `size` is what the device reports. */
+/** A file or a folder of the listing; `size` is what the device reports. `hash` is the device's content hash of a file as the backend lists it
+ * (opaque: only `sameOnDevice` of the same backend reads it); absent for a folder. */
 export interface SampleEntry {
   name: string;
   kind: 'file' | 'folder';
   size: number;
+  hash?: string;
 }
 export interface SampleSpace {
   free: number;
@@ -63,6 +65,11 @@ export interface SamplesBackend {
   rmdir(folder: string): Promise<void>;
   /** Remove a folder and everything in it, file by file, then the folders. A failure names the file; a cancelled request is rethrown as it is. */
   removeTree(folder: string, o?: RemoveTreeOptions): Promise<RemoveTreeResult>;
+  /**
+   * Whether `listing` (what `list` returned for the folder the file goes into) holds a file of this name with exactly the bytes `file` will store:
+   * the same size and the same content hash. No request: the listing carries the device's hash. A listing cut short only makes this false.
+   */
+  sameOnDevice(file: Prepared, listing: readonly SampleEntry[]): boolean;
   put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void): Promise<void>;
   /** Compare the stored file with `file` (a device that does not have it, or has other bytes, reports `ok` false). */
   verify(folder: string, file: Prepared): Promise<SampleVerified>;
@@ -122,11 +129,16 @@ class RpcSamples implements SamplesBackend {
   }
   async list(folder = '') {
     const rows = await this.files.readDir(`/${clean(folder)}`);
-    return rows.map((e) => ({
-      name: e.name,
-      kind: e.kind === 'D' ? ('folder' as const) : ('file' as const),
-      size: e.size,
-    }));
+    return rows.map((e) =>
+      e.kind === 'D'
+        ? { name: e.name, kind: 'folder' as const, size: e.size }
+        : { name: e.name, kind: 'file' as const, size: e.size, hash: hex8(e.hash) },
+    );
+  }
+  sameOnDevice(file: Prepared, listing: readonly SampleEntry[]) {
+    // the +Drive lists the size without the trailer and `hash | 1` over the file with it (verifyWritten)
+    const e = listing.find((x) => x.name === file.name && x.kind === 'file');
+    return !!e && e.size === file.bytes.length && e.hash === hex8(this.hashOf(concat(file.bytes, TRAILER)));
   }
   async space() {
     const s = await this.files.space();
@@ -238,9 +250,13 @@ class StoreSamples implements SamplesBackend {
       const slash = rest.indexOf('/');
       if (slash >= 0) out.set(rest.slice(0, slash), { name: rest.slice(0, slash), kind: 'folder', size: 0 });
       else if (isFolderEntry(e)) out.set(rest, { name: rest, kind: 'folder', size: 0 });
-      else out.set(rest, { name: rest, kind: 'file', size: e.size });
+      else out.set(rest, { name: rest, kind: 'file', size: e.size, hash: e.hash });
     }
     return [...out.values()];
+  }
+  sameOnDevice(file: Prepared, listing: readonly SampleEntry[]) {
+    const e = listing.find((x) => x.name === file.name && x.kind === 'file');
+    return !!e && e.size === file.stored.length && e.hash === fileHashHex(file.stored);
   }
   async space() {
     return storeSpace(this.s);

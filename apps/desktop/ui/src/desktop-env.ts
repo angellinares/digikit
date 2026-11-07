@@ -22,6 +22,7 @@ import {
   setUploads,
   uploadBase,
   uploadAverage,
+  uploadNotes,
   uploads,
 } from './samples-state';
 import SamplesMode from './SamplesMode';
@@ -52,7 +53,7 @@ const samples: SamplesSlot = {
     const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading', uploadAverage());
     return info ? { info, running: busy === 'Uploading' } : undefined;
   },
-  lines: () => uploadLines(uploads(), uploadBase()),
+  lines: () => [...uploadNotes(), ...uploadLines(uploads(), uploadBase())],
   async localChanged() {
     if (!localFolder()) return false;
     const now = await listLocalNow();
