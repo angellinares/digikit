@@ -100,7 +100,7 @@
 #define DKRT_E_NOT_FOUND (-1)            /* no store, or no such file or module */
 #define DKRT_E_BAD_STORE (-2)            /* store header or table check failed */
 #define DKRT_E_READ (-3)                 /* the firmware's block read failed */
-#define DKRT_E_SHA (-4)                  /* store or .dkm sha256 does not match */
+#define DKRT_E_SHA (-4)                  /* store file hash or .dkm sha256 does not match */
 #define DKRT_E_FORMAT (-5)               /* bad magic, version, bounds or alignment of the .dkm */
 #define DKRT_E_RUNTIME (-6)              /* the module needs a newer runtime */
 #define DKRT_E_IMPORT (-7)               /* an import name is not in the runtime's table */
@@ -222,7 +222,7 @@ typedef struct DkrtStoreEntry {
     uint32_t size;
 } DkrtStoreEntry;
 
-/* A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the sha256 of the table entry. The file's sectors are contiguous: sector n of the file is store sector first + n. */
+/* A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the file hash slot of the table entry (the content hash, 4 bytes big-endian, then 28 zeros). The file's sectors are contiguous: sector n of the file is store sector first + n. */
 typedef struct DkrtStoreFile {
     uint32_t first;
     uint32_t size;

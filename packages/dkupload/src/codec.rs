@@ -1,7 +1,5 @@
 //! Framing and 8-in-7 packing (docs/design/digikit-upload.md, "Framing").
 
-use sha2::{Digest, Sha256};
-
 pub const HEAD: [u8; 5] = [0xF0, 0x7D, 0x64, 0x6B, 0x01];
 pub const REPLY_BIT: u8 = 0x40;
 
@@ -88,9 +86,7 @@ pub fn decode(msg: &[u8]) -> Result<Message, String> {
     })
 }
 
-pub fn sha256(data: &[u8]) -> [u8; 32] {
-    Sha256::digest(data).into()
-}
+pub use dksample::file_hash;
 
 /// The store's path rules: 1 to 159 bytes, `/` separated, no empty, `.` or `..` part, no NUL.
 pub fn path_ok(path: &str) -> bool {

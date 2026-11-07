@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { Dk, DkClient, DkError, MockTransport, repackMissing, storePath, hexSha256 } from '@digi/dk-session';
+import { Dk, DkClient, DkError, MockTransport, repackMissing, storePath, fileHashHex } from '@digi/dk-session';
 import { WebMidiTransport, listPorts, portLabel } from '../src/modules/webmidi.ts';
 
 const wasm = join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'public/dkupload.wasm');
@@ -29,7 +29,7 @@ test('info, put, list, delete', { skip }, async () => {
   for (const [k, n] of sizes.entries()) {
     const e = list.find((x) => x.path === `modules/f${k}.dkm`);
     assert.equal(e.size, n);
-    assert.equal(e.sha256, await hexSha256(data(n, k)));
+    assert.equal(e.hash, fileHashHex(data(n, k)));
   }
   await c.delete('modules/f1.dkm');
   assert.equal((await c.list()).length, 4);
@@ -81,7 +81,7 @@ test('E_FULL carries the free bytes; delete frees space; repack; progress and ca
   await c.delete('modules/a.dkm');
   await c.put('modules/big.dkm', big);
   const listing = await c.list();
-  const lib = [{ path: 'modules/b.dkm', sha256: await hexSha256(b) }];
+  const lib = [{ path: 'modules/b.dkm', hash: fileHashHex(b) }];
   assert.deepEqual(repackMissing(listing, lib), ['modules/big.dkm']);
   await c.repack([
     { path: 'modules/a.dkm', data: a },

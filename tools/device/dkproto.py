@@ -77,7 +77,7 @@ STATUS: dict[int, tuple[str, str]] = {
     -53: ("E_STATE", "no upload open (or not in this state)"),
     -54: ("E_OFFSET", "offset is neither the next byte nor a retry"),
     -55: ("E_LENGTH", "bad chunk length, or the file would pass its size"),
-    -56: ("E_HASH", "the staged file does not match the sha256 of BEGIN"),
+    -56: ("E_HASH", "the staged file does not match the file hash of BEGIN"),
     -57: ("E_WRITE", "the firmware's block write failed"),
     -58: ("E_READ", "the firmware's block read failed"),
     -59: ("E_NOFILE", "that path is not in the store"),
@@ -103,7 +103,7 @@ LOAD_STATUS: dict[int, tuple[str, str]] = {
     -1: ("E_NOT_FOUND", "no store, or no such file or module"),
     -2: ("E_BAD_STORE", "store header or table check failed"),
     -3: ("E_READ", "the firmware's block read failed"),
-    -4: ("E_SHA", "store or .dkm sha256 does not match"),
+    -4: ("E_SHA", "store file hash or .dkm sha256 does not match"),
     -5: ("E_FORMAT", "bad magic, version, bounds or alignment of the .dkm"),
     -6: ("E_RUNTIME", "the module needs a newer runtime"),
     -7: ("E_IMPORT", "an import name is not in the runtime's table"),
@@ -157,6 +157,7 @@ CAP: dict[str, int] = {
     "SERVICE_CMDS": 9,
     "FOLDERS": 10,
     "SETTINGS": 11,
+    "FILEHASH": 12,
 }
 
 RANGES: dict[str, tuple[int, int]] = {

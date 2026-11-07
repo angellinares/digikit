@@ -5,7 +5,7 @@ export interface CardFile {
   /** Relative to `digikit/` of the folder. */
   path: string;
   bytes: number;
-  sha256: string;
+  hash: string;
 }
 
 /** The answer of the controller's `card.folder` / `card.sync`. */

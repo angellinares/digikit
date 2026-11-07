@@ -1,5 +1,7 @@
 # digikit
 
+> 🧪 **digikit is experimental.** It will be released as stable once it reaches 1.0.0.
+
 digikit adds new machines and effects to the Elektron **Digitakt II** and **Digitone II**. It patches your own copy of
 the stock firmware with a small runtime. The runtime loads modules from its own area on the device's card, so you can add or change
 a machine without flashing again. An emulator runs the real firmware on your computer, so you can test everything

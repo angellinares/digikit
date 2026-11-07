@@ -36,6 +36,7 @@ mod sample;
 mod sample_source;
 mod tracks;
 mod files;
+mod hash32;
 mod sha256;
 pub mod store;
 mod table;

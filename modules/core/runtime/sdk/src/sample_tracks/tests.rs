@@ -894,7 +894,7 @@ fn a_store_file_is_inspected_with_the_native_header_and_its_table_sha() {
     assert_eq!((i.frames, i.channels, i.rate), (100, 2, 48000));
     assert_eq!(
         (i.id.size, i.id.hash_kind, i.id.flags),
-        (size, crate::files::HASH_SHA256, ID_HASH_VALID)
+        (size, crate::files::HASH_ELEKTRON32, ID_HASH_VALID)
     );
     assert_eq!(i.id.hash, sha);
     assert!(i.id.same(&store_identity(size, &sha)));

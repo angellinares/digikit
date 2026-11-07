@@ -64,7 +64,7 @@ export function fit(req: FitRequest): FitAnswer {
 
 /** null when the module fits `caps`, else the first short resource. */
 export function fitsNow(n: Needs, caps: Caps, empty = false): Short | null {
-  return fit({ caps, needs: [n], empty }).each[0];
+  return fit({ caps, needs: [n], empty }).each[0] ?? null;
 }
 
 /** null when all the modules fit in turn into the empty runtime of the next boot (`empty`) or into `caps`, else the first that does not. */

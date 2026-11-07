@@ -13,7 +13,7 @@ name = "dkupload"
 path = "src/lib.rs"
 crate-type = ["rlib", "cdylib"]
 
-# std only, and sha2 (already in the workspace). Builds for wasm32 (src/wasm.rs is the C ABI the web app loads).
+# std only, and dksample (the content hash). Builds for wasm32 (src/wasm.rs is the C ABI the web app loads).
 [dependencies]
-sha2 = "0.10"
+dksample = { path = "../dksample" }
 serde_json = "1"

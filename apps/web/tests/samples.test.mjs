@@ -1,13 +1,12 @@
 // The samples API (samples.ts) over both backends with fake transports: the backend follows the profile's `[storage] samples` value, and the same calls give the same
 // shapes on a fake +Drive (stock MidiRpc, fakedrive.mjs) and a fake digikit store session.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { DkError, DkSession } from '@digi/dk-session';
+import { DkError, DkSession, fileHashHex } from '@digi/dk-session';
 import { VERIFY_PIECE, openSamples } from '@digi/dk-session/samples';
 import { FakeDrive, hashOf } from './fakedrive.mjs';
 
-const sha = (b) => createHash('sha256').update(b).digest('hex');
+const sha = fileHashHex;
 const ZERO = '0'.repeat(64);
 const FOLDERS = 1 << 10;
 const CAPACITY = 1 << 6;
@@ -29,8 +28,8 @@ class FakeStore {
   async list(prefix) {
     this.calls.push(prefix === undefined ? 'list' : `list ${prefix}`);
     const rows = [
-      ...[...this.files].map(([path, b]) => ({ path, size: b.length, sha256: sha(b) })),
-      ...[...this.dirs].map((path) => ({ path, size: 0, sha256: ZERO })),
+      ...[...this.files].map(([path, b]) => ({ path, size: b.length, hash: sha(b) })),
+      ...[...this.dirs].map((path) => ({ path, size: 0, hash: ZERO })),
     ];
     return rows.filter((e) => !prefix || e.path.startsWith(prefix));
   }
@@ -137,7 +136,7 @@ for (const kind of ['stock-rpc', 'digikit']) {
 
     const ok = await dev.verify('drums', f);
     assert.equal(ok.ok, true);
-    assert.equal(ok.message, kind === 'stock-rpc' ? 'device content hash matches' : 'device sha256 matches');
+    assert.equal(ok.message, kind === 'stock-rpc' ? 'device content hash matches' : 'device hash matches');
     assert.equal(ok.device, ok.host);
     assert.equal(ok.sent, kind === 'stock-rpc' ? n : n + 16);
     assert.equal(ok.mismatchAt, null);

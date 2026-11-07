@@ -19,9 +19,9 @@ const state = {
 };
 
 const files = [
-  { path: 'modules/pluck.dkm', bytes: 2260, sha256: 'aa' },
-  { path: 'modules/sine.dkm', bytes: 932, sha256: 'bb' },
-  ...(device === 'dt2' ? [{ path: 'samples/kick.wav', bytes: 48_212, sha256: 'cc' }] : []),
+  { path: 'modules/pluck.dkm', bytes: 2260, hash: 'aa' },
+  { path: 'modules/sine.dkm', bytes: 932, hash: 'bb' },
+  ...(device === 'dt2' ? [{ path: 'samples/kick.wav', bytes: 48_212, hash: 'cc' }] : []),
 ];
 
 /** Only a device whose card is built from the folder (a path filesystem: the Digitakt II) needs a reload to take a new folder. */

@@ -49,7 +49,7 @@ const PATTERN = Buffer.from(Array.from({ length: SECTOR }, (_, i) => (i * 7 + 3)
 function storeHeader(count: number, tableCrc: number, seq: number, used: number, sectors: number): Buffer {
   const b = Buffer.alloc(SECTOR);
   b.write('DKST', 0);
-  [3, count, 1, 1, tableCrc, seq, used, sectors].forEach((v, i) => b.writeUInt32BE(v, 4 + 4 * i));
+  [4, count, 1, 1, tableCrc, seq, used, sectors].forEach((v, i) => b.writeUInt32BE(v, 4 + 4 * i));
   b.writeUInt32BE(zlib.crc32(b.subarray(0, 508)), 508);
   return b;
 }

@@ -39,6 +39,7 @@ import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
+from tools.device import dkupload  # noqa: E402
 from tools.emulator import digi_env, native_target  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import pk_device  # noqa: E402
@@ -147,7 +148,7 @@ def build_plusdrive() -> pathlib.Path:
 def store_listing(
     plusdrive: pathlib.Path, image: pathlib.Path, device: str
 ) -> dict[str, tuple[int, int, str]]:
-    """`plusdrive store ls`: path -> (first sector relative to the store, bytes, sha256)."""
+    """`plusdrive store ls`: path -> (first sector relative to the store, bytes, file hash slot hex)."""
     done = subprocess.run(
         [str(plusdrive), "store", "ls", str(image), "--device", device],
         cwd=ROOT, env=python_env(), capture_output=True, text=True, check=True,
@@ -223,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         subprocess.run(build, cwd=ROOT, env=python_env(), check=True)
         listing = store_listing(release / "plusdrive", image, device)
         expect_store = {
-            path: (hashlib.sha256(data).hexdigest(), len(data))
+            path: (dkupload.file_hash(data).hex(), len(data))
             for path, data in store.items()
         }
         got_store = {path: (row[2], row[1]) for path, row in listing.items()}

@@ -250,7 +250,7 @@ const _: () = assert!(offset_of!(DkrtStoreEntry, path) == 0, "DkrtStoreEntry.pat
 const _: () = assert!(offset_of!(DkrtStoreEntry, first) == 64, "DkrtStoreEntry.first");
 const _: () = assert!(offset_of!(DkrtStoreEntry, size) == 68, "DkrtStoreEntry.size");
 
-/// A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the sha256 of the table entry. The file's sectors are contiguous: sector n of the file is store sector first + n.
+/// A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the file hash slot of the table entry (the content hash, 4 bytes big-endian, then 28 zeros). The file's sectors are contiguous: sector n of the file is store sector first + n.
 #[repr(C)]
 pub struct DkrtStoreFile {
     pub first: u32,

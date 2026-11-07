@@ -3,7 +3,7 @@
 // Nothing is built here and no process is started.
 import { DkNeeds } from '../modules/dkneeds';
 import { setFitReader } from '../modules/fit';
-import { fmtVersion, hexSha256, storePath } from '@digi/dk-session';
+import { fileHashHex, fmtVersion, storePath } from '@digi/dk-session';
 import {
   buildView,
   deleteFiles,
@@ -86,7 +86,7 @@ export const transferBackend = {
     const library = await loadLibrary(info.port);
     return asked(() => buildView(s, library));
   },
-  /** Upload and VERIFY the modules (the same sha256 is not sent again). The device's selection is not touched. */
+  /** Upload and VERIFY the modules (the same file hash is not sent again). The device's selection is not touched. */
   async install(modules: string[], onEvent: (e: TransferEvent) => void): Promise<void> {
     const { s, info } = await opened();
     const library = await loadLibrary(info.port);
@@ -102,15 +102,15 @@ export const transferBackend = {
     const s = await asked(running);
     await asked(() => restartDevice(s, onEvent));
   },
-  /** Put .dkm files from outside the library on the card (the same sha256 is not sent again); returns what was done, one line each. */
+  /** Put .dkm files from outside the library on the card (the same file hash is not sent again); returns what was done, one line each. */
   async add(files: { name: string; data: Uint8Array }[]): Promise<string[]> {
     const s = await asked(running);
     return asked(async () => {
-      const onCard = new Map((await s.list()).map((e) => [e.path, e.sha256]));
+      const onCard = new Map((await s.list()).map((e) => [e.path, e.hash]));
       const lines: string[] = [];
       for (const f of files) {
         const path = storePath(f.name);
-        if (onCard.get(path) === (await hexSha256(f.data))) {
+        if (onCard.get(path) === fileHashHex(f.data)) {
           lines.push(`${path}: already on the card`);
           continue;
         }

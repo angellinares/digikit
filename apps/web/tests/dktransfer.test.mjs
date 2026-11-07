@@ -84,6 +84,18 @@ test('framing: the vectors of the spec, round trips, partial groups, message spl
   assert.deepEqual([...s.rest], [0xf0, 2, 3]);
 });
 
+test('session: a runtime without the file hash capability is refused at once, before any file command', async () => {
+  const dev = new FakeDevice();
+  dev.caps = Object.values(CAP).reduce((a, bit) => (bit === CAP.FILEHASH ? a : a | (1 << bit)), 0);
+  const s = session(dev);
+  const want = (e) =>
+    e instanceof DkError && e.message === 'Update the firmware: this runtime uses the old store format';
+  await assert.rejects(s.put('modules/a.dkm', dkm('x/0')), want);
+  await assert.rejects(s.list(), want);
+  await assert.rejects(s.verify('modules/a.dkm'), want);
+  assert.equal(dev.files.size, 0);
+});
+
 test('session: info with caps, list in pages, modules, capacity, read, verify, select', async () => {
   const dev = new FakeDevice();
   for (const [i, n] of ['modules/a.dkm', 'modules/b.dkm', 'modules/c.dkm'].entries())
@@ -104,7 +116,7 @@ test('session: info with caps, list in pages, modules, capacity, read, verify, s
     ls.map((e) => e.path),
     ['modules/a.dkm', 'modules/b.dkm', 'modules/c.dkm'],
   ); // three entries, two per page
-  assert.equal(ls[0].sha256, hex(sha(dev.files.get('modules/a.dkm'))));
+  assert.equal(ls[0].hash, hex(sha(dev.files.get('modules/a.dkm'))));
   assert.deepEqual(
     (await s.modules()).map((m) => [m.name, m.types, m.contracts[1]]),
     [['someone/machine', [17], [1, 0]]],
@@ -184,7 +196,7 @@ test('header, library module, the merged list', async () => {
   assert.equal(await libraryModule(new Uint8Array(300)), null);
   const lm = await libraryModule(mach, needsOf);
   assert.deepEqual(
-    [lm.id, lm.label, lm.test, lm.path, lm.file_size, lm.sha256],
+    [lm.id, lm.label, lm.test, lm.path, lm.file_size, lm.hash],
     ['someone/machine', 'machine', false, 'modules/machine.dkm', 900, hex(sha(mach))],
   );
   assert.deepEqual([lm.needs.ARENA, lm.needs.DSP_AREA, lm.needs.file_size], [120, 64, 900]);
@@ -202,10 +214,10 @@ test('header, library module, the merged list', async () => {
 
   const library = [await libraryModule(sine, needsOf), lm, await libraryModule(tool, needsOf)];
   const card = [
-    { path: 'modules/machine.dkm', size: 900, sha256: hex(sha(mach)) }, // same file
-    { path: 'modules/tool.dkm', size: 500, sha256: 'ff' }, // same path, other bytes
-    { path: 'modules/other.dkm', size: 700, sha256: 'aa' }, // not from the library
-    { path: 'modules/junk.dkm', size: 9, sha256: 'bb' },
+    { path: 'modules/machine.dkm', size: 900, hash: hex(sha(mach)) }, // same file
+    { path: 'modules/tool.dkm', size: 500, hash: 'ff' }, // same path, other bytes
+    { path: 'modules/other.dkm', size: 700, hash: 'aa' }, // not from the library
+    { path: 'modules/junk.dkm', size: 9, hash: 'bb' },
   ];
   const headers = { 'modules/other.dkm': dkm('someone/effect', { fx: 1, size: 700 }), 'modules/junk.dkm': null };
   // the device has 1000 bytes of DSP area, 50 of them in one free piece (a loaded module sits in the rest)
@@ -313,7 +325,7 @@ test('free space above 4 GiB: INFO saturates at 2^32 - 1, CAPACITY STORE (KiB) d
   assert.equal((await buildView(s, [])).free_bytes, 4294967295);
 });
 
-test('install: skip the same sha256, upload the rest with capped progress, VERIFY each, no SELECT', async () => {
+test('install: skip the same file hash, upload the rest with capped progress, VERIFY each, no SELECT', async () => {
   const dev = new FakeDevice();
   const mach = dkm('someone/machine', { machine: 1, size: 900 });
   const big = dkm('test/big', { size: 20000 });
@@ -441,7 +453,7 @@ test('LIST by prefix pages through the matches; MKDIR makes a folder entry that 
       ['samples/two.wav', 700],
     ],
   );
-  assert.equal(under[0].sha256, '0'.repeat(64));
+  assert.equal(under[0].hash, '0'.repeat(64));
   assert.equal((await s.list()).length, 5);
   await s.put('samples/empty/x.wav', new Uint8Array(512));
   assert.deepEqual(

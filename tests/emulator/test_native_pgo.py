@@ -870,3 +870,13 @@ def test_auto_clean_failure_does_not_fail_training(monkeypatch, capsys):
     monkeypatch.setattr(native_pgo, "clean_all", boom)
     native_pgo.auto_clean()
     assert "pgo clean failed: disk gone" in capsys.readouterr().err
+
+
+def test_the_tree_digest_ignores_generated_output_inside_a_crate(tmp_path):
+    """A test run that writes `out/` into a crate must not make the profile stale."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "lib.rs").write_text("fn main() {}")
+    before = [p.name for p in native_pgo.tree_files(tmp_path)]
+    (tmp_path / "out" / "x").mkdir(parents=True)
+    (tmp_path / "out" / "x" / "REPORT.txt").write_text("report")
+    assert [p.name for p in native_pgo.tree_files(tmp_path)] == before == ["lib.rs"]

@@ -16,7 +16,7 @@ pub mod session;
 pub mod wasm;
 
 pub use codec::{
-    Message, decode, decode_8in7, encode, encode_8in7, encode_request, path_ok, sha256,
+    Message, decode, decode_8in7, encode, encode_8in7, encode_request, file_hash, path_ok,
 };
 pub use proto::{Entry, Error, Info, ListPage, Status};
 pub use put::PutMachine;

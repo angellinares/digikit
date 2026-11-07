@@ -27,7 +27,7 @@ struct Chunk {
 pub struct PutMachine {
     path: String,
     data: Vec<u8>,
-    sha: [u8; 32],
+    hash: [u8; 32],
     seq: u8,
     phase: Phase,
     begin: Option<u8>,
@@ -58,11 +58,11 @@ impl PutMachine {
                 retries: 0,
             })
             .collect();
-        let sha = sha256(&data);
+        let hash = file_hash(&data);
         Ok(PutMachine {
             path: path.into(),
             data,
-            sha,
+            hash,
             seq: seq & 0x7f,
             phase: Phase::Begin,
             begin: None,
@@ -99,8 +99,8 @@ impl PutMachine {
             .map(|c| c.len as u64)
             .sum()
     }
-    pub fn sha256(&self) -> [u8; 32] {
-        self.sha
+    pub fn hash(&self) -> [u8; 32] {
+        self.hash
     }
     pub fn path(&self) -> &str {
         &self.path
@@ -120,7 +120,7 @@ impl PutMachine {
                 }
                 let s = self.take_seq();
                 self.begin = Some(s);
-                let body = begin_body(&self.path, self.data.len() as u32, &self.sha).ok()?;
+                let body = begin_body(&self.path, self.data.len() as u32, &self.hash).ok()?;
                 Some(encode_request(CMD_BEGIN, s, &body))
             }
             Phase::Data => {

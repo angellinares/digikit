@@ -6,9 +6,9 @@
 //     node tools/devtools/upload_bench.mjs SOCKET [--bytes N] [--chunk N] [--runs N] [--verify-piece N] [--path P] [--check-sizes N,N,...]
 //
 // One JSON line per run on stdout: wall seconds and MB/s of the upload and of VERIFY, guest instructions per file byte, the real-time factor.
-// With `--check-sizes` instead one line per file size and no timing: the hash and 8-in-7 paths of the runtime against the host's SHA-256.
+// With `--check-sizes` instead one line per file size and no timing: the hash and 8-in-7 paths of the runtime against the host's file hash.
 import { randomBytes } from 'node:crypto';
-import { DkSession, hexSha256 } from '../../packages/dk-session/src/index.ts';
+import { DkSession, fileHashHex } from '../../packages/dk-session/src/index.ts';
 import { connect } from './emu_midi.mjs';
 
 const [socketPath, ...flags] = process.argv.slice(2);
@@ -34,13 +34,13 @@ if (sizes !== null) {
   let bad = 0;
   for (const n of sizes.split(',').map(Number)) {
     const data = Uint8Array.from(randomBytes(n));
-    const want = await hexSha256(data);
+    const want = fileHashHex(data);
     await session.put(`check/f${n}`, data);
     const whole = await session.verify(`check/f${n}`);
     let ranged = true;
     for (let off = 0; off < n; off += 4096) {
       const part = data.subarray(off, Math.min(n, off + 4096));
-      if ((await session.verify(`check/f${n}`, off, part.length)) !== (await hexSha256(part))) ranged = false;
+      if ((await session.verify(`check/f${n}`, off, part.length)) !== fileHashHex(part)) ranged = false;
     }
     const ok = whole === want && ranged;
     if (!ok) bad++;
@@ -59,6 +59,8 @@ const snap = async () => {
     audio: s.audio?.source_audio_seconds ?? null,
     cpu: s.controller_cpu_ns / 1e9,
     dsp: s.audio?.dsp_tiers?.worker_cpu_s ?? null,
+    stalls: s.heartbeat?.stall_count ?? null,
+    underruns: s.heartbeat?.underrun_count ?? null,
   };
 };
 const rate = (a, b) => {
@@ -71,6 +73,8 @@ const rate = (a, b) => {
     audio_s: b.audio === null ? null : +(b.audio - a.audio).toFixed(3),
     cf_cpu_s: +(b.cpu - a.cpu).toFixed(3),
     dsp_cpu_s: b.dsp === null ? null : +(b.dsp - a.dsp).toFixed(3),
+    stall_count: b.stalls,
+    underrun_count: b.underruns,
   };
 };
 
@@ -118,7 +122,7 @@ for (let run = 0; run < runs; run++) {
     for (let off = 0; off < data.length; off += piece) {
       const part = data.subarray(off, Math.min(data.length, off + piece));
       const got = await session.verify(path, off, part.length);
-      if (got !== (await hexSha256(part))) ok = false;
+      if (got !== fileHashHex(part)) ok = false;
     }
   } catch {
     ok = false;

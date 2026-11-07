@@ -102,7 +102,7 @@ impl Mirror {
         json!({
             "folder": self.dir.display().to_string(),
             "continuous": true,
-            "files": files.iter().map(|f| json!({"path": f.path, "bytes": f.bytes, "sha256": f.sha256})).collect::<Vec<_>>(),
+            "files": files.iter().map(|f| json!({"path": f.path, "bytes": f.bytes, "hash": f.hash})).collect::<Vec<_>>(),
             "last_sync": self.last_sync_ms,
             "last": self.last,
             "behind": self.behind(),

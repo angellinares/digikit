@@ -200,7 +200,7 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
                   <ul class="files">
                     <For each={g.files}>
                       {(f) => (
-                        <li title={`${f.path}\nsha256 ${f.sha256}`}>
+                        <li title={`${f.path}\nhash ${f.hash}`}>
                           <span class="name">{nameInGroup(f.path, g.folder)}</span>
                           <span class="size">{formatBytes(f.bytes)}</span>
                         </li>

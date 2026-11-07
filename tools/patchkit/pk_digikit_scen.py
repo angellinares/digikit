@@ -288,7 +288,7 @@ class Ctx:
         written over the card, bytes that are not ours in the store range. Returns the cached file."""
         h = hashlib.sha256(self.image.encode())
         # the store format and area are part of the key: a card built for another area or version is not this card
-        h.update(b"store-v3.1" + repr(self.store).encode())
+        h.update(b"store-v4.0" + repr(self.store).encode())
         store_dir = self.env.folder / "digikit"
         for f in sorted(store_dir.rglob("*")):
             if f.is_file():

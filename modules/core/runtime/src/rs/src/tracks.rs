@@ -236,7 +236,7 @@ fn root() -> &'static [u8] {
     }
 }
 
-/// DN2: a `samples/...` file of the digikit store. Identity is its size and the sha256 of its table entry (the listing row's), and `head` is
+/// DN2: a `samples/...` file of the digikit store. Identity is its size and the file hash of its table entry (the listing row's), and `head` is
 /// the first 64 bytes of the file. `path` is not NUL-terminated.
 unsafe fn probe_store(path: &[u8], head: Option<&mut [u8; 64]>) -> Result<FileId, i32> {
     if path.is_empty() || path.len() >= dkrt_sdk::sample_tracks::PATH {

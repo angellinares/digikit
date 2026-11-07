@@ -221,13 +221,13 @@ int32_t dkrt_store_stat(const uint8_t *path, DkrtStoreFile *out);
 int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count, uint8_t *dst);
 ```
 
-`stat` looks a digikit store file up by path (NUL-terminated, store form `samples/...`): `first` is the first sector relative to the store, `size` in bytes, `sha` the table entry's sha256. A file's sectors are contiguous: file sector n is store sector `first + n`. It scans the table through the runtime's staging buffer, so call it at the start of a load only. `E_NOT_FOUND` for no store, no such file or a folder.
+`stat` looks a digikit store file up by path (NUL-terminated, store form `samples/...`): `first` is the first sector relative to the store, `size` in bytes, `sha` the table entry's file hash slot (the +Drive content hash, 4 bytes big-endian, then 28 zeros). A file's sectors are contiguous: file sector n is store sector `first + n`. It scans the table through the runtime's staging buffer, so call it at the start of a load only. `E_NOT_FOUND` for no store, no such file or a folder.
 
 `read` reads `count` sectors (1 to 128) from file sector `sector` into `dst`: no staging buffer, no sha check. `dst` must be 16-byte aligned (`E_CONTRACT`); the range must lie inside the file rounded up to whole sectors (`E_RANGE`); a card error gives `E_READ`. Mono page k of the DN2 transport (file bytes `64 + 4096k` to `64 + 4096(k+1)`) is file sectors `8k .. 8k+8`, 9 sectors, as the pool design says. Both run in the UI-loop task. The range arithmetic is `dkrt_sdk::store::file_span` (host-tested). DT2 has no use for them (the stock loader reads +Drive).
 
 ### 6.6 DN2 probe
 
-`tracks.rs` `inspect` and `stat` work on DN2: the file is `samples/...` in the digikit store; identity is its size and the sha256 of its table entry (`hash_kind = DK_FILE_HASH_SHA256`, the same values a DN2 listing row has, so the pool dedups by it); the header is the first 64 bytes, parsed by `sample::native_header` as on DT2 (`store_inspect`). `sample_pool_add` on DN2 reaches the pool plug-in; it returns `E_CONTRACT` while no DN2 pool adapter is in the image (the `sample-tracks` patch set has one).
+`tracks.rs` `inspect` and `stat` work on DN2: the file is `samples/...` in the digikit store; identity is its size and the file hash of its table entry (`hash_kind = DK_FILE_HASH_ELEKTRON32`, the kind and value a DT2 file has and a DN2 listing row has, so the pool dedups by it); the header is the first 64 bytes, parsed by `sample::native_header` as on DT2 (`store_inspect`). `sample_pool_add` on DN2 reaches the pool plug-in; it returns `E_CONTRACT` while no DN2 pool adapter is in the image (the `sample-tracks` patch set has one).
 
 ### 6.7 Api minor of a `.dkm`
 
