@@ -51,6 +51,12 @@
 //! `tests/scenarios/dn2-load.json` holds the load scenarios for the gate. `--scenarios` is
 //! repeatable, so one run can take `dn2.json` and `dn2-load.json`.
 //!
+//! `--late-send-window LO,HI` times each DSPI2 exchange, when a frame goes to the DSP side, and
+//! flags each frame whose gap from the previous exchange is LO to HI ms of emulated time (at
+//! `DIGI_CF_IPS`: 0.667 ms is one period). The report gives `late_send`: the frames, the flagged
+//! ones and their counts. `--drop-late-sends` also drops each flagged frame: the DSP side gets the
+//! previous frame again (a model of the loss on a unit, finding 04).
+//!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
 //! min, mean, p50, p99, max and `over_period`, a period being one DSPI2 frame at `DIGI_CF_IPS`). On
@@ -136,6 +142,10 @@ struct Args {
     calls: Vec<(u32, Vec<CallArg>)>,
     /// `--span-log PATH`: every span pass as a JSON line, `-<scenario>` before the extension.
     span_log: Option<PathBuf>,
+    /// `--late-send-window LO,HI`: the gap window in ms.
+    late_send: Option<(f64, f64)>,
+    /// `--drop-late-sends`: the DSP side does not receive a flagged frame.
+    drop_late_sends: bool,
     /// `--span-baseline STOCK.json`: the stock report the spans are gated against.
     span_baseline: Option<Value>,
     /// `--span-max NAME=N`: the extra instructions over stock a span may add.
@@ -250,6 +260,23 @@ fn do_calls(rt: &mut CoupledRuntime, calls: &[(u32, Vec<CallArg>)]) -> Result<Va
 }
 
 /// `NAME=ENTRY:EXIT`: two ColdFire PCs.
+fn parse_late_send(spec: &str) -> Result<(f64, f64), String> {
+    let (lo, hi) = spec
+        .split_once(',')
+        .ok_or("--late-send-window needs LO,HI in ms")?;
+    let ms = |v: &str| {
+        v.parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .ok_or(format!("--late-send-window: {v} is not a time in ms"))
+    };
+    let (lo, hi) = (ms(lo)?, ms(hi)?);
+    if lo > hi {
+        return Err("--late-send-window needs LO <= HI".into());
+    }
+    Ok((lo, hi))
+}
+
 fn parse_span(spec: &str) -> Result<(String, u32, u32), String> {
     let (name, rest) = spec.split_once('=').ok_or("--span needs NAME=ENTRY:EXIT")?;
     let (entry, exit) = rest.split_once(':').ok_or("--span needs ENTRY:EXIT")?;
@@ -399,6 +426,8 @@ fn parse_args() -> Result<Args, String> {
         cold_base: None,
         calls: Vec::new(),
         span_log: None,
+        late_send: None,
+        drop_late_sends: false,
         span_baseline: None,
         span_limits: Limits::default(),
         zero: false,
@@ -439,6 +468,10 @@ fn parse_args() -> Result<Args, String> {
             "--cold-base" => a.cold_base = Some(value("--cold-base")?),
             "--call" => a.calls.push(parse_call(&value("--call")?)?),
             "--span-log" => a.span_log = Some(value("--span-log")?.into()),
+            "--late-send-window" => {
+                a.late_send = Some(parse_late_send(&value("--late-send-window")?)?)
+            }
+            "--drop-late-sends" => a.drop_late_sends = true,
             "--span-baseline" => {
                 let path = value("--span-baseline")?;
                 let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
@@ -471,6 +504,9 @@ fn parse_args() -> Result<Args, String> {
             }
             other => return Err(format!("unknown option {other}")),
         }
+    }
+    if a.drop_late_sends && a.late_send.is_none() {
+        return Err("--drop-late-sends needs --late-send-window".into());
     }
     if a.span_baseline.is_some() && a.spans.is_empty() {
         return Err("--span-baseline needs at least one --span".into());
@@ -966,6 +1002,10 @@ fn run_scenario(
     for (name, entry, exit) in &args.spans {
         rt.add_span(name, *entry, *exit);
     }
+    if let Some((lo, hi)) = args.late_send {
+        let instr = |ms: f64| (ms / 1000.0 * cf_instructions_per_second()).round() as u64;
+        rt.set_late_send(instr(lo), instr(hi), args.drop_late_sends);
+    }
     let start = probe(&mut rt)?;
     let initial_audio_health = rt.audio_report().unwrap_or(Value::Null);
     let start_health = json!({
@@ -1235,6 +1275,7 @@ fn run_scenario(
         "peek": peek,
         "dsp_peek": dsp_peek,
         "spans": spans,
+        "late_send": rt.late_send_report(),
         "calls": calls,
         "dsp_dump": dsp_dump,
         "gates": gates,
@@ -1457,6 +1498,14 @@ mod tests {
                 detents: -2
             }
         ));
+    }
+
+    #[test]
+    fn late_send_windows_parse() {
+        assert_eq!(parse_late_send("0.739,0.772").unwrap(), (0.739, 0.772));
+        assert!(parse_late_send("0.8").is_err());
+        assert!(parse_late_send("0.8,0.7").is_err());
+        assert!(parse_late_send("-1,0.7").is_err());
     }
 
     #[test]

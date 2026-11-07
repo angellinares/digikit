@@ -14,6 +14,7 @@ pub mod ddr_monitor;
 pub mod dsp_patch;
 pub mod dsp_stream;
 mod guard;
+mod late_send;
 pub mod midi;
 pub mod panel_leds;
 #[cfg(feature = "play")]

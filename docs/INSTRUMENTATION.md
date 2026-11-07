@@ -287,6 +287,30 @@ The gate fails, and does not pass in silence, when it cannot compare the two rep
 The gate compares instruction counts, not cycles. A limit in instructions is a first step. The limit can change when a
 measurement in cycles is available.
 
+### Late frame sends
+
+`--late-send-window LO,HI` times each DSPI2 exchange, when a frame goes to the DSP side. It measures the gap from the
+previous exchange. A gap of LO to HI ms flags the frame. The ms are emulated time at `DIGI_CF_IPS`: one period of 88,000
+instructions is 0.667 ms. The report gives `late_send`: the number of frames and of flagged frames. It also lists the first
+1,000 flagged frames, each with its instruction count and gap.
+
+The count is at the transfer, not at a PC. So a build that moves the send call, or holds a frame in a guard, cannot hide a
+transfer from it.
+
+`--drop-late-sends` also drops each flagged frame. The DSP side gets the previous frame again, and the ColdFire gets the
+DSP's reply to it. This is a model. How a unit loses a frame is not known (finding 04).
+
+Stock DN2 1.11, `--cold-base`, `--dsp zero`:
+
+| run | window | frames | flagged |
+|---|---|---|---|
+| `idle`, 2 s | 0.66 to 0.67 ms (around one period) | 3,002 | 3,001, each 88,000 instructions after the previous send |
+| `load-seq16` | 0.70 to 0.80 ms | 19,684 | 0 |
+
+A local patched build that runs one handler pass past its period on `load-seq16` has 1 flagged frame in 0.70 to 0.80 ms. Its
+gap is 95,080 instructions (0.720 ms). On a unit, frames sent 0.739 to 0.772 ms after the previous one were lost. Emulated
+time is not the unit's time, so a window from the unit needs a calibration first.
+
 ## Cost when off
 
 - Interpreter loop: `cov`, `hist`, `wwatch` and `pcdump` are tested through one
