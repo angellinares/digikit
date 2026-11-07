@@ -230,11 +230,28 @@ in a cycle of four.
 another limit for one span. The result is `gates.span_gate` in each scenario's report. A failure fails the run (exit 2), and
 the console shows one line per span.
 
+The gate also counts late passes. A pass that runs past its period (`overrun`, from `length.over_period`) makes the next
+entry late (`late`, from `gap.over_period`). A span fails when the build has more of either count than stock has.
+
+The gate set is seven scenarios: `idle`, `kb-chord16` and `dn2-rec-play` from `tests/scenarios/dn2.json`, and four load
+scenarios from `tests/scenarios/dn2-load.json`:
+
+| scenario | load | checked on stock 1.11 |
+|---|---|---|
+| `load-seq16` | a trig on all 16 steps of all 16 tracks, then PLAY for 8 s | 64 frames start a note on all 16 tracks (mask `0xffff`), one every 0.125 s |
+| `load-turns` | the SRC page, Trig 1 held, then each encoder A to H 40 detents up and 40 down, one detent every 1M instructions | the screen changes 120 times |
+| `load-ptn-switch` | 8 pattern changes while stopped, one every 0.5 s | the kit pointer `0x800052a0` takes 8 values, each written twice, then pattern 1's kit again |
+| `load-kb-roll` | keyboard mode, a key down every 1M instructions over the 13 trig keys that play a note, 792 notes | 792 frames each start one note, from 0.457 s to 6.45 s, on all 16 voices in turn |
+
+In keyboard mode trig keys 1, 4 and 8 start no note. So `kb-chord16`, with all 16 keys held, starts 13 voices.
+
 1. Run stock once with the scenarios and spans. Keep its report:
 
    ```text
    coupled-run --syx Digitone_II_OS1.11.syx --dsp zero --cold-base 2af43e65… \
-     --scenario idle --scenario kb-chord16 --scenario dn2-rec-play \
+     --scenarios tests/scenarios/dn2.json --scenarios tests/scenarios/dn2-load.json \
+     --scenario idle --scenario kb-chord16 --scenario dn2-rec-play --scenario load-seq16 \
+     --scenario load-turns --scenario load-ptn-switch --scenario load-kb-roll \
      --span isr=0x40025e36:0x40027bc6 --span evala=0x400272d4:0x400272da --out stock-111.json
    ```
 
