@@ -16,7 +16,6 @@ use std::{
 
 use device_profile::StoreLayout;
 use emmc_card::RandomAccessRead;
-use sha2::{Digest, Sha256};
 
 /// What one mirror pass did, as store paths (relative to `digikit/`).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -36,7 +35,7 @@ pub struct FolderFile {
     pub path: String,
     pub bytes: u64,
     /// Hex.
-    pub sha256: String,
+    pub hash: String,
 }
 
 /// A card with no image file and no writes (the DN2 before anything is written): every read is zero.
@@ -193,14 +192,14 @@ pub fn folder_files(folder: &Path) -> Vec<FolderFile> {
                 if rel == crate::SELECTION_FILE {
                     continue;
                 }
-                let sha256 = Sha256::digest(&bytes)
+                let hash = dksample::file_hash(&bytes)
                     .iter()
                     .map(|b| format!("{b:02x}"))
                     .collect();
                 out.push(FolderFile {
                     path: rel,
                     bytes: bytes.len() as u64,
-                    sha256,
+                    hash,
                 });
             }
         }
@@ -359,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn the_folder_listing_has_path_size_and_sha256_without_the_selection_file() {
+    fn the_folder_listing_has_path_size_and_hash_without_the_selection_file() {
         let root = temp("listing");
         let folder = root.join("f");
         fs::create_dir_all(folder.join("digikit/modules")).unwrap();
@@ -372,7 +371,7 @@ mod tests {
             vec![FolderFile {
                 path: "modules/a.dkm".into(),
                 bytes: 3,
-                sha256: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into()
+                hash: format!("49bec845{}", "0".repeat(56))
             }]
         );
         assert!(folder_files(&root.join("nothing")).is_empty());

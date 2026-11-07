@@ -136,7 +136,7 @@ pub unsafe extern "C" fn dk_decode(m: *const u8, n: usize) -> i32 {
                         v["list"] = json!({
                             "total": l.total,
                             "entries": l.entries.iter().map(|e| json!({
-                                "path": e.path, "size": e.size, "sha256": hex(&e.sha256),
+                                "path": e.path, "size": e.size, "hash": hex(&e.hash),
                             })).collect::<Vec<_>>(),
                         })
                     }
@@ -229,7 +229,7 @@ pub extern "C" fn dk_put_state(h: u32) -> i32 {
     match put_with(h, |p| {
         json!({
             "phase": format!("{:?}", p.phase()).to_lowercase(), "done": p.acked_bytes(), "total": p.total(),
-            "seq": p.seq(), "end_retried": p.end_retried(), "sha256": hex(&p.sha256()),
+            "seq": p.seq(), "end_retried": p.end_retried(), "hash": hex(&p.hash()),
         })
     }) {
         Some(v) => out_json(v),
@@ -290,13 +290,13 @@ pub extern "C" fn dk_mock_ctl(h: u32, kind: u32, n: u32) {
     });
 }
 
-/// `[{path, size, sha256}]` of the mock's files in the output buffer.
+/// `[{path, size, hash}]` of the mock's files in the output buffer.
 #[unsafe(no_mangle)]
 pub extern "C" fn dk_mock_files(h: u32) -> i32 {
     let v = mock_with(h, |d| {
         d.files
             .iter()
-            .map(|(p, b)| json!({"path": p, "size": b.len(), "sha256": hex(&sha256(b))}))
+            .map(|(p, b)| json!({"path": p, "size": b.len(), "hash": hex(&file_hash(b))}))
             .collect::<Vec<_>>()
     });
     out_json(json!(v.unwrap_or_default()))

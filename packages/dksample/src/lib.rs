@@ -11,7 +11,7 @@ pub mod hash;
 pub mod native;
 pub mod wav;
 
-pub use hash::{content_hash, hashlittle};
+pub use hash::{content_hash, file_hash, hashlittle};
 pub use native::{
     NATIVE_HEADER_SIZE, NATIVE_RATE, NATIVE_TRAILER_SIZE, NativeError, build_native_sample,
 };
