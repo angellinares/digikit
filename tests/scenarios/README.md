@@ -31,7 +31,8 @@ app's `--scenario` mode and the browser parity check). One file per device:
   instructions, `at_s` in audio seconds (DSPI2 frames sent / 1500).
 - Events: `{"at_instr"|"at_s": T, "button": CODE, "down": true|false}` for a
   button, `{"at_instr"|"at_s": T, "turn": ENCODER, "detents": N}` for an
-  encoder turn.
+  encoder turn, `{"at_instr"|"at_s": T, "midi": [BYTE, ...]}` for 1 to 16 bytes
+  on the MIDI DIN input. The bytes enter one per wire time (320 us) from T.
 - Events fire at chunk boundaries, before the chunk that follows, so a run is
   a function of its inputs. `clip_last_chunk` ends an `instructions` run exactly at its count. `exact_events` shortens the chunk so an `at_instr`
   event fires at exactly that count.
