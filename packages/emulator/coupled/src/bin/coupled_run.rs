@@ -260,6 +260,67 @@ fn do_calls(rt: &mut CoupledRuntime, calls: &[(u32, Vec<CallArg>)]) -> Result<Va
 }
 
 /// `NAME=ENTRY:EXIT`: two ColdFire PCs.
+/// One DIN byte on the wire in instructions (320 us at `DIGI_CF_IPS`).
+fn wire_period() -> u64 {
+    elektron_native_boot::clock::scale_instr(
+        elektron_native_boot::midi::WIRE_PERIOD,
+        elektron_native_boot::clock::cf_ips(),
+    )
+}
+
+/// Most channel messages `out_events` lists.
+const MIDI_EVENTS_MAX: usize = 2000;
+
+/// The channel messages (status 0x80 to 0xEF, with their data bytes) in the DIN output. Each gets
+/// `at`: the instruction count (from ready) at the end of the chunk that moved its bytes, plus one
+/// wire period for each byte before it in that chunk. The model moves a transfer's bytes at once, so
+/// `at` is when the status byte is on the wire, within one chunk. A message the sender put inside a
+/// SysEx message gets `in_sysex`: a receiver ends the SysEx at its status byte.
+fn midi_out_events(log: &[(u64, Vec<u8>)], wire: u64) -> Value {
+    let mut events = Vec::new();
+    let mut in_sysex = false;
+    // The message being read: its time, its bytes, the data bytes still due, and whether a SysEx was open.
+    let mut current: Option<(u64, Vec<u8>, usize, bool)> = None;
+    for (end, bytes) in log {
+        for (i, &b) in bytes.iter().enumerate() {
+            let at = end + i as u64 * wire;
+            if b >= 0xf8 {
+                continue; // real-time bytes may come anywhere
+            }
+            if let Some((_, msg, due, _)) = current.as_mut()
+                && *due > 0
+                && b < 0x80
+            {
+                msg.push(b);
+                *due -= 1;
+                if *due == 0 {
+                    let (at, msg, _, sysex) = current.take().expect("message");
+                    if events.len() < MIDI_EVENTS_MAX {
+                        let hex: Vec<String> = msg.iter().map(|b| format!("{b:02x}")).collect();
+                        events.push(json!({"at": at, "bytes": hex.join(" "), "in_sysex": sysex}));
+                    }
+                }
+                continue;
+            }
+            current = None;
+            match b {
+                0xf0 => in_sysex = true,
+                0xf7 => in_sysex = false,
+                0x80..=0xef => {
+                    let due = if matches!(b & 0xf0, 0xc0 | 0xd0) {
+                        1
+                    } else {
+                        2
+                    };
+                    current = Some((at, vec![b], due, in_sysex));
+                }
+                _ => {}
+            }
+        }
+    }
+    Value::Array(events)
+}
+
 fn parse_late_send(spec: &str) -> Result<(f64, f64), String> {
     let (lo, hi) = spec
         .split_once(',')
@@ -1030,6 +1091,8 @@ fn run_scenario(
         When::Frames(n) => (1, n),
     });
     let mut chunks = 0u64;
+    // DIN output bytes and the instruction count (from ready) at the end of the chunk that moved them.
+    let mut midi_out_log: Vec<(u64, Vec<u8>)> = Vec::new();
     let mut trace = Vec::new();
     let (mut last_fb, mut last_leds, mut last_rgb) = (String::new(), String::new(), String::new());
     loop {
@@ -1064,6 +1127,10 @@ fn run_scenario(
             budget = budget.min((n - elapsed).min(u64::from(u32::MAX)) as u32);
         }
         let snap = rt.step_chunk(budget);
+        let out = rt.take_midi_out();
+        if !out.is_empty() {
+            midi_out_log.push((rt.elapsed_instructions(), out));
+        }
         let status = snap.status;
         chunks += 1;
         if args.trace {
@@ -1129,13 +1196,21 @@ fn run_scenario(
             .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     let peek = do_peeks(&mut rt, &args.peeks);
-    let midi_out = rt.take_midi_out();
+    let tail = rt.take_midi_out();
+    if !tail.is_empty() {
+        midi_out_log.push((rt.elapsed_instructions(), tail));
+    }
+    let midi_out: Vec<u8> = midi_out_log
+        .iter()
+        .flat_map(|(_, b)| b.iter().copied())
+        .collect();
     let midi = {
         let status = rt.midi_status();
         json!({
             "in_bytes": status.rx_bytes, "in_irqs": status.rx_irqs, "in_queued": status.queued,
             "out_bytes": midi_out.len(), "out_transfers": status.tx_dma, "out_irqs": status.tx_irqs,
             "out_head": midi_out.iter().take(48).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" "),
+            "out_events": midi_out_events(&midi_out_log, wire_period()),
         })
     };
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
@@ -1473,7 +1548,9 @@ mod tests {
                 "load-kb-roll",
                 "load-midi-flood",
                 "load-lfo3",
-                "load-midi-out"
+                "load-midi-out",
+                "load-sysex-send",
+                "load-sysex-keys"
             ]
         );
         let defaults = parse_scenarios(DEFAULT_SCENARIOS).unwrap();
@@ -1511,6 +1588,28 @@ mod tests {
                 detents: -2
             }
         ));
+    }
+
+    #[test]
+    fn midi_out_events_skip_sysex_and_time_each_status() {
+        let log = vec![
+            (1000, vec![0xf0, 0x00, 0x20, 0x3c, 0xf7, 0x99, 60, 100]),
+            (
+                5000,
+                vec![0xb9, 48, 7, 0xf0, 0x10, 0x89, 60, 0, 0x10, 0x00, 0xf7],
+            ),
+        ];
+        let e = midi_out_events(&log, 10);
+        assert_eq!(e.as_array().unwrap().len(), 3);
+        assert_eq!(e[0]["at"], 1050);
+        assert_eq!(e[0]["bytes"], "99 3c 64");
+        assert_eq!(e[0]["in_sysex"], false);
+        assert_eq!(e[1]["at"], 5000);
+        assert_eq!(e[1]["bytes"], "b9 30 07");
+        // A note off the sender put inside a SysEx message: its data bytes end it, the SysEx bytes after it are skipped.
+        assert_eq!(e[2]["at"], 5050);
+        assert_eq!(e[2]["bytes"], "89 3c 00");
+        assert_eq!(e[2]["in_sysex"], true);
     }
 
     #[test]
