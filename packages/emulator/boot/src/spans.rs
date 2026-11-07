@@ -125,8 +125,10 @@ impl Spans {
     }
 
     /// One object per span. `period` is the instructions in one handler period: a length
-    /// or a gap above it counts in `over_period`.
-    pub fn report(&self, period: u64) -> Value {
+    /// or a gap above it counts in `over_period`. `unit_scale` is the unit's timer ticks per
+    /// emulator instruction: a length whose ticks are above the period counts in
+    /// `length.over_unit_period`.
+    pub fn report(&self, period: u64, unit_scale: f64) -> Value {
         Value::Array(
             self.spans
                 .iter()
@@ -139,12 +141,22 @@ impl Spans {
                         .enumerate()
                         .max_by_key(|(i, p)| (p.1, std::cmp::Reverse(*i)))
                         .map(|(i, p)| json!({"pass": i, "at": p.0}));
+                    let mut length = stats(&lengths, period);
+                    if !lengths.is_empty() {
+                        length["over_unit_period"] = json!(
+                            lengths
+                                .iter()
+                                .filter(|&&v| f64::from(v) * unit_scale > period as f64)
+                                .count()
+                        );
+                    }
                     json!({
                         "name": s.name,
                         "entry": format!("{:#010x}", s.entry),
                         "exit": format!("{:#010x}", s.exit),
                         "period": period,
-                        "length": stats(&lengths, period),
+                        "unit_scale": unit_scale,
+                        "length": length,
                         "worst": worst,
                         "gap": stats(&s.gaps, period),
                         "nested": s.nested,
@@ -179,11 +191,14 @@ mod tests {
         s.observe(0x100, 110);
         s.observe(0x100, 120); // nested entry: keeps 110
         s.observe(0x200, 170);
-        let r = s.report(50);
+        let r = s.report(50, 1.0);
         assert_eq!(r[0]["length"]["count"], 2);
         assert_eq!(r[0]["length"]["min"], 30);
         assert_eq!(r[0]["length"]["max"], 60);
         assert_eq!(r[0]["length"]["over_period"], 1);
+        assert_eq!(r[0]["length"]["over_unit_period"], 1);
+        // At 1.7 ticks an instruction, the pass of 30 is 51 ticks: over a period of 50 too.
+        assert_eq!(s.report(50, 1.7)[0]["length"]["over_unit_period"], 2);
         assert_eq!(r[0]["gap"]["count"], 1);
         assert_eq!(r[0]["gap"]["max"], 100);
         assert_eq!(r[0]["nested"], 1);
@@ -194,7 +209,7 @@ mod tests {
             [("isr", 10, 30), ("isr", 110, 60)]
         );
         s.clear();
-        assert_eq!(s.report(50)[0]["length"]["count"], 0);
+        assert_eq!(s.report(50, 1.0)[0]["length"]["count"], 0);
     }
 
     #[test]
@@ -205,7 +220,7 @@ mod tests {
         s.observe(0x100, 0);
         s.observe(0x180, 8);
         s.observe(0x200, 20);
-        let r = s.report(100);
+        let r = s.report(100, 1.0);
         assert_eq!(r[0]["length"]["max"], 20);
         assert_eq!(r[1]["length"]["max"], 8);
         assert_eq!(s.pcs().count(), 4);

@@ -847,8 +847,8 @@ impl Emulator {
     }
 
     /// The spans' statistics; `period` is one handler period in instructions.
-    pub fn spans_report(&self, period: u64) -> serde_json::Value {
-        self.spans.report(period)
+    pub fn spans_report(&self, period: u64, unit_scale: f64) -> serde_json::Value {
+        self.spans.report(period, unit_scale)
     }
 
     /// Time each DSPI2 exchange (`late_send`): flag the frames whose gap from the previous
