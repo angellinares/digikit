@@ -3206,3 +3206,33 @@ Measured once on a DN2 unit on OS 1.11, with a 1.11 mod build with LFO 4. This h
 - Every lost frame was on a mod build. The mods made the handler run late. The send itself is stock code. The case on pure stock is untested: no run logged the masks on a stock build.
 - The cause is a guess. The DSP receives the frame in a ring at `0x2c29d0` or `0x2c39d0` (section "DN2 1.11 TX frame" above). A send in the window may collide with the DSP's change between the two pages. This was not measured.
 - The window was measured on one unit and two patterns only.
+
+## DN2 1.11: the stock handler on a unit against the emulator (2026-11-07) **[D][O]**
+
+Measured once on a DN2 unit on OS 1.11, with stock and the USB probe mod. This has not been second-checked.
+
+The probe times the vector-191 handler with DTCN0, from entry to exit. DTCN0 counts the internal bus clock, which the probe
+measured at 132.00 MHz. The unit ran a new project. The emulator ran the same states on stock 1.11 with `--span`
+(`docs/INSTRUMENTATION.md`, "Calibration against a unit").
+
+| state | unit, % of a frame | emulator, % of a period |
+|---|---|---|
+| stopped, average | 56.7 | 56.3 |
+| playing 16 trigs on 16 tracks at 120 BPM, average | 54.6 | 56.6 |
+| the same, step frames | 91 to 100 | 78 to 80 |
+| the first step after PLAY | 115, 1 frame over | 93 |
+
+- On average, one emulator instruction is one DTCN0 tick, to within 1 %.
+- On a step frame the unit takes about 1.21 ticks per instruction. With that scale the first step after PLAY is 113 % of a
+  frame, and the unit measured 115 %.
+- So stock runs late on a unit once, at PLAY. Its pass is about 0.767 ms. The next send can wait for the end of that pass.
+  Then its gap is in the window of the lost frames above. The probe of this run did not log the masks or the send times, so
+  that gap and the frame's loss are not known.
+- Stock's other step frames leave about 5 % of a frame.
+
+**Open.**
+
+- The cause of the extra time on heavy frames. The probe's time includes the interrupts that preempt the handler. The core
+  has an 8 KB instruction cache and an 8 KB data cache (MCF5441x Reference Manual, chapter 6), and the handler's code is
+  7,568 bytes. Neither part is measured.
+- One unit and one pattern. Another pattern can give another scale.

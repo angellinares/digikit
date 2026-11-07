@@ -198,7 +198,8 @@ counted. An exit with no open entry is ignored, and a second entry before the ex
 
 The report has `spans`: one object per span, with `length` and `gap` (`count`, `min`, `mean`, `p50`, `p99`, `max`,
 `over_period`). `period` is one DSPI2 frame in instructions at `DIGI_CF_IPS` (88,000 at 132e6). A length or a gap above
-it counts in `over_period`.
+it counts in `over_period`. `length` also has `over_unit_period`: the lengths above the period when multiplied by
+`unit_scale` (`--unit-scale`, default 1.21). The object gives `unit_scale`.
 
 DN2 1.11 and 1.12 have the vector-191 handler and evaluator A at the same PCs ([finding 04](findings/04-coldfire-dsp-link.md)):
 
@@ -235,6 +236,11 @@ entry late. A late entry makes `gap.max` longer, the longest time from one entry
 `gap.max` is more than its limit above stock's, or when it has more overruns than stock. In the emulator a handler entry
 drifts by a few dozen instructions around its period (stock `isr` `gap.max` is 88,013 to 88,056). So the gate does not count
 the gaps over the period.
+
+The gate also counts the passes over the period at the unit's speed (`unit_overrun`, from `length.over_unit_period`). A
+pass counts when its length times `--unit-scale` is above the period. The default scale is 1.21, from a unit (see
+"Calibration against a unit"). A span fails when it has more of these passes than stock. The console line gives them as
+`unit N/STOCK`.
 
 A run stops at the first chunk boundary past its length. So two builds can end the same scenario up to one chunk (250,000
 instructions) apart. The gate accepts a difference of up to one chunk and one period.
@@ -310,12 +316,41 @@ to 835 instructions later than on `idle`. The cause is not traced.
 The gate fails, and does not pass in silence, when it cannot compare the two reports:
 
 - the stock report has no scenario or no span of the same name
-- the span PCs or the period are different
+- the span PCs, the period or the unit scale are different. A stock report made before the unit count has no scale: run
+  stock again
 - the DSP mode is different
 - the two scenario lengths are more than one chunk and one period apart
 
 The gate compares instruction counts, not cycles. A limit in instructions is a first step. The limit can change when a
 measurement in cycles is available.
+
+#### Calibration against a unit
+
+A DN2 unit with stock 1.11 and the USB probe mod timed its audio handler with DTCN0. DTCN0 counts the internal bus clock,
+measured at 132.00 MHz on that unit. The unit ran a new project, read for 10 s or more in each state. The emulator ran the
+same states on stock 1.11 (`--cold-base`, `--dsp zero`):
+
+| state | unit, % of a frame | emulator, % of a period | unit ticks per instruction |
+|---|---|---|---|
+| stopped, average | 56.7 | 56.3 (`idle`) | 1.007 |
+| playing, average | 54.6 | 56.6 (`load-seq16`) | 0.96 |
+| playing, frames with no step, worst per 100 ms | 61 to 63 | 56.6 | about 1.1 |
+| playing, step frames | 91 to 100, about 95 typical | 78 to 80 (68,000 to 70,000 instructions) | about 1.21 |
+| the first step after PLAY | 115, 1 frame over | 93 (82,102 instructions) | 1.21 gives 113 |
+
+- On average frames an instruction is one tick, to within 1 %. So emulated time is the unit's time on average.
+- A heavy frame costs the unit more. The probe times the handler from entry to exit, so its peak includes the interrupts
+  that preempt the handler. The core also has 8 KB caches only, and the handler's code alone is 7,568 bytes. Which of the
+  two adds the time is not measured.
+- At 1.21, a pass of more than about 72,700 instructions runs past the frame on a unit. Stock's step frames take 68,000 to
+  70,000, about 5 % below that.
+- Stock has 1 such pass on `load-seq16`, the first step after PLAY. The unit had 1 frame over at PLAY.
+- A local patched build has 0 passes over the period on `load-seq16` in the emulator, and 33 at the unit's speed.
+
+The scale is from one unit and one pattern. `--unit-scale X` sets another.
+
+So `--late-send-window` cannot take the unit's window as it is. In the emulator a send is late only when a pass is longer
+than the full period. On the unit the same pass is late at about 72,700 instructions.
 
 ### Late frame sends
 
