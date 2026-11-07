@@ -117,7 +117,12 @@ EXPECTED_FRAMES = 1139
 # on dn2-reset, dn2 and dt2 (sharc_cells, 2026-11-07), so training runs it once.
 TRAIN_RUNS = 1
 FLAGS_TEMPLATE = "-Cprofile-use={profdata}"
-SKIP_DIRS = {"target", ".git", "node_modules"}
+SKIP_DIRS = {
+    "target",
+    "out",
+    ".git",
+    "node_modules",
+}  # `out`: generated output that a test run leaves inside a crate (gitignored)
 SKIP_FILES = {".DS_Store"}
 
 
