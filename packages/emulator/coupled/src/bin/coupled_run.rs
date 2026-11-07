@@ -46,7 +46,10 @@
 //! `--span-baseline STOCK.json` gates each scenario's spans against the same scenario and spans
 //! in an earlier stock report (`--out` of a stock run with the same options). A span fails when
 //! its `p50` or its `max` is more than its limit above stock: `--span-max NAME=N` (repeatable),
-//! else 1,000 instructions. The result is `gates.span_gate`, and a failure fails the run (exit 2).
+//! else 1,000 instructions. A span also fails when it has more passes over its period, or more
+//! late entries, than stock. The result is `gates.span_gate`, and a failure fails the run (exit 2).
+//! `tests/scenarios/dn2-load.json` holds the load scenarios for the gate. `--scenarios` is
+//! repeatable, so one run can take `dn2.json` and `dn2-load.json`.
 //!
 //! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
 //! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
@@ -103,7 +106,8 @@ struct Args {
     image: PathBuf,
     state: PathBuf,
     snapshot: PathBuf,
-    scenarios: Option<PathBuf>,
+    /// `--scenarios FILE` (repeatable): scenario files, read in order. None: the embedded `dn2.json`.
+    scenarios: Vec<PathBuf>,
     names: Vec<String>,
     seconds: Option<f64>,
     playback: bool,
@@ -372,7 +376,7 @@ fn parse_args() -> Result<Args, String> {
         image: PathBuf::new(),
         state: PathBuf::new(),
         snapshot: PathBuf::new(),
-        scenarios: None,
+        scenarios: Vec::new(),
         names: Vec::new(),
         seconds: None,
         playback: false,
@@ -411,7 +415,7 @@ fn parse_args() -> Result<Args, String> {
             "--cf-snapshot" => a.snapshot = value("--cf-snapshot")?.into(),
             "--dsp-patch" => a.dsp_patch = Some(value("--dsp-patch")?.into()),
             "--card-image" => a.card = Some(value("--card-image")?.into()),
-            "--scenarios" => a.scenarios = Some(value("--scenarios")?.into()),
+            "--scenarios" => a.scenarios.push(value("--scenarios")?.into()),
             "--scenario" => a.names.push(value("--scenario")?),
             "--seconds" => {
                 a.seconds = Some(value("--seconds")?.parse().map_err(|_| "bad --seconds")?)
@@ -1274,13 +1278,25 @@ fn real_main() -> Result<bool, String> {
             find_scenario(&root).ok_or_else(|| format!("{}: no scenario found", path.display()))?;
         vec![parse_scenario(found)?]
     } else {
-        let text = match &args.scenarios {
-            Some(path) => {
-                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
+        let mut all: Vec<Scenario> = Vec::new();
+        if args.scenarios.is_empty() {
+            all = parse_scenarios(DEFAULT_SCENARIOS)?;
+        }
+        for path in &args.scenarios {
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            for sc in parse_scenarios(&text)? {
+                if all.iter().any(|s| s.name == sc.name) {
+                    return Err(format!(
+                        "{}: scenario {} is named twice",
+                        path.display(),
+                        sc.name
+                    ));
+                }
+                all.push(sc);
             }
-            None => DEFAULT_SCENARIOS.to_string(),
-        };
-        parse_scenarios(&text)?
+        }
+        all
     };
     if args.list {
         for s in &all {
@@ -1390,6 +1406,27 @@ mod tests {
         }
         let hold = all.iter().find(|s| s.name == "trig1-hold").unwrap();
         assert!(hold.qa_script && hold.seconds == Some(10.0));
+    }
+
+    #[test]
+    fn load_scenarios_parse_and_have_the_documented_names() {
+        let all =
+            parse_scenarios(include_str!("../../../../../tests/scenarios/dn2-load.json")).unwrap();
+        let names: Vec<_> = all.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "load-seq16",
+                "load-turns",
+                "load-ptn-switch",
+                "load-kb-roll"
+            ]
+        );
+        let defaults = parse_scenarios(DEFAULT_SCENARIOS).unwrap();
+        assert!(
+            all.iter()
+                .all(|s| defaults.iter().all(|d| d.name != s.name))
+        );
     }
 
     #[test]
