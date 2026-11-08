@@ -51,7 +51,10 @@ Scope: measurements of 2026-11-07/08 on an M3 Max (12 performance and 4 efficien
 - **[D]** Full merge gates took about 140 min on 2026-11-05, before these changes. They took 61-92 min on 2026-11-08, on different loads.
 - **[O]** No paired A/B was run, so the gain is not proven.
 
-## Open: freqshift on DT2
+## freqshift on DT2: a `setRaw` limit cycle
 
-- **[O]** `freqshift` on DT2 has failed on main since PR #288 (first bad commit `34583f6b`): `turning ENC A: value 25344, wanted 26624`.
-- **[O]** The cause is not found. The native-page turn hook and the `source_draw` and `source_code` hooks are ruled out.
+- **[D]** `digikit/freqshift:test-device` on DT2 failed with `turning ENC A: value 25344, wanted 26624` from commit `34583f6b` (PR #288) on.
+- **[D]** Cause: `setRaw` in `tests/regression/runtime/fx-pages-ui.ts`. Near the target it sent 3 events of 8 detents, about 2048 raw, against a window of +-0x200. The value swung between about 25344 and 27392 and landed only by luck. A trace showed that the passing layout also swung for 22 attempts and landed on attempt 25. Turns were delivered in both runs (`cf.input_irqs` rose per event, `input_pending` drained).
+- **[D]** Any layout change alters that luck. The failure followed the addresses of later objects: an empty BSS pad in `machines.s` reproduced it (0x4000 passes, 0x4800 fails). The native-page code of PR #288 was not at fault.
+- **[D]** Lesson: a retry loop whose step exceeds its acceptance window is not a convergence check.
+- **[D]** A size-and-placement bisect with BSS padding is a cheap way to tell a layout-dependent failure from a logic bug.
