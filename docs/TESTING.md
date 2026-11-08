@@ -481,22 +481,28 @@ The no-AOT halves of `tier-quick` and `tier-sweep` use `NO_AOT_SUBSET` in `tools
 `pnpm nx:pilot` runs `tools/nx/nx.mjs`, the one Nx launcher. It computes a budget from the machine:
 B = the performance core count on Apple Silicon, otherwise cores - 2, with a minimum of 2, or `DIGI_BUDGET=N`. A value already set in the environment wins over the derived one.
 
-| Setting | Formula | 4 cores | 8 cores | 12 cores | 16 cores |
+| Setting | Formula | B=4 | B=8 | B=12 | B=16 |
 | --- | --- | --- | --- | --- | --- |
-| Nx tasks (`NX_PARALLEL`) | clamp(floor(B/3), 1, 4) | 1 | 2 | 3 | 4 |
+| Nx tasks (`NX_PARALLEL`) and emulator ceiling | max(1, min(floor(B/2), floor(RAM GB/2))) | 2 | 4 | 6 | 8 |
 | `REGRESSION_JOBS` (Vitest workers per task) | 1 | 1 | 1 | 1 | 1 |
-| `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 1 | 3 | 5 | 6 |
-| `CARGO_BUILD_JOBS` | B | 2 | 6 | 10 | 14 |
-| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 3 | 4 | 4 |
+| `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 2 | 4 | 6 | 6 |
+| `CARGO_BUILD_JOBS` | B | 4 | 8 | 12 | 16 |
+| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 2 | 2 | 2 |
 
-On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 4 tasks, 6 emulators for gate targets that run alone.
+The values assume at least 2 GB of RAM per emulator. On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 6 tasks, a ceiling of 6 emulators.
+`tools/nx/resources.mjs` holds this policy.
 
-Each launcher run has its own budget, so several lanes can start more emulators than the machine runs well.
+Each launcher run has its own budget, so several lanes could start more emulators than the machine runs well.
 Module device targets and `test-conformance` therefore run behind `node tools/devtools/emu-slot.mjs --`. It takes one
-of N machine-wide slots (lock files in `<git common dir>/emu-slots/`, N = `DIGI_EMU_SLOTS`, default the launcher's
-Nx task count), runs the command, and passes on its exit status. A waiting task prints one line and waits without a
-limit; a lock of a dead process is taken over. The wait is outside Vitest, so it does not count against test timeouts.
-Gate targets such as `fx` and `stock` are not wrapped.
+of N machine-wide slots (lock files in `<git common dir>/emu-slots/`, N = the ceiling above), runs the command, and
+passes on its exit status. A slot is taken only when the machine has idle cores. One waiter at a time holds the
+`admit` lock and decides: if the slots in use reach the ceiling it waits; if none is in use it admits at once (work
+never starves); otherwise it samples the idle cores twice, 1 s apart, and admits when at least 2 plus the reserve are
+idle. The reserve is the efficiency-core count on Apple Silicon, else max(2, floor(cores/4)); `DIGI_EMU_RESERVE=N`
+sets it. After an admission the lock is kept for 3 s, so the next decision sees the new emulator's load. The log shows
+`emulator slot taken (M of ceiling, idle X.X cores)`. `DIGI_EMU_SLOTS=N` is a fixed count with no idle check, for an A/B.
+A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The wait is outside
+Vitest, so it does not count against test timeouts. Gate targets such as `fx` and `stock` are not wrapped.
 
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
 

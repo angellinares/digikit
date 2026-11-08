@@ -2,38 +2,9 @@
 // Nx has no per-kind limits, so the per-target counts (Vitest workers, emulators, cargo jobs)
 // come from this budget and reach the targets through environment variables.
 import { spawnSync } from 'node:child_process';
-import { availableParallelism } from 'node:os';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
-const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-
-export function budget(work, override) {
-  let b;
-  if (override !== undefined && override !== '') {
-    b = Number(override);
-    if (!Number.isInteger(b) || b < 1) throw new Error(`DIGI_BUDGET must be a positive integer, got ${override}`);
-  } else {
-    b = Math.max(2, work);
-  }
-  // One emulator keeps 2 cores busy. One task per 3 cores keeps the machine usable.
-  const tasks = clamp(Math.floor(b / 3), 1, 4);
-  const workers = 1;
-  const threads = Math.ceil(b / tasks);
-  const jobs = clamp(Math.floor(b / 2), 1, 6);
-  return { budget: b, tasks, workers, threads, jobs };
-}
-
-// Cores for our work: the performance cores on Apple Silicon, so the efficiency cores stay
-// free for the rest of the machine. Otherwise all cores but two.
-export function workCores() {
-  if (process.platform === 'darwin') {
-    const { stdout } = spawnSync('sysctl', ['-n', 'hw.perflevel0.logicalcpu'], { encoding: 'utf8' });
-    const performance = Number(stdout);
-    if (performance > 0) return performance;
-  }
-  return availableParallelism() - 2;
-}
+import { budget, workCores } from './resources.mjs';
 
 export function runsTasks(args) {
   const first = args[0];
