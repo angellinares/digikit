@@ -97,10 +97,10 @@ export const scopedManifestInputs = (inputs, manifests) => [
 // Files that tests read by path and do not import. The import walk (test-imports.mjs) cannot see them.
 // Extend this list when a test reads a new file; a file only one record's tests read goes in that record's `sources`.
 export const READ_BY_TESTS = [
-  // the daemon and the harness read every device file and every manifest to patch and plan the image
+  // the daemon reads every device file to patch the image. Manifests are not listed: the image input holds those of
+  // the image modules, `production` the test's own, and the pack outputs the loaded ones. A manifest outside the image
+  // can only make the daemon's scan fail, which `pack` and `patchkit build --check` catch.
   '{workspaceRoot}/devices/**/*.toml',
-  '{workspaceRoot}/modules/**/module.toml',
-  '{workspaceRoot}/tests/fixtures/modules/**/module.toml',
   // committed core objects: the patched image is made from them
   '{workspaceRoot}/modules/core/**/build/*.dko.json',
   '{workspaceRoot}/modules/core/adapters/machines/types.toml',

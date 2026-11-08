@@ -359,8 +359,7 @@ it('forms explicit manifest libraries from selected modules and transitive requi
 describe('workspace selection', () => {
   it('keeps full-only module fixtures out of quick capacity selection', () => {
     const manifest = manifestOf(otherImageConsumer());
-    // Capacity tests and the daemon read every module.toml, so a manifest edit selects them.
-    expect(selected(manifest, 'test-device').tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
+    expect(selected(manifest, 'test-device').tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
     const full = selected(manifest, 'test-device-full');
     expect(full.tasks['core/runtime-inferred-needs-tests:test-device-full']).toBeDefined();
     expect(full.tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();

@@ -377,8 +377,8 @@ The store has a 14-day TTL swept daily and no size cap.
 
 Cached targets: module `test-device` and `test-conformance`. A key covers what the run consumes: the
 TypeScript import closure of the test files and of the Vitest setup file (`tools/nx/test-imports.mjs`), the
-outputs of the pack, CLI and daemon targets, the production files of the module and of the core modules in the
-patched image, the SDK, the files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: every `module.toml`, `devices/**/*.toml`,
+outputs of the pack, CLI and daemon targets, the production files of the module (with its `module.toml`) and of the core modules in the
+patched image (with their manifests), the SDK, the files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: `devices/**/*.toml`,
 committed core objects, `types.toml`, fixture files, the Vitest and TypeScript config), each record's `sources`,
 the toolchain, the emulator env switches,
 `config/emulator.json`, and the firmware, ready dirs and DT2 sample card (hashed by
