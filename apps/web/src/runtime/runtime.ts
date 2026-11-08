@@ -40,7 +40,7 @@ export async function fastConfig(
   const config: FastRegions = { regions: pcs(entry?.fast_regions), roots: pcs(entry?.blocktrans) };
   if (query === null) {
     // The generic-core default comes from `_contexts.browser` of the config file.
-    const browser = (fastRegionTable as unknown as Record<string, Record<string, string> | undefined>)._contexts
+    const browser = (fastRegionTable as unknown as { _contexts?: Record<string, Record<string, string>> })._contexts
       ?.browser;
     const generic =
       browser?.when === 'generic-core' && browser.SHARC_FAST_AUTO ? auto(browser.SHARC_FAST_AUTO) : undefined;

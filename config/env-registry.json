@@ -321,6 +321,10 @@
    "owner": "rust:packages/emulator",
    "purpose": "File path; the emulator appends one line per front-panel UART8 drain and per injected panel button."
   },
+  "DIGI_PATCHED_CACHE_MAX_GB": {
+   "owner": "python:tools/patchkit",
+   "purpose": "Size cap in GB of the patched boot-pair cache; the patchkit harness removes the oldest entries above it (default 30)."
+  },
   "DIGI_PATCHED_STARTUP_EMUD": {
    "owner": "ts:tools/nx",
    "purpose": "Path to the emulator daemon binary used by the patched DSP startup device test."
