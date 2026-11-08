@@ -1,0 +1,496 @@
+{
+ "scenarios": [
+  {
+   "name": "audition-fm-tone",
+   "description": "Audition a DN2 stock machine: FUNC+SRC, DOWN x0, YES, YES, then Trig 1 every 1 s (0.5 s hold) x6",
+   "seconds": 7.84,
+   "exact_events": true,
+   "events": [
+    {
+     "at_instr": 60000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 60660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 63300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 63960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 91020000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 93660000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 133920000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 136560000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 176820000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 242820000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 308820000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 374820000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 440820000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 506820000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 572820000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 638820000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 704820000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 770820000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 836820000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 902820000,
+     "button": 25,
+     "down": false
+    }
+   ]
+  },
+  {
+   "name": "audition-fm-drum",
+   "description": "Audition a DN2 stock machine: FUNC+SRC, DOWN x1, YES, YES, then Trig 1 every 1 s (0.5 s hold) x6",
+   "seconds": 7.94,
+   "exact_events": true,
+   "events": [
+    {
+     "at_instr": 60000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 60660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 63300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 63960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 91020000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 93660000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 104880000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 107520000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 147780000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 150420000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 190680000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 256680000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 322680000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 388680000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 454680000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 520680000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 586680000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 652680000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 718680000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 784680000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 850680000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 916680000,
+     "button": 25,
+     "down": false
+    }
+   ]
+  },
+  {
+   "name": "audition-wavetone",
+   "description": "Audition a DN2 stock machine: FUNC+SRC, DOWN x2, YES, YES, then Trig 1 every 1 s (0.5 s hold) x6",
+   "seconds": 8.05,
+   "exact_events": true,
+   "events": [
+    {
+     "at_instr": 60000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 60660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 63300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 63960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 91020000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 93660000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 104880000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 107520000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 118740000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 121380000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 161640000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 164280000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 204540000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 270540000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 336540000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 402540000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 468540000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 534540000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 600540000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 666540000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 732540000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 798540000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 864540000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 930540000,
+     "button": 25,
+     "down": false
+    }
+   ]
+  },
+  {
+   "name": "audition-swarmer",
+   "description": "Audition a DN2 stock machine: FUNC+SRC, DOWN x3, YES, YES, then Trig 1 every 1 s (0.5 s hold) x6",
+   "seconds": 8.15,
+   "exact_events": true,
+   "events": [
+    {
+     "at_instr": 60000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 60660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 63300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 63960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 91020000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 93660000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 104880000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 107520000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 118740000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 121380000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 132600000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 135240000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 175500000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 178140000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 218400000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 284400000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 350400000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 416400000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 482400000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 548400000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 614400000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 680400000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 746400000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 812400000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 878400000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 944400000,
+     "button": 25,
+     "down": false
+    }
+   ]
+  }
+ ]
+}

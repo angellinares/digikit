@@ -513,7 +513,7 @@ script change; check the frames by eye first).
 
 ## Tuning switches (not diagnostics)
 
-Read at start-up; defaults are what `tools/emulator/digi_env.py` and the shipped
+Read at start-up; defaults are what `tools/emulator/emulator_config.py` and the shipped
 `config/emulator.json` set. Status **[D]**: read from the code, not re-run.
 
 | variable | effect |

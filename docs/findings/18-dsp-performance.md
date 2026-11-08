@@ -2182,3 +2182,17 @@ Hand-picked loops run at about 0.6 ticks per guest instruction, large auto CFG r
 **[O]** Real device tests are not faster with auto-arming: shot-picker took 236 s against 153 s, card-safety 280 s against 258 s, and freqshift 359 s against 364 s. It is therefore a workbench default only.
 
 **[O]** Compile runs on the SHARC thread. The first-note stall in free-running mode has not been measured.
+
+**[O]** Towards 1.0x:
+- Measure host time per tier and per CPU first.
+- Train AOT on more machines, or run it with `--all --coverage`.
+- Arm at the DO loop instead of upstream of it.
+- Generate the hand-picked list per machine with `perf:fast-roots rank`.
+- Make entry and exit cheaper for small regions.
+- Retrain PGO with more machines and the fast tier.
+- Add MODE1 data flow at function entry.
+- Resolve the 175 indirect jumps.
+- Add pointer-range analysis for the `address range unknown` refusals.
+- Write native kernels for hot functions such as `0x1c10e3`.
+- Lower the ColdFire instruction budget if it is the limit.
+- Compile in the background and keep an on-disk cache.

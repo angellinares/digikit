@@ -160,7 +160,8 @@ each has a module docstring with its full command line.
 | `tools/devtools/benchlock.py` | Shared lock for builds and exclusive lock for timed runs (`status` shows holders). |
 | `tools/devtools/upload_bench.py` | `uv run python -m tools.devtools.upload_bench [--device dn2\|dt2] -- --bytes N`: one free-running daemon, then `upload_bench.mjs` (digikit BEGIN/DATA/END and ranged VERIFY, DN2) or `upload_bench_rpc.mjs` (stock +Drive MidiRpc write, DT2): wall MB/s, guest instructions per byte (`work_insn_per_byte` less the firmware's own load), the real-time factor, controller CPU seconds. |
 | `tools/nx/rust-env.mjs` | `node tools/nx/rust-env.mjs [--gen] [--variant NAME] -- CMD`: runs a cargo command with the pinned toolchain; `--gen` sets `SHARC_GEN_DIR` and `CARGO_TARGET_DIR` and checks the generated-core fingerprint. |
-| `tools/emulator/digi_env.py` | Paths, firmware lookup, ready-input lookup, the generated-core registry and fast-region tables (`config/emulator.json`). |
+| `tools/emulator/digi_env.py` | Paths, firmware lookup, ready-input lookup and the generated-core registry. |
+| `tools/emulator/emulator_config.py` | The one resolver for the tier settings in `config/emulator.json` (fast regions, cluster roots, fallback roots, context defaults). |
 | `tools/devtools/wasm_parity.mjs` | `mise run web:parity NAME`: check the browser core renders a scenario's PCM byte-identical to native. |
 | `tools/devtools/worktree-setup.sh` | Link `out/`, `.venv`, each `firmware/*.syx` and generated language files into an agent worktree. |
 
