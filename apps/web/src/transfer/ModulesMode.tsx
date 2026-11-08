@@ -4,7 +4,7 @@
 // uploads and verifies each ticked module on the card; that is all. The device's selection is the device's own: the user selects the module
 // in MODULES on the device, then applies and restarts there. Restart only restarts the device and reports what loaded. Delete removes the
 // ticked files from the card; a loaded module stays loaded until the restart.
-import { For, Show, type JSX } from 'solid-js';
+import { For, Show, createSignal, type JSX } from 'solid-js';
 import { errorLine, formatBytes } from '../modules/backend';
 import {
   ListRow,
@@ -18,6 +18,7 @@ import {
   type PageCtx,
 } from './TransferParts';
 import { noteActivity } from './activity';
+import ModuleFilesArea from './ModuleFilesArea';
 import { transferEnv } from './env';
 import { createPaneSelect } from './pane-select';
 import SplitPane from './SplitPane';
@@ -193,7 +194,15 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
     return st?.kind === 'uploading' ? { kind: 'uploading', sent: st.sent, bytes: st.bytes } : st;
   };
 
-  return (
+  // The module whose row was clicked. The tick stays install/delete only: a row whose module has a [files] table is selected by a click
+  // without being ticked; its files area shows under the lists. A card-only row has the module id when its header is known (the header name).
+  const [selectedId, setSelectedId] = createSignal<string>();
+  const filesId = (r: TransferRow) => {
+    const id = r.id ?? (r.known ? r.name : undefined);
+    return id && transferEnv().moduleFiles?.(id) ? id : undefined;
+  };
+
+  const lists = (
     <SplitPane id="transfer">
       <LocalPane
         onDrop={(f) => void addFiles(f)}
@@ -284,8 +293,19 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                           {(r) => (
                             <ListRow
                               rowKey={rowKey(r)}
-                              selected={ticks().has(rowKey(r))}
-                              onSelect={r.id ? (e) => lsel.click(rowKey(r), e) : undefined}
+                              selected={ticks().has(rowKey(r)) || (!!filesId(r) && selectedId() === filesId(r))}
+                              onSelect={
+                                r.id
+                                  ? (e) => {
+                                      const f = filesId(r);
+                                      if (f) setSelectedId(f);
+                                      else {
+                                        setSelectedId(undefined);
+                                        lsel.click(rowKey(r), e);
+                                      }
+                                    }
+                                  : undefined
+                              }
                               check={{
                                 label: `Install ${label(r)}`,
                                 checked: ticks().has(rowKey(r)),
@@ -358,8 +378,19 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                   {(r) => (
                     <ListRow
                       rowKey={r.on_card === 'no' ? undefined : r.path}
-                      selected={delTicks().has(r.path)}
-                      onSelect={r.on_card === 'no' ? undefined : (e) => dsel.click(r.path, e)}
+                      selected={delTicks().has(r.path) || (!!filesId(r) && selectedId() === filesId(r))}
+                      onSelect={
+                        r.on_card === 'no'
+                          ? undefined
+                          : (e) => {
+                              const f = filesId(r);
+                              if (f) setSelectedId(f);
+                              else {
+                                setSelectedId(undefined);
+                                dsel.click(r.path, e);
+                              }
+                            }
+                      }
                       check={
                         r.on_card === 'no'
                           ? undefined
@@ -385,5 +416,18 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
         </Show>
       </DevicePane>
     </SplitPane>
+  );
+
+  return (
+    <>
+      {lists}
+      <Show when={selectedId()}>
+        {(id) => (
+          <Show when={transferEnv().moduleFiles?.(id())}>
+            {(spec) => <ModuleFilesArea ctx={props.ctx} id={id()} spec={spec()} />}
+          </Show>
+        )}
+      </Show>
+    </>
   );
 }

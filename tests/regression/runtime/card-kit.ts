@@ -246,7 +246,7 @@ const BI_FIELDS = [
   'loaded',
   'uiReached',
 ] as const;
-const SAFE_NAMES = ['none', 'counter', 'key', 'flag'];
+const SAFE_NAMES = ['none', 'counter', 'key', 'flag', 'dsp', 'panic', 'read'];
 const CARD_FIELDS = [
   'state',
   'firstNonblank',

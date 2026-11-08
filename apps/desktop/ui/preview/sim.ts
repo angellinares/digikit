@@ -127,6 +127,14 @@ export const LIBRARY: LibModule[] = [
     needs: need(61 * KiB, 600 * KiB),
   },
   { id: 'chorus', label: 'Chorus', group: 'Effects', version: '0.4.0', size: 26 * KiB, needs: need(26 * KiB) },
+  {
+    id: 'tools/bootscreen',
+    label: 'Boot screens',
+    group: 'Tools',
+    version: '0.1.0',
+    size: 3 * KiB,
+    needs: need(3 * KiB),
+  },
   { id: 'tuner', label: 'Tuner', group: 'Tools', version: '0.1.0', size: 9 * KiB, needs: need(9 * KiB) },
   { id: 'remote', label: 'Remote control', group: 'Tools', version: '0.1.0', size: 1032, needs: need(1032) },
   {

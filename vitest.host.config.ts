@@ -11,6 +11,8 @@ export default defineConfig({
     maxWorkers: 1,
     // desktop-host: the Solid client build (the server build runs no effects), for the tests of reactive code
     projects: projects.map((p: { name: string; dir: string; include: string; conditions?: string[] }) => ({
+      // modules/ has no node_modules: its tests reach the workspace packages by path
+      resolve: { alias: { '@digi/dkbs': fileURLToPath(new URL('packages/dkbs/src/index.ts', import.meta.url)) } },
       ...(p.conditions
         ? { resolve: { conditions: p.conditions }, ssr: { resolve: { conditions: p.conditions } } }
         : {}),

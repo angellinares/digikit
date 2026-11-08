@@ -151,6 +151,12 @@ value = 5
 doc = "DkrtBootInfo.reason: the boot before left a panic record (the runtime's Rust code panicked)."
 
 [[const]]
+name = "SAFE_READ"
+type = "u32"
+value = 6
+doc = "DkrtBootInfo.reason: no selection copy is valid and a copy could not be read; no modules load and the selection is not written during this boot."
+
+[[const]]
 name = "FAULT_ROWS"
 type = "usize"
 value = 4
@@ -571,12 +577,12 @@ doc = "The header fields of the .dkm that starts at store sector first (DkrtScan
 [[fn]]
 name = "dkrt_selection_get"
 sig = "i32 dkrt_selection_get(DkrtSelection *out)"
-doc = "The saved selection (what the next boot loads): count store paths. Always OK."
+doc = "The saved selection (what the next boot loads): count store paths. OK, or E_READ without touching out when no copy is valid and a copy had a read error."
 
 [[fn]]
 name = "dkrt_selection_set"
 sig = "i32 dkrt_selection_set(const DkrtSelection *sel)"
-doc = "Save a selection (two copies in the card's store range); OK or an E_SEL_* code. No effect until the next boot."
+doc = "Save a selection (two copies in the card's store range); OK, an E_SEL_* code, or E_READ without writes when no copy is valid and a copy had a read error. No effect until the next boot."
 
 [[fn]]
 name = "dkrt_boot_info"

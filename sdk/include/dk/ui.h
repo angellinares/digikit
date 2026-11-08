@@ -59,6 +59,7 @@ typedef void dk_ui_act_fn(void *ctx, int arg);
 enum {
     DK_UI_TEXT_PAGE = 1, /* rows are text to read: no highlighted row, the keys scroll */
     DK_UI_LIST = 2,      /* a dense list with a title bar, a check column and a side panel */
+    DK_UI_WIDE = 4,      /* a menu page with a full-width title bar and full-width rows (a list without check marks or side panel) */
 };
 
 typedef struct dk_ui_menu_desc {

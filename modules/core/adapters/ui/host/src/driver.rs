@@ -15,6 +15,11 @@ fn is_list(id: usize) -> bool {
     desc_of(id).is_some_and(|d| d.flags & DK_UI_LIST != 0)
 }
 
+/// True when the top view is a menu page with the full-width title bar and rows (`DK_UI_WIDE`).
+pub fn is_wide() -> bool {
+    desc_of(top()).is_some_and(|d| d.flags & DK_UI_WIDE != 0)
+}
+
 /// Opens a menu (as `dk_ui_open` does). Returns its result.
 pub fn open(m: *mut DkUiMenu) -> c_int {
     dk_ui_open(m)

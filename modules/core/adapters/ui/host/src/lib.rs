@@ -12,6 +12,7 @@ pub const DK_UI_ROW: usize = 24;
 pub const DK_UI_TOAST: usize = 32;
 pub const DK_UI_TEXT_PAGE: u32 = 1;
 pub const DK_UI_LIST: u32 = 2;
+pub const DK_UI_WIDE: u32 = 4;
 
 pub const CAP_MENU: c_int = 1;
 pub const CAP_TEXT_PAGE: c_int = 2;
@@ -208,7 +209,7 @@ pub(crate) fn open_id(id: usize) -> c_int {
     let ok = with(|s| {
         s.has(CAP_MENU)
             && (d.flags & DK_UI_TEXT_PAGE == 0 || s.has(CAP_TEXT_PAGE))
-            && (d.flags & DK_UI_LIST == 0 || s.has(CAP_LIST))
+            && (d.flags & (DK_UI_LIST | DK_UI_WIDE) == 0 || s.has(CAP_LIST))
     });
     if !ok {
         return -1;
@@ -247,7 +248,7 @@ pub unsafe extern "C" fn dk_ui_menu_new(d: *const MenuDesc) -> *mut DkUiMenu {
     with(|s| {
         let ok = s.has(CAP_MENU)
             && (d.flags & DK_UI_TEXT_PAGE == 0 || s.has(CAP_TEXT_PAGE))
-            && (d.flags & DK_UI_LIST == 0 || s.has(CAP_LIST));
+            && (d.flags & (DK_UI_LIST | DK_UI_WIDE) == 0 || s.has(CAP_LIST));
         if !ok {
             return std::ptr::null_mut();
         }

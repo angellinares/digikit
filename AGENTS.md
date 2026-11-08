@@ -19,6 +19,7 @@ packages/
   dk-session/       TypeScript SysEx session layer
   test-support/     Shared test fixtures and helpers
   dkupload/         Rust upload protocol
+  dkbs/             Boot screen format, player and authoring CLI
   dksample/         WAV, native sample format and hashing
   dkneeds/          Module resource requirements
 modules/

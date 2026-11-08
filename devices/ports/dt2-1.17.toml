@@ -39,6 +39,16 @@ excludes = [[0x200fa000, 0x200fe000]]
 mark = "D"
 
 [[anchor]]
+name = "cf.draw.fn.bitmap_clear"
+cpu = "cf"
+kind = "code"
+addr = 0x40113700
+len = 4
+sha256 = "7694646addf9bf72b639ece8ba990d8e101955de2d4cecd4d9e1bd66b670ef41"
+mark = "D"
+rule = "fw/draw:cf_func"
+
+[[anchor]]
 name = "cf.draw.fn.blit"
 cpu = "cf"
 kind = "code"
@@ -2358,6 +2368,16 @@ mark = "D"
 rule = "fw/rtos:cf_func"
 
 [[anchor]]
+name = "cf.rtos.site.intro_setup.table_arg"
+cpu = "cf"
+kind = "code"
+addr = 0x400d183a
+len = 6
+sha256 = "03ecf6de6621b1244703968590878d561fdc9fb5be9a05774791bb104128566c"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
 name = "cf.rtos.site.main_os_task"
 cpu = "cf"
 kind = "code"
@@ -2366,6 +2386,17 @@ len = 8
 sha256 = "f446b70c3829f8c05b4cb484c6f85e777d19f62557951248a5c622fe97d11223"
 mark = "D"
 rule = "fw/rtos:cf_words"
+
+[[anchor]]
+name = "cf.rtos.value.intro_entry"
+cpu = "cf"
+kind = "value"
+addr = 0x43153a00
+src = 0x400d1964
+len = 4
+sha256 = "251ac2eca7ee73e5ff367fb6f68d9b48b1606627202954432f7eef98e75fc540"
+mark = "D"
+rule = "fw/rtos:cf_literal"
 
 [[anchor]]
 name = "cf.rtos.value.reset.clear_helper"
@@ -3245,6 +3276,11 @@ mode = "before"
 name = "cf.rtos.hook.idle"
 site = "cf.rtos.site.idle"
 mode = "replace"
+
+[[hook]]
+name = "cf.rtos.hook.intro_setup.table_arg"
+site = "cf.rtos.site.intro_setup.table_arg"
+mode = "before"
 
 [[hook]]
 name = "cf.rtos.hook.main_os_task"

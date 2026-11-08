@@ -211,6 +211,18 @@ After a change to `devices/*.toml` or `sdk/sdk.toml`, run `mise run gen:modules`
 
 Each task takes `-- --help`.
 
+## Boot screens
+
+A boot screen is a script `x.mjs` that exports `ticks` and `draw(ctx, t)` and draws with Canvas 2D (128x64). The agent skill `.agents/skills/digikit-bootscreen/SKILL.md` has the rules.
+
+0. `mise run bootscreen` (no arguments): opens a gallery of `modules/tools/bootscreen/examples/*.mjs` in a browser. Click a tile to zoom it in; Esc closes. Tiles update when any file in the folder changes; `--no-open` skips the browser.
+1. `mise run bootscreen -- dev x.mjs`: packs the script and opens a browser preview that reloads when the file changes.
+2. `mise run bootscreen -- sheet x.mjs`: writes a contact sheet PNG of up to 24 ticks to `out/bootscreens/` (a way to see the result without a browser).
+3. `mise run bootscreen -- put x.mjs [--port Digitakt]`: packs the script and uploads it to `data/tools/bootscreen/x.dkbs` on the device (`wb store put`, verified after the upload).
+4. Or open Workbench, Transfer, Modules, tick `bootscreen`: the "Boot screens" area chooses or takes `.dkbs` files, previews them without a device, and sends them (the module too, when it is not on the device).
+
+The device applies a file only after you choose it in the module's settings on the device and restart.
+
 ## Fast iteration: runtime, UI and modules
 
 One edit and one look take seconds, not a boot. Iterate on the Digitone II (its boot is about half as long), check the Digitakt II at the end, and finish with the owner's check (`module:check` for a content module, the named Nx device target for a fixture).

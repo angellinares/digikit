@@ -63,7 +63,11 @@ description = "Build the dkmidi MIDI bridge (the workbench's MIDI port code on s
 ["wb:cli"]
 depends = ["dkmidi:build"]
 run = "node tools/devtools/wb.mjs"
-description = "Workbench actions from the command line through the workbench's own code: mise run wb:cli -- samples put FILE... --folder F | samples ls | info | ports"
+description = "Workbench actions from the command line through the workbench's own code: mise run wb:cli -- samples put FILE... --folder F | samples ls | store put LOCAL REMOTE | store ls [PREFIX] | store rm REMOTE | info | ports"
+
+["bootscreen"]
+run = "node packages/dkbs/cli/bootscreen.mjs"
+description = "Boot screen authoring without a device: mise run bootscreen (no arguments: gallery of the examples in a browser, --no-open skips the browser) | -- pack SRC.mjs | sheet SRC.mjs | dev SRC.mjs | put SRC.mjs [--port SUB] [--bin PATH] (pack, then send to the device)"
 
 # --- scenarios (tests/scenarios/README.md) ---
 

@@ -345,6 +345,11 @@
 .transfer-page .mini:hover:not(:disabled) {
   background: #23262b;
 }
+.transfer-page .act.primary:disabled {
+  background: #1a1c20;
+  border-color: var(--tp-border);
+  color: var(--ink, #eceae5);
+}
 .transfer-page .act.primary:hover:not(:disabled) {
   background: var(--amber-hover, #ffc444);
 }
@@ -609,6 +614,10 @@
 
 /* a narrow window: the connection badge takes its own line under the title, its parts wrap from the left (it would push the title up and the columns down at random) */
 @media (max-width: 760px) {
+  /* the lists keep the height of their rows instead of filling the window: the files area of a module follows them without a gap */
+  .transfer-page .split {
+    flex: 0 1 auto;
+  }
   .transfer-page .head .sp {
     display: none;
   }
@@ -617,4 +626,32 @@
     flex: 1 1 100%;
     min-width: 0;
   }
+}
+
+/* the preview of a module file (components/ModuleFilePreview.tsx): the canvas, then the controls on one wrapping line */
+.transfer-page .module-preview {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  max-width: 100%;
+}
+.transfer-page .module-preview canvas {
+  max-width: 100%;
+  height: auto !important;
+  aspect-ratio: 2 / 1;
+  background: #08090c;
+}
+.transfer-page .module-preview .acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.transfer-page .module-preview .acts label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.transfer-page .module-preview .err {
+  margin: 0;
 }

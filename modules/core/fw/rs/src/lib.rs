@@ -5,7 +5,13 @@
 
 pub mod draw {
     unsafe extern "C" {
-        /// Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, data pointer at +0x14.
+        /// Clears the 32-bit row bands of a Bitmap to `value` (0: black); the intro's frame callbacks of the stock scene tables call it as (bitmap, 0, 1) before they draw.
+        #[link_name = "cf.draw.fn.bitmap_clear"]
+        pub fn bitmap_clear(bitmap: *mut u8, value: u32, flags: u32);
+    }
+
+    unsafe extern "C" {
+        /// Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, +0x10 pixel pointer, +0x14 mask pointer.
         #[link_name = "cf.draw.fn.blit"]
         pub fn blit(dst: *mut u8, src: *mut u8, x: i32, y: i32, centre: u8);
     }
@@ -540,6 +546,12 @@ pub mod rtos {
         /// The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`.
         #[link_name = "cf.rtos.site.exc_hook_lit"]
         pub static EXC_HOOK_LIT: u8;
+    }
+
+    unsafe extern "C" {
+        /// The intro's current-entry pointer: {callback, frame count} in the scene table, NULL when no intro runs (DT2 0x43153a00, DN2 0x42c4cacc).
+        #[link_name = "cf.rtos.value.intro_entry"]
+        pub static INTRO_ENTRY: u8;
     }
 
     unsafe extern "C" {

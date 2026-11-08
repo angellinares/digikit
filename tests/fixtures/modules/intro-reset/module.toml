@@ -1,0 +1,22 @@
+[module]
+id = "test/intro-reset"
+version = "0.1.0"
+name = "Intro reset"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: takes the boot animation with a frame function that resets the machine on the first tick, on the intro task"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# C, packed like test/dyn-crash. `dkm_init` calls `intro_take` (<dk/intro.h>); the first tick of the intro runs `frame`, which writes SOFTRST as test/dyn-fault does
+# (no dk_api call: a frame callback must not make one). The boot counter stays raised, so the third boot is safe mode.
+[[object]]
+path = "build/intro-reset.dko.json"
+sources = ["src/c/intro_reset.c"]
+place = "cf.expansion"

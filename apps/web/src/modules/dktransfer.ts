@@ -219,6 +219,76 @@ export async function listModules(s: DkSession, info: DkInfoFull): Promise<DkEnt
   return (await s.list()).filter((e) => e.path.startsWith(MODULES_FOLDER));
 }
 
+/** The store folder of a module's own files (sdk/include/dk/data.h): `data/<module id>/`. */
+export const moduleFilesFolder = (moduleId: string): string => `data/${moduleId}/`;
+
+/** The module chooser keeps a file name in 48 bytes, NUL included (modules/tools/bootscreen/src/module.c, NAME_MAX_BYTES). */
+export const MODULE_FILE_NAME_LIMIT = 48;
+
+/**
+ * The store path of a file of a module: `data/<module id>/<name>`. The rule of `dk_data_path` (sdk/include/dk/data.h): `name` is not empty
+ * and holds neither '/' nor "..". Throws otherwise.
+ */
+export function moduleFilePath(moduleId: string, name: string): string {
+  if (name.length >= MODULE_FILE_NAME_LIMIT)
+    throw new DkError({
+      error: `"${name}" is ${name.length} characters; a module file name must be shorter than ${MODULE_FILE_NAME_LIMIT}`,
+      kind: 'request',
+    });
+  if (!name || name.includes('/') || name.includes('..'))
+    throw new DkError({ error: `"${name}" is not a name for a module file (empty, '/' or '..')`, kind: 'request' });
+  return `${moduleFilesFolder(moduleId)}${name}`;
+}
+
+/** The files of a module under `data/<module id>/`: by prefix when the runtime has FOLDERS, else all entries, filtered here. */
+export async function listModuleFiles(s: DkSession, moduleId: string): Promise<DkEntry[]> {
+  const folder = moduleFilesFolder(moduleId);
+  const info = await s.info();
+  requireRuntime(info);
+  const all = hasCap(info, 'FOLDERS') ? await s.list(folder) : await s.list();
+  return all.filter((e) => e.path.startsWith(folder) && e.path.length > folder.length);
+}
+
+/** Upload one file of a module and VERIFY it against the bytes sent (a mismatch is an error). */
+export async function putModuleFile(
+  s: DkSession,
+  moduleId: string,
+  name: string,
+  bytes: Uint8Array,
+  progress: (sent: number, total: number) => void = () => {},
+): Promise<void> {
+  const path = moduleFilePath(moduleId, name);
+  requireRuntime(await s.info());
+  await s.put(path, bytes, progress);
+  if (!(await s.verifyFile(path, bytes)))
+    throw new DkError({
+      error: `${path}: the device reads back other bytes: the card did not keep the file`,
+      kind: 'verify',
+    });
+}
+
+/** DELETE one file of a module. */
+export async function removeModuleFile(s: DkSession, moduleId: string, name: string): Promise<void> {
+  const path = moduleFilePath(moduleId, name);
+  requireRuntime(await s.info());
+  await s.delete(path);
+}
+
+/** The whole file at `path` of the store, read in pieces of READ (runtime 0.2.4, capability READ). */
+export async function readStoreFile(s: DkSession, path: string, piece = 768): Promise<Uint8Array> {
+  const first = await s.read(path, 0, piece);
+  const out = new Uint8Array(first.size);
+  out.set(first.bytes.subarray(0, first.size));
+  let at = first.bytes.length;
+  while (at < first.size) {
+    const part = await s.read(path, at, Math.min(piece, first.size - at));
+    if (part.bytes.length === 0) throw new DkError({ error: `${path}: short read at ${at}`, kind: 'protocol' });
+    out.set(part.bytes, at);
+    at += part.bytes.length;
+  }
+  return out;
+}
+
 /** The merged view for the device behind `s`. */
 export async function buildView(s: DkSession, library: LibraryModule[]): Promise<TransferView> {
   const info = await s.info();

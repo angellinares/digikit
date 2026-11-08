@@ -13,6 +13,7 @@ const alias = [
   { find: /^@digi\/regression\/(.*)$/, replacement: `${at('.').replace(/\/$/, '')}/$1` },
   { find: /^@digi\/test-support$/, replacement: at('../../packages/test-support/src/index.ts') },
   { find: /^@digi\/control-client$/, replacement: at('../../packages/control-client/src/index.ts') },
+  { find: /^@digi\/dkbs$/, replacement: at('../../packages/dkbs/src/index.ts') },
   { find: /^@digi\/dk-session$/, replacement: at('../../packages/dk-session/src/index.ts') },
   { find: /^@digi\/dk-session\/(.*)$/, replacement: `${at('../../packages/dk-session/src')}/$1.ts` },
 ];

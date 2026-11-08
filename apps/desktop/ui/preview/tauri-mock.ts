@@ -28,7 +28,7 @@ export async function invoke<T>(cmd: string, args?: any, _options?: { headers?: 
     case 'patchkit_wasm':
       return (await firmware.patchkitWasm()) as T;
     case 'firmware_prepare':
-      return (await firmware.prepare(args as Uint8Array, _options?.headers?.['x-restore'] === '1')) as T;
+      return (await firmware.prepare(args as Uint8Array, _options?.headers?.['x-restore'] === '1', _options?.headers?.['x-set'] ?? '')) as T;
     case 'firmware_save':
       return firmware.save(
         decodeURIComponent(_options?.headers?.['x-name'] ?? 'firmware.syx'),

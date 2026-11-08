@@ -9,6 +9,12 @@ import {
   deleteFiles,
   install,
   libraryModule,
+  listModuleFiles,
+  moduleFilePath,
+  moduleFilesFolder,
+  putModuleFile,
+  readStoreFile,
+  removeModuleFile,
   restartDevice,
   type LibraryModule,
   type TransferEvent,
@@ -96,6 +102,34 @@ export const transferBackend = {
   async remove(paths: string[], onEvent: (e: TransferEvent) => void): Promise<void> {
     const s = await asked(running);
     await asked(() => deleteFiles(s, paths, onEvent));
+  },
+  /** The files of a module under `data/<module id>/` on the card: name and size. */
+  async listModuleFiles(moduleId: string): Promise<{ name: string; size: number }[]> {
+    const { s } = await opened();
+    const folder = moduleFilesFolder(moduleId);
+    const entries = await asked(() => listModuleFiles(s, moduleId));
+    return entries.map((e) => ({ name: e.path.slice(folder.length), size: e.size }));
+  },
+  /** Upload one file of a module and VERIFY it on the card. */
+  async putModuleFile(
+    moduleId: string,
+    name: string,
+    bytes: Uint8Array,
+    progress: (sent: number, total: number) => void,
+  ): Promise<void> {
+    const s = await asked(running);
+    await asked(() => putModuleFile(s, moduleId, name, bytes, progress));
+  },
+  /** The bytes of one file of a module on the card (READ). */
+  async readModuleFile(moduleId: string, name: string): Promise<Uint8Array> {
+    const s = await asked(running);
+    const path = moduleFilePath(moduleId, name);
+    return asked(() => readStoreFile(s, path));
+  },
+  /** DELETE one file of a module from the card. */
+  async removeModuleFile(moduleId: string, name: string): Promise<void> {
+    const s = await asked(running);
+    await asked(() => removeModuleFile(s, moduleId, name));
   },
   /** RESTART the emulated device, wait for the boot and report what loaded. */
   async restart(onEvent: (e: TransferEvent) => void): Promise<void> {

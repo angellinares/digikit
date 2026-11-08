@@ -347,6 +347,38 @@ Persistence and modulation:
 
 Patching a stock machine will become a separate module type. It is not part of the content modules.
 
+### 5.8 Module settings
+
+A run-time module keeps its own values with the settings API of `<dk/settings.h>` (API 1.9): `dk_settings_client` (only in `dkm_init`, gives the handle),
+`dk_settings_get`, `dk_settings_put` and `dk_settings_remove`. A module on a runtime older than API 1.9 must check `api->size` before it calls them.
+
+- The runtime stores the key as `<module name>/<key>`. A module reaches its own keys only; the prefix stops mistakes, not hostile code.
+- The module name and the key together are at most 47 printable ASCII characters (no space). A key may not be empty, hold `/` or hold `..`: such a key
+  returns `E_SET_KEY` and nothing is written.
+- A value is 0 to 1024 bytes. All modules and the runtime share one 8 KiB record; a full record returns `E_SET_FULL`, an off settings store `E_SET_OFF`.
+- Writes reach the card 2 s after the last change, and before a restart.
+- `get` works in `dkm_init` and in the UI task. `put` and `remove` are for the UI task only (a `DK_MENU` row, slot 0): not from a service command handler.
+- The module owns the layout and the version of its values: write a version byte first and read older values or reset them. The runtime never interprets them.
+- The settings popup is the module's `DK_MENU` with the `dk_ui_*` rows: a row changes a value and its callback calls `dk_settings_put`; `dkm_init` reads it at the next boot.
+
+### 5.9 Module files and `intro_take`
+
+A module's own files live under `data/<module id>/` in the store, not next to the `.dkm`: the `modules/` list holds at most 32 entries. `dk_data_path` (`<dk/data.h>`)
+builds the path and refuses a name that is empty or holds `/` or `..`. Read a file with `store_read` in `dkm_init`, or list the folder with the `files_*` calls (root
+`DK_FILES_STORE`). Only the host writes these files for now. `store_read` runs one at a time and in `dkm_init` only.
+
+`dk_intro_take` (`<dk/intro.h>`, API 1.9) replaces the boot animation. It runs after the REC, safe-mode and boot-counter checks and does no storage I/O: read the frames
+in `dkm_init`, then call it.
+
+- `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. `ticks`-1 (30 a second), or NULL to end the animation. It runs on the intro task (priority 7, more urgent than the main-OS task, priority 6): it must return quickly, because it blocks every lower-priority task, and a callback that never returns starves the main OS until power-off. It must not block and
+  must not call any `dk_api` function. The last frame stays on the screen.
+- `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass. Free the buffer there, never in `frame`.
+- `ticks` is 1 to 300. Errors: `E_NOT_FOUND` (outside `dkm_init`), `E_CONTRACT` (no frame, bad ticks), `E_BUSY` (taken already), `E_BOOT_ONLY` (the intro is over). After an error the stock intro runs.
+- A fault in `frame` reaches the firmware's handler. The boot counter stays raised, so repeated failed boots end in safe mode.
+- In a safe boot no module loads, so `dk_intro_take` is never called. The runtime itself replaces the stock intro with a fixed safe-mode screen for 4 s: `SAFE MODE`, the reason (`REC HELD`, `2 FAILED BOOTS`, `SAFE ONCE`, `DSP FAULT`, `CRASH` or `SELECTION UNREADABLE`) and `NO MODULES LOADED`.
+
+See `modules/tools/bootscreen`.
+
 ## 6. Generated files
 
 `patchkit gen` writes `build/gen/gallery.json` from the module's declaration and the device profiles. It holds the machines with their
@@ -509,7 +541,7 @@ The `dk_api` table that `dkm_init` receives. Fields are only appended, each is 4
 | `version`, `size`, `device`, `runtime` | Table layout version, table size, the device id, the packed runtime version. |
 | `import(name)` | Address of a firmware function or runtime helper by name. 0 when the image has none. |
 | `alloc(size)`, `free(p)` | A 16-byte aligned block from the module arena, and its release. `alloc` returns null when full. |
-| `store_read(path, dst, cap)` | Read a store file. Returns its size, or a negative code. |
+| `store_read(path, dst, cap)` | Read a store file. Returns its size, or a negative code. One call at a time, in `dkm_init` only. |
 | `log(msg, value)` | Append to the runtime log. API 1.0. |
 | `log_lv(level, msg, value)` | The same with a level. API 1.1. |
 | `register_cmds(first, count, handler)` | Register SysEx commands. API 1.2. |

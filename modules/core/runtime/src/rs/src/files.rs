@@ -77,6 +77,10 @@ pub unsafe fn retire(owner: usize) -> bool {
         jobs.retire(owner).unwrap_or(false)
     })
 }
+/// Is module record `owner` inside its `dkm_init` now? The check that `client` and the settings client share.
+pub unsafe fn in_init(owner: usize) -> bool {
+    owner < crate::MAX_MODULES && INIT_SCOPE == owner && READY[owner] == 1
+}
 pub unsafe fn client() -> i32 {
     locked(|jobs| {
         let source = crate::dlog::current_source();

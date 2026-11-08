@@ -165,9 +165,9 @@ async function patchKit(): Promise<PatchKit> {
 export const patchkitWasm = async (): Promise<ArrayBuffer> => (await fetch(wasmUrl)).arrayBuffer();
 
 /** `firmware_prepare`: the real checks, packed as the Tauri command packs them. */
-export async function prepare(stock: Uint8Array, restore: boolean): Promise<ArrayBuffer> {
+export async function prepare(stock: Uint8Array, restore: boolean, set = ''): Promise<ArrayBuffer> {
   const k = await patchKit();
-  const p = k.prepare(stock, restore);
+  const p = k.prepare(stock, restore, set);
   expect(p.imageId, restore);
   if (p.runtime) patchedRuntime = String(p.runtime);
   if (q.get('fwforce') === '1') {
