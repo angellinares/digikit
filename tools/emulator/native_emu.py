@@ -845,6 +845,8 @@ def main(args: list[str] | None = None) -> None:
         return
     if not daemon:
         env.update(pgo_env())
+        # Workbench default; the fast tier covers code that has no generated blocks, and an explicit value, including an empty one, still wins.
+        env.setdefault("SHARC_FAST_AUTO", "4,2,0")
     subprocess.run([str(binary), *args], cwd=ROOT, check=True, env=env)
 
 

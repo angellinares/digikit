@@ -330,6 +330,8 @@ pub trait FastTier: Send {
     /// boundary (the target of a taken branch, call or loop-back) or at a
     /// generated-block dispatch. Only called when `auto()`; must be cheap.
     fn note(&mut self, _pc: u32) {}
+    /// The engine did not call `note` for a PC that has a usable AOT block.
+    fn skipped_for_aot(&mut self) {}
     /// The interpreter landed by a taken branch, call, return or loop-back in
     /// appended code (code a patch added after the generated image's code):
     /// a candidate entry, which no generated block or root list can name.
@@ -361,6 +363,7 @@ pub struct FastStats {
     /// Regions rebuilt with flat accesses after their dynamic windows kept failing.
     pub dyn_flat: u64,
     pub cached_refusals: u64,
+    pub auto_skipped_aot: u64,
     pub reasons: std::collections::BTreeMap<String, u64>,
 }
 
@@ -487,6 +490,8 @@ struct Slot {
     chased: bool,
     calls: u64,
     insns: u64,
+    /// Host ticks spent in calls that ran (`SHARC_FAST_TIME`).
+    ticks: u64,
     cov: SlotCov,
 }
 
@@ -553,6 +558,8 @@ pub struct FastEngine {
     log: bool,
     /// Reports at exit (`SHARC_FAST_LOG` set to anything).
     summary: bool,
+    /// `SHARC_FAST_TIME`: host ticks per region, reported at exit.
+    time: bool,
     /// `SHARC_FAST_FOLLOW=1`: the instruction after an instruction a region
     /// stopped at (one the lowering cannot run) becomes an entry too, so the
     /// code after it runs from a region again once the interpreter has run
@@ -688,6 +695,7 @@ impl FastEngine {
                 on
             },
             summary: std::env::var_os("SHARC_FAST_LOG").is_some(),
+            time: std::env::var("SHARC_FAST_TIME").is_ok_and(|v| !v.is_empty() && v != "0"),
             follow: std::env::var("SHARC_FAST_FOLLOW").is_ok_and(|v| v == "1"),
             chase: std::env::var("SHARC_FAST_CHASE").map_or(true, |v| v != "0"),
             follow_queue: Vec::new(),
@@ -969,7 +977,18 @@ impl FastEngine {
                     Some(Err(e)) => Some(e),
                     _ => None,
                 };
-                match region::build_cfg_opts(s, pc, cluster) {
+                // An auto region stops at every hand-picked entry.
+                let barrier: std::collections::BTreeSet<u32> =
+                    if self.lookup.get(&pc).is_some_and(|&i| self.slots[i].auto) {
+                        self.lookup
+                            .iter()
+                            .filter(|&(&p, &i)| p != pc && !self.slots[i].auto)
+                            .map(|(&p, _)| p)
+                            .collect()
+                    } else {
+                        Default::default()
+                    };
+                match region::build_cfg_opts(s, pc, cluster, &barrier) {
                     Ok(r) => Ok(r),
                     Err(e) => Err(match loop_err {
                         Some(l) => {
@@ -1357,6 +1376,36 @@ impl Drop for FastEngine {
         if self.summary && (self.stats.calls > 0 || self.stats.armed > 0) {
             eprintln!("{}", self.report());
         }
+        if self.time {
+            let mut rows: Vec<(&u32, &Slot)> = self
+                .pcs
+                .iter()
+                .zip(&self.slots)
+                .filter(|(_, sl)| sl.calls > 0)
+                .collect();
+            rows.sort_by(|a, b| b.1.ticks.cmp(&a.1.ticks));
+            eprintln!(
+                "fast time: {} regions with calls, tick rate {} Hz (pc, origin, shape, len, calls, insns, ticks, ticks/insn)",
+                rows.len(),
+                crate::tick_hz()
+            );
+            for (pc, sl) in rows.into_iter().take(60) {
+                let shape = match &sl.region {
+                    Some(r) if r.cfg.is_some() => "cfg",
+                    Some(_) => "loop",
+                    None => "none",
+                };
+                eprintln!(
+                    "fast time {pc:#x} {} {shape} {} {} {} {} {:.3}",
+                    if sl.auto { "auto" } else { "list" },
+                    sl.region.as_ref().map_or(0, |r| r.len()),
+                    sl.calls,
+                    sl.insns,
+                    sl.ticks,
+                    sl.ticks as f64 / sl.insns.max(1) as f64
+                );
+            }
+        }
         if self.cov {
             for (pc, s) in self.pcs.iter().zip(&self.slots) {
                 let exits: Vec<String> = s
@@ -1485,6 +1534,7 @@ impl FastEngine {
         self.stats.calls += 1;
         let before = s.icount;
         let kernel = slot.kernel.as_deref()?;
+        let t0 = if self.time { crate::ticks() } else { 0 };
         let mut res = run_variant(s, region, kernel, &mut self.ctx);
         if res == Err(glue::Decline::Req)
             && !slot.alts.is_empty()
@@ -1542,6 +1592,9 @@ impl FastEngine {
         }
         slot.calls += 1;
         slot.insns += s.icount - before;
+        if self.time && res.is_ok() {
+            slot.ticks += crate::ticks() - t0;
+        }
         if self.cov {
             match &res {
                 Ok(_) => {
@@ -1850,6 +1903,10 @@ impl FastTier for FastEngine {
         self.auto.as_ref().is_some_and(|a| a.blocks)
     }
 
+    fn skipped_for_aot(&mut self) {
+        self.stats.auto_skipped_aot += 1;
+    }
+
     #[inline(always)]
     fn note(&mut self, pc: u32) {
         let Some(a) = &mut self.auto else { return };
@@ -1905,9 +1962,10 @@ impl FastTier for FastEngine {
             .map(|(r, n)| format!("{n}x {r}"))
             .collect();
         format!(
-            "fast tier [{}]: {} armed, {} built ({} ms compile, {} ms build), {} refused ({} cached), {} unprofitable; {} calls: {} ran ({} insns), declined shape/req/window/budget/exit0 = {:?}; refusals: [{}]",
+            "fast tier [{}]: {} armed ({} skipped for aot), {} built ({} ms compile, {} ms build), {} refused ({} cached), {} unprofitable; {} calls: {} ran ({} insns), declined shape/req/window/budget/exit0 = {:?}; refusals: [{}]",
             self.backend.name(),
             s.armed,
+            s.auto_skipped_aot,
             s.built,
             s.compile_ns / 1_000_000,
             s.build_ns / 1_000_000,

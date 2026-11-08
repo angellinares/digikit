@@ -2156,3 +2156,29 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
 [O] About 1.14M interpreted appended instructions per audio second remain. Six entries at 24,000 calls per audio second each stop at a form 14a access: `normal-word address outside the plain range` (`_static_plain` in `sharc_lowergen.py`).
 
 [O] DN2 post-reset stays below real time, which is about 23G host instructions by DT2 at 22.5G and 1.02x. Remaining estimates: AOT path length about 12% (a rough hand count), appended code about 1.4G, union core up to 5%. Their sum still falls short, so reaching it also needs more AOT work moved to the fast tier; AOT is about 60% of the total.
+
+## Auto-arming beside AOT blocks and hand-picked regions [D]
+
+Measured 2026-11-09 on stock DN2 1.12, stepped, 20 s of emulated audio after a 3 s settle, audition on trig 1, on one binary (`tools/devtools/rt_matrix.py`). RT is emulated audio per wall second.
+
+| Machine | Baseline RT | `SHARC_FAST_AUTO=4,2,0` RT | Ratio |
+| --- | --- | --- | --- |
+| FM Tone | 1.086 | 1.057 | 0.97 |
+| WaveTone | 0.821 | 0.827 | 1.01 |
+| FM Drum | about 0.09 | 0.741 | about 8 |
+| Swarmer | about 0.08 | 0.751 | about 9 |
+| `digikit/pluck` | 0.518 | 0.744 | 1.44 |
+
+PCM matched the baseline in all 34 `coupled-run` scenarios (DN2 stock FX, load, machines and DT2 sample and FX). DN2 stock FX, load, FM Tone and WaveTone cost 3 to 5% more host instructions per audio second. FM Drum and Swarmer cost 0.36 and 0.32 of the baseline. DT2 cost 0.4 to 0.8% more, except two scenarios that cost less (0.964 and 0.935).
+
+Why the baseline is slow on these machines: FM Drum and Swarmer were not in the AOT training, so 97% of their interpreted work was in code with no generated block.
+
+Two engine rules make auto-arming safe beside the other tiers:
+- An interpreter landing at a PC with a usable AOT block does not count towards arming.
+- An auto-armed CFG region stops at the entry of a hand-picked region. Without this stop, large auto regions absorbed the hand-picked loops: on FM Tone at `4,2,0` the hand-picked regions fell from 7078M to 2973M guest instructions, and auto regions ran the work at about twice the host cost per instruction.
+
+Hand-picked loops run at about 0.6 ticks per guest instruction, large auto CFG regions at about 1.1, and auto regions under 16 instructions at 5 to 22. Thresholds alone cannot give both results: `256,64,0` keeps FM Tone at baseline but holds FM Drum at about 0.45x.
+
+**[O]** Real device tests are not faster with auto-arming: shot-picker took 236 s against 153 s, card-safety 280 s against 258 s, and freqshift 359 s against 364 s. It is therefore a workbench default only.
+
+**[O]** Compile runs on the SHARC thread. The first-note stall in free-running mode has not been measured.

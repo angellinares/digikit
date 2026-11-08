@@ -1183,6 +1183,25 @@ impl Engine {
             || self.software_interrupts
     }
 
+    /// An auto region at a PC with a usable AOT block would displace the block, because the fast tier runs first.
+    fn aot_block_usable(&mut self, pc: u32) -> bool {
+        if !self.use_blocks || !self.s.loops_ok {
+            return false;
+        }
+        let Some(entry) = self.dispatch.get_entry(pc as Int) else {
+            return false;
+        };
+        if !self.blocks_code_ok()
+            && self
+                .code_barred
+                .as_ref()
+                .is_none_or(|b| b.binary_search(&pc).is_ok())
+        {
+            return false;
+        }
+        !(self.models_active() && !entry.model_safe)
+    }
+
     /// The loaded code is what the generated blocks came from. Without
     /// runtime decoding the image's own table is the code, as always. With
     /// it, the generator's per-range SHA-256 of the short words (and the words
@@ -2207,8 +2226,13 @@ impl Engine {
             if self.fast_auto && !(1..=3).contains(&(self.s.pc_sw - pc_before)) {
                 // A taken branch, call, return or loop-back landed here: a
                 // candidate region start for run-time selection.
+                let skip = self.aot_block_usable(self.s.pc_sw as u32);
                 if let Some(f) = self.fast.as_mut() {
-                    f.note(self.s.pc_sw as u32);
+                    if skip {
+                        f.skipped_for_aot();
+                    } else {
+                        f.note(self.s.pc_sw as u32);
+                    }
                 }
             }
             if self.s.pc_sw as u32 >= self.appended_from

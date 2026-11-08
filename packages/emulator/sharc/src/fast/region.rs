@@ -388,13 +388,20 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
 /// A CFG region entered at PC: the code reachable from there, as far as the
 /// lowering goes (see `cfg`).
 pub fn build_cfg(s: &St, pc: u32) -> Result<Region, Refuse> {
-    build_cfg_opts(s, pc, false)
+    build_cfg_opts(s, pc, false, &Default::default())
 }
 
 /// `build_cfg` for a block-translator cluster root (`SHARC_BLOCKTRANS`):
 /// `cluster` lowers dynamic-modifier pre-modify transfers with guarded
 /// windows (`Env::guarded_dyn`).
-pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> {
+/// `barrier` PCs start as denied: the region stops there (an auto region hands
+/// over to a hand-picked entry).
+pub fn build_cfg_opts(
+    s: &St,
+    pc: u32,
+    cluster: bool,
+    barrier: &std::collections::BTreeSet<u32>,
+) -> Result<Region, Refuse> {
     if !cfg!(sharc_gen) {
         return Err(Refuse("no generated core (SHARC_GEN_DIR)".into()));
     }
@@ -407,7 +414,7 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
     env.guarded_dyn = cluster;
     // An instruction that cannot be lowered where it stands (an address that
     // has no range, too many windows) becomes the end of the region.
-    let mut deny = std::collections::BTreeSet::new();
+    let mut deny = barrier.clone();
     let mut helpers = std::collections::BTreeSet::new();
     for _ in 0..80 {
         match build_cfg_with(s, pc, &env, &deny, &helpers) {

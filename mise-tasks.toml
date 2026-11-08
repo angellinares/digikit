@@ -186,6 +186,10 @@ description = "DSP CPU, tier split and fast-tier refusals/exits per tier config:
 run = "uv run python -m tools.devtools.fast_roots"
 description = "Rank barred generated regions from a capture, or check interpreted work against budgets (rank/check)"
 
+["perf:rt-matrix"]
+run = "uv run python -m tools.devtools.rt_matrix"
+description = "RT (emulated audio per wall second) of the daemon per machine, activity and SHARC_FAST_AUTO setting, with tier shares and PCM parity; also `stall` (audio gap in free mode) and `gaps` (interpreted work by function from a capture): mise run perf:rt-matrix -- run --cells fmtone:aud --setting base --setting 4,2,0 (DIGI_EMUD_DN2 or --binary names the daemon)"
+
 ["perf:pgo:dn2"]
 run = "uv run python -m tools.emulator.native_pgo train"
 description = "Retrain the DN2 PGO profile against the current code and generated core"
