@@ -53,7 +53,9 @@ export function pageKit(session: Session, profile: FxProfile, row = 0) {
           await advance(session, 60);
           return raw(knob);
         }
-        await burst(session, enc, error > 0 ? 8 : -8, Math.abs(error) < 0x1000 ? 3 : 20);
+        // Near the target one detent is smaller than the +-0x200 window; three fast events overshoot it.
+        if (Math.abs(error) < 0x1000) await burst(session, enc, Math.sign(error), 1);
+        else await burst(session, enc, error > 0 ? 8 : -8, 20);
       }
       throw new Error(`turning ${enc}: value ${await raw(knob)}, wanted ${target}`);
     },
