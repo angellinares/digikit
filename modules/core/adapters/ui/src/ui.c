@@ -56,6 +56,7 @@ void dk_make_sp(shared_ptr *out, uint8_t *parent, uint8_t *view);
 #define KEY_RIGHT 15
 #define MAX_CHOICE 32
 #define LIST_ROWS 8
+#define LIST_COLS 20 /* characters of a list row that the label of a toggle or value row fills */
 
 enum { K_MENU, K_TEXT, K_LIST, K_PANEL };
 enum { R_ACTION, R_SUBMENU, R_TEXT, R_TOGGLE, R_VALUE };
@@ -265,15 +266,61 @@ static uint8_t *make_item(const char *text, const fn *act, const fn *adj, const 
     return item;
 }
 
+/* A list calls the draw function of an item with an origin that is not the row's (a value drawn there lands on the title bar). A toggle or
+   value row of a list shows its value in its label instead: the text, then ON, OFF or the number (three digits) at the right end of
+   LIST_COLS columns. A change fills the list again (value_changed), which writes the label again. */
+static void value_label(char *out, const char *text, const row *r)
+{
+    char val[4];
+    int v = r->value ? *r->value : 0, vn = 3, n = 0;
+    if (r->kind == R_TOGGLE) {
+        val[0] = 'O';
+        val[1] = v ? 'N' : 'F';
+        val[2] = 'F';
+        vn = v ? 2 : 3;
+    } else {
+        val[0] = v < 0 ? '-' : (char)('0' + (v / 100) % 10);
+        if (v < 0)
+            v = -v;
+        val[1] = (char)('0' + (v / 10) % 10);
+        val[2] = (char)('0' + v % 10);
+    }
+    while (text[n] && n < LIST_COLS - vn - 1) {
+        out[n] = text[n];
+        n++;
+    }
+    while (n < LIST_COLS - vn)
+        out[n++] = ' ';
+    for (int k = 0; k < vn; k++)
+        out[n++] = val[k];
+    out[n] = 0;
+}
+
+/* A toggle or value changed: a list writes its labels again (the selection stays), a menu draws the value. */
+static void refill(dk_ui_menu *m, int top);
+static void value_changed(dk_ui_menu *m)
+{
+    if (m->kind == K_LIST)
+        refill(m, 0);
+    else
+        invalidate(m);
+}
+
 static void add_item(dk_ui_menu *m, const char *text, int i, int with_value)
 {
+    char label[DK_UI_ROW];
+    int in_list = m->kind == K_LIST && with_value && (m->rows[i].kind == R_TOGGLE || m->rows[i].kind == R_VALUE);
+    if (in_list) {
+        value_label(label, text, &m->rows[i]);
+        text = label;
+    }
     fn act = make_fn((uint32_t)m, (uint32_t)i, inv_act);
     fn adj = make_fn(0, 0, 0);
     adj.mgr = 0;
     if (with_value && m->rows[i].kind == R_VALUE)
         adj = make_fn((uint32_t)m, (uint32_t)i, inv_adjust);
     fn draw = make_fn((uint32_t)m, (uint32_t)i, inv_draw);
-    uint8_t *item = make_item(text, &act, &adj, with_value ? &draw : 0, 0);
+    uint8_t *item = make_item(text, &act, &adj, with_value && !in_list ? &draw : 0, 0);
     if (item)
         dk_fw_menu_add_item(m->obj, item);
 }
@@ -337,7 +384,7 @@ static void run_row(dk_ui_menu *m, int i)
         if (r.value) {
             int v = *r.value == 0;
             *r.value = v;
-            invalidate(m);
+            value_changed(m);
             if (r.fn)
                 r.fn(r.ctx, v);
         }
@@ -361,7 +408,7 @@ static void adjust_row(dk_ui_menu *m, int i, int delta)
     if (v == *r.value)
         return;
     *r.value = v;
-    invalidate(m);
+    value_changed(m);
     if (r.fn)
         r.fn(r.ctx, v);
 }
@@ -625,7 +672,7 @@ dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d)
     if (!m)
         return 0;
     m->d = d;
-    m->kind = d->flags & DK_UI_LIST ? K_LIST : d->flags & DK_UI_TEXT_PAGE ? K_TEXT : K_MENU;
+    m->kind = d->flags & (DK_UI_LIST | DK_UI_WIDE) ? K_LIST : d->flags & DK_UI_TEXT_PAGE ? K_TEXT : K_MENU;
     if (!build_menu(m, d))
         return 0; /* the partly built objects stay: the firmware heap is not given back */
     return m;

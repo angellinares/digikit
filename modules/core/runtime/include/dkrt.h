@@ -53,6 +53,8 @@
 #define DKRT_SAFE_DSP 4
 /* DkrtBootInfo.reason: the boot before left a panic record (the runtime's Rust code panicked). */
 #define DKRT_SAFE_PANIC 5
+/* DkrtBootInfo.reason: no selection copy is valid and a copy could not be read; no modules load and the selection is not written during this boot. */
+#define DKRT_SAFE_READ 6
 /* Rows of DkrtDiag.fault_text. */
 #define DKRT_FAULT_ROWS 4
 /* Boots in a row that did not stay up for STABLE_BLOCKS after which the next one is safe mode. */
@@ -534,10 +536,10 @@ int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count,
 /* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
 int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);
 
-/* The saved selection (what the next boot loads): count store paths. Always OK. */
+/* The saved selection (what the next boot loads): count store paths. OK, or E_READ without touching out when no copy is valid and a copy had a read error. */
 int32_t dkrt_selection_get(DkrtSelection *out);
 
-/* Save a selection (two copies in the card's store range); OK or an E_SEL_* code. No effect until the next boot. */
+/* Save a selection (two copies in the card's store range); OK, an E_SEL_* code, or E_READ without writes when no copy is valid and a copy had a read error. No effect until the next boot. */
 int32_t dkrt_selection_set(const DkrtSelection *sel);
 
 /* This boot: safe mode and why, the modules selected and each one's result. */

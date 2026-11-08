@@ -9,6 +9,11 @@
         "files": ["settings.device.test.ts"],
         "modules": ["test/c-demo"],
         "plusdrive": true
+      },
+      {
+        "files": ["settings-api.device.test.ts"],
+        "modules": ["test/settings-a", "test/settings-b"],
+        "plusdrive": true
       }
     ]
   }

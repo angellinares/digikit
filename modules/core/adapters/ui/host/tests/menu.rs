@@ -8,6 +8,11 @@ extern "C" {
     fn fk_add(path: *const c_char, flags: u32, arena: u32, fx_slots: u32, machines: u32);
     fn fk_select(path: *const c_char);
     fn fk_scan_result(r: c_int);
+    fn fk_get_result(r: c_int);
+    fn fk_apply();
+    fn fk_set_tick(row: c_int, on: c_int);
+    fn fk_boot_read_failure();
+    fn fk_boot_safe();
     fn fk_loaded(path: *const c_char, name: *const c_char);
     fn fk_fx(id: *const c_char, allowed: u32, saved: u32);
     fn fk_loaded_menu(path: *const c_char, name: *const c_char);
@@ -113,6 +118,79 @@ fn modules_list_has_one_row_per_file_with_kind_and_size() {
             "  HUGE         MACH  900K",
         ]
     );
+}
+
+#[test]
+fn selected_modules_that_are_loaded_show_a_check_mark() {
+    let _g = digikit();
+    add("modules/tool.dkm", OK | LOADED, 20, 0, 0);
+    add("modules/gain-fx.dkm", OK | LOADED, 100, 1, 0);
+    select("modules/tool.dkm");
+    select("modules/gain-fx.dkm");
+    open_modules();
+    assert_eq!(
+        render(),
+        ["* TOOL         TOOL   20K", "* GAIN-FX      FX    100K"]
+    );
+}
+
+#[test]
+fn a_selected_module_that_failed_to_load_shows_a_dash() {
+    let _g = digikit();
+    add("modules/tool.dkm", OK, 20, 0, 0); // selected, not loaded
+    add("modules/gain-fx.dkm", OK | LOADED, 100, 1, 0);
+    add("modules/huge.dkm", OK, 900, 0, 1); // not selected
+    select("modules/tool.dkm");
+    select("modules/gain-fx.dkm");
+    open_modules();
+    // the marks are text in a column of their own; the check mark stays off for the dash
+    assert_eq!(
+        render(),
+        [
+            "  -TOOL        TOOL   20K",
+            "*  GAIN-FX     FX    100K",
+            "   HUGE        MACH  900K",
+        ]
+    );
+    // YES unselects the dash row and the next YES selects it again
+    press_yes(0);
+    assert_eq!(unsafe { fk_tick(0) }, 0);
+    assert!(render()[0].starts_with("   TOOL"), "{:?}", render());
+    press_yes(0);
+    assert_eq!(unsafe { fk_tick(0) }, 1);
+    assert!(render()[0].starts_with("  -TOOL"), "{:?}", render());
+}
+
+#[test]
+fn safe_mode_has_a_header_and_dashes_for_the_selected_modules() {
+    let _g = digikit();
+    add("modules/tool.dkm", OK, 20, 0, 0);
+    add("modules/gain-fx.dkm", OK, 100, 1, 0);
+    select("modules/tool.dkm");
+    unsafe { fk_boot_safe() };
+    open_digikit();
+    press_yes(4); // below the SAFE row
+    assert_eq!(title(), "MODULES");
+    assert_eq!(
+        render(),
+        [
+            "  SAFE MODE: NOT LOADED",
+            "  -TOOL        TOOL   20K",
+            "   GAIN-FX     FX    100K",
+        ]
+    );
+    // the cursor starts on the first module; the header is no module: YES and RIGHT do nothing there
+    press_yes(0);
+    assert_eq!(render()[0], "  SAFE MODE: NOT LOADED");
+    assert_eq!((unsafe { fk_tick(0) }, unsafe { fk_tick(1) }), (1, 0));
+    press_right(0);
+    assert_eq!(title(), "MODULES");
+    // the rows after it are modules 0 and 1
+    press_yes(2);
+    assert_eq!((unsafe { fk_tick(0) }, unsafe { fk_tick(1) }), (1, 1));
+    assert!(render()[2].starts_with("*  GAIN-FX"), "{:?}", render());
+    press_right(1);
+    assert_eq!(render(), ["UNLOAD", "INFO"]);
 }
 
 #[test]
@@ -257,6 +335,7 @@ fn a_loaded_module_with_a_menu_gets_settings_in_the_side_panel() {
     press_right(0);
     choose_panel_row(1);
     assert_eq!(title(), "TOOL"); // the module name without its author
+    assert!(is_wide(), "module settings use the full-width page");
     assert_eq!(render(), ["HELD 0", "RELEASE"]);
     assert_eq!(unsafe { fk_settings_runs() }, 1);
     press_yes(1);
@@ -266,6 +345,24 @@ fn a_loaded_module_with_a_menu_gets_settings_in_the_side_panel() {
     choose_panel_row(1);
     assert_eq!(unsafe { fk_settings_runs() }, 2);
     assert_eq!(depth(), 3); // DIGIKIT, MODULES, the settings
+}
+
+#[test]
+fn a_module_settings_page_has_the_full_name_as_its_title() {
+    let _g = digikit();
+    store_of_three();
+    loaded_menu("modules/tool.dkm", "digikit/a-long-module-name-here");
+    select("modules/tool.dkm");
+    open_modules();
+    press_right(0);
+    choose_panel_row(1);
+    // no cut to a few characters: the wide title bar holds the whole name (the firmware cuts it only past about 28)
+    assert_eq!(title(), "A-LONG-MODULE-NAME-HERE");
+    assert_eq!(render(), ["HELD 0", "RELEASE"]);
+    assert!(is_wide());
+    // the DIGIKIT menu and the MODULES list keep their own pages
+    press_no();
+    assert!(!is_wide());
 }
 
 #[test]
@@ -356,7 +453,9 @@ fn no_without_changes_just_goes_back() {
 #[test]
 fn no_with_changes_asks_to_apply_and_restart() {
     let _g = digikit();
-    store_of_three();
+    add("modules/tool.dkm", OK | LOADED, 20, 0, 0);
+    add("modules/gain-fx.dkm", OK | LOADED, 100, 1, 0);
+    add("modules/huge.dkm", OK, 900, 0, 1);
     select("modules/tool.dkm");
     open_modules();
     press_yes(0); // unchecks the saved one
@@ -428,4 +527,62 @@ fn a_refused_restart_is_shown() {
     answer_confirm(true);
     let (_, title, text, _) = dialog().expect("the refusal");
     assert_eq!((title.as_str(), text.as_str()), ("NO RESTART", "CARD BUSY"));
+}
+
+#[test]
+fn selection_read_failure_blocks_apply_until_a_successful_refresh() {
+    let _g = digikit();
+    add("modules/tool.dkm", OK | LOADED, 20, 0, 0);
+    select("modules/tool.dkm");
+    open_modules();
+    assert!(render()[0].starts_with("* TOOL"));
+    press_no();
+    press_no();
+    unsafe { fk_get_result(-3) };
+    open_modules();
+    assert_eq!(render(), ["STORE READ ERROR"]);
+    unsafe { fk_set_tick(0, 1) };
+    assert_eq!(unsafe { fk_tick(0) }, 0);
+    assert_eq!(
+        dialog().expect("read error dialog").1,
+        "SELECTION READ ERROR"
+    );
+    answer_confirm(false);
+    // Even if storage recovers, the failed refresh's empty ticks must not be saved.
+    unsafe {
+        fk_get_result(0);
+        fk_apply();
+    }
+    assert_eq!(unsafe { fk_selection_sets() }, 0);
+    assert_eq!(unsafe { fk_restarts() }, 0);
+    assert_eq!(dialog().expect("read error dialog").1, "NOT SAVED");
+    press_no();
+    press_no();
+    press_no();
+    open_modules();
+    assert!(render()[0].starts_with("* TOOL"));
+    unsafe { fk_apply() };
+    assert_eq!(unsafe { fk_selection_sets() }, 1);
+    assert_eq!(unsafe { fk_set_count() }, 1);
+    assert_eq!(cstr(unsafe { fk_set_path(0) }), "modules/tool.dkm");
+}
+
+#[test]
+fn about_reports_read_failure_without_stale_selection_names() {
+    let _g = digikit();
+    add("modules/tool.dkm", OK, 20, 0, 0);
+    select("modules/tool.dkm");
+    open_modules();
+    press_no();
+    press_no();
+    unsafe {
+        fk_get_result(-3);
+        fk_boot_read_failure();
+    }
+    open_digikit();
+    press_yes(1);
+    let rows = render();
+    assert!(rows.iter().any(|s| s == "SAFE: READ FAILED"), "{rows:?}");
+    assert!(rows.iter().any(|s| s == "SELECTION READ ERROR"), "{rows:?}");
+    assert!(!rows.iter().any(|s| s.contains("TOOL")), "{rows:?}");
 }

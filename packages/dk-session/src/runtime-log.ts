@@ -26,7 +26,7 @@ export interface RuntimeEvent {
 }
 
 const CARD_STATES = ['unknown', 'ours', 'blank', 'foreign', 'unreadable', 'too small'];
-const SAFE_REASONS: Record<number, string> = { 1: 'counter', 2: 'key', 3: 'flag', 4: 'dsp' };
+const SAFE_REASONS: Record<number, string> = { 1: 'counter', 2: 'key', 3: 'flag', 4: 'dsp', 5: 'panic', 6: 'read' };
 const REFUSAL: Record<number, string> = {
   1: 'outside the store range',
   2: 'card read-only',

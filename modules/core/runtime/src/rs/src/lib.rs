@@ -37,6 +37,8 @@ mod sample_source;
 mod tracks;
 mod files;
 mod hash32;
+mod intro;
+mod safe_screen;
 mod sha256;
 pub mod store;
 mod table;
@@ -539,7 +541,11 @@ unsafe extern "C" fn api_files_cancel(client: u32, ticket: u32) -> i32 { files::
 unsafe extern "C" fn api_job_post(step: Option<dkrt_sdk::api::JobStep>, done: Option<dkrt_sdk::api::JobDone>, ctx: *mut u8) -> i32 { worker::post(dlog::current_source(), step, done, ctx) }
 unsafe extern "C" fn api_job_cancel(id: u32) -> i32 { worker::cancel(dlog::current_source(), id) }
 unsafe extern "C" fn api_sample_pool_peaks_window(handle: u32, track: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32 { peakwin::window(handle, track, token, first, frames, columns, out, capacity) }
-
+unsafe extern "C" fn api_settings_client() -> i32 { settings::module_client() }
+unsafe extern "C" fn api_settings_get(client: u32, key: *const u8, out: *mut u8, cap: u32) -> i32 { settings::module_get(client, key, out, cap) }
+unsafe extern "C" fn api_settings_put(client: u32, key: *const u8, value: *const u8, len: u32) -> i32 { settings::module_put(client, key, value, len) }
+unsafe extern "C" fn api_settings_remove(client: u32, key: *const u8) -> i32 { settings::module_remove(client, key) }
+unsafe extern "C" fn api_intro_take(frame: Option<dkrt_sdk::api::IntroFrame>, done: Option<dkrt_sdk::api::IntroDone>, ctx: *mut u8, ticks: u32) -> i32 { intro::take(frame, done, ctx, ticks) }
 
 /// The table is built at first use: pointers to the helpers are not constants.
 #[no_mangle]
@@ -581,6 +587,11 @@ pub static mut dkrt_api: Api = Api {
     job_post: api_job_post,
     job_cancel: api_job_cancel,
     sample_pool_peaks_window: api_sample_pool_peaks_window,
+    settings_client: api_settings_client,
+    settings_get: api_settings_get,
+    settings_put: api_settings_put,
+    settings_remove: api_settings_remove,
+    intro_take: api_intro_take,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {
@@ -1115,6 +1126,7 @@ pub unsafe extern "C" fn dkrt_tick() {
     init_once();
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
+    intro::ui_pass();
     boot::ui_pass();
     upload::restart_poll();
     crash::install();

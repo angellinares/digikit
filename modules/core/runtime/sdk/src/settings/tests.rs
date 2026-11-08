@@ -580,6 +580,35 @@ fn a_power_cut_in_a_write_leaves_the_current_copy() {
 }
 
 #[test]
+fn a_module_key_is_its_name_a_slash_and_the_key() {
+    let mut out = [0u8; KEY_MAX];
+    let n = module_key(b"test/m", b"volume", &mut out).unwrap();
+    assert_eq!(&out[..n], b"test/m/volume");
+    let n = module_key(b"test/m", b"a.b-c", &mut out).unwrap();
+    assert_eq!(&out[..n], b"test/m/a.b-c");
+    // the longest key that fits: 47 characters in all
+    let key = [b'k'; KEY_MAX - 7];
+    assert_eq!(module_key(b"test/m", &key, &mut out), Some(KEY_MAX));
+}
+
+#[test]
+fn a_module_key_that_would_leave_its_prefix_or_break_the_rules_is_refused() {
+    let mut out = [0u8; KEY_MAX];
+    assert_eq!(module_key(b"test/m", b"", &mut out), None, "empty key");
+    assert_eq!(module_key(b"", b"k", &mut out), None, "empty module name");
+    assert_eq!(module_key(b"test/m", b"/other/k", &mut out), None, "leading slash");
+    assert_eq!(module_key(b"test", b"m/x", &mut out), None, "slash inside: would collide with test/m + x");
+    assert_eq!(module_key(b"test/m", b"../other/k", &mut out), None, "..");
+    assert_eq!(module_key(b"test/m", b"a/../b", &mut out), None, ".. inside");
+    assert_eq!(module_key(b"test/m", b"a..", &mut out), None, ".. at the end");
+    assert_eq!(module_key(b"test/m", b"has space", &mut out), None, "space");
+    assert_eq!(module_key(b"test/m", b"tab\t", &mut out), None, "control byte");
+    assert_eq!(module_key(b"test/m", b"caf\xc3\xa9", &mut out), None, "not ASCII");
+    let key = [b'k'; KEY_MAX - 6];
+    assert_eq!(module_key(b"test/m", &key, &mut out), None, "48 characters in all");
+}
+
+#[test]
 fn a_write_takes_only_the_sectors_the_record_needs_and_only_its_copy() {
     let _g = lock();
     fresh();

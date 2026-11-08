@@ -96,6 +96,42 @@ pub fn valid_key(key: &[u8]) -> bool {
     true
 }
 
+/// Build the stored key of a module's own key: `<module>/<key>` into `out`; returns its length, or `None` when `key` is empty, holds `/` (`test` + `m/x` and `test/m` + `x` would collide),
+/// holds `..`, or the whole key is not a legal key (a byte that is not printable ASCII, or more than `KEY_MAX` characters). `module` is the name
+/// from the module's own header, never caller input. The prefix stops mistakes, not hostile code: modules are native code with no memory protection.
+pub fn module_key(module: &[u8], key: &[u8], out: &mut [u8; KEY_MAX]) -> Option<usize> {
+    if module.is_empty() || key.is_empty() || key.contains(&b'/') {
+        return None;
+    }
+    let n = module.len() + 1 + key.len();
+    if n > KEY_MAX {
+        return None;
+    }
+    let mut i = 0;
+    while i + 1 < key.len() {
+        if key[i] == b'.' && key[i + 1] == b'.' {
+            return None;
+        }
+        i += 1;
+    }
+    i = 0;
+    while i < module.len() {
+        out[i] = module[i];
+        i += 1;
+    }
+    out[module.len()] = b'/';
+    i = 0;
+    while i < key.len() {
+        out[module.len() + 1 + i] = key[i];
+        i += 1;
+    }
+    if valid_key(&out[..n]) {
+        Some(n)
+    } else {
+        None
+    }
+}
+
 /// The bytes of the record, `used` of them (an empty record when `b` has no header yet: call `init`).
 pub fn used(b: &[u8]) -> usize {
     get32(b, O_USED) as usize
