@@ -490,6 +490,13 @@ B = the performance core count on Apple Silicon, otherwise cores - 2, with a min
 
 On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 4 tasks, 6 emulators for gate targets that run alone.
 
+Each launcher run has its own budget, so several lanes can start more emulators than the machine runs well.
+Module device targets and `test-conformance` therefore run behind `node tools/devtools/emu-slot.mjs --`. It takes one
+of N machine-wide slots (lock files in `<git common dir>/emu-slots/`, N = `DIGI_EMU_SLOTS`, default the launcher's
+Nx task count), runs the command, and passes on its exit status. A waiting task prints one line and waits without a
+limit; a lock of a dead process is taken over. The wait is outside Vitest, so it does not count against test timeouts.
+Gate targets such as `fx` and `stock` are not wrapped.
+
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
 
 - For verbs that run tasks the launcher runs at nice 10 and takes the shared benchlock, except when all
