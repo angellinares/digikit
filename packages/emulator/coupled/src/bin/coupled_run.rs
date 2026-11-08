@@ -1087,6 +1087,8 @@ fn cold_sharc_boot(
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
     let inputs = cold::ColdInputs {
+        initial_buttons: Vec::new(),
+        deliver_exceptions: false,
         image: args.image.clone(),
         cold_idle: cold_idle.to_path_buf(),
         cold_state: None,
