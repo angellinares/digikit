@@ -167,6 +167,24 @@ export interface RuntimeCase extends PatchedSession {
   readonly epoch: number;
 }
 
+/**
+ * Temp dirs of the fixtures of this test file. A test may read the artifacts of an earlier fixture of its file, so they are removed when
+ * the file's process ends (the forks pool runs one file per process), not when a fixture closes. Kept, with a line that names them,
+ * when any fixture of the file failed.
+ */
+const fileTemps = { dirs: new Set<string>(), failed: false, registered: false };
+function fileTemp(dir: string, failed: boolean): void {
+  fileTemps.dirs.add(dir);
+  fileTemps.failed ||= failed;
+  if (failed) console.info(`kept run dir for diagnostics: ${dir}`);
+  if (fileTemps.registered) return;
+  fileTemps.registered = true;
+  process.on('exit', () => {
+    if (fileTemps.failed) return;
+    for (const d of fileTemps.dirs) fs.rmSync(d, { recursive: true, force: true });
+  });
+}
+
 /** Opt-in fixture: independent cases reload pristine firmware/card state in one owned daemon. */
 export function withReusablePatchedSession(
   opts: Omit<SessionOptions, 'runtime' | 'dsp'> & {
@@ -200,11 +218,7 @@ export function withReusablePatchedSession(
     claim = undefined;
   };
   const disposeTemp = () => {
-    for (const dir of lifecycle.tempDirs?.() ?? []) {
-      if (!dir || !fs.existsSync(dir)) continue;
-      if (failed) console.info(`kept run dir for diagnostics: ${dir}`);
-      else fs.rmSync(dir, { recursive: true, force: true });
-    }
+    for (const dir of lifecycle.tempDirs?.() ?? []) if (dir) fileTemp(dir, failed);
   };
   const loadCase = async (next: RuntimeBaseline): Promise<RuntimeCase> => {
     const context = { scope, device: opts.device, session: randomUUID() };

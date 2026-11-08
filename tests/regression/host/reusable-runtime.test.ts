@@ -171,19 +171,37 @@ test('post-close evidence waits for owned shutdown and runs once after a failed 
   expect(checked).toHaveBeenCalledExactlyOnceWith(f.session);
 });
 
-test('the fixture removes its temp dirs when the file ends clean and keeps them when a test failed', async () => {
+// The fixtures of a file share its temp dirs: they go when the file's process ends, and stay if a fixture of the file failed.
+let atExit: (() => void) | undefined;
+test('fixture temp dirs stay after the fixture closes and go when the file ends clean', async () => {
+  const on = vi.spyOn(process, 'on');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-temp-rule-'));
   try {
-    const dir = (name: string) => fs.mkdirSync(path.join(root, name)) ?? path.join(root, name);
-    const clean = dir('clean');
+    const clean = path.join(root, 'clean');
+    fs.mkdirSync(clean);
     const first = await fixture({ tempDirs: () => [clean] });
     await first.afterEach();
     await first.afterAll();
+    expect(fs.existsSync(clean), 'a later fixture of the file may still read it').toBe(true);
+    atExit = on.mock.calls.find(([event]) => event === 'exit')?.[1] as () => void;
+    expect(atExit).toBeTypeOf('function');
+    atExit();
     expect(fs.existsSync(clean)).toBe(false);
-    const failed = dir('failed');
-    const second = await fixture({ tempDirs: () => [failed] });
-    await second.afterEach('fail');
-    await second.afterAll();
+  } finally {
+    on.mockRestore();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fixture temp dirs are kept when a test of the file failed', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-temp-rule-'));
+  try {
+    const failed = path.join(root, 'failed');
+    fs.mkdirSync(failed);
+    const f = await fixture({ tempDirs: () => [failed] });
+    await f.afterEach('fail');
+    await f.afterAll();
+    atExit!();
     expect(fs.existsSync(failed)).toBe(true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -3,7 +3,7 @@
 // words). The bundle equals `tools/patchkit/patchkit.py bundle` (the node test compares them).
 //
 // The objects of content modules (every module but category "core") are build output, not committed: `patchkit build` makes them
-// first (it needs the m68k-elf toolchain; nothing is built when they are current) and they are read from the cache out/cache/dko/<id>/.
+// first (it needs the m68k-elf toolchain; nothing is built when they are current) and they are read from the cache out/cache/dko/<id>/<src12>/ (`patchkit build MODDIR --paths` names the files).
 // It also writes what the Transfer page ships (see shipModules): per device the prebuilt .dkm of each run-time content module
 // (public/modules/<dev>/<leaf>.dkm, the bytes `mise run module:pack-all` writes), public/modules/index.json and the sources of the
 // modules (public/modules/src/<id>/: module.toml, README.md, src/**; nothing of build/ or out/).
@@ -59,12 +59,23 @@ export function buildObjects(root = repoRoot) {
   }
 }
 
-/** The text of an object: in the module for `core/*`, else in the cache. */
-const objectText = (root, dir, d, o) =>
+/** `patchkit build MODDIR --paths`: the stored file of each object with sources, for the sources now (the cache entry is keyed by them). */
+function cachedPaths(root, dir) {
+  const env = { ...process.env, PYTHONPATH: root };
+  delete env.PATCHKIT_MODULES;
+  const out = execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build', dir, '--paths'], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  return Object.values(JSON.parse(out))[0] ?? {};
+}
+
+/** The text of an object: in the module for `core/*`, else in the cache (`stored`: the paths of `cachedPaths`). */
+const objectText = (dir, d, o, stored) =>
   readFileSync(
-    d.module.category !== 'core' && (o.sources ?? []).length > 0
-      ? join(root, 'out', 'cache', 'dko', d.module.id, o.path)
-      : join(dir, o.path),
+    d.module.category !== 'core' && (o.sources ?? []).length > 0 ? stored[o.path] : join(dir, o.path),
     'utf8',
   );
 
@@ -85,7 +96,11 @@ export function buildModuleData(root = repoRoot) {
     const text = readFileSync(file, 'utf8');
     const d = parse(text);
     const files = {};
-    for (const o of d.object ?? []) files[o.path] = objectText(root, dir, d, o);
+    const stored =
+      d.module.category !== 'core' && (d.object ?? []).some((o) => (o.sources ?? []).length > 0)
+        ? cachedPaths(root, dir)
+        : {};
+    for (const o of d.object ?? []) files[o.path] = objectText(dir, d, o, stored);
     for (const r of d.registry ?? [])
       if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
     // `patchkit gen`: machines and parameters, for the page
