@@ -2,7 +2,7 @@
 """Real-time (RT) matrix of the emulator daemon: emulated audio seconds per wall second.
 
     uv run python -m tools.devtools.rt_matrix run [--device dn2] [--cells fmtone:aud,fmdrum:par]
-        [--setting base --setting 4,2,0] [--binary PATH] [--measure plain|timing] [--out DIR]
+        [--module 'some/module*'] [--setting base --setting 4,2,0] [--binary PATH] [--measure plain|timing] [--out DIR]
     uv run python -m tools.devtools.rt_matrix stall [--cell fmdrum] [--setting 4,2,0] [--seconds 12]
     uv run python -m tools.devtools.rt_matrix gaps --prefix PREFIX [--device dn2] [--top 25]
     uv run python -m tools.devtools.rt_matrix table RESULTS.json
@@ -100,12 +100,6 @@ SCENARIOS: dict[str, dict[str, Any]] = {
             "machine": m,
         }
         for name, m in STOCK_MACHINES.items()
-    },
-    "pluck": {
-        "route": "runtime",
-        "target": "emulator",
-        "store": ["digikit/pluck*"],
-        "machine": ("dynamic", 5, None),
     },
 }
 ACTIVITIES = {"aud": False, "par": True}  # name -> encoder turns during the audition
@@ -654,6 +648,14 @@ def cmd_run(a: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     logfile = pathlib.Path(a.log) if a.log else out / "run.log"
     settings = a.setting or [BASE, "4,2,0"]
+    if a.module:
+        # One runtime scenario with the loaded module store entry (the first loaded machine).
+        SCENARIOS["module"] = {
+            "route": "runtime",
+            "target": "emulator",
+            "store": [a.module],
+            "machine": ("dynamic", 5, None),
+        }
     cells = []
     for spec in a.cells.split(","):
         scenario, _, activity = spec.partition(":")
@@ -893,6 +895,12 @@ def main(argv: list[str] | None = None) -> int:
         "--cells",
         default="fmtone:aud",
         help="scenario:activity,... (scenarios: " + ", ".join(SCENARIOS) + ")",
+    )
+    r.add_argument(
+        "--module",
+        metavar="STORE_PATTERN",
+        help="adds the scenario `module` with this module store entry, e.g. 'some/module*'; "
+        "select its cells as module:aud",
     )
     r.add_argument(
         "--setting",
