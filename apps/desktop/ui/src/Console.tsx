@@ -155,6 +155,8 @@ export default function Console() {
   const [opened, setOpened] = createSignal('');
   /** A firmware is starting: the old device information is gone until its first status. */
   const [booting, setBooting] = createSignal<Booting>();
+  /** The last load failed: its file, so the faceplate is the file's device, or none when the name does not tell. */
+  const [failed, setFailed] = createSignal<Booting>();
   const [watching, setWatching] = createSignal(true);
   const [reloadNote, setReloadNote] = createSignal('');
   const [modulesBusy, setModulesBusy] = createSignal(false);
@@ -187,7 +189,7 @@ export default function Console() {
   // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
   const sidePanelsShown = createMemo(() => page() === 'emulator' && !!status());
   const device = () => {
-    const d = status()?.device ?? booting()?.device;
+    const d = status()?.device ?? booting()?.device ?? failed()?.device;
     return d === 'dt2' || d === 'dn2' ? d : 'dn2';
   };
   const panel = () => panels[device()];
@@ -272,6 +274,7 @@ export default function Console() {
     setInfo(undefined);
     setReloadNote('');
     setBooting(startBoot(name));
+    setFailed(undefined);
     health = healthStart();
     const began = performance.now();
     try {
@@ -299,6 +302,7 @@ export default function Console() {
       }
     } catch (e) {
       setError(message(e));
+      setFailed(startBoot(name));
       setReloadNote(loadFailure(name, message(e)));
       logInput(failureEntry('firmware', `loading ${name}`, message(e)));
     } finally {
@@ -796,7 +800,12 @@ export default function Console() {
                   </p>
                 )}
               </Show>
-              <div class="surface" hidden={!!booting()}>
+              <Show when={!booting() && !status() && failed() && !failed()!.device}>
+                <p class="booting" role="status">
+                  {loadFailure(failed()!.name, error())}
+                </p>
+              </Show>
+              <div class="surface" hidden={!!booting() || (!status() && !!failed() && !failed()!.device)}>
                 <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
               </div>
             </main>
