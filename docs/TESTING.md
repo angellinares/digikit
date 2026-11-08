@@ -375,9 +375,12 @@ Plain `pnpm nx:pilot run ...` and every gate tier read and write the cache when 
 and sets the Nx variables only when the server answers.
 The store has a 14-day TTL swept daily and no size cap.
 
-Cached targets: module `test-device` and `test-conformance`. Inputs: the module and its graph deps,
-the outputs of the pack, CLI and daemon targets, the toolchain, the emulator env switches, the harness
-packages (`test-support`, `control-client`, `dk-session`), every `module.toml`,
+Cached targets: module `test-device` and `test-conformance`. A key covers what the run consumes: the
+TypeScript import closure of the test files and of the Vitest setup file (`tools/nx/test-imports.mjs`), the
+outputs of the pack, CLI and daemon targets, the production files of the module and of the core modules in the
+patched image, the SDK, the files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: every `module.toml`, `devices/**/*.toml`,
+committed core objects, `types.toml`, fixture files, the Vitest and TypeScript config), each record's `sources`,
+the toolchain, the emulator env switches,
 `config/emulator.json`, and the firmware, ready dirs and DT2 sample card (hashed by
 `tools/nx/device-inputs.mjs`). That digest also hashes path, contents and file permissions of
 `DIGI_EMUD`, device-specific/proof daemon overrides, `DIGI_PATCHKIT`, `DIGI_PATCHKIT_BIN` and
@@ -567,6 +570,14 @@ replays the stored output of a target with `cache: true`; the hash covers only t
 Plugin sources (`tools/nx/*.mjs`) are not inputs: Nx hashes each project's resolved configuration, so a plugin
 edit invalidates only the targets whose definition changes. `UPDATE_GOLDENS` is a cache input of module device
 targets and `gate-stock:stock`.
+
+A package or a harness file that no test imports is not an input: an edit to `packages/dk-session/src/samples.ts`
+leaves a target that does not import it cached. A file that a test reads by path and does not import goes in
+`READ_BY_TESTS`, or in the `sources` of the record whose test reads it. `digi-control:daemons` declares the daemon
+sources (`SOURCE_GLOBS` of `tools/devtools/emud_key.py`) as inputs. The binary is keyed by content, and these
+inputs make a source edit select every task that consumes `dist/daemons.json`.
+`tools/device/dktransfer.py` keeps the state of failed packs in a folder. A test run sets `DIGI_TRANSFER_DIR` to a folder
+of its run directory, because `out/` is shared by all worktrees.
 
 Inspect declared inputs with `pnpm nx:pilot show target inputs PROJECT:TARGET --json`, or use
 `pnpm nx:pilot show target inputs PROJECT:TARGET --check PATH` for one file. Native Nx resolves

@@ -94,19 +94,39 @@ export const scopedManifestInputs = (inputs, manifests) => [
   ...manifests.map((file) => `{workspaceRoot}/${file}`),
 ];
 
-// Cache inputs of test-device and test-conformance: the module and its graph deps (core modules, harness via
-// regression/conformance, daemon and patchkit crate sources) with their `production` files (sources without
-// tests/ and docs; regression's runtime helpers come from each suite's import closure), the outputs of
-// the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
-// ready dirs via device-inputs.mjs.
-// Image core sources/objects are explicit production inputs, without acceptance-fixture graph edges.
-// Also named explicitly: the harness packages (test-support, control-client, dk-session) and
-// config/emulator.json (sets SHARC_* env). Manifests follow production and declared
-// acceptance module dependencies; conformance also names its scoped selected manifest.
+// Files that tests read by path and do not import. The import walk (test-imports.mjs) cannot see them.
+// Extend this list when a test reads a new file; a file only one record's tests read goes in that record's `sources`.
+export const READ_BY_TESTS = [
+  // the daemon and the harness read every device file and every manifest to patch and plan the image
+  '{workspaceRoot}/devices/**/*.toml',
+  '{workspaceRoot}/modules/**/module.toml',
+  '{workspaceRoot}/tests/fixtures/modules/**/module.toml',
+  // committed core objects: the patched image is made from them
+  '{workspaceRoot}/modules/core/**/build/*.dko.json',
+  '{workspaceRoot}/modules/core/adapters/machines/types.toml',
+  // fixture files
+  '{workspaceRoot}/modules/core/runtime/tests/fixtures/safe-*.bin',
+  '{workspaceRoot}/tests/fixtures/sharc/**/*.json',
+  // the Vitest run itself
+  '{workspaceRoot}/tests/regression/vitest.config.ts',
+  '{workspaceRoot}/tests/regression/tsconfig.json',
+  '{workspaceRoot}/tests/regression/package.json',
+  '{workspaceRoot}/tools/emulator/ready_inputs.json',
+];
+// Vitest runs this file before each test file (`setupFiles`), so no test imports it.
+export const VITEST_SETUP = 'tests/regression/setup-temp.ts';
+
+// Cache inputs of test-device and test-conformance. A key covers what the run consumes:
+// - the imports of the test files and of the Vitest setup file (importInputs, a closure over TypeScript sources);
+// - the outputs of the pack, CLI and daemons targets (dependentTasksOutputFiles; dist/daemons.json names the
+//   content-keyed daemon), and the production files of the core modules of the patched image (imageInput);
+// - the module itself (`production` of the project: its sources, without tests/ and docs);
+// - the files in READ_BY_TESTS, the SDK, config/emulator.json (sets SHARC_* env) and each record's `sources`;
+// - the firmware and ready dirs via device-inputs.mjs, and the env switches below.
+// A package or a harness file that no test imports is not an input.
 export const DEVICE_INPUTS = [
   ...SHARED_SDK_INPUTS,
-  'default',
-  '^production',
+  ...READ_BY_TESTS,
   'jsToolchain',
   { dependentTasksOutputFiles: '**/*', transitive: true },
   { runtime: 'node tools/nx/device-inputs.mjs' },
@@ -121,9 +141,6 @@ export const DEVICE_INPUTS = [
   { env: 'SHARC_FAST_FALLBACK_REGIONS' },
   { env: 'SHARC_FAST_AUTO' },
   { env: 'UPDATE_GOLDENS' },
-  '{workspaceRoot}/packages/test-support/**/*',
-  '{workspaceRoot}/packages/control-client/**/*',
-  '{workspaceRoot}/packages/dk-session/**/*',
   '{workspaceRoot}/tools/nx/device-inputs.mjs',
   '{workspaceRoot}/config/emulator.json',
 ];
@@ -144,9 +161,10 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
     cache: true,
     inputs: [
       ...DEVICE_INPUTS,
+      'production',
       EMU_SLOT_INPUT,
       imageInput,
-      ...importInputs(tests.map((test) => join(root, test))),
+      ...importInputs([...tests.map((test) => join(root, test)), VITEST_SETUP]),
       ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
       ...(recs.some((rec) => rec.pythonTools === true)
         ? PYTHON_TOOL_SOURCES

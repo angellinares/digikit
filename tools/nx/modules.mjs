@@ -12,6 +12,7 @@ import {
   DEVICE_INPUTS,
   EMU_SLOT,
   EMU_SLOT_INPUT,
+  VITEST_SETUP,
   deviceTargets,
   scopedManifestInputs,
 } from './module-targets.mjs';
@@ -197,15 +198,14 @@ export const createNodesV2 = [
           executor: 'nx:run-commands',
           cache: true,
           inputs: [
-            ...scopedManifestInputs(
-              DEVICE_INPUTS.filter((input) => input !== '^production'),
-              [f],
-            ),
-            // The shared runner's Vitest, TypeScript and package configuration is not an import of a test file.
-            { input: 'production', projects: ['regression'] },
+            ...DEVICE_INPUTS,
+            'production',
             EMU_SLOT_INPUT,
             imageInput,
-            ...importInputs(globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot })),
+            ...importInputs([
+              ...globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot }),
+              VITEST_SETUP,
+            ]),
           ],
           dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD],
           outputs: [],
@@ -268,10 +268,13 @@ export const createNodesV2 = [
               targets: {
                 'test-device': {
                   inputs: [
-                    ...DEVICE_INPUTS.map((input) => (input === 'default' ? 'production' : input)),
+                    ...DEVICE_INPUTS,
                     imageInput,
                     '{projectRoot}/project.json',
-                    ...importInputs(globSync('tests/regression/emulator/**/*.test.ts', { cwd: ctx.workspaceRoot })),
+                    ...importInputs([
+                      ...globSync('tests/regression/emulator/**/*.test.ts', { cwd: ctx.workspaceRoot }),
+                      VITEST_SETUP,
+                    ]),
                   ],
                 },
               },

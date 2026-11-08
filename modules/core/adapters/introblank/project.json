@@ -5,7 +5,8 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/introblank.device.test.ts"],
-        "modules": ["tools/bootscreen", "test/sine"]
+        "modules": ["tools/bootscreen", "test/sine"],
+        "plusdrive": true
       }
     ]
   }
