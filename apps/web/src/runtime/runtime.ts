@@ -17,7 +17,7 @@ const pcs = (list: string | undefined) =>
 
 /**
  * The DSP fast tier of the page (dev page, `?fast=`). Without a query the DSP worker decides from the
- * core (a `FastDefault`): `4,2,1` when the core is generic (`digi_sharc_aot_blocks() === 0`); otherwise
+ * core (a `FastDefault`): the `_contexts.browser` value (`4,2,1`) when the core is generic (`digi_sharc_aot_blocks() === 0`); otherwise
  * `desktop` when config/emulator.json has an entry for the firmware; otherwise off. `?fast=off` disables it; `desktop` is the desktop
  * configuration (the static regions and cluster roots of config/emulator.json for this
  * firmware); `auto` or `T,M,F` is run-time selection (threshold, min insns, follow); `desktop+auto`
@@ -38,7 +38,12 @@ export async function fastConfig(
   if (query === 'auto') return [256, 64, 0];
   if (query !== null && !query.startsWith('desktop')) return auto(query);
   const config: FastRegions = { regions: pcs(entry?.fast_regions), roots: pcs(entry?.blocktrans) };
-  if (query === null) return entry ? { kind: 'default', desktop: config } : { kind: 'default' };
+  if (query === null) {
+    // The generic-core default comes from `_contexts.browser` of the config file.
+    const browser = (fastRegionTable as unknown as Record<string, Record<string, string> | undefined>)._contexts?.browser;
+    const generic = browser?.when === 'generic-core' && browser.SHARC_FAST_AUTO ? auto(browser.SHARC_FAST_AUTO) : undefined;
+    return { kind: 'default', desktop: entry ? config : undefined, generic };
+  }
   if (query.startsWith('desktop+auto')) config.auto = [256, 64];
   return config;
 }

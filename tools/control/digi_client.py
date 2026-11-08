@@ -211,11 +211,8 @@ class Emu:
 
         syx = pathlib.Path(syx).resolve()
         ready = pathlib.Path(ready_dir).resolve()
-        env = {}
-        if regions := digi_env.fast_regions_for(syx):
-            env["SHARC_FAST_REGIONS"] = regions
-        if roots := digi_env.blocktrans_roots_for(syx):
-            env["SHARC_BLOCKTRANS"] = roots
+        # The table only: no fallback roots, and neither the environment nor DIGI_EMU_FAST is read.
+        env = digi_env.resolve_tiers("tests", syx, "", {}, fallback=False).add
         return cls.spawn(
             str(syx),
             "--auto-coupled",

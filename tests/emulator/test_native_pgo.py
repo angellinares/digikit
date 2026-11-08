@@ -550,7 +550,7 @@ def run_one_item(tmp_path, monkeypatch, device, gate_ok=True):
     monkeypatch.setattr(
         digi_env,
         "fast_env",
-        lambda environ=None, *, syx=None: {"SHARC_FAST_REGIONS": "0xaa"},
+        lambda environ=None, *, syx=None, context="tests": {"SHARC_FAST_REGIONS": "0xaa"},
     )
     item = native_pgo.WorkItem(
         f"{device}-x",

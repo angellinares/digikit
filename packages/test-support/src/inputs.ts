@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveTiers } from './emulator-config.ts';
 
 export type Device = 'dt2' | 'dn2';
 
@@ -92,29 +93,13 @@ export function validateRuntimeInputs(inputs: ReadyInputs): void {
   }
 }
 
-/** Match the coupled launcher's verified fast-tier defaults for the actual stock bytes.
+/** Match the coupled launcher's verified fast-tier defaults for the actual stock bytes (rules: emulator-config.ts).
  * Explicit values (including empty strings) win; DIGI_EMU_FAST=0 suppresses defaults.
  * The daemon inherits process.env, so disabled defaults do not erase explicit settings. */
 export function coupledEnv(syx: string, environ: NodeJS.ProcessEnv = process.env): Record<string, string> {
   if (environ.DIGI_EMU_FAST === '0') return {};
   const digest = createHash('sha256').update(fs.readFileSync(syx)).digest('hex');
-  const table: Record<string, { fast_regions?: string; blocktrans?: string; fallback_regions?: string }> = JSON.parse(
-    fs.readFileSync(path.join(repoRoot(), 'config/emulator.json'), 'utf8'),
-  );
-  const entry = table[digest];
-  const defaults = {
-    SHARC_FAST_REGIONS: entry?.fast_regions,
-    SHARC_BLOCKTRANS: entry?.blocktrans,
-    // Explicit ordinary regions or auto selection retain control of these roots.
-    SHARC_FAST_FALLBACK_REGIONS:
-      environ.SHARC_FAST_REGIONS === undefined && environ.SHARC_FAST_AUTO === undefined
-        ? entry?.fallback_regions
-        : undefined,
-  };
-  const result: Record<string, string> = {};
-  for (const [name, value] of Object.entries(defaults)) {
-    if (environ[name] !== undefined) result[name] = environ[name];
-    else if (value) result[name] = value;
-  }
-  return result;
+  const config = JSON.parse(fs.readFileSync(path.join(repoRoot(), 'config/emulator.json'), 'utf8'));
+  const res = resolveTiers({ context: 'tests', digest, environ, config });
+  return { ...res.explicit, ...res.add };
 }

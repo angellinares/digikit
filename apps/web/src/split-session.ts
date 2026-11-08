@@ -36,10 +36,11 @@ export interface FastRegions {
   follow?: boolean;
 }
 
-/** No `?fast=` query: the DSP worker picks `4,2,1` for a generic core (no AOT blocks), else `desktop` if present, else off. */
+/** No `?fast=` query: the DSP worker picks `generic` (`_contexts.browser` of config/emulator.json) for a generic core (no AOT blocks), else `desktop` if present, else off. */
 export interface FastDefault {
   kind: 'default';
   desktop?: FastRegions;
+  generic?: [number, number, number];
 }
 
 export interface DspStats {
@@ -92,8 +93,10 @@ export async function createDspSide(o: DspSideOptions): Promise<DspSide> {
   } else if (o.fast && 'kind' in o.fast) {
     const aot = core.exports.digi_sharc_aot_blocks?.();
     if (aot === 0) {
-      core.call('digi_sharc_fast', 4, 2, 1);
-      fastArmed = true;
+      if (o.fast.generic) {
+        core.call('digi_sharc_fast', ...o.fast.generic);
+        fastArmed = true;
+      }
     } else if (o.fast.desktop) armRegions(o.fast.desktop);
   } else if (o.fast) armRegions(o.fast);
   const txp = core.put(new Uint8Array(MAX_PAYLOAD));
