@@ -1,0 +1,40 @@
+[module]
+id = "core/introblank"
+version = "0.1.0"
+name = "Black intro"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Optional: replaces the Elektron intro with black until a boot screen module takes over, and ends it early when none does"
+requires = ["core/runtime"]
+conflicts = []
+ports = ["dt2-1.17", "dn2-1.11", "dn2-1.12"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.11" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The stock intro task calls one setup function with one of five scene tables (`{callback, count}` entries and a 0 terminator). A hook before the
+# setup function's load of that argument writes the adapter's own table over the argument on the stack, so every boot runs one black scene
+# of 175 ticks (the stock length). The callback clears the bitmap with the stock clear function, because the intro's bitmap persists between frames.
+# The table is in the bss (one cache line of its own); the hook fills it, then continues into the displaced load.
+# The runtime (optional symbol `introblank_table`) ends the black intro after the module loads when nothing took it over: count 0 in the entry.
+# See README.md for the risk: the callback runs at intro frame 0, before REC is read.
+[[object]]
+path = "build/introblank.dko.json"
+sources = ["src/introblank.c", "src/hook.s"]
+place = "cf.expansion"
+
+[object.externs]
+introblank_next = "hook.cf.rtos.site.intro_setup.table_arg.tail"
+
+[[op]]
+op = "hook"
+hook = "cf.rtos.hook.intro_setup.table_arg"
+to = "introblank_hook"
+
+[[claim]]
+resource = "cf.rtos.site.intro_setup.table_arg"

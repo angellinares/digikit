@@ -483,6 +483,15 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }
+        // the Workbench's Custom boot screen toggle: the `device` modules and the optional black intro
+        let (mut with, _) = lib
+            .with_requires(dev.patch_set("device-introblank").unwrap())
+            .unwrap();
+        let (mut base, _) = lib.with_requires(dev.patch_set("device").unwrap()).unwrap();
+        base.push("core/introblank".to_string());
+        with.sort();
+        base.sort();
+        assert_eq!(with, base, "{} set device-introblank", dev.short);
         assert!(dev.patch_set("nope").is_err());
     }
 }

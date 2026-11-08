@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "tools/bootscreen",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/bootscreen.device.test.ts"],
+        "modules": ["test/intro-fault", "test/intro-reset", "test/intro-ticks"]
+      }
+    ]
+  }
+}

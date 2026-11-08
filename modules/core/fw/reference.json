@@ -4,6 +4,56 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x40114d94",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40115074",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40113700",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_draw_bitmap_clear",
+        "rust": "dkfw::draw::bitmap_clear"
+      },
+      "cpu": "cf",
+      "doc": "Clears the 32-bit row bands of a Bitmap to `value` (0: black); the intro's frame callbacks of the stock scene tables call it as (bitmap, 0, 1) before they draw.",
+      "file": "devices/fw/draw.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.draw.fn.bitmap_clear",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *bitmap, u32 value, u32 flags)",
+      "subsystem": "draw",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x401157fc",
             "len": 4
           }
@@ -26,7 +76,7 @@
         "rust": "dkfw::draw::blit"
       },
       "cpu": "cf",
-      "doc": "Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, data pointer at +0x14.",
+      "doc": "Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, +0x10 pixel pointer, +0x14 mask pointer.",
       "file": "devices/fw/draw.toml",
       "kind": "fn",
       "mark": "D",
@@ -9827,6 +9877,50 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x400d3bae"
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x400d3d12"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400d183a"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "The intro setup function, before it reads its scene table argument from (0x24,sp); a hook that writes another table pointer there changes the whole intro.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.rtos.hook.intro_setup.table_arg",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "a0",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.rtos.site.intro_setup.table_arg",
+      "subsystem": "rtos",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4002ed34"
           }
         ],
@@ -9978,6 +10072,51 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x400d3bae",
+            "len": 6
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x400d3d12",
+            "len": 6
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400d183a",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "doc": "The load of the scene table argument in the intro setup function (`move.l (0x24,sp),d0; movea.l d0,a0`, 6 bytes); the hook may change the argument on the stack.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.rtos.site.intro_setup.table_arg",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 8
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 8
+        }
+      },
+      "subsystem": "rtos",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4002ed34",
             "len": 8
           }
@@ -10021,6 +10160,55 @@
         "cf.rtos.site.boot",
         "dkrt.hook.boot"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x42c4bacc",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x42c4cacc",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x43153a00",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_intro_entry",
+        "rust": "dkfw::rtos::INTRO_ENTRY"
+      },
+      "cpu": "cf",
+      "doc": "The intro's current-entry pointer: {callback, frame count} in the scene table, NULL when no intro runs (DT2 0x43153a00, DN2 0x42c4cacc).",
+      "file": "devices/fw/rtos.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.rtos.value.intro_entry",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 116
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 116
+        }
+      },
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -16762,7 +16950,7 @@
   ],
   "subsystems": [
     {
-      "count": 4,
+      "count": 5,
       "cpu": "cf",
       "file": "devices/fw/draw.toml",
       "meaning": "pixels, rectangles, bitmaps, the screen",
@@ -16832,7 +17020,7 @@
       "name": "project"
     },
     {
-      "count": 11,
+      "count": 14,
       "cpu": "cf",
       "file": "devices/fw/rtos.toml",
       "meaning": "tasks, queues, mutexes, idle, interrupts, the reset and boot path",

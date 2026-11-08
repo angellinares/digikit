@@ -172,6 +172,8 @@ dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 [patch_sets]
 emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
 device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
+# `device` plus the optional black intro (core/introblank): the Workbench Firmware page picks it with its "Custom boot screen" toggle.
+device-introblank = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/introblank"]
 # `emulator` plus the sample pool (core/sample-pool), core/dsp-link (the pool's DSP tail needs it) and the dsp-voice stereo hooks, for the per-track sample tests (API 1.5).
 sample-tracks = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/dsp-link", "core/dsp-voice"]
 
