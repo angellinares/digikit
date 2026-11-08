@@ -172,9 +172,11 @@ fn bundle_lowering_matches_the_scan() {
     let dir = root().join("tests/fixtures/modules/patched-pluck");
     let text = std::fs::read_to_string(dir.join("module.toml")).unwrap();
     // the objects of a content module are in the cache (the scan above built them); the gallery bundle holds them as texts
-    let cache = root().join("out/cache/dko/test/patched-pluck");
+    let files = patchkit::build::object_files(&root(), &dir).unwrap();
     let read = |p: &str| {
-        std::fs::read_to_string(cache.join(p)).map_err(|e| patchkit::Error(e.to_string()))
+        let f = files.iter().find(|(r, _)| r == p).map(|(_, f)| f.clone());
+        std::fs::read_to_string(f.unwrap_or_else(|| dir.join(p)))
+            .map_err(|e| patchkit::Error(e.to_string()))
     };
     let m = patchkit::module::Module::from_parts(&text, &read).unwrap();
     let mut lib = Library { modules: vec![m] };

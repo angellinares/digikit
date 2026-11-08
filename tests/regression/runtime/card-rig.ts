@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,11 +18,12 @@ import {
   type CardOptions,
   type SelRecord,
 } from './card-kit.ts';
+import { cachedCard, cachedCardId, cardKey, fileSha } from './card-cache.ts';
 import { uploadStore } from './device-data.ts';
 import { advance, bounded, options, rpc } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
 import { record } from './artifacts.ts';
-import { DEVICES, FIRMWARE, FULL_TIER } from './devices.ts';
+import { DEVICES, FIRMWARE, FULL_TIER, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { RING_SYMBOLS } from './runtime-menu.ts';
@@ -36,6 +38,7 @@ import {
   cardAfter,
   cardOverlay,
   linkCard,
+  overlayFile,
   overlayRecords,
   overlayWrites,
   runtimeSafety,
@@ -190,7 +193,6 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
   let clone = '';
   let closed = 0;
   let seq = 0;
-  let boots = 0;
   let cap: number | undefined;
   let stepping: { dk: DkSession; transport: EmuUsbTransport } | undefined;
   const overlays: string[] = [];
@@ -226,19 +228,32 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     name: `modules/${as ?? id.split('/').at(-1)}.dkm`,
     file: moduleArtifact(device, id),
   });
-  const build = (session: Session, tag: string, spec: CardSpec = {}) => {
-    const { modules = [], ...rest } = spec;
-    return buildCard(device, {
+  /**
+   * A card of `spec`. It is built once into the card cache under a name of its inputs, so the same spec gives the same file in every run and
+   * the daemon finds its snapshot. A card on a `base` outside the cache has no stable name: it is built in a fresh directory of the run dir.
+   */
+  const build = async (session: Session, tag: string, spec: CardSpec = {}) => {
+    const { modules = [], name: _name, ...rest } = spec;
+    const options = {
       ...(o.project ? { syx: resolveInputs(device, FIRMWARE[device]).syx } : {}),
       ...rest,
-      dir: freshDir(session, tag),
       modules: modules.map((m) => (typeof m === 'string' ? mod(m) : m)),
+    };
+    const base = options.base ? cachedCardId(options.base) : undefined;
+    if (options.base && !base) return buildCard(device, { ...options, dir: freshDir(session, tag) });
+    const key = cardKey(device, {
+      ...options,
+      syx: options.syx ? fileSha(options.syx) : undefined,
+      modules: options.modules.map((m) => ({ name: m.name, sha: fileSha(m.file) })),
+      base,
     });
+    return cachedCard(key, (work) => buildCard(device, { ...options, dir: work, name: 'card' }));
   };
 
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
+      runDirClaim: () => claimRunDir(device),
       ...(o.stallMs !== undefined ? { stallMs: o.stallMs } : {}),
       dsp: o.initial === 'small' ? 'cold' : o.dsp,
       env: async () => {
@@ -282,7 +297,8 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         await bounded(() => expectNoGuardHits(session));
         if (!o.faults) await bounded(() => session.expectNoFault(`case ${closed}`));
       },
-      afterClose: async (session) => {
+      tempDirs: () => [artifacts],
+      afterClose: async () => {
         const report = runtimeSafety(device, watchOutput, overlays, Math.max(1, epochs.size));
         record(artifacts, 'lifetime-safety', report);
         expect(report.write_events, 'write-watch on cf.expansion over every boot: no stray write').toBe(0);
@@ -308,8 +324,6 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
             );
           }
         o.onClose?.(rig, report);
-        // The artifacts dir is ours. Keep it with the session dir when that is kept (a failed run).
-        if (!fs.existsSync(session.runDir)) fs.rmSync(artifacts, { recursive: true, force: true });
       },
     },
     scope,
@@ -460,7 +474,12 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     async pausedBoot(card) {
       const { session } = fixture.runtime;
       const previous = clone && path.dirname(clone);
-      const next = path.join(session.runDir, `boot${++boots}`, 'card.img');
+      // Named after the card (path and overlay), so a path never maps to two cards across runs.
+      const id = createHash('sha256')
+        .update(`${fs.realpathSync(card)}:${fs.existsSync(overlayFile(card)) ? fileSha(overlayFile(card)) : ''}`)
+        .digest('hex')
+        .slice(0, 12);
+      const next = path.join(session.runDir, `boot-${id}`, 'card.img');
       fs.mkdirSync(path.dirname(next), { recursive: true });
       linkCard(card, path.dirname(next), cardOverlay(card)); // the daemon may save next to the image: boot a card of its own
       const runtime = await rig.boot(next);
@@ -476,7 +495,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         .toEqual({ pending: 0, scheduled: 0 });
       await rpc(runtime.session, 'run.mode', { mode: 'paused' });
       await advance(runtime.session, 300);
-      if (previous) fs.rmSync(previous, { recursive: true, force: true });
+      if (previous && previous !== path.dirname(next)) fs.rmSync(previous, { recursive: true, force: true });
       clone = next;
       const transport = new EmuUsbTransport((method, params) => runtime.session.client.call(method, params), {
         stepInstructions: 400_000,

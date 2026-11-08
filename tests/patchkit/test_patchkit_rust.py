@@ -104,7 +104,7 @@ def test_built_object_is_current_and_plain_coldfire():
     front_end.build_module(MODULE)  # a stale object is rebuilt into out/cache/dko
     front_end.build_module(MODULE, check=True)
     obj = json.loads(
-        (modroots.OBJECT_CACHE / "test/rust-demo/build/rust-demo.dko.json").read_text()
+        modroots.cached_objects(MODULE)["build/rust-demo.dko.json"].read_text()
     )
     assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
     assert int(obj["toolchain"]["instructions_redecoded"]) > 100

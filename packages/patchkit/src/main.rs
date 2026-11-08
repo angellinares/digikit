@@ -47,14 +47,15 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]   digikit's own data on a card image or a raw sector dump:
                                          the store header and files, the selection record, the settings record (both copies, the one in use,
                                          every entry decoded); `store dump --record FILE` reads one settings record file (docs/design/digikit-store.md)
-  build   [MODULE...] [--check] [--force] [--define NAME]... [--out DIR] [--status] [--tree DIR]
+  build   [MODULE...] [--check] [--force] [--define NAME]... [--out DIR] [--status] [--paths] [--tree DIR]
                                          module sources -> objects: build/*.dko.json for a core/* module (committed), else the cache
-                                         out/cache/dko/<module id>/<path> (ColdFire C, asm and Rust, and SHARC+ with Selache as a
+                                         out/cache/dko/<module id>/<src12>/<path> (ColdFire C, asm and Rust, and SHARC+ with Selache as a
                                          library: all in this process). MODULE is a directory or a module id; none: every module.
                                          An object whose stored source_sha256 equals the hash of its sources is not compiled
                                          (--force compiles it). --check writes nothing and fails on a stale object.
                                          --define NAME[=V] selects an #ifdef of the DSP sources (needs --out; the stored objects
                                          stay). --status prints {module: \"unchanged\"|\"needs build\"} as JSON and builds nothing.
+                                         --paths prints {module: {object path: stored file}} for the sources now and builds nothing.
                                          --tree DIR: every module under DIR only.
   dko show FILE.dko.json [--relocs]      arch, toolchain record, sections, symbols and relocations of an object
   dko isa-digest FILE.dko.json           the ISA check record the object's bytes need (toolchain.isa_check)
@@ -1731,11 +1732,11 @@ path = "build/gen/device-{dev}.inc"
         for id in ["test/selected", "test/dependency"] {
             assert!(ids.iter().any(|selected| selected == id));
             assert_eq!(lib.get(id).unwrap().objects.len(), 1);
+            // `<id>/<src12>/build/tiny.dko.json`
+            let keys = std::fs::read_dir(cache_dir(&root.0).join(id)).unwrap();
             assert!(
-                cache_dir(&root.0)
-                    .join(id)
-                    .join("build/tiny.dko.json")
-                    .is_file()
+                keys.filter_map(|k| k.ok())
+                    .any(|k| k.path().join("build/tiny.dko.json").is_file())
             );
         }
         assert!(lib.get("test/unrelated").unwrap().objects.is_empty());

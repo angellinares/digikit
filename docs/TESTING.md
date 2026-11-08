@@ -265,9 +265,25 @@ Rust tests in their crates.
 - Lint and types come from `pyproject.toml`: new Python files are covered by `[tool.ruff] include`;
   add new typed files to `[tool.mypy] files`. Both run as commands in the gate target `python-checks`.
 
-Device sessions run in a claimed `dist/session-cache/<device>-<n>` (per worktree, gitignored). A vitest
-worker process claims the first free `<n>` with a pid lock file (`<device>-<n>.lock`) and keeps it until it
-exits; later processes reuse the dir, so the daemon's boot cache stays warm. It is pruned to 4 snapshot entries.
+Device sessions run in a claimed `dist/session-cache/<key12>/<device>-<n>` (per worktree, gitignored).
+`<key12>` is the first 12 characters of the daemon build key (the directory name of the binary in
+`<git dir>/emud-cache/<dev>/<key>/`): a boot snapshot has no version, so a new daemon build must not read the
+snapshots of an older one. A daemon from another place (a custom `DIGI_EMUD_<DEV>`) uses
+`dist/session-cache/<device>-<n>`, or for the card and fx fixtures a fresh temp dir. A vitest worker process
+claims the first free `<n>` with a pid lock file (`<device>-<n>.lock`) and keeps it until it exits; later
+processes reuse the dir, so the daemon's boot cache stays warm. It is pruned to 8 snapshot entries. The card
+and fx fixtures claim a dir when their daemon starts (not at collection), empty everything but `patched/` and
+`cards/`, and release it when the session closes. A file with a failed test or a failed post-close safety check
+renames its dir to `<dir>.failed-<time>` (the newest 2 per device stay), so the next claim boots cold: a snapshot
+of a boot that failed a check would otherwise pass the next run. A `.dirty` marker, written at the claim and removed by a clean release, does the same for a killed or timed-out run. Only the newest 2 `<key12>` dirs of each device stay.
+Cards that the fixtures build (`cardRig`, the fx presets) are content-named: `dist/session-cache/cards/<key>/`
+holds `card.img` and `overlay.bin`, read-only. The key is a hash of the spec, the bytes of every input file
+(`.dkm`, `.syx`, the settings tool), the plusdrive binary, `devices/*.toml` and a format version in
+`tests/regression/runtime/card-cache.ts`. Equal inputs give the same path, size and mtime, so the daemon's
+snapshot key matches and a baseline reload restores the snapshot (0.2 to 1.5 s) instead of a cold boot
+(14 s DT2, 38 s DN2). A card built on a `base` outside the cache (a card after the guest's writes) is built in a
+fresh dir and always boots cold. Eviction runs when a fixture claims its run dir: only the newest 32 card dirs
+stay (a load touches a dir; one used in the last 2 hours stays). Fx presets with a `seed-card` settings step are built in the run dir, not cached. Delete `dist/session-cache/cards` to rebuild.
 `liveOptions(..., { fresh: true })` and mirror sessions use a fresh temp dir.
 
 ## Module-owned tests

@@ -1037,7 +1037,7 @@ mod cache_generation_tests {
     fn generation_reads_cached_declarations_without_building_and_tolerates_missing_cache() {
         let root = std::env::temp_dir().join(format!("digikit-cached-gen-{}", std::process::id()));
         let dir = root.join("modules").join("new-machine");
-        let cache = root.join("out/cache/dko/test/new-machine/build/module.dko.json");
+        let cache = root.join("out/cache/dko/test/new-machine/k/build/module.dko.json");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
         // No sources or toolchains exist here: either a freshness check or a

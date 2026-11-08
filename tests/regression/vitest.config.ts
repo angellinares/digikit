@@ -21,6 +21,8 @@ export default defineConfig({
   root: at('.'),
   resolve: { alias },
   test: {
+    // Removes the temp dirs of the file's fixtures after its last test.
+    setupFiles: [at('./setup-temp.ts')],
     // Caps the shared pool: workers at once in stock, runtime and conformance.
     maxWorkers: Number(process.env.REGRESSION_JOBS ?? 2),
     // REGRESSION_JUNIT_FILE (verify's failed-unit record) names the report; REGRESSION_JUNIT=1 alone keeps the default.

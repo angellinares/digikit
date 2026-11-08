@@ -34,7 +34,7 @@ def test_objects_are_current_and_plain_coldfire():
     if not pk_toolchains.codegen_gcc_ready():
         pytest.skip("Rust-for-ColdFire toolchain not installed")
     front_end.build_module(DEMO)
-    built = modroots.OBJECT_CACHE / "test/dyn-demo/build/dyn-demo.dko.json"
+    built = modroots.cached_objects(DEMO)["build/dyn-demo.dko.json"]
     obj = json.loads(built.read_text())
     assert {r["type"] for r in obj["relocs"]} == {"cf.32"}
     assert int(obj["toolchain"]["instructions_redecoded"]) > 10

@@ -15,6 +15,7 @@ import {
 } from '@digi/control-client';
 import {
   coupledEnv,
+  repoRoot,
   resolveInputs,
   validateRuntimeInputs,
   validatePreparedRuntimeImage,
@@ -22,6 +23,10 @@ import {
   type PreparedRuntimeImage,
 } from './inputs.ts';
 import { button, encoder } from './keys.ts';
+
+/** Content-named card images that the device tests share between runs (tests/regression/runtime/card-cache.ts; `DIGI_CARD_CACHE` moves it for host tests). A baseline card may live here. */
+export const cardCacheRoot = (): string =>
+  process.env.DIGI_CARD_CACHE || path.join(repoRoot(), 'dist/session-cache/cards');
 
 /** ColdFire instructions per emulated millisecond (the oracle clock). */
 export const MS = 132_000;
@@ -224,13 +229,15 @@ export class Session {
       return await (expired ? Promise.race([started, expired]) : started);
     } catch (err) {
       controller?.abort(err);
-      if (session) await session.close();
-      else {
+      if (session) {
+        session.keepDiagnostics();
+        await session.close();
+      } else {
         // A spawn still connecting owns the child: its abort path waits for exit. If a handle
         // arrives after expiry, the signal check rejects and we close that late handle too.
         const lateSession = await started.catch(() => session);
         if (lateSession) await lateSession.close();
-        else if (ownedDir) fs.rmSync(ownedDir, { recursive: true, force: true });
+        else if (ownedDir) console.info(`kept run dir for diagnostics: ${ownedDir}`); // the daemon did not start: its stderr is there
       }
       throw err;
     } finally {
@@ -258,17 +265,24 @@ export class Session {
     const checked = <T>(operation: () => Promise<T>) => withinRuntimeDeadline(deadline, operation);
     let lastStatus: StatusResult | undefined;
     try {
-      const root = fs.realpathSync(this.runDir);
+      const roots = [this.runDir, cardCacheRoot()]
+        .filter((dir) => fs.existsSync(dir))
+        .map((dir) => fs.realpathSync(dir));
       const directory = fs.realpathSync(path.dirname(baseline.cardImage));
       const image = fs.realpathSync(baseline.cardImage);
-      const inside = (file: string) => {
+      const inside = (root: string, file: string) => {
         const relative = path.relative(root, file);
         return (
           Boolean(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
         );
       };
-      if (!inside(directory) || !inside(image)) {
-        throw new Error('runtime baseline card must be in a fixture-owned child directory of runDir');
+      if (!roots.some((root) => inside(root, directory) && inside(root, image))) {
+        throw new Error('runtime baseline card must be in a fixture-owned child directory of runDir or the card cache');
+      }
+      // A card of the cache that a session loads is in use: eviction goes by the dir's mtime.
+      if (fs.existsSync(cardCacheRoot()) && inside(fs.realpathSync(cardCacheRoot()), directory)) {
+        const now = new Date();
+        fs.utimesSync(directory, now, now);
       }
       // The card's own `overlay.bin` (its test writes) is part of the baseline: the daemon applies it on load.
       if (!fs.statSync(image).isFile()) throw new Error('runtime baseline must be a card image file');
@@ -458,14 +472,22 @@ export class Session {
     if (problems.length) throw new Error(`fault${where ? ` at ${where}` : ''}: ${problems.join('; ')}`);
   }
 
-  /** Quit the daemon and remove an owned temporary run directory. */
+  /** A test, hook or check failed: `close` keeps the temporary run directory (if this session made one) and prints its path. */
+  keepDiagnostics(): void {
+    this.#preserveDiagnostics = true;
+  }
+
+  /** Quit the daemon and remove an owned temporary run directory, unless diagnostics are kept (`keepDiagnostics`, `preserveDiagnostics`). */
   close(options: { preserveDiagnostics?: boolean } = {}): Promise<void> {
     if (options.preserveDiagnostics) this.#preserveDiagnostics = true;
     return (this.#closing ??= (async () => {
       try {
         await this.#daemon.close();
       } finally {
-        if (this.#ownedDir && !this.#preserveDiagnostics) fs.rmSync(this.#ownedDir, { recursive: true, force: true });
+        // The one rule for a run dir that Session.start made itself: a clean close removes it, a failed one keeps it.
+        if (this.#ownedDir && this.#preserveDiagnostics)
+          console.info(`kept run dir for diagnostics: ${this.#ownedDir}`);
+        else if (this.#ownedDir) fs.rmSync(this.#ownedDir, { recursive: true, force: true });
       }
     })());
   }
