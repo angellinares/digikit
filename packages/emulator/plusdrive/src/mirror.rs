@@ -5,8 +5,9 @@
 //! no longer has is removed from the folder (a card built from the folder at the next start then does not bring it back). The mirror
 //! removes only what it has seen on the card in this session (`seen`: the store as the session started, then every file it read), so
 //! a session that starts on an empty card (the DN2 has no card file at boot) never removes the files an earlier session left. A
-//! replaced or removed file is moved to the backup first. The selection record is not a store file and is not mirrored (the full
-//! export writes `digikit/selection.txt`). Nothing is read from the folder into the card.
+//! replaced or removed file is moved to the backup first. The selection record is not a store file, but its paths are written to
+//! `digikit/selection.txt` when they change, so a card built from the folder at the next start loads the same modules at its first
+//! boot (the full export writes the same file). Nothing else is read from the folder into the card.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -105,6 +106,55 @@ fn write_atomic(to: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::rename(&part, to).map_err(|e| format!("{}: {e}", to.display()))
 }
 
+/// The selection the card holds: both copies read, the valid one with the higher `seq`. `None`: no valid record.
+fn card_selection(view: &dyn RandomAccessRead, range: &StoreLayout) -> Option<Vec<String>> {
+    if range.selection_sectors < 2 {
+        return None;
+    }
+    let copy = |sector: u64| {
+        let mut buf = [0u8; crate::SECTOR];
+        view.read_at(sector * crate::SECTOR as u64, &mut buf);
+        crate::decode_selection(&buf)
+    };
+    crate::current_selection(copy(range.end_sector - 2), copy(range.end_sector - 1))
+        .map(|s| s.paths)
+}
+
+/// Write the card's selection to `digikit/selection.txt` when it differs, so a card built from the folder at the next start loads the
+/// same modules at its first boot. A card without a record, or an empty one next to no file, leaves the folder alone.
+fn mirror_selection(
+    view: &dyn RandomAccessRead,
+    range: &StoreLayout,
+    root: &Path,
+    backup: &Path,
+    report: &mut MirrorReport,
+) {
+    let Some(paths) = card_selection(view, range) else {
+        return;
+    };
+    let to = root.join(crate::SELECTION_FILE);
+    let have = fs::read_to_string(&to).ok();
+    let kept = have
+        .as_deref()
+        .and_then(|t| crate::parse_selection_txt(t).ok());
+    if kept.as_ref() == Some(&paths) || (have.is_none() && paths.is_empty()) {
+        return;
+    }
+    let text = crate::format_selection_txt(&paths);
+    let step = if have.is_some() {
+        move_to_backup(&to, backup, crate::SELECTION_FILE)
+    } else {
+        Ok(())
+    }
+    .and_then(|()| write_atomic(&to, text.as_bytes()));
+    let name = crate::SELECTION_FILE.to_string();
+    match step {
+        Ok(()) if have.is_some() => report.replaced.push(name),
+        Ok(()) => report.added.push(name),
+        Err(e) => report.issues.push(e),
+    }
+}
+
 /// Bring `<folder>/digikit/` up to date with the store of `view`. `seen` is the set of store paths this session has seen on the card
 /// (start it with the store of the base image, `store_files` of the card as it was built); it is updated.
 pub fn mirror_store(
@@ -138,6 +188,7 @@ pub fn mirror_store(
             },
         }
     }
+    mirror_selection(view, range, &root, backup, &mut report);
     let gone: Vec<String> = seen
         .iter()
         .filter(|p| !now.contains_key(*p))
@@ -305,6 +356,57 @@ mod tests {
         assert_eq!(r.removed, ["modules/sine.dkm"]);
         assert!(!folder.join("digikit/modules").exists());
         assert!(seen.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_selection_of_the_card_is_written_to_the_folder_when_it_changes() {
+        use crate::{OverlayImage, Selection, encode_selection};
+        use emmc_card::CardOverlaySector;
+        let root = temp("selection");
+        let (folder, backup) = (root.join("plus_drive/dn2"), root.join("backup"));
+        let r = range();
+        let base = card(&[("modules/a.dkm", b"A"), ("modules/b.dkm", b"B")]);
+        let mut seen = BTreeSet::new();
+        // no record on the card: no selection file
+        mirror_store(&base, &r, &folder, &backup, &mut seen).unwrap();
+        assert!(!folder.join("digikit/selection.txt").exists());
+        // the runtime writes both copies of a record
+        let writes = |seq: u32, paths: &[&str]| -> Vec<CardOverlaySector> {
+            let data = encode_selection(&Selection {
+                seq,
+                boot_counter: 0,
+                flags: 0,
+                paths: paths.iter().map(|p| p.to_string()).collect(),
+            })
+            .unwrap();
+            [r.end_sector - 2, r.end_sector - 1]
+                .map(|sector| CardOverlaySector {
+                    sector,
+                    written: [0xff; 64],
+                    data,
+                })
+                .to_vec()
+        };
+        let first = OverlayImage::new(&base, &writes(1, &["modules/a.dkm", "modules/b.dkm"]));
+        let report = mirror_store(&first, &r, &folder, &backup, &mut seen).unwrap();
+        assert_eq!(report.added, ["selection.txt"], "{report:?}");
+        let text = fs::read_to_string(folder.join("digikit/selection.txt")).unwrap();
+        assert_eq!(
+            crate::parse_selection_txt(&text).unwrap(),
+            ["modules/a.dkm", "modules/b.dkm"]
+        );
+        // unchanged: left alone
+        let again = mirror_store(&first, &r, &folder, &backup, &mut seen).unwrap();
+        assert!(
+            again.added.is_empty() && again.replaced.is_empty(),
+            "{again:?}"
+        );
+        // a new selection: the folder follows, the old file is in the backup
+        let second = OverlayImage::new(&base, &writes(2, &["modules/b.dkm"]));
+        let report = mirror_store(&second, &r, &folder, &backup, &mut seen).unwrap();
+        assert_eq!(report.replaced, ["selection.txt"], "{report:?}");
+        assert!(backup.join("digikit/selection.txt").is_file());
         let _ = fs::remove_dir_all(&root);
     }
 
