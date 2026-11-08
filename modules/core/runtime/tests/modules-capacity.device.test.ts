@@ -103,7 +103,7 @@ async function expectModulesReply(runtime: PatchedSession): Promise<void> {
   await session.expectNoFault('modules reply');
 }
 
-runtimeTests('MODULES and CAPACITY list the loaded modules, ranges, types and limits', expectModulesReply, {
+runtimeTests('MODULES and CAPACITY list the loaded modules, ranges, types and limits', expectModulesReply, { dsp: 'sharc',
   timeout: 900_000,
   devices: ['dt2'],
 });

@@ -37,7 +37,7 @@ async function observe(h: CardRig) {
 
 cardRigs(
   'crash capture',
-  { devices: ['dt2'], full: true, faults: true, roots: RT, symbols: CARD_SYMBOLS },
+  { dsp: 'sharc', devices: ['dt2'], full: true, faults: true, roots: RT, symbols: CARD_SYMBOLS },
   (h) => {
     for (const [kind, { blocks, mode, vector }] of Object.entries(KINDS)) {
       test(

@@ -249,7 +249,7 @@ runtimeTests('a module that loads before the debug module has its log line in th
 runtimeTests(
   'the periodic events: HEALTH every ten seconds, STABLE once, quiet DSP diagnostics',
   expectPeriodicEvents,
-  {
+  { dsp: 'sharc',
     timeout: 1_200_000,
     devices: ['dt2'],
     full: true,

@@ -297,15 +297,15 @@ async function expectRuntimePanic(runtime: PatchedSession): Promise<void> {
   await session.expectNoFault('runtime panic');
 }
 
-runtimeTests('an effect that stops the DSP gives safe mode and names the module, site and step', expectFxHang, {
+runtimeTests('an effect that stops the DSP gives safe mode and names the module, site and step', expectFxHang, { dsp: 'sharc',
   timeout: 1_200_000,
 });
-runtimeTests('a machine that stops the DSP gives safe mode and names the module and the voice site', expectVoiceHang, {
+runtimeTests('a machine that stops the DSP gives safe mode and names the module and the voice site', expectVoiceHang, { dsp: 'sharc',
   timeout: 1_200_000,
   devices: ['dt2'],
 });
-runtimeTests('effect faults are logged with the module as source', expectFxFaultEvents, { timeout: 900_000 });
-runtimeTests('a normal effect is no stop', expectNoFalseStop, { timeout: 1_200_000 });
+runtimeTests('effect faults are logged with the module as source', expectFxFaultEvents, { dsp: 'sharc', timeout: 900_000 });
+runtimeTests('a normal effect is no stop', expectNoFalseStop, { dsp: 'sharc', timeout: 1_200_000 });
 runtimeTests('a CPU crash is kept as the last fault', expectCpuCrashFault, { timeout: 1_200_000, devices: ['dt2'] });
 runtimeTests('a panic of the runtime gives safe mode and names the runtime', expectRuntimePanic, {
   timeout: 1_200_000,
