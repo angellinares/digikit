@@ -89,11 +89,12 @@ T=$(uv run python -m tools.emulator.native_target dir)
 cargo build --release --locked --target-dir "$T" -p sharc-fast-cl --examples
 ```
 
-In a git worktree the root is `out/native/target-wt/<worktree-name>/` instead
-(`out/` is linked to the main tree's, and two checkouts in one target dir would
-invalidate each other). A worktree cannot reuse the main tree's compiled
-`sharc-gen` -- different package paths and fresh file mtimes make cargo rebuild
-it -- so it pays one compile per gen, then reuses its own dir.
+In a git worktree the root is `dist/native-target/` inside the worktree instead
+(git-ignored; it is deleted with the lane). A worktree cannot reuse the main
+tree's compiled `sharc-gen` (different package paths and fresh file mtimes make
+cargo rebuild it), so it pays one compile per gen, then reuses its own dir.
+A live lane that built into the old `out/native/target-wt/<name>/` pays one cold
+build the next time it builds; that old dir stays in `out/` until removed by hand.
 
 A plain `cargo build` without `--target-dir` uses `./target` (ignored by git).
 Wrap heavy builds in `uv run python -m tools.devtools.benchlock run --shared -- ...`.

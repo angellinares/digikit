@@ -248,9 +248,14 @@ class FileHasher:
         if self.new == self.old:
             return
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.cache_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.new))
-        tmp.replace(self.cache_path)
+        # The cache only saves time. The cache file is shared by all lanes: write a unique temp file and
+        # rename it, so a concurrent writer cannot remove ours. A lost update is acceptable (it is rebuilt).
+        tmp = self.cache_path.with_name(f"{self.cache_path.name}.{os.getpid()}.tmp")
+        try:
+            tmp.write_text(json.dumps(self.new))
+            tmp.replace(self.cache_path)
+        except OSError:
+            tmp.unlink(missing_ok=True)
 
 
 def tree_files(top: pathlib.Path) -> list[pathlib.Path]:

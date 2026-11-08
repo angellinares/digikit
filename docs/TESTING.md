@@ -265,6 +265,12 @@ Rust tests in their crates.
 - Lint and types come from `pyproject.toml`: new Python files are covered by `[tool.ruff] include`;
   add new typed files to `[tool.mypy] files`. Both run as commands in the gate target `python-checks`.
 
+The patchkit harness shares boot snapshot pairs in `out/runs/.cache/patched`. The first harness call of a process
+caps it at 30 GB (`DIGI_PATCHED_CACHE_MAX_GB`): it removes the oldest entries first by last write time and never an
+entry written in the last 2 hours, so concurrent runs and lanes keep what they use. The harness cannot tell which
+entry the daemon restored, so a reused but old entry can go and is rebuilt on its next use (about 13 s). `cards-store`
+(a few entries) has no cap.
+
 Device sessions run in a claimed `dist/session-cache/<key12>/<device>-<n>` (per worktree, gitignored).
 `<key12>` is the first 12 characters of the daemon build key (the directory name of the binary in
 `<git dir>/emud-cache/<dev>/<key>/`): a boot snapshot has no version, so a new daemon build must not read the
@@ -483,6 +489,13 @@ B = the performance core count on Apple Silicon, otherwise cores - 2, with a min
 | `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 3 | 4 | 4 |
 
 On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 4 tasks, 6 emulators for gate targets that run alone.
+
+Each launcher run has its own budget, so several lanes can start more emulators than the machine runs well.
+Module device targets and `test-conformance` therefore run behind `node tools/devtools/emu-slot.mjs --`. It takes one
+of N machine-wide slots (lock files in `<git common dir>/emu-slots/`, N = `DIGI_EMU_SLOTS`, default the launcher's
+Nx task count), runs the command, and passes on its exit status. A waiting task prints one line and waits without a
+limit; a lock of a dead process is taken over. The wait is outside Vitest, so it does not count against test timeouts.
+Gate targets such as `fx` and `stock` are not wrapped.
 
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
 

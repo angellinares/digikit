@@ -10,6 +10,8 @@ import {
   IMAGE_BUILD,
   BUILD_INPUTS,
   DEVICE_INPUTS,
+  EMU_SLOT,
+  EMU_SLOT_INPUT,
   deviceTargets,
   scopedManifestInputs,
 } from './module-targets.mjs';
@@ -201,13 +203,14 @@ export const createNodesV2 = [
             ),
             // The shared runner's Vitest, TypeScript and package configuration is not an import of a test file.
             { input: 'production', projects: ['regression'] },
+            EMU_SLOT_INPUT,
             imageInput,
             ...importInputs(globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot })),
           ],
           dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD],
           outputs: [],
           options: {
-            command: 'pnpm --filter @digi/regression test:conformance',
+            command: `${EMU_SLOT} pnpm --filter @digi/regression test:conformance`,
             env: { DIGI_CONFORMANCE_MODULES: m.id, DIGI_CONFORMANCE_MANIFEST: f },
             cwd: '.',
           },

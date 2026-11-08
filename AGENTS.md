@@ -93,4 +93,4 @@ Builds and benchmarks use `tools/devtools/benchlock.py`. `coupled_ab.py`, `nativ
 ## Worktrees
 
 Use warm lanes (`tools/devtools/lane.sh NAME [BASE]`) for parallel native edits or long measurements; small edits and reading stay in the main tree. Lanes share artifacts and the virtualenv: do not change Python dependencies there. Use a separate dev-server port per lane.
-Reuse one cargo target per lane: a new target variant name builds cold (10 to 30 minutes), a rebuild takes seconds. Run `cargo check` before a long build. Start a new branch in a warm lane rather than a new lane; a new worktree pays about 25 minutes of cold builds.
+Each lane builds into its own `dist/native-target/` (deleted with the lane; a lane that predates this pays one cold build). Reuse one cargo target per lane: a new target variant name builds cold (10 to 30 minutes), a rebuild takes seconds. Run `cargo check` before a long build. Start a new branch in a warm lane rather than a new lane; a new worktree pays about 25 minutes of cold builds.

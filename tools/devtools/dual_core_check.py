@@ -5,7 +5,7 @@ The daemon starts on the first device (DN2) with the second device's ready input
 runs it, restarts it and goes back. Each phase must report `status.dsp == "sharc"`, the audio
 report's `dsp_core` of that device, advancing DSP frames, no DSP halt and (with `--pcm`) a PCM tap.
 
-    DIGI_EMUD=out/native/target-wt/NAME/dual/release/digi-emud \\
+    DIGI_EMUD=dist/native-target/dual/release/digi-emud \\
         uv run python -m tools.devtools.dual_core_check [--runtime] [--steps N] [--pcm] [--module <author/name> [--play]]
         uv run python -m tools.devtools.dual_core_check --bench dt2 --binary second=BIN_A --binary first=BIN_B --pairs 3
         uv run python -m tools.devtools.dual_core_check --menu <machine id> --menu <effect id> [--shots DIR]

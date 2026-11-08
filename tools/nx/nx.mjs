@@ -26,7 +26,7 @@ export function budget(work, override) {
 
 // Cores for our work: the performance cores on Apple Silicon, so the efficiency cores stay
 // free for the rest of the machine. Otherwise all cores but two.
-function workCores() {
+export function workCores() {
   if (process.platform === 'darwin') {
     const { stdout } = spawnSync('sysctl', ['-n', 'hw.perflevel0.logicalcpu'], { encoding: 'utf8' });
     const performance = Number(stdout);

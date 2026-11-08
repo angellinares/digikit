@@ -127,6 +127,9 @@ export const DEVICE_INPUTS = [
   '{workspaceRoot}/tools/nx/device-inputs.mjs',
   '{workspaceRoot}/config/emulator.json',
 ];
+// Device and conformance tasks run behind this wrapper: it takes one machine-wide emulator slot.
+export const EMU_SLOT = 'node tools/devtools/emu-slot.mjs --';
+export const EMU_SLOT_INPUT = '{workspaceRoot}/tools/devtools/emu-slot.mjs';
 export const deviceTarget = (root, tests, recs, imageInput, importInputs, uploadable = false) => {
   const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD];
   if (uploadable) dependsOn.push('pack');
@@ -141,6 +144,7 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
     cache: true,
     inputs: [
       ...DEVICE_INPUTS,
+      EMU_SLOT_INPUT,
       imageInput,
       ...importInputs(tests.map((test) => join(root, test))),
       ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
@@ -153,7 +157,7 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
     dependsOn: [...new Set(dependsOn)],
     outputs: [],
     options: {
-      command: `pnpm --filter @digi/regression test:runtime ${tests.map((t) => `../../${root}/${t}`).join(' ')}`,
+      command: `${EMU_SLOT} pnpm --filter @digi/regression test:runtime ${tests.map((t) => `../../${root}/${t}`).join(' ')}`,
       cwd: '.',
     },
   };
