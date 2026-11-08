@@ -19,6 +19,7 @@ vi.mock('vitest', async (original) => ({
   afterAll: fake.afterAll,
 }));
 vi.mock('@digi/test-support', async (original) => ({ ...(await original<object>()), Session: { start: fake.start } }));
+import { flushFileTemps } from '../file-temp.ts';
 import { withReusablePatchedSession } from '../support.ts';
 
 async function fixture(
@@ -171,10 +172,8 @@ test('post-close evidence waits for owned shutdown and runs once after a failed 
   expect(checked).toHaveBeenCalledExactlyOnceWith(f.session);
 });
 
-// The fixtures of a file share its temp dirs: they go when the file's process ends, and stay if a fixture of the file failed.
-let atExit: (() => void) | undefined;
+// The fixtures of a file share its temp dirs: they go when the file ends (setup-temp.ts), and stay if a fixture of the file failed.
 test('fixture temp dirs stay after the fixture closes and go when the file ends clean', async () => {
-  const on = vi.spyOn(process, 'on');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-temp-rule-'));
   try {
     const clean = path.join(root, 'clean');
@@ -183,12 +182,9 @@ test('fixture temp dirs stay after the fixture closes and go when the file ends 
     await first.afterEach();
     await first.afterAll();
     expect(fs.existsSync(clean), 'a later fixture of the file may still read it').toBe(true);
-    atExit = on.mock.calls.find(([event]) => event === 'exit')?.[1] as () => void;
-    expect(atExit).toBeTypeOf('function');
-    atExit();
+    flushFileTemps();
     expect(fs.existsSync(clean)).toBe(false);
   } finally {
-    on.mockRestore();
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
@@ -201,7 +197,7 @@ test('fixture temp dirs are kept when a test of the file failed', async () => {
     const f = await fixture({ tempDirs: () => [failed] });
     await f.afterEach('fail');
     await f.afterAll();
-    atExit!();
+    flushFileTemps();
     expect(fs.existsSync(failed)).toBe(true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -10,6 +10,7 @@ import {
   type RuntimeBaseline,
   type SessionOptions,
 } from '@digi/test-support';
+import { fileTemp } from './file-temp.ts';
 import { portFile } from './runtime/device-data.ts';
 import { daemonBinary } from './runtime/devices.ts';
 import type { RunDirClaim } from './runtime/run-claim.ts';
@@ -165,24 +166,6 @@ export function withPatchedSession(
 
 export interface RuntimeCase extends PatchedSession {
   readonly epoch: number;
-}
-
-/**
- * Temp dirs of the fixtures of this test file. A test may read the artifacts of an earlier fixture of its file, so they are removed when
- * the file's process ends (the forks pool runs one file per process), not when a fixture closes. Kept, with a line that names them,
- * when any fixture of the file failed.
- */
-const fileTemps = { dirs: new Set<string>(), failed: false, registered: false };
-function fileTemp(dir: string, failed: boolean): void {
-  fileTemps.dirs.add(dir);
-  fileTemps.failed ||= failed;
-  if (failed) console.info(`kept run dir for diagnostics: ${dir}`);
-  if (fileTemps.registered) return;
-  fileTemps.registered = true;
-  process.on('exit', () => {
-    if (fileTemps.failed) return;
-    for (const d of fileTemps.dirs) fs.rmSync(d, { recursive: true, force: true });
-  });
 }
 
 /** Opt-in fixture: independent cases reload pristine firmware/card state in one owned daemon. */
