@@ -7090,8 +7090,8 @@ The MCF5441x data sheet (Rev. 8, tables 1 and 2) rates the core at 250 MHz at mo
 The only speed grade is 250 MHz.
 
 A photograph of a DN2 board shows the part at U1: MCF54415CMJ250, mask set 0N51E. The suffix 250 is that speed grade.
-For an MCF54415 the CIR is expected to give PIN `0x0A0` (`docs/refs/dspi2-edma-blocker-and-register-sources.md`). No read on a unit
-checks it yet.
+For an MCF54415 the CIR is expected to give PIN `0x0A0` (`docs/refs/dspi2-edma-blocker-and-register-sources.md`). A read on
+the unit gives that value (below).
 
 The MCF54415 has no cryptography acceleration unit (CAU). In the data sheet's table 1 and the Reference Manual's table 1-1,
 only the MCF54416 and the MCF54418 have one. The CAU is an instruction coprocessor for DES, 3DES, AES, MD5, SHA-1 and
@@ -7110,8 +7110,28 @@ likely lose bytes. DIN MIDI works on stock units.
 
 So the bus runs at about 132 MHz, above the data sheet's 125 MHz, and the core at 264 MHz if it is twice the bus. DTCN0 at
 132.00 MHz then counts the bus clock divided by 1, with a prescaler of 1. Nothing in the update file writes DTMR0, so a
-read of DTMR0 and PLL_DR on a unit is still the direct check. The bootstrap section writes one field of PLL_DR only,
+read of DTMR0 and PLL_DR on a unit was the direct check left. The bootstrap section writes one field of PLL_DR only,
 OUTDIV3 = 6 (the eSDHC clock). The core and bus dividers come from the reset configuration.
+
+**The registers, read on a unit (2026-11-08).** A USB probe build with a fixed list of read-only registers ran on the owner's
+unit: stock 1.11 and the probe, with no other change. Two reads a minute apart gave the same values:
+
+| register | value | fields | gives |
+|---|---|---|---|
+| CIR `0xec09000a` | `0x2802` | PIN `0x0A0`, PRN 2 | an MCF54415, mask revision 2 |
+| PLL_CR `0xfc0c0000` | `0x00001015` | FBKDIV 21, REFDIV 0, LOLEN 1 | fVCO = fREF x 22 |
+| PLL_DR `0xfc0c0004` | `0x00071861` | OUTDIV1 1, OUTDIV2 3, OUTDIV3 6, OUTDIV4 7, OUTDIV5 0 | core fVCO/2, bus fVCO/4, eSDHC fVCO/7, USB fVCO/8, NAND off |
+| PLL_SR `0xfc0c0008` | `0x00000030` | LOCK 1, LOCKS 1, no loss flags | the PLL is locked |
+| DTMR0 `0xfc070000` | `0x0003` | CLK 01, PS 0, RST 1 | DMA timer 0 counts the bus clock divided by 1 |
+| DTXMR0 `0xfc070002` | `0x00` | EN1588 0 | not the 1588 timebase |
+
+DTCN0 ran at 132.00 MHz during the reads. With the bus at 132.00 MHz and OUTDIV2 = 3, fVCO is 528 MHz and fREF is 24.00 MHz.
+So the core runs at 264 MHz, 5.6 % above the data sheet's 250 MHz. The eSDHC clock is 75.4 MHz and the USB clock is 66 MHz.
+
+- The reads confirm the inferences above: the bus at 132 MHz, the core at twice the bus, and DTCN0 on the bus clock with no
+  divider.
+- The eSDHC divider is the bootstrap's OUTDIV3 = 6. `devices/cycle-factors.json` already uses a core of 264 MHz.
+- The reads are from one unit.
 
 **DTCN2.** Stock writes DTMR2 = `0x0007`: RST = 1, CLK = 11, PS = 0. CLK = 11 selects the DT2IN pin (falling edge). So
 DMA timer 2 counts an external signal, and the bus clock cannot model it.
