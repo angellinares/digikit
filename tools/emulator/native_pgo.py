@@ -325,47 +325,28 @@ def local_package_dirs(features: str = FEATURES) -> list[str]:
     return sorted(d for d in dirs if is_emulation_package(d))
 
 
+def _pgo_tiers(environ: dict[str, str] | os._Environ[str] | None):
+    environ = os.environ if environ is None else environ
+    return digi_env.resolve_tiers("pgo", digi_env.firmware(environ), "", environ)
+
+
 def fast_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
     """The fast-tier region list a coupled run uses ("" when off).
 
-    An explicit SHARC_FAST_REGIONS wins, DIGI_EMU_FAST=0 turns the tier off,
-    otherwise the per-firmware table (tools/emulator/fast_regions.json) is read for the
-    firmware (DIGI_EMU_SYX, then DIGI_COUPLED_SYX).
+    Rules in `emulator_config.resolve`; the firmware is DIGI_EMU_SYX, then DIGI_COUPLED_SYX.
+    An explicit SHARC_FAST_REGIONS wins even under DIGI_EMU_FAST=0.
     """
-    environ = os.environ if environ is None else environ
-    if "SHARC_FAST_REGIONS" in environ:
-        return environ["SHARC_FAST_REGIONS"]
-    if environ.get("DIGI_EMU_FAST") == "0":
-        return ""
-    return digi_env.fast_regions_for(digi_env.firmware(environ))
+    return _pgo_tiers(environ).effective("SHARC_FAST_REGIONS")
 
 
 def fallback_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
     """Runtime fallback list, respecting explicit fast-region diagnostics."""
-    environ = os.environ if environ is None else environ
-    if "SHARC_FAST_FALLBACK_REGIONS" in environ:
-        return environ["SHARC_FAST_FALLBACK_REGIONS"]
-    if (
-        environ.get("DIGI_EMU_FAST") == "0"
-        or "SHARC_FAST_REGIONS" in environ
-        or "SHARC_FAST_AUTO" in environ
-    ):
-        return ""
-    return digi_env.fallback_regions_for(digi_env.firmware(environ))
+    return _pgo_tiers(environ).effective("SHARC_FAST_FALLBACK_REGIONS")
 
 
 def blocktrans_roots(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
-    """The SHARC_BLOCKTRANS cluster roots a coupled run uses ("" when none).
-
-    Same precedence as :func:`fast_regions`: explicit env, DIGI_EMU_FAST=0,
-    then the per-firmware table.
-    """
-    environ = os.environ if environ is None else environ
-    if "SHARC_BLOCKTRANS" in environ:
-        return environ["SHARC_BLOCKTRANS"]
-    if environ.get("DIGI_EMU_FAST") == "0":
-        return ""
-    return digi_env.blocktrans_roots_for(digi_env.firmware(environ))
+    """The SHARC_BLOCKTRANS cluster roots a coupled run uses ("" when none)."""
+    return _pgo_tiers(environ).effective("SHARC_BLOCKTRANS")
 
 
 def compute_components(
@@ -1477,7 +1458,7 @@ def run_items(
             "--out", str(report),
         ]  # fmt: skip
         env = {**os.environ, **extra_env}
-        fast = digi_env.fast_env(env, syx=item.fast_syx)
+        fast = digi_env.fast_env(env, syx=item.fast_syx, context="pgo")
         env.update(digi_env.slot_env(item.device, fast) if slots else fast)
         done = subprocess.run(
             argv,
@@ -1842,7 +1823,7 @@ def cmd_train_both(args: argparse.Namespace) -> None:
             item.label: {
                 k: v
                 for k, v in digi_env.slot_env(
-                    item.device, digi_env.fast_env(syx=item.fast_syx)
+                    item.device, digi_env.fast_env(syx=item.fast_syx, context="pgo")
                 ).items()
                 if k.startswith(("SHARC_FAST_", "SHARC_BLOCKTRANS"))
             }

@@ -10,7 +10,7 @@
         "^production",
         "jsToolchain",
         "{workspaceRoot}/modules/*/*/module.toml",
-        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/config/emulator.json",
         "{workspaceRoot}/devices/*.toml"
       ],
       "outputs": ["{projectRoot}/ui/dist"]
@@ -22,7 +22,7 @@
         "^production",
         "jsToolchain",
         "{workspaceRoot}/modules/*/*/module.toml",
-        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/config/emulator.json",
         "{workspaceRoot}/apps/web/tests/fakeflash.mjs",
         "{workspaceRoot}/devices/*.toml",
         "{workspaceRoot}/apps/web/tests/fakeflash.d.mts"

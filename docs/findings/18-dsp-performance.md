@@ -933,7 +933,7 @@ per-call counts on all 10 regions where a kernel already reaches a call (e.g. 0x
 
 Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), prod core `out/native/dt2-audio/gen`, default config, scenario
 `dt2-sample-trig` (3 s, one-sample card of `tools/emulator/dt2_sample_check.py`; the only DT2 load scenario). The DT2 DSP image has
-no fast regions in `tools/emulator/fast_regions.json`, so the tiers are AOT block, idle skip and interpreter. `tools/sharc_dev/aot_entry_iter.py`
+no fast regions in `config/emulator.json`, so the tiers are AOT block, idle skip and interpreter. `tools/sharc_dev/aot_entry_iter.py`
 now takes `--device dt2` (`aot_fxprof.py --dt2-card` runs on the card's ready state; the base profile is
 `prof-merged-c2`). Four rounds, each profiled with the core built from the previous round (rsgen about 50 s, build 1.5 min):
 new block starts 27, 8, 3, 1 (the fifth round finds one PC again, a 9000-count chain of one instruction per round, not
@@ -1179,7 +1179,7 @@ by a second agent.
   code for LLVM's wasm output against LLVM's arm64 output for the same Rust.
 - **Ceiling (b), the fast tier in the browser core: about 2.0 (1.8-2.3), confidence low.** Not measurable here:
   `digi_sharc_fast` panics on the first kernel build on `wasm32-unknown-unknown` (`std::time::Instant::now`; fixed
-  in `fast/mod.rs` by a clock shim), and with the DN2 static regions (`tools/emulator/fast_regions.json`, tried via a
+  in `fast/mod.rs` by a clock shim), and with the DN2 static regions (`config/emulator.json`, tried via a
   temporary `threshold 0` seeding) it stops at `Op::Helper` (`unimplemented!`, `sharc-fast-wasm/src/lib.rs`).
   Auto selection (256,64,0) is exact (3 s hash equals the AOT-only 3 s hash `ae86d0b3...`) but arms only 19
   kernels worth 0.4% of the instructions. Model from the native numbers: AOT 235M x 5.4 ns = 1.27 s, plus the
@@ -1214,7 +1214,7 @@ second agent.
 - **Build and seeding.** `tools/emulator/native_wasm.py` now builds the coupled core with `fast-wasm` (`--no-fast` leaves it out;
   the tier stays off until the page asks). New ABI `digi_sharc_fast_regions(regions, n, roots, n, threshold, min_insns,
   follow)` = the desktop configuration: the static regions and the block-translator cluster roots of
-  `tools/emulator/fast_regions.json` for the firmware's SHA-256 (`FastEngine::new(..).with_clusters(..)`), optional run-time
+  `config/emulator.json` for the firmware's SHA-256 (`FastEngine::new(..).with_clusters(..)`), optional run-time
   selection on top (`threshold != u32::MAX`). Page: `?fast=desktop|desktop+auto|auto|T,M,F`; `browser_bench.mjs --fast X`;
   `wasm_parity.mjs --fast desktop[+auto]` (also with `--split 1`). The bench reports the kernel host's counters and
   `digi_sharc_fast_report` (`dsp_kernels`, `dsp_fast`). The dev page is the only consumer: `?fast=` is off by default.
@@ -1533,7 +1533,7 @@ fast tier: clean tone (peak share 0.99995) and WAV hash `4bab8330915f0929`.
 What dominates at 0.94 to 1.05. Interpreted code is 5.7M to 5.9M of about 950M instructions per run (0.6%), so the cost is
 the AOT blocks plus the ColdFire thread, which runs in parallel (0.44 to 0.55 per audio s). The trig is under 1.0 and runs
 in real time (1.06); a bit-reduction scene does not (DSP 1.05, real-time factor 0.90). A DT2 fast-region list
-(`tools/emulator/fast_regions.json` has only the DN2 1.11 entry) is not cheap: it needs a region profile of the DT2 DSP, a list per
+(`config/emulator.json` has only the DN2 1.11 entry) is not cheap: it needs a region profile of the DT2 DSP, a list per
 firmware hash and an AOT = fast = no-AOT gate over the 60 FX scenarios; on DN2 the list is worth 19% over AOT without PGO.
 Not tried **[O]**. A promoted `gen` or a later entry round changes `sharc_gen`, so the profile needs a retrain
 (`check --device dt2` reports stale).
@@ -1716,7 +1716,7 @@ The five 64-trip loops are 8.7k of the 10.4k instructions.
   and the later loops read and filter these streams. The "16 changed words" seen in the voice record and the 0x24ebb0
   block are only the persistent state; the checker compares all memory, so the 64-sample stream stores must be
   reproduced bit for bit. No closed form exists (table lookup, linear interpolation, float rounding per sample).
-- All four loop heads (0x1c399a, 0x1c3862, 0x1c364f, 0x1c5765) are already in `tools/emulator/fast_regions.json`
+- All four loop heads (0x1c399a, 0x1c3862, 0x1c364f, 0x1c5765) are already in `config/emulator.json`
   (`fast_regions`) and run as Cranelift kernels, with 0x1c369b and 0x1c5796 as `blocktrans` roots. So the work an HLE
   could not avoid is the work that already runs at kernel speed. From "HLE: first function and checker", a
   hand-written exact routine costs about 0.9 ns per replaced instruction (value-domain checks, flags), no better than a
@@ -1797,7 +1797,7 @@ function and checker" measured ~0.9 ns, so they do not hold.
 
 ## Browser: where the wasm penalty is 2026-10-12 **[D]**
 
-- **[D]** The page arms the fast tier `desktop` by default when tools/emulator/fast_regions.json has an entry for the firmware
+- **[D]** The page arms the fast tier `desktop` by default when config/emulator.json has an entry for the firmware
   (DN2 1.11 only; a DT2 image arms nothing). `?fast=off` turns it off. DN2 in headless Chromium, 3 runs of 10 s: DSP
   worker 2.07-2.21 s per audio s and 0.471 audio s per wall s by default, against 2.45-2.48 and 0.411 with
   `?fast=off`.
@@ -1912,7 +1912,7 @@ function and checker" measured ~0.9 ns, so they do not hold.
   - the fallback interpreter is about 72% of DSP time (27.4M instructions per audio s at about 220 ns);
   - kernels and their calls are about 2.0 s;
   - kernel chaining would save under 0.3%.
-- **[D]** Page default: with no `?fast=` and no fast_regions.json entry, the DSP worker arms 4,2,1 when the core
+- **[D]** Page default: with no `?fast=` and no config/emulator.json entry, the DSP worker arms 4,2,1 when the core
   reports `digi_sharc_aot_blocks() == 0` (the generic core). An unlisted AOT core keeps the fast tier off.
 - **[D]** sharc-jit revived on lane/jit (a2292d7, 4637c61; about an hour of porting to today's sharc-rt):
   - Exact on 91/91 frames of the drive3-f0 DT2 pack, against fresh interpreter hashes, in wasmtime and V8.
@@ -2097,7 +2097,7 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
   extra roots give no gain.
 - **[D]** 58.6% of the interpreted instructions were one region, 0x1c9aea..0x1c9b30: a DO loop of about 496 iterations
   once per audio block that applies two gain ramps and writes through an offset table.
-- **[D]** Fix: DN2 `fallback_regions` in tools/emulator/fast_regions.json (20 roots). The loop-body roots (0x1c9b0d,
+- **[D]** Fix: DN2 `fallback_regions` in config/emulator.json (20 roots). The loop-body roots (0x1c9b0d,
   0x1c9b12) give nearly all of the gain; the region entry alone does not. Fresh-fixture coupled run, PGO build, steady
   state per audio s:
 
@@ -2156,3 +2156,43 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
 [O] About 1.14M interpreted appended instructions per audio second remain. Six entries at 24,000 calls per audio second each stop at a form 14a access: `normal-word address outside the plain range` (`_static_plain` in `sharc_lowergen.py`).
 
 [O] DN2 post-reset stays below real time, which is about 23G host instructions by DT2 at 22.5G and 1.02x. Remaining estimates: AOT path length about 12% (a rough hand count), appended code about 1.4G, union core up to 5%. Their sum still falls short, so reaching it also needs more AOT work moved to the fast tier; AOT is about 60% of the total.
+
+## Auto-arming beside AOT blocks and hand-picked regions [D]
+
+Measured 2026-11-09 on stock DN2 1.12, stepped, 20 s of emulated audio after a 3 s settle, audition on trig 1, on one binary (`tools/devtools/rt_matrix.py`). RT is emulated audio per wall second.
+
+| Machine | Baseline RT | `SHARC_FAST_AUTO=4,2,0` RT | Ratio |
+| --- | --- | --- | --- |
+| FM Tone | 1.086 | 1.057 | 0.97 |
+| WaveTone | 0.821 | 0.827 | 1.01 |
+| FM Drum | about 0.09 | 0.741 | about 8 |
+| Swarmer | about 0.08 | 0.751 | about 9 |
+| `digikit/pluck` | 0.518 | 0.744 | 1.44 |
+
+PCM matched the baseline in all 34 `coupled-run` scenarios (DN2 stock FX, load, machines and DT2 sample and FX). DN2 stock FX, load, FM Tone and WaveTone cost 3 to 5% more host instructions per audio second. FM Drum and Swarmer cost 0.36 and 0.32 of the baseline. DT2 cost 0.4 to 0.8% more, except two scenarios that cost less (0.964 and 0.935).
+
+Why the baseline is slow on these machines: FM Drum and Swarmer were not in the AOT training, so 97% of their interpreted work was in code with no generated block.
+
+Two engine rules make auto-arming safe beside the other tiers:
+- An interpreter landing at a PC with a usable AOT block does not count towards arming.
+- An auto-armed CFG region stops at the entry of a hand-picked region. Without this stop, large auto regions absorbed the hand-picked loops: on FM Tone at `4,2,0` the hand-picked regions fell from 7078M to 2973M guest instructions, and auto regions ran the work at about twice the host cost per instruction.
+
+Hand-picked loops run at about 0.6 ticks per guest instruction, large auto CFG regions at about 1.1, and auto regions under 16 instructions at 5 to 22. Thresholds alone cannot give both results: `256,64,0` keeps FM Tone at baseline but holds FM Drum at about 0.45x.
+
+**[O]** Real device tests are not faster with auto-arming: shot-picker took 236 s against 153 s, card-safety 280 s against 258 s, and freqshift 359 s against 364 s. It is therefore a workbench default only.
+
+**[O]** Compile runs on the SHARC thread. The first-note stall in free-running mode has not been measured.
+
+**[O]** Towards 1.0x:
+- Measure host time per tier and per CPU first.
+- Train AOT on more machines, or run it with `--all --coverage`.
+- Arm at the DO loop instead of upstream of it.
+- Generate the hand-picked list per machine with `perf:fast-roots rank`.
+- Make entry and exit cheaper for small regions.
+- Retrain PGO with more machines and the fast tier.
+- Add MODE1 data flow at function entry.
+- Resolve the 175 indirect jumps.
+- Add pointer-range analysis for the `address range unknown` refusals.
+- Write native kernels for hot functions such as `0x1c10e3`.
+- Lower the ColdFire instruction budget if it is the limit.
+- Compile in the background and keep an on-disk cache.

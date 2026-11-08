@@ -46,7 +46,7 @@
       "inputs": [
         "hostTests",
         "^hostTests",
-        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/config/emulator.json",
         "{workspaceRoot}/devices/*.toml",
         "{workspaceRoot}/sdk/vectors/**/*",
         {

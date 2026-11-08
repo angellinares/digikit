@@ -101,7 +101,7 @@ export const scopedManifestInputs = (inputs, manifests) => [
 // ready dirs via device-inputs.mjs.
 // Image core sources/objects are explicit production inputs, without acceptance-fixture graph edges.
 // Also named explicitly: the harness packages (test-support, control-client, dk-session) and
-// tools/emulator/fast_regions.json (sets SHARC_* env). Manifests follow production and declared
+// config/emulator.json (sets SHARC_* env). Manifests follow production and declared
 // acceptance module dependencies; conformance also names its scoped selected manifest.
 export const DEVICE_INPUTS = [
   ...SHARED_SDK_INPUTS,
@@ -125,7 +125,7 @@ export const DEVICE_INPUTS = [
   '{workspaceRoot}/packages/control-client/**/*',
   '{workspaceRoot}/packages/dk-session/**/*',
   '{workspaceRoot}/tools/nx/device-inputs.mjs',
-  '{workspaceRoot}/tools/emulator/fast_regions.json',
+  '{workspaceRoot}/config/emulator.json',
 ];
 export const deviceTarget = (root, tests, recs, imageInput, importInputs, uploadable = false) => {
   const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD];

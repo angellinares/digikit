@@ -35,7 +35,7 @@
         "default",
         "^production",
         "jsToolchain",
-        "{workspaceRoot}/tools/emulator/fast_regions.json",
+        "{workspaceRoot}/config/emulator.json",
         "{workspaceRoot}/tools/emulator/ready_inputs.json",
         "{workspaceRoot}/modules/**/module.toml",
         "{workspaceRoot}/modules/**/gallery/icon.svg",

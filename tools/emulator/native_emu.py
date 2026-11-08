@@ -24,18 +24,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
-from tools.emulator import digi_env  # noqa: E402
+from tools.emulator import digi_env, emulator_config  # noqa: E402
 
-# Fast-tier regions (SHARC_FAST_REGIONS) and block-translator cluster roots
-# (SHARC_BLOCKTRANS), keyed by the SHA-256 of the DN2 .syx. The data lives in
-# tools/emulator/fast_regions.json.
-FAST_REGIONS = {k: v.get("fast_regions", "") for k, v in digi_env.fast_table().items()}
-FALLBACK_REGIONS = {
-    k: v.get("fallback_regions", "") for k, v in digi_env.fast_table().items()
-}
-BLOCKTRANS_ROOTS = {
-    k: v.get("blocktrans", "") for k, v in digi_env.fast_table().items()
-}
 PANEL_STAMP = ROOT / "out" / "native" / "panel-stamp.json"
 PANEL_INPUTS = (
     "apps/desktop/ui",
@@ -45,39 +35,22 @@ PANEL_INPUTS = (
 )
 
 
-def _lookup(table: dict[str, str], syx: pathlib.Path) -> str:
-    try:
-        digest = hashlib.sha256(syx.read_bytes()).hexdigest()
-    except OSError:
-        return ""
-    return table.get(digest, "")
-
-
 def fast_regions_for(syx: pathlib.Path) -> str:
     """The verified fast regions for this firmware file, or "" if unknown."""
-    return _lookup(FAST_REGIONS, syx)
-
-
-def fallback_regions_for(syx: pathlib.Path) -> str:
-    """Runtime fallback roots for this firmware, or empty if unknown."""
-    return _lookup(FALLBACK_REGIONS, syx)
-
-
-def blocktrans_roots_for(syx: pathlib.Path) -> str:
-    """The verified block-translator cluster roots for this firmware, or ""."""
-    return _lookup(BLOCKTRANS_ROOTS, syx)
+    return digi_env.fast_regions_for(syx)
 
 
 def set_fast_regions(
     args: list[str], environ: dict[str, str] | os._Environ[str]
-) -> None:
+) -> emulator_config.Resolution | None:
     """Enable the fast tier for a coupled run unless the user chose otherwise.
 
-    Explicit lists win; DIGI_EMU_FAST=0 suppresses defaults. Explicit regular
-    regions or auto selection suppress fallback defaults for that core.
+    The rules are in `emulator_config.resolve` (explicit values win, DIGI_EMU_FAST=0 adds
+    nothing, explicit regions or auto selection suppress fallback roots for that core).
+    Returns the resolution of the first core, None when DIGI_EMU_FAST=0.
     """
     if environ.get("DIGI_EMU_FAST") == "0":
-        return
+        return None
     syx = (
         pathlib.Path(args[args.index("--audio-profile-syx") + 1])
         if "--audio-profile-syx" in args
@@ -94,25 +67,12 @@ def set_fast_regions(
         firmwares.append(pathlib.Path(args[at]))
     dt2_first = len(firmwares) == 2 and digi_env.device_for_syx(syx) == "dt2"
     suffixes = ["_2", ""] if dt2_first else ["", "_2"]
+    first = None
     for suffix, firmware in zip(suffixes, firmwares, strict=False):
-        # Check explicit fast settings before installing the regular default.
-        fallback_name = f"SHARC_FAST_FALLBACK_REGIONS{suffix}"
-        if (
-            fallback_name not in environ
-            and f"SHARC_FAST_REGIONS{suffix}" not in environ
-            and "SHARC_FAST_AUTO" not in environ
-            and (fallback := fallback_regions_for(firmware))
-        ):
-            environ[fallback_name] = fallback
-        if f"SHARC_FAST_REGIONS{suffix}" not in environ:
-            regions = fast_regions_for(firmware)
-            if regions:
-                environ[f"SHARC_FAST_REGIONS{suffix}"] = regions
-        # Cluster roots follow the same rules; a user-set SHARC_BLOCKTRANS wins.
-        if f"SHARC_BLOCKTRANS{suffix}" not in environ:
-            roots = blocktrans_roots_for(firmware)
-            if roots:
-                environ[f"SHARC_BLOCKTRANS{suffix}"] = roots
+        res = digi_env.resolve_tiers(None, firmware, suffix, environ)
+        environ.update(res.add)
+        first = first or res
+    return first
 
 
 def generated_core(args: list[str] | None = None) -> pathlib.Path:
@@ -816,6 +776,7 @@ def main(args: list[str] | None = None) -> None:
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:
         args = default_audio_args(args, second_core_by_default=not daemon)
+    fast = None
     if "--coupled" in args or "--auto-coupled" in args:
         generated = generated_core(args)
         if not generated.is_dir():
@@ -824,7 +785,7 @@ def main(args: list[str] | None = None) -> None:
             )
         digi_env.check_generated(generated)
         os.environ.setdefault("SHARC_GEN_DIR", str(generated))
-        set_fast_regions(args, os.environ)
+        fast = set_fast_regions(args, os.environ)
     # The native shell serves the built panel; it does not load browser WASM.
     # Avoid rebuilding the browser core (and its local DSP code) for a desktop run.
     # The daemon has no window: no panel, no PGO.
@@ -845,6 +806,12 @@ def main(args: list[str] | None = None) -> None:
         return
     if not daemon:
         env.update(pgo_env())
+        # Workbench default from config/emulator.json; an explicit value, including an empty one, still wins.
+        context = digi_env.resolve_tiers(
+            "workbench", digi_env.firmware(env), "", env, lists=False
+        )
+        env.update(context.add)
+        print(emulator_config.startup_line("workbench", env, fast, context), flush=True)
     subprocess.run([str(binary), *args], cwd=ROOT, check=True, env=env)
 
 

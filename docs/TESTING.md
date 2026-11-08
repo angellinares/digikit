@@ -372,7 +372,7 @@ The store has a 14-day TTL swept daily and no size cap.
 Cached targets: module `test-device` and `test-conformance`. Inputs: the module and its graph deps,
 the outputs of the pack, CLI and daemon targets, the toolchain, the emulator env switches, the harness
 packages (`test-support`, `control-client`, `dk-session`), every `module.toml`,
-`tools/emulator/fast_regions.json`, and the firmware, ready dirs and DT2 sample card (hashed by
+`config/emulator.json`, and the firmware, ready dirs and DT2 sample card (hashed by
 `tools/nx/device-inputs.mjs`). That digest also hashes path, contents and file permissions of
 `DIGI_EMUD`, device-specific/proof daemon overrides, `DIGI_PATCHKIT`, `DIGI_PATCHKIT_BIN` and
 `DIGI_PLUSDRIVE` (following binary symlinks). Nonempty `PATCHKIT_MODULES` or `DIGI_PK_ROOT`, or any

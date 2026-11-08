@@ -8,7 +8,7 @@
       "{workspaceRoot}/tools/emulator/coupled.py",
       "{workspaceRoot}/tools/emulator/digi_env.py",
       "{workspaceRoot}/tools/emulator/native_target.py",
-      "{workspaceRoot}/tools/emulator/fast_regions.json",
+      "{workspaceRoot}/config/emulator.json",
       "{workspaceRoot}/tools/emulator/ready_inputs.json",
       "{workspaceRoot}/tools/firmware/config.py",
       "{workspaceRoot}/tools/firmware/device.py",

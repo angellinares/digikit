@@ -37,7 +37,7 @@ set of mise tasks. Nothing is committed.
   cluster roots and AOT.
 - Tooling:
   - `tools/digi_env.py` holds the toolchain (from mise.toml), paths, firmware
-    and the fast tables. The fast tables live in `tools/fast_regions.json`.
+    and the fast tables. The fast tables live in `config/emulator.json`.
   - The launcher builds once and runs the binary.
   - `--build-only` (`mise run emu:build`).
   - The panel build is skipped when unchanged.
