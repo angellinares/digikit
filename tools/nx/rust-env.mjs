@@ -109,6 +109,8 @@ export const targetDir = (gen, variant = '') => {
 // A copy of the environment with RUSTC/RUSTDOC pinned to the toolchain, so PGO profiles keep matching.
 export const toolchainEnv = (env = process.env) => {
   const out = { ...env };
+  // Dev builds need no full debuginfo (it made out/native/target/prod/debug 43 GB). The environment wins.
+  out.CARGO_PROFILE_DEV_DEBUG ??= 'line-tables-only';
   const done = spawnSync('rustup', ['which', '--toolchain', TOOLCHAIN, 'rustc'], { encoding: 'utf8' });
   const rustc = done.status === 0 ? (done.stdout ?? '').trim() : '';
   if (rustc) {
