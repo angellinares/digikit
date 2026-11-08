@@ -21,6 +21,7 @@ import SidePanels from '../src/SidePanels';
 import { setLocalFolder } from '../src/samples-state';
 import TransferPage from '@web/transfer/TransferPage';
 import { setMode } from '@web/transfer/transfer-state';
+import { bootingScreen, bootingStatus, booting as startBoot, loadFailure } from '../src/boot-core';
 import { cardDevice, reloadCard } from './card-mock';
 import { installRemoteMock, testPattern } from './remote-mock';
 import { createLogFollow } from '../src/log-follow';
@@ -33,27 +34,47 @@ import { SAMPLES_ROOT, control, sim } from './sim';
 // markup as ../src/Console.tsx, to put its screen next to the Remote page's.
 const page = new URLSearchParams(location.search).get('page') ?? 'transfer';
 if (page === 'remote') installRemoteMock();
-const emulatorFaceplate = () => (
-  <div class="emu-row">
-    <main class="stage" aria-label="front panel">
-      <div class="surface">
-        <LivePanel
-          panel={panels[cardDevice]}
-          runtime={() => undefined}
-          onError={() => {}}
-          ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
-        />
-      </div>
-    </main>
-    <SidePanels
-      visible
-      card
-      reload={reloadCard}
-      session={() => Promise.resolve({} as never)}
-      where={() => 'the emulator'}
-    />
-  </div>
-);
+// ?boot=loading | failed: the Emulator page while a firmware starts (the old device information is gone), or after a failed load
+// (the name of the file is `bootfile`, default Digitakt_II_OS1.17.syx). The texts are the app's (../src/boot-core.ts).
+const bootState = new URLSearchParams(location.search).get('boot');
+const bootFile = new URLSearchParams(location.search).get('bootfile') ?? 'Digitakt_II_OS1.17.syx';
+const bootError = 'the emulator did not answer within 120 s';
+const emulatorFaceplate = () =>
+  bootState ? (
+    <div class="emu-row">
+      <main class="stage" aria-label="front panel">
+        {bootState === 'loading' ? (
+          <p class="booting" role="status">
+            {bootingScreen(startBoot(bootFile))}
+          </p>
+        ) : (
+          <div class="surface">
+            <LivePanel panel={panels.dn2} runtime={() => undefined} onError={() => {}} ref={() => {}} />
+          </div>
+        )}
+      </main>
+    </div>
+  ) : (
+    <div class="emu-row">
+      <main class="stage" aria-label="front panel">
+        <div class="surface">
+          <LivePanel
+            panel={panels[cardDevice]}
+            runtime={() => undefined}
+            onError={() => {}}
+            ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
+          />
+        </div>
+      </main>
+      <SidePanels
+        visible
+        card
+        reload={reloadCard}
+        session={() => Promise.resolve({} as never)}
+        where={() => 'the emulator'}
+      />
+    </div>
+  );
 
 /** The Log drawer under an empty page, as in the app: the same panel, fed by the fake runtime logs. */
 function LogPage() {
@@ -118,9 +139,9 @@ render(
         {page === 'emulator' ? (
           // the toolbar of ../src/Console.tsx around the firmware file: the file, the runtime option, Open…, and the Default modules list
           <>
-            <span class="path">Digitone_II_OS1.12.syx</span>
-            <span class="tag device">dn2 1.12</span>
-            <span class="tag">runtime core/dynreg …</span>
+            <span class="path">{bootState ? bootFile : 'Digitone_II_OS1.12.syx'}</span>
+            {bootState ? null : <span class="tag device">dn2 1.12</span>}
+            {bootState ? null : <span class="tag">runtime core/dynreg …</span>}
             <span class="sp" />
             <label class="tag opt">
               <input type="checkbox" checked />
@@ -176,6 +197,29 @@ render(
         </div>
       </div>
       {page === 'log' ? <LogPage /> : null}
+      {page === 'emulator' && bootState ? (
+        <>
+          {bootState === 'failed' ? (
+            <p class="alert" role="alert">
+              {bootError}
+            </p>
+          ) : null}
+          <footer class="statusbar">
+            <span>
+              <i class="dot paused" />
+              {bootState === 'loading' ? bootingStatus(startBoot(bootFile)) : 'no firmware'}
+            </span>
+            <span class="sp" />
+            {bootState === 'failed' ? <span class="muted">{loadFailure(bootFile, bootError)}</span> : null}
+            <button type="button" class="sb">
+              Log
+            </button>
+            <button type="button" class="sb">
+              Metrics
+            </button>
+          </footer>
+        </>
+      ) : null}
     </div>
   ),
   document.getElementById('app')!,
