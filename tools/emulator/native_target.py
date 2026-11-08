@@ -47,7 +47,9 @@ from tools.emulator import digi_env  # noqa: E402
 # targetDir in tools/nx/rust-env.mjs.
 IS_WORKTREE = (ROOT / ".git").is_file()
 TARGET_ROOT = (
-    ROOT / "dist" / "native-target" if IS_WORKTREE else ROOT / "out" / "native" / "target"
+    ROOT / "dist" / "native-target"
+    if IS_WORKTREE
+    else ROOT / "out" / "native" / "target"
 )
 PROD_GEN = digi_env.DEFAULT_GENERATED
 

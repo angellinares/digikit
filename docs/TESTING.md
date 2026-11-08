@@ -265,6 +265,12 @@ Rust tests in their crates.
 - Lint and types come from `pyproject.toml`: new Python files are covered by `[tool.ruff] include`;
   add new typed files to `[tool.mypy] files`. Both run as commands in the gate target `python-checks`.
 
+The patchkit harness shares boot snapshot pairs in `out/runs/.cache/patched`. The first harness call of a process
+caps it at 30 GB (`DIGI_PATCHED_CACHE_MAX_GB`): it removes the oldest entries first by last write time and never an
+entry written in the last 2 hours, so concurrent runs and lanes keep what they use. The harness cannot tell which
+entry the daemon restored, so a reused but old entry can go and is rebuilt on its next use (about 13 s). `cards-store`
+(a few entries) has no cap.
+
 Device sessions run in a claimed `dist/session-cache/<key12>/<device>-<n>` (per worktree, gitignored).
 `<key12>` is the first 12 characters of the daemon build key (the directory name of the binary in
 `<git dir>/emud-cache/<dev>/<key>/`): a boot snapshot has no version, so a new daemon build must not read the
