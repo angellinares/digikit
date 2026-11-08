@@ -176,7 +176,9 @@ def _set_table(monkeypatch, entries):
 
     config = {"_contexts": {"workbench": {"SHARC_FAST_AUTO": "4,2,0"}}, **entries}
     monkeypatch.setattr(digi_env, "tier_config", lambda: config)
-    monkeypatch.setattr(digi_env, "fast_table", lambda: emulator_config.firmware_table(config))
+    monkeypatch.setattr(
+        digi_env, "fast_table", lambda: emulator_config.firmware_table(config)
+    )
     return entries
 
 
@@ -185,7 +187,9 @@ def _known_syx(tmp_path, scope, monkeypatch, content=b"dn2", **extra):
     syx.write_bytes(content)
     digest = __import__("hashlib").sha256(content).hexdigest()
     entry = {"fast_regions": "0x10,0x20", **extra}
-    monkeypatch.setattr(digi_env, "_syx_digest", lambda path: digest if Path(path) == syx else "")
+    monkeypatch.setattr(
+        digi_env, "_syx_digest", lambda path: digest if Path(path) == syx else ""
+    )
     _set_table(monkeypatch, {digest: entry})
     return syx
 

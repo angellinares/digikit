@@ -135,7 +135,8 @@ def resolve(
             if off:
                 continue
             if name == FALLBACK and (
-                (ENV_FALLBACK_OFF[0] + slot) in environ or ENV_FALLBACK_OFF[1] in environ
+                (ENV_FALLBACK_OFF[0] + slot) in environ
+                or ENV_FALLBACK_OFF[1] in environ
             ):
                 continue
             if value := entry.get(key, ""):

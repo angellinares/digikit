@@ -807,7 +807,9 @@ def main(args: list[str] | None = None) -> None:
     if not daemon:
         env.update(pgo_env())
         # Workbench default from config/emulator.json; an explicit value, including an empty one, still wins.
-        context = digi_env.resolve_tiers("workbench", digi_env.firmware(env), "", env, lists=False)
+        context = digi_env.resolve_tiers(
+            "workbench", digi_env.firmware(env), "", env, lists=False
+        )
         env.update(context.add)
         print(emulator_config.startup_line("workbench", env, fast, context), flush=True)
     subprocess.run([str(binary), *args], cwd=ROOT, check=True, env=env)

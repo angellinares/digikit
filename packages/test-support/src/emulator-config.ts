@@ -56,7 +56,11 @@ export function resolveTiers(o: TierOptions): TierResolution {
       continue;
     }
     if (off) continue;
-    if (name === FALLBACK && (environ['SHARC_FAST_REGIONS' + slot] !== undefined || environ.SHARC_FAST_AUTO !== undefined)) continue;
+    if (
+      name === FALLBACK &&
+      (environ['SHARC_FAST_REGIONS' + slot] !== undefined || environ.SHARC_FAST_AUTO !== undefined)
+    )
+      continue;
     const value = entry[key];
     if (value) {
       add[full] = value;
