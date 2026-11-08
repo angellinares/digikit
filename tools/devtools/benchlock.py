@@ -154,20 +154,34 @@ def hold(
     flag = fcntl.LOCK_SH if mode == "shared" else fcntl.LOCK_EX
     start = time.monotonic()
     announced = False
+    last_notice = start
 
     def acquire(fd: IO[str], how: int) -> None:
         """Take a flock, polling so the timeout and the notice work."""
-        nonlocal announced
+        nonlocal announced, last_notice
         while True:
             try:
                 fcntl.flock(fd, how | fcntl.LOCK_NB)
                 return
             except BlockingIOError:
                 pass
+            now = time.monotonic()
             if not announced:
-                announced = True
+                # A holder writes its sidecar just after it takes the lock, so the
+                # first poll can see no holder yet: wait up to 1 s for the sidecar.
+                infos = holders(lpath)
+                if infos or now - start >= 1.0:
+                    announced = True
+                    last_notice = now
+                    print(
+                        f"benchlock: waiting for {mode} (held by: {_describe(infos)})",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+            elif now - last_notice >= 60.0:
+                last_notice = now
                 print(
-                    f"benchlock: waiting for {mode} "
+                    f"benchlock: still waiting for {mode} after {now - start:.0f}s "
                     f"(held by: {_describe(holders(lpath))})",
                     file=sys.stderr,
                     flush=True,

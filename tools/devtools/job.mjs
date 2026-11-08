@@ -2,10 +2,22 @@
 // Detached job runner for long commands: one blocking `wait` replaces repeated polling.
 //   node tools/devtools/job.mjs start NAME [--timeout SEC] -- CMD ARGS...
 //   node tools/devtools/job.mjs wait NAME [--max SEC] [--lines N]
+//   node tools/devtools/job.mjs stop NAME
 //   node tools/devtools/job.mjs status [NAME]
+// --timeout defaults to 10800 s; 0 means no limit.
 // State: <git toplevel>/out/runs/jobs/<worktree name>/NAME/{log,meta.json,exit.json}.
-import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, openSync, writeFileSync, renameSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  openSync,
+  statSync,
+  writeFileSync,
+  renameSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -98,7 +110,7 @@ function start(args) {
   if (split < 0 || split === args.length - 1) fail('usage: start NAME [--timeout SEC] -- CMD ARGS...');
   const command = args.slice(split + 1);
   const own = args.slice(0, split);
-  const timeout = flag(own, '--timeout', 0);
+  const timeout = flag(own, '--timeout', 10800);
   const paths = jobPaths(own[0]);
   const old = state(paths);
   if (old?.kind === 'running') fail(`job ${own[0]} is still running (pid ${old.meta.pid})`);
@@ -131,13 +143,27 @@ async function wait(args) {
   const paths = jobPaths(name);
   if (!state(paths)) fail(`no job ${name} in this worktree`);
   const began = Date.now();
+  const sizeBefore = statSync(paths.log).size;
   let current;
   while ((current = state(paths)).kind === 'running') {
     if ((Date.now() - began) / 1000 >= max) {
       const lines = logLines(paths.log);
       const seconds = Math.round(current.elapsed);
-      console.log(`job ${name}: still running after ${seconds}s, log ${lines.length} lines; run wait again`);
+      const quiet = Math.round((Date.now() - statSync(paths.log).mtimeMs) / 1000);
+      console.log(
+        `job ${name}: still running after ${seconds}s, last log write ${quiet}s ago, log ${lines.length} lines; run wait again`,
+      );
       if (lines.length) console.log(clip(lines.at(-1)));
+      if (statSync(paths.log).size === sizeBefore) {
+        const lock = spawnSync('uv', ['run', 'python', '-m', 'tools.devtools.benchlock', 'status'], {
+          cwd: current.meta.cwd,
+          encoding: 'utf8',
+          timeout: 20000,
+        });
+        console.log(
+          `no output during this wait; lock: ${lock.status === 0 ? lock.stdout.trim().replaceAll('\n', '; ') : 'unknown'}`,
+        );
+      }
       process.exit(EXIT_RUNNING);
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -160,6 +186,23 @@ async function wait(args) {
   process.exit(code);
 }
 
+async function stop(args) {
+  const paths = jobPaths(args[0]);
+  const current = state(paths);
+  if (!current) fail(`no job ${args[0]} in this worktree`);
+  if (current.kind !== 'running') return console.log(`job ${args[0]}: ${current.kind}`);
+  const target = current.meta.childPid || current.meta.pid;
+  const send = (signal) => {
+    try {
+      process.kill(-target, signal);
+    } catch {} // ESRCH: the group is gone
+  };
+  send('SIGTERM');
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  send('SIGKILL');
+  console.log(`job ${args[0]}: stopped`);
+}
+
 function status(args) {
   const dir = jobsDir();
   const names = args[0] ? [args[0]] : existsSync(dir) ? readdirSync(dir) : [];
@@ -175,5 +218,6 @@ const [command, ...rest] = process.argv.slice(2);
 if (command === '_run') runWrapper(rest[0]);
 else if (command === 'start') start(rest);
 else if (command === 'wait') await wait(rest);
+else if (command === 'stop') await stop(rest);
 else if (command === 'status') status(rest);
-else fail('usage: job.mjs start|wait|status ...');
+else fail('usage: job.mjs start|wait|stop|status ...');

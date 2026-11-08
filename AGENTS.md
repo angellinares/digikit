@@ -51,7 +51,7 @@ out/                Ignored generated artifacts and run outputs
 Use `mise run test` for complete affected verification and the merge gate.
 When selection is unclear, run `mise run test:plan` first: Nx explains the tasks without running them.
 Use the owner's explicit Nx target or named test while iterating. `test:changed` is only cheap preflight,
-not complete verification. Full command details and preparation live in [testing](docs/TESTING.md).
+not complete verification. Do not use `--skip-nx-cache` to rerun a failed test: Nx does not cache failures, and the flag reruns every dependency. Full command details and preparation live in [testing](docs/TESTING.md).
 
 | Work | Iteration check |
 | --- | --- |
@@ -74,7 +74,7 @@ The local `.nx/` cache is per worktree. Module `test-device` and `test-conforman
 Do not run test directories, full tier sweeps, or smoke `--update` across all cells while iterating. Use quick proof modes; the default test owns smoke coverage. Reserve `mise run test:full` for generated-core changes before merging to `main`. Preserve SHARC golden hashes for refactors; explain intentional updates. PCM pins in `tests/scenarios/*.json` require Em's approval.
 
 Wait without polling. Run a command under 9 minutes in the foreground with a long tool timeout.
-For a longer run use `node tools/devtools/job.mjs start NAME -- CMD`, then repeat `node tools/devtools/job.mjs wait NAME`: it blocks up to 9 minutes and prints the exit code and last lines.
+For a longer run use `node tools/devtools/job.mjs start NAME -- CMD`, then repeat `node tools/devtools/job.mjs wait NAME`: it blocks up to 9 minutes and prints the exit code and last lines. `wait` exits 75 while the job still runs. Jobs stop after 3 h unless `--timeout SEC` is set (0 for no limit); `job.mjs stop NAME` stops one. Do not redirect output inside a job command: `wait` reads the job log. Give a long-running sub-agent a time budget and a condition to stop and report.
 Do not wait with `sleep`, `tail` or repeated log reads, and never use `tail -f`. Read the log only when the result asks for detail.
 
 ## Development and analysis
