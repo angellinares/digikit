@@ -42,6 +42,8 @@ PY_CHECKS: tuple[tuple[str, list[str]], ...] = (
     ("mypy", [sys.executable, "-m", "mypy"]),
     # the module layering (docs/ARCHITECTURE.md): reads manifests, sources and built objects, under a second
     ("layercheck", [sys.executable, "-m", "tools.devtools.layercheck"]),
+    # every SHARC_* and DIGI_* name in the sources is in config/env-registry.json
+    ("env-registry", [sys.executable, "-m", "tools.devtools.env_registry"]),
     # the generated sources match sdk/sdk.toml, devices/*.toml and abi.toml (mise run gen:modules)
     ("gen-check", [sys.executable, "-m", "tools.patchkit.patchkit", "gen", "--check"]),
 )
