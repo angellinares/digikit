@@ -199,7 +199,8 @@ export function rgbaToBitmap(rgba: Uint8Array | Uint8ClampedArray, threshold = 1
       const r = Math.round((rgba[at]! * a) / 255);
       const g = Math.round((rgba[at + 1]! * a) / 255);
       const b = Math.round((rgba[at + 2]! * a) / 255);
-      if ((77 * r + 150 * g + 29 * b + 128) >> 8 > threshold) bitmap[8 * x + ((63 - y) >> 3)]! |= 1 << (7 - ((63 - y) % 8));
+      if ((77 * r + 150 * g + 29 * b + 128) >> 8 > threshold)
+        bitmap[8 * x + ((63 - y) >> 3)]! |= 1 << (7 - ((63 - y) % 8));
     }
   return bitmap;
 }

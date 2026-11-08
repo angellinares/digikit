@@ -596,16 +596,44 @@ fn a_module_key_that_would_leave_its_prefix_or_break_the_rules_is_refused() {
     let mut out = [0u8; KEY_MAX];
     assert_eq!(module_key(b"test/m", b"", &mut out), None, "empty key");
     assert_eq!(module_key(b"", b"k", &mut out), None, "empty module name");
-    assert_eq!(module_key(b"test/m", b"/other/k", &mut out), None, "leading slash");
-    assert_eq!(module_key(b"test", b"m/x", &mut out), None, "slash inside: would collide with test/m + x");
+    assert_eq!(
+        module_key(b"test/m", b"/other/k", &mut out),
+        None,
+        "leading slash"
+    );
+    assert_eq!(
+        module_key(b"test", b"m/x", &mut out),
+        None,
+        "slash inside: would collide with test/m + x"
+    );
     assert_eq!(module_key(b"test/m", b"../other/k", &mut out), None, "..");
-    assert_eq!(module_key(b"test/m", b"a/../b", &mut out), None, ".. inside");
-    assert_eq!(module_key(b"test/m", b"a..", &mut out), None, ".. at the end");
+    assert_eq!(
+        module_key(b"test/m", b"a/../b", &mut out),
+        None,
+        ".. inside"
+    );
+    assert_eq!(
+        module_key(b"test/m", b"a..", &mut out),
+        None,
+        ".. at the end"
+    );
     assert_eq!(module_key(b"test/m", b"has space", &mut out), None, "space");
-    assert_eq!(module_key(b"test/m", b"tab\t", &mut out), None, "control byte");
-    assert_eq!(module_key(b"test/m", b"caf\xc3\xa9", &mut out), None, "not ASCII");
+    assert_eq!(
+        module_key(b"test/m", b"tab\t", &mut out),
+        None,
+        "control byte"
+    );
+    assert_eq!(
+        module_key(b"test/m", b"caf\xc3\xa9", &mut out),
+        None,
+        "not ASCII"
+    );
     let key = [b'k'; KEY_MAX - 6];
-    assert_eq!(module_key(b"test/m", &key, &mut out), None, "48 characters in all");
+    assert_eq!(
+        module_key(b"test/m", &key, &mut out),
+        None,
+        "48 characters in all"
+    );
 }
 
 #[test]
