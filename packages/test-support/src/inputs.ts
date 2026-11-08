@@ -99,7 +99,7 @@ export function coupledEnv(syx: string, environ: NodeJS.ProcessEnv = process.env
   if (environ.DIGI_EMU_FAST === '0') return {};
   const digest = createHash('sha256').update(fs.readFileSync(syx)).digest('hex');
   const table: Record<string, { fast_regions?: string; blocktrans?: string; fallback_regions?: string }> = JSON.parse(
-    fs.readFileSync(path.join(repoRoot(), 'tools/emulator/fast_regions.json'), 'utf8'),
+    fs.readFileSync(path.join(repoRoot(), 'config/emulator.json'), 'utf8'),
   );
   const entry = table[digest];
   const defaults = {

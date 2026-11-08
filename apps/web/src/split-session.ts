@@ -28,7 +28,7 @@ export interface DspSideOptions {
   statsEvery?: number;
 }
 
-/** Static fast-tier regions and cluster roots (tools/emulator/fast_regions.json), with optional run-time selection on top. */
+/** Static fast-tier regions and cluster roots (config/emulator.json), with optional run-time selection on top. */
 export interface FastRegions {
   regions: number[];
   roots: number[];

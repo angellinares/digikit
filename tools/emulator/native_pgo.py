@@ -329,7 +329,7 @@ def fast_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> st
     """The fast-tier region list a coupled run uses ("" when off).
 
     An explicit SHARC_FAST_REGIONS wins, DIGI_EMU_FAST=0 turns the tier off,
-    otherwise the per-firmware table (tools/emulator/fast_regions.json) is read for the
+    otherwise the per-firmware table (config/emulator.json) is read for the
     firmware (DIGI_EMU_SYX, then DIGI_COUPLED_SYX).
     """
     environ = os.environ if environ is None else environ

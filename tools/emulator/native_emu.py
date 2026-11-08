@@ -28,7 +28,7 @@ from tools.emulator import digi_env  # noqa: E402
 
 # Fast-tier regions (SHARC_FAST_REGIONS) and block-translator cluster roots
 # (SHARC_BLOCKTRANS), keyed by the SHA-256 of the DN2 .syx. The data lives in
-# tools/emulator/fast_regions.json.
+# config/emulator.json.
 FAST_REGIONS = {k: v.get("fast_regions", "") for k, v in digi_env.fast_table().items()}
 FALLBACK_REGIONS = {
     k: v.get("fallback_regions", "") for k, v in digi_env.fast_table().items()

@@ -3,7 +3,7 @@
 
 One place for the pinned Rust toolchain (read from mise.toml), the default
 paths of the private inputs, the firmware file, and the per-firmware fast-tier
-tables (tools/emulator/fast_regions.json). tools/emulator/native_emu.py, native_pgo.py,
+tables (config/emulator.json). tools/emulator/native_emu.py, native_pgo.py,
 native_target.py and coupled.py import it.
 
     uv run python -m tools.emulator.digi_env        # print the resolved settings
@@ -43,7 +43,7 @@ READY_DIRS = {
 }
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
 DEFAULT_SYX = config.stock("Digitone_II_OS1.12.syx")
-FAST_TABLE = ROOT / "tools" / "emulator" / "fast_regions.json"
+FAST_TABLE = ROOT / "config" / "emulator.json"
 TOOLCHAIN: str = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]["rust"]
 TRIPLE = "aarch64-apple-darwin"
 

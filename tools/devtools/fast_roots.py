@@ -5,14 +5,14 @@
     uv run python -m tools.devtools.fast_roots fixtures --device dn2,dt2
 
 A patched PC bars every entry of its generated region (packages/emulator/sharc/src/code_diff.rs), so the
-code of that region runs in the interpreter. `fallback_regions` in tools/emulator/fast_regions.json arm
+code of that region runs in the interpreter. `fallback_regions` in config/emulator.json arm
 roots that stay fast.
 
 `rank` reads one capture (`SHARC_PROFILE_PREFIX=PREFIX`, files `PREFIX.e*` and `PREFIX.e*.entries`, see
 docs/INSTRUMENTATION.md) and the `REGION_ENTRIES` of the generated core. It ranks the regions by interpreted
 instructions and suggests roots: the entries with most interpreter run starts, and the DO-loop bodies (an
 entry that runs at least 10 times as many interpreted instructions as it has run starts). Check the
-suggested roots for exactness before they go into fast_regions.json.
+suggested roots for exactness before they go into config/emulator.json.
 
 `check` replays a scenario on a fixture of the CURRENT runtime (cached by a content key) and fails when the
 interpreted instructions per audio second (and block entries, when the budget has a limit) are over the budget in
@@ -211,7 +211,7 @@ def format_ranking(ranking: Ranking) -> str:
         f"outside generated blocks: {ranking.outside_pct:.2f}% ({ranking.outside})"
     )
     lines.append(
-        "Check every root for exactness before it goes into fast_regions.json."
+        "Check every root for exactness before it goes into config/emulator.json."
     )
     lines.append("ROOTS " + ",".join(f"0x{pc:x}" for pc in ranking.roots()))
     return "\n".join(lines)
@@ -471,7 +471,7 @@ def measure(
 HINT = (
     "The runtime patches probably bar generated regions. Capture with SHARC_PROFILE_PREFIX "
     "(docs/INSTRUMENTATION.md) and run `mise run perf:fast-roots -- rank ...`, then add "
-    "`fallback_regions` in tools/emulator/fast_regions.json."
+    "`fallback_regions` in config/emulator.json."
 )
 HINT_BLOCK_ENTRIES = (
     "Too many block entries: the generated core lacks links for hot blocks. Profile with "

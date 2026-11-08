@@ -93,7 +93,7 @@ process, for example `digi-emud`. When an engine is dropped (daemon restart or e
 To find generated regions that the runtime patches bar (they run in the interpreter), capture with
 `SHARC_PROFILE_PREFIX=out/prof/cap SHARC_CODE_LOG=1 mise run wb` (the folder must exist; quit the app normally so the profile is written).
 Then run `mise run perf:fast-roots -- rank --prefix out/prof/cap --device dn2`. It ranks the regions by interpreted instructions and prints
-roots for `fallback_regions` in `tools/emulator/fast_regions.json`. Check each root for exactness. The gate target `fast-roots`
+roots for `fallback_regions` in `config/emulator.json`. Check each root for exactness. The gate target `fast-roots`
 (`mise run perf:fast-roots -- check --device dn2,dt2`) fails when the interpreted work per audio second is over `tools/emulator/fast_budgets.json`.
 `mise run perf:rt-matrix` measures RT, tier shares and PCM parity per machine and setting; its `gaps` subcommand ranks interpreted work by function.
 
@@ -514,7 +514,7 @@ script change; check the frames by eye first).
 ## Tuning switches (not diagnostics)
 
 Read at start-up; defaults are what `tools/emulator/digi_env.py` and the shipped
-`tools/emulator/fast_regions.json` set. Status **[D]**: read from the code, not re-run.
+`config/emulator.json` set. Status **[D]**: read from the code, not re-run.
 
 | variable | effect |
 |---|---|

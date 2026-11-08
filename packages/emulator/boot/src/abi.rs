@@ -504,7 +504,7 @@ mod coupled {
     /// The desktop configuration of the fast tier: REGIONS and ROOTS are
     /// arrays of little-endian u32 entry PCs (`n` entries each; the static
     /// regions and the block-translator cluster roots of
-    /// `tools/emulator/fast_regions.json`), and a `threshold` other than `u32::MAX`
+    /// `config/emulator.json`), and a `threshold` other than `u32::MAX`
     /// adds run-time selection as `digi_sharc_fast` does.
     #[cfg(feature = "fast-wasm")]
     #[unsafe(no_mangle)]

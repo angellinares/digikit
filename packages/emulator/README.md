@@ -133,7 +133,7 @@ Use:
   blob (one slot each). It was one `OnceLock` for the process, so the core that asked second read the first core's table and the
   code check compared a patched DT2 image against DN2's instructions (493 changed PCs instead of 10; 0.23x against 0.38x real time
   with the runtime patched in). Any new process-wide cache in `sharc-rt` needs the same key.
-- The fast tier lists exist for DN2 only (`tools/emulator/fast_regions.json`): `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` go to
+- The fast tier lists exist for DN2 only (`config/emulator.json`): `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` go to
   the first core, `SHARC_FAST_REGIONS_2` and `SHARC_BLOCKTRANS_2` (from the `--also-coupled` firmware) to the second. A DT2 core
   has no lists, so it runs AOT blocks and the interpreter only, as a single-core DT2 launch does.
 - `dual_core_check` modes (a daemon each, bounded; `DIGI_EMUD` names the two-core `digi-emud`): the default (open the other
@@ -262,7 +262,7 @@ kernels are wasm modules the page compiles (`packages/emulator/sharc-fast-wasm`,
 `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables, which
 wasm32-unknown-unknown does not have, so the page passes the regions in
 (`digi_sharc_fast_regions`). With no `?fast=` query it uses the `desktop` regions
-of `tools/emulator/fast_regions.json` for a listed firmware (AOT blocks present), or
+of `config/emulator.json` for a listed firmware (AOT blocks present), or
 run-time selection `4,2,1` on the generic core. `node tools/devtools/wasm_parity.mjs --scenario NAME` (or
 `mise run web:parity NAME`) checks that the browser PCM is byte-identical to
 the native `expect_sha256`.
