@@ -7,7 +7,7 @@
 // explicit gen, where native_target falls back to $SHARC_GEN_DIR.
 import { createHash } from 'node:crypto';
 import { existsSync, globSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { parse } from 'smol-toml';
@@ -88,11 +88,11 @@ export const checkGenerated = (gen, env = process.env) => {
   process.exit(1);
 };
 
-// Cargo target dir for a generated core: out/native/target[-wt/<name>]/<key>[/<variant>].
+// Cargo target dir for a generated core: out/native/target (main tree) or dist/native-target (worktree), then <key>[/<variant>].
 export const targetDir = (gen, variant = '') => {
   const root =
     existsSync(join(ROOT, '.git')) && statSync(join(ROOT, '.git')).isFile()
-      ? join(ROOT, 'out', 'native', 'target-wt', basename(ROOT))
+      ? join(ROOT, 'dist', 'native-target')
       : join(ROOT, 'out', 'native', 'target');
   let key;
   if (!gen || !isDir(gen)) key = 'nogen';

@@ -26,7 +26,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 // the patchkit rule (tools/emulator/native_target.py): a worktree builds into its own target dir; no generated core is the "nogen" key
 const targetRoot = existsSync(path.join(root, '.git', 'HEAD'))
   ? path.join(root, 'out/native/target')
-  : path.join(root, 'out/native/target-wt', path.basename(root));
+  : path.join(root, 'dist/native-target');
 const usage =
   'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE';
 
