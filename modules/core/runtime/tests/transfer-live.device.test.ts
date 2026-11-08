@@ -93,7 +93,7 @@ async function expectTransferLive({ session, dk }: PatchedSession): Promise<void
   ).toEqual([DEBUG_MODULE]);
 }
 
-runtimeTests('CLI transfer survives restart, mirrors the store and skips a deleted selection', expectTransferLive, {
+runtimeTests('CLI transfer survives restart, mirrors the store and skips a deleted selection', expectTransferLive, { dsp: 'sharc',
   mirror: true,
   timeout: 1_000_000,
 });

@@ -82,5 +82,5 @@ async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
   await session.expectNoFault('remote control');
 }
 
-runtimeTests('remote keys open ABOUT and TURN accepts signed deltas', expectRemoteKeys);
-runtimeTests('remote commands answer once the module is installed and TURN is paced', expectRemoteControl);
+runtimeTests('remote keys open ABOUT and TURN accepts signed deltas', expectRemoteKeys, { dsp: 'sharc' });
+runtimeTests('remote commands answer once the module is installed and TURN is paced', expectRemoteControl, { dsp: 'sharc' });

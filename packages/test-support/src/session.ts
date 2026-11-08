@@ -61,7 +61,8 @@ function guardDspClient(client: Client, dsp: DspMode): Client {
   if (dsp === 'sharc') return client;
   return new Proxy(client, {
     get(target, prop) {
-      if (prop !== 'call') return Reflect.get(target, prop, target);
+      const value = Reflect.get(target, prop, target);
+      if (prop !== 'call') return typeof value === 'function' ? value.bind(target) : value;
       return (method: string, ...rest: unknown[]) => {
         if (DSP_ONLY_RPC.test(method)) return Promise.reject(needsDsp(method, dsp));
         return (target.call as (...a: unknown[]) => unknown)(method, ...rest);

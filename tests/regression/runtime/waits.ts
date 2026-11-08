@@ -8,6 +8,7 @@ const FRAMES_PER_MS = 1.5;
 
 /** Wait until the DSP has run `frames` more frames (emulated time). Wall time only guards against a stuck daemon. */
 export async function waitEmulatedFrames(session: Session, frames: number, { hangMs = 30_000 } = {}): Promise<void> {
+  session.requireDsp('waitEmulated (the DSP frame clock)');
   const read = async () => Number(((await session.status()).audio as { frames?: number } | null)?.frames ?? 0);
   const start = await read();
   let seen = start;

@@ -144,6 +144,7 @@ export async function rows(session: Session, plan: RuntimePlan, slots: number): 
 }
 
 export async function frames(session: Session): Promise<number> {
+  session.requireDsp('frames (the DSP frame count)');
   const frame = (await bounded(() => session.status())).dsp_frames;
   if (typeof frame !== 'number') throw new Error('status lacks DSP frame count');
   return frame;
