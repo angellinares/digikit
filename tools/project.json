@@ -28,13 +28,13 @@
     },
     "python-tests": {
       "executor": "nx:run-commands",
-      "description": "py_select picks the tests from the diff against DIGI_GATE_BASE; tests/patchkit/test_pk_current.py always runs. Selected only for changes in the scope of python-checks.",
+      "description": "py_select picks the tests from the diff against DIGI_GATE_BASE; tests/patchkit/test_pk_current.py always runs. The first step builds the cf_call example that some tests need (pk_cfcall.build_example; a no-op when current). Selected only for changes in the scope of python-checks.",
       "cache": false,
       "parallelism": false,
       "dependsOn": ["digi-control:daemons"],
       "inputs": ["pythonGate"],
       "options": {
-        "command": "uv run python -m tools.devtools.py_select run --base ${DIGI_GATE_BASE:-main}",
+        "command": "uv run python -c \"from tools.patchkit import pk_cfcall; pk_cfcall.build_example()\" && uv run python -m tools.devtools.py_select run --base ${DIGI_GATE_BASE:-main}",
         "cwd": "."
       }
     }
