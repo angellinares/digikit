@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Boot screen gallery</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #101116;
+        color: #d8dbe6;
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+      #grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 16px;
+        max-width: 1200px;
+        margin: 0 auto;
+        transition: opacity 0.2s;
+      }
+      .tile {
+        display: grid;
+        gap: 6px;
+        padding: 8px;
+        text-align: left;
+        font: inherit;
+        color: inherit;
+        background: #181a21;
+        border: 1px solid #2a2c36;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .tile:focus-visible {
+        outline: 2px solid #6fa8ff;
+      }
+      canvas {
+        width: 100%;
+        aspect-ratio: 2 / 1;
+        image-rendering: pixelated;
+        background: #08090c;
+        border: 1px solid #2a2c36;
+      }
+      .name {
+        font-weight: 600;
+      }
+      .meta {
+        color: #9aa0b0;
+      }
+      .error {
+        background: #5a1d24;
+        color: #ffd6da;
+        padding: 6px;
+        border-radius: 4px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      body.zoomed .tile {
+        opacity: 0.2;
+      }
+      #backdrop {
+        position: fixed;
+        inset: 0;
+        display: none;
+      }
+      body.zoomed #backdrop {
+        display: block;
+      }
+      #stage {
+        position: fixed;
+        display: none;
+        z-index: 2;
+        background: #181a21;
+        border: 1px solid #3a3d4a;
+        border-radius: 6px;
+        padding: 8px;
+        gap: 8px;
+        transition:
+          left 0.2s,
+          top 0.2s,
+          width 0.2s;
+      }
+      #stage canvas {
+        width: 100%;
+      }
+      #stage .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      #stage .controls {
+        display: grid;
+        gap: 8px;
+        transition: opacity 0.2s;
+      }
+      #stage.moving .controls {
+        opacity: 0;
+      }
+      #stage input[type='range'] {
+        flex: 1 1 160px;
+        min-width: 0;
+      }
+      #stage button {
+        background: #23252f;
+        color: inherit;
+        border: 1px solid #3a3d4a;
+        padding: 4px 14px;
+        border-radius: 4px;
+      }
+      #stage #close {
+        margin-left: auto;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #stage,
+        #stage .controls,
+        .tile,
+        #grid {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="grid"></div>
+    <div id="backdrop"></div>
+    <div id="stage" role="dialog" aria-label="Boot screen">
+      <canvas id="zoom"></canvas>
+      <div class="controls">
+        <div class="row">
+          <button id="play">Pause</button>
+          <label><input type="checkbox" id="loop" checked /> Loop</label>
+          <input type="range" id="slider" min="0" max="0" value="0" />
+          <button id="close">Close</button>
+        </div>
+        <div id="readout"></div>
+      </div>
+    </div>
+    <script type="module" src="./gallery.ts"></script>
+  </body>
+</html>

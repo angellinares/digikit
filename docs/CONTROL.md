@@ -145,8 +145,13 @@ they carry (it must be newer than the current one; it is taken when the call suc
 else the answer is `STALE_SESSION` ("stale emulator session") and nothing runs. Without `session` nothing is checked (the socket's clients).
 Time (release build): the first patch of a 1.17 or 1.12 image takes about 1.3 s, a cached one about 0.08 s.
 
-`framebuffer.get {hash?, data?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
+`framebuffer.get {hash?, data?, source?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
 (the bytes `data_b64` carries; the hash the patchkit smoke goldens use); `data: false` omits `data_b64`.
+`source` defaults to `current`, preserving the ordinary response. `intro` selects
+the retained latest drawing at the stock intro callback-return boundary and adds
+`source: "intro"`; it remains readable after main UI starts. This is before stock
+presentation, not proof of physical display. Its `revision` is the existing global
+display revision, not a separate intro sequence or history. Other sources are refused.
 
 `cpu.exceptions {deliver?}` (a test aid): `deliver: true` makes a CPU exception run the guest's own handler; the default is a fault of the run
 (`step` fails with `exception vector N`), because an exception in the firmware is a bug the harness must see. The setting is kept for every runtime

@@ -3,6 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listingChanged } from '../../../web/src/transfer/refresh-core';
 import { setTransferEnv, type SamplesSlot, type TransferEnv } from '../../../web/src/transfer/env';
+import { MODULE_FILES } from '../../../web/src/transfer/module-files.generated';
 import { target, targetLabel, type Target } from '../../../web/src/transfer/target';
 import { failureLine } from '../../../web/src/transfer/wait-core';
 import './desktop-firmware';
@@ -66,6 +67,7 @@ export const desktopEnv: TransferEnv = {
     scan: (device) => invoke<{ path: string; size: number }[]>('lib_scan', { device }),
     read: async (device, path) => new Uint8Array(await invoke<ArrayBuffer>('lib_read', { device, path })),
   },
+  moduleFiles: (id) => MODULE_FILES[id],
   patchkitWasm: () => invoke<ArrayBuffer>('patchkit_wasm'),
   deviceName: async (device) => (await deviceStorage(device)).name,
   targets: {

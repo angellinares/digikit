@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Boot screen preview</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+        background: #101116;
+        color: #d8dbe6;
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 800px;
+        margin: 0 auto;
+        display: grid;
+        gap: 10px;
+      }
+      canvas {
+        width: 100%;
+        max-width: 768px;
+        aspect-ratio: 2 / 1;
+        image-rendering: pixelated;
+        background: #08090c;
+        border: 1px solid #2a2c36;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      input[type='range'] {
+        flex: 1 1 200px;
+        min-width: 0;
+      }
+      button {
+        background: #23252f;
+        color: inherit;
+        border: 1px solid #3a3d4a;
+        padding: 4px 14px;
+        border-radius: 4px;
+      }
+      #bar {
+        height: 8px;
+        background: #23252f;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      #fill {
+        height: 100%;
+        width: 0;
+        background: #6fa8ff;
+      }
+      #error {
+        display: none;
+        background: #5a1d24;
+        color: #ffd6da;
+        padding: 8px;
+        border-radius: 4px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="error"></div>
+      <canvas id="screen"></canvas>
+      <div class="row">
+        <button id="play">Pause</button>
+        <label><input type="checkbox" id="loop" /> Loop</label>
+        <input type="range" id="slider" min="0" max="0" value="0" />
+      </div>
+      <div id="readout"></div>
+      <div id="bar"><div id="fill"></div></div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

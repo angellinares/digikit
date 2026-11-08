@@ -391,6 +391,8 @@ export function DevicePane(props: {
   actions: JSX.Element;
   select?: PaneSelect;
   drop?: DeviceDrop;
+  /** Leave out the target selector and the device info line (a second device pane under the first one). */
+  hideTarget?: boolean;
   children: JSX.Element;
 }): JSX.Element {
   const [over, setOver] = createSignal(false);
@@ -434,21 +436,23 @@ export function DevicePane(props: {
         </div>
         <div class="acts">{props.actions}</div>
       </div>
-      <div class="devhead">
-        <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
-        <Show when={deviceInfo()}>
-          {(d) => (
-            <>
-              <Show when={d().free !== undefined}>
-                <span class="meta">{freeLine(d().free)}</span>
-              </Show>
-              <Show when={d().storage}>
-                <span class="meta storage">{d().storage}</span>
-              </Show>
-            </>
-          )}
-        </Show>
-      </div>
+      <Show when={!props.hideTarget}>
+        <div class="devhead">
+          <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
+          <Show when={deviceInfo()}>
+            {(d) => (
+              <>
+                <Show when={d().free !== undefined}>
+                  <span class="meta">{freeLine(d().free)}</span>
+                </Show>
+                <Show when={d().storage}>
+                  <span class="meta storage">{d().storage}</span>
+                </Show>
+              </>
+            )}
+          </Show>
+        </div>
+      </Show>
       <div class="listarea">{props.children}</div>
       <Marquee select={props.select} />
     </section>
