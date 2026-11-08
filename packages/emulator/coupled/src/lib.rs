@@ -18,6 +18,7 @@ use std::{
 
 /// Largest number of ColdFire instructions a host runs per `step_chunk`.
 pub const STEP_CHUNK: u32 = 250_000;
+
 #[cfg(feature = "coupled-audio")]
 pub mod cold;
 #[cfg(feature = "coupled-audio")]

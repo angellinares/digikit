@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport, frame, parseReply } from '@digi/dk-session';
+import type { InitialButton } from '@digi/control-client';
 import { resolveInputs, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
 import { describe, expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type RuntimeCase } from '../support.ts';
@@ -77,6 +78,10 @@ export interface CardRigOptions {
   env?: Record<string, string> | ((prepared: PreparedRuntimePlan) => Record<string, string>);
   /** ColdFire-only daemon ('zero'; 'cold': also without a snapshot) or with the SHARC (default). */
   dsp?: 'zero' | 'sharc' | 'cold';
+  /** Configure coupled audio without loading stock firmware before the first explicit baseline. */
+  startEmpty?: boolean;
+  /** Explicit absolute baseline budget; omit to preserve the shared 120-second default. */
+  baselineTimeoutMs?: number;
   /** The first card: a function that gives its spec (default a blank store card) or `small`, a blank 1 MiB file (a test sets `DIGI_CARD_IDENTITY=small`). */
   initial?: 'small' | (() => CardSpec);
   /** Seed every card with the stock firmware's project (Python `Env.card`). */
@@ -85,12 +90,16 @@ export interface CardRigOptions {
   uploads?: boolean;
   /** Store sectors besides the two selection sectors that the test writes on purpose (Python `store_extra`). */
   storeExtra?: number[];
-  /** The DT2 file system check never runs on a card that the firmware saved a project on. */
+  /** Use the MainPanel baseline, accepting missing filesystem verification but rejecting explicit failure; this does not stop stock verification/loading. */
   relaxFs?: boolean;
   /** Boot paused at the ready point and settle by stepping (Python `settle_ms` of 300 ms and `wait_dsp`), so a test that times events in DSP frames starts from the same frame in every run. */
   hold?: boolean;
   /** A CPU exception is part of the scenario: faults of the session are not an error. */
   faults?: boolean;
+  /** Deliver genuine guest CPU exceptions during the initial baseline as well as later boots. */
+  deliverExceptions?: boolean;
+  /** Queue ordered panel transitions before every cold boot in this baseline, including boot-time resets. */
+  initialButtons?: readonly InitialButton[];
   /** Stall threshold of the daemon in emulated ms (default 1000): for a scenario whose single guest request blocks the main loop longer. */
   stallMs?: number;
   /** More checks after the daemon has closed. */
@@ -120,7 +129,7 @@ export interface CardRig {
   /** A card in a fresh directory of the run directory (plusdrive build + the records of `spec`). */
   card(spec?: CardSpec): Promise<string>;
   /** Boot the runtime on this card image in the same daemon; the previous case's evidence is collected first. */
-  boot(cardImage: string, o?: { deliverExceptions?: boolean }): Promise<RuntimeCase>;
+  boot(cardImage: string, o?: { deliverExceptions?: boolean; timeoutMs?: number }): Promise<RuntimeCase>;
   /** `boot` of a card built from `spec`, then `settle`. */
   load(tag: string, spec: CardSpec): Promise<RuntimeCase>;
   /** The first case (the `initial` card), settled. */
@@ -200,7 +209,11 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
   const extra = new Set(o.storeExtra ?? []);
   const symbols = ['DKRT_BOOT', ...(o.symbols ?? [])];
 
-  const baseline = (cardImage: string, deliverExceptions?: boolean): RuntimeBaseline => {
+  const baseline = (
+    cardImage: string,
+    deliverExceptions = o.deliverExceptions,
+    timeoutMs = o.baselineTimeoutMs,
+  ): RuntimeBaseline => {
     if (o.roots && !prepared.preparedImage)
       throw new Error('the explicit runtime plan lacks a prepared image identity');
     const boot = planSymbol(prepared.plan, 'DKRT_BOOT');
@@ -209,8 +222,10 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       preparedImage: prepared.preparedImage,
       guard: { protect: [{ lo: boot, hi: boot + 8, label: 'runtime boot identity' }], allow_pc: [] },
       deliverExceptions,
+      initialButtons: o.initialButtons,
       relaxedReady: o.relaxFs,
       paused: o.hold,
+      timeoutMs,
     };
   };
   const freshDir = (session: Session, tag = 'card') => {
@@ -256,6 +271,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       runDirClaim: () => claimRunDir(device),
       ...(o.stallMs !== undefined ? { stallMs: o.stallMs } : {}),
       dsp: o.initial === 'small' ? 'cold' : o.dsp,
+      startEmpty: o.startEmpty,
       env: async () => {
         artifacts = fs.mkdtempSync(
           path.join(os.tmpdir(), `digi-${scope.split(':')[0]!.replace(/\W+/g, '-')}-${device}-`),
@@ -279,9 +295,17 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       },
     },
     {
+      watchdogLimitMs: o.baselineTimeoutMs,
       prepareBaseline: async (session) => {
+        if (o.startEmpty) {
+          const startup = await session.status();
+          record(artifacts, 'startup-empty', startup);
+          expect(startup.firmware, 'the first baseline starts without firmware').toBeNull();
+          expect(startup.cf, 'no ColdFire runtime exists before the first baseline').toBeUndefined();
+        }
         // A cold daemon (no firmware at spawn) has no emulator, so no watch summary, for its first epoch.
-        if (o.initial !== 'small' && o.dsp !== 'cold') epochs.add((await session.status()).epoch as number);
+        if (o.initial !== 'small' && o.dsp !== 'cold' && !o.startEmpty)
+          epochs.add((await session.status()).epoch as number);
         if (o.initial === 'small') {
           image = path.join(freshDir(session), 'small-card.img');
           fs.writeFileSync(image, Buffer.alloc(1 << 20)); // blank; the identity, not the file, sets the capacity
@@ -298,8 +322,8 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         if (!o.faults) await bounded(() => session.expectNoFault(`case ${closed}`));
       },
       tempDirs: () => [artifacts],
-      afterClose: async () => {
-        const report = runtimeSafety(device, watchOutput, overlays, Math.max(1, epochs.size));
+      afterClose: async (session) => {
+        const report = runtimeSafety(device, watchOutput, overlays, Math.max(1, epochs.size), 'default', [...extra]);
         record(artifacts, 'lifetime-safety', report);
         expect(report.write_events, 'write-watch on cf.expansion over every boot: no stray write').toBe(0);
         expect(report.flush_hits, 'flush check over every boot: no hit').toBe(0);
@@ -388,7 +412,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     },
     card: (spec = {}) => build(fixture.runtime.session, spec.name ?? 'card', spec),
     async boot(cardImage, extraOptions = {}) {
-      const next = await fixture.reload(baseline(cardImage, extraOptions.deliverExceptions));
+      const next = await fixture.reload(baseline(cardImage, extraOptions.deliverExceptions, extraOptions.timeoutMs ?? o.baselineTimeoutMs));
       if (prepared.preparedImage) validateRuntimePlan(prepared.plan, next.session);
       epochs.add(next.epoch);
       image = cardImage;

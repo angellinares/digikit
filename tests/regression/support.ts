@@ -177,6 +177,8 @@ export function withReusablePatchedSession(
     runDirClaim?: () => RunDirClaim | undefined;
   },
   lifecycle: {
+    /** Explicit no-progress budget for this fixture; undefined preserves the environment/default limit. */
+    watchdogLimitMs?: number;
     prepareBaseline: (session: Session) => Promise<RuntimeBaseline>;
     /** Required scenario evidence (guard/fault/card/PCM) before state is discarded. Holds release in their own finally. */
     finishCase: (runtime: RuntimeCase) => Promise<void>;
@@ -206,6 +208,8 @@ export function withReusablePatchedSession(
   const loadCase = async (next: RuntimeBaseline): Promise<RuntimeCase> => {
     const context = { scope, device: opts.device, session: randomUUID() };
     setTimingContext(session!, context);
+    // A load with its own timeout (a long multi-boot chain) gets the same bound as no-progress limit; the next case restores the default.
+    watchdog?.setLimit(next.timeoutMs);
     const epoch = await timePhase('session.baseline-reload', () => session!.reloadRuntimeBaseline(next), context);
     let active = true;
     const dk = new DkSession(
@@ -254,6 +258,7 @@ export function withReusablePatchedSession(
     } finally {
       // No release-all RPC exists. Bounded taps/chords own release; the mandatory next load clears runtime/scheduled input.
       cancel?.();
+      watchdog?.setLimit(undefined);
       runtime = undefined;
     }
     if (errors.length) {
@@ -286,7 +291,7 @@ export function withReusablePatchedSession(
       releaseClaim();
       throw error;
     }
-    watchdog = startNoProgressWatchdog(session);
+    watchdog = startNoProgressWatchdog(session, { limitMs: lifecycle.watchdogLimitMs });
     try {
       baseline = await withinRuntimeDeadline(deadline, () => lifecycle.prepareBaseline(session!));
     } catch (error) {

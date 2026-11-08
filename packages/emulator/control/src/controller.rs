@@ -65,6 +65,69 @@ fn pace_ahead(wall_s: f64, executed: Option<u64>) -> Option<bool> {
 /// Most guest instructions a cold boot may take before it is called stuck.
 const BOOT_LIMIT: u64 = 3_000_000_000;
 
+type InitialButtons = Vec<(u8, bool)>;
+
+fn parse_initial_buttons(
+    value: Option<&Value>,
+    start: &str,
+) -> Result<Option<InitialButtons>, RpcError> {
+    let Some(value) = value else { return Ok(None) };
+    if start != "cold" {
+        return Err(RpcError::bad_params("initial_buttons requires start:cold"));
+    }
+    let values = value
+        .as_array()
+        .ok_or_else(|| RpcError::bad_params("initial_buttons must be an array"))?;
+    if values.len() > 32 {
+        return Err(RpcError::bad_params(
+            "initial_buttons exceeds 32 transitions",
+        ));
+    }
+    values
+        .iter()
+        .map(|value| {
+            let code = value
+                .get("code")
+                .and_then(Value::as_u64)
+                .and_then(|n| u8::try_from(n).ok())
+                .ok_or_else(|| {
+                    RpcError::bad_params("initial_buttons code must be a logical u8 button")
+                })?;
+            let down = value
+                .get("down")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| RpcError::bad_params("initial_buttons down must be boolean"))?;
+            Ok((code, down))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn validate_initial_buttons(
+    panel: &plusdrive_format::device_profile::PanelProfile,
+    buttons: &[(u8, bool)],
+) -> Result<(), RpcError> {
+    let mut held = [0u8; 16];
+    for &(code, down) in buttons {
+        let (channel, bit) = panel
+            .button(code)
+            .ok_or_else(|| RpcError::bad_params("unknown initial logical button"))?;
+        let mask = &mut held[channel as usize];
+        let was_down = *mask & (1 << bit) != 0;
+        if was_down == down {
+            return Err(RpcError::bad_params(
+                "initial_buttons must be transitions from the initial released state",
+            ));
+        }
+        if down {
+            *mask |= 1 << bit;
+        } else {
+            *mask &= !(1 << bit);
+        }
+    }
+    Ok(())
+}
+
 struct FileBacking {
     file: Mutex<File>,
     len: u64,
@@ -565,6 +628,34 @@ fn ready_inputs_sha(audio: &AudioOptions) -> Option<String> {
     })
 }
 
+/// A first patched coupled load has no retained stock bytes for its DSP diff. Use only the configured
+/// automatic profile's explicit stock path, and validate its identity before the existing loader sees it.
+fn first_coupled_stock_base(
+    audio: Option<&AudioOptions>,
+    base_sha: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let Some(audio) = audio.filter(|a| a.automatic && !a.zero) else {
+        return Ok(None);
+    };
+    let path = audio
+        .expected_syx
+        .as_ref()
+        .ok_or("first patched coupled load requires an explicit stock profile")?;
+    let bytes = std::fs::read(path).map_err(|e| {
+        format!(
+            "cannot read first coupled stock profile {}: {e}",
+            path.display()
+        )
+    })?;
+    if firmware::sha256_hex(&bytes) != base_sha {
+        return Err(format!(
+            "first coupled stock profile {} does not match declared base_sha256 {base_sha}",
+            path.display()
+        ));
+    }
+    Ok(Some(bytes))
+}
+
 struct Actor {
     rx: mpsc::Receiver<Command>,
     /// The audio options in force: a loaded card's own ready state replaces the
@@ -855,6 +946,7 @@ impl Actor {
             base_bytes,
             &mut report,
             "cold",
+            None,
             reply,
         ) {
             Ok(true) => {
@@ -2941,21 +3033,37 @@ impl Actor {
         self.with_runtime(|r| Ok(json!({"scenario": r.recorded_scenario()})))
     }
 
-    /// `framebuffer.get {hash?, data?}`: the frame; `hash: true` adds the SHA-256
+    /// `framebuffer.get {hash?, data?, source?}`: the frame; `hash: true` adds the SHA-256
     /// of its bytes, `data: false` omits them.
     fn rpc_framebuffer(&mut self, p: &Params) -> RpcResult {
         let hash = p.opt_bool("hash")?.unwrap_or(false);
         let data = p.opt_bool("data")?.unwrap_or(true);
+        let intro = match p.opt_str("source")?.unwrap_or("current") {
+            "current" => false,
+            "intro" => true,
+            _ => {
+                return Err(RpcError::new(
+                    code::BAD_PARAMS,
+                    "source must be current or intro",
+                ));
+            }
+        };
         self.with_runtime(|r| {
-            let (revision, bytes) = r
-                .current_frame()
-                .map(|(revision, bytes)| (revision, bytes.to_vec()))
-                .ok_or_else(|| RpcError::new(code::GUEST_FAULT, "no frame yet"))?;
+            let (revision, bytes) = if intro {
+                r.intro_frame()
+            } else {
+                r.current_frame()
+            }
+            .map(|(revision, bytes)| (revision, bytes.to_vec()))
+            .ok_or_else(|| RpcError::new(code::GUEST_FAULT, "no frame yet"))?;
             let mut frame = json!({
                 "revision": revision, "width": 128, "height": 64,
                 "format": "oled-1bpp-column-major",
                 "note": "byte (7 - y/8) + 8*x, bit y%8",
             });
+            if intro {
+                frame["source"] = "intro".into();
+            }
             if data {
                 frame["data_b64"] = base64(&bytes).into();
             }
@@ -3176,6 +3284,7 @@ impl Actor {
         if !matches!(start, "auto" | "snapshot" | "cold") {
             return Err(RpcError::bad_params("start is auto, snapshot or cold"));
         }
+        let initial_buttons = parse_initial_buttons(p.get("initial_buttons"), start)?;
         let force = p.opt_bool("force")?.unwrap_or(false);
         self.want_auto_no = p.opt_bool("auto_no")?.unwrap_or(false);
         let mut base_param = p.opt_str("base_sha256")?.map(str::to_ascii_lowercase);
@@ -3252,6 +3361,46 @@ impl Actor {
             let loaded = self.loaded.as_mut().expect("loaded");
             loaded.ensure_analysis().map_err(&rejected)?;
         }
+        if let Some(buttons) = &initial_buttons {
+            let base = base_param
+                .as_deref()
+                .or_else(|| {
+                    (!replace)
+                        .then(|| self.loaded.as_ref().map(|l| l.base_sha.as_str()))
+                        .flatten()
+                })
+                .unwrap_or(&new.sha256);
+            let stock_main = !replace
+                && self
+                    .loaded
+                    .as_ref()
+                    .and_then(|l| l.base_analysis.as_ref())
+                    .is_some_and(|a| a.main_sha256() == new.main_sha256());
+            if base == new.sha256 || stock_main || !cfg!(feature = "coupled-audio") {
+                return Err(RpcError::bad_params(
+                    "initial_buttons requires a patched coupled cold boot",
+                ));
+            }
+            if !self
+                .audio_for_base(base)
+                .or_else(|| self.audio.clone())
+                .is_some_and(|a| !a.zero)
+            {
+                return Err(RpcError::bad_params(
+                    "initial_buttons requires configured coupled audio",
+                ));
+            }
+            let registry = plusdrive_format::device_profile::Registry::load()
+                .map_err(|e| rejected(e.to_string()))?;
+            let (device, _) = registry
+                .identify(base)
+                .map_err(|e| rejected(e.to_string()))?;
+            let panel = device
+                .panel
+                .as_ref()
+                .ok_or_else(|| RpcError::bad_params("initial_buttons requires a panel profile"))?;
+            validate_initial_buttons(panel, buttons)?;
+        }
         if replace {
             // As `ui_load` always did: forget the running firmware, its card job and its audio setup.
             self.cancel_card();
@@ -3280,6 +3429,13 @@ impl Actor {
             // First load: stock when the file is a known one (or base_sha256
             // names itself), otherwise a patched build of `base_sha256`.
             let base_sha = base_param.clone().unwrap_or_else(|| new.sha256.clone());
+            if base_sha != new.sha256 && stock_base.is_none() {
+                let audio = self
+                    .audio_for_base(&base_sha)
+                    .or_else(|| self.audio.clone());
+                stock_base =
+                    first_coupled_stock_base(audio.as_ref(), &base_sha).map_err(&rejected)?;
+            }
             let card = card_param
                 .clone()
                 .or_else(|| self.default_card(&bytes, stock_base.as_deref()));
@@ -3294,6 +3450,7 @@ impl Actor {
                     stock_base,
                     &mut report,
                     start,
+                    initial_buttons.as_deref(),
                     reply,
                 )?
             }
@@ -3308,6 +3465,11 @@ impl Actor {
             let main_changed = changed.contains(&firmware::SECTION_MAIN);
             report["main_changed"] = main_changed.into();
             if !main_changed && !force {
+                if initial_buttons.is_some() {
+                    return Err(RpcError::bad_params(
+                        "initial_buttons cannot be applied to a hot load",
+                    ));
+                }
                 self.load_hot(bytes, new, running, &mut report)?
             } else {
                 // not for a hot load: it keeps the running card
@@ -3333,6 +3495,7 @@ impl Actor {
                         base_bytes,
                         &mut report,
                         start,
+                        initial_buttons.as_deref(),
                         reply,
                     )?,
                 }
@@ -3525,6 +3688,7 @@ impl Actor {
         base_bytes: Option<Vec<u8>>,
         report: &mut Value,
         start: &str,
+        initial_buttons: Option<&[(u8, bool)]>,
         reply: &RpcReply,
     ) -> Result<bool, RpcError> {
         if self.reset_overlay.is_none() && self.reset_ram.is_none() {
@@ -3557,11 +3721,17 @@ impl Actor {
             &base_bytes,
             report,
             start,
+            initial_buttons,
             reply,
         )? {
             CoupledLoad::Done => return Ok(false),
             CoupledLoad::Started => return Ok(true),
             CoupledLoad::Unavailable(why) => {
+                if initial_buttons.is_some() {
+                    return Err(rejected(format!(
+                        "initial_buttons needs coupled cold boot: {why}"
+                    )));
+                }
                 report["coupled_note"] = why.into();
             }
         }
@@ -3703,6 +3873,7 @@ enum CoupledLoad {
 
 /// Everything `install_patched_audio` needs once the ready pair exists.
 struct PatchInstall {
+    initial_buttons: Option<InitialButtons>,
     bytes: Vec<u8>,
     card: Option<PathBuf>,
     new: Analysis,
@@ -3778,12 +3949,25 @@ fn patched_pair_key(
     cold_state: &Path,
     card: Option<&Path>,
     extra: &[u8],
+    deliver_exceptions: bool,
+    initial_buttons: &[(u8, bool)],
 ) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     hash.update(main_sha.as_bytes());
     // what else the cold boot started from: the DSP section it ran with, the card writes of a soft reset
     hash.update(extra);
+    // False retains the existing key. A guest-handler boot must not reuse a fatal-exception boot's pair.
+    if deliver_exceptions {
+        hash.update(b"deliver-exceptions:");
+    }
+    if !initial_buttons.is_empty() {
+        hash.update(b"initial-buttons:");
+        hash.update((initial_buttons.len() as u32).to_be_bytes());
+        for &(code, down) in initial_buttons {
+            hash.update([code, u8::from(down)]);
+        }
+    }
     for path in [image, cold_state] {
         let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         hash.update(Sha256::digest(&data));
@@ -3816,6 +4000,7 @@ impl Actor {
         base_bytes: &Option<Vec<u8>>,
         report: &mut Value,
         start: &str,
+        initial_buttons: Option<&[(u8, bool)]>,
         reply: &RpcReply,
     ) -> Result<CoupledLoad, RpcError> {
         let rejected = |m: String| RpcError::new(code::FIRMWARE_REJECTED, m);
@@ -3917,8 +4102,16 @@ impl Actor {
             }
             _ => None,
         };
-        let stem = patched_pair_key(main_sha, &image, startup_state, card.as_deref(), &extra_key)
-            .map_err(&rejected)?;
+        let stem = patched_pair_key(
+            main_sha,
+            &image,
+            startup_state,
+            card.as_deref(),
+            &extra_key,
+            self.deliver_exceptions,
+            initial_buttons.unwrap_or_default(),
+        )
+        .map_err(&rejected)?;
         let pair = self.run_dir.join("patched").join(stem);
         let (snapshot, dsp_state) = (
             pair.join("digi-audio-m5.snap"),
@@ -3931,6 +4124,7 @@ impl Actor {
         audio.automatic = false;
         audio.expected_syx = None;
         let mut install = PatchInstall {
+            initial_buttons: initial_buttons.map(<[_]>::to_vec),
             bytes: bytes.to_vec(),
             card: card.clone(),
             new: new.clone(),
@@ -3956,7 +4150,15 @@ impl Actor {
                     report["cache_note"] = format!("cached pair unusable: {}", e.message).into();
                     let _ = std::fs::remove_file(&snapshot);
                     return self.load_patched_coupled(
-                        bytes, card, new, base_sha, base_bytes, report, "cold", reply,
+                        bytes,
+                        card,
+                        new,
+                        base_sha,
+                        base_bytes,
+                        report,
+                        "cold",
+                        initial_buttons,
+                        reply,
                     );
                 }
                 Err(e) => return Err(e),
@@ -3981,6 +4183,8 @@ impl Actor {
             base_sha.to_string(),
         );
         let inputs = digi_coupled::cold::ColdInputs {
+            initial_buttons: initial_buttons.unwrap_or_default().to_vec(),
+            deliver_exceptions: self.deliver_exceptions,
             image,
             cold_idle,
             cold_state,
@@ -4040,6 +4244,7 @@ impl Actor {
         _base_bytes: &Option<Vec<u8>>,
         _report: &mut Value,
         _start: &str,
+        _initial_buttons: Option<&[(u8, bool)]>,
         _reply: &RpcReply,
     ) -> Result<CoupledLoad, RpcError> {
         Ok(CoupledLoad::Unavailable(
@@ -4060,6 +4265,7 @@ impl Actor {
             audio,
             mut report,
             dsp_in_boot,
+            initial_buttons: _,
         } = install;
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
         let runtime =
@@ -4122,6 +4328,7 @@ impl Actor {
                     json!({"during_boot": true, "count": self.boot_resets}),
                 );
                 let PatchInstall {
+                    initial_buttons,
                     bytes,
                     card,
                     new,
@@ -4141,6 +4348,7 @@ impl Actor {
                     &base_bytes,
                     &mut report,
                     "cold",
+                    initial_buttons.as_deref(),
                     &reply,
                 ) {
                     Ok(CoupledLoad::Started) => return,
@@ -4304,6 +4512,8 @@ fn run_card_job(
                     &syx,
                     card,
                     &digi_coupled::cold::ColdInputs {
+                        initial_buttons: Vec::new(),
+                        deliver_exceptions: false,
                         image,
                         cold_idle,
                         cold_state: None,
@@ -4618,6 +4828,63 @@ fn summarize_audio(runtime: &mut Runtime) -> Value {
 }
 
 #[cfg(test)]
+mod first_coupled_base_tests {
+    use super::*;
+
+    #[test]
+    fn first_coupled_base_accepts_only_matching_readable_explicit_stock() {
+        let dir =
+            std::env::temp_dir().join(format!("digi-first-coupled-base-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("stock.syx");
+        let bytes = b"owned stock fixture bytes";
+        std::fs::write(&path, bytes).unwrap();
+        let mut audio = AudioOptions {
+            automatic: true,
+            expected_syx: Some(path.clone()),
+            ..Default::default()
+        };
+        let sha = firmware::sha256_hex(bytes);
+        assert_eq!(
+            first_coupled_stock_base(Some(&audio), &sha).unwrap(),
+            Some(bytes.to_vec())
+        );
+        assert!(
+            first_coupled_stock_base(Some(&audio), "wrong base")
+                .unwrap_err()
+                .contains("does not match")
+        );
+        std::fs::remove_file(&path).unwrap();
+        assert!(
+            first_coupled_stock_base(Some(&audio), &sha)
+                .unwrap_err()
+                .contains("cannot read")
+        );
+        audio.expected_syx = None;
+        assert!(
+            first_coupled_stock_base(Some(&audio), &sha)
+                .unwrap_err()
+                .contains("explicit stock profile")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn first_coupled_base_leaves_nonautomatic_and_absent_audio_unchanged() {
+        assert_eq!(first_coupled_stock_base(None, "base").unwrap(), None);
+        let audio = AudioOptions {
+            automatic: false,
+            expected_syx: Some("not-read.syx".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            first_coupled_stock_base(Some(&audio), "base").unwrap(),
+            None
+        );
+    }
+}
+
+#[cfg(test)]
 mod card_key_tests {
     use super::{card_snapshot_key, overlay_path};
 
@@ -4651,7 +4918,8 @@ mod card_key_tests {
         std::fs::write(&card, vec![0u8; 512]).unwrap();
         let _ = std::fs::remove_file(overlay_path(&card));
         let main = "ab".repeat(32);
-        let key = || super::patched_pair_key(&main, &image, &cold, Some(&card), b"").unwrap();
+        let key =
+            || super::patched_pair_key(&main, &image, &cold, Some(&card), b"", false, &[]).unwrap();
         let none = key();
         assert_eq!(none, key(), "stable");
         std::fs::write(overlay_path(&card), b"overlay one").unwrap();
@@ -4693,16 +4961,45 @@ mod tests {
         std::fs::write(&card, vec![0u8; 512]).unwrap();
         let main = "ab".repeat(32);
         let key = |main: &str, card: Option<&std::path::Path>| {
-            patched_pair_key(main, &image, &idle, card, b"").unwrap()
+            patched_pair_key(main, &image, &idle, card, b"", false, &[]).unwrap()
         };
         let base = key(&main, None);
         assert_eq!(base, key(&main, None), "stable");
+        let delivered = patched_pair_key(&main, &image, &idle, None, b"", true, &[]).unwrap();
+        assert_ne!(
+            base, delivered,
+            "guest exception delivery changes the production cold pair identity"
+        );
+        assert_eq!(
+            delivered,
+            patched_pair_key(&main, &image, &idle, None, b"", true, &[]).unwrap()
+        );
+        let input_key = |buttons: &[(u8, bool)]| {
+            patched_pair_key(&main, &image, &idle, None, b"", false, buttons).unwrap()
+        };
+        let pressed = input_key(&[(21, true)]);
+        assert_ne!(base, pressed, "queued panel input changes the cold pair");
+        assert_eq!(
+            pressed,
+            input_key(&[(21, true)]),
+            "same ordered input is stable"
+        );
+        assert_ne!(
+            pressed,
+            input_key(&[(21, true), (21, false)]),
+            "release changes the cold state"
+        );
+        assert_ne!(
+            input_key(&[(19, true), (21, true)]),
+            input_key(&[(21, true), (19, true)]),
+            "packet order matters"
+        );
         assert!(base.starts_with("abababababababab-"));
         assert_ne!(base, key(&"cd".repeat(32), None), "another MAIN");
         assert_ne!(base, key(&main, Some(&card)), "a card");
         assert_ne!(
             base,
-            patched_pair_key(&main, &image, &idle, None, b"keep-ram:x").unwrap(),
+            patched_pair_key(&main, &image, &idle, None, b"keep-ram:x", false, &[]).unwrap(),
             "another cold boot input"
         );
         std::fs::write(&idle, b"idle two").unwrap();
@@ -4712,16 +5009,17 @@ mod tests {
         assert_ne!(base, key(&main, None), "another DSP image");
         let raw = dir.join("cold.state");
         std::fs::write(&raw, b"raw reset one").unwrap();
-        let changed = patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").unwrap();
+        let changed =
+            patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:", false, &[]).unwrap();
         std::fs::write(&raw, b"raw reset two").unwrap();
         assert_ne!(
             changed,
-            patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").unwrap(),
+            patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:", false, &[]).unwrap(),
             "changed DSP follows raw reset bytes"
         );
         std::fs::remove_file(&idle).unwrap();
         assert!(
-            patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:").is_ok(),
+            patched_pair_key(&main, &image, &raw, None, b"dsp-raw-init-v1:", false, &[]).is_ok(),
             "changed DSP does not use initialized idle state"
         );
         std::fs::write(&idle, b"idle one").unwrap();
@@ -4731,6 +5029,80 @@ mod tests {
             "unchanged DSP does not require raw reset state"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod initial_button_tests {
+    use super::*;
+
+    #[test]
+    fn initial_button_params_are_bounded_typed_and_cold_only() {
+        assert_eq!(parse_initial_buttons(None, "auto").unwrap(), None);
+        assert_eq!(
+            parse_initial_buttons(Some(&json!([])), "cold").unwrap(),
+            Some(vec![])
+        );
+        let input = json!([{"code":21,"down":true},{"code":21,"down":false}]);
+        assert_eq!(
+            parse_initial_buttons(Some(&input), "cold").unwrap(),
+            Some(vec![(21, true), (21, false)])
+        );
+        for start in ["auto", "snapshot"] {
+            assert!(parse_initial_buttons(Some(&input), start).is_err());
+        }
+        for input in [
+            json!({}),
+            json!([{"code":256,"down":true}]),
+            json!([{"code":21,"down":1}]),
+            json!([{"code":21}]),
+        ] {
+            assert!(parse_initial_buttons(Some(&input), "cold").is_err());
+        }
+        let max = json!(
+            (0..32)
+                .map(|i| json!({"code":21,"down":i%2==0}))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            parse_initial_buttons(Some(&max), "cold")
+                .unwrap()
+                .unwrap()
+                .len(),
+            32
+        );
+        let too_many = json!(
+            (0..33)
+                .map(|i| json!({"code":21,"down":i%2==0}))
+                .collect::<Vec<_>>()
+        );
+        assert!(parse_initial_buttons(Some(&too_many), "cold").is_err());
+    }
+
+    #[test]
+    fn initial_button_transitions_follow_real_panel_profiles_and_start_released() {
+        let registry = plusdrive_format::device_profile::Registry::load().unwrap();
+        for short in ["dt2", "dn2"] {
+            let panel = registry
+                .devices()
+                .iter()
+                .find(|d| d.short == short)
+                .unwrap()
+                .panel
+                .as_ref()
+                .unwrap();
+            assert!(validate_initial_buttons(panel, &[(21, true), (21, false)]).is_ok());
+            assert!(validate_initial_buttons(panel, &[(19, true)]).is_ok());
+            assert!(validate_initial_buttons(panel, &[(19, true), (19, false)]).is_ok());
+            for input in [
+                &[(19, false)][..],
+                &[(21, true), (21, true)][..],
+                &[(0, true)][..],
+                &[(255, true)][..],
+            ] {
+                assert!(validate_initial_buttons(panel, input).is_err());
+            }
+        }
     }
 }
 
@@ -4837,6 +5209,7 @@ mod reset_tests {
                         Some(bytes.clone()),
                         &mut report,
                         "cold",
+                        None,
                         &reply
                     )
                     .is_err()
@@ -4862,6 +5235,7 @@ mod reset_tests {
                         Some(bytes.clone()),
                         &mut report,
                         "auto",
+                        None,
                         &reply
                     )
                     .unwrap()
@@ -4936,6 +5310,7 @@ mod reset_tests {
                     None,
                     &mut json!({}),
                     "cold",
+                    None,
                     &reply,
                 )
                 .unwrap();
@@ -4973,6 +5348,33 @@ mod mem_write_tests {
         assert!(decode_hex("abc").is_err(), "odd length");
         assert!(decode_hex("zz").is_err(), "not hex");
         assert!(decode_hex("é1").is_err(), "not ASCII");
+    }
+}
+
+#[cfg(test)]
+mod framebuffer_tests {
+    use super::*;
+
+    #[test]
+    fn source_is_validated_before_runtime_access_with_current_as_default() {
+        let (_commands, rx) = mpsc::channel();
+        let mut actor = Actor::new(rx, Config::new(None));
+        for params in [json!({"source":"history"}), json!({"source":true})] {
+            assert_eq!(
+                actor.rpc_framebuffer(&Params(&params)).unwrap_err().code,
+                code::BAD_PARAMS
+            );
+        }
+        for params in [
+            json!({}),
+            json!({"source":"current"}),
+            json!({"source":"intro"}),
+        ] {
+            assert_ne!(
+                actor.rpc_framebuffer(&Params(&params)).unwrap_err().code,
+                code::BAD_PARAMS
+            );
+        }
     }
 }
 

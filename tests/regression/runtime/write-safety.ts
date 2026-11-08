@@ -237,10 +237,12 @@ export function runtimeSafety(
   overlays: string[],
   minEmulators = 1,
   policy: SafetyPolicy = 'default',
+  storeExtra: readonly number[] = [],
 ) {
   if (minEmulators < 1 || !overlays.length)
     throw new Error('runtime safety needs observed emulators and exported overlays');
   const facts = runtimePolicy(device, policy);
+  facts.store_extra = [...new Set([...facts.store_extra, ...storeExtra])];
   const { dir, name: stem } = path.parse(output);
   const indexed = (suffix: string) => {
     const files = new Map<number, string>();

@@ -160,6 +160,9 @@ pub fn parse_values(
     if !coupled_build && (scenario.is_some() || report.is_some()) {
         return Err("--scenario needs a coupled-audio build".into());
     }
+    if syx.is_none() && audio_profile_syx.is_some() && !automatic {
+        return Err("--audio-profile-syx requires --auto-coupled".into());
+    }
     let audio = if zero {
         if coupled || image.is_some() || state.is_some() || dsp_patch.is_some() {
             return Err(
@@ -173,8 +176,11 @@ pub fn parse_values(
             ..Default::default()
         })
     } else if coupled {
-        if syx.is_none() {
-            return Err("--coupled requires a startup SYX".into());
+        if syx.is_none() && (!automatic || audio_profile_syx.is_none()) {
+            return Err(
+                "empty coupled startup requires --auto-coupled and explicit --audio-profile-syx"
+                    .into(),
+            );
         }
         Some(AudioOptions {
             image: image.ok_or("--coupled requires --dsp-image")?,
@@ -349,5 +355,90 @@ mod tests {
             .is_err()
         );
         assert!(parse(&[]).unwrap().audio_alt.is_empty());
+    }
+
+    #[test]
+    fn empty_automatic_coupled_startup_retains_explicit_profile_and_inputs() {
+        let a = parse(&[
+            "--auto-coupled",
+            "--audio-profile-syx",
+            "stock.syx",
+            "--dsp-image",
+            "i",
+            "--dsp-state",
+            "s",
+            "--cf-snapshot",
+            "c",
+            "--no-audio",
+        ])
+        .unwrap();
+        assert!(a.syx.is_none());
+        let audio = a.audio.unwrap();
+        assert!(audio.automatic && !audio.zero && !audio.playback);
+        assert_eq!(audio.expected_syx, Some(PathBuf::from("stock.syx")));
+        assert_eq!(
+            (audio.image, audio.state, audio.snapshot),
+            ("i".into(), "s".into(), "c".into())
+        );
+    }
+
+    #[test]
+    fn coupled_startup_refuses_unguarded_empty_or_ignored_profiles() {
+        let inputs = ["--dsp-image", "i", "--dsp-state", "s", "--cf-snapshot", "c"];
+        for mode in ["--auto-coupled", "--coupled"] {
+            let args = [vec![mode], inputs.to_vec()].concat();
+            assert!(
+                parse(&args).is_err(),
+                "empty {mode} must not use an implicit profile"
+            );
+        }
+        let args = [
+            vec!["--coupled", "--audio-profile-syx", "stock.syx"],
+            inputs.to_vec(),
+        ]
+        .concat();
+        assert!(
+            parse(&args).is_err(),
+            "empty plain coupled mode cannot use a profile"
+        );
+        assert!(parse(&["--audio-profile-syx", "stock.syx"]).is_err());
+        assert!(parse(&["--auto-coupled", "--audio-profile-syx", "stock.syx"]).is_err());
+    }
+
+    #[test]
+    fn automatic_startup_with_firmware_preserves_explicit_profile_identity() {
+        let a = parse(&[
+            "patched.syx",
+            "--auto-coupled",
+            "--audio-profile-syx",
+            "stock.syx",
+            "--dsp-image",
+            "i",
+            "--dsp-state",
+            "s",
+            "--cf-snapshot",
+            "c",
+        ])
+        .unwrap();
+        assert_eq!(a.syx, Some(PathBuf::from("patched.syx")));
+        assert_eq!(
+            a.audio.unwrap().expected_syx,
+            Some(PathBuf::from("stock.syx"))
+        );
+        let plain = parse(&[
+            "x.syx",
+            "--coupled",
+            "--audio-profile-syx",
+            "ignored.syx",
+            "--dsp-image",
+            "i",
+            "--dsp-state",
+            "s",
+            "--cf-snapshot",
+            "c",
+        ])
+        .unwrap();
+        assert_eq!(plain.syx, Some(PathBuf::from("x.syx")));
+        assert_eq!(plain.audio.unwrap().expected_syx, None);
     }
 }

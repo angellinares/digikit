@@ -16,6 +16,7 @@
       "@digi/regression/*": ["./*"],
       "@digi/test-support": ["../../packages/test-support/src/index.ts"],
       "@digi/control-client": ["../../packages/control-client/src/index.ts"],
+      "@digi/dkbs": ["../../packages/dkbs/src/index.ts"],
       "@digi/dk-session": ["../../packages/dk-session/src/index.ts"],
       "@digi/dk-session/*": ["../../packages/dk-session/src/*.ts"]
     }
