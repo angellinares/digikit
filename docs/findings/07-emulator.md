@@ -7093,6 +7093,11 @@ A photograph of a DN2 board shows the part at U1: MCF54415CMJ250, mask set 0N51E
 For an MCF54415 the CIR is expected to give PIN `0x0A0` (`docs/refs/dspi2-edma-blocker-and-register-sources.md`). No read on a unit
 checks it yet.
 
+The MCF54415 has no cryptography acceleration unit (CAU). In the data sheet's table 1 and the Reference Manual's table 1-1,
+only the MCF54416 and the MCF54418 have one. The CAU is an instruction coprocessor for DES, 3DES, AES, MD5, SHA-1 and
+SHA-256 (Reference Manual, section 1.7.14). So on a DN2 the HMAC-SHA256 check of an update file
+([finding 75](75-os-upgrade-receive.md)) runs in software on the ColdFire core.
+
 Another section of this finding shows the bus clock of 132 MHz: "The intro is meant to run at 15.00 fps, and the bus
 clock is 132 MHz".
 
