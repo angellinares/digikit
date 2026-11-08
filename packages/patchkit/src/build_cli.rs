@@ -38,8 +38,8 @@ fn positional(rest: &[String], valued: &[&str]) -> Vec<String> {
 }
 
 pub fn build(root: &Path, rest: &[String]) -> Result<()> {
-    const KNOWN: [&str; 8] = [
-        "--check", "--force", "--define", "--out", "--status", "--tree", "--all", "--",
+    const KNOWN: [&str; 9] = [
+        "--check", "--force", "--define", "--out", "--status", "--paths", "--tree", "--all", "--",
     ];
     if let Some(f) = rest
         .iter()
@@ -72,6 +72,18 @@ pub fn build(root: &Path, rest: &[String]) -> Result<()> {
                 name.clone(),
                 if ok { "unchanged" } else { "needs build" }.into(),
             );
+        }
+        println!("{}", serde_json::Value::Object(m));
+        return Ok(());
+    }
+    if has("--paths") {
+        let mut m = serde_json::Map::new();
+        for (name, d) in &dirs {
+            let files: serde_json::Map<String, serde_json::Value> = build::object_files(root, d)?
+                .into_iter()
+                .map(|(p, f)| (p, f.display().to_string().into()))
+                .collect();
+            m.insert(name.clone(), files.into());
         }
         println!("{}", serde_json::Value::Object(m));
         return Ok(());

@@ -358,7 +358,12 @@ def object_path(root: Path, m: Module, rel_path: str) -> Path:
     """Where the built object `rel_path` of the module is: in the module for `core/*`, else in the cache (packages/patchkit/src/build/mod.rs)."""
     if classify(root, m) == "core":
         return m.dir / rel_path
-    return root / "out/cache/dko" / m.id / rel_path
+    # entries are `<id>/<src12>/<path>`: read the newest one (no hashing here)
+    found = sorted(
+        (root / "out/cache/dko" / m.id).glob(f"*/{rel_path}"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    return found[-1] if found else root / "out/cache/dko" / m.id / rel_path
 
 
 def check_committed_objects(root: Path, mods: list[Module]) -> list[Violation]:

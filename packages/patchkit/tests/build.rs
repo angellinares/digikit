@@ -523,7 +523,7 @@ fn a_module_builds_once_and_then_is_unchanged() {
     let _ = std::fs::remove_dir_all(&out);
 }
 
-/// A content module (any category but `core`) keeps its objects in the cache `out/cache/dko/<id>/<path>`, not in the module; the
+/// A content module (any category but `core`) keeps its objects in the cache `out/cache/dko/<id>/<src12>/<path>`, not in the module; the
 /// library builds a stale or missing one on demand and leaves out the objects of modules it was not asked for.
 #[test]
 fn a_content_module_builds_into_the_cache_on_demand() {
@@ -545,9 +545,8 @@ fn a_content_module_builds_into_the_cache_on_demand() {
         "int twice(int x) { return x + x; }\n",
     )
     .unwrap();
-    let cached = build::cache_dir(&root())
-        .join(&id)
-        .join("build/tiny.dko.json");
+    let cached_now = || build::object_files(&root(), &moddir).unwrap()[0].1.clone();
+    let cached = cached_now();
     let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
     let scan = |only: Option<&[String]>| {
         Library::scan_in(
@@ -569,13 +568,12 @@ fn a_content_module_builds_into_the_cache_on_demand() {
     assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
     assert!(cached.is_file() && !moddir.join("build").exists());
     let text = std::fs::read_to_string(&cached).unwrap();
-    let stamp = std::fs::metadata(&cached).unwrap().modified().unwrap();
+    // a build writes a new file (a rename), a use only touches it: the inode tells them apart
+    let inode = || std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&cached).unwrap());
+    let stamp = inode();
     // a current object is read, not built again
     assert_eq!(scan(Some(&[id.clone()])).get(&id).unwrap().objects.len(), 1);
-    assert_eq!(
-        std::fs::metadata(&cached).unwrap().modified().unwrap(),
-        stamp
-    );
+    assert_eq!(inode(), stamp);
     // a changed source makes it stale; the next scan builds it again
     std::fs::write(
         moddir.join("src/t.c"),
@@ -583,7 +581,12 @@ fn a_content_module_builds_into_the_cache_on_demand() {
     )
     .unwrap();
     assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
-    assert_ne!(std::fs::read_to_string(&cached).unwrap(), text);
+    // the new sources have their own entry; the old one stays beside it
+    let cached2 = cached_now();
+    assert_ne!(cached2, cached);
+    assert!(cached.is_file());
+    assert_ne!(std::fs::read_to_string(&cached2).unwrap(), text);
+    let cached = cached2;
     // `patchkit build` finds it current
     let r = build::build_module(
         &moddir,
