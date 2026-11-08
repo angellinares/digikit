@@ -271,7 +271,7 @@ async function gallery(noOpen) {
   const refresh = async (names) => {
     const found = await discoverExamples(examplesDir);
     const only = names && [...names].every((n) => found.some((f) => f.name === n)) ? names : undefined;
-    for (const name of [...examples.keys()]) if (!found.some((f) => f.name === name)) examples.delete(name);
+    for (const name of examples.keys()) if (!found.some((f) => f.name === name)) examples.delete(name);
     for (const f of found) {
       let e = examples.get(f.name);
       if (!e)

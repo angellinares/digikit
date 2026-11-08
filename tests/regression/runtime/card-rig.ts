@@ -322,7 +322,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
         if (!o.faults) await bounded(() => session.expectNoFault(`case ${closed}`));
       },
       tempDirs: () => [artifacts],
-      afterClose: async (session) => {
+      afterClose: async (_session) => {
         const report = runtimeSafety(device, watchOutput, overlays, Math.max(1, epochs.size), 'default', [...extra]);
         record(artifacts, 'lifetime-safety', report);
         expect(report.write_events, 'write-watch on cf.expansion over every boot: no stray write').toBe(0);
@@ -412,7 +412,9 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     },
     card: (spec = {}) => build(fixture.runtime.session, spec.name ?? 'card', spec),
     async boot(cardImage, extraOptions = {}) {
-      const next = await fixture.reload(baseline(cardImage, extraOptions.deliverExceptions, extraOptions.timeoutMs ?? o.baselineTimeoutMs));
+      const next = await fixture.reload(
+        baseline(cardImage, extraOptions.deliverExceptions, extraOptions.timeoutMs ?? o.baselineTimeoutMs),
+      );
       if (prepared.preparedImage) validateRuntimePlan(prepared.plan, next.session);
       epochs.add(next.epoch);
       image = cardImage;
