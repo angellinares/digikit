@@ -78,6 +78,9 @@
 .SECTION/PM seg_pmco;
 .GLOBAL _dl_hook;
 .EXTERN _dl_back;
+#ifdef DL_CHAIN_SP
+.EXTERN _sp_tail;
+#endif
 .EXTERN _dl_area;
 .EXTERN _dl_vrows;
 .EXTERN _dl_vcount;
@@ -401,7 +404,16 @@ _dl_nodiag:
     R4 = DM(_dl_sv4);
     R5 = DM(_dl_sv5);
     R6 = DM(_dl_sv6);
+#ifdef DL_CHAIN_SP
+    // core/sample-pool (DN2) hangs its own block work on this tail: _sp_tail saves every register itself and ends in the same
+    // `_dl_back` (it is 0 when that module is not in the image). R10 is free here, the epilogue reloads it from the frame.
+    R10 = _sp_tail;
+    R10 = PASS R10;
+    IF EQ JUMP _dl_back;
+    JUMP _sp_tail;
+#else
     JUMP _dl_back;
+#endif
 
 .SECTION/DM seg_dmda;
 .GLOBAL _dl_xid;

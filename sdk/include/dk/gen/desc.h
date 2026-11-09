@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Record kind of dk_desc_sample_bank. */
+#define DK_DESC_SAMPLE_BANK 6
+/* Record kind of dk_desc_sample_tracks. */
+#define DK_DESC_SAMPLE_TRACKS 7
 /* Record kind of dk_desc_fx. */
 #define DK_DESC_FX 1
 /* Record kind of dk_desc_machine. */
@@ -16,6 +20,28 @@
 #define DK_DESC_PAGE 4
 /* Record kind of dk_desc_fx_param. */
 #define DK_DESC_FX_PARAM 5
+/* Record kind of dk_desc_param_action. */
+#define DK_DESC_PARAM_ACTION 8
+/* Record kind of dk_desc_param_glyph. */
+#define DK_DESC_PARAM_GLYPH 9
+/* Record kind of dk_desc_param_latched (machine contract 1.3). */
+#define DK_DESC_PARAM_LATCHED 10
+/* Record kind of dk_desc_native_page (machine contract 1.4). */
+#define DK_DESC_NATIVE_PAGE 11
+/* Record kind of dk_desc_native_page_v2 (machine contract 1.5). */
+#define DK_DESC_NATIVE_PAGE_V2 12
+/* Glyph (the dk_glyph values): a plain encoder knob, values 0 .. 127 (the default). */
+#define DK_GLYPH_ENCODER 0
+/* Glyph: a fader, values 0 .. 127. */
+#define DK_GLYPH_FADER 1
+/* Glyph: a pan knob, values 0 .. 127 (centre 64, shows L/R). */
+#define DK_GLYPH_PAN 2
+/* Glyph: an on/off switch, values 0 .. 1. */
+#define DK_GLYPH_ONOFF 3
+/* Glyph: a tune knob, values 4 .. 124 (centre 64, one unit = one semitone). */
+#define DK_GLYPH_TUNE 4
+/* Glyph: a play-mode knob, values 0 .. 3 (REV, REV.L, FWD.L, FWD on the Digitakt II; the Digitone II shows 0 .. 3). */
+#define DK_GLYPH_PLAY 5
 /* Encoders on a page. */
 #define DK_PAGE_KNOBS 8
 /* The knob takes the lowest free position. */
@@ -28,6 +54,25 @@
 #define DK_ROUTE_MASTER 1
 /* The effect runs on a send bus (one amount per track). */
 #define DK_ROUTE_SEND 2
+
+/* One module-owned DSP BSS sample bank and initialized zero descriptor. At most one per module. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_SAMPLE_BANK */
+    uint32_t size;                           /* sizeof(dk_desc_sample_bank) */
+    uint32_t local_id;                       /* module-local numeric id */
+    char bank[32];                           /* module DSP BSS symbol */
+    char descriptor[32];                     /* module DSP initialized data symbol, four zero words */
+    uint32_t capacity_frames;                /* mono float frames, 1 .. 8192 */
+} dk_desc_sample_bank;
+
+/* Per-track stereo sample table (API 1.5): 16 initially zero dk_strack records and one control set per track. At most one per module; not with a sample bank. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_SAMPLE_TRACKS */
+    uint32_t size;                           /* sizeof(dk_desc_sample_tracks) */
+    uint32_t local_id;                       /* module-local numeric id */
+    char records[32];                        /* module DSP data symbol: 16 dk_strack records, 8 words each, zero */
+    char control[32];                        /* module DSP data symbol: 16 control sets of 4 words (closed, count, fault, reserved), zero */
+} dk_desc_sample_tracks;
 
 /* One effect. The process routine and its dk_fx_desc are symbols of the module's SHARC+ object. */
 typedef struct {
@@ -65,6 +110,7 @@ typedef struct {
     char render[32];                         /* the SHARC+ symbol of the render routine */
     char note_on[32];                        /* the SHARC+ symbol of the note-on routine */
     char desc[32];                           /* the SHARC+ symbol of the dk_machine_desc */
+    uint32_t stereo;                         /* 0 mono, 1 stereo (contract 1.2); must agree with DK_MACHINE_STEREO in the dk_machine_desc */
 } dk_desc_machine;
 
 /* One parameter of a machine. Values are knob units times 256 (0x7f00 = 127.0). */
@@ -80,6 +126,32 @@ typedef struct {
     char name[32];                           /* 1 to 31 characters, shown while the knob turns */
     char short_name[16];                     /* 1 to 15 characters, under the knob */
 } dk_desc_param;
+
+/* A click on the knob of one parameter word of a machine calls a function of the module (docs/design/machine-page-click.md). At most one per parameter. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_PARAM_ACTION */
+    uint32_t size;                           /* sizeof(dk_desc_param_action) */
+    char machine[16];                        /* the id of the machine */
+    uint32_t word;                           /* 0 .. 7, the parameter word of the machine whose knob is clicked; the machine declares it with DK_PARAM */
+    char fn[32];                             /* the ColdFire symbol of the callback, `void fn(u32 track)`: a global function of the module, called in the UI task */
+} dk_desc_param_action;
+
+/* The look of one parameter word of a machine: its glyph (a dk_glyph value) selects the stock row whose knob picture, value text and step behaviour the parameter copies. At most one per parameter; without it the glyph is DK_GLYPH_ENCODER. Glyphs on effect parameters are not supported yet. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_PARAM_GLYPH */
+    uint32_t size;                           /* sizeof(dk_desc_param_glyph) */
+    char owner[16];                          /* the id of the machine (an effect id is refused for now) */
+    uint32_t word;                           /* 0 .. 7, the parameter word of the machine; the machine declares it with DK_PARAM */
+    uint32_t glyph;                          /* DK_GLYPH_ENCODER .. DK_GLYPH_PLAY */
+} dk_desc_param_glyph;
+
+/* Snapshot one machine parameter at actual note_on, after effective values and clamping. Render sees that value until the next note_on; undeclared words remain live. At most one declaration per parameter. Requires machine contract 1.3. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_PARAM_LATCHED */
+    uint32_t size;                           /* sizeof(dk_desc_param_latched) */
+    char owner[16];                          /* the declared machine id */
+    uint32_t word;                           /* the declared machine parameter word, 0 .. 7 */
+} dk_desc_param_latched;
 
 /* One encoder of a page. An unused entry is all zero. */
 typedef struct {
@@ -98,6 +170,52 @@ typedef struct {
     dk_desc_page_knob knob[DK_PAGE_KNOBS];   /* the encoders, from entry 0, without gaps */
 } dk_desc_page;
 
+/* One encoder of an opt-in native page: kind 1 PARAM names an existing parameter word; kind 2 LOCAL names a UI-local control id; kind 0 is unused. */
+typedef struct {
+    uint32_t kind;                           /* 0 unused, 1 PARAM, 2 LOCAL */
+    uint32_t value;                          /* parameter word or local control id */
+    uint32_t position;                       /* encoder 0 .. 7 */
+} dk_desc_native_binding;
+
+/* One additional native page, after a machine's ordinary page zero. Version 1 has a bounded draw callback and an event callback for LOCAL controls only; PARAM controls use the native parameter edit path. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_NATIVE_PAGE */
+    uint32_t size;                           /* sizeof(dk_desc_native_page) */
+    uint32_t version;                        /* 1 */
+    char owner[16];                          /* declared machine id */
+    char title[24];                          /* 1 to 23 printable characters */
+    char draw[32];                           /* ColdFire draw callback symbol */
+    char event[32];                          /* ColdFire LOCAL event callback symbol */
+    dk_desc_native_binding binding[DK_PAGE_KNOBS]; /* contiguous used entries, unique positions */
+} dk_desc_native_page;
+
+/* One of exactly two replacement native pages, indexes zero and one, of a machine. Uses the shared callback frame/event v1 ABI; cannot mix with append-only native page v1. */
+typedef struct {
+    uint32_t kind;                           /* DK_DESC_NATIVE_PAGE_V2 */
+    uint32_t size;                           /* sizeof(dk_desc_native_page_v2) */
+    uint32_t version;                        /* 2 */
+    char owner[16];                          /* declared machine id */
+    char title[24];                          /* 1 to 23 printable characters */
+    char draw[32];                           /* ColdFire draw callback symbol */
+    char event[32];                          /* ColdFire LOCAL event callback symbol */
+    uint32_t page;                           /* replacement page index 0 or 1; both are required */
+    uint32_t flags;                          /* 0, DK_PAGE_STOCK_OVERLAY (1, page zero only) or DK_PAGE_WIDE_CANVAS (2, page one only, 107x53 canvas); the two flags are mutually exclusive */
+    dk_desc_native_binding binding[DK_PAGE_KNOBS]; /* contiguous used entries, unique positions */
+} dk_desc_native_page_v2;
+
+_Static_assert(sizeof(dk_desc_sample_bank) == 80, "dk_desc_sample_bank size");
+_Static_assert(offsetof(dk_desc_sample_bank, kind) == 0, "dk_desc_sample_bank.kind");
+_Static_assert(offsetof(dk_desc_sample_bank, size) == 4, "dk_desc_sample_bank.size");
+_Static_assert(offsetof(dk_desc_sample_bank, local_id) == 8, "dk_desc_sample_bank.local_id");
+_Static_assert(offsetof(dk_desc_sample_bank, bank) == 12, "dk_desc_sample_bank.bank");
+_Static_assert(offsetof(dk_desc_sample_bank, descriptor) == 44, "dk_desc_sample_bank.descriptor");
+_Static_assert(offsetof(dk_desc_sample_bank, capacity_frames) == 76, "dk_desc_sample_bank.capacity_frames");
+_Static_assert(sizeof(dk_desc_sample_tracks) == 76, "dk_desc_sample_tracks size");
+_Static_assert(offsetof(dk_desc_sample_tracks, kind) == 0, "dk_desc_sample_tracks.kind");
+_Static_assert(offsetof(dk_desc_sample_tracks, size) == 4, "dk_desc_sample_tracks.size");
+_Static_assert(offsetof(dk_desc_sample_tracks, local_id) == 8, "dk_desc_sample_tracks.local_id");
+_Static_assert(offsetof(dk_desc_sample_tracks, records) == 12, "dk_desc_sample_tracks.records");
+_Static_assert(offsetof(dk_desc_sample_tracks, control) == 44, "dk_desc_sample_tracks.control");
 _Static_assert(sizeof(dk_desc_fx) == 100, "dk_desc_fx size");
 _Static_assert(offsetof(dk_desc_fx, kind) == 0, "dk_desc_fx.kind");
 _Static_assert(offsetof(dk_desc_fx, size) == 4, "dk_desc_fx.size");
@@ -118,7 +236,7 @@ _Static_assert(offsetof(dk_desc_fx_param, max) == 36, "dk_desc_fx_param.max");
 _Static_assert(offsetof(dk_desc_fx_param, def) == 40, "dk_desc_fx_param.def");
 _Static_assert(offsetof(dk_desc_fx_param, name) == 44, "dk_desc_fx_param.name");
 _Static_assert(offsetof(dk_desc_fx_param, short_name) == 68, "dk_desc_fx_param.short_name");
-_Static_assert(sizeof(dk_desc_machine) == 168, "dk_desc_machine size");
+_Static_assert(sizeof(dk_desc_machine) == 172, "dk_desc_machine size");
 _Static_assert(offsetof(dk_desc_machine, kind) == 0, "dk_desc_machine.kind");
 _Static_assert(offsetof(dk_desc_machine, size) == 4, "dk_desc_machine.size");
 _Static_assert(offsetof(dk_desc_machine, id) == 8, "dk_desc_machine.id");
@@ -127,6 +245,7 @@ _Static_assert(offsetof(dk_desc_machine, short_name) == 48, "dk_desc_machine.sho
 _Static_assert(offsetof(dk_desc_machine, render) == 72, "dk_desc_machine.render");
 _Static_assert(offsetof(dk_desc_machine, note_on) == 104, "dk_desc_machine.note_on");
 _Static_assert(offsetof(dk_desc_machine, desc) == 136, "dk_desc_machine.desc");
+_Static_assert(offsetof(dk_desc_machine, stereo) == 168, "dk_desc_machine.stereo");
 _Static_assert(sizeof(dk_desc_param) == 112, "dk_desc_param size");
 _Static_assert(offsetof(dk_desc_param, kind) == 0, "dk_desc_param.kind");
 _Static_assert(offsetof(dk_desc_param, size) == 4, "dk_desc_param.size");
@@ -138,6 +257,23 @@ _Static_assert(offsetof(dk_desc_param, max) == 56, "dk_desc_param.max");
 _Static_assert(offsetof(dk_desc_param, def) == 60, "dk_desc_param.def");
 _Static_assert(offsetof(dk_desc_param, name) == 64, "dk_desc_param.name");
 _Static_assert(offsetof(dk_desc_param, short_name) == 96, "dk_desc_param.short_name");
+_Static_assert(sizeof(dk_desc_param_action) == 60, "dk_desc_param_action size");
+_Static_assert(offsetof(dk_desc_param_action, kind) == 0, "dk_desc_param_action.kind");
+_Static_assert(offsetof(dk_desc_param_action, size) == 4, "dk_desc_param_action.size");
+_Static_assert(offsetof(dk_desc_param_action, machine) == 8, "dk_desc_param_action.machine");
+_Static_assert(offsetof(dk_desc_param_action, word) == 24, "dk_desc_param_action.word");
+_Static_assert(offsetof(dk_desc_param_action, fn) == 28, "dk_desc_param_action.fn");
+_Static_assert(sizeof(dk_desc_param_glyph) == 32, "dk_desc_param_glyph size");
+_Static_assert(offsetof(dk_desc_param_glyph, kind) == 0, "dk_desc_param_glyph.kind");
+_Static_assert(offsetof(dk_desc_param_glyph, size) == 4, "dk_desc_param_glyph.size");
+_Static_assert(offsetof(dk_desc_param_glyph, owner) == 8, "dk_desc_param_glyph.owner");
+_Static_assert(offsetof(dk_desc_param_glyph, word) == 24, "dk_desc_param_glyph.word");
+_Static_assert(offsetof(dk_desc_param_glyph, glyph) == 28, "dk_desc_param_glyph.glyph");
+_Static_assert(sizeof(dk_desc_param_latched) == 28, "dk_desc_param_latched size");
+_Static_assert(offsetof(dk_desc_param_latched, kind) == 0, "dk_desc_param_latched.kind");
+_Static_assert(offsetof(dk_desc_param_latched, size) == 4, "dk_desc_param_latched.size");
+_Static_assert(offsetof(dk_desc_param_latched, owner) == 8, "dk_desc_param_latched.owner");
+_Static_assert(offsetof(dk_desc_param_latched, word) == 24, "dk_desc_param_latched.word");
 _Static_assert(sizeof(dk_desc_page_knob) == 12, "dk_desc_page_knob size");
 _Static_assert(offsetof(dk_desc_page_knob, used) == 0, "dk_desc_page_knob.used");
 _Static_assert(offsetof(dk_desc_page_knob, word) == 4, "dk_desc_page_knob.word");
@@ -149,5 +285,29 @@ _Static_assert(offsetof(dk_desc_page, owner) == 8, "dk_desc_page.owner");
 _Static_assert(offsetof(dk_desc_page, name) == 24, "dk_desc_page.name");
 _Static_assert(offsetof(dk_desc_page, title) == 48, "dk_desc_page.title");
 _Static_assert(offsetof(dk_desc_page, knob) == 72, "dk_desc_page.knob");
+_Static_assert(sizeof(dk_desc_native_binding) == 12, "dk_desc_native_binding size");
+_Static_assert(offsetof(dk_desc_native_binding, kind) == 0, "dk_desc_native_binding.kind");
+_Static_assert(offsetof(dk_desc_native_binding, value) == 4, "dk_desc_native_binding.value");
+_Static_assert(offsetof(dk_desc_native_binding, position) == 8, "dk_desc_native_binding.position");
+_Static_assert(sizeof(dk_desc_native_page) == 212, "dk_desc_native_page size");
+_Static_assert(offsetof(dk_desc_native_page, kind) == 0, "dk_desc_native_page.kind");
+_Static_assert(offsetof(dk_desc_native_page, size) == 4, "dk_desc_native_page.size");
+_Static_assert(offsetof(dk_desc_native_page, version) == 8, "dk_desc_native_page.version");
+_Static_assert(offsetof(dk_desc_native_page, owner) == 12, "dk_desc_native_page.owner");
+_Static_assert(offsetof(dk_desc_native_page, title) == 28, "dk_desc_native_page.title");
+_Static_assert(offsetof(dk_desc_native_page, draw) == 52, "dk_desc_native_page.draw");
+_Static_assert(offsetof(dk_desc_native_page, event) == 84, "dk_desc_native_page.event");
+_Static_assert(offsetof(dk_desc_native_page, binding) == 116, "dk_desc_native_page.binding");
+_Static_assert(sizeof(dk_desc_native_page_v2) == 220, "dk_desc_native_page_v2 size");
+_Static_assert(offsetof(dk_desc_native_page_v2, kind) == 0, "dk_desc_native_page_v2.kind");
+_Static_assert(offsetof(dk_desc_native_page_v2, size) == 4, "dk_desc_native_page_v2.size");
+_Static_assert(offsetof(dk_desc_native_page_v2, version) == 8, "dk_desc_native_page_v2.version");
+_Static_assert(offsetof(dk_desc_native_page_v2, owner) == 12, "dk_desc_native_page_v2.owner");
+_Static_assert(offsetof(dk_desc_native_page_v2, title) == 28, "dk_desc_native_page_v2.title");
+_Static_assert(offsetof(dk_desc_native_page_v2, draw) == 52, "dk_desc_native_page_v2.draw");
+_Static_assert(offsetof(dk_desc_native_page_v2, event) == 84, "dk_desc_native_page_v2.event");
+_Static_assert(offsetof(dk_desc_native_page_v2, page) == 116, "dk_desc_native_page_v2.page");
+_Static_assert(offsetof(dk_desc_native_page_v2, flags) == 120, "dk_desc_native_page_v2.flags");
+_Static_assert(offsetof(dk_desc_native_page_v2, binding) == 124, "dk_desc_native_page_v2.binding");
 
 #endif /* DK_GEN_DESC_H */

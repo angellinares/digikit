@@ -110,14 +110,13 @@ It does not read the image, the tables' entries, the records' bodies or the DSP 
 Names that are capacity kinds (`[capacity.kinds]` of `sdk/sdk.toml`) are in the unit of that kind's CAPACITY entry, so "fits" is need <= limit - used, with the largest free block for the arena and the DSP area.
 
 Who calls it: the DIGIKIT menu (`modules/core/apps/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
-`patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`, `pk_capacity`). The arithmetic exists once.
+`patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`). The arithmetic exists once.
 
 The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit` in `modules/core/runtime/fit`, vectors in `sdk/vectors/fit-vectors.json`; the compare and the needs are each written once, in Rust: the web app calls the compare through `pk_fit` and the tools through `patchkit fit --json -`): the staging buffer holds the file, a module record and a selection path are free,
 the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most
 limit - used. A kind that a device's CAPACITY lacks is not judged.
-`tests/digikit/scenarios/inferred-needs-*.toml` (`tools/patchkit/pk_digikit_capacity.py run_inferred_needs`) loads every run-time module and fixture that packs
-for the device alone on a ColdFire-only rig and compares CAPACITY and MODULES with `needs_of` of the file; `isolation-*` does the same after a
-coupled load (rows of a DSP module come in after the DSP acknowledges). The Rust tests of `dkneeds` cover the arithmetic and malformed files (truncated sections, absurd counts, every cut of a file).
+The `inferred needs` tests of `modules/core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` (full tier) load a set of run-time modules and fixtures alone, coupled, and compare
+CAPACITY and MODULES with `needs_of` of the file (rows of a DSP module come in after the DSP acknowledges). The Rust tests of `dkneeds` cover the arithmetic and malformed files (truncated sections, absurd counts, every cut of a file).
 
 ## DSP section
 
@@ -146,7 +145,7 @@ All integers are big endian. Offsets are from the start of the section.
 | 0x2c | 4 | `voice_off`; 0x30: `voice_count` (at most 8) |
 | 0x34 | 4 | `fx_off`: offset of the effect records (version 4; 0 before) |
 | 0x38 | 4 | `fx_count`: effect records, at most 4 (`DK_FX_MAX`) (version 4; 0 before) |
-| 0x3c | 4 | reserved (0) |
+| 0x3c | 4 | `sample_off` (version 5): offset of a 32-byte record of little-endian words, 0 before. Word 0 is the kind: 1 a sample bank (local id, bank byte offset, capacity frames, descriptor byte offset), 2 the per-track sample table of API 1.5 (local id, byte offsets of the 16 `dk_strack` records, 512 bytes, and of the 16 control sets, 256 bytes; four zero words). The blocks lie in the initialized image, are zero and have no relocations in them. Version 5 keeps the voices and effects of version 4 |
 
 - **Imports**: 32-byte NUL padded names of DSP symbols the object references and does not define: today the helpers of `core/dsp-voice`
   (`_dv_exp2`, `_dv_frame_hw`, `_dv_frame_sw`). The runtime resolves them in `dyndsp_info` (module `core/dyndsp`): a name it does not
@@ -202,7 +201,7 @@ type 0's (finding 30). A machine that clones SAMPLE, like `pluck`, is right alre
 
 ## What the loader checks, in order (nothing is written to the arena before the last one)
 
-1. Store: header, table checksum, the path, the table's sha256 of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
+1. Store: header, table checksum, the path, the table's file hash of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
 2. Magic, format 1, size fields equal the file (`E_FORMAT`); the file's own sha256 (`E_SHA`).
 3. Contracts (0x38): for each contract the module declares (major not 0), its major equals the runtime's and its minor is not above the runtime's (`E_CONTRACT`: built for another SDK contract, rebuild the module). `runtime_min` is not checked.
 4. Name, alignment, table bounds, reloc kinds and offsets, slot numbers and function offsets (`E_FORMAT`).

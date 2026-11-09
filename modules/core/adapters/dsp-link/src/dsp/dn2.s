@@ -6,6 +6,8 @@
 // to 686 of the ring, 15 words.
 //
 // The reserved area (window 0): see the Digitakt II file.
+// The tail also calls core/sample-pool's `_sp_tail` when that module is in the image (docs/design/dn2-sample-pool.md 2.5).
+#define DL_CHAIN_SP
 #include "device-dn2.inc"
 #include "dsp-link.inc"
 .PKBSS _dl_area, DL_AREA_BYTES;

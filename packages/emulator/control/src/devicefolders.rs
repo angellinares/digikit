@@ -39,28 +39,44 @@ pub struct DeviceFolders {
 
 /// A device name is a short id (`dt2`, `dn2`): it becomes a path part.
 pub fn device_ok(device: &str) -> bool {
-    !device.is_empty() && device.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    !device.is_empty()
+        && device
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
 }
 
 impl DeviceFolders {
     pub fn new(root: Option<PathBuf>, file: Option<PathBuf>) -> Self {
         let choices = file.as_deref().map(read_choices).unwrap_or_default();
-        Self { root, file, choices, session: BTreeMap::new() }
+        Self {
+            root,
+            file,
+            choices,
+            session: BTreeMap::new(),
+        }
     }
 
     /// `plus_drive/<device>/`, when there is a root.
     pub fn default_folder(&self, device: &str) -> Option<PathBuf> {
-        device_ok(device).then(|| self.root.as_ref().map(|r| r.join(device))).flatten()
+        device_ok(device)
+            .then(|| self.root.as_ref().map(|r| r.join(device)))
+            .flatten()
     }
 
     /// The saved choice, when its folder exists.
     pub fn choice(&self, device: &str) -> Option<&Path> {
-        self.choices.get(device).map(PathBuf::as_path).filter(|p| p.is_dir())
+        self.choices
+            .get(device)
+            .map(PathBuf::as_path)
+            .filter(|p| p.is_dir())
     }
 
     /// The saved choice whose folder is gone (a removed drive): the default is used instead.
     pub fn missing_choice(&self, device: &str) -> Option<&Path> {
-        self.choices.get(device).map(PathBuf::as_path).filter(|p| !p.is_dir())
+        self.choices
+            .get(device)
+            .map(PathBuf::as_path)
+            .filter(|p| !p.is_dir())
     }
 
     /// The folder `device` uses now.
@@ -99,7 +115,9 @@ impl DeviceFolders {
     }
 
     fn write(&self) -> Result<(), String> {
-        let Some(file) = &self.file else { return Ok(()) };
+        let Some(file) = &self.file else {
+            return Ok(());
+        };
         if let Some(parent) = file.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
         }
@@ -116,8 +134,12 @@ impl DeviceFolders {
 }
 
 fn read_choices(file: &Path) -> BTreeMap<String, PathBuf> {
-    let Ok(text) = fs::read_to_string(file) else { return BTreeMap::new() };
-    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&text) else { return BTreeMap::new() };
+    let Ok(text) = fs::read_to_string(file) else {
+        return BTreeMap::new();
+    };
+    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&text) else {
+        return BTreeMap::new();
+    };
     map.into_iter()
         .filter(|(device, _)| device_ok(device))
         .filter_map(|(device, dir)| dir.as_str().map(|d| (device, PathBuf::from(d))))
@@ -130,7 +152,8 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("digi-devfolders-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("digi-devfolders-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -153,10 +176,18 @@ mod tests {
         let mut f = DeviceFolders::new(Some(dir.join("pd")), None);
         f.set_session("dn2", "/from/launcher".into());
         assert_eq!(f.folder("dn2"), Some("/from/launcher".into()));
-        assert_eq!(f.folder("dt2"), Some(dir.join("pd/dt2")), "the first-load folder is for its device only");
+        assert_eq!(
+            f.folder("dt2"),
+            Some(dir.join("pd/dt2")),
+            "the first-load folder is for its device only"
+        );
         f.set_choice("dn2", Some(&mine)).unwrap();
         assert_eq!(f.folder("dn2"), Some(fs::canonicalize(&mine).unwrap()));
-        assert_eq!(f.folder("dt2"), Some(dir.join("pd/dt2")), "a choice is per device");
+        assert_eq!(
+            f.folder("dt2"),
+            Some(dir.join("pd/dt2")),
+            "a choice is per device"
+        );
         f.set_choice("dn2", None).unwrap();
         assert_eq!(f.folder("dn2"), Some(dir.join("pd/dn2")));
         assert!(f.set_choice("dn2", Some(&dir.join("missing"))).is_err());
@@ -179,10 +210,23 @@ mod tests {
         fs::remove_dir_all(&b).unwrap();
         let gone = DeviceFolders::new(Some(dir.join("pd")), Some(file.clone()));
         assert_eq!(gone.folder("dt2"), Some(dir.join("pd/dt2")));
-        assert_eq!(gone.missing_choice("dt2"), Some(fs::canonicalize(&a).unwrap().parent().unwrap().join("b").as_path()));
+        assert_eq!(
+            gone.missing_choice("dt2"),
+            Some(
+                fs::canonicalize(&a)
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join("b")
+                    .as_path()
+            )
+        );
         // a damaged file or a relative path is ignored
         fs::write(&file, r#"{"dn2": "relative", "dt2": 3}"#).unwrap();
-        assert_eq!(DeviceFolders::new(None, Some(file.clone())).folder("dn2"), None);
+        assert_eq!(
+            DeviceFolders::new(None, Some(file.clone())).folder("dn2"),
+            None
+        );
         fs::write(&file, "{not json").unwrap();
         assert!(read_choices(&file).is_empty());
     }

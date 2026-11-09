@@ -43,7 +43,7 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | -53 | E_STATE | no upload open (DATA, END) |
 | -54 | E_OFFSET | offset is neither the next byte nor a retry of the previous chunk |
 | -55 | E_LENGTH | chunk length breaks the rule below, or the file would pass its size |
-| -56 | E_HASH | the sha256 of the bytes received (hashed as the DATA chunks came) does not match the sha256 of BEGIN |
+| -56 | E_HASH | the file hash of the bytes received (hashed as the DATA chunks came) does not match the hash slot of BEGIN |
 | -57 | E_WRITE | the firmware's block write failed |
 | -58 | E_READ | the firmware's block read failed |
 | -59 | E_NOFILE | DELETE of a path that is not in the store |
@@ -66,17 +66,17 @@ SELECT also answers the selection record's own codes (runtime codes -40 to -49):
 | cmd | name | request body | reply body after status |
 |---|---|---|---|
 | 0x01 | INFO | (none) | `u16 protocol 1, u16 RUNTIME_VERSION (4 since SELECT and RESTART, 5 since the DSP guard: voice rows of 16 words, DSP sections of version 2, 24 DSP diagnostic words, log events 27 and 28; the commands are unchanged), device id NUL ("dt2" or "dn2"), u32 free_bytes, u32 max_chunk 32768, u8 flags, u32 log_oldest, u32 log_newest` (flags: bit 0 safe mode, bit 1 upload open, bit 2 card read-only, bit 3 the debug module is loaded (a log sink is set), bit 4 a crash record was found at this boot; the runtime sends 0 and 0 for the two sequence numbers: the log is the debug module's, and its LOG reply has the oldest and newest sequence number; runtime 2 stops after the flags; later runtimes append `u32` the packed runtime version, `u32` the capability bits and, from runtime 0.5.2, `u8 image_id[8]`: the id of the flashed image that patchkit stamps into the runtime (definition: `docs/design/device-bridge.md` 3.3), all zero when the image carries none; a host reads each appended field only when the reply is long enough) |
-| 0x02 | LIST | `u32 first`, then optionally `prefix NUL` (1 to 159 bytes; runtime 0.3.0, capability bit 10) | `u32 total, u8 n`, then n entries `path NUL, u32 size, sha256[32]` from index `first`, as many as fit the reply. Without a prefix: every entry of the table, `first` is a table index. With one: only the entries whose path starts with it (files, and folders with nothing in them), `first` and `total` count those. A folder entry has size 0 and a zero sha256 (a file of size 0 has the sha256 of nothing). The host pages until it has `total`. A prefix without its NUL: E_MSG. |
+| 0x02 | LIST | `u32 first`, then optionally `prefix NUL` (1 to 159 bytes; runtime 0.3.0, capability bit 10) | `u32 total, u8 n`, then n entries `path NUL, u32 size, hash[32]` from index `first`, as many as fit the reply. Without a prefix: every entry of the table, `first` is a table index. With one: only the entries whose path starts with it (files, and folders with nothing in them), `first` and `total` count those. A folder entry has size 0 and a zero hash (a file of size 0 has the hash of nothing, `43fa243b`, never zero). The 32-byte hash is the file hash slot: the +Drive content hash `| 1` (`dksample::content_hash`, a lookup3 variant over big-endian words) as 4 big-endian bytes, then 28 zero bytes (capability bit 12, FILEHASH; a host that finds the bit missing stops with "Update the firmware: this runtime uses the old store format"). The host pages until it has `total`. A prefix without its NUL: E_MSG. |
 | 0x03 | MODULES (runtime 0.2.0, capability bit 5) | `u8 start` (a module record index) | `u32 arena_free, u32 arena_largest, u32 dsp_free, u32 dsp_largest, u8 total, u8 n`, then `n` records (below). The loaded modules and what they hold; see "MODULES". |
 | 0x04 | CAPACITY (runtime 0.2.2, capability bit 6) | (none) | `u8 version 1, u8 n`, then `n` entries `u8 kind, u32 limit, u32 used, u32 largest`. Per resource of the runtime; see "CAPACITY". |
-| 0x10 | BEGIN | `path NUL, u32 size, sha256[32]` | (none). Opens an upload; a BEGIN while one is open drops the old one. |
+| 0x10 | BEGIN | `path NUL, u32 size, hash[32]` (the file hash slot, see LIST) | (none). Opens an upload; a BEGIN while one is open drops the old one. |
 | 0x11 | DATA | `u32 offset, bytes` | (none). |
 | 0x12 | END | (none) | (none). Verifies, then commits (below). |
 | 0x13 | DELETE | `path NUL` | (none). Commits a table without the path. It does not touch the selection record: a selected or loaded file that is deleted stays selected and loaded until the next boot, which skips the path with a `MOD_LOAD` error line (`E_NOT_FOUND`) and carries on. |
 | 0x14 | CLEAR | `u32 0x434c5221` ("CLR!") | (none). Commits an empty store. |
 | 0x15 | ABORT | (none) | (none). Drops an open upload. |
 | 0x16 | READ (runtime 0.2.4, capability bit 7) | `path NUL, u32 offset, u32 length` | `u32 file size`, then `min(length, 768, size - offset)` bytes of the file from `offset`. Read-only: every state, one card read, not logged as an UPLOAD event. Errors: E_NOFILE (not in the store), E_LENGTH (length 0), E_OFFSET (offset at or past the end of the file), E_PATH, E_MSG. The cap of 768 keeps the reply (status, size, bytes) inside the 880-byte reply body; a host reads a larger file with several requests. A .dkm header is the first 0xa0 bytes (`digikit-dkm.md`). |
-| 0x17 | VERIFY (runtime 0.2.4, capability bit 8) | `path NUL`, optionally `u32 offset, u32 length` (runtime 0.3.0) | `sha256[32]` of the file, or of that range of it, computed by the device from a fresh read of the card. Read-only, not logged. The device spends about 120 ColdFire instructions a byte, so a host checks a large file in ranges of a MiB or so (`offset` is a multiple of 512). Errors: E_NOFILE, E_READ, E_PATH, E_MSG, E_OFFSET (not a multiple of 512, or at or past the end), E_LENGTH (0, or past the end). A host compares it with its own hash to know that the bytes on the card are the bytes it sent. |
+| 0x17 | VERIFY (runtime 0.2.4, capability bit 8) | `path NUL`, optionally `u32 offset, u32 length` (runtime 0.3.0) | `hash[32]` (the file hash slot) of the file, or of that range of it, computed by the device from a fresh read of the card. Read-only, not logged. The device spends about 7 ColdFire instructions a byte on the hash (finding 43), so a host still checks a large file in ranges of a MiB or so (`offset` is a multiple of 512). Errors: E_NOFILE, E_READ, E_PATH, E_MSG, E_OFFSET (not a multiple of 512, or at or past the end), E_LENGTH (0, or past the end). A host compares it with its own hash to know that the bytes on the card are the bytes it sent. |
 | 0x18 | MKDIR (runtime 0.3.0, capability bit 10) | `path NUL` | (none). Makes a folder: a folder entry with nothing in it. Ok when the folder exists (an entry, or implied by files inside it). E_PATH when the path is a file, lies inside one or breaks the path rules. A folder entry goes when a file or a folder is stored inside the folder. An open upload is dropped. |
 | 0x19 | SETTINGS (runtime 0.5.1, capability bit 11) | `u32 offset, u16 length` (1 to 768) | `u8 flags` (bit 0: the RAM record has changes the card does not hold yet), `u8 copy` (the card's current settings copy: 0 A, 1 B, 2 none), `u32 seq` (the card's), `u32 used` (the record's bytes), then `min(length, used - offset)` bytes of the record from `offset`. Read only, not logged; answers from the RAM record, sealed with the card's `seq` when it has changes, so the pieces of one read are one valid record. Errors: E_SET_NOKEY (no record), E_OFFSET (at or past the end), E_LENGTH (0), E_MSG. The record format and rules: `docs/design/digikit-store.md`, "The settings record". Host: `dkupload settings`. |
 | 0x20 | LOG | `u32 from_seq` | `u32 oldest, u32 newest, u8 n`, then `n` events of 32 bytes from `from_seq` (or from `oldest` when `from_seq` is older), as many as fit one reply (27). An event is `u32 seq, u32 time, u16 kind, u16 flags, u32 a0..a4`, big endian; `time` is the firmware's block counter (1500 per second), `flags` bit 0 an error. The host polls: ask again from `last seq + 1` until `n` is 0. Nothing is ever sent unless a host asks. |
@@ -94,8 +94,8 @@ Behaviour the first draft left open (lane r4, built and tested):
   `E_NOSTORE` is for a header that is there but unreadable (no usable copy); CLEAR still works then.
 - END closes the upload whatever its result (a failed END needs a new BEGIN). BEGIN, DELETE and CLEAR drop an open upload. ABORT with
   none open is ok.
-- The table is streamed through two 8 KiB buffers, so a store holds as many entries as the card has room for (version 3, docs/design/digikit-store.md); a request body is at most 256 bytes (a path of 159 bytes
-  and BEGIN's size and sha256 make 196).
+- The table is streamed through two 8 KiB buffers, so a store holds as many entries as the card has room for (version 4, docs/design/digikit-store.md); a request body is at most 256 bytes (a path of 159 bytes
+  and BEGIN's size and hash slot make 196).
 - The buffer is a static object of the runtime, 32 KiB plus 16 bytes of body offset and 4 KiB scratch (36,896 bytes), 16-byte aligned. The first
   draft said "from its arena"; a static address lets the write-watch leave out the card reads that land in it by DMA, as it does for
   the staging buffer, and the buffer cannot fail to allocate.
@@ -103,7 +103,9 @@ Behaviour the first draft left open (lane r4, built and tested):
 
 DATA rules: `offset` equals the next expected byte, or the offset of the previous chunk with the same length (a retry; the
 reply is ok and nothing is written again). The length is 1 to 32768 and a multiple of 512, except for the chunk that ends the
-file. The host may keep at most 2 DATA requests in flight; replies come in order.
+file. The host may keep at most 2 DATA requests in flight; replies come in order. A host with 2 in flight treats a reply to a later request as proof that the earlier ones were done, and after a
+timeout sends the unacknowledged chunks again one at a time from the first (an `E_OFFSET` for one with a later chunk behind it means it was done). The TypeScript `DkSession` keeps 1 in flight unless the
+transport says `dataDepth` (the emulator's USB: 2); the real MIDI transports stay at 1 until it has run on a device (finding 43, "Two requests in flight").
 
 ## Service commands (runtime 0.2.5, capability bit 9)
 
@@ -217,7 +219,7 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
 - **Staging:** BEGIN checks the path against the table (it may replace a file; it may not replace a folder, lie inside a file or be a folder that has entries: `E_PATH`) and finds the
   first gap that holds `ceil(size / 512)` sectors, and a gap beside it for the new table of one more entry (`E_FULL` otherwise). DATA writes whole sectors into the file's extent at once (the last partial sector is zero
   padded). Nothing the current header points at is written.
-- **Commit (END, DELETE, CLEAR, MKDIR):** END first checks the sha256 of the bytes received (DATA feeds a running hash, so END costs the same for a file of any size and a 4 GiB sample is not read back through a 250 MHz ColdFire; VERIFY reads the card, in ranges). Then the new table is streamed from the old one, with the entry inserted, replaced (a replaced path takes the
+- **Commit (END, DELETE, CLEAR, MKDIR):** END first checks the file hash of the bytes received (DATA feeds a running hash, so END costs the same for a file of any size and a 4 GiB sample is not read back through a 250 MHz ColdFire; VERIFY reads the card, in ranges). Then the new table is streamed from the old one, with the entry inserted, replaced (a replaced path takes the
   new entry and frees the old extent; a folder entry that the new path lies inside is dropped) or removed, into the first gap that holds it (never over the table in use or the staged file), read back and checked by its CRC; then header B with `seq + 1`, then header A
   with `seq + 1`. A power cut before B leaves the old store; between B and A the next reader takes B. Space freed by a delete or a replace is reused by the next BEGIN; BEGIN, DELETE and CLEAR first
   make the two header copies agree.
@@ -233,21 +235,21 @@ anchor on both ports (`dkrt.fw.*`). The runtime's upload buffer is a static 16-b
 
 ## Tests
 
-- CLI transfer acceptance: `modules/core/runtime/tests/transfer-live.device.test.ts` on DT2 1.17 and DN2 1.12, through the real `tools.device.dktransfer` CLI. Install/restart persists the upload and selection, the mirror matches the card's SHA-256 and metadata, delete plus `card.sync` removes it, and the next protocol restart skips the selected missing module with `MOD_LOAD E_NOT_FOUND` and reaches `UI_FIRST`. Run with `mise run test:runtime -- transfer-live` (prerequisites: `tests/regression/README.md`); the gate selects this acceptance on relevant changes. Remaining scenario tests are in `tests/digikit/scenarios`.
+- CLI transfer acceptance: `modules/core/runtime/tests/transfer-live.device.test.ts` on DT2 1.17 and DN2 1.12, through the real `tools.device.dktransfer` CLI. Install/restart persists the upload and selection, the mirror matches the card's file hash and metadata, delete plus `card.sync` removes it, and the next protocol restart skips the selected missing module with `MOD_LOAD E_NOT_FOUND` and reaches `UI_FIRST`. Run with `mise run test:runtime -- transfer-live` (prerequisites: `tests/regression/README.md`); the gate selects this acceptance on relevant changes. Remaining scenario tests are in `tests/digikit/scenarios`.
 - upload, list, restart, load: equal to a card built with the file in `digikit/` (rows, tables, PCM).
-- replace, delete, CLEAR, E_FULL, E_HASH (a wrong sha256 commits nothing), DATA retry and bad offset.
+- replace, delete, CLEAR, E_FULL, E_HASH (a wrong file hash commits nothing), DATA retry and bad offset.
 - power cut during staging, between header B and A, and after A: the next boot reads a valid store (old or new, never mixed).
 - an upload during playback: PCM equal to the same run without it; the write-watch shows store sectors only.
 - stock MidiRpc unchanged: a Ping and a SoftwareVersion reply are byte-identical with and without the runtime.
 - `upload-folders` (store format 3): MKDIR and its errors, LIST by prefix and its paging (forty entries), a streamed upload of 6 MiB (far over the staging buffer), VERIFY in ranges, a delete that frees its space for the next file (first fit), a smaller file that takes a hole, CAPACITY's STORE entry, the +Drive round trip.
-- DN2 sample-store acceptance (`tests/regression/runtime/dn2-samples-store-live.test.ts`, replacing `samples-store`): a WAV converted by the host and sent into `samples/<folder>/<name>` in several chunks through the generic samples API (`packages/dk-session/src/samples.ts`, exported as `@digi/dk-session/samples`), VERIFY against the host's sha256, a corrupted copy reported as failed, a delete that frees the space, a RESTART after which the store still lists and verifies the file, and the folder mirror holding the file. Run with `mise run test:runtime -- dn2-samples-store-live.test.ts`, using the prepared runtime inputs in `tests/regression/README.md`.
+- DN2 sample-store acceptance (`tests/regression/runtime/dn2-samples-store-live.test.ts`, replacing `samples-store`): a WAV converted by the host and sent into `samples/<folder>/<name>` in several chunks through the generic samples API (`packages/dk-session/src/samples.ts`, exported as `@digi/dk-session/samples`), VERIFY against the host's file hash, a corrupted copy reported as failed, a delete that frees the space, a RESTART after which the store still lists and verifies the file, and the folder mirror holding the file. Run with `mise run test:runtime -- dn2-samples-store-live.test.ts`, using the prepared runtime inputs in `tests/regression/README.md`.
 - the +Drive round trip: after an upload in the emulator, the exporter writes the store's files back to
   `plus_drive/<device>/digikit/`, so the next card build holds them.
 
 ## `dk run` (runtime 4; `tools/device/dkrun.py`)
 
 One command from a module id to a running module: INFO (the runtime must be 4 or newer; its device id picks the pack target), `pk_build` and
-`patchkit pack`, PUT to `modules/<name>.dkm` unless LIST shows the same sha256, SELECT with that one path, RESTART, wait for the new boot (poll LOG
+`patchkit pack`, PUT to `modules/<name>.dkm` unless LIST shows the same file hash, SELECT with that one path, RESTART, wait for the new boot (poll LOG
 until the old boot's RESTART event is gone and BOOT_START is there; the USB port may vanish and return, the tool connects again), print MOD_LOAD and
 MOD_DSP (MOD_LOAD result 1 is LOADING, MOD_DSP result 0 the DSP part loaded), then follow the log for `--seconds`. The selection becomes this module
 only; the other store files stay. Against the emulator the same code runs (`--emu`; the scenario `menu-dkrun-pluck` proves it: upload, SELECT, RESTART,

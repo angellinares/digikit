@@ -631,9 +631,7 @@ impl Lower {
         }
         match a.base {
             Base::None if (1..=u32::MAX as i64).contains(&a.lo) => self.reg_lit[i] = Some(a.lo),
-            Base::Reg(r)
-                if self.reg_sym.is_none() && st.loops.iter().all(|l| !l.entry()) =>
-            {
+            Base::Reg(r) if self.reg_sym.is_none() && st.loops.iter().all(|l| !l.entry()) => {
                 self.reg_sym = Some((i, r, a.lo));
             }
             _ => {}

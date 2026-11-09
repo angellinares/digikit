@@ -123,3 +123,9 @@ test('a fault detail names the crashed module from CRASH_MOD when no module list
   expect(faultDetail(stop, events)).toMatch(/ 90 +3\.000s info +dyn-fx-hang +MOD_LOG/);
   expect(faultDetail(stop, events, new Map([[1, 'listed']]))).toMatch(/ 90 +3\.000s info +listed +MOD_LOG/);
 });
+
+test('safe reason 6 reads as a selection read failure', () => {
+  const safe = runtimeEvent(ev(1, 'SAFE', [6, 0, 10], 1));
+  expect(safe.fields.reason).toBe('read');
+  expect(eventText(safe, new Map())).toBe('SAFE  reason=read  boot_counter=0  record_seq=10');
+});

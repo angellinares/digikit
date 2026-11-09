@@ -5,6 +5,7 @@ import { createSignal } from 'solid-js';
 import {
   DefaultModuleError,
   parseUnticked,
+  patchSetFor,
   tickedIds,
   withTick,
   type DefaultModuleEntry,
@@ -23,6 +24,31 @@ function read(): Unticked {
 }
 
 export const [unticked, setUnticked] = createSignal<Unticked>(read());
+
+const BOOT_KEY = 'digikit.customBootScreen';
+
+function readBoot(): boolean {
+  try {
+    return localStorage.getItem(BOOT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** The Custom boot screen toggle (core/introblank in the patch roots), off by default; kept in localStorage. */
+export const [customBootScreen, setCustomBootScreenSignal] = createSignal<boolean>(readBoot());
+
+export function setCustomBootScreen(on: boolean): void {
+  setCustomBootScreenSignal(on);
+  try {
+    localStorage.setItem(BOOT_KEY, on ? '1' : '0');
+  } catch {
+    // the choice is not kept
+  }
+}
+
+/** The patch set the page prepares: `device`, or `device-introblank` with the toggle on. */
+export const patchSet = (): string => patchSetFor(customBootScreen());
 
 export function setTick(device: string, id: string, on: boolean): void {
   const next = withTick(unticked(), device, id, on);

@@ -7,11 +7,11 @@
 IMAGE is dt2-1.17, dn2-1.12, ... : ColdFire (out/cfdb/IMAGE-emac.sqlite) and
 SHARC (out/sharcdb/IMAGE.sqlite) are both opened from it. The CPU is chosen
 from the address (>= 0x400000 is ColdFire) or with --cpu. Set FW_IMAGE to skip
--i. Output is plain text, capped at --max lines (default 60; 0 = no cap) with a
-"... N more" tail, so a single call never floods the context.
+-i. Text output is capped at --max lines (default 60; 0 = no cap) with a
+"... N more" tail. The stores command instead returns uncapped JSON.
 
 Subcommands: fn decomp disasm callers callees xref str class path port sql
-search atlas catalog dossier batch. In a batch file each line is one command line (without
+search atlas catalog dossier stores batch. In a batch file each line is one command line (without
 "fw.py"); lines starting with # are comments; every result block starts with
 "## <line>". The call graph is cached on disk (out/cache/fw/), keyed by the
 database hash, so a cold process only pays for opening SQLite.
@@ -23,6 +23,8 @@ list is not evidence of dead code (AGENTS.md; tools/coldfire/refscan.py confirms
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import pickle
 import re
@@ -353,9 +355,13 @@ class Sharc:
             else {}
         )
         self.meta = {k.split("|")[-1]: v for k, v in self.meta.items()} or self.meta
-        rows = self.db.execute(
-            "SELECT key, value FROM meta WHERE image=?", (self.image,)
-        ).fetchall()
+        rows = (
+            self.db.execute(
+                "SELECT key, value FROM meta WHERE image=?", (self.image,)
+            ).fetchall()
+            if _has(self.db, "meta")
+            else []
+        )
         if rows:
             self.meta = dict(rows)
         self._graph: Graph | None = None
@@ -420,6 +426,321 @@ class Sharc:
                 ),
             )
         return self._graph
+
+
+# --- read-only SHARC store inventory ------------------------------------------
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise FwError(f"cannot read provenance input {path}: {exc}") from exc
+    return digest.hexdigest()
+
+
+def cmd_stores(
+    img: Sharc, roots: list[str], expected_sha: str | None, blob: str | None
+) -> dict[str, Any]:
+    """One read-only transaction; file identity is not a SQLite snapshot hash."""
+    img.db.execute("BEGIN")
+    try:
+        return _store_inventory(img, roots, expected_sha, blob)
+    finally:
+        img.db.rollback()
+
+
+def _store_inventory(
+    img: Sharc, roots: list[str], expected_sha: str | None, blob: str | None
+) -> dict[str, Any]:
+    """Inventory recorded operands, not runtime addresses, extents or ownership."""
+    import networkx as nx
+
+    from tools.sharc_dev.sharcdb.schema import DB_VERSION
+
+    required = {
+        "meta": "image key value",
+        "functions": "image entry_sw end_sw name",
+        "edges": "image from_sw to_sw kind delayed cond from_function to_function note",
+        "insn": "image sw form fields confidence function_sw raw",
+        "mem_access": "image sw space direction base_reg modifier u form width abs_address",
+        "ptr": "image sw base_reg base_value address direction width",
+    }
+    for table, columns in required.items():
+        found = {r[1] for r in img.db.execute(f"PRAGMA table_info({table})")}
+        if not set(columns.split()) <= found:
+            raise FwError(
+                f"stores: missing/stale schema for {table}; no rebuild attempted"
+            )
+    meta = dict(
+        img.db.execute(
+            "SELECT key,value FROM meta WHERE image=? ORDER BY key", (img.image,)
+        )
+    )
+    if any(
+        not meta.get(k)
+        for k in ("image", "cpu", "db_version", "image_sha256", "blob_path")
+    ):
+        raise FwError(
+            "stores: missing per-image provenance metadata; no rebuild attempted"
+        )
+    if (
+        meta["image"] != img.image
+        or meta["cpu"] != "sharc"
+        or meta["db_version"] != str(DB_VERSION)
+    ):
+        raise FwError(
+            "stores: stale/mismatched image, CPU or schema version; no rebuild attempted"
+        )
+    sha = meta["image_sha256"]
+    if not re.fullmatch(r"[0-9a-f]{64}", sha):
+        raise FwError("stores: malformed image SHA-256 metadata")
+    if expected_sha is not None and expected_sha.lower() != sha:
+        raise FwError("stores: expected image SHA-256 differs from database metadata")
+    selected_blob = os.path.abspath(blob) if blob else None
+    if selected_blob is not None and _sha256_file(selected_blob) != sha:
+        raise FwError(
+            "stores: image bytes differ from database SHA-256; no rebuild attempted"
+        )
+
+    def rows(table: str) -> list[dict[str, Any]]:
+        cursor = img.db.execute(
+            f"SELECT rowid AS evidence_rowid,* FROM {table} WHERE image=? ORDER BY rowid",
+            (img.image,),
+        )
+        names = [c[0] for c in cursor.description]
+        return [dict(zip(names, r, strict=True)) for r in cursor]
+
+    functions = sorted(rows("functions"), key=lambda r: r["entry_sw"])
+    entries = {f["entry_sw"] for f in functions}
+    owner_cache: dict[int, list[int]] = {}
+
+    def owners(pc: int | None) -> list[int]:
+        if pc is None:
+            return []
+        if pc not in owner_cache:
+            owner_cache[pc] = [
+                f["entry_sw"] for f in functions if f["entry_sw"] <= pc < f["end_sw"]
+            ]
+        return owner_cache[pc]
+
+    root_rows = []
+    for token in roots:
+        pc = parse_addr(token)
+        if pc is None:
+            raise FwError(f"stores: root must be an explicit PC, not {token!r}")
+        containing = owners(pc)
+        if len(containing) != 1:
+            raise FwError(
+                f"stores: root 0x{pc:x} has {len(containing)} containing functions"
+            )
+        root_rows.append(
+            {
+                "requested_pc": pc,
+                "containing_function": containing[0],
+                "is_function_entry": pc == containing[0],
+            }
+        )
+    root_rows.sort(key=lambda r: (r["requested_pc"], r["containing_function"]))
+    edges = rows("edges")
+    graph = nx.DiGraph()
+    graph.add_nodes_from(entries)
+    for edge in edges:
+        edge["source_containing_functions"] = owners(edge["from_sw"])
+        edge["target_containing_functions"] = owners(edge["to_sw"])
+        edge["target_is_recorded_entry"] = (
+            edge["to_sw"] in entries if edge["to_sw"] is not None else None
+        )
+        eligible = (
+            edge["kind"] == "call"
+            and edge["from_function"] in entries
+            and edge["to_function"] in entries
+            and edge["source_containing_functions"] == [edge["from_function"]]
+            and edge["target_containing_functions"] == [edge["to_function"]]
+        )
+        edge["followed_by_policy"] = eligible
+        if eligible:
+            graph.add_edge(edge["from_function"], edge["to_function"])
+    reachable: set[int] = set()
+    for root in root_rows:
+        entry = root["containing_function"]
+        reachable.add(entry)
+        reachable.update(nx.descendants(graph, entry))
+    selected_edges = []
+    for edge in edges:
+        if (
+            not ({edge["from_function"]} | set(edge["source_containing_functions"]))
+            & reachable
+        ):
+            continue
+        if edge["followed_by_policy"]:
+            reason = None
+        elif edge["source_containing_functions"] != [edge["from_function"]]:
+            reason = "source_function_metadata_missing_or_mismatched"
+        elif edge["kind"] == "call":
+            reason = "unresolved_or_mismatched_call_target"
+        elif edge["kind"] == "indirect":
+            reason = "unresolved_indirect_target"
+        elif edge["kind"] == "return":
+            reason = "return_not_followed"
+        elif edge["to_function"] not in (None, edge["from_function"]):
+            reason = "non_call_cross_function_edge"
+        else:
+            reason = "non_call_edge_not_followed"
+        edge["not_followed_reason"] = reason
+        selected_edges.append(edge)
+    selected_edges.sort(key=lambda r: (r["from_sw"], r["evidence_rowid"]))
+
+    instructions = {r["sw"]: r for r in rows("insn")}
+    pointers: dict[int, list[dict[str, Any]]] = {}
+    for pointer in rows("ptr"):
+        pointers.setdefault(pointer["sw"], []).append(pointer)
+    all_stores = [r for r in rows("mem_access") if r["direction"] == "store"]
+    stores: list[dict[str, Any]] = []
+    for mem in sorted(all_stores, key=lambda r: (r["sw"], r["evidence_rowid"])):
+        insn = instructions.get(mem["sw"])
+        scope = set(owners(mem["sw"]))
+        if insn and insn["function_sw"] in entries:
+            scope.add(insn["function_sw"])
+        if not scope & reachable:
+            continue
+        site_ptr = pointers.get(mem["sw"], [])
+        compatible = [
+            p
+            for p in site_ptr
+            if p["direction"] == "store"
+            and p["base_reg"] == mem["base_reg"]
+            and p["width"] == mem["width"]
+        ]
+        competing = [
+            m
+            for m in all_stores
+            if m["sw"] == mem["sw"]
+            and m["base_reg"] == mem["base_reg"]
+            and m["width"] == mem["width"]
+        ]
+        unknown = []
+        if len(scope) != 1 or (insn and insn["function_sw"] not in owners(mem["sw"])):
+            unknown.append("function_ownership_metadata_ambiguous")
+        if not insn:
+            unknown.append("instruction_evidence_missing")
+        matched = None
+        if mem["abs_address"] is not None:
+            resolution = "database_recorded_absolute_operand"
+        elif len(compatible) > 1 or (compatible and len(competing) > 1):
+            resolution = "unknown"
+            unknown.append("ambiguous_pointer_to_operand_matching")
+        elif len(compatible) == 1:
+            matched = compatible[0]
+            resolution = (
+                "static_first_arrival_estimate"
+                if matched["address"] is not None
+                else "base_only_estimate"
+            )
+            if matched["address"] is None:
+                unknown.append("effective_address_unresolved")
+        else:
+            resolution = "unknown"
+            unknown.append(
+                "no_compatible_pointer_evidence"
+                if not site_ptr
+                else "pointer_base_or_width_mismatch_possible_bank_metadata_gap"
+            )
+        labels = []
+        if mem["base_reg"] in ("I6", "I7"):
+            labels.append("stack_register_candidate")
+        if mem["space"] == "PM":
+            labels.append("program_memory_operand")
+        if mem["form"] == "dual":
+            labels.append("dual_memory_operand")
+        stores.append(
+            {
+                "operand_id": len(stores),
+                "function_candidates": sorted(scope),
+                "mem_access": mem,
+                "instruction": insn,
+                "ptr_site_evidence": site_ptr,
+                "compatible_ptr_rowids": [p["evidence_rowid"] for p in compatible],
+                "matched_ptr_rowid": matched["evidence_rowid"] if matched else None,
+                "address_estimate": matched["address"] if matched else None,
+                "resolution": resolution,
+                "confidence": {
+                    "instruction": insn["confidence"] if insn else None,
+                    "address": "limited_static_estimate_not_bounds"
+                    if matched
+                    else resolution,
+                },
+                "unknown_reasons": unknown,
+                "candidate_labels": labels,
+            }
+        )
+    schema = list(
+        img.db.execute(
+            "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name"
+        )
+    )
+    return {
+        "report_version": 1,
+        "provenance": {
+            "image": img.image,
+            "meta": meta,
+            "database_path": os.path.abspath(img.path),
+            "database_file_sha256": _sha256_file(img.path),
+            "database_file_hash_scope": "main file identity only, not transaction/WAL snapshot or concurrent replacement proof",
+            "journal_mode": img.db.execute("PRAGMA journal_mode").fetchone()[0],
+            "schema_sha256": hashlib.sha256(
+                json.dumps(schema, separators=(",", ":")).encode()
+            ).hexdigest(),
+            "selected_blob_path": selected_blob,
+            "image_verification": "bytes_verified"
+            if selected_blob
+            else "metadata_only_not_bytes_verified",
+            "verified_image_sha256": sha if selected_blob else None,
+            "expected_image_sha256": expected_sha,
+        },
+        "policy": {
+            "edges": "recorded CALL only with unambiguous containing target; whole containing functions, including interior targets",
+            "roots": "requested PC is retained; traversal starts at its containing function",
+            "pointer_evidence": "limited constant propagation; loop first arrival, not runtime bounds; stack labels are candidates, not exclusions",
+            "footprint": "raw width tokens only; no byte extent, SIMD or alias inference",
+            "coverage": "recorded functions/operands only; unresolved/non-CALL edges prevent full reachability or ownership claims",
+        },
+        "roots": root_rows,
+        "reachable_functions": [f for f in functions if f["entry_sw"] in reachable],
+        "edges": selected_edges,
+        "stores": stores,
+        "counts": {
+            "database_store_operands": len(all_stores),
+            "reachable_functions": len(reachable),
+            "reachable_store_operands": len(stores),
+            "reachable_store_sites": len({r["mem_access"]["sw"] for r in stores}),
+            "other_store_operands": len(all_stores) - len(stores),
+            "edge_rows": len(selected_edges),
+            "followed_call_edge_rows": sum(
+                e["followed_by_policy"] for e in selected_edges
+            ),
+            "unresolved_call_edge_rows": sum(
+                e["kind"] == "call" and not e["followed_by_policy"]
+                for e in selected_edges
+            ),
+            "unresolved_indirect_edge_rows": sum(
+                e["kind"] == "indirect" for e in selected_edges
+            ),
+            "not_followed_edge_rows": sum(
+                not e["followed_by_policy"] for e in selected_edges
+            ),
+            "stack_candidate_operands": sum(
+                "stack_register_candidate" in r["candidate_labels"] for r in stores
+            ),
+            "pm_operands": sum(r["mem_access"]["space"] == "PM" for r in stores),
+            "dual_operands": sum(
+                "dual_memory_operand" in r["candidate_labels"] for r in stores
+            ),
+        },
+    }
 
 
 # --- command implementations ---------------------------------------------------
@@ -1559,6 +1880,19 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         sp = common(sub.add_parser(name, help=helptext))
         sp.add_argument("target", help="address (hex), Ghidra name or cf_names name")
+    sp = common(
+        sub.add_parser(
+            "stores",
+            help="read-only SHARC CALL-reachable store operands as uncapped JSON",
+        )
+    )
+    sp.add_argument(
+        "roots", nargs="+", help="explicit root PCs (hex), not inferred task roots"
+    )
+    sp.add_argument("--expected-image-sha256")
+    sp.add_argument(
+        "--image-blob", help="explicit blob path override; bytes must match DB SHA-256"
+    )
     sp = common(sub.add_parser("str", help="strings containing TEXT and who uses them"))
     sp.add_argument("text", nargs="+")
     sp = common(sub.add_parser("class", help="RTTI class: bases, derived, vtable"))
@@ -1632,6 +1966,16 @@ def run(
                 sess, image, args.target, args.other, args.callers, args.decomp
             ),
             cap,
+        )
+    if c == "stores":
+        if args.cpu not in (None, "sharc"):
+            raise FwError("stores supports SHARC databases only")
+        img = sess.get(image, None, "sharc")
+        assert isinstance(img, Sharc)
+        return json.dumps(
+            cmd_stores(img, args.roots, args.expected_image_sha256, args.image_blob),
+            sort_keys=True,
+            indent=2,
         )
     if c == "sql":
         return capped(cmd_sql(sess.get(image, None, args.cpu), args.query), cap)

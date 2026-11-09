@@ -8,7 +8,8 @@ import ConnectionBadge from '../transfer/ConnectionBadge';
 import TargetSelect from '../transfer/TargetSelect';
 import { target } from '../transfer/target';
 import DefaultModules from './DefaultModules';
-import { postRun } from './default-modules-state';
+import { CUSTOM_BOOT_SCREEN_HELP } from './default-modules-core';
+import { customBootScreen, postRun } from './default-modules-state';
 import { firmwareEnv } from './env';
 import { createEffectOn } from './on-change';
 import {
@@ -47,6 +48,7 @@ import {
   runInEmulator,
   run,
   setAck,
+  setCustomBoot,
   setRestore,
   setRoute,
   startFlash,
@@ -259,6 +261,17 @@ export default function FirmwarePage(): JSX.Element {
             />
             <span>
               Restore stock <span class="dim">(send the stock file itself, to take digikit off the device)</span>
+            </span>
+          </label>
+          <label class="tick">
+            <input
+              type="checkbox"
+              checked={customBootScreen()}
+              disabled={running(run()) || restore()}
+              onChange={(e) => setCustomBoot(e.currentTarget.checked)}
+            />
+            <span>
+              Custom boot screen <span class="dim">({CUSTOM_BOOT_SCREEN_HELP})</span>
             </span>
           </label>
         </Step>

@@ -1,0 +1,70 @@
+[module]
+id = "core/dsp-stereo-proof"
+version = "0.1.0"
+name = "Private staged stereo isolation proof"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Emulator-only DN2 1.12 first-order and U/Y callsite observers with private L2 histories and identity/polarity diagnostics; explicit opt-in."
+ports = ["dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dn2-1.12" = "untested"
+
+[[object]]
+path = "build/stereo-proof-dsp.dko.json"
+sources = ["src/dsp/stereo-proof.s", "src/dsp/uy-proof.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[object.externs]
+_sp_stock_render = "dsp.voice.fn.first_order_process"
+_sp_stock_reset = "dsp.voice.fn.first_order_reset"
+_sp_engine_base = "dsp.voice.value.engine_base"
+_uy_stock_render = "dsp.voice.fn.uy_process"
+_uy_stock_reset = "dsp.voice.fn.uy_reset"
+_uy_engine_base = "dsp.voice.value.engine_base"
+
+[[op]]
+op = "hook"
+hook = "dsp.voice.hook.first_order_process.call"
+to = "_sp_render"
+
+[[op]]
+op = "hook"
+hook = "dsp.voice.hook.first_order_reset.call"
+to = "_sp_reset"
+
+[[claim]]
+resource = "dsp.voice.site.first_order_process.call"
+
+[[claim]]
+resource = "dsp.voice.site.first_order_reset.call"
+
+[[op]]
+op = "hook"
+hook = "dsp.voice.hook.uy_process.early.call"
+to = "_uy_render"
+
+[[claim]]
+resource = "dsp.voice.site.uy_process.early.call"
+
+[[op]]
+op = "hook"
+hook = "dsp.voice.hook.uy_process.late.call"
+to = "_uy_render"
+
+[[claim]]
+resource = "dsp.voice.site.uy_process.late.call"
+
+[[op]]
+op = "hook"
+hook = "dsp.voice.hook.uy_reset.call"
+to = "_uy_reset"
+
+[[claim]]
+resource = "dsp.voice.site.uy_reset.call"

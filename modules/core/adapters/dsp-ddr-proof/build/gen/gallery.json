@@ -1,0 +1,87 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            null,
+            {
+              "param": "dd_reverse",
+              "slot": 26
+            }
+          ],
+          "level": 10,
+          "name": "DDR proof",
+          "own_dsp": true,
+          "page": {
+            "name": "DDRPROOF",
+            "title": "DDR proof"
+          },
+          "position": null,
+          "short": "DDR",
+          "type": 11
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "dd_reverse",
+              "slot": 1
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "DDR proof",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "DDR",
+          "type": 11
+        }
+      },
+      "id": "ddr_proof",
+      "name": "DDR proof",
+      "short": "DDR"
+    }
+  ],
+  "module": "core/dsp-ddr-proof",
+  "params": {
+    "dn2": [
+      {
+        "default": 0,
+        "id": "dd_reverse",
+        "max": 256,
+        "min": 0,
+        "name": "Reverse",
+        "short": "REV",
+        "slot": 26,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 0,
+        "id": "dd_reverse",
+        "max": 256,
+        "min": 0,
+        "name": "Reverse",
+        "short": "REV",
+        "slot": 1,
+        "template": 204
+      }
+    ]
+  }
+}

@@ -7,6 +7,8 @@
 #define DK_MAX_VOICES 16
 #define DK_OK 0
 #define DK_DONE 1
+#define DK_STEREO 2
+#define DK_MACHINE_STEREO 256
 #define DK_P_PERCENT 0
 #define DK_P_BIPOLAR 1
 #define DK_P_ENUM 2
@@ -17,12 +19,16 @@
 #define DK_IN_VELOCITY 4
 #define DK_IN_BLOCK 8
 #define DK_IN_OUT 12
-#define DK_IN_BYTES 16
+#define DK_IN_TRACK 16
+#define DK_IN_OUT_R 20
+#define DK_IN_BYTES 24
 #define DK_IN_W_PITCH 0
 #define DK_IN_W_VELOCITY 1
 #define DK_IN_W_BLOCK 2
 #define DK_IN_W_OUT 3
-#define DK_IN_WORDS 4
+#define DK_IN_W_TRACK 4
+#define DK_IN_W_OUT_R 5
+#define DK_IN_WORDS 6
 #define DK_DESC_MAGIC 0
 #define DK_DESC_CONTRACT 4
 #define DK_DESC_N_PARAMS 8

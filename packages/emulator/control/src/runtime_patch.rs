@@ -39,7 +39,9 @@ pub enum Outcome {
 pub fn device_short(syx: &[u8]) -> Option<&'static str> {
     let first = patchkit::syx::messages(syx).ok()?.into_iter().next()?;
     let id = *first.get(1..first.len().checked_sub(1)?)?.get(3)?;
-    patchkit::syx::Device::from_id(id).ok().map(patchkit::syx::Device::short)
+    patchkit::syx::Device::from_id(id)
+        .ok()
+        .map(patchkit::syx::Device::short)
 }
 
 /// The repository root: `configured`, else `$DIGI_REPO_ROOT`, else the nearest directory from the working directory up that
@@ -47,10 +49,18 @@ pub fn device_short(syx: &[u8]) -> Option<&'static str> {
 pub fn find_root(configured: Option<&Path>) -> Result<PathBuf, String> {
     let ok = |d: &Path| d.join("devices/ports").is_dir() && d.join("modules").is_dir();
     if let Some(d) = configured {
-        return if ok(d) { Ok(d.to_path_buf()) } else { Err(no_root(&d.display().to_string())) };
+        return if ok(d) {
+            Ok(d.to_path_buf())
+        } else {
+            Err(no_root(&d.display().to_string()))
+        };
     }
     if let Some(d) = std::env::var_os("DIGI_REPO_ROOT").map(PathBuf::from) {
-        return if ok(&d) { Ok(d) } else { Err(no_root(&format!("DIGI_REPO_ROOT={}", d.display()))) };
+        return if ok(&d) {
+            Ok(d)
+        } else {
+            Err(no_root(&format!("DIGI_REPO_ROOT={}", d.display())))
+        };
     }
     let mut d = std::env::current_dir().unwrap_or_default();
     loop {
@@ -89,7 +99,9 @@ pub fn cache_key(
     part("stock", stock_sha256.as_bytes());
     part("set", set.as_bytes());
     for id in modules {
-        let m = lib.get(id).ok_or_else(|| format!("runtime: unknown module {id}"))?;
+        let m = lib
+            .get(id)
+            .ok_or_else(|| format!("runtime: unknown module {id}"))?;
         part(id, m.digest.as_bytes());
     }
     // The device files and the ports lower the modules' typed sections and place them.
@@ -109,7 +121,8 @@ pub fn cache_key(
 }
 
 fn cache_file(root: &Path, stock_sha256: &str, set: &str, key: &str) -> PathBuf {
-    root.join("out/runtime-cache").join(format!("{stock_sha256}-{set}-{key}.syx"))
+    root.join("out/runtime-cache")
+        .join(format!("{stock_sha256}-{set}-{key}.syx"))
 }
 
 /// Patch `stock` with the device's `set` (or take the cached result). The cache is written whole or not at all.
@@ -139,7 +152,10 @@ pub fn prepare(root: &Path, stock: &[u8], set: &str) -> Result<Outcome, String> 
         }))
     };
     if let Ok(syx) = std::fs::read(&file)
-        && verify::patch_record(&syx).ok().flatten().is_some_and(|r| r.base_sha256 == base_sha256)
+        && verify::patch_record(&syx)
+            .ok()
+            .flatten()
+            .is_some_and(|r| r.base_sha256 == base_sha256)
     {
         return patched(syx, modules, true);
     }
@@ -169,7 +185,12 @@ pub struct Reapplied {
 
 /// The image `ids` (a patch record's modules, in apply order) make from `stock` with the module objects as they are on disk now,
 /// and the plan that places them: what `dev.reload` compares with the running image. Nothing is cached or written.
-pub fn reapply(root: &Path, stock: &[u8], ids: &[String], needs: &[&str]) -> Result<Reapplied, String> {
+pub fn reapply(
+    root: &Path,
+    stock: &[u8],
+    ids: &[String],
+    needs: &[&str],
+) -> Result<Reapplied, String> {
     let e = |x: patchkit::Error| x.to_string();
     // objects are loaded for the modules of the record only; a content module of it is built when stale
     let lib = Library::scan_repo_for(root, false, Some(ids)).map_err(e)?;
@@ -177,10 +198,19 @@ pub fn reapply(root: &Path, stock: &[u8], ids: &[String], needs: &[&str]) -> Res
     let requirers = lib
         .modules
         .iter()
-        .filter(|m| m.manifest.module.requires.iter().any(|r| needs.contains(&r.as_str())))
+        .filter(|m| {
+            m.manifest
+                .module
+                .requires
+                .iter()
+                .any(|r| needs.contains(&r.as_str()))
+        })
         .map(|m| m.id().to_string())
         .collect();
-    Ok(Reapplied { applied: apply::apply(stock, &reg, &lib, ids).map_err(e)?, requirers })
+    Ok(Reapplied {
+        applied: apply::apply(stock, &reg, &lib, ids).map_err(e)?,
+        requirers,
+    })
 }
 
 /// One module the build wrote objects for.
@@ -210,17 +240,29 @@ pub fn build_modules(root: &Path, ids: &[String]) -> Result<BuildSummary, String
 
 fn build_dirs(root: &Path, dirs: &[(String, PathBuf)]) -> Result<BuildSummary, String> {
     use patchkit::build::{BuildOptions, Status};
-    let opts = BuildOptions { root: root.to_path_buf(), ..Default::default() };
+    let opts = BuildOptions {
+        root: root.to_path_buf(),
+        ..Default::default()
+    };
     let mut sum = BuildSummary::default();
     for (id, dir) in dirs {
         let started = std::time::Instant::now();
-        let report = patchkit::build::build_module(dir, &opts).map_err(|e| format!("build of {id} failed:\n{e}"))?;
-        let objects: Vec<PathBuf> =
-            report.objects.iter().filter(|o| o.status == Status::Built).map(|o| o.path.clone()).collect();
+        let report = patchkit::build::build_module(dir, &opts)
+            .map_err(|e| format!("build of {id} failed:\n{e}"))?;
+        let objects: Vec<PathBuf> = report
+            .objects
+            .iter()
+            .filter(|o| o.status == Status::Built)
+            .map(|o| o.path.clone())
+            .collect();
         if objects.is_empty() {
             sum.skipped.push(id.clone());
         } else {
-            sum.built.push(BuiltModule { id: id.clone(), objects, ms: started.elapsed().as_secs_f64() * 1e3 });
+            sum.built.push(BuiltModule {
+                id: id.clone(),
+                objects,
+                ms: started.elapsed().as_secs_f64() * 1e3,
+            });
         }
     }
     Ok(sum)
@@ -243,7 +285,10 @@ mod tests {
     }
 
     fn lib_and_modules() -> (Library, Vec<String>) {
-        let roots = devdata::by_short("dt2").unwrap().patch_set("emulator").unwrap();
+        let roots = devdata::by_short("dt2")
+            .unwrap()
+            .patch_set("emulator")
+            .unwrap();
         let lib = Library::scan_repo_for(&root(), false, Some(roots)).unwrap();
         let (modules, _) = lib.with_requires(roots).unwrap();
         (lib, modules)
@@ -252,13 +297,19 @@ mod tests {
     #[test]
     fn the_key_follows_the_stock_image_the_set_and_the_modules() {
         let (mut lib, modules) = lib_and_modules();
-        let key = |lib: &Library, stock: &str, set: &str| cache_key(&root(), lib, &modules, stock, set).unwrap();
+        let key = |lib: &Library, stock: &str, set: &str| {
+            cache_key(&root(), lib, &modules, stock, set).unwrap()
+        };
         let k = key(&lib, "aa", "emulator");
         assert_eq!(k, key(&lib, "aa", "emulator"));
         assert_ne!(k, key(&lib, "bb", "emulator"), "stock image");
         assert_ne!(k, key(&lib, "aa", "device"), "set name");
         // One changed byte of a module (its digest covers manifest and objects) is another key.
-        let m = lib.modules.iter_mut().find(|m| m.id() == "core/health").unwrap();
+        let m = lib
+            .modules
+            .iter_mut()
+            .find(|m| m.id() == "core/health")
+            .unwrap();
         m.digest.push('x');
         assert_ne!(k, key(&lib, "aa", "emulator"), "module bytes");
     }
@@ -267,7 +318,10 @@ mod tests {
     fn the_device_comes_from_the_framing_message() {
         assert_eq!(device_short(b"not a syx"), None);
         assert_eq!(device_short(&[]), None);
-        for (file, short) in [("Digitakt_II_OS1.17.syx", "dt2"), ("Digitone_II_OS1.12.syx", "dn2")] {
+        for (file, short) in [
+            ("Digitakt_II_OS1.17.syx", "dt2"),
+            ("Digitone_II_OS1.12.syx", "dn2"),
+        ] {
             match stock(file) {
                 Some(syx) => assert_eq!(device_short(&syx), Some(short), "{file}"),
                 None => eprintln!("skipped: firmware/{file} is absent"),
@@ -277,7 +331,10 @@ mod tests {
 
     #[test]
     fn a_reload_build_writes_stale_objects_once_and_reports_c_errors() {
-        if patchkit::build::toolchain::Env::new(&root()).m68k("gcc").is_err() {
+        if patchkit::build::toolchain::Env::new(&root())
+            .m68k("gcc")
+            .is_err()
+        {
             eprintln!("SKIP: the m68k-elf toolchain is not installed");
             return;
         }
@@ -290,7 +347,11 @@ mod tests {
             format!("[module]\nid = \"{id}\"\ncategory = \"core\"\n\n[[object]]\npath = \"build/t.dko.json\"\nsources = [\"src/t.c\"]\n"),
         )
         .unwrap();
-        std::fs::write(dir.join("src/t.c"), "extern int ext(int);\nint twice(int x) { return ext(x) + ext(x); }\n").unwrap();
+        std::fs::write(
+            dir.join("src/t.c"),
+            "extern int ext(int);\nint twice(int x) { return ext(x) + ext(x); }\n",
+        )
+        .unwrap();
         let dirs = [(id.clone(), dir.clone())];
         let first = build_dirs(&root(), &dirs).unwrap();
         assert_eq!(first.built.len(), 1);
@@ -302,8 +363,14 @@ mod tests {
         let good = std::fs::read_to_string(dir.join("build/t.dko.json")).unwrap();
         std::fs::write(dir.join("src/t.c"), "int twice(int x) { return x +; }\n").unwrap();
         let err = build_dirs(&root(), &dirs).unwrap_err();
-        assert!(err.starts_with(&format!("build of {id} failed:")) && err.contains("t.c"), "{err}");
-        assert_eq!(std::fs::read_to_string(dir.join("build/t.dko.json")).unwrap(), good);
+        assert!(
+            err.starts_with(&format!("build of {id} failed:")) && err.contains("t.c"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("build/t.dko.json")).unwrap(),
+            good
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -319,28 +386,49 @@ mod tests {
         )
         .unwrap();
         let src = dir.join("src/dsp/d.s");
-        std::fs::write(&src, ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    R0 = 7;\n    RTS;\n").unwrap();
+        std::fs::write(
+            &src,
+            ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    R0 = 7;\n    RTS;\n",
+        )
+        .unwrap();
         let dirs = [(id.clone(), dir.clone())];
         let first = build_dirs(&root(), &dirs).unwrap();
         assert_eq!(first.built.len(), 1);
         assert_eq!(first.built[0].objects, [dir.join("build/d.dko.json")]);
         let text = std::fs::read_to_string(dir.join("build/d.dko.json")).unwrap();
-        assert!(text.contains("\"arch\": \"sharc\"") && text.contains("selache_rev"), "{text}");
+        assert!(
+            text.contains("\"arch\": \"sharc\"") && text.contains("selache_rev"),
+            "{text}"
+        );
         // current: skipped, not built again
         let second = build_dirs(&root(), &dirs).unwrap();
         assert!(second.built.is_empty() && second.skipped == [id.clone()]);
         // an instruction the ISA excludes is refused with the check's text; the old object stays
-        std::fs::write(&src, ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    DM(15, I4) = I0;\n    RTS;\n").unwrap();
+        std::fs::write(
+            &src,
+            ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    DM(15, I4) = I0;\n    RTS;\n",
+        )
+        .unwrap();
         let err = build_dirs(&root(), &dirs).unwrap_err();
-        assert!(err.starts_with(&format!("build of {id} failed:")) && err.contains("the ISA does not allow"), "{err}");
-        assert_eq!(std::fs::read_to_string(dir.join("build/d.dko.json")).unwrap(), text);
+        assert!(
+            err.starts_with(&format!("build of {id} failed:"))
+                && err.contains("the ISA does not allow"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("build/d.dko.json")).unwrap(),
+            text
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_missing_root_says_what_to_do() {
         let err = find_root(Some(Path::new("/nonexistent-digikit-root"))).unwrap_err();
-        assert!(err.contains("DIGI_REPO_ROOT") && err.contains("no module library"), "{err}");
+        assert!(
+            err.contains("DIGI_REPO_ROOT") && err.contains("no module library"),
+            "{err}"
+        );
     }
 
     /// A stock image of the repository's firmware directory, or `None` (the test is skipped without firmware).
@@ -356,7 +444,8 @@ mod tests {
             return;
         };
         // A scratch root with the repository's modules and devices linked in, so the cache lands in a temp directory.
-        let dir = std::env::temp_dir().join(format!("digikit-runtime-patch-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("digikit-runtime-patch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for d in ["modules", "devices", "tests"] {
@@ -367,7 +456,7 @@ mod tests {
             Outcome::AlreadyPatched => panic!("stock has no patch record"),
         };
         assert!(!first.cache_hit);
-        assert_eq!(first.modules.len(), 15); // the Digitakt II emulator set: 12 and core/dynfx, core/fx, core/fxpages
+        assert_eq!(first.modules.len(), 16); // the Digitakt II emulator set: 12 and core/dynfx, core/fx, core/fxpages, core/sample-pool
         assert!(first.cache_file.is_file());
         let record = verify::patch_record(&first.syx).unwrap().unwrap();
         assert_eq!(record.base_sha256, first.base_sha256);
@@ -378,7 +467,10 @@ mod tests {
         assert!(again.cache_hit);
         assert_eq!(again.syx, first.syx);
         // The patched image goes on as it is.
-        assert!(matches!(prepare(&dir, &first.syx, "emulator").unwrap(), Outcome::AlreadyPatched));
+        assert!(matches!(
+            prepare(&dir, &first.syx, "emulator").unwrap(),
+            Outcome::AlreadyPatched
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

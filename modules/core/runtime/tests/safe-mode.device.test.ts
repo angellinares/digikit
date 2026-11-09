@@ -1,14 +1,17 @@
 import { be32 } from '@digi/dk-session';
-import type { Device } from '@digi/test-support';
+import { button, type Device } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import { bootInfo, CMD as MAILBOX, currentRecord, encodeRecord, postRaw } from '@digi/regression/runtime/card-kit.ts';
+import { bootInfo, bootInfoLoaded, CMD as MAILBOX, currentRecord, encodeRecord, postRaw } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 import { CARD_TIMEOUT, settleHang } from '@digi/regression/runtime/debug-kit.ts';
 import { rpc } from '@digi/regression/runtime/fx-live.ts';
+import { drainInputs } from '@digi/regression/runtime/fx-session.ts';
+import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { waitEmulatedFrames } from '@digi/regression/runtime/waits.ts';
 
 /**
- * Safe mode and power cuts (Python `run_safe`, `run_safe_late`, `run_cut` of pk_digikit_scen.py; scenarios safe-fault, safe-late-fault and cut-selection, all full
+ * Safe mode and power cuts (the Python scenarios, deleted: safe-fault, safe-late-fault and cut-selection, all full
  * tier): the boot counter, the safe-once flag, a stable period that clears the counter, and the card states a power cut can leave between the two
  * selection record copies. A boot is one card image; the next boot runs on the card the last one left.
  */
@@ -16,12 +19,13 @@ import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 type BootInfo = Awaited<ReturnType<typeof bootInfo>>;
 const E_SAFE_MODE = -44;
 const SAFE_COUNTER = 1;
+const SAFE_KEY = 2;
 const SAFE_FLAG = 3;
-/** `safe-fault.toml`: the module that follows `fault` on the card of the safe-once flag. */
+/** Scenario safe-fault: the module that follows `fault` on the card of the safe-once flag. */
 const FLAG_MODULES: Record<Device, string[]> = { dt2: ['test/sine'], dn2: ['test/dyn-dn2'] };
 /** `cut-selection.toml`. */
 const CUT_MODULES: Record<Device, string[]> = { dt2: ['test/sine'], dn2: ['test/dyn-dn2', 'test/sine'] };
-/** `safe-late-fault.toml`: the stable period is shortened to 9,000 blocks; the module hangs the UI task 8,000 or 10,000 blocks in. */
+/** Scenario safe-late-fault: the stable period is shortened to 9,000 blocks; the module hangs the UI task 8,000 or 10,000 blocks in. */
 const LATE = { stable: 9000, early: 8000, late: 10000 };
 /** `cut-selection.toml` cases: the copies A and B, and what the boot uses. */
 const CUT_CASES = [
@@ -31,14 +35,14 @@ const CUT_CASES = [
   { a: 'torn', b: 'torn', want: { loaded: 0, seq: 0, copy: 0 } },
 ] as const;
 
-const OPEN = 'open: fails in the full tier, see docs/handovers/HANDOVER-2026-11-02-scenario-migration.md';
 
-cardRigs('safe mode', { full: true, skip: { dt2: OPEN }, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
+cardRigs('safe mode', { full: true, relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
   test(
     'a module that resets the machine in its init: two boots never reach the UI loop, the third boots in safe mode',
     async () => {
       const fault = h.mod('test/dyn-fault', 'fault');
-      await h.boot(await h.card({ modules: [fault], selection: [fault.name] }));
+      // Three boots of the fault card run inside this one reload; the hang guard covers all three.
+      await h.boot(await h.card({ modules: [fault], selection: [fault.name] }), { timeoutMs: 600_000 });
       const info = await h.ready(true);
       expect(info, 'the third boot is safe mode (counter 2)').toMatchObject({
         safe: 1,
@@ -47,6 +51,7 @@ cardRigs('safe mode', { full: true, skip: { dt2: OPEN }, roots: RT, symbols: CAR
       });
       expect(info.loaded, 'safe mode loaded no module').toBe(0);
       expect(info.allResults[0], 'and reported it').toBe(E_SAFE_MODE);
+      expect((await introNow(h.session)).equals(safeFrame('counter')), 'the intro shows the 2 FAILED BOOTS frame').toBe(true);
       const rec = currentRecord(await h.records());
       expect(rec?.counter, 'the UI loop ran: counter 0').toBe(0);
       expect(rec?.paths, 'selection kept').toEqual([fault.name]);
@@ -125,9 +130,57 @@ cardRigs('safe mode', { full: true, skip: { dt2: OPEN }, roots: RT, symbols: CAR
   }
 });
 
+// REC (the safe-mode key) is queued before the cold boot: held, or pressed and released.
+for (const held of [true, false]) {
+  cardRigs(
+    `cold boot with REC ${held ? 'held' : 'released'}`,
+    {
+      roots: RT, // default tier: these two cases run in the normal gate
+      symbols: CARD_SYMBOLS,
+      startEmpty: true,
+      initial: () => ({ modules: ['test/c-demo'], selection: ['modules/c-demo.dkm'] }),
+      initialButtons: held
+        ? [{ code: button('RECORD'), down: true }]
+        : [
+            { code: button('RECORD'), down: true },
+            { code: button('RECORD'), down: false },
+          ],
+    },
+    (h) => {
+      test(
+        held ? 'REC held: safe mode (key), no module loaded' : 'REC released: no safe mode, the module loads',
+        async () => {
+          await expect.poll(async () => (await bootInfo(h.session, h.plan)).uiReached, { timeout: 30_000 }).toBe(1);
+          // Check the first decision, not a later boot: a wrong safe result must fail here.
+          const first = await bootInfo(h.session, h.plan);
+          expect(first).toMatchObject({ safe: held ? 1 : 0, reason: held ? SAFE_KEY : 0, count: 1 });
+          // the safe-mode screen replaces the stock intro in a safe boot only (its bytes are the host test's fixture)
+          const shown = await introNow(h.session);
+          expect(shown.equals(safeFrame('key')), held ? 'REC held: the SAFE MODE / REC HELD frame' : 'REC released: not the safe-mode frame').toBe(held);
+          expect(shown.equals(safeFrame('counter')), 'never the counter frame').toBe(false);
+          const info = held ? first : await bootInfoLoaded(h.session, h.plan);
+          expect(info).toMatchObject({ loaded: held ? 0 : 1 });
+          await rpc(h.session, 'run.mode', { mode: 'free' });
+          try {
+            if (held) await rpc(h.session, 'input.button', { code: button('RECORD'), down: false });
+            await waitEmulatedFrames(h.session, 150);
+          } finally {
+            try {
+              await drainInputs(h.session);
+            } finally {
+              await rpc(h.session, 'run.mode', { mode: 'paused' });
+            }
+          }
+        },
+        CARD_TIMEOUT,
+      );
+    },
+  );
+}
+
 cardRigs(
   'power cut between the selection record copies',
-  { full: true, skip: { dn2: OPEN }, roots: RT, symbols: CARD_SYMBOLS },
+  { full: true, roots: RT, symbols: CARD_SYMBOLS },
   (h) => {
     const modules = () => CUT_MODULES[h.device].map((id, i) => h.mod(id, `m${i}`));
 
@@ -143,8 +196,8 @@ cardRigs(
           const named = { new: fresh, old: encodeRecord({ paths: [], seq: 1 }), torn };
           const { session } = await h.boot(await h.card({ modules: mods, recs: [named[a], named[b]] }));
           await h.ready();
-          const info = await bootInfo(session, h.plan);
-          expect(info, `loaded ${info.loaded} seq ${info.seq} copy ${info.copy}`).toMatchObject({
+          const info = await bootInfoLoaded(session, h.plan);
+          expect(info, `loaded ${info.loaded} of ${info.count} (results ${info.results.join(",")}) seq ${info.seq} copy ${info.copy}`).toMatchObject({
             loaded: want.loaded === 'all' ? mods.length : want.loaded,
             seq: want.seq,
             copy: want.copy,
@@ -175,7 +228,7 @@ cardRigs(
         await dk.restart();
         await dk.waitForBoot();
         await h.ready();
-        expect(await bootInfo(session, h.plan), 'the restart loads the new copy').toMatchObject({
+        expect(await bootInfoLoaded(session, h.plan), 'the restart loads the new copy').toMatchObject({
           loaded: mods.length,
           copy: 0,
         });

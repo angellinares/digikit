@@ -16,7 +16,9 @@ import {
 import { expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
-import { daemonBinary, FIRMWARE } from './devices.ts';
+import { plusdriveBinary } from './card-kit.ts';
+import { cachedCard, cardKey, fileSha } from './card-cache.ts';
+import { daemonBinary, FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { deviceProfile } from './device-data.ts';
@@ -43,7 +45,7 @@ export function slotsFor(device: Device): number {
   return deviceProfile(device).limits.fx_slots;
 }
 
-/** Native plusdrive owns all card/store/selection encoding. Each image has its own overlay-free directory. */
+/** Native plusdrive owns all card/store/selection encoding. The cards are built once into the card cache and reused by their inputs. */
 async function baseline(
   session: Session,
   plan: RuntimePlan,
@@ -51,34 +53,38 @@ async function baseline(
   artifacts: string,
 ): Promise<RuntimeBaseline> {
   const tag = wet ? 'wet' : 'dry';
-  const directory = path.join(session.runDir, tag);
-  const seed = path.join(directory, 'seed');
-  const modules = path.join(seed, 'digikit', 'modules');
-  fs.mkdirSync(modules, { recursive: true });
-  for (const id of [SINE, GAIN]) {
-    let artifact: string;
-    try {
-      artifact = moduleArtifact(session.options.device, id);
-    } catch (error) {
-      throw new Error(`FX reuse needs prepared ${id} and the prebuilt native plusdrive card builder; ${String(error)}`);
-    }
-    fs.copyFileSync(artifact, path.join(modules, `${id.split('/')[1]}.dkm`));
-  }
-  fs.writeFileSync(
-    path.join(seed, 'digikit', 'selection.txt'),
-    ['modules/sine.dkm', ...(wet ? ['modules/dyn-fx-gain.dkm'] : [])].join('\n') + '\n',
-  );
-  const binary = path.join(root, 'out/native/target/nogen/release/plusdrive');
+  const binary = plusdriveBinary();
   if (!fs.existsSync(binary))
     throw new Error(
       `prepare prebuilt plusdrive separately: ${binary}; this fixture also needs prepared sine and gain DKMs`,
     );
-  const cardImage = path.join(directory, 'card.img');
-  const built = await exec(binary, ['build', seed, '-o', cardImage, '--device', session.options.device], {
-    cwd: root,
-    timeout: 30_000,
+  const device = session.options.device;
+  const files = [SINE, GAIN].map((id) => {
+    try {
+      return { name: `${id.split('/')[1]}.dkm`, file: moduleArtifact(device, id) };
+    } catch (error) {
+      throw new Error(`FX reuse needs prepared ${id} and the prebuilt native plusdrive card builder; ${String(error)}`);
+    }
   });
-  record(artifacts, `card-${tag}-${path.basename(session.runDir)}`, { stdout: built.stdout, stderr: built.stderr });
+  const selection = ['modules/sine.dkm', ...(wet ? ['modules/dyn-fx-gain.dkm'] : [])];
+  const key = cardKey(device, {
+    kind: 'fx-live-reuse',
+    modules: files.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
+    selection,
+  });
+  const cardImage = await cachedCard(key, async (work) => {
+    // The seed stays in the card dir: tests read the built modules from it.
+    const seed = path.join(work, 'card', 'seed');
+    const modules = path.join(seed, 'digikit', 'modules');
+    fs.mkdirSync(modules, { recursive: true });
+    for (const f of files) fs.copyFileSync(f.file, path.join(modules, f.name));
+    fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), selection.join('\n') + '\n');
+    const out = path.join(work, 'card', 'card.img');
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    const built = await exec(binary, ['build', seed, '-o', out, '--device', device], { cwd: root, timeout: 30_000 });
+    record(artifacts, `card-${tag}`, { stdout: built.stdout, stderr: built.stderr });
+    return out;
+  });
   const boot = planSymbol(plan, 'DKRT_BOOT');
   return {
     cardImage,
@@ -279,7 +285,8 @@ export async function compare(
   expect(metrics.rms_db).not.toBeNull();
   expect(Math.abs(metrics.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
   expect(metrics.shift).not.toBeNull();
-  expect(Math.abs(metrics.shift!)).toBeLessThanOrEqual(128);
+  // hook_ab counts interleaved stereo samples; the onset tolerance is 128 audio frames.
+  expect(Math.abs(metrics.shift!) / 2).toBeLessThanOrEqual(128);
   if (identical) expect(metrics.identical, 'dry PCM is bit-identical from onset').toBe(true);
 }
 
@@ -413,7 +420,7 @@ export async function inspect(
     expect(effect.contracts[1]).toEqual([0, 0]);
     expect(effect.rows).toBe(0);
     const base = planSymbol(plan, '_dl_area') + effect.dsp_off;
-    const artifact = path.join(path.dirname(session.cardPath!), 'seed/digikit/modules/dyn-fx-gain.dkm');
+    const artifact = moduleArtifact(session.options.device, GAIN); // the module that the card was built from
     oracle = await fxExpectations(artifact, base);
     record(artifacts, `${tag}-expected-gain`, oracle);
     expect(effect.dsp_len, 'MODULES range agrees with independently inferred needs').toBe(oracle.needs.DSP_AREA);
@@ -499,6 +506,7 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
+      runDirClaim: () => claimRunDir(device),
       env: async () => {
         artifacts = fs.mkdtempSync(path.join(os.tmpdir(), `digi-fx-reuse-${device}-`));
         console.info('FX safety artifacts:', artifacts);
@@ -523,6 +531,7 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
         return config.initial === 'wet' ? wet : dry;
       },
       finishCase: (runtime) => collectEvidence(runtime, `case-${++closed}`),
+      tempDirs: () => [artifacts],
       afterClose: async () => {
         const report = runtimeSafety(device, watchOutput, overlays, epochs.size);
         record(artifacts, 'lifetime-safety', report);

@@ -47,3 +47,6 @@ dkrt-fit = { path = "../../modules/core/runtime/fit" }
 midir = "0.11"
 plusdrive-format = { path = "../emulator/plusdrive" }
 emmc-card = { path = "../emulator/card" }
+
+[dev-dependencies]
+machine = { path = "../emulator/machine" }

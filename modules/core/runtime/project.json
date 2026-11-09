@@ -1,87 +1,27 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "core/runtime",
-  "metadata": {
-    "runtimeAcceptance": [
-      {
-        "files": ["tests/modules-capacity.device.test.ts"],
-        "modules": ["digikit/debug", "digikit/probe", "digikit/remote", "test/dyn-params"]
-      },
-      {
-        "files": ["tests/fault-trace.device.test.ts"],
-        "modules": [
-          "digikit/debug",
-          "test/dyn-crash",
-          "test/dyn-dsp-hang",
-          "test/dyn-fx-gain-send",
-          "test/dyn-fx-hang",
-          "test/dyn-fx-nan"
-        ]
-      },
-      {
-        "files": ["tests/transfer-live.device.test.ts"],
-        "modules": ["digikit/debug", "test/sine"],
-        "sources": ["tools/device/dktransfer.py"]
-      },
-      {
-        "files": ["tests/samples-live.device.test.ts"],
-        "modules": [],
-        "sources": [
-          "packages/dk-session/src/dksample.ts",
-          "packages/dk-session/src/rpcfiles.ts",
-          "packages/dk-session/src/samples.ts"
-        ],
-        "plusdrive": true
-      },
-      {
-        "files": ["tests/samples-store-live.device.test.ts"],
-        "modules": [],
-        "sources": [
-          "packages/dk-session/src/dksample.ts",
-          "packages/dk-session/src/rpcfiles.ts",
-          "packages/dk-session/src/samples.ts"
-        ]
-      },
-      {
-        "files": ["tests/service-commands.device.test.ts"],
-        "modules": ["test/svc-echo"]
-      },
-      {
-        "files": ["tests/upload.device.test.ts"],
-        "modules": [],
-        "plusdrive": true
-      },
-      {
-        "files": ["tests/upload-faults.device.test.ts"],
-        "modules": ["test/sine"],
-        "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
-        "plusdrive": true
-      },
-      {
-        "files": ["tests/settings.device.test.ts"],
-        "modules": ["test/c-demo"],
-        "plusdrive": true
-      },
-      {
-        "files": ["tests/card-safety.device.test.ts"],
-        "modules": ["test/c-demo"],
-        "plusdrive": true
-      },
-      {
-        "files": ["tests/safe-mode.device.test.ts"],
-        "modules": ["test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine"],
-        "plusdrive": true
-      },
-      {
-        "files": ["tests/crash-capture.device.test.ts"],
-        "modules": ["digikit/debug", "test/dyn-crash"],
-        "plusdrive": true
-      },
-      {
-        "files": ["tests/debug-guard.device.test.ts"],
-        "modules": ["digikit/debug", "test/dyn-guard-nan", "test/sine"],
-        "plusdrive": true
+  "implicitDependencies": ["dkrt-sdk", "dkrt-fit", "dkneeds", "dkfw"],
+  "targets": {
+    "rust-tests": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "{projectRoot}/src/rs/**/*",
+        {
+          "input": "production",
+          "projects": ["dkrt-sdk", "dkrt-fit", "dkneeds", "dkfw"]
+        },
+        "{workspaceRoot}/.cargo/**/*",
+        "{workspaceRoot}/rust-toolchain*",
+        "{workspaceRoot}/mise.toml",
+        "{workspaceRoot}/tools/nx/rust-env.mjs"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "node tools/nx/rust-env.mjs --variant host-dkrt -- cargo test --manifest-path modules/core/runtime/src/rs/Cargo.toml --lib --offline --locked",
+        "cwd": "."
       }
-    ]
+    }
   }
 }

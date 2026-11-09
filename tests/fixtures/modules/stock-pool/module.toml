@@ -1,0 +1,20 @@
+[module]
+id = "test/stock-pool"
+version = "0.1.0"
+name = "Stock pool borrow"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: calls the stock DT2 sample loader, reload and purge directly, from the command task or the sample loader worker"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+
+[[object]]
+path = "build/stock-pool.dko.json"
+sources = ["src/c/stock_pool.c"]
+place = "cf.expansion"
+devices = ["dt2"]

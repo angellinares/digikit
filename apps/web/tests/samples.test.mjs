@@ -1,13 +1,14 @@
 // The samples API (samples.ts) over both backends with fake transports: the backend follows the profile's `[storage] samples` value, and the same calls give the same
 // shapes on a fake +Drive (stock MidiRpc, fakedrive.mjs) and a fake digikit store session.
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { DkError, DkSession } from '@digi/dk-session';
+import { DkError, DkSession, fileHashHex } from '@digi/dk-session';
 import { VERIFY_PIECE, openSamples } from '@digi/dk-session/samples';
 import { FakeDrive, hashOf } from './fakedrive.mjs';
 
-const sha = (b) => createHash('sha256').update(b).digest('hex');
+const sha = fileHashHex;
+const hex8 = (n) => (n >>> 0).toString(16).padStart(8, '0');
+const concat = (a, b) => Uint8Array.from([...a, ...b]);
 const ZERO = '0'.repeat(64);
 const FOLDERS = 1 << 10;
 const CAPACITY = 1 << 6;
@@ -29,8 +30,8 @@ class FakeStore {
   async list(prefix) {
     this.calls.push(prefix === undefined ? 'list' : `list ${prefix}`);
     const rows = [
-      ...[...this.files].map(([path, b]) => ({ path, size: b.length, sha256: sha(b) })),
-      ...[...this.dirs].map((path) => ({ path, size: 0, sha256: ZERO })),
+      ...[...this.files].map(([path, b]) => ({ path, size: b.length, hash: sha(b) })),
+      ...[...this.dirs].map((path) => ({ path, size: 0, hash: ZERO })),
     ];
     return rows.filter((e) => !prefix || e.path.startsWith(prefix));
   }
@@ -123,9 +124,16 @@ for (const kind of ['stock-rpc', 'digikit']) {
     assert.equal(seen.at(-1)[0], seen.at(-1)[1]);
     assert.ok(seen.length >= 3, 'several chunks');
     // the size the device reports: without the trailer on the +Drive, the stored file on the store
-    assert.deepEqual(await dev.list('drums'), [
-      { name: 'kick', kind: 'file', size: kind === 'stock-rpc' ? n : n + 16 },
-    ]);
+    const listed = await dev.list('drums');
+    assert.deepEqual(
+      listed.map(({ hash: _hash, ...e }) => e),
+      [{ name: 'kick', kind: 'file', size: kind === 'stock-rpc' ? n : n + 16 }],
+    );
+    assert.match(listed[0].hash, /^[0-9a-f]+$/, 'a file of the listing carries the device hash');
+    assert.equal(
+      listed[0].hash,
+      kind === 'stock-rpc' ? hex8(hashOf(concat(f.bytes, new Uint8Array(16)))) : sha(f.stored),
+    );
     assert.deepEqual(
       (await dev.list('')).filter((e) => e.name === 'drums'),
       [{ name: 'drums', kind: 'folder', size: 0 }],
@@ -137,7 +145,7 @@ for (const kind of ['stock-rpc', 'digikit']) {
 
     const ok = await dev.verify('drums', f);
     assert.equal(ok.ok, true);
-    assert.equal(ok.message, kind === 'stock-rpc' ? 'device content hash matches' : 'device sha256 matches');
+    assert.equal(ok.message, kind === 'stock-rpc' ? 'device content hash matches' : 'device hash matches');
     assert.equal(ok.device, ok.host);
     assert.equal(ok.sent, kind === 'stock-rpc' ? n : n + 16);
     assert.equal(ok.mismatchAt, null);
@@ -206,7 +214,10 @@ test('digikit without the FOLDERS capability: no mkdir, the host filters a full 
   await assert.rejects(dev.mkdir('x'), /no folder entries/);
   await dev.put('drums', prepared('a', 20));
   store.files.set('modules/m.dkm', bytes(5));
-  assert.deepEqual(await dev.list('drums'), [{ name: 'a', kind: 'file', size: 36 }]);
+  assert.deepEqual(
+    (await dev.list('drums')).map(({ hash: _hash, ...e }) => e),
+    [{ name: 'a', kind: 'file', size: 36 }],
+  );
   assert.ok(store.calls.includes('list') && !store.calls.some((c) => c.startsWith('list samples')));
 });
 
@@ -235,3 +246,129 @@ test('digikit: a large file is verified in ranges and reports where the first on
   const longer = await dev.verify('', f);
   assert.deepEqual([longer.ok, longer.message], [false, 'the device file has another size']);
 });
+
+// ---- removeTree: a folder with everything in it --------------------------------------------------------------------------------
+
+/** A device with `Foo/a`, `Foo/sub/deep/b`, `Foo/sub/c` and the sibling `Foobar/x` (the same prefix without the slash). */
+async function tree(kind) {
+  const h = session();
+  const dev = openSamples(kind, { session: h.s, hashOf });
+  for (const [folder, name] of [
+    ['Foo', 'a'],
+    ['Foo/sub/deep', 'b'],
+    ['Foo/sub', 'c'],
+    ['Foobar', 'x'],
+  ])
+    await dev.put(folder, prepared(name, 300), () => {});
+  return { ...h, dev };
+}
+const names = async (dev, folder) => (await dev.list(folder)).map((e) => e.name).sort();
+
+for (const kind of ['stock-rpc', 'digikit']) {
+  test(`${kind}: removeTree removes the nested files and the folder, and keeps a sibling with the same prefix`, async () => {
+    const { dev } = await tree(kind);
+    const seen = [];
+    const r = await dev.removeTree('Foo', { onProgress: (d, t) => seen.push([d, t]) });
+    assert.deepEqual(r, { removed: 3, total: 3, stopped: false });
+    assert.deepEqual(seen, [
+      [0, 3],
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ]);
+    assert.deepEqual(
+      (await names(dev, '')).filter((n) => n.startsWith('Foo')),
+      ['Foobar'],
+    );
+    assert.deepEqual(await names(dev, 'Foobar'), ['x']);
+  });
+
+  test(`${kind}: removeTree of an empty folder, and not of the top`, async () => {
+    const { dev } = await tree(kind);
+    if (kind === 'digikit') {
+      await dev.mkdir('Empty');
+      assert.ok((await names(dev, '')).includes('Empty'));
+    } else await dev.mkdir('Empty');
+    assert.deepEqual(await dev.removeTree('Empty'), { removed: 0, total: 0, stopped: false });
+    assert.ok(!(await names(dev, '')).includes('Empty'));
+    await assert.rejects(dev.removeTree(''), /not the top/);
+    await assert.rejects(dev.removeTree('/'), /not the top/);
+  });
+
+  test(`${kind}: removeTree stops between two files when asked, and a second call finishes`, async () => {
+    const { dev } = await tree(kind);
+    let done = 0;
+    const r = await dev.removeTree('Foo', { onProgress: (d) => (done = d), shouldStop: () => done >= 1 });
+    assert.deepEqual(r, { removed: 1, total: 3, stopped: true });
+    assert.equal((await dev.removeTree('Foo')).total, 2);
+    assert.deepEqual(
+      (await names(dev, '')).filter((n) => n.startsWith('Foo')),
+      ['Foobar'],
+    );
+  });
+}
+
+test('digikit: removeTree removes a folder entry inside, tolerates E_NOFILE on the implied folder, and names a failing file', async () => {
+  const { dev, store } = await tree('digikit');
+  await dev.mkdir('Foo/empty');
+  store.dirs.add('samples/Foo'); // the folder has an entry of its own, too
+  const r = await dev.removeTree('Foo');
+  assert.equal(r.total, 3);
+  assert.ok(![...store.files.keys(), ...store.dirs].some((p) => p.startsWith('samples/Foo/') || p === 'samples/Foo'));
+  assert.ok(store.files.has('samples/Foobar/x'));
+  // only implied folder: the delete of `samples/Foo` itself says E_NOFILE and counts as gone
+  const again = await tree('digikit');
+  assert.equal((await again.dev.removeTree('Foo')).removed, 3);
+  // a file that fails: the message names it, and what was removed before stays removed
+  const bad = await tree('digikit');
+  const del = bad.store.delete.bind(bad.store);
+  bad.store.delete = async (path) => {
+    if (path.endsWith('/c')) throw new DkError({ error: 'rm: E_IO', kind: 'device', status: 'E_IO' });
+    return del(path);
+  };
+  await assert.rejects(bad.dev.removeTree('Foo'), /samples\/Foo\/sub\/c: rm: E_IO/);
+  assert.ok(bad.store.files.has('samples/Foo/sub/c'));
+  assert.ok(bad.store.files.has('samples/Foobar/x'));
+});
+
+test('stock-rpc: removeTree names the file the +Drive refuses, and a cancelled request passes as it is', async () => {
+  const { dev, drive } = await tree('stock-rpc');
+  // the file `/Foo/sub/c` vanishes after the listing: DeleteFile answers no
+  await assert.rejects(
+    dev.removeTree('Foo', { onProgress: (d) => d === 1 && drive.files.delete('/Foo/sub/c') }),
+    /\/Foo\/sub\/c: remove \/Foo\/sub\/c/,
+  );
+  assert.ok(drive.files.has('/Foobar/x'));
+  const cancelled = Object.assign(new Error('Cancelled.'), { kind: 'cancelled' });
+  const { dev: d2, s } = await tree('stock-rpc');
+  const rpc = s.rpc;
+  let n = 0;
+  s.rpc = (...a) => (++n > 4 ? Promise.reject(cancelled) : rpc(...a));
+  await assert.rejects(d2.removeTree('Foo'), (e) => e === cancelled);
+});
+
+for (const kind of ['stock-rpc', 'digikit']) {
+  test(`${kind}: sameOnDevice is true only for the same name, size and content hash of a file in the listing`, async () => {
+    const { s, used } = session();
+    const dev = openSamples(kind, { session: s, hashOf });
+    const f = prepared('kick', 300, 1);
+    await dev.put('drums', f);
+    await dev.put('drums', prepared('hat', 300, 2));
+    await dev.mkdir('drums/kick2');
+    const listing = await dev.list('drums');
+    assert.equal(dev.sameOnDevice(f, listing), true);
+    // same size, other bytes: the hash tells
+    assert.equal(dev.sameOnDevice(prepared('kick', 300, 5), listing), false);
+    // other size
+    assert.equal(dev.sameOnDevice(prepared('kick', 301, 1), listing), false);
+    // another name, a name the listing does not have, an empty listing, a folder of that name
+    assert.equal(dev.sameOnDevice(prepared('hat', 300, 1), listing), false);
+    assert.equal(dev.sameOnDevice(prepared('snare', 300, 1), listing), false);
+    assert.equal(dev.sameOnDevice(f, []), false);
+    assert.equal(dev.sameOnDevice(prepared('kick2', 300, 1), listing), false);
+    // the check reads the listing only: no request
+    const before = { ...used };
+    dev.sameOnDevice(f, listing);
+    assert.deepEqual(used, before);
+  });
+}

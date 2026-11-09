@@ -176,7 +176,7 @@ async function expectLevelsFilterUploadEvents({ dk }: PatchedSession) {
 }
 
 /** A coupled boot with the debug module for 32 s: a HEALTH snapshot every ten seconds (15,000 blocks), the stable period (30 s) logged once, DSP diagnostics
- * logged quietly (a full set of six events at the first poll, then every ten seconds), and a running DSP is never reported stopped. */
+ * logged quietly (a full set of eight events at the first poll, then every ten seconds), and a running DSP is never reported stopped. */
 async function expectPeriodicEvents(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
@@ -195,8 +195,12 @@ async function expectPeriodicEvents(runtime: PatchedSession): Promise<void> {
 
   const diag = ofKind(log, LOG_KIND.DSP_DIAG);
   const starts = diag.filter((e) => (e.args[0]! & 0xff) === 0);
-  expect(diag.length, 'a full set (24 words, six events) at the first poll and at each later one').toBe(
-    6 * starts.length,
+  expect(
+    starts.map((e) => e.args[0]! >>> 8),
+    'every set holds all 32 words of the DSP diagnostics (watch::DIAG_WORDS)',
+  ).toEqual(starts.map(() => 32));
+  expect(diag.length, 'a full set (32 words, eight events) at the first poll and at each later one').toBe(
+    8 * starts.length,
   );
   expect(starts.length).toBeGreaterThanOrEqual(3);
   expect(starts.length).toBeLessThanOrEqual(5);
@@ -249,6 +253,5 @@ runtimeTests(
     timeout: 1_200_000,
     devices: ['dt2'],
     full: true,
-    skip: 'open: fails in the full tier, see docs/handovers/HANDOVER-2026-11-02-scenario-migration.md',
   },
 );

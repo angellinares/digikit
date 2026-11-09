@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import {
   blob,
   cardInfo,
+  claimHeader,
   bootInfo,
   E_CARD_RO,
   E_INUSE,
@@ -24,6 +25,8 @@ import { logEvents, ofKind } from '@digi/regression/runtime/runtime-menu.ts';
  * outside the store range; a blank card works as before; foreign bytes in the range make the card read-only for the runtime; a card with our store keeps
  * working; an upload on a blank card claims the range first, so a cut upload leaves a card the next boot calls ours; a card smaller than the store area has
  * no store. The write watch and the card writes are checked as `common_checks_upload`.
+ * Also covers card-torn (was Python `run_card_torn`, deleted: c608bbf5:tests/digikit/scenarios/card-torn.toml): a power cut inside one sector write of the first
+ * writes to a blank card.
  */
 
 const MOD = 'modules/a.dkm';
@@ -35,6 +38,7 @@ cardRigs(
   'card safety',
   {
     devices: ['dt2'],
+    dsp: 'zero',
     uploads: true,
     relaxFs: true, // the card after the cut upload carries the firmware's own writes: no filesystem check on the next boot
     roots: RT,
@@ -229,6 +233,67 @@ cardRigs(
   },
 );
 
+cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
+  const { first, selA } = cardStore(h.device);
+  const headerB = deviceProfile(h.device).card.store.header_b_sector;
+  const claim = claimHeader(h.device);
+  const torn = Buffer.concat([claim.subarray(0, 256), Buffer.alloc(256)]); // the cut came after half the sector
+
+  test(
+    "header B torn by the claim's first write, header A blank: the card reads blank, an upload answers E_NOSTORE and writes nothing; CLEAR recovers it",
+    async () => {
+      const rt = await h.boot(await h.card({ foreign: { [headerB]: torn } }));
+      await h.ready();
+      expect((await cardInfo(rt.session, h.plan)).stateName).toBe('blank');
+      expect(await statusOf(() => rt.dk.put('modules/b.dkm', blob(3_000, 31)))).toBe(E_NOSTORE);
+      expect(await h.storeWrites(), 'nothing written in the store range').toEqual([]);
+      expect(await statusOf(() => rt.dk.clear()), 'CLEAR').toBe(0);
+      expect(await statusOf(() => rt.dk.put('modules/b.dkm', blob(3_000, 31))), 'the next upload commits').toBe(0);
+      expect((await rt.dk.list()).map((e) => e.path)).toContain('modules/b.dkm');
+    },
+    CARD_TIMEOUT,
+  );
+
+  test(
+    "header A torn by the claim's second write, header B whole: the card is ours and an upload commits",
+    async () => {
+      const rt = await h.boot(await h.card({ foreign: { [first]: torn, [headerB]: claim } }));
+      await h.ready();
+      expect((await cardInfo(rt.session, h.plan)).stateName).toBe('ours');
+      expect(await statusOf(() => rt.dk.put('modules/a.dkm', blob(3_000, 31)))).toBe(0);
+      expect((await rt.dk.list()).map((e) => e.path)).toContain('modules/a.dkm');
+    },
+    CARD_TIMEOUT,
+  );
+
+  test(
+    'header A torn and header B blank (claim writes out of order): the card is foreign at sector 0, BEGIN and CLEAR answer E_INUSE, nothing is written',
+    async () => {
+      const rt = await h.boot(await h.card({ foreign: { [first]: torn } }));
+      await h.ready();
+      expect(await cardInfo(rt.session, h.plan)).toMatchObject({ stateName: 'foreign', firstNonblank: 0 });
+      expect(await opStatuses(rt.dk, ['begin', 'clear'])).toEqual([E_INUSE, E_INUSE]);
+      expect(await h.storeWrites()).toEqual([]);
+    },
+    CARD_TIMEOUT,
+  );
+
+  test(
+    'selection copy A torn by the first selection write, the rest blank: the card is blank and the next selection writes both copies',
+    async () => {
+      const tornSel = Buffer.concat([PAT.subarray(0, 256), Buffer.alloc(256)]);
+      const rt = await h.boot(await h.card({ foreign: { [selA]: tornSel } }));
+      await h.ready();
+      expect((await cardInfo(rt.session, h.plan)).stateName).toBe('blank');
+      expect(await setSelection(rt.session, h.plan, [MOD])).toBe(0);
+      const recs = await h.records();
+      expect(recs[0]).not.toBeNull();
+      expect(recs[0]).toEqual(recs[1]);
+    },
+    CARD_TIMEOUT,
+  );
+});
+
 // A card smaller than the store area (the emulator's `small` identity reports 0x3B0000 sectors, below the area of both devices): no store.
 cardRigs(
   'card-small',
@@ -255,7 +320,10 @@ cardRigs(
           claims: 0,
           writes: 0,
         });
-        expect(await bootInfo(session, h.plan), 'the boot goes on').toMatchObject(BOOT_OK);
+        expect(await bootInfo(session, h.plan), 'the boot goes on: no safe mode, reason none (no store is not a read failure)').toMatchObject({
+          ...BOOT_OK,
+          reason: 0,
+        });
 
         const checks = ofKind(await logEvents(h.runtime, h.plan), LOG_KIND.CARD_CHECK);
         expect(checks, 'one error event for the check (state too small)').toHaveLength(1);

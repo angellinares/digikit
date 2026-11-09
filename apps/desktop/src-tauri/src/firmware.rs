@@ -13,8 +13,8 @@ pub fn pack(summary: &str, image: &[u8]) -> Vec<u8> {
 }
 
 /// Patch and check `stock` (or, with `restore`, check the stock file itself) with the checkout's modules, ports and device files.
-pub fn prepare(root: &Path, stock: &[u8], restore: bool) -> Result<Vec<u8>, String> {
-    let p = patchkit::flash::prepare_in_repo(root, stock, restore, "device").map_err(|e| e.0)?;
+pub fn prepare(root: &Path, stock: &[u8], restore: bool, set: &str) -> Result<Vec<u8>, String> {
+    let p = patchkit::flash::prepare_in_repo(root, stock, restore, set).map_err(|e| e.0)?;
     Ok(pack(&p.summary_json().to_string(), &p.image))
 }
 
@@ -33,9 +33,17 @@ pub async fn firmware_prepare(
 ) -> Result<tauri::ipc::Response, String> {
     let stock = body(&request)?;
     let restore = request.headers().get("x-restore").is_some_and(|v| v == "1");
+    // the patch set: `device` or `device-introblank` (the Custom boot screen toggle); anything else is refused by the device file
+    let set = request
+        .headers()
+        .get("x-set")
+        .and_then(|v| v.to_str().ok())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("device")
+        .to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let root = digi_control::runtime_patch::find_root(None)?;
-        prepare(&root, &stock, restore).map(tauri::ipc::Response::new)
+        prepare(&root, &stock, restore, &set).map(tauri::ipc::Response::new)
     })
     .await
     .map_err(|e| e.to_string())?

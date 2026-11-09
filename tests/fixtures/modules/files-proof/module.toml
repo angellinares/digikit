@@ -1,0 +1,20 @@
+[module]
+id = "test/files-proof"
+version = "0.1.0"
+name = "Files proof"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Public read-only listing boundary fixture; deferred notifications, no slot0."
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[object]]
+path = "build/files-proof.dko.json"
+sources = ["src/files-proof.c"]
+place = "cf.expansion"

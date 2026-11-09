@@ -16,7 +16,9 @@ import {
 } from '@digi/test-support';
 import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
-import { FIRMWARE } from './devices.ts';
+import { cachedCard, cardKey, fileSha } from './card-cache.ts';
+import { plusdriveBinary } from './card-kit.ts';
+import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
@@ -250,6 +252,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
+      runDirClaim: () => claimRunDir(device),
       env: async () => {
         artifacts = fs.mkdtempSync(path.join(os.tmpdir(), `digi-fx-${name}-${device}-`));
         console.info('FX route safety artifacts:', artifacts);
@@ -276,7 +279,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
     {
       prepareBaseline: async (session) => {
         rememberEpoch((await bounded(() => session.status())).epoch);
-        const binary = path.join(root, 'out/native/target/nogen/release/plusdrive');
+        const binary = plusdriveBinary();
         if (!fs.existsSync(binary)) throw new Error(`prepare prebuilt plusdrive separately: ${binary}`);
         for (const [tag, preset] of Object.entries(config.presets)) {
           if (!/^[a-zA-Z0-9_-]+$/.test(tag)) throw new Error(`invalid route preset directory ${tag}`);
@@ -285,29 +288,52 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
             preset.selection.some((file) => !inventory.some((_, index) => file === `modules/m${index}.dkm`))
           )
             throw new Error(`invalid route preset selection ${tag}`);
-          const directory = path.join(session.runDir, tag);
-          const seed = path.join(directory, 'seed');
-          const destination = path.join(seed, 'digikit', 'modules');
-          fs.mkdirSync(destination, { recursive: true });
-          inventory.forEach((id, index) =>
-            fs.copyFileSync(moduleArtifact(device, id), path.join(destination, `m${index}.dkm`)),
-          );
-          fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), preset.selection.join('\n') + '\n');
-          const cardImage = path.join(directory, 'card.img');
-          const built = await exec(binary, ['build', seed, '-o', cardImage, '--device', device], {
-            cwd: root,
-            timeout: 30_000,
-          });
-          record(artifacts, `card-${tag}`, { stdout: built.stdout, stderr: built.stderr });
+          const files = inventory.map((id, index) => ({ name: `m${index}.dkm`, file: moduleArtifact(device, id) }));
+          // The card is built in WORK (`<work>/card/card.img`).
+          const produce = async (work: string) => {
+            // The seed stays in the card dir: tests read the built modules from it.
+            const seed = path.join(work, 'card', 'seed');
+            const destination = path.join(seed, 'digikit', 'modules');
+            fs.mkdirSync(destination, { recursive: true });
+            for (const f of files) fs.copyFileSync(f.file, path.join(destination, f.name));
+            fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), preset.selection.join('\n') + '\n');
+            const out = path.join(work, 'card', 'card.img');
+            fs.mkdirSync(path.dirname(out), { recursive: true });
+            const built = await exec(binary, ['build', seed, '-o', out, '--device', device], {
+              cwd: root,
+              timeout: 30_000,
+            });
+            record(artifacts, `card-${tag}`, { stdout: built.stdout, stderr: built.stderr });
+            if (preset.settings?.length) {
+              const entries = path.join(work, 'settings.json');
+              fs.writeFileSync(
+                entries,
+                JSON.stringify(preset.settings.map(([key, value_hex]) => ({ key, value_hex }))),
+              );
+              await analysisJson(
+                'tools.patchkit.pk_digikit_fxroutes',
+                ['seed-card', out, '--device', device, '--entries', entries],
+                artifacts,
+                `settings-${tag}`,
+              );
+            }
+            return out;
+          };
+          // A card with settings goes through the Python seed-card tool, whose imports the key does not cover: it is built in
+          // the run dir each time. Other presets are built once into the card cache: equal inputs give the same card (and snapshot).
+          let cardImage: string;
           if (preset.settings?.length) {
-            const entries = path.join(directory, 'settings.json');
-            fs.writeFileSync(entries, JSON.stringify(preset.settings.map(([key, value_hex]) => ({ key, value_hex }))));
-            await analysisJson(
-              'tools.patchkit.pk_digikit_fxroutes',
-              ['seed-card', cardImage, '--device', device, '--entries', entries],
-              artifacts,
-              `settings-${tag}`,
-            );
+            const work = path.join(session.runDir, tag);
+            fs.rmSync(work, { recursive: true, force: true });
+            fs.mkdirSync(work, { recursive: true });
+            cardImage = await produce(work);
+          } else {
+            const key = cardKey(device, {
+              kind: 'fx-route-preset',
+              modules: files.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
+              selection: preset.selection,
+            });
+            cardImage = await cachedCard(key, produce);
           }
           const boot = planSymbol(prepared.plan, 'DKRT_BOOT');
           if (!prepared.preparedImage) throw new Error('explicit route plan lacks prepared image identity');
@@ -320,6 +346,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
         return baselines.get(config.initial)!;
       },
       finishCase: (runtime) => collectEvidence(runtime, `case-${++closed}`),
+      tempDirs: () => [artifacts],
       afterClose: async () => {
         const results = await Promise.allSettled([
           (async () => {

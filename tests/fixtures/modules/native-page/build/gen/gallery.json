@@ -1,0 +1,114 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            null,
+            {
+              "param": "native_start",
+              "slot": 26
+            },
+            {
+              "param": "native_end",
+              "slot": 27
+            }
+          ],
+          "level": 10,
+          "name": "NATIVE",
+          "own_dsp": true,
+          "page": {
+            "name": "NAT",
+            "title": "Native proof"
+          },
+          "position": null,
+          "short": "NAT",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "native_start",
+              "slot": 1
+            },
+            {
+              "param": "native_end",
+              "slot": 2
+            },
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "NATIVE",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "NAT",
+          "type": null
+        }
+      },
+      "id": "native",
+      "name": "NATIVE",
+      "short": "NAT"
+    }
+  ],
+  "module": "test/native-page",
+  "params": {
+    "dn2": [
+      {
+        "default": 4096,
+        "id": "native_start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 28672,
+        "id": "native_end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 27,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 4096,
+        "id": "native_start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 1,
+        "template": 204
+      },
+      {
+        "default": 28672,
+        "id": "native_end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 2,
+        "template": 204
+      }
+    ]
+  }
+}

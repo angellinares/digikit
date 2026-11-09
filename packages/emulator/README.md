@@ -13,8 +13,8 @@ mise run workbench -- --build-only   # build the desktop emulator without launch
 mise run workbench         # build and run it (DN2 audio when the ready inputs exist)
 mise run scenario:build    # build the headless runner coupled-run
 mise run scenario:all      # run every DN2 scenario against its pinned PCM hash
-mise run test:quick        # fast checks; mise run test runs cargo test --workspace too
-uv run python -m tools.devtools.rust_ws check    # cargo check --workspace --all-targets
+mise run test:quick        # fast checks for the tooling and the coupled runtime
+node tools/nx/rust-env.mjs --gen -- cargo check --workspace --exclude digiemu-desktop --all-targets --locked
 mise run web:wasm          # browser cores
 ```
 
@@ -89,11 +89,12 @@ T=$(uv run python -m tools.emulator.native_target dir)
 cargo build --release --locked --target-dir "$T" -p sharc-fast-cl --examples
 ```
 
-In a git worktree the root is `out/native/target-wt/<worktree-name>/` instead
-(`out/` is linked to the main tree's, and two checkouts in one target dir would
-invalidate each other). A worktree cannot reuse the main tree's compiled
-`sharc-gen` -- different package paths and fresh file mtimes make cargo rebuild
-it -- so it pays one compile per gen, then reuses its own dir.
+In a git worktree the root is `dist/native-target/` inside the worktree instead
+(git-ignored; it is deleted with the lane). A worktree cannot reuse the main
+tree's compiled `sharc-gen` (different package paths and fresh file mtimes make
+cargo rebuild it), so it pays one compile per gen, then reuses its own dir.
+A live lane that built into the old `out/native/target-wt/<name>/` pays one cold
+build the next time it builds; that old dir stays in `out/` until removed by hand.
 
 A plain `cargo build` without `--target-dir` uses `./target` (ignored by git).
 Wrap heavy builds in `uv run python -m tools.devtools.benchlock run --shared -- ...`.
@@ -133,7 +134,7 @@ Use:
   blob (one slot each). It was one `OnceLock` for the process, so the core that asked second read the first core's table and the
   code check compared a patched DT2 image against DN2's instructions (493 changed PCs instead of 10; 0.23x against 0.38x real time
   with the runtime patched in). Any new process-wide cache in `sharc-rt` needs the same key.
-- The fast tier lists exist for DN2 only (`tools/emulator/fast_regions.json`): `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` go to
+- The fast tier lists exist for DN2 only (`config/emulator.json`): `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` go to
   the first core, `SHARC_FAST_REGIONS_2` and `SHARC_BLOCKTRANS_2` (from the `--also-coupled` firmware) to the second. A DT2 core
   has no lists, so it runs AOT blocks and the interpreter only, as a single-core DT2 launch does.
 - `dual_core_check` modes (a daemon each, bounded; `DIGI_EMUD` names the two-core `digi-emud`): the default (open the other
@@ -262,13 +263,13 @@ kernels are wasm modules the page compiles (`packages/emulator/sharc-fast-wasm`,
 `SHARC_FAST_REGIONS` and `SHARC_BLOCKTRANS` are environment variables, which
 wasm32-unknown-unknown does not have, so the page passes the regions in
 (`digi_sharc_fast_regions`). With no `?fast=` query it uses the `desktop` regions
-of `tools/emulator/fast_regions.json` for a listed firmware (AOT blocks present), or
+of `config/emulator.json` for a listed firmware (AOT blocks present), or
 run-time selection `4,2,1` on the generic core. `node tools/devtools/wasm_parity.mjs --scenario NAME` (or
 `mise run web:parity NAME`) checks that the browser PCM is byte-identical to
 the native `expect_sha256`.
 
 The coupled core (`emulator-core-sharc.wasm`) contains firmware-derived DSP code.
-`tools/emulator/native_wasm.py` writes it to `apps/web/.local/`, which is gitignored
+`tools/nx/wasm.mjs` writes it to `apps/web/.local/`, which is gitignored
 and served only by the dev server. It is never in `dist/`: a build guard fails
 the build if it appears in the output. The CF-only core stays in
 `apps/web/public/`.

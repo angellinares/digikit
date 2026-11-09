@@ -1,7 +1,7 @@
 # Module architecture: categories, contracts, capabilities and enforced layers (plan, 2026-11-01)
 
-Status: agreed design, nothing built. Branch: `docs/module-architecture`. Steps 1 and 2 start after the sampler branch
-(`sdk/dsp-sampler-discovery`) is merged.
+Status: agreed design, nothing built. It was written on the module-architecture design branch. Steps 1 and 2 start after the sampler branch
+(the DSP sampler discovery branch) is merged.
 
 Inputs: issue #240 (the store upload for patch-based images), PR #209 (machines patched into the firmware),
 [finding 73](../findings/73-dnfw-coexistence.md) (dnfw and the runtime in one image), the [capabilities plan](capabilities.md), the
@@ -62,7 +62,7 @@ and `core/sample-pool` reach `main` with that branch. Paths without a directory 
   objects in `cf.expansion` (ColdFire) or `dsp.l2` (SHARC). None is a `.dkm`.
 - `[patch_sets]` of the device files put the same eight roots into every image: `core/dynreg`, `dyndsp`, `dynfx`, `fxpages`, `ui`,
   `digikit-menu`, `health`, `input`. `requires` adds the rest (`runtime`, `expansion`, `machines`, `params`, `dsp-link`, `dsp-voice`,
-  `fx`). DT2 adds the `sample-tracks` set with `core/sample-pool`.
+  `fx`). DT2 `device` and `emulator` include `core/sample-pool`; the `sample-tracks` set has the same roots.
 - Adapter code is small: from about 30 B of data (`dynfx`) to about 6 KB of text (`ui`).
 - The runtime calls adapters through optional symbols (`modules/core/runtime/module.toml:30`: `dynreg_info`, `dl_send`, `dyndsp_info`,
   `dynfx_info`, `fxpages_info`, `dkpool_*`, `health_*`, `input_*`, `dk_ui_*`). Each resolves to 0 when its adapter is not in the image.
@@ -165,7 +165,7 @@ SELECT writes the selection record and loads nothing; RESTART applies it at the 
 
 ### 3.8 Content modules, SHARC assembly and what a module can reach
 
-- Every machine (analog, bd, pd, pluck, spark) and the fx module (freqshift) is C (`src/module.c`, the declaration) plus one SHARC `.s` (the
+- Every machine (analog, bd, pd, pluck, shot) and the fx module (freqshift) is C (`src/module.c`, the declaration) plus one SHARC `.s` (the
   DSP code). The tools (debug, probe, remote) are C only. MODULE-AUTHORING.md: machine and fx are "SHARC+ assembly, declared in C".
 - The SHARC files include only SDK files: `dk_machine.inc` or `dk_fx.inc` (generated from `sdk/sdk.toml`) and `sdk/dsp/*.inc` helpers.
 - The C runs on the ColdFire and the assembly on the SHARC. The assembly cannot be wrapped in a C function; the C only declares it. So the
@@ -199,7 +199,8 @@ SELECT writes the selection record and loads nothing; RESTART applies it at the 
 
 - The settings record is digikit's one key-value store (`docs/design/digikit-store.md`, "Keys by owner"). Keys now: `fx/route/<module
   id>`, `fx/send/<module id>`, `dk/fault` (the crash handler's fault record, `crash.rs:545-548`). Keys `<module id>/...` are reserved for
-  the module itself; there is no module API yet. A module can already export a settings menu (`dkm_menu`, `docs/plans/sdk-api.md`).
+  the module itself, through the settings API of API 1.9 (`settings_client`, `settings_get`, `settings_put`, `settings_remove`, `<dk/settings.h>`). A module
+  can also export a settings menu (`dkm_menu`, `docs/plans/sdk-api.md`).
 - The runtime has a semantic version (`sdk/sdk.toml` `version`, now 0.5.4; `docs/design/module-sdk.md` D9). While it is 0.x, MINOR may
   break. Adapters carry the version of the runtime image they are built into.
 - Each contract has [major, minor] (`sdk/sdk.toml` `[contract]`, api is 1.5). It decides compatibility (D3).
@@ -281,13 +282,13 @@ The rules are one table (step 4), read by the boundary check and by layercheck.
 | `[targets]` | yes | kept |
 | `[[object]]` | path, sources, place per object | derived from the source layout: `src/*.c` → `cf.expansion`, `src/dsp/*.s` → `dsp.l2`; written out only to differ |
 
-Example, `modules/machines/spark/module.toml`. Today:
+Example, `modules/machines/shot/module.toml`. Today:
 
 ```toml
 [module]
-id = "digikit/spark"
+id = "digikit/shot"
 version = "0.1.0"
-name = "SPARK"
+name = "SHOT"
 category = "machines"
 type = "machine"
 author = "digikit"
@@ -303,13 +304,13 @@ conflicts = []
 "dn2-1.12" = "experimental"
 
 [[object]]
-path = "build/spark-cf.dko.json"
+path = "build/shot-cf.dko.json"
 sources = ["src/module.c"]
 place = "cf.expansion"
 
 [[object]]
-path = "build/spark-dsp.dko.json"
-sources = ["src/dsp/spark.s"]
+path = "build/shot-dsp.dko.json"
+sources = ["src/dsp/shot.s"]
 place = "dsp.l2"
 ```
 
@@ -317,9 +318,9 @@ After:
 
 ```toml
 [module]
-id = "digikit/spark"
+id = "digikit/shot"
 version = "0.1.0"
-name = "SPARK"
+name = "SHOT"
 category = "machines"          # contract defaults to "machine"
 author = "digikit"
 summary = "Plays the stereo sample bound to the track once per note, with start, end, reverse and pitch."
@@ -369,7 +370,7 @@ A `raw` machine adds one line: `contract = "raw"`.
 | --- | --- | --- | --- |
 | A. Experimental adapter | Patch-time module that owns a new hook and exposes an experimental capability as data rows or optional symbols. The content is a `raw` `.dkm` where possible, else inside the adapter. | layercheck, its own tests, default images unchanged | PR #209 today |
 | B. Raw `.dkm` | Uses the capability. | generic load checks, the absolute-address check, `module:audit` | TB303 once it loads from the card |
-| C. Contract module | The capability is stable in the SDK. | the conformance suite of the contract | spark, pluck |
+| C. Contract module | The capability is stable in the SDK. | the conformance suite of the contract | shot, pluck |
 
 From B to C: change `contract`, replace calls that are not SDK calls, pass the conformance suite. The category does not change, so the UI
 does not change. The more a raw module uses the SDK headers from the start, the easier the move.
@@ -715,7 +716,7 @@ None of them changes D1 to D24. They decide how much of the adapter layer can lo
     SDK documents this rule.
   - The runtime never interprets a module's values. Unloaded modules keep their entries (`settings.rs`).
   - Values saved with the project (parameters) are the firmware's and are not part of this.
-  - The module settings API (get, put, remove within the module's prefix) is a later item; the settings menu (`dkm_menu`) exists.
+  - The module settings API (`settings_client`, `settings_get`, `settings_put`, `settings_remove` within the module's prefix, API 1.9) and the settings menu (`dkm_menu`) exist.
 
 ## 13. Enforcement
 
@@ -824,8 +825,6 @@ default images and objects.
         capabilities the selected modules use, hot-path hooks first, and adapters that no module uses leave the default images.
   - [ ] The cost of each adapter when no module uses it (image bytes, RAM, cycles per block).
   - [ ] The Selache C compiler against hand-written assembly, on one machine.
-
-Later, not ordered: the module settings API (12).
 
 ## 15. Open
 

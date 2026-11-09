@@ -53,7 +53,9 @@ fn main() {
     let vs = vectors::parse(&text).unwrap_or_else(|e| panic!("{path}: {e}"));
     let mut e = Engine::new(Mem::new());
     if e.dispatch.count == 0 {
-        eprintln!("no block code: build with SHARC_GEN_DIR (tools/sharc_dev/sharc_rsgen.py output)");
+        eprintln!(
+            "no block code: build with SHARC_GEN_DIR (tools/sharc_dev/sharc_rsgen.py output)"
+        );
         std::process::exit(2);
     }
     let mut per_block: BTreeMap<u32, (u32, u32, u64)> = BTreeMap::new();

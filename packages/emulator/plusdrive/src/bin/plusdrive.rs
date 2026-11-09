@@ -153,7 +153,7 @@ fn with_image<T>(
     with_overlay(path, overlay.as_deref(), f)
 }
 /// `plusdrive store ls IMAGE [--overlay FILE] [--device D] [--cat PATH]`: the module store's files (path, first sector,
-/// bytes, SHA-256), or one file's bytes on stdout.
+/// bytes, file hash slot), or one file's bytes on stdout.
 fn store_ls(mut args: Vec<String>) -> Result<(), String> {
     let overlay = take_overlay(&mut args)?;
     let (mut image, mut device, mut cat) = (None, String::from("dt2"), None);
@@ -197,7 +197,7 @@ fn store_ls(mut args: Vec<String>) -> Result<(), String> {
         let mut entries: Vec<_> = store.entries.iter().collect();
         entries.sort_by(|a, b| a.path.cmp(&b.path));
         for e in entries {
-            let hex: String = e.sha256.iter().map(|b| format!("{b:02x}")).collect();
+            let hex: String = e.hash.iter().map(|b| format!("{b:02x}")).collect();
             if e.is_dir {
                 println!("{}/\t-\t0\tfolder", e.path);
             } else {

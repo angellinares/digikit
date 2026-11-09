@@ -3,8 +3,9 @@
 // The Digitone II engine (FUN_1c8ef1) is a stage pipeline over 16 voice slots: slot v has a 32-float voice buffer
 // (48 kHz, one DSP block) at `0x804acf90 + 0x80 v` and a frame slot (pitch halfword 1 + v = note << 8, velocity 26 + v
 // = velocity << 8, machine type 74 + v). The FM synthesis of each voice writes its buffer; the stages that follow
-// (gain, amplitude envelope and its gate, filter, overdrive and the rest of the track chain, then the upsample to the
-// 64-float block at 96 kHz, the sends, the master mix) work on the same buffers in place. A slot whose machine type is
+// (gain, amplitude envelope and its gate, filter, overdrive and the rest of the track chain) process the mono buffer.
+// FUN_1c9aea then applies independent pan gains to produce two 32-sample channel planes for the sends and master mix;
+// the configured rate/block is 48000 Hz / 32 samples (finding 96). A slot whose machine type is
 // above 4 is skipped by the synthesis like MIDI and its buffer holds nothing, so a routine that fills it makes the
 // slot sound through everything after the synthesis (findings 06, "Per-voice hook on DN2").
 //
@@ -53,6 +54,9 @@
 .EXTERN _fw_frame;
 .EXTERN _fw_render_next;
 .EXTERN _dv_table;
+.EXTERN _gs_rbuf;
+.EXTERN _gs_post;
+.EXTERN _gs_block;
 
 _dv_entry:
     DM(_dv_s_r0) = R0;
@@ -194,6 +198,7 @@ _dv_full:
     DM(10, I4) = R1;
     R1 = MODE1;
     DM(11, I4) = R1;
+    CALL _gs_block;                       // publishes the stereo events of the block that has ended (dsp-voice-dn2-stereo.s); clobbers R0 and R1 only
     // the mask of the registered types: R0-R3 are saved above and free (a free row holds 0xffffffff, the zero row ends the table)
     I4 = _dv_table;
     R3 = 0;
@@ -391,7 +396,7 @@ _dv_mk1:
 // Entered with JUMP (M13, I12) from the code above, the context pinned: R0 = type, R2 = v, R4 = the voice buffer, DM(_dv_row) = the row's end
 // (word k of the row is DM(k - 24, end)). The adapter's scalars are _dv_c: 0 type, 1 v, 2 buffer, 3 slot record, 4 note-on, 5 parameter index,
 // 6 knob slot, 7 state, 8 status, 9 fault kind, 10 faults so far, 11 types disabled. The slot's record (_dv_cst + 16 v): 0 phase (0 silent,
-// 1 armed by the edge, 2 running), 1 previous trig bit, 2 blocks since the note-on.
+// 1 armed by the edge, 2 running), 1 previous trig bit, 2 blocks since the note-on, 3 latched source track.
 _dv_contract:
     DM(_dv_c + 0) = R0;
     DM(_dv_c + 4) = R2;
@@ -428,6 +433,23 @@ _dv_contract:
     R1 = 2;
     DM(0, I3) = R1;
     DM(_dv_c + 16) = R11;
+    // Latch the source track at the delayed note_on, not the silent edge.
+    // The unsigned frame halfword is zero-extended by _dv_frame_hw; no masking
+    // can turn an invalid owner into a valid track (finding 90).
+    R11 = PASS R11;
+    IF EQ JUMP _dv_cowner;
+    R2 = DM(_dv_c + 4);
+    R0 = 0x52d;
+    R0 = R0 + R2;
+    CALL _dv_frame_hw;
+    R1 = 16;
+    COMP(R0, R1);
+    IF GE JUMP _dv_cbadowner;
+    DM(3, I3) = R0;
+_dv_cowner:
+    R0 = DM(3, I3);
+    DM(_dv_in + DK_IN_TRACK) = R0;
+    R11 = DM(_dv_c + 16);
     // the dk_voice_in: blocks since the note-on, pitch, velocity, the output block
     R0 = DM(2, I3);
     R1 = 0;
@@ -448,6 +470,13 @@ _dv_contract:
     DM(_dv_in + DK_IN_VELOCITY) = R0;
     R4 = DM(_dv_c + 8);
     DM(_dv_in + DK_IN_OUT) = R4;
+    // out_r: the slot's R buffer (`_gs_rbuf`, dsp-voice-dn2-stereo.s). A machine that returns DK_STEREO has its R stamped after the guard (`_gs_post`)
+    // and run through the R twins of the stages that follow; a mono machine leaves it alone.
+    R2 = DM(_dv_c + 4);
+    R0 = LSHIFT R2 BY 7;
+    R1 = _gs_rbuf;
+    R0 = R0 + R1;
+    DM(_dv_in + DK_IN_OUT_R) = R0;
     // the parameter words: knob ADM_PARAM_SLOTi of the slot, until a slot of 255 (the buffer's other words stay 0)
     R0 = 0;
     DM(_dv_c + 20) = R0;
@@ -485,8 +514,40 @@ _dv_cpl:
     R0 = MIN(R0, R14);
     R0 = MAX(R0, R13);
     R1 = DM(_dv_c + 20);
+    // Retain live effective words for UI/debug readers. Callbacks receive the
+    // merged live/latched view in _dv_call_params through the unchanged ABI.
     R2 = LSHIFT R1 BY 2;
     R3 = _dv_params;
+    R3 = R3 + R2;
+    I1 = R3;
+    DM(0, I1) = R0;
+    // Machine contract 1.3: latch declared words per adapter voice/slot at
+    // actual note_on, after effective parameters (including p-locks) are clamped.
+    R2 = DM(_dv_row);
+    I1 = R2;
+    R2 = DM(-2, I1);                      // row word 22: parameter-word latch mask
+    R3 = 1;
+    R3 = LSHIFT R3 BY R1;
+    R2 = R2 AND R3;
+    R2 = PASS R2;
+    IF EQ JUMP _dv_cplive;
+    R2 = DM(_dv_c + 4);
+    R2 = LSHIFT R2 BY 5;                  // 8 words / 32 bytes per voice/slot
+    R3 = _dv_trig_params;
+    R3 = R3 + R2;
+    R2 = LSHIFT R1 BY 2;
+    R3 = R3 + R2;
+    I2 = R3;
+    R5 = DM(_dv_c + 16);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_cpread;
+    DM(0, I2) = R0;
+    JUMP _dv_cplive;
+_dv_cpread:
+    R0 = DM(0, I2);
+_dv_cplive:
+    R2 = LSHIFT R1 BY 2;
+    R3 = _dv_call_params;
     R3 = R3 + R2;
     I1 = R3;
     DM(0, I1) = R0;
@@ -521,7 +582,7 @@ _dv_cnoclr:
     R0 = DM(-8, I4);
     I12 = R0;                             // the note_on pc
     R8 = _dv_in;
-    R12 = _dv_params;
+    R12 = _dv_call_params;
     I13 = _dv_nback;
     JUMP (M13, I12);
 _dv_nback:
@@ -534,10 +595,15 @@ _dv_crender:
     I12 = R0;                             // the render pc
     R4 = DM(_dv_c + 28);
     R8 = _dv_in;
-    R12 = _dv_params;
+    R12 = _dv_call_params;
     I13 = _dv_rback;
     JUMP (M13, I12);
 _dv_rback:
+    R1 = DK_STEREO;                       // contract 1.2: the stereo bit goes to _gs_post, the rest is the status
+    R2 = R0 AND R1;
+    DM(_dv_c + 48) = R2;
+    R1 = NOT R1;
+    R0 = R0 AND R1;
     DM(_dv_c + 32) = R0;                  // the status
     // the guard: finite samples of at most 8.0 in magnitude (one integer test: the magnitude bits of 8.0 are 0x41000000, Inf and NaN lie above 0x7f800000)
     R8 = DM(_dv_c + 8);
@@ -551,6 +617,7 @@ _dv_gchk: R13 = MAX(R13, R0);
     R0 = 0x41000000;
     COMP(R13, R0);
     IF GT JUMP _dv_gfault;
+    CALL _gs_post;                        // a stereo machine: check, scale and stamp R (dsp-voice-dn2-stereo.s)
     R1 = DK_DONE;
     R0 = DM(_dv_c + 32);
     COMP(R0, R1);
@@ -572,7 +639,7 @@ _dv_gfault:
 _dv_gfaultk:
     DM(_dv_c + 36) = R12;
     // the words the module saw, packed in pairs, and the zeroed block, the ended voice
-    I1 = _dv_params;
+    I1 = _dv_call_params;
     I2 = _dv_diag;
     MODIFY(I2, 68);
     LCNTR = 4, DO _dv_gpk UNTIL LCE;
@@ -639,6 +706,11 @@ _dv_gnd:
     R0 = R0 OR R3;
     DM(_dv_diag + 64) = R0;               // type | voice << 16
     JUMP _dv_back;
+// An invalid source owner ends only this slot, without callbacks or a type fault.
+_dv_cbadowner:
+    R0 = 0;
+    DM(0, I3) = R0;
+    JUMP _dv_cz;
 // The rising edge: the slot is armed, this block is silent; the next block runs note_on and render.
 _dv_cedge:
     R1 = 1;
@@ -743,8 +815,11 @@ _dv_frame_sw:
 .PKDATA _dv_row, 4;
 // The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), its scalars (see `_dv_contract`), the slots'
 // records (4 words each) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
-.PKDATA _dv_in, 16;
-.PKDATA _dv_params, 32;
+.PKDATA _dv_in, 24;
+.PKDATA _dv_params, 32;                    // live effective UI/debug words
+.PKDATA _dv_call_params, 32;               // merged callback words (latched declarations over live words)
+// Adapter-private snapshots: DT2 track / DN2 physical voice slot, never firmware-owned state.
+.PKDATA _dv_trig_params, 512;
 .PKDATA _dv_c, 64;
 .PKDATA _dv_cst, 256;
 .VAR _dv_slots = ADM_PARAM_SLOT0;

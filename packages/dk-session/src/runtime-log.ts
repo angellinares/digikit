@@ -26,7 +26,7 @@ export interface RuntimeEvent {
 }
 
 const CARD_STATES = ['unknown', 'ours', 'blank', 'foreign', 'unreadable', 'too small'];
-const SAFE_REASONS: Record<number, string> = { 1: 'counter', 2: 'key', 3: 'flag', 4: 'dsp' };
+const SAFE_REASONS: Record<number, string> = { 1: 'counter', 2: 'key', 3: 'flag', 4: 'dsp', 5: 'panic', 6: 'read' };
 const REFUSAL: Record<number, string> = {
   1: 'outside the store range',
   2: 'card read-only',
@@ -339,12 +339,15 @@ function tailEvents(events: DkLogEvent[]): DkLogEvent[] {
   return out;
 }
 
-/** The events that follow the record's first event, up to the first that is not one of its parts. */
+/**
+ * The parts of a record that follow its first event, up to the next event of the same kind. Other events lie between them: a sink gets the small ring
+ * first (FAULT_FOUND, the settings write, BOOT_RECORD) and the long detail of the record (registers, stack, tail) after it (`crash::replay_detail`).
+ */
 function followers(events: DkLogEvent[], at: number, parts: ReadonlySet<number>): DkLogEvent[] {
   const out: DkLogEvent[] = [];
   for (const e of events.slice(at + 1)) {
-    if (!parts.has(e.kind)) break;
-    out.push(e);
+    if (e.kind === events[at]!.kind) break;
+    if (parts.has(e.kind)) out.push(e);
   }
   return out;
 }

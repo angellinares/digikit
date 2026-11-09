@@ -1,0 +1,50 @@
+[module]
+id = "core/dsp-ddr-proof"
+version = "0.1.0"
+name = "DDR transport proof"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Diagnostic-only quiet full-frame transfer into an isolated DDR range."
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = ["core/machines", "core/params", "core/dsp-voice"]
+conflicts = ["core/dsp-link"]
+
+[targets]
+"dt2-1.17" = "untested"
+"dn2-1.12" = "untested"
+
+[[object]]
+path = "build/ddr-proof-cf.dko.json"
+sources = ["src/cf/ddr-proof.c", "src/cf/machine.c"]
+place = "cf.expansion"
+
+[object.externs]
+dd_stock_send = "cf.link.fn.frame"
+
+[[object]]
+path = "build/ddr-proof-dsp.dko.json"
+sources = ["src/dsp/ddr-proof.s", "src/dsp/playback.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]
+
+[object.externs]
+_dd_back = "hook.dsp.link.site.block_tail.tail"
+
+[[op]]
+op = "hook"
+hook = "cf.link.hook.block_isr.frame_call"
+to = "dd_frame_hook"
+
+[[op]]
+op = "hook"
+hook = "dsp.link.hook.block_tail"
+to = "_dd_hook"
+
+[[claim]]
+resource = "dsp.link.site.block_tail"
+
+[[claim]]
+resource = "cf.link.site.block_isr.frame_call"

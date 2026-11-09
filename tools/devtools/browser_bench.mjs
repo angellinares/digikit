@@ -21,7 +21,7 @@
 //   --profile-out DIR (implies --profile; writes each worker's raw CDP profile to DIR/<run>-<dsp|cf>.cpuprofile for DevTools)
 //   env BENCH_CDP_BASE=N (9400): first Chrome CDP port, run i uses N+i; the bench exits 2 if a port it needs is taken
 //   --fast off|desktop|auto|desktop+auto|T,M,F (page default is now desktop for firmware listed in
-//   tools/emulator/fast_regions.json; --fast off measures AOT only)
+//   config/emulator.json; --fast off measures AOT only)
 // The dev server serves the local DSP inputs and the coupled wasm only to
 // loopback; nothing firmware-derived is written by this tool. Timed runs must
 // hold the bench lock: `mise run web:bench` does (exclusive).
@@ -46,7 +46,7 @@ const jsFlags = opt('js-flags', '');
 const profileOut = opt('profile-out'); // DIR: also write each raw CDP profile as DIR/<run>-<worker>.cpuprofile (implies --profile)
 const profile = flag('profile') || Boolean(profileOut);
 const splitOpt = opt('split'); // 0: one worker; 1 (default when isolated): ColdFire and DSP workers
-const fastOpt = opt('fast'); // DSP fast tier of the page: off, desktop, auto, desktop+auto or T,M,F (page default: desktop when fast_regions.json lists the firmware)
+const fastOpt = opt('fast'); // DSP fast tier of the page: off, desktop, auto, desktop+auto or T,M,F (page default: desktop when config/emulator.json lists the firmware)
 const timeoutS = Number(opt('timeout', 900));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...m) => console.error('[browser_bench]', ...m);

@@ -1,0 +1,98 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 2,
+   "section": ".text",
+   "symbol": "introblank_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 8,
+   "section": ".text",
+   "symbol": "introblank_black",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 38,
+   "section": ".text",
+   "symbol": "introblank_next",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text.introblank_black",
+   "symbol": "cf.draw.fn.bitmap_clear",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 4,
+   "hex": "41f900000000203c000000002080203c000000af2140000442a8000842a8000c2f4800244ef900000000",
+   "kind": "text",
+   "name": ".text",
+   "size": 42
+  },
+  {
+   "align": 2,
+   "hex": "4878000142a72f2f00144eb9000000004fef000c4e75",
+   "kind": "text",
+   "name": ".text.introblank_black",
+   "size": 22
+  },
+  {
+   "align": 16,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.introblank_table",
+   "size": 16
+  }
+ ],
+ "source_sha256": "138aa3cfcdf8423b39d38b8210f08ab4be1b2a2f2c866749ea03e50ddc91e020",
+ "symbols": [
+  {
+   "global": true,
+   "name": "cf.draw.fn.bitmap_clear",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "introblank_black",
+   "section": ".text.introblank_black",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "introblank_hook",
+   "section": ".text",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "introblank_next",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "introblank_table",
+   "section": ".bss.introblank_table",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "15",
+  "isa_check": "377797760fefe63a37a3fdb5e54d93525b50e5b7f1be5f9ff6b4578e82ac4a4d",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

@@ -211,11 +211,8 @@ class Emu:
 
         syx = pathlib.Path(syx).resolve()
         ready = pathlib.Path(ready_dir).resolve()
-        env = {}
-        if regions := digi_env.fast_regions_for(syx):
-            env["SHARC_FAST_REGIONS"] = regions
-        if roots := digi_env.blocktrans_roots_for(syx):
-            env["SHARC_BLOCKTRANS"] = roots
+        # The table only: no fallback roots, and neither the environment nor DIGI_EMU_FAST is read.
+        env = digi_env.resolve_tiers("tests", syx, "", {}, fallback=False).add
         return cls.spawn(
             str(syx),
             "--auto-coupled",
@@ -230,6 +227,23 @@ class Emu:
             "--no-audio",
             *args,
             env={**env, **kwargs.pop("env", {})},
+            **kwargs,
+        )
+
+    @classmethod
+    def spawn_zero(
+        cls,
+        syx: str | os.PathLike[str],
+        ready_dir: str | os.PathLike[str],
+        **kwargs: Any,
+    ) -> Emu:
+        """Spawn a ColdFire-only daemon using the ready ColdFire snapshot."""
+        return cls.spawn(
+            str(pathlib.Path(syx).resolve()),
+            "--dsp",
+            "zero",
+            "--cf-snapshot",
+            str(pathlib.Path(ready_dir).resolve() / "digi-audio-m5.snap"),
             **kwargs,
         )
 

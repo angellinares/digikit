@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/digikit-menu",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/fits.device.test.ts"],
+        "modules": [],
+        "plusdrive": true
+      }
+    ]
+  }
+}

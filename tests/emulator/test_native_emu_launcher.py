@@ -170,13 +170,27 @@ def test_invalid_configured_core_fails_before_build(monkeypatch):
     assert calls == []
 
 
-def _known_syx(tmp_path, scope, monkeypatch, content=b"dn2"):
+def _set_table(monkeypatch, entries):
+    """Make the tier config hold ENTRIES (digest -> entry) in place of config/emulator.json."""
+    from tools.emulator import emulator_config
+
+    config = {"_contexts": {"workbench": {"SHARC_FAST_AUTO": "4,2,0"}}, **entries}
+    monkeypatch.setattr(digi_env, "tier_config", lambda: config)
+    monkeypatch.setattr(
+        digi_env, "fast_table", lambda: emulator_config.firmware_table(config)
+    )
+    return entries
+
+
+def _known_syx(tmp_path, scope, monkeypatch, content=b"dn2", **extra):
     syx = tmp_path / "fw.syx"
     syx.write_bytes(content)
-    table = scope["fast_regions_for"].__globals__["FAST_REGIONS"]
-    monkeypatch.setitem(
-        table, __import__("hashlib").sha256(content).hexdigest(), "0x10,0x20"
+    digest = __import__("hashlib").sha256(content).hexdigest()
+    entry = {"fast_regions": "0x10,0x20", **extra}
+    monkeypatch.setattr(
+        digi_env, "_syx_digest", lambda path: digest if Path(path) == syx else ""
     )
+    _set_table(monkeypatch, {digest: entry})
     return syx
 
 
@@ -191,22 +205,7 @@ def test_fast_regions_follow_the_firmware_hash(monkeypatch, tmp_path):
 
 
 def _known_roots(tmp_path, scope, monkeypatch, content=b"dn2"):
-    syx = _known_syx(tmp_path, scope, monkeypatch, content)
-    table = scope["blocktrans_roots_for"].__globals__["BLOCKTRANS_ROOTS"]
-    monkeypatch.setitem(
-        table, __import__("hashlib").sha256(content).hexdigest(), "0x30,0x40"
-    )
-    return syx
-
-
-def test_blocktrans_roots_follow_the_firmware_hash(monkeypatch, tmp_path):
-    scope = launcher()
-    syx = _known_roots(tmp_path, scope, monkeypatch)
-    other = tmp_path / "other.syx"
-    other.write_bytes(b"other")
-    assert scope["blocktrans_roots_for"](syx) == "0x30,0x40"
-    assert scope["blocktrans_roots_for"](other) == ""
-    assert scope["blocktrans_roots_for"](tmp_path / "missing.syx") == ""
+    return _known_syx(tmp_path, scope, monkeypatch, content, blocktrans="0x30,0x40")
 
 
 def test_set_fast_regions_exports_the_cluster_roots(monkeypatch, tmp_path):
@@ -423,6 +422,30 @@ def test_rustflags_skip_warns_and_never_trains(pgo, capsys):
     assert capsys.readouterr().err.startswith("WARNING: native PGO: skipped")
 
 
+def test_stale_profile_is_reported_to_the_child(pgo):
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is None
+    assert scope["pgo_env"]() == {
+        "DIGI_PGO_STATUS": "stale",
+        "DIGI_PGO_DETAIL": "changed: sources",
+    }
+
+
+def test_current_profile_is_reported_ok_without_detail(pgo):
+    pgo.states = [("ok", "/p/abc.profdata")]
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is not None
+    assert scope["pgo_env"]() == {"DIGI_PGO_STATUS": "ok", "DIGI_PGO_DETAIL": ""}
+
+
+def test_pgo_opt_out_reports_nothing(pgo, monkeypatch):
+    pgo.states = [("off", "")]
+    monkeypatch.setenv("DIGI_EMU_PGO", "0")
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is None
+    assert scope["pgo_env"]() == {}
+
+
 def dt2_syx(monkeypatch, tmp_path):
     syx = tmp_path / "dt2.syx"
     syx.write_bytes(b"dt2")
@@ -523,14 +546,18 @@ def _dual_launch(monkeypatch, tmp_path, first):
             monkeypatch.delenv(name + suffix)
     monkeypatch.delenv("DIGI_EMU_FAST", raising=False)
     monkeypatch.delenv("SHARC_FAST_AUTO", raising=False)
-    for function, value in (
-        ("fast_regions_for", "regions"),
-        ("blocktrans_roots_for", "roots"),
-        ("fallback_regions_for", "fallback"),
-    ):
-        monkeypatch.setitem(
-            glob, function, lambda path, value=value: f"{path.parent.name}-{value}"
-        )
+    _set_table(
+        monkeypatch,
+        {
+            device: {
+                "fast_regions": f"{device}-regions",
+                "blocktrans": f"{device}-roots",
+                "fallback_regions": f"{device}-fallback",
+            }
+            for device in ("dn2", "dt2")
+        },
+    )
+    monkeypatch.setattr(digi_env, "_syx_digest", lambda path: Path(path).parent.name)
     return scope, calls, inputs, cores
 
 
@@ -862,13 +889,17 @@ def test_card_cache_key_follows_every_file(monkeypatch, tmp_path):
 
 def test_fallback_defaults_single_and_dual_core(monkeypatch, tmp_path):
     scope = launcher()
-    first = _known_syx(tmp_path, scope, monkeypatch)
+    first = tmp_path / "fw.syx"
+    first.write_bytes(b"dn2")
     second = tmp_path / "second.syx"
     second.write_bytes(b"second")
-    table = scope["FALLBACK_REGIONS"]
-    monkeypatch.setitem(table, __import__("hashlib").sha256(b"dn2").hexdigest(), "0x50")
-    monkeypatch.setitem(
-        table, __import__("hashlib").sha256(b"second").hexdigest(), "0x60"
+    sha = __import__("hashlib").sha256
+    _set_table(
+        monkeypatch,
+        {
+            sha(b"dn2").hexdigest(): {"fallback_regions": "0x50"},
+            sha(b"second").hexdigest(): {"fallback_regions": "0x60"},
+        },
     )
     args = [
         "--audio-profile-syx",

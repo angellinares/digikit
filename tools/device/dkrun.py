@@ -5,7 +5,7 @@
     uv run python -m tools.device.dkrun <author/name> --emu            # the running emulator (desktop app or `mise run emu:serve`)
     mise run dk:run -- <author/name> --port Digitakt --seconds 30
 
-Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build and pack (`patchkit pack` builds the objects that are stale, in memory), upload to `modules/<name>.dkm` (skipped when LIST shows the same sha256), SELECT (the selection becomes the debug module `digikit/debug`, which the log needs, and this module), RESTART, wait for the new boot, then the boot's MOD_LOAD / MOD_DSP results, then the log for `--seconds`.
+Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build and pack (`patchkit pack` builds the objects that are stale, in memory), upload to `modules/<name>.dkm` (skipped when LIST shows the same file hash), SELECT (the selection becomes the debug module `digikit/debug`, which the log needs, and this module), RESTART, wait for the new boot, then the boot's MOD_LOAD / MOD_DSP results, then the log for `--seconds`.
 
 It changes only the module store and the selection record (the menu's own code writes it). `--no-restart` stops after SELECT. Time on the emulator is stepped, not real: `--seconds` is emulated time, approximately.
 """
@@ -13,7 +13,6 @@ It changes only the module store and the selection record (the menu's own code w
 from __future__ import annotations
 
 import argparse
-import hashlib
 import subprocess
 import sys
 import time
@@ -109,18 +108,18 @@ def upload_if_changed(
     log: Callable[[str], None] = say,
     progress: Callable[[int, int], None] | None = None,
 ) -> bool:
-    """PUT `data` at `path` unless LIST shows the same size and sha256 there (`have`: that listing, else asked for). True: uploaded.
+    """PUT `data` at `path` unless LIST shows the same size and file hash there (`have`: that listing, else asked for). True: uploaded.
     `progress(sent, total)` is called after each DATA chunk the device acknowledged (not for a skipped upload)."""
     if have is None:
         have = {p: (n, h) for p, n, h in up.ls()}
-    sha = hashlib.sha256(data).hexdigest()
+    sha = D.file_hash(data).hex()
     if path in have and have[path] == (len(data), sha):
-        log(f"{path} is on the device ({len(data)} bytes, same sha256): not uploaded")
+        log(f"{path} is on the device ({len(data)} bytes, same hash): not uploaded")
         return False
     t0 = time.monotonic()
     up.put(path, data, progress)
     log(
-        f"uploaded {path}: {len(data)} bytes ({time.monotonic() - t0:.1f} s, sha256 checked on the device)"
+        f"uploaded {path}: {len(data)} bytes ({time.monotonic() - t0:.1f} s, hash checked on the device)"
     )
     return True
 
@@ -140,7 +139,11 @@ def restart_and_wait(
         wait_boot()
     old = up
     up = wait_new_boot(
-        connect or (lambda: old), sleep, now=now, connect_closes=connect is not None
+        connect or (lambda: old),
+        sleep,
+        now=now,
+        connect_closes=connect is not None,
+        booted=wait_boot is not None,
     )
     if connect is not None:
         _close(old)
@@ -188,11 +191,16 @@ def wait_new_boot(
     timeout_s: float = 90.0,
     now: Callable[[], float] = time.monotonic,
     connect_closes: bool = True,
+    booted: bool = False,
 ) -> D.Uploader:
-    """Poll until the log of the device is the log of a new boot (the debug module, which `run` selects, provides it; an INFO without the LOG capability is the old boot). The port may vanish and return (USB re-enumerates): every failure is
-    a reason to wait and connect again."""
+    """Poll until the device has booted again. With the debug module (which `run` selects) the log tells a new boot from the old one.
+    Without it there is no log (INFO has no LOG capability), so the device counts as booted when it answers again after a failed read
+    (the port is silent while it resets), or when the caller already stepped past the reset (`booted`). The TypeScript `waitForBoot`
+    (packages/dk-session/src/dkupload-core.ts) uses the same rule. The port may vanish and return (USB re-enumerates): every failure
+    is a reason to wait and connect again."""
     end = now() + timeout_s
     last: Exception | None = None
+    silent = False
     while now() < end:
         up = None
         try:
@@ -202,8 +210,11 @@ def wait_new_boot(
                 _, _, evs = L.read_all(up)
                 if restarted(evs):
                     return up
+            elif silent or booted:
+                return up
         except (TimeoutError, OSError, SystemExit, D.UploadError) as e:
             last = e
+            silent = True
         if connect_closes:
             _close(up)
         sleep(0.5)

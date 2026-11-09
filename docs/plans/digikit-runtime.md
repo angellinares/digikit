@@ -345,7 +345,7 @@ Safety (lane r4):
 - [x] Safe mode also catches a module that crashes or hangs after the first UI pass: the boot counter is cleared only after a stable period (45,000 DSP blocks = 30 s of the firmware's block counter; a CPU exception halts the device; kept scenario `safe-late-fault`; finding 37, last section).
 - [x] `patchkit pack` refuses a ColdFire object that has not passed the ISA check (the build records `toolchain.isa_check` over the object's bytes, pack verifies it; finding 43 "2.").
 - [x] The menu's store reader cannot see a torn table while an upload commits (`store::open_stable`, fingerprint of the headers before and after, no lock; host tests that interleave a commit with every read; finding 43 "3.").
-- [x] CLEAR cannot lose the store after a cut between header B and A followed by a torn header B (BEGIN makes the headers equal before staging; kept scenario `upload-clear-cut`; finding 43 "4.").
+- [x] CLEAR cannot lose the store after a cut between header B and A followed by a torn header B (BEGIN makes the headers equal before staging; test `upload-clear-cut` in `modules/core/runtime/tests/upload-faults.device.test.ts`; finding 43 "4.").
 - [x] A reply cannot hang the MIDI task when the host does not read (no unbounded spin on the TX ring): replies are dropped when the firmware's in-flight count says the ring has no room; kept scenario `upload-txfull`; finding 43 "5.".
 - [x] HEALTH shows the module store's used and free space (`DkrtHealth` store fields, read from the headers once and again after an upload; finding 41, last section).
 

@@ -5,22 +5,27 @@ import TargetSelect from './TargetSelect';
 import { fmtRate } from './rate-core';
 import type { PaneSelect } from './pane-select';
 import { dragKind, selectState, toggleAll } from './select-core';
-import { deleteLabel, freeLine, type RowTag } from './transfer-core';
+import { deleteLabel, freeLine, writing, type RowTag } from './transfer-core';
 import { deviceInfo, liveRate } from './transfer-state';
 
 /** What the page gives each mode: the one busy action, and the error line. */
 export interface PageCtx {
   busy: () => string;
   /** Run `f` as the page's one busy action; an error shows, and both sides are read again either way. */
-  run: (what: string, f: () => Promise<void>) => Promise<void>;
+  run: (what: string, f: () => Promise<void | CancelledRun>) => Promise<void>;
   setError: (m: string) => void;
   /** Changes when the page reads by itself (the target selector reads the MIDI ports again). */
   reload: () => number;
 }
 
+/** What a job that the user stopped returns (it is not a failure): what it did, as the log says it (`87 of 357 uploaded, 270 not sent`). */
+export interface CancelledRun {
+  cancelled: string;
+}
+
 /** What the page shows beside a file while it is sent: a bar, or a chip; `message` is the tooltip of the chip. */
 export interface ChipStatus {
-  kind: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'failed';
+  kind: 'waiting' | 'uploading' | 'verifying' | 'ok' | 'same' | 'failed' | 'cancelled';
   sent?: number;
   bytes?: number;
   message?: string;
@@ -45,9 +50,19 @@ export function Chip(props: { status: ChipStatus }): JSX.Element {
           verified
         </span>
       </Show>
+      <Show when={props.status.kind === 'same'}>
+        <span class="check ok" title={props.status.message}>
+          on device
+        </span>
+      </Show>
       <Show when={props.status.kind === 'failed'}>
         <span class="check bad" title={props.status.message}>
           failed
+        </span>
+      </Show>
+      <Show when={props.status.kind === 'cancelled'}>
+        <span class="check idle" title={props.status.message}>
+          cancelled
         </span>
       </Show>
       <Show when={props.status.kind === 'uploading'}>
@@ -256,6 +271,8 @@ export function DeleteButton(props: {
   n: number;
   busy: string;
   confirming: boolean;
+  /** The text once armed, when "Confirm delete (n)" is not enough (a folder goes with its contents). */
+  confirmLabel?: string;
   title: string;
   onClick: () => void;
 }): JSX.Element {
@@ -268,7 +285,11 @@ export function DeleteButton(props: {
       title={props.n ? props.title : 'Tick the rows to delete'}
       onClick={props.onClick}
     >
-      {props.busy === 'Deleting' ? 'Deleting…' : deleteLabel(props.n, props.confirming)}
+      {props.busy === 'Deleting'
+        ? 'Deleting…'
+        : props.confirming && props.confirmLabel
+          ? props.confirmLabel
+          : deleteLabel(props.n, props.confirming)}
     </button>
   );
 }
@@ -352,10 +373,7 @@ export function LocalPane(props: {
   );
 }
 
-/** A job that writes to the device (the target cannot change under it); reading and waiting can be left by choosing another target. */
-export function writing(busy: string): boolean {
-  return busy !== '' && busy !== 'Reading';
-}
+export { writing };
 
 /** What a drop on the right column carries: rows of the local list (our own drag) or files from outside, and the device folder it was dropped
  * on (undefined: the open folder). */
@@ -373,6 +391,8 @@ export function DevicePane(props: {
   actions: JSX.Element;
   select?: PaneSelect;
   drop?: DeviceDrop;
+  /** Leave out the target selector and the device info line (a second device pane under the first one). */
+  hideTarget?: boolean;
   children: JSX.Element;
 }): JSX.Element {
   const [over, setOver] = createSignal(false);
@@ -416,21 +436,23 @@ export function DevicePane(props: {
         </div>
         <div class="acts">{props.actions}</div>
       </div>
-      <div class="devhead">
-        <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
-        <Show when={deviceInfo()}>
-          {(d) => (
-            <>
-              <Show when={d().free !== undefined}>
-                <span class="meta">{freeLine(d().free)}</span>
-              </Show>
-              <Show when={d().storage}>
-                <span class="meta storage">{d().storage}</span>
-              </Show>
-            </>
-          )}
-        </Show>
-      </div>
+      <Show when={!props.hideTarget}>
+        <div class="devhead">
+          <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
+          <Show when={deviceInfo()}>
+            {(d) => (
+              <>
+                <Show when={d().free !== undefined}>
+                  <span class="meta">{freeLine(d().free)}</span>
+                </Show>
+                <Show when={d().storage}>
+                  <span class="meta storage">{d().storage}</span>
+                </Show>
+              </>
+            )}
+          </Show>
+        </div>
+      </Show>
       <div class="listarea">{props.children}</div>
       <Marquee select={props.select} />
     </section>

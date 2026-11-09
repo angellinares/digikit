@@ -5,6 +5,7 @@ import type { DkTransport } from '@digi/dk-session';
 import { noteConnection } from './connection-state';
 import { setTransferEnv, type TransferEnv } from './env';
 import { portLost, selectTarget, startOn, target, type Target } from './target';
+import { MODULE_FILES } from './module-files.generated';
 import { createWebLibrary } from './web-library';
 import {
   WebMidiTransport,
@@ -64,6 +65,7 @@ const { library, source } = createWebLibrary({
 export const webEnv: TransferEnv = {
   library,
   source,
+  moduleFiles: (id) => MODULE_FILES[id],
   patchkitWasm: async () => (await fetchOk(`${BASE}patchkit.wasm`)).arrayBuffer(),
   deviceName: async (device) => deviceNameOf(device),
   targets: {

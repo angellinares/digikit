@@ -25,8 +25,12 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
       kind 1 PARAM   (0x50): u32 index, template, slot; i32 min, max, default; name[32]; short[16]
       kind 2 MACHINE (0x6c): u32 type, clone_of, position, own_dsp, level; u32 knobs[8]; name[24]; short[24]
       kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II only)
+      kind 5 ACTION  (0x10): u32 param (index of a PARAM record of the file), offset (image offset of the click callback)
       kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, id; tab[8]; title[24]; 7 x (u32 position, display; f32 min, max, default; name[24]; short[8])   (Digitakt II)
 
+- ACTION: `DK_PARAM_ACTION` of a machine's parameter (docs/design/machine-page-click.md). `param` is the index of a PARAM record of the same file (at most one ACTION per parameter), `offset` the image offset of
+  `void fn(u32 track)` (inside the image); the runtime stores `load address + offset` for the parameter's row and calls it when the knob is clicked on the machine's page. It takes no row. A runtime
+  that does not know the kind refuses the file (`E_FORMAT`).
 - MACHINE `type` is the machine **key** (since sticky ids, 2026-10-20, docs/design/module-sdk.md 11.5 D7): `hash24 << 8 | hint`. The hash is the low 24 bits of FNV-1a 32 over the
   UTF-8 string `<module id>:<machine id>` (the machine's global id; `register.rs` `machine_hash`); the low byte is 0 ("assign a type at load"; there is no type hint in the manifest). The runtime
   gives the machine a number in `dynamic_first ..= last` (Digitakt II and Digitone II 16 to 23) and remembers it on the card (below), so a project that stores the number

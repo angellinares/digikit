@@ -99,6 +99,7 @@ pub unsafe fn load(path: *const u8) -> i32 {
         return E_TABLE;
     }
     let r = load_inner(path);
+    #[cfg(not(test))]
     crate::table::check();
     r
 }
@@ -254,7 +255,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         return E_FORMAT;
     }
     let reg = f.add(reg_off as usize);
-    let r = crate::registry::check(reg, reg_size);
+    let r = crate::registry::check(reg, reg_size, image_size);
     if r != OK {
         return r;
     }
@@ -268,21 +269,10 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         }
     }
     // already loaded; a free record
-    let mut rec: usize = MAX_MODULES;
-    i = 0;
-    while i < MAX_MODULES {
-        if s.modules[i].used != 0 {
-            if cstr_eq(s.modules[i].name.as_ptr(), name) {
-                return E_LOADED;
-            }
-        } else if rec == MAX_MODULES {
-            rec = i;
-        }
-        i += 1;
-    }
-    if rec == MAX_MODULES {
-        return E_TABLE_FULL;
-    }
+    let rec = match capacity::pick_record(MAX_MODULES, |i| s.modules[i].used != 0, |i| cstr_eq(s.modules[i].name.as_ptr(), name)) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
 
     // ---- allocate, copy, relocate, zero bss ----
     // The DSP range, the relocated DSP image and the voice rows come first: nothing else is allocated yet if they fail.
@@ -379,7 +369,9 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         m.used = 1;
         let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
         if r != OK {
+            if dsp::retained() { return E_BUSY; }
             dsp::cancel(rec);
+            if !crate::files::retire(rec) { return E_BUSY; }
             arena::free(mem);
             m.used = 0;
             return r;
@@ -401,6 +393,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     }
     let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
     if r != OK {
+        if dsp::retained() || !crate::files::retire(rec) { return E_BUSY; }
         arena::free(mem);
         m.used = 0;
     }
@@ -419,19 +412,24 @@ unsafe fn complete(
 ) -> i32 {
     let s = st();
     let owner = rec as u8 + 1;
+    crate::files::init_begin(rec);
     // registry rows before `init` (which may reuse the staging buffer through `store_read`)
-    let r = crate::registry::apply(owner, reg, reg_size);
+    let r = crate::registry::apply(owner, reg, reg_size, s.modules[rec].base);
     if r != OK {
         crate::registry::remove(owner);
-        dsp::release(rec);
+        crate::files::retire(rec);
+        if !dsp::release(rec) { return E_BUSY; }
         return r;
     }
     if init != 0 {
         let call: unsafe extern "C" fn(*const Api) -> i32 = core::mem::transmute(init as usize);
         let r = crate::dlog::call_init(rec as usize, call, addr_of!(dkrt_api));
         if r != 0 {
+            crate::intro::discard(rec);
+            crate::files::retire(rec);
+            crate::upload::release_cmds(owner);
             crate::registry::remove(owner);
-            dsp::release(rec);
+            if !dsp::release(rec) { return E_BUSY; }
             return E_INIT;
         }
     }
@@ -446,12 +444,15 @@ unsafe fn complete(
     m.slot_mask = mask;
     m.used = 1;
     s.loads = s.loads.wrapping_add(1);
+    crate::files::ready(rec);
+    // fully loaded: a boot animation the module asked for in `dkm_init` goes live now (never before: a rolled-back module is not reachable)
+    crate::intro::commit(rec);
     OK
 }
 
 /// The DSP part of a module published at boot failed (the machine rows, `init` and the slots are in already): take it down again.
-pub unsafe fn undo_early(rec: usize) {
-    unload_rec(rec);
+pub unsafe fn undo_early(rec: usize) -> i32 {
+    unload_rec(rec)
 }
 
 /// While the boot hook loads the selection: the CF part of a module with DSP code is published at once (the machine view is built
@@ -479,11 +480,16 @@ unsafe fn drop_tick_cb(base: u32, size: u32) {
 /// it (with the in-use scan) is archived with hot reload. The tables are checked after it (`table::check`).
 pub unsafe fn unload_rec(rec: usize) -> i32 {
     let r = unload_rec_inner(rec);
+    #[cfg(not(test))]
     crate::table::check();
     r
 }
 
 unsafe fn unload_rec_inner(rec: usize) -> i32 {
+    if !crate::files::retire(rec) { return E_BUSY; }
+    if !crate::worker::retire(rec) { return E_BUSY; }
+    // an intro of this module that has not run `done` yet: `done` must not point into freed code
+    crate::intro::discard(rec);
     let s = st();
     let m: &mut Module = &mut s.modules[rec];
     // 1. clear the slots (one aligned store each) so no new call starts
@@ -510,28 +516,27 @@ unsafe fn unload_rec_inner(rec: usize) -> i32 {
         }
         spin += 1;
         if spin > SPIN {
-            // give up: put the slots back, the module stays loaded
-            idx = 0;
-            while idx < SLOTS {
-                if m.slot_mask & (1 << idx) != 0 {
-                    write_volatile(addr_of_mut!(s.slots[idx]), m.slot_fn[idx]);
-                }
-                idx += 1;
-            }
+            // Failed boot teardown stays closed; retain storage until reboot.
             return E_BUSY;
         }
     }
+    // DSP rows must be invalidated before fini can mutate/release module state.
+    if !dsp::quiesce(rec) { return E_BUSY; }
     // 3. fini, 4. free
     if m.fini != 0 {
-        let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(m.fini as usize);
-        crate::dlog::call_fini(rec as usize, call, addr_of!(dkrt_api));
+        #[cfg(test)] crate::cleanup_tests::fini(rec, m.fini);
+        #[cfg(not(test))] {
+            let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(m.fini as usize);
+            crate::dlog::call_fini(rec as usize, call, addr_of!(dkrt_api));
+        }
     }
     // the SysEx commands it registered are released with it
     crate::upload::release_cmds(rec as u8 + 1);
     drop_tick_cb(m.base, m.size);
     // the machine row first, then the DSP voice rows, then the range in the DSP area
-    crate::registry::remove(rec as u8 + 1);
-    dsp::release(rec);
+    #[cfg(test)] crate::cleanup_tests::registry_remove(rec as u8 + 1);
+    #[cfg(not(test))] crate::registry::remove(rec as u8 + 1);
+    dsp::release_range(rec);
     arena::free(m.base as *mut u8);
     m.used = 0;
     m.slot_mask = 0;

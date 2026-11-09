@@ -38,7 +38,7 @@ def render(
     out: pathlib.Path, jobs: int, names: list[str], no_build: bool = True
 ) -> dict[str, dict]:
     coupled.enable_dt2_card()
-    binary = coupled.ensure_binary(no_build, "dt2")
+    binary = coupled.ensure_binary(no_build, "dt2", pgo=True)
     reports = {}
     for kind in FILES:
         scn = ROOT / "tests" / "regression" / "scenarios" / f"dt2-{kind}.ts"

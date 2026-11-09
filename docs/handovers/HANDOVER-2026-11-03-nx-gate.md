@@ -27,10 +27,10 @@ This PR (branch `test/watchdog-default`):
 - `test:changed`: cheap targets only, cache read-only.
 - Selection is per Nx project. A project is touched when it owns a changed file, depends on a touched
   project, or has a target input `{workspaceRoot}/<glob>` that matches a changed file.
-- Gate projects in `tools/gate/` (smoke, fx, tier, card, stock, rust-modules) carry their triggers as
-  such inputs.
-- Module projects depend on regression, conformance, digi-control (daemon), patchkit (packs),
-  devices and sdk.
+- Gate projects in `tools/gate/` (smoke, card, stock, fx-dn2, fx-dt2, pins, dt2-tone, rust-modules)
+  carry their triggers as such inputs. Nx affected ignores negated (`!`) inputs.
+- Module projects depend on regression, digi-control (daemon), patchkit (packs), devices and sdk;
+  modules with `test-conformance` also on conformance.
 - Editing `nx.json` touches every project. Editing a `project.json` touches that project and its
   dependents (regression or a harness package: every module's device tests). Prefer plugin code
   (`tools/nx/*.mjs`) and new files for config changes.
@@ -47,21 +47,51 @@ This PR (branch `test/watchdog-default`):
 
 ## Next steps
 
-1. Waste review of the gate layout. For each gate project and target, list the triggers it needs.
-   Split or narrow where needed (as with gate-fx and gate-tier). One config PR.
-2. Cache the cheap targets: typecheck, `@digi/web` check, desktop `build:ui` and `check:ui`,
-   rust-tests (inputs from cargo depfiles). Bundle with step 1, so `nx.json` and `project.json`
-   change once.
+1. Done on branch `test/gate-waste`: waste review of the gate layout. Gate projects are split into
+   fx-dn2, fx-dt2, pins and dt2-tone with traced inputs; smoke and card use the store daemon; module
+   device targets use `production` cache keys.
+2. Done on branch `test/gate-waste`: cheap targets are cached (typecheck, web check, desktop
+   `build:ui` and `check:ui`, lint, host tests) and the hermetic rust-tests are cached.
 3. Port the Python scenarios to TypeScript. Prove each family on both devices, then delete its Python
    runner code:
-   - card-torn to `card-safety.device.test.ts`.
-   - debug parts: capacity, fits, inferred-needs, isolation, memaudit, sticky-types, menu-open.
-   - the upload full tier once, then delete the matching Python upload scenarios.
-   - upload-cut and clear-cut.
+   - Done on branch `test/card-upload-ports`: card-torn in `card-safety.device.test.ts`.
+   - Done on branch `test/card-upload-ports`: the upload full tier; matching Python upload scenarios deleted.
+   - Done on branch `test/card-upload-ports`: upload-cut and clear-cut.
+   - Done on branch `test/card-upload-ports`: cut-selection in `safe-mode.device.test.ts`, both devices.
+   - Done on branch `test/runtime-pure-cores` (B1): the pure decisions of the runtime (sticky machine
+     types, first-fit DSP placement, row counting, registry, selection and stage limits, module record
+     choice) moved into `dkrt-sdk` (`sticky`, `capacity`, `sel`) with host unit tests; the runtime calls
+     them. The `sticky-types` scenario and `run_sticky` are deleted (ledger: debug-card-safe.md).
+   - Done on branch `test/full-tier-skips`: debug-log (periodic events), debug-guard, crash-capture, safe-fault
+     and safe-late-fault pass on every device they list, with no skips; the Python scenarios, `run_debug`
+     (except the memaudit part), `run_crash`, `run_safe*` and the `safe`/`crash` kinds are deleted.
+   - debug parts still to do, revised plan:
+     - B2 (done on branch `test/capacity-device`; ledger sections in debug-card-safe.md): one device boundary test per device. A full synthetic module set: every refusal code, no
+       overlapping ranges, reference DSP bytes unchanged. Inferred-needs. One fits case on the real
+       MODULES page. The TypeScript synthetic-module helper is written so it can become a fixture-module
+       library.
+     - B3: done on branch `test/memaudit-device`. memaudit clean and stray are
+       `modules/core/runtime/tests/memaudit.device.test.ts`; `module:audit` runs
+       `memaudit-module.device.test.ts` through `tools/devtools/module_audit.sh`. memaudit-full is done on branch
+       `test/memaudit-full` (full-set builder moved to `synth.ts`); `memaudit-*-full`,
+       `pk_digikit_memaudit.py`, `pk_capacity.py` and `test_capacity_sets.py` are deleted. `P.spec` of the
+       Python tests is `tests/support/synth_spec.py`.
+     - Dropped: menu-open and the isolation PCM comparison.
+   - Future: capacity tests through a committed set of fixture modules uploaded into a running
+     emulator (one per limit, arena-fill and expansion variants). This could replace B2's generator and
+     much of B1.
 4. Smaller items:
    - fx-reuse onset jitter: +-64 samples between identical runs, tolerance 128.
    - dkneeds lists broad inputs (`pyproject.toml`, `nx.json`, every `Cargo.toml`).
    - Breaking the Python tools import cycle (finding 104) would allow finer Python test selection.
+   - nx_input_audit does not know what tools/nx/device-inputs.mjs and dependentTasksOutputFiles hash;
+     teach it or port it to TypeScript.
+   - rust-tests of the non-hermetic crates need hashes of the generated core and firmware before they
+     can be cached.
+   - Gate project Python inputs are hand-listed import closures; derive them from the import graph
+     (tools/nx plugin) if they drift.
+5. Overhaul AGENTS.md testing rules, check mise.toml for leftover Python gate tasks, and point
+   README.md to docs/TESTING.md.
 
 ## Process notes
 

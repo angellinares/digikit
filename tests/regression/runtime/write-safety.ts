@@ -162,11 +162,8 @@ function ownedSymbol(plan: RuntimePlan, owner: string, name: string): number | u
   return undefined;
 }
 
-/** The write-watch environment of the runtime proof: the module RAM minus the DMA holes of core/runtime, and the PCs of the modules that may write. */
-export function runtimeWatchEnv(planFile: string, out: string): Record<string, string> {
-  const plan: RuntimePlan & { regions: Record<string, number[]> } = JSON.parse(fs.readFileSync(planFile, 'utf8'));
-  const [lo, hi] = expansionRegion(plan.base.device as Device, plan.base.version);
-  // Card reads land by DMA in these buffers; an image of an older runtime lacks some of them.
+/** Card reads land by DMA in these buffers of core/runtime (`[start, size]`, sorted); an image of an older runtime lacks some of them. */
+export function dmaHoles(plan: RuntimePlan): [number, number][] {
   const holes: [number, number][] = [];
   const hole = (name: string, size: number) => {
     const start = ownedSymbol(plan, 'core/runtime', name);
@@ -180,9 +177,16 @@ export function runtimeWatchEnv(planFile: string, out: string): Record<string, s
   hole('DKRT_STORE_FP', 512);
   // The header sector of the settings record is a hole only together with the record.
   if (hole('DKRT_SETTINGS', SETTINGS_SECTORS * SECTOR)) hole('DKRT_SETTINGS_HDR', 512);
+  return holes.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+}
+
+/** The write-watch environment of the runtime proof: the module RAM minus the DMA holes of core/runtime, and the PCs of the modules that may write. */
+export function runtimeWatchEnv(planFile: string, out: string): Record<string, string> {
+  const plan: RuntimePlan & { regions: Record<string, number[]> } = JSON.parse(fs.readFileSync(planFile, 'utf8'));
+  const [lo, hi] = expansionRegion(plan.base.device as Device, plan.base.version);
   const ranges: string[] = [];
   let at = lo;
-  for (const [start, size] of holes.sort((a, b) => a[0] - b[0] || a[1] - b[1])) {
+  for (const [start, size] of dmaHoles(plan)) {
     if (start > at) ranges.push(`${hex(at)}-${hex(start)}`); // adjacent holes leave no range between them
     at = start + size;
   }
@@ -233,10 +237,12 @@ export function runtimeSafety(
   overlays: string[],
   minEmulators = 1,
   policy: SafetyPolicy = 'default',
+  storeExtra: readonly number[] = [],
 ) {
   if (minEmulators < 1 || !overlays.length)
     throw new Error('runtime safety needs observed emulators and exported overlays');
   const facts = runtimePolicy(device, policy);
+  facts.store_extra = [...new Set([...facts.store_extra, ...storeExtra])];
   const { dir, name: stem } = path.parse(output);
   const indexed = (suffix: string) => {
     const files = new Map<number, string>();

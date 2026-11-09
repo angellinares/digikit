@@ -205,7 +205,10 @@ FN_ID_BASE = 16
 # loop-register sync after an instruction that cannot change it.
 # 11: selected regions can use a generated fallback with runtime known-bit
 # masks (Rf.allow_unknown); older native runtimes lack this register-file mode.
-GENERATOR_VERSION = 11
+# 12: model-safe bodies go on after a MODE1 write that changes no bank,
+# NESTM or IRPTEN bit (sharc_rsgen.mode1_continue); block code then does
+# the bank-request completion itself (St::bank_complete).
+GENERATOR_VERSION = 12
 
 
 def core_hash() -> str:

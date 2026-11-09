@@ -1,0 +1,574 @@
+"""digikit/shot on the concrete SHARC+ core through core/dsp-voice (the real adapter), against a float32 model of the stereo PCM16 reader.
+
+The pool table (`_shot_rec` records and `_shot_ctl` control sets, one of each for every pool index) is written the way the runtime does: PCM
+planes in free L2, the record published with `ready` last. The SMP parameter (word 0, index << 8) picks the record of a note. Checks: SMP
+picks the record (two values, two records; an empty or out-of-range entry is silent); start, end, play (reverse and loop modes) and pitch; L and R differ for a
+stereo sample; a mono sample plays centred; the voice ends after the sample; a stale token or a closed entry is silent with no PCM read;
+every block leaves the count at 0.
+Skips when Selache is not built."""
+
+import numpy as np
+import pytest
+from support.machine_rig import MachineRig, nw
+
+from tools.patchkit import pk_toolchains
+
+pytestmark = pytest.mark.skipif(
+    pk_toolchains.selache_dir() is None,
+    reason="selache not built (tools/patchkit/pk_toolchains.py selache)",
+)
+
+MODULE = "digikit/shot"
+PLANE_L = nw(0x200F0000)  # normal-word addresses of the test PCM planes (free L2)
+PLANE_R = nw(0x200F8000)
+FRAMES = 200
+RATE_HZ = 48000
+TOKEN = 7
+DK_STEREO = 2
+REV, REV_L, FWD_L, FWD = (mode << 8 for mode in range(4))  # the PLAY word: mode * 256
+
+
+STOCK_GAIN = np.uint32(0x3ECF1AA0).view(np.float32)  # DK_SAMPLE_STOCK_GAIN, 0.4045
+STOCK_STEP = np.uint32(0x3C55C8E7).view(np.float32)  # G / 31, the end ramp step
+
+
+def pcm(seed: int, n: int = FRAMES) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    return rng.integers(-32768, 32768, n).astype(np.int16)
+
+
+LEFT, RIGHT = pcm(1), pcm(2)
+
+
+def pack(plane: np.ndarray) -> list[int]:
+    p = np.concatenate([plane, np.zeros(len(plane) % 2, dtype=np.int16)])
+    pairs = p.reshape(-1, 2).astype(np.int64) & 0xFFFF
+    return [int(lo | hi << 16) for lo, hi in pairs]
+
+
+class Shot:
+    def __init__(self, device="dt2", index=0, channels=2, frames=FRAMES, rate=RATE_HZ):
+        self.rig = MachineRig(MODULE, device)
+        self.index = index
+        self.channels = channels
+        self.frames = frames
+        self.src_rate = rate
+        self.left = LEFT[:frames]
+        self.right = self.left if channels == 1 else RIGHT[:frames]
+        d = self.rig.built.data
+        self.rec = nw(d["_shot_rec"]) + 8 * index
+        self.ctl = nw(d["_shot_ctl"]) + 4 * index
+        self.state = nw(self.rig.built.state)
+        poke = self.rig.sess.poke
+        for k, w in enumerate(pack(self.left)):
+            poke(PLANE_L + k, w)
+        for k, w in enumerate(pack(self.right)):
+            poke(PLANE_R + k, w)
+        self.publish()
+
+    def publish(self, token=TOKEN, rec=None, plane_l=PLANE_L, plane_r=PLANE_R):
+        """Publish a record: this entry's by default, or `rec` (a record address) with its own planes."""
+        poke = self.rig.sess.poke
+        rec = self.rec if rec is None else rec
+        base_r = plane_l if self.channels == 1 else plane_r
+        for k, w in enumerate(
+            [0, token, self.frames, self.src_rate, self.channels, 1, plane_l, base_r]
+        ):
+            poke(rec + k, w)
+        poke(rec, 1)  # ready last
+
+    def count(self):
+        return self.rig.sess.peek(self.ctl + 1) or 0
+
+    def cursor(self):
+        return [self.rig.sess.peek(self.state + k) or 0 for k in range(6)]
+
+    def start(self, note=60, params=None, vel=100):
+        """Set the parameters and trigger a note; `step` renders the blocks."""
+        r = self.rig
+        r.set_params(
+            {
+                "shot_smp": self.index << 8,
+                "shot_start": 0,
+                "shot_end": 0x7F00,
+                "shot_play": FWD,
+                "shot_pitch": 0x4000,
+                **(params or {}),
+            }
+        )
+        r.set_note(note, vel)
+        r.trigger()
+        if (
+            r.device == "dn2"
+        ):  # the trig edge block is silent; note_on runs in the next one
+            r.block("friendly")
+
+    def step(self, blocks, params=None):
+        """Change parameters (if any), then render `blocks` blocks of the running note."""
+        r = self.rig
+        if params:
+            r.set_params(params)
+        left, right = [], []
+        for _ in range(blocks):
+            b = r.block("friendly")
+            assert b.returned and b.faults == 0 and b.context_bad == []
+            assert self.count() == 0
+            left += b.samples
+            if r.device == "dt2":
+                right += r.odd_block()
+        return np.array(left), np.array(right)
+
+    def play(self, note=60, blocks=8, params=None, vel=100):
+        self.start(note, params, vel)
+        return self.step(blocks)
+
+
+def model(plane, start, end, rate, reverse, blocks, schedule=None, loop=False):
+    """The reader's output for one plane: split cursor, linear interpolation in float32, a zero tail after the end.
+    Every block is multiplied by the stock gain G; the block in which the cursor passes the end by the running float32 gain G - k * G / 31.
+    `schedule` maps a block index to the (reverse, start, end) or (reverse, start, end, loop) in frames that hold from that block on; the
+    cursor continues. The range is [0, end) forward and [start, end) in reverse and when looping. A cursor outside it renders the block over
+    the whole sample and ends the voice; when looping it moves into the region (START forward, END - 1 in reverse) instead.
+    A looping cursor wraps by the region length (once; still outside: the voice ends); a forward cursor at END - 1 interpolates toward START."""
+    out = np.zeros(32 * blocks, dtype=np.float32)
+    mag = abs(rate)
+    pos = (end - 1 if reverse else start) * 65536
+    done = start >= end
+    ending = 0 if done else None
+    for blk in range(blocks):
+        if schedule and blk in schedule:
+            reverse, start, end, *rest = schedule[blk]
+            loop = bool(rest and rest[0])
+        if done:
+            continue
+        step = -mag if reverse else mag
+        lo, hi = (start, end) if reverse or loop else (0, end)
+        forced = not lo <= pos // 65536 < hi
+        if forced and loop and lo < hi:
+            pos = (hi - 1 if reverse else lo) * 65536 + pos % 65536
+            forced = False
+        elif forced:
+            lo, hi = 0, len(plane)
+        for n in range(blk * 32, blk * 32 + 32):
+            index, frac = divmod(pos, 65536)
+            if not lo <= index < hi:
+                done = True
+                break
+            a = np.float32(plane[index] / 32768)
+            wraps = loop and not forced and not reverse
+            nxt = lo if wraps and index + 1 >= hi else min(index + 1, hi - 1)
+            b = np.float32(plane[nxt] / 32768)
+            out[n] = np.float32(
+                a + np.float32(np.float32(frac / 65536) * np.float32(b - a))
+            )
+            pos += step
+            if not lo * 65536 <= pos < hi * 65536:
+                if loop and hi - lo >= 2 and not forced:
+                    pos += (
+                        -(hi - lo) * 65536 if pos >= hi * 65536 else (hi - lo) * 65536
+                    )
+                if not lo * 65536 <= pos < hi * 65536:
+                    done = True
+        if forced:
+            done = True
+        if done:
+            ending = blk
+    for b in range(blocks):
+        gain, step = STOCK_GAIN, STOCK_STEP if b == ending else np.float32(0)
+        for k in range(32):
+            out[b * 32 + k] = np.float32(out[b * 32 + k] * gain)
+            gain = np.float32(gain - step)
+    return out
+
+
+def frames_of(word, frames):
+    f = np.float32(np.float32(word) * np.float32(frames)) * np.float32(1 / 32512)
+    return min(int(np.rint(f)), frames)
+
+
+def expected_rate(note, pitch_word, src_rate=RATE_HZ, reverse=False):
+    x = ((note - 60) + (pitch_word - 0x4000) * 3 / 2048) / 12
+    r = round(src_rate / 48000 * 2**x * 65536)
+    r = min(max(r, 1), 1 << 22)
+    return -r if reverse else r
+
+
+def check(s, note=60, blocks=8, **params):
+    p = {
+        "shot_start": 0,
+        "shot_end": 0x7F00,
+        "shot_play": FWD,
+        "shot_pitch": 0x4000,
+        **params,
+    }
+    got_l, got_r = s.play(note, blocks, params)
+    reverse = p["shot_play"] >> 8 <= 1
+    loop = p["shot_play"] >> 8 in (1, 2)
+    start = frames_of(p["shot_start"], s.frames)
+    end = frames_of(p["shot_end"], s.frames)
+    cur = s.cursor()
+    rate = cur[4] - (1 << 32) if cur[4] >= 1 << 31 else cur[4]
+    want = expected_rate(note, p["shot_pitch"], s.src_rate, reverse)
+    assert abs(rate - want) <= max(2, abs(want) >> 17), (
+        rate,
+        want,
+    )  # the device's exp2 is a polynomial
+    mag = abs(rate)
+    step = -mag if reverse else mag
+    wl = model(s.left, start, end, step, reverse, blocks, loop=loop)
+    wr = model(s.right, start, end, step, reverse, blocks, loop=loop)
+    return got_l, got_r, wl, wr, (start, end, rate)
+
+
+DEVICES = ["dt2", "dn2"]
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_default_params_play_the_whole_sample_with_distinct_channels(device):
+    s = Shot(device)
+    gl, gr, wl, wr, (start, end, rate) = check(s)
+    assert (start, end) == (0, FRAMES) and rate == 65536
+    assert np.array_equal(gl, wl)
+    assert np.max(np.abs(wl)) > 0.04 and not np.array_equal(wl, wr)
+    if device == "dt2":
+        assert np.array_equal(gr, wr)  # R reaches the odd voice's buffer
+    # DN2: the adapter drops R for now (TODO: the shadow right-channel stages), only L is checked
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"shot_start": 40 * 256, "shot_end": 100 * 256},
+        {"shot_start": 0, "shot_end": 50 * 256},
+        {"shot_start": 0, "shot_end": 90 * 256, "shot_play": REV},
+        {"shot_start": 20 * 256, "shot_end": 127 * 256, "shot_play": REV},
+    ],
+    ids=["window", "end-only", "reverse", "reverse-start"],
+)
+def test_start_end_and_play_select_the_frames(params):
+    s = Shot("dt2")
+    gl, gr, wl, wr, (start, end, rate) = check(s, **params)
+    assert 0 <= start < end <= FRAMES
+    assert np.array_equal(gl, wl) and np.array_equal(gr, wr)
+    played = int(np.count_nonzero(wl)) or 1
+    assert 0 < played <= end - start + 1
+
+
+@pytest.mark.parametrize(
+    "note,pitch",
+    [(72, 0x4000), (48, 0x4000), (60, 96 * 256), (60, 32 * 256), (67, 70 * 256)],
+    ids=["note+12", "note-12", "pitch+12", "pitch-12", "note+7,pitch+2.25"],
+)
+def test_pitch_is_the_note_plus_the_pitch_parameter(note, pitch):
+    s = Shot("dt2")
+    gl, gr, wl, wr, (_, _, rate) = check(s, note=note, shot_pitch=pitch)
+    assert np.array_equal(gl, wl) and np.array_equal(gr, wr)
+    semis = (note - 60) + (pitch - 0x4000) * 3 / 2048
+    assert abs(rate / 65536 / 2 ** (semis / 12) - 1) < 3e-5
+
+
+def test_a_source_rate_other_than_48k_scales_the_cursor():
+    s = Shot("dt2", rate=24000)
+    gl, gr, wl, wr, (_, _, rate) = check(s, blocks=12)
+    assert abs(rate - 32768) <= 2
+    assert np.array_equal(gl, wl) and np.array_equal(gr, wr)
+
+
+def test_a_mono_sample_plays_centred():
+    s = Shot("dt2", channels=1)
+    gl, gr, wl, wr, _ = check(s)
+    assert np.array_equal(gl, wl) and np.array_equal(gl, gr)
+
+
+def test_another_pool_entry_reads_its_own_record():
+    s = Shot("dt2", index=3)
+    gl, gr, wl, wr, _ = check(s)
+    assert np.array_equal(gl, wl) and np.array_equal(gr, wr)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_two_smp_values_pick_two_records(device):
+    """Two entries hold different PCM; the SMP word of the note, not the track, chooses. Entry 5 is published after entry 2 and both stay ready."""
+    s = Shot(device, index=2)
+    other_l, other_r = nw(0x200F4000), nw(0x200FC000)
+    poke = s.rig.sess.poke
+    third = pcm(3)
+    for k, w in enumerate(pack(third)):
+        poke(other_l + k, w)
+    for k, w in enumerate(pack(pcm(4))):
+        poke(other_r + k, w)
+    d = s.rig.built.data
+    rec5 = nw(d["_shot_rec"]) + 8 * 5
+    s.publish(token=TOKEN + 1, rec=rec5, plane_l=other_l, plane_r=other_r)
+    first, _ = s.play(blocks=8)  # SMP 2
+    assert np.array_equal(first, model(s.left, 0, FRAMES, 65536, False, 8))
+    s.index = 5
+    second, _ = s.play(blocks=8)  # SMP 5
+    assert np.array_equal(second, model(third, 0, FRAMES, 65536, False, 8))
+    assert not np.array_equal(first, second)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_smp_is_latched_but_other_parameter_words_remain_live(device):
+    s = Shot(device, index=2)
+    s.start(params={"shot_play": FWD_L})
+    s.step(1)
+    changed = {
+        "shot_smp": 5 << 8,
+        "shot_start": 12 << 8,
+        "shot_end": 100 << 8,
+        "shot_play": REV_L,
+        "shot_pitch": 72 << 8,
+    }
+    s.step(1, changed)
+    r = s.rig
+    live = nw(r.built.data["_dv_params"])
+    called = nw(r.built.data["_dv_call_params"])
+    assert r.sess.peek(live) == 5 << 8
+    assert r.sess.peek(called) == 2 << 8
+    for word, pid in enumerate(
+        ("shot_start", "shot_end", "shot_play", "shot_pitch"), 1
+    ):
+        assert r.sess.peek(called + word) == changed[pid]
+    # Entry 5 is empty: a new trigger must now use it and finish silently.
+    s.index = 5
+    s.start()
+    left, _ = s.step(1)
+    assert not np.any(left)
+    assert r.sess.peek(called) == 5 << 8
+
+
+@pytest.mark.parametrize(
+    "smp",
+    [7, 15, 16, 127],
+    ids=["empty-7", "empty-15", "above-pool-16", "above-pool-127"],
+)
+def test_an_empty_or_out_of_range_entry_is_silent(smp):
+    """The entry has no record (never published, or past the pool): note_on does not latch, render ends the voice with no PCM read."""
+    s = Shot("dt2", index=0)
+    s.index = smp
+    left, right = s.play(blocks=2)
+    assert not np.any(left) and not np.any(right)
+    assert s.count() == 0
+
+
+def test_the_voice_ends_after_the_sample():
+    s = Shot("dt2")
+    r = s.rig
+    s.play(blocks=1)
+    for _ in range(10):  # 200 frames = 7 blocks
+        r.block("friendly")
+    assert r.read_rec_word(r.voice, 0x1B8) & 0xFF == 0, "DK_DONE ends the voice"
+    b = r.block("friendly")
+    assert all(x == 0.0 for x in b.samples)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_a_stale_token_is_silent_and_ends_the_voice(device):
+    s = Shot(device)
+    r = s.rig
+    left, _ = s.play(blocks=2)
+    assert np.any(left)  # playing
+    s.rig.sess.poke(
+        s.rec + 1, TOKEN + 1
+    )  # a select: the old token is no longer current
+    b = r.block("friendly")
+    assert all(x == 0.0 for x in b.samples)
+    if device == "dt2":
+        assert r.read_rec_word(r.voice, 0x1B8) & 0xFF == 0
+        assert all(x == 0.0 for x in r.odd_block())
+    assert s.count() == 0
+
+
+@pytest.mark.parametrize("what", ["not-ready", "closed", "bad-fmt", "empty"])
+def test_an_entry_that_is_not_playable_is_silent_with_no_pcm_read(what):
+    s = Shot("dt2")
+    r = s.rig
+    poke = r.sess.poke
+    if what == "not-ready":
+        poke(s.rec, 0)
+    elif what == "closed":
+        poke(s.ctl, 1)
+    elif what == "bad-fmt":
+        poke(s.rec + 5, 2)
+    else:
+        poke(s.rec + 2, 0)
+    poke(s.rec + 6, 0xFFFFFFF0)  # a bad plane address: reading it would fault
+    poke(s.rec + 7, 0xFFFFFFF0)
+    left, right = s.play(blocks=2)
+    assert not np.any(left) and not np.any(right)
+    assert s.count() == 0
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_instruction_count_is_inside_the_declared_ceiling(device):
+    s = Shot(device)
+    s.rig.set_note(60, 100)
+    s.rig.trigger()
+    first = s.rig.block("friendly")
+    steady = s.rig.block("friendly")
+    desc = s.rig.built.desc
+    assert first.instructions < desc[7] + 1500, (
+        first.instructions
+    )  # note_on + render + the adapter
+    assert steady.instructions < desc[6] + 1500, steady.instructions
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_the_module_stores_only_inside_its_own_memory(device):
+    s = Shot(device)
+    s.rig.record_stores = True
+    s.rig.sess.record_stores()
+    s.rig.set_note(60, 100)
+    s.rig.trigger()
+    for _ in range(3):
+        b = s.rig.block("friendly")
+        assert b.returned and b.foreign == [], b.foreign
+
+
+def word_of(frame):
+    """A parameter word that maps to `frame` of the 200-frame sample."""
+    w = int(np.ceil(frame * 32512 / FRAMES))
+    assert frames_of(w, FRAMES) == frame
+    return w
+
+
+def run_live(first, first_blocks, later, later_blocks, expect):
+    """Trigger with the `first` parameters, render `first_blocks`, change to `later`, render `later_blocks`. `expect` is the model schedule
+    (block index -> (reverse, start, end) in frames) and the first entry, 0, is the note-on state. Returns the output and the Shot."""
+    s = Shot("dt2")
+    s.start(params=first)
+    ll, lr = s.step(first_blocks)
+    cursor = s.cursor()
+    gl, gr = s.step(later_blocks, later)
+    left, right = np.concatenate([ll, gl]), np.concatenate([lr, gr])
+    blocks = first_blocks + later_blocks
+    reverse, start, end = expect[0]
+    for plane, got in ((s.left, left), (s.right, right)):
+        want = model(plane, start, end, 65536, reverse, blocks, expect)
+        assert np.array_equal(got, want)
+    return left, cursor, s
+
+
+def test_a_live_play_flip_to_reverse_turns_at_the_current_cursor():
+    expect = {0: (False, 0, FRAMES), 3: (True, 0, FRAMES)}
+    left, cursor, _ = run_live({}, 3, {"shot_play": REV}, 8, expect)
+    assert cursor[2] == 96  # forward: 3 blocks of 32 frames
+    s2 = Shot("dt2")
+    s2.start()
+    s2.step(3)
+    s2.step(1, {"shot_play": REV})
+    assert s2.cursor()[2] == 64 and s2.cursor()[3] == 0  # back from 96, no reset
+    assert np.any(left[96:128])
+
+
+def loop_run(mode, blocks, first=None):
+    """Play a looped region of the sample (frames 40 .. 100, 60 frames) for `blocks` blocks at the unison rate."""
+    reverse = mode == REV_L
+    params = {
+        "shot_start": word_of(40),
+        "shot_end": word_of(100),
+        "shot_play": mode,
+        **(first or {}),
+    }
+    s = Shot("dt2")
+    s.start(params=params)
+    left, right = s.step(blocks)
+    return s, left, right, reverse
+
+
+@pytest.mark.parametrize("mode", [FWD_L, REV_L], ids=["fwd-loop", "rev-loop"])
+def test_a_loop_mode_repeats_the_region_seamlessly(mode):
+    blocks = 6  # 192 frames: more than 3 times the 60 frame region
+    s, left, right, reverse = loop_run(mode, blocks)
+    step = -65536 if reverse else 65536
+    for plane, got in ((s.left, left), (s.right, right)):
+        want = model(plane, 40, 100, step, reverse, blocks, loop=True)
+        assert np.array_equal(got, want)
+    assert np.any(left[-32:]), "still playing after 3 region lengths"
+    assert s.cursor()[5] == 0, "a looping voice is not done"
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF != 0
+
+
+def test_a_live_switch_from_a_loop_to_fwd_ends_at_end_with_the_ramp():
+    first = {"shot_play": FWD_L}
+    s = Shot("dt2")
+    params = {"shot_start": word_of(40), "shot_end": word_of(100), **first}
+    s.start(params=params)
+    ll, _ = s.step(3)  # 96 frames: wrapped once, the cursor is at 76
+    gl, _ = s.step(3, {"shot_play": FWD})  # forward [0, 100): ends at frame 100
+    left = np.concatenate([ll, gl])
+    expect = {0: (False, 40, 100, True), 3: (False, 40, 100, False)}
+    want = model(s.left, 40, 100, 65536, False, 6, expect, loop=True)
+    assert np.array_equal(left, want)
+    assert np.any(left[96:128]) and not np.any(left[128:]), "ended in block 4"
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF == 0
+
+
+def test_a_live_end_moved_behind_the_cursor_fades_the_block_and_ends_the_voice():
+    expect = {0: (False, 0, FRAMES), 3: (False, 0, 50)}
+    left, _, s = run_live({}, 3, {"shot_end": word_of(50)}, 4, expect)
+    assert np.any(left[96:128])  # the block still plays real audio, faded by the ramp
+    assert not np.any(left[128:])
+    done = s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF
+    assert done == 0, "DK_DONE ends the voice"
+
+
+def test_a_live_end_moved_above_the_cursor_continues_to_the_new_end():
+    first = {"shot_end": word_of(100)}
+    expect = {0: (False, 0, 100), 2: (False, 0, FRAMES)}
+    left, _, _ = run_live(first, 2, {"shot_end": 0x7F00}, 6, expect)
+    assert np.any(left[100:190])  # past the first END
+
+
+def test_a_live_start_above_the_cursor_does_not_change_forward_play():
+    expect = {0: (False, 0, FRAMES), 3: (False, word_of(150), FRAMES)}
+    left, _, s = run_live({}, 3, {"shot_start": word_of(150)}, 5, expect)
+    assert np.array_equal(left, model(s.left, 0, FRAMES, 65536, False, 8))
+
+
+def test_a_live_start_above_the_cursor_ends_reverse_play_with_the_ramp():
+    first = {"shot_play": REV}
+    expect = {0: (True, 0, FRAMES), 2: (True, word_of(150), FRAMES)}
+    left, cursor, s = run_live(first, 2, {"shot_start": word_of(150)}, 3, expect)
+    assert cursor[2] == 135 < 150
+    assert np.any(left[64:96]) and not np.any(left[96:])
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF == 0
+
+
+def test_a_live_end_at_or_below_start_in_reverse_ends_the_voice_with_the_ramp():
+    first = {"shot_play": REV, "shot_start": word_of(20)}
+    expect = {0: (True, 20, FRAMES), 2: (True, 120, 100)}
+    later = {"shot_start": word_of(120), "shot_end": word_of(100)}
+    left, _, s = run_live(first, 2, later, 3, expect)
+    assert np.any(left[64:96]) and not np.any(left[96:])
+    assert s.rig.read_rec_word(s.rig.voice, 0x1B8) & 0xFF == 0
+
+
+def sine_plane(frames, period):
+    return np.rint(16000 * np.sin(2 * np.pi * np.arange(frames) / period)).astype(
+        np.int16
+    )
+
+
+@pytest.mark.parametrize(
+    "note", [60, 72, 48], ids=["unison", "octave-up", "octave-down"]
+)
+def test_a_pure_tone_keeps_its_level_at_any_pitch(note):
+    """The pitch changes only the speed: a sine of 16000/32768 keeps its amplitude, scaled by the stock gain 0.4045, one octave up or down."""
+    frames = 1600
+    s = Shot("dt2", frames=frames)
+    plane = sine_plane(
+        frames, 160
+    )  # 300 Hz at 48 kHz, well below the Nyquist limit of the 2x read
+    poke = s.rig.sess.poke
+    for k, w in enumerate(pack(plane)):
+        poke(PLANE_L + k, w)
+        poke(PLANE_R + k, w)
+    got_l, _ = s.play(note=note, blocks=20)
+    n = np.arange(64, 576)  # inside the sample at every pitch
+    w = 2 * np.pi * 2 ** ((note - 60) / 12) / 160
+    basis = np.stack([np.sin(w * n), np.cos(w * n)], 1)
+    c = np.linalg.lstsq(basis, got_l[64:576], rcond=None)[0]
+    amp = np.hypot(*c)
+    assert abs(amp / (16000 / 32768 * float(STOCK_GAIN)) - 1) < 0.02, amp

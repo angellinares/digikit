@@ -387,7 +387,9 @@ fn complement(cond: u32) -> u32 {
 fn flow_compute(d: &Dec, cond: u32) -> Option<Dec> {
     if d.field("e") == Some(1) {
         // ELSE with no condition: the compute never runs.
-        (cond != 0x1f).then(|| d.compute_part(complement(cond))).flatten()
+        (cond != 0x1f)
+            .then(|| d.compute_part(complement(cond)))
+            .flatten()
     } else {
         d.compute_part(cond)
     }
@@ -600,10 +602,8 @@ pub fn build_structure(
                 for _ in 0..if delayed { 2 } else { 0 } {
                     match decode(next) {
                         Ok(sd)
-                            if !matches!(
-                                sd.form,
-                                "8a_abs" | "8a_rel" | "12a_imm" | "12a_ureg"
-                            ) && lowerable(env, &sd).is_ok() =>
+                            if !matches!(sd.form, "8a_abs" | "8a_rel" | "12a_imm" | "12a_ureg")
+                                && lowerable(env, &sd).is_ok() =>
                         {
                             let l = sd.len_sw;
                             node.slots.push((next, sd));
@@ -808,7 +808,13 @@ pub fn build_structure(
     let mut ctx: HashMap<u32, Vec<u16>> = HashMap::new();
     let mut order: Vec<usize> = (0..loops.len()).collect();
     // The dormant loop is the outermost, at every node.
-    order.sort_by_key(|&i| (!loops[i].dormant, loops[i].start, std::cmp::Reverse(loops[i].end)));
+    order.sort_by_key(|&i| {
+        (
+            !loops[i].dormant,
+            loops[i].start,
+            std::cmp::Reverse(loops[i].end),
+        )
+    });
     for pc in nodes.keys().copied().chain(slot_pcs.iter().copied()) {
         let v: Vec<u16> = order
             .iter()
@@ -821,8 +827,13 @@ pub fn build_structure(
     // no loop is active (`CTX_DYNPC` is read from it at entry).
     for pc in nodes.keys().copied().collect::<Vec<_>>() {
         let n = &nodes[&pc];
-        if matches!(n.kind, NodeKind::Jump { tail: Tail::Rts, .. })
-            && ctx.get(&pc).is_some_and(|v| !v.is_empty())
+        if matches!(
+            n.kind,
+            NodeKind::Jump {
+                tail: Tail::Rts,
+                ..
+            }
+        ) && ctx.get(&pc).is_some_and(|v| !v.is_empty())
         {
             let n = nodes.get_mut(&pc).unwrap();
             for (p, _) in n.slots.drain(..) {
@@ -836,9 +847,11 @@ pub fn build_structure(
     for d in loops.iter().filter(|l| l.dormant) {
         let others = ctx.get(&d.end).map_or(0, |v| {
             v.iter()
-                .filter(|&&i| !loops[i as usize].dormant && {
-                    let o = &loops[i as usize];
-                    o.start <= d.end && d.end <= o.end
+                .filter(|&&i| {
+                    !loops[i as usize].dormant && {
+                        let o = &loops[i as usize];
+                        o.start <= d.end && d.end <= o.end
+                    }
                 })
                 .count()
         });
@@ -854,9 +867,7 @@ pub fn build_structure(
             .iter()
             .enumerate()
             .filter(|&(j, o)| {
-                j != i
-                    && (o.dormant
-                        || (o.start <= loops[i].start && loops[i].end <= o.end))
+                j != i && (o.dormant || (o.start <= loops[i].start && loops[i].end <= o.end))
             })
             .count();
         loops[i].empties = irrelevant_deeper == 0 && ancestors == 0;

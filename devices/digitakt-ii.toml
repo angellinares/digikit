@@ -179,10 +179,14 @@ dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 # Named module sets, as roots (the modules they require are added). `patchkit apply` without --modules applies `device`
 # (`--set NAME` picks another); `firmware.load {runtime: true}` patches the stock image with `emulator` (`patch_set` picks
 # another). Both are the flash-image roots of the rt021 images for now. The two sets are the same
-# today (core/input is in both); a module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
+# today (core/input and core/sample-pool, the stock sample pool adapter, are in both); a module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
 [patch_sets]
-emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
-device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
+emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
+device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
+# `device` plus the optional black intro (core/introblank): the Workbench Firmware page picks it with its "Custom boot screen" toggle.
+device-introblank = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/introblank"]
+# Same roots as `emulator`; the name stays for the per-track sample tests (API 1.5).
+sample-tracks = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
 
 # The input backend core/input uses to press keys and turn encoders from software (docs/plans/remote-control.md). The profile chooses; `panel-uart`: the panel
 # MCU's UART packets are decoded by the firmware's own key and encoder decoders, which core/input calls (anchors by hash in the port files).
@@ -381,9 +385,14 @@ tune = 0xca
 level = 0xd1
 level_knob = 7
 
-# Stock parameter rows a module parameter can copy by name: `plain` shows a plain 0..127 value.
+# Stock parameter rows a module parameter copies by glyph name (dk_glyph in sdk/sdk.toml); `encoder` is the default.
 [modules.templates]
-plain = 0xd1
+encoder = 0xcc   # 204 CFADE
+fader = 0xd1     # 209 LEV
+pan = 0x47       # 71 PAN
+onoff = 0x32     # 50 RSET
+tune = 0xca      # 202 TUNE
+play = 0xcb      # 203 PLAY: pictogram painter 0x400c2040, text REV, REV.L, FWD.L, FWD
 
 # A clone of SAMPLE (machine 0) keeps knob 3: it is the sample slot, the firmware's own sample number field. The DSP gets only the sample
 # number bits of its value (`value & 0x3ff`), the module default replaces the track's sample number, so no module parameter goes there.
@@ -417,5 +426,13 @@ record_mark     = 0x1b9                   # byte +0x1b9: the note-on mark
 note_on         = "record"                # ACTIVE != 0 and mark == 0; DN2: "trig-edge"
 pair            = "copy-even"             # the odd voice copies the even block; DN2: "none"
 tune_slot       = 0                       # the stock tune is knob 0 of the track (a frame halfword; pluck.s "0 TUNE"), folded into `pitch`
-param_slots     = [1, 2, 4, 5]            # knob positions for module parameters, in order (a saved project stores values by slot)
+param_slots     = [1, 2, 4, 5, 6]         # knob positions B C E F G for module parameters, in order (a saved project stores values by slot)
 reserved_slots  = [3]                     # knob 3 is the sample slot of a SAMPLE clone (module-sdk.md D1)
+
+# The sample pool adapter's device facts (docs/design/sample-api-1.5.md 2.3); generated into core/sample-pool build/gen/sample-pool-{dev}.inc.
+# DT2 borrows the stock pool: the adapter takes stock sample slots from 0x3ff down to slot_floor (finding 109). 0x3f0 gives 16 slots, one
+# for each track; the value is a placeholder until one more stock project load test (Em's recommendation 5 of the 1.5 design).
+[adapter.sample_pool]
+slot_floor = 0x3f0
+ddr_base   = 0
+ddr_bytes  = 0

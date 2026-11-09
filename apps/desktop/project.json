@@ -3,12 +3,38 @@
   "name": "@digi/desktop",
   "implicitDependencies": ["@digi/web", "@digi/dk-session", "digiemu-desktop", "dkui-host"],
   "targets": {
-    "cargo-test": {
+    "build:ui": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/modules/*/*/module.toml",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/devices/*.toml"
+      ],
+      "outputs": ["{projectRoot}/ui/dist"]
+    },
+    "check:ui": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/modules/*/*/module.toml",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/apps/web/tests/fakeflash.mjs",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/apps/web/tests/fakeflash.d.mts"
+      ],
+      "outputs": []
+    },
+    "rust-tests": {
       "executor": "nx:run-commands",
       "cache": false,
       "parallelism": false,
       "options": {
-        "command": "uv run python -m tools.emulator.digi_env exec -- cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir out/native/target/check-desktop",
+        "command": "node tools/nx/rust-env.mjs --gen -- cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir .nx/target/check-desktop-clean",
         "cwd": "."
       }
     },

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { hexSha256 } from '@digi/dk-session';
+import { fileHashHex } from '@digi/dk-session';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
@@ -12,7 +12,7 @@ import { cliInstall, transferCommand } from '@digi/regression/runtime/transfer-c
 interface FolderResult {
   folder: string;
   continuous: boolean;
-  files: { path: string; size: number; sha256: string }[];
+  files: { path: string; size: number; hash: string }[];
 }
 
 /** CLI upload, persistence, folder mirroring and the selected-but-missing module boot. */
@@ -23,7 +23,7 @@ async function expectTransferLive({ session, dk }: PatchedSession): Promise<void
   // the debug module is installed next to it: the log of the last boot is read at the end
   const debugPath = 'modules/debug.dkm';
   const mirrored = path.join(mirror, 'digikit', modulePath);
-  const sha256 = async () => (fs.existsSync(mirrored) ? await hexSha256(fs.readFileSync(mirrored)) : null);
+  const mirroredHash = async () => (fs.existsSync(mirrored) ? fileHashHex(fs.readFileSync(mirrored)) : null);
 
   await expectRuntimeReady(session);
   const epoch = (await session.status()).epoch;
@@ -39,18 +39,18 @@ async function expectTransferLive({ session, dk }: PatchedSession): Promise<void
 
   // The store follows the guest's card writes after its quiet period (about two seconds).
   await expect
-    .poll(sha256, { timeout: 30_000, interval: 500, message: `mirror SHA-256: ${mirrored}` })
-    .toBe(entry.sha256);
+    .poll(mirroredHash, { timeout: 30_000, interval: 500, message: `mirror hash: ${mirrored}` })
+    .toBe(entry.hash);
   const folder = await session.client.call<FolderResult>('card.folder');
   record(artifacts, 'installed-folder', folder);
   expect(folder.folder, 'card.folder reports the session-owned mirror').toBe(mirror);
   expect(folder.continuous, 'card.folder continuously mirrors the store').toBe(true);
   expect(
-    folder.files.map(({ path, sha256 }) => ({ path, sha256 })).sort((x, y) => x.path.localeCompare(y.path)),
+    folder.files.map(({ path, hash }) => ({ path, hash })).sort((x, y) => x.path.localeCompare(y.path)),
     'mirror metadata matches the card',
   ).toEqual([
-    { path: debugPath, sha256: entries.find((e) => e.path === debugPath)!.sha256 },
-    { path: modulePath, sha256: entry.sha256 },
+    { path: debugPath, hash: entries.find((e) => e.path === debugPath)!.hash },
+    { path: modulePath, hash: entry.hash },
   ]);
 
   const deleted = await transferCommand(session, ['delete', modulePath], path.join(artifacts, 'delete.log'), 300_000);

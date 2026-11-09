@@ -58,7 +58,8 @@ softfloat_abi = true
 # Section 7 is byte-identical to 1.11, so the idle loop addresses carry over.
 # Has a port lockfile (devices/ports/): tools/patchkit/port_resolve.py resolves every firmware with `port = true`.
 port = true
-dsp = { image = "dn2-1.12", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_head = 0xb88aab }
+# Audited LP0 bulk-transport capability (finding 92), not stock sampling support.
+dsp = { image = "dn2-1.12", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_head = 0xb88aab, sample_link = "lp0" }
 
 
 # Board and CPU facts the digikit runtime and the core modules use (docs/design/device-data.md). `patchkit gen` writes them into the
@@ -165,11 +166,16 @@ dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 
 # Named module sets, as roots (the modules they require are added). `patchkit apply` without --modules applies `device`
 # (`--set NAME` picks another); `firmware.load {runtime: true}` patches the stock image with `emulator` (`patch_set` picks
-# another). Both are the flash-image roots of the rt021 images for now. The two sets are the same
-# today (core/input is in both); a module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
+# another). Both are the flash-image roots of the rt021 images for now. The `emulator` set has the sample pool (core/sample-pool) for
+# emulator testing; the `device` set (what is flashed) does not, until the SPI wire-size decision and a hardware read-back of the reserved DDR range.
+# A module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
 [patch_sets]
-emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
+emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
 device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
+# `device` plus the optional black intro (core/introblank): the Workbench Firmware page picks it with its "Custom boot screen" toggle.
+device-introblank = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/introblank"]
+# `emulator` plus the sample pool (core/sample-pool), core/dsp-link (the pool's DSP tail needs it) and the dsp-voice stereo hooks, for the per-track sample tests (API 1.5).
+sample-tracks = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/dsp-link", "core/dsp-voice"]
 
 # The input backend core/input uses to press keys and turn encoders from software (docs/plans/remote-control.md). The profile chooses; `panel-uart`: the panel
 # MCU's UART packets are decoded by the firmware's own key and encoder decoders, which core/input calls (anchors by hash in the port files).
@@ -366,9 +372,14 @@ level_field = "c8"
 level_default = 10          # the track level code
 own_dsp = true
 
-# Stock parameter rows a module parameter can copy by name: `plain` shows a plain 0..127 value.
+# Stock parameter rows a module parameter copies by glyph name (dk_glyph in sdk/sdk.toml); `encoder` is the default.
 [modules.templates]
-plain = 0xd5
+encoder = 0xd5   # 213 DEC
+fader = 0xd7     # 215 A Level
+pan = 0x47       # 71 PAN
+onoff = 0xdd     # 221 ATRG
+tune = 0xee      # 238 TUN1
+play = 0xd5      # DN2 has no PLAY row: falls back to the encoder (shows 0 .. 3)
 
 # The DSP's copy of the frame holds the word of sound-array slot s of voice v at halfword 0x6d + 0x49 v + (s - 25).
 [modules.frame]
@@ -389,5 +400,16 @@ type_hw         = 74
 note_on         = "trig-edge"             # rising edge of bit v of frame halfword trig_hw; DT2: "record"
 trig_hw         = 0x11
 pair            = "none"                  # one voice per slot; DT2: "copy-even"
-param_slots     = [0, 1, 2, 3]            # knob positions for module parameters, in order (pluck_dn2.s: DECAY, PICK, BRIGHT, COLOR)
+param_slots     = [1, 2, 4, 5, 6, 0, 3, 7] # knob positions for module parameters, in order: B C E F G as on the Digitakt II, then A D H (words 0 to 4 sit on the same letters on both devices)
 reserved_slots  = []
+
+# The sample pool adapter's device facts (docs/design/sample-api-1.5.md 2.3); generated into core/sample-pool build/gen/sample-pool-{dev}.inc.
+# DN2 has no stock pool to borrow: the adapter owns a DDR range of the DSP. The canary soak saw no stock write in [0x80531000, 0xa0000000)
+# (finding 106); 256 MiB is a placeholder until the extended soak. The top 512 KiB of that range are not the pool's: they hold the R rings of the stereo
+# machines (core/dsp-voice, docs/design/dn2-stereo.md): 16 rings of 32 KiB, one per slot, written and read by the DSP only. ring_r_base = 0x80531000 + 0x10000000 - 0x80000;
+# the pool range is 0x80000 bytes shorter than the 256 MiB placeholder.
+[adapter.sample_pool]
+slot_floor = 0
+ddr_base   = 0x80531000
+ddr_bytes  = 0x0ff80000
+ring_r_base = 0x904b1000

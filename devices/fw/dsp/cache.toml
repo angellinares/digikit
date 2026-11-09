@@ -1,0 +1,30 @@
+# DSP reset and startup path.
+
+[[fn]]
+name = "dsp.cache.fn.cache_range"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_func", reloc_hash = "04f2b36ddc1a6f83601f00b783818b0f709f1f2aa3539781f38cbccbada87de3", offset = 0x8, len = 6 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 L1 cache-range helper: R4=start, R8=end argument, R12=selector, DM(I6,M6)=mode; 0x604 and mode 1 select noncacheable RR4. Guard stock modifier constants, L4/L5 zero and scalar mode; zero R0 means success. Finding 95."
+
+[[site]]
+name = "dsp.cache.site.cache_enable"
+cpu = "sharc"
+devices = ["dn2"]
+rule = { kind = "sharc_func", reloc_hash = "7cf5b796b58341da2c8b1b140e32f2622188ca3b0eecdd5702e694fa3bf717c5", offset = 0x72, len = 6 }
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "DN2 1.12 boot cache configuration after RR3 argument cleanup, before final CFG enable/invalidate. Displaced R2=DM(CFG); live startup registers, stack, DAG and MODE1 must survive. Finding 95."
+
+[[hook]]
+name = "dsp.cache.hook.cache_enable"
+site = "dsp.cache.site.cache_enable"
+cpu = "sharc"
+mode = "replace"
+regs = { in = ["r10-r11", "r13-r15", "i5-i7", "m5-m7", "m14", "mode1"], clobbers = ["astat"] }
+devices = ["dn2"]
+mark = "D"
+users = ["core/dsp-lp0-proof", "core/sample-pool"]
+doc = "Private boot hook, preserving startup context and re-executing the displaced CFG load before resume."

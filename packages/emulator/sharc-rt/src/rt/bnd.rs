@@ -670,7 +670,11 @@ pub fn _round_even_int(_s: &St, value: f64) -> Int {
 /// floats._flush_denormal_bits
 #[inline(always)]
 fn ftz32(b: u32) -> u32 {
-    if b & 0x7F80_0000 == 0 { b & 0x8000_0000 } else { b }
+    if b & 0x7F80_0000 == 0 {
+        b & 0x8000_0000
+    } else {
+        b
+    }
 }
 
 /// floats._F32_FLUSH_BELOW: 2**-126 - 2**-151 (exact in a double).
@@ -682,7 +686,11 @@ const F32_FLUSH_BELOW: f64 = f32::MIN_POSITIVE as f64 - f64::from_bits((1023u64 
 pub fn _float32_result(s: &St, value: f64) -> (Int, bool, bool) {
     let m = value.abs();
     if m > 0.0 && m < F32_FLUSH_BELOW {
-        let sign = if value.is_sign_negative() { 0x8000_0000 } else { 0 };
+        let sign = if value.is_sign_negative() {
+            0x8000_0000
+        } else {
+            0
+        };
         return (sign, false, true);
     }
     let (bits, overflowed) = _float32_bits(s, value);
@@ -762,15 +770,14 @@ float_binary_fast!(_float_binary_sub, -, fsub);
 
 /// floats._float_multiply: (result, overflowed, underflowed, invalid).
 #[inline(always)]
-pub fn _float_multiply(
-    s: &St,
-    left: V,
-    right: V,
-) -> (V, Option<bool>, Option<bool>, Option<bool>) {
+pub fn _float_multiply(s: &St, left: V, right: V) -> (V, Option<bool>, Option<bool>, Option<bool>) {
     if !left.is_c() || !right.is_c() {
         return (V::UNK, None, None, None);
     }
-    let (a, b) = (f32::from_bits(ftz32(left.b)), f32::from_bits(ftz32(right.b)));
+    let (a, b) = (
+        f32::from_bits(ftz32(left.b)),
+        f32::from_bits(ftz32(right.b)),
+    );
     let r = a * b;
     let rb = r.to_bits();
     let mag = rb & 0x7FFF_FFFF;
@@ -805,11 +812,7 @@ pub fn _float_multiply(
 }
 
 #[inline(always)]
-fn float_multiply_slow(
-    s: &St,
-    left: V,
-    right: V,
-) -> (V, Option<bool>, Option<bool>, Option<bool>) {
+fn float_multiply_slow(s: &St, left: V, right: V) -> (V, Option<bool>, Option<bool>, Option<bool>) {
     std::hint::cold_path();
     let a = _f32_from_bits(s, ftz32(left.b) as Int);
     let b = _f32_from_bits(s, ftz32(right.b) as Int);
@@ -854,7 +857,10 @@ pub fn _float_multiply_parts(s: &St, left: V, right: V, _label: Sym) -> (V, Flag
     // The product of the flushed operands in single precision: a normal
     // result, or one that is a (flushed) zero, is built directly. The
     // smallest normal, an infinity and a NaN take the original sequence.
-    let (a, b) = (f32::from_bits(ftz32(left.b)), f32::from_bits(ftz32(right.b)));
+    let (a, b) = (
+        f32::from_bits(ftz32(left.b)),
+        f32::from_bits(ftz32(right.b)),
+    );
     let rb = (a * b).to_bits();
     let mag = rb & 0x7FFF_FFFF;
     if mag.wrapping_sub(0x0080_0001) < 0x7EFF_FFFF {
@@ -1060,7 +1066,10 @@ fn uninit_seed() -> u32 {
 fn uninit_log(line: &str) {
     use std::io::Write;
     if let Some(path) = std::env::var_os("SHARC_UNINIT_LOG")
-        && let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path)
+        && let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
     {
         let _ = writeln!(f, "pid {} {line}", std::process::id());
     }
@@ -1109,7 +1118,10 @@ fn uninit_value(address: Int, width: Int) -> Int {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if n < 24 || n.is_power_of_two() {
-        uninit_log(&format!("read #{n} of {width} byte(s) at {:#x}", address as u32));
+        uninit_log(&format!(
+            "read #{n} of {width} byte(s) at {:#x}",
+            address as u32
+        ));
     }
     let mut v: Int = 0;
     for k in 0..width {
@@ -1356,6 +1368,13 @@ pub fn _dm_read_full(
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(None);
     };
+    if matches!(width, 1 | 2 | 4 | 8) && (0..=u32::MAX as Int).contains(&concrete) {
+        s.mem.note_ddr_access(
+            concrete as u32,
+            width as u32,
+            crate::mem::DdrAccessKind::CpuRead,
+        );
+    }
     if !s.cfg.has_concrete || !matches!(width, 1 | 2 | 4 | 8) {
         return Ok(None);
     }
@@ -1543,6 +1562,13 @@ pub fn _dm_write_full(s: &mut St, address: VI, width: Int, value: V, normal_word
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(false);
     };
+    if matches!(width, 1 | 2 | 4) && (0..=u32::MAX as Int).contains(&concrete) {
+        s.mem.note_ddr_access(
+            concrete as u32,
+            width as u32,
+            crate::mem::DdrAccessKind::CpuWrite,
+        );
+    }
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
     }
@@ -1605,6 +1631,13 @@ fn _dm_write_nolog_full(
     let Some(concrete) = _concrete_address(s, address) else {
         return Ok(false);
     };
+    if matches!(width, 1 | 2 | 4) && (0..=u32::MAX as Int).contains(&concrete) {
+        s.mem.note_ddr_access(
+            concrete as u32,
+            width as u32,
+            crate::mem::DdrAccessKind::CpuWrite,
+        );
+    }
     if !s.cfg.has_concrete || !value.is_c() || !matches!(width, 1 | 2 | 4) {
         return Ok(false);
     }

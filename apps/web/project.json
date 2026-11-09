@@ -15,12 +15,35 @@
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "command": "uv run python -m tools.emulator.native_wasm --patchkit-only",
+        "command": "node tools/nx/wasm.mjs --patchkit-only",
         "cwd": "."
       }
     },
     "test": {
-      "dependsOn": ["patchkit-wasm"]
+      "dependsOn": ["patchkit-wasm"],
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/apps/desktop/ui/src/card-core.ts",
+        "{workspaceRoot}/apps/desktop/ui/src/samples-core.ts"
+      ]
+    },
+    "check": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/tools/emulator/ready_inputs.json",
+        "{workspaceRoot}/modules/**/module.toml",
+        "{workspaceRoot}/modules/**/gallery/icon.svg",
+        "{workspaceRoot}/apps/desktop/ui/src/**/*",
+        "{workspaceRoot}/apps/desktop/package.json"
+      ],
+      "outputs": ["{projectRoot}/.astro"],
+      "description": "astro check; it writes .astro/*.d.ts before it checks (the audit lists them as generated)."
     },
     "test-host": {
       "executor": "nx:run-commands",
@@ -31,7 +54,9 @@
         "forwardAllArgs": false,
         "command": "pnpm exec vitest run --config vitest.host.config.ts --project web-transfer",
         "cwd": ".",
-        "env": { "DIGI_FW_EMU_SOCKET": "" }
+        "env": {
+          "DIGI_FW_EMU_SOCKET": ""
+        }
       }
     }
   }

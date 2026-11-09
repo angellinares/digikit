@@ -1,31 +1,44 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "gate-stock",
+  "description": "Stock DT2 1.17 goldens (vitest project stock). Cached like module test-device: the daemon key comes from dist/daemons.json, firmware and ready dirs from tools/nx/device-inputs.mjs.",
   "targets": {
     "stock": {
       "executor": "nx:run-commands",
-      "cache": false,
+      "cache": true,
       "parallelism": false,
       "dependsOn": ["digi-control:daemons"],
+      "outputs": [],
       "inputs": [
         "{workspaceRoot}/tests/regression/dt2/**/*",
+        "{workspaceRoot}/tests/regression/goldens/**/*",
         "{workspaceRoot}/tests/regression/support.ts",
+        "{workspaceRoot}/tests/regression/timing.ts",
+        "{workspaceRoot}/tests/regression/watchdog.ts",
+        "{workspaceRoot}/tests/regression/runtime/**/*",
         "{workspaceRoot}/tests/regression/vitest.config.ts",
+        "{workspaceRoot}/tests/regression/tsconfig.json",
         "{workspaceRoot}/tests/regression/package.json",
+        "{workspaceRoot}/tests/scenarios/dt2.json",
         "{workspaceRoot}/packages/test-support/**/*",
         "{workspaceRoot}/packages/control-client/**/*",
-        "{workspaceRoot}/packages/emulator/**/*",
+        "{workspaceRoot}/packages/dk-session/**/*",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/tools/nx/device-inputs.mjs",
         "{workspaceRoot}/devices/**/*",
-        "{workspaceRoot}/tools/devtools/emud_key.py",
-        "{workspaceRoot}/tools/devtools/verify_build.py",
-        "{workspaceRoot}/tools/devtools/stablebin.py",
-        "{workspaceRoot}/tools/emulator/digi_env.py",
-        "{workspaceRoot}/tools/emulator/native_pgo.py",
-        "{workspaceRoot}/tools/emulator/native_target.py",
-        "{workspaceRoot}/tools/emulator/native_emu.py",
-        "{workspaceRoot}/tools/patchkit/pk_emud_pgo.py"
+        "jsToolchain",
+        { "dependentTasksOutputFiles": "**/*", "transitive": true },
+        { "runtime": "node tools/nx/device-inputs.mjs" },
+        { "env": "DIGI_EMU_FAST" },
+        { "env": "DIGI_NO_PROGRESS_MS" },
+        { "env": "DIGI_PK_READY_DT2_117" },
+        { "env": "SHARC_FAST_REGIONS" },
+        { "env": "SHARC_BLOCKTRANS" },
+        { "env": "SHARC_FAST_FALLBACK_REGIONS" },
+        { "env": "SHARC_FAST_AUTO" },
+        { "env": "UPDATE_GOLDENS" }
       ],
-      "options": { "command": "pnpm --filter @digi/regression test:stock", "cwd": "." }
+      "options": { "command": "REGRESSION_JOBS=${DIGI_JOBS:-4} pnpm --filter @digi/regression test:stock", "cwd": "." }
     }
   }
 }

@@ -151,6 +151,12 @@ value = 5
 doc = "DkrtBootInfo.reason: the boot before left a panic record (the runtime's Rust code panicked)."
 
 [[const]]
+name = "SAFE_READ"
+type = "u32"
+value = 6
+doc = "DkrtBootInfo.reason: no selection copy is valid and a copy could not be read; no modules load and the selection is not written during this boot."
+
+[[const]]
 name = "FAULT_ROWS"
 type = "usize"
 value = 4
@@ -348,6 +354,15 @@ fields = [
 ]
 
 [[struct]]
+name = "DkrtStoreFile"
+doc = "A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the file hash slot of the table entry (the content hash, 4 bytes big-endian, then 28 zeros). The file's sectors are contiguous: sector n of the file is store sector first + n."
+fields = [
+    "u32 first",
+    "u32 size",
+    "u8 sha[32]",
+]
+
+[[struct]]
 name = "DkrtModule"
 doc = "dkrt_module result: one loaded module."
 fields = [
@@ -533,6 +548,28 @@ sig = "i32 dkrt_store_list(const u8 *prefix, DkrtStoreEntry *out, u32 max)"
 doc = "The files of the module store whose path starts with prefix (NUL-terminated), sorted by path, at most max into out: the count, or a negative code (E_NOT_FOUND: no store)."
 
 [[fn]]
+name = "dkrt_poll_add"
+sig = "i32 dkrt_poll_add(usize f)"
+doc = "Add a function that the UI loop calls once per pass, in the UI task, next to the one of dkrt_poll_set (room for 4). Adding a function that is in the table is OK. E_NOMEM when the table is full. core/ui uses it for dk_ui_tick."
+
+[[fn]]
+name = "dkrt_poll_remove"
+sig = "void dkrt_poll_remove(usize f)"
+doc = "Remove a function added with dkrt_poll_add; no effect when it is not in the table."
+
+[[fn]]
+name = "dkrt_store_stat"
+sig = "i32 dkrt_store_stat(const u8 *path, DkrtStoreFile *out)"
+doc = "Look a store file up by path (NUL-terminated) and fill out: OK, E_NOT_FOUND (no store, no such file, a folder), or a card error. It reads the store headers and scans the table through the runtime's staging buffer, so call it only at the start of a load, not while a staged module read is in progress. A file of size 0 is found."
+at = "store"
+
+[[fn]]
+name = "dkrt_store_read"
+sig = "i32 dkrt_store_read(const DkrtStoreFile *f, u32 sector, u32 count, u8 *dst)"
+doc = "Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ."
+at = "store"
+
+[[fn]]
 name = "dkrt_module_header"
 sig = "i32 dkrt_module_header(u32 first, DkrtModuleHeader *out)"
 doc = "The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself."
@@ -540,12 +577,12 @@ doc = "The header fields of the .dkm that starts at store sector first (DkrtScan
 [[fn]]
 name = "dkrt_selection_get"
 sig = "i32 dkrt_selection_get(DkrtSelection *out)"
-doc = "The saved selection (what the next boot loads): count store paths. Always OK."
+doc = "The saved selection (what the next boot loads): count store paths. OK, or E_READ without touching out when no copy is valid and a copy had a read error."
 
 [[fn]]
 name = "dkrt_selection_set"
 sig = "i32 dkrt_selection_set(const DkrtSelection *sel)"
-doc = "Save a selection (two copies in the card's store range); OK or an E_SEL_* code. No effect until the next boot."
+doc = "Save a selection (two copies in the card's store range); OK, an E_SEL_* code, or E_READ without writes when no copy is valid and a copy had a read error. No effect until the next boot."
 
 [[fn]]
 name = "dkrt_boot_info"
@@ -586,3 +623,35 @@ name = "dkrt_fit"
 sig = "i32 dkrt_fit(const DkrtScan *entries, u32 n, const u8 *ticked, DkrtFitOut *out)"
 doc = "Which modules fit. The ticked set loads at the next boot into an empty runtime: start from the limits (nothing used) and take in the ticked entries (ticked[i] != 0) in list order; a ticked one that does not fit is flagged and not taken. Then each unticked entry is checked against what the ticked ones leave. An entry without SCAN_COMPAT or without SCAN_NEEDS has no verdict (wont 0). n is at most SCAN_MAX. OK."
 at = "scan"
+
+# The sample backing's events, called by the adapter core/sample-pool (plug-in point dkrt_pool.h, docs/design/sample-api-1.5.md 2.2).
+
+[[fn]]
+name = "dkrt_pool_done"
+sig = "void dkrt_pool_done(u32 req, i32 result)"
+doc = "Adapter to runtime: the load `req` of dkpool_load finished. result is OK (the handle `out` is filled), E_POOL, E_READ or E_FORMAT. Only from dkpool_tick."
+at = "tracks"
+
+[[fn]]
+name = "dkrt_job_post"
+sig = "i32 dkrt_job_post(usize step, usize done, u8 *ctx)"
+doc = "Adapter to runtime: queue a job on the background worker (owner 0). step is the address of i32 step(u8 *ctx), run in the worker task: it returns 1 to be called again, 0 when finished, or a negative error. done is the address of void done(u8 *ctx, i32 status) (or 0), called once in the UI task with the final status, or -80 after a cancel. Returns a job id > 0, E_BUSY when the queue is full or E_CONTRACT for a null step."
+at = "worker"
+
+[[fn]]
+name = "dkrt_job_cancel"
+sig = "i32 dkrt_job_cancel(u32 id)"
+doc = "Adapter to runtime: cancel the job id of dkrt_job_post. A queued job gets done with -80 at the next tick; a running one stops after its current step. OK or E_NOT_FOUND."
+at = "worker"
+
+[[fn]]
+name = "dkrt_pool_lost"
+sig = "void dkrt_pool_lost()"
+doc = "Adapter to runtime: the backing was lost (a stock reset), every handle is invalid. Only from dkpool_tick."
+at = "tracks"
+
+[[fn]]
+name = "dkrt_project_changed"
+sig = "void dkrt_project_changed(u32 slot)"
+doc = "Adapter to runtime: the current project slot changed. The runtime never reads the byte."
+at = "tracks"

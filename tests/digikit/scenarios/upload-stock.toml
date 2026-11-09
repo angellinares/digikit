@@ -1,9 +1,0 @@
-# A stock MidiRpc Ping, SoftwareVersion and DeviceUID reply byte for byte the same with and without the runtime.
-[scenario]
-name = "upload-stock"
-kind = "upload"
-devices = ["dt2", "dn2"]
-tier = "full"
-
-[upload]
-part = "stock"

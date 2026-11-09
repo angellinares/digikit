@@ -57,6 +57,7 @@
 .EXTERN _fw_type_cache;
 .EXTERN _fw_render_next;
 .EXTERN _fw_frame;
+.EXTERN _fw_param_rec;
 .EXTERN _dv_table;
 
 _dv_entry:
@@ -796,6 +797,12 @@ _dv_f3b:
 #else
     CALL _dv_crumb;                       // stage 4: the routine is about to be called (R3, R5, I4 are free here)
 #endif
+    R3 = LSHIFT R2 BY 2;                  // the track's stereo flag starts the block clear (the odd voice normally consumes it; stale if it did not run)
+    R5 = _dv_st;
+    R5 = R5 + R3;
+    I1 = R5;
+    R3 = 0;
+    DM(0, I1) = R3;
     CALL _dv_clrstep;                     // the module step word is cleared
     R3 = DM(_dv_g + 0);
     I4 = R3;
@@ -889,12 +896,22 @@ _dv_back:
 #endif
     JUMP _dv_gcheck;
 _dv_odd:
+    R3 = LSHIFT R2 BY 2;                  // the even voice of the track wrote R (stereo machine): keep it, clear the flag
+    R5 = _dv_st;
+    R5 = R5 + R3;
+    I1 = R5;
+    R3 = DM(0, I1);
+    R5 = 0;
+    DM(0, I1) = R5;
+    R3 = PASS R3;
+    IF NE JUMP _dv_odd6;
     I1 = R8;
     MODIFY(I1, -128);
     I0 = R8;
     LCNTR = 32, DO _dv_copy UNTIL LCE;
         R0 = DM(I1, M6);
 _dv_copy: DM(I0, M6) = R0;
+_dv_odd6:
     R3 = 6;
 #ifdef DV_C3_DB
     CALL _dv_crumb (DB);
@@ -963,9 +980,19 @@ _dv_done:
 _dv_gcheck:
     R8 = DM(_dv_g + 20);
     I0 = R8;
+    R2 = DM(_dv_g + 12);                  // a stereo block (the track's flag) is 64 words: L, then R in the odd voice's buffer
+    R2 = LSHIFT R2 BY 2;
+    R3 = _dv_st;
+    R3 = R3 + R2;
+    I1 = R3;
+    R5 = DM(0, I1);
+    R4 = 32;
+    R6 = 64;
+    R5 = PASS R5;
+    IF NE R4 = PASS R6;
     R13 = 0;
     R9 = 0x7fffffff;
-    LCNTR = 32, DO _dv_gchk UNTIL LCE;
+    LCNTR = R4, DO _dv_gchk UNTIL LCE;
         R0 = DM(I0, M6);
         R0 = R0 AND R9;
 _dv_gchk: R13 = MAX(R13, R0);
@@ -989,7 +1016,7 @@ _dv_gfaultk:
     R3 = DM(_dv_c + 20);
     R3 = PASS R3;
     IF EQ JUMP _dv_gseen;
-    I1 = _dv_params;                      // a contract voice: the words the module saw are its parameter buffer
+    I1 = _dv_call_params;                      // a contract voice: the words the module saw are its parameter buffer
     R14 = _dv_g;
     R3 = 76;
     R14 = R14 + R3;
@@ -1045,10 +1072,21 @@ _dv_gpack:
     IF EQ JUMP _dv_gnr;
     CALL _dv_grestore;
 _dv_gnr:
+    R2 = DM(_dv_g + 12);                  // zero L, and R of a stereo block; the flag is cleared so that the odd voice copies the silent L
+    R2 = LSHIFT R2 BY 2;
+    R3 = _dv_st;
+    R3 = R3 + R2;
+    I1 = R3;
+    R5 = DM(0, I1);
+    R3 = 0;
+    DM(0, I1) = R3;
+    R4 = 32;
+    R6 = 64;
+    R5 = PASS R5;
+    IF NE R4 = PASS R6;
     R8 = DM(_dv_g + 20);
     I0 = R8;
-    R3 = 0;
-    LCNTR = 32, DO _dv_gz UNTIL LCE;
+    LCNTR = R4, DO _dv_gz UNTIL LCE;
 _dv_gz: DM(I0, M6) = R3;
     R4 = DM(_dv_g + 16);
     I1 = R4;
@@ -1215,6 +1253,8 @@ _dv_contract:
     DM(I1, M5) = R9;
 _dv_cmarked:
     DM(_dv_c + 0) = R11;
+    R2 = DM(_dv_g + 12);                  // actual source track, fixed for this DT2 voice
+    DM(_dv_in + DK_IN_TRACK) = R2;
     // pitch = frame word ADM_PITCH_HW + t, the tune knob's word (clamped to the row's range) folded in as (word - 0x4000)
     R0 = ADM_PITCH_HW;
     R0 = R0 + R2;
@@ -1248,6 +1288,9 @@ _dv_cmarked:
     DM(0, I1) = R0;
     R8 = DM(_dv_g + 20);
     DM(_dv_in + DK_IN_OUT) = R8;
+    R0 = 128;                             // machine contract 1.2: out_r is the odd voice's block of the pair (the buffers are 128 apart, as `_dv_odd` copies)
+    R0 = R0 + R8;
+    DM(_dv_in + DK_IN_OUT_R) = R0;
     // the parameter words: knob ADM_PARAM_SLOTi of the track, until a slot of 255 (the buffer's other words stay 0)
     R0 = 0;
     DM(_dv_c + 8) = R0;
@@ -1263,8 +1306,40 @@ _dv_cpl:
     IF EQ JUMP _dv_cpe;
     CALL _dv_pw;
     R1 = DM(_dv_c + 8);
+    // Retain live effective words for UI/debug readers. Callbacks receive the
+    // merged live/latched view in _dv_call_params through the unchanged ABI.
     R2 = LSHIFT R1 BY 2;
     R3 = _dv_params;
+    R3 = R3 + R2;
+    I1 = R3;
+    DM(0, I1) = R0;
+    // Machine contract 1.3: latch declared words per adapter voice/slot at
+    // actual note_on, after effective parameters (including p-locks) are clamped.
+    R2 = DM(_dv_g + 0);
+    I1 = R2;
+    R2 = DM(-2, I1);                      // row word 22: parameter-word latch mask
+    R3 = 1;
+    R3 = LSHIFT R3 BY R1;
+    R2 = R2 AND R3;
+    R2 = PASS R2;
+    IF EQ JUMP _dv_cplive;
+    R2 = DM(_dv_g + 12);
+    R2 = LSHIFT R2 BY 5;                  // 8 words / 32 bytes per voice/slot
+    R3 = _dv_trig_params;
+    R3 = R3 + R2;
+    R2 = LSHIFT R1 BY 2;
+    R3 = R3 + R2;
+    I2 = R3;
+    R5 = DM(_dv_c + 0);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_cpread;
+    DM(0, I2) = R0;
+    JUMP _dv_cplive;
+_dv_cpread:
+    R0 = DM(0, I2);
+_dv_cplive:
+    R2 = LSHIFT R1 BY 2;
+    R3 = _dv_call_params;
     R3 = R3 + R2;
     I1 = R3;
     DM(0, I1) = R0;
@@ -1299,7 +1374,7 @@ _dv_cnoclr:
     R0 = DM(-8, I4);
     I12 = R0;                             // the note_on pc
     R8 = _dv_in;
-    R12 = _dv_params;
+    R12 = _dv_call_params;
     I13 = _dv_nback;
     JUMP (M13, I12);
 _dv_nback:
@@ -1312,10 +1387,36 @@ _dv_crender:
     I12 = R0;                             // the render pc
     R4 = DM(_dv_c + 12);
     R8 = _dv_in;
-    R12 = _dv_params;
+    R12 = _dv_call_params;
     I13 = _dv_rback;
     JUMP (M13, I12);
 _dv_rback:
+    R2 = DM(_dv_g + 12);                  // contract 1.2: a stereo machine or-s DK_STEREO into the status; the track's flag tells the odd voice to keep the R it wrote
+    R2 = LSHIFT R2 BY 2;
+    R3 = _dv_st;
+    R3 = R3 + R2;
+    I1 = R3;
+    R1 = DK_STEREO;
+    R2 = R0 AND R1;
+    DM(0, I1) = R2;
+    // DT2 1.17: the stock pan stage (FUN_1c642a, loop 0x1c7040) reads its per-pair gate (1: stereo pair, pan = balance; 0: matrix, both
+    // voices summed into both planes) from the even voice's param record word +0xd8 (byte _fw_param_rec + 0xdc * 2t + 0xd8, the base 0x2506ec on 1.17),
+    // one frame late (copy at 0x1c7158). Only the stock sample note-on (0x1c335b) writes it. A stereo machine sets it every block.
+    R2 = PASS R2;
+    IF EQ JUMP _dv_nogate;
+    R3 = DM(_dv_g + 12);
+    R4 = 0x1b8;
+    R3 = R3 * R4 (SSI);
+    R4 = _fw_param_rec;
+    R3 = R3 + R4;
+    R4 = 0xd8;
+    R3 = R3 + R4;
+    I1 = R3;
+    R4 = 1;
+    DM(0, I1) = R4;
+_dv_nogate:
+    R1 = NOT R1;
+    R0 = R0 AND R1;
     R1 = DK_DONE;
     COMP(R0, R1);
     IF NE JUMP _dv_rdone;
@@ -1602,10 +1703,15 @@ _dv_frame_sw:
 .PKDATA _dv_rec, 12;
 // The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), the blocks since the note-on per track (16), its scalars
 // (see `_dv_contract`) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
-.PKDATA _dv_in, 16;
-.PKDATA _dv_params, 32;
+.PKDATA _dv_in, 24;
+.PKDATA _dv_params, 32;                    // live effective UI/debug words
+.PKDATA _dv_call_params, 32;               // merged callback words (latched declarations over live words)
+// Adapter-private snapshots: DT2 track / DN2 physical voice slot, never firmware-owned state.
+.PKDATA _dv_trig_params, 512;
 .PKDATA _dv_blk, 64;
 .PKDATA _dv_c, 64;
+// Per track: nonzero while the even voice has written R into the odd voice's block this block (contract 1.2); the odd voice consumes it.
+.PKDATA _dv_st, 64;
 .VAR _dv_slots = ADM_PARAM_SLOT0;
 .VAR _dv_slots1 = ADM_PARAM_SLOT1;
 .VAR _dv_slots2 = ADM_PARAM_SLOT2;

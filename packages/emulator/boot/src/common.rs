@@ -743,7 +743,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, false);
         if !self.guards.is_empty() {
-            self.guards.note_load(self.current_pc, addr, 1, self.current_icount);
+            self.guards
+                .note_load(self.current_pc, addr, 1, self.current_icount);
         }
         let r = self.board.read8(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
@@ -757,7 +758,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, false);
         if !self.guards.is_empty() {
-            self.guards.note_load(self.current_pc, addr, 2, self.current_icount);
+            self.guards
+                .note_load(self.current_pc, addr, 2, self.current_icount);
         }
         let r = self.board.read16(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
@@ -771,7 +773,8 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
         #[cfg(feature = "cf-mix")]
         crate::cfmix::data_ref(addr, false);
         if !self.guards.is_empty() {
-            self.guards.note_load(self.current_pc, addr, 4, self.current_icount);
+            self.guards
+                .note_load(self.current_pc, addr, 4, self.current_icount);
         }
         let r = self.board.read32(addr);
         if !TRACE && (r.is_ok() || !self.zero_page_mmio) {
@@ -784,7 +787,21 @@ impl<const TRACE: bool> Bus for LoggingBus<TRACE> {
     fn fetch16(&mut self, addr: u32) -> Result<u16, BusError> {
         // Decode-cache misses only (a cold path): the flush check.
         if !self.guards.is_empty() && addr == self.current_pc {
-            self.guards.note_fetch(addr, self.current_icount);
+            // The flush check needs the whole instruction, not only its first word. Read the
+            // words from plain RAM only (no device side effects); else assume one word.
+            let len = if self.board.plain_ram(addr, 6) {
+                let mut w = [0u16; 3];
+                for (i, word) in w.iter_mut().enumerate() {
+                    *word = self
+                        .board
+                        .fetch16(addr.wrapping_add(2 * i as u32))
+                        .unwrap_or(0);
+                }
+                coldfire::decode(addr, w).map_or(2, |i| u32::from(i.len))
+            } else {
+                2
+            };
+            self.guards.note_fetch(addr, len, self.current_icount);
         }
         let r = self.board.fetch16(addr);
         self.log("fetch", addr, 2, &r);

@@ -241,7 +241,7 @@ def test_biquad_from_assembly_two_blocks_in_a_row():
                             "    R4 = %d;" % BQ_IN[k],
                             "    R8 = %d;" % outs[k],
                             "    R12 = %d;" % BQ_ST,
-                            "    DK_CALL(_dk_biquad);",
+                            "    DK_CALL(_dk_biquad, _bq_after%d);" % k,
                         )
                     ),
                     "    RTS;",
@@ -290,7 +290,7 @@ def test_biquad_never_reads_past_the_input_block():
             "    R4 = %d;" % BQ_IN[0],
             "    R8 = %d;" % BQ_OUT[0],
             "    R12 = %d;" % BQ_ST,
-            "    DK_CALL(_dk_biquad);",
+            "    DK_CALL(_dk_biquad, _bq_after);",
             "    RTS;",
             "",
         ]
@@ -389,12 +389,12 @@ def block_calls(inc, name, args, entry):
         ".GLOBAL %s;" % entry,
         "%s:" % entry,
     ]
-    for x, y, st in args:
+    for call_index, (x, y, st) in enumerate(args):
         lines += [
             "    R4 = %d;" % x,
             "    R8 = %d;" % y,
             "    R12 = %d;" % st,
-            "    DK_CALL(%s);" % name,
+            "    DK_CALL(%s, _h_after%d);" % (name, call_index),
         ]
     return "\n".join([*lines, "    RTS;", ""])
 

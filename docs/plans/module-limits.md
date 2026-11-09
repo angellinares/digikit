@@ -41,7 +41,7 @@ read from CAPACITY.
 Each with one proof run on DN2, then DT2.
 
 - [ ] DN2 DSP area to 448 KiB (below `0x200fa000`).
-- [ ] Parameters: DT2 `param_slots` `[1,2,4,5,6]`; DN2 `[0..7]`. Check that kit and project save and load keep the new knobs.
+- [x] Parameters: DT2 `param_slots` `[1,2,4,5,6]`; DN2 `[1,2,4,5,6,0,3,7]` (words 0 to 4 on the same letters on both devices). [ ] Check that kit and project save and load keep the new knobs.
 - [ ] ColdFire arena and staging: size from the measured runtime footprint inside the expansion region (DT2 1.33 MiB in all, DN2 much more).
 - [ ] `param_rows`, `page_rows`, `machine_rows`: raise with the dynreg and dyndsp entries; size from RAM cost.
 

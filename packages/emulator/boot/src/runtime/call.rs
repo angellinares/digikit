@@ -58,7 +58,9 @@ impl Emulator {
         let mut out = Vec::with_capacity(len + 4);
         let mut a = addr & !3;
         while a < addr + len as u32 {
-            let w = self.peek32(a).ok_or_else(|| format!("peek {a:#x}: unmapped"))?;
+            let w = self
+                .peek32(a)
+                .ok_or_else(|| format!("peek {a:#x}: unmapped"))?;
             out.extend_from_slice(&w.to_be_bytes());
             a += 4;
         }
@@ -73,7 +75,13 @@ impl Emulator {
         if self.error.is_some() {
             return Err(format!("emulator faulted: {:?}", self.error));
         }
-        let saved = (self.cpu.d, self.cpu.a, self.cpu.pc, self.cpu.sr, self.cpu.other_a7);
+        let saved = (
+            self.cpu.d,
+            self.cpu.a,
+            self.cpu.pc,
+            self.cpu.sr,
+            self.cpu.other_a7,
+        );
         let mut sp = spec.sp;
         for &arg in spec.args.iter().rev() {
             sp -= 4;
@@ -122,7 +130,13 @@ impl Emulator {
             error: self.error.clone(),
         };
         if self.error.is_none() {
-            (self.cpu.d, self.cpu.a, self.cpu.pc, self.cpu.sr, self.cpu.other_a7) = saved;
+            (
+                self.cpu.d,
+                self.cpu.a,
+                self.cpu.pc,
+                self.cpu.sr,
+                self.cpu.other_a7,
+            ) = saved;
         }
         Ok(out)
     }

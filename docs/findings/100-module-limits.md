@@ -56,7 +56,7 @@ level is fixed another way). On DN2 a machine can have several pages and up to 4
 
 | Our limit | Value | Firmware allows |
 | --- | --- | --- |
-| Parameters per machine (`param_slots`) | 4 | DT2 8 knobs on one page; DN2 40 saved slots over several pages |
+| Parameters per machine (`param_slots`) | DT2 5 (`[1,2,4,5,6]`), DN2 8 (`[1,2,4,5,6,0,3,7]`) | DT2 8 knobs on one page, knobs 0, 3 and 7 are TUNE, the sample slot and LEV; DN2 40 saved slots over several pages |
 | Pages per machine (patchkit) | 1 | DT2 1; DN2 no cap found |
 | `param_rows`, `page_rows`, `machine_rows` | 16, 8 (DN2), 8 | table sizes of ours; the firmware has no such cap |
 | DSP area | 512 KiB DT2, 320 KiB DN2 | about 900 KiB DT2 (needs a wider offset field), about 450 KiB DN2 |

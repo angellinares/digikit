@@ -10,8 +10,10 @@ import {
   type RuntimeBaseline,
   type SessionOptions,
 } from '@digi/test-support';
+import { fileTemp } from './file-temp.ts';
 import { portFile } from './runtime/device-data.ts';
 import { daemonBinary } from './runtime/devices.ts';
+import type { RunDirClaim } from './runtime/run-claim.ts';
 import { setTimingContext, timePhase, timingContext } from './timing.ts';
 import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
 
@@ -35,6 +37,9 @@ export function withSession(opts: SessionOptions & { restart?: boolean }): Sessi
     const binary = opts.binary ?? (process.env.DIGI_EMUD ? undefined : daemonBinary(opts.device));
     session = await Session.start({ ...opts, binary });
   });
+  afterEach((context) => {
+    if (context.task.result?.state === 'fail') session?.keepDiagnostics();
+  });
   afterAll(async () => {
     await session?.close();
   });
@@ -57,7 +62,7 @@ export interface PatchedSession {
 
 /** A fresh runtime daemon; protocol cancellation precedes daemon shutdown. No remote module is assumed installed. */
 export async function startPatchedSession(
-  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: SessionOptions['dsp'] },
   scope = 'patched runtime',
 ): Promise<PatchedSession> {
   const context = { scope, device: opts.device, session: randomUUID() };
@@ -66,7 +71,7 @@ export async function startPatchedSession(
     () =>
       Session.start({
         ...opts,
-        dsp: 'sharc',
+        dsp: opts.dsp ?? 'sharc',
         runtime: { patchSet: opts.patchSet },
       }),
     context,
@@ -93,6 +98,7 @@ export async function startPatchedSession(
     };
   } catch (err) {
     watchdog.stop();
+    session.keepDiagnostics();
     await timePhase('session.shutdown', () => session.close(), context);
     throw err;
   }
@@ -135,7 +141,7 @@ export async function expectRuntimeBoot({ session, dk }: PatchedSession): Promis
 /** No restart hook: every acceptance file owns a single fresh, free-running runtime. Vitest forbids `expect.poll` in
  * `beforeAll`, so each test calls `expectRuntimeBoot` itself. */
 export function withPatchedSession(
-  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string },
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: SessionOptions['dsp'] },
   scope?: string,
 ): {
   readonly runtime: PatchedSession;
@@ -143,6 +149,9 @@ export function withPatchedSession(
   let runtime: PatchedSession | undefined;
   beforeAll(async () => {
     runtime = await startPatchedSession(opts, scope);
+  });
+  afterEach((context) => {
+    if (context.task.result?.state === 'fail') runtime?.session.keepDiagnostics();
   });
   afterAll(async () => {
     await runtime?.close();
@@ -161,13 +170,22 @@ export interface RuntimeCase extends PatchedSession {
 
 /** Opt-in fixture: independent cases reload pristine firmware/card state in one owned daemon. */
 export function withReusablePatchedSession(
-  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: 'zero' | 'sharc' | 'cold' },
+  opts: Omit<SessionOptions, 'runtime' | 'dsp'> & {
+    patchSet?: string;
+    dsp?: 'zero' | 'sharc' | 'cold';
+    /** Called when the daemon starts: a persistent run dir for it (see `claimRunDir`), or undefined for a fresh temporary one. */
+    runDirClaim?: () => RunDirClaim | undefined;
+  },
   lifecycle: {
+    /** Explicit no-progress budget for this fixture; undefined preserves the environment/default limit. */
+    watchdogLimitMs?: number;
     prepareBaseline: (session: Session) => Promise<RuntimeBaseline>;
     /** Required scenario evidence (guard/fault/card/PCM) before state is discarded. Holds release in their own finally. */
     finishCase: (runtime: RuntimeCase) => Promise<void>;
     /** Validate process-lifetime artifacts only after the owned daemon has closed, even on a failed case. */
     afterClose?: (session: Session) => Promise<void>;
+    /** Temporary directories of the fixture (artifacts): removed when the file ends clean, kept (and printed) when it failed. */
+    tempDirs?: () => string[];
   },
   scope = 'reused runtime',
 ): { readonly runtime: RuntimeCase; reload(baseline: RuntimeBaseline): Promise<RuntimeCase> } {
@@ -177,9 +195,21 @@ export function withReusablePatchedSession(
   let runtime: RuntimeCase | undefined;
   let invalidate: (() => void) | undefined;
   let transitioning = false;
+  let claim: RunDirClaim | undefined;
+  /** A failed file leaves a run dir that must not be reused: a snapshot of a boot that failed a check would pass the next run. */
+  let failed = false;
+  const releaseClaim = () => {
+    claim?.release(failed);
+    claim = undefined;
+  };
+  const disposeTemp = () => {
+    for (const dir of lifecycle.tempDirs?.() ?? []) if (dir) fileTemp(dir, failed);
+  };
   const loadCase = async (next: RuntimeBaseline): Promise<RuntimeCase> => {
     const context = { scope, device: opts.device, session: randomUUID() };
     setTimingContext(session!, context);
+    // A load with its own timeout (a long multi-boot chain) gets the same bound as no-progress limit; the next case restores the default.
+    watchdog?.setLimit(next.timeoutMs);
     const epoch = await timePhase('session.baseline-reload', () => session!.reloadRuntimeBaseline(next), context);
     let active = true;
     const dk = new DkSession(
@@ -228,9 +258,11 @@ export function withReusablePatchedSession(
     } finally {
       // No release-all RPC exists. Bounded taps/chords own release; the mandatory next load clears runtime/scheduled input.
       cancel?.();
+      watchdog?.setLimit(undefined);
       runtime = undefined;
     }
     if (errors.length) {
+      failed = true;
       try {
         fs.writeFileSync(
           path.join(session!.runDir, 'runtime-case-error.json'),
@@ -245,17 +277,28 @@ export function withReusablePatchedSession(
   };
   beforeAll(async () => {
     const deadline = Date.now() + 120_000;
-    session = await Session.start({
-      ...opts,
-      dsp: opts.dsp ?? 'sharc',
-      runtime: { patchSet: opts.patchSet, reuse: true },
-    });
-    watchdog = startNoProgressWatchdog(session);
+    const { runDirClaim, ...sessionOptions } = opts;
+    claim = runDirClaim?.();
+    try {
+      session = await Session.start({
+        ...sessionOptions,
+        ...(claim ? { runDir: claim.dir } : {}),
+        dsp: opts.dsp ?? 'sharc',
+        runtime: { patchSet: opts.patchSet, reuse: true },
+      });
+    } catch (error) {
+      failed = true;
+      releaseClaim();
+      throw error;
+    }
+    watchdog = startNoProgressWatchdog(session, { limitMs: lifecycle.watchdogLimitMs });
     try {
       baseline = await withinRuntimeDeadline(deadline, () => lifecycle.prepareBaseline(session!));
     } catch (error) {
       watchdog.stop();
+      failed = true;
       await session.close({ preserveDiagnostics: true });
+      releaseClaim();
       throw error;
     }
   });
@@ -265,6 +308,7 @@ export function withReusablePatchedSession(
   afterEach(async (context) => {
     await finishCurrentCase();
     if (context.task.result?.state === 'fail') {
+      failed = true;
       watchdog?.stop();
       await session?.close({ preserveDiagnostics: true });
     }
@@ -273,7 +317,10 @@ export function withReusablePatchedSession(
   afterAll(async () => {
     watchdog?.stop();
     invalidate?.();
-    if (!session || checkedClose) return;
+    if (!session || checkedClose) {
+      releaseClaim();
+      return disposeTemp();
+    }
     checkedClose = true;
     const errors: unknown[] = [];
     try {
@@ -286,6 +333,9 @@ export function withReusablePatchedSession(
     } catch (error) {
       errors.push(error);
     }
+    if (errors.length) failed = true;
+    releaseClaim();
+    disposeTemp();
     if (errors.length) throw aggregate(errors, 'runtime shutdown or post-close evidence failed');
   });
   return {

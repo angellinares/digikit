@@ -12,6 +12,16 @@ users = ["core/health"]
 doc = "The function that creates the main-OS task, the target of the boot thread's last `jsr`; core/health calls it from its idle hook before it starts counting."
 
 [[fn]]
+name = "cf.rtos.fn.sleep_us"
+cpu = "cf"
+sig = "void (u32 us)"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "113f4261cb994d31a918bb90032ffe45", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/sample-pool"]
+doc = "DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it."
+
+[[fn]]
 name = "cf.rtos.fn.queue_pop"
 was = ["dkrt.fw.queue_pop"]
 cpu = "cf"
@@ -105,3 +115,33 @@ devices = ["dt2", "dn2"]
 mark = "D"
 users = ["core/health"]
 doc = "The boot thread's last call (create the main-OS task), after which the thread idles; the hook makes that call itself and then counts idle iterations forever."
+
+[[value]]
+name = "cf.rtos.value.intro_entry"
+cpu = "cf"
+rule = { kind = "cf_literal", hash = "573ca1fa13c8386bc529bf48d5cd1fb4", offset = 0x74, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "The intro's current-entry pointer: {callback, frame count} in the scene table, NULL when no intro runs (DT2 0x43153a00, DN2 0x42c4cacc)."
+
+# The intro's setup function (DT2 1.17 0x400d1832, DN2 1.12 0x400d3d0a; the same code in DN2 1.11): `lea -0x1c,sp; clr.l d1; move.l d2,-(sp);
+# move.l (0x24,sp),d0; movea.l d0,a0; ...`. Its one argument is the scene table (`{callback, count}` entries, a 0 terminator): it stores the pointer as the
+# current entry and counts the entries. The intro task calls it with one of five tables.
+[[site]]
+name = "cf.rtos.site.intro_setup.table_arg"
+cpu = "cf"
+rule = { kind = "cf_func", hash = "76bd72a01dc0ff453c176fae55a6031e", offset = 0x8, len = 6 }
+mark = "D"
+users = ["core/introblank"]
+doc = "The load of the scene table argument in the intro setup function (`move.l (0x24,sp),d0; movea.l d0,a0`, 6 bytes); the hook may change the argument on the stack."
+
+[[hook]]
+name = "cf.rtos.hook.intro_setup.table_arg"
+site = "cf.rtos.site.intro_setup.table_arg"
+cpu = "cf"
+mode = "before"
+regs = { in = [], clobbers = ["d0", "a0", "ccr"] }   # the argument is at (0x24,sp); the displaced `move.l (0x24,sp),d0; movea.l d0,a0` load d0 and a0 next
+devices = ["dt2", "dn2"]
+mark = "D"
+users = ["core/introblank"]
+doc = "The intro setup function, before it reads its scene table argument from (0x24,sp); a hook that writes another table pointer there changes the whole intro."

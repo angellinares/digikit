@@ -5,21 +5,23 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "analog_detune",
-              "slot": 25
-            },
-            {
-              "param": "analog_wave",
               "slot": 26
             },
             {
-              "param": "analog_sub",
+              "param": "analog_wave",
               "slot": 27
+            },
+            null,
+            {
+              "param": "analog_sub",
+              "slot": 29
             },
             {
               "param": "analog_fold",
-              "slot": 28
+              "slot": 30
             }
           ],
           "level": 10,
@@ -87,7 +89,7 @@
         "min": 0,
         "name": "Detune",
         "short": "DET",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       },
       {
@@ -97,7 +99,7 @@
         "min": 0,
         "name": "Wave",
         "short": "WAVE",
-        "slot": 26,
+        "slot": 27,
         "template": 213
       },
       {
@@ -107,7 +109,7 @@
         "min": 0,
         "name": "Sub",
         "short": "SUB",
-        "slot": 27,
+        "slot": 29,
         "template": 213
       },
       {
@@ -117,7 +119,7 @@
         "min": 0,
         "name": "Fold",
         "short": "FOLD",
-        "slot": 28,
+        "slot": 30,
         "template": 213
       }
     ],
@@ -130,7 +132,7 @@
         "name": "Detune",
         "short": "DET",
         "slot": 1,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -140,7 +142,7 @@
         "name": "Wave",
         "short": "WAVE",
         "slot": 2,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -150,7 +152,7 @@
         "name": "Sub",
         "short": "SUB",
         "slot": 4,
-        "template": 209
+        "template": 204
       },
       {
         "default": 0,
@@ -160,7 +162,7 @@
         "name": "Fold",
         "short": "FOLD",
         "slot": 5,
-        "template": 209
+        "template": 204
       }
     ]
   }

@@ -99,6 +99,7 @@ class BuildError(RuntimeError):
 
 def _build_cmd(args: list[str]) -> subprocess.CompletedProcess:
     # always the real repository: the toolchains, caches and shared include directories are in it (DIGI_PK_ROOT names a module variant)
+    modroots.forget()  # object paths carry the key of the sources, which a build or a source edit changes
     return subprocess.run(
         [str(binary()), "--root", str(ROOT), *args],
         cwd=ROOT,

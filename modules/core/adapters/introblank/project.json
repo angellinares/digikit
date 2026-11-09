@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/introblank",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/introblank.device.test.ts"],
+        "modules": ["tools/bootscreen", "test/sine"]
+      }
+    ]
+  }
+}

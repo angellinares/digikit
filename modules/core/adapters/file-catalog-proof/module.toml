@@ -1,0 +1,36 @@
+[module]
+id = "core/file-catalog-proof"
+version = "0.1.0"
+name = "Private directory iterator proof"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Emulator-only DT2 UI-task read-only directory iterator diagnostic."
+ports = ["dt2-1.17"]
+requires = ["core/expansion"]
+conflicts = ["core/runtime", "core/dsp-lp0-proof"]
+
+[targets]
+"dt2-1.17" = "untested"
+
+[[object]]
+path = "build/catalog-cf.dko.json"
+sources = ["src/cf/catalog.c", "src/cf/tramp.s"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[object.externs]
+catalog_queue_pop = "cf.rtos.fn.queue_pop"
+catalog_dir_open = "cf.storage.fn.directory.open"
+catalog_dir_next = "cf.storage.fn.directory.next"
+catalog_file_size = "cf.storage.fn.path.size"
+
+[[op]]
+op = "hook"
+hook = "cf.view.hook.ui_loop"
+to = "catalog_loop_hook"
+
+[[claim]]
+resource = "cf.view.site.ui_loop"

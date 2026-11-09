@@ -1,0 +1,31 @@
+[module]
+id = "digikit/shot"
+version = "0.1.0"
+name = "SHOT"
+category = "machines"
+type = "machine"
+author = "digikit"
+status = "experimental"
+summary = "Plays the stereo sample bound to the track once per note, with start, end, reverse and pitch."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+# Every dk_api field the module's sources call (module and picker); the packer takes the API floor from the newest.
+uses_api = ["files_client", "files_list", "files_poll", "files_cancel", "sample_tracks", "sample_pool_set", "sample_pool_clear", "sample_pool_status", "sample_pool_info", "sample_pool_path", "sample_pool_peaks", "sample_pool_peaks_window", "param_get", "param_set"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# A stereo sample-playback machine (machine contract 1.2, track samples API 1.5). `patchkit pack digikit/shot --device dt2|dn2 -o shot.dkm` makes
+# the .dkm. The machine declaration, the parameters and the track table are in src/module.c; the DSP in src/dsp/shot.s.
+[[object]]
+path = "build/shot-cf.dko.json"
+sources = ["src/module.c", "src/pages.c", "src/sample_view.c", "../../../sdk/src/sample_picker.c", "../../../sdk/src/chooser.c", "../../../sdk/src/picker_logic.c"]
+place = "cf.expansion"
+
+[[object]]
+path = "build/shot-dsp.dko.json"
+sources = ["src/dsp/shot.s"]
+place = "dsp.l2"

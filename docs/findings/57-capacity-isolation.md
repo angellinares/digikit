@@ -2,8 +2,8 @@
 
 Plan: `docs/plans/capacity-isolation.md` (PR 1: steps 1 to 5, merged; PR 2, step 6: the CAPACITY command, runtime 0.2.2, built). Marks as in AGENTS.md: **[D]** measured or read once here,
 **[O]** open, **[C]** corrects an earlier claim; nothing is **[V]** (a second agent has not checked the sets against the image bytes). Emulator only; the device has
-not run any of it. Pieces: `tools/patchkit/pk_capacity.py` (the sets), `tools/patchkit/pk_digikit_capacity.py` (the runner), `packages/patchkit/src/dkmsynth.rs`
-(`patchkit synth-dkm`), scenarios `capacity-*`, `memaudit-*-full`, `isolation-*` in `tests/digikit/scenarios/`, `tests/patchkit/test_capacity_sets.py`,
+not run any of it. Pieces: `tools/patchkit/pk_capacity.py` (the sets), `tests/regression/runtime/synth.ts` (the TypeScript spec builder), `packages/patchkit/src/dkmsynth.rs`
+(`patchkit synth-dkm`), the device tests `modules/core/runtime/tests/capacity/capacity.device.test.ts` (capacity and isolation of the reference's DSP bytes) and `modules/core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` (inferred needs, full tier), scenarios `memaudit-*-full` in `tests/digikit/scenarios/`, `tests/patchkit/test_capacity_sets.py`,
 `tests/patchkit/test_limits.py`.
 
 ## Result

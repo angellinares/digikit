@@ -29,6 +29,7 @@ pub const SLOTS: usize = 8;
 
 /// The structs, constants and function types of the runtime's C ABI, written by `patchkit gen` from `core/runtime/abi.toml` (also the C header
 /// `core/runtime/include/dkrt.h`): `OK`, `LOADING`, `Dkrt*`, `HEALTH_*`, `SAFE_*`, `CARD_*`, `SCAN_*`, `sig`.
+#[rustfmt::skip]
 pub mod gen_abi;
 pub use gen_abi::*;
 
@@ -151,12 +152,74 @@ pub mod sel {
 
     /// Byte offset of map entry `i`.
     pub const fn map_at(i: usize) -> usize {
-        if i == 0 { 28 } else { 480 + 4 * (i - 1) }
+        if i == 0 {
+            28
+        } else {
+            480 + 4 * (i - 1)
+        }
+    }
+
+    /// The record a new selection writes over `cur`: the sequence number goes up, the boot counter, the stable period and the sticky type map are
+    /// kept (the map survives a new selection), the flags keep only `FLAG_SAFE_ONCE`.
+    pub fn next_record(
+        cur: &Record,
+        flags: u32,
+        count: u32,
+        paths: &[[u8; SEL_PATH]; SEL_MAX],
+    ) -> Record {
+        let mut r = Record::empty();
+        r.seq = cur.seq.wrapping_add(1);
+        r.boot_counter = cur.boot_counter;
+        r.stable_blocks = cur.stable_blocks;
+        r.map = cur.map;
+        r.flags = flags & FLAG_SAFE_ONCE;
+        r.count = count;
+        let mut k = 0;
+        while k < count as usize && k < SEL_MAX {
+            r.paths[k] = paths[k];
+            k += 1;
+        }
+        r
+    }
+
+    /// `E_SEL_COUNT` when a selection names more than `SEL_MAX` paths, else `OK`.
+    pub fn check_count(count: u32) -> i32 {
+        if count as usize > SEL_MAX {
+            E_SEL_COUNT
+        } else {
+            OK
+        }
+    }
+
+    /// `check_count` for `CMD_SELECT_ONE`, whose copy index must be 0 or 1 (a bad index has the same code).
+    pub fn check_one(count: u32, copy: u32) -> i32 {
+        if copy > 1 {
+            E_SEL_COUNT
+        } else {
+            check_count(count)
+        }
+    }
+
+    /// The mailbox list of paths takes path number `n` (0-based): `E_SEL_COUNT` when `SEL_MAX` paths are already there.
+    pub fn check_slot(n: usize) -> i32 {
+        if n >= SEL_MAX {
+            E_SEL_COUNT
+        } else {
+            OK
+        }
     }
 
     impl Record {
         pub const fn empty() -> Record {
-            Record { seq: 0, boot_counter: 0, flags: 0, count: 0, stable_blocks: 0, map: [0; MAP_N], paths: [[0; SEL_PATH]; SEL_MAX] }
+            Record {
+                seq: 0,
+                boot_counter: 0,
+                flags: 0,
+                count: 0,
+                stable_blocks: 0,
+                map: [0; MAP_N],
+                paths: [[0; SEL_PATH]; SEL_MAX],
+            }
         }
     }
 
@@ -180,7 +243,10 @@ pub mod sel {
         b[off + 3] = v as u8;
     }
     fn get(b: &[u8], off: usize) -> u32 {
-        ((b[off] as u32) << 24) | ((b[off + 1] as u32) << 16) | ((b[off + 2] as u32) << 8) | (b[off + 3] as u32)
+        ((b[off] as u32) << 24)
+            | ((b[off + 1] as u32) << 16)
+            | ((b[off + 2] as u32) << 8)
+            | (b[off + 3] as u32)
     }
 
     pub fn encode(r: &Record, out: &mut [u8; 512]) {
@@ -266,6 +332,22 @@ pub struct Mailbox {
 /// The module and sample store, version 3 (docs/design/digikit-store.md).
 pub mod store;
 
+/// Bounded native sample validation and integer-only PCM decoding.
+pub mod sample;
+pub mod sample_job;
+pub mod sample_tracks;
+
+pub mod files;
+/// Internal fixed-memory listing work/notification lifecycle model.
+pub mod files_job;
+pub mod sample_stream;
+
+/// The sticky machine type assignment (docs/design/module-sdk.md 11.5 D7) as a pure function, tested on the host; the runtime's `assign` calls it.
+pub mod sticky;
+
+/// The loader's limit decisions (DSP placement, row counts, refusal codes) as pure functions, tested on the host; the runtime calls them.
+pub mod capacity;
+
 /// The settings record, two copies before the selection record (docs/design/digikit-store.md, "The settings record").
 pub mod settings;
 
@@ -279,6 +361,7 @@ pub mod fault;
 /// An event is 32 bytes: `seq`, `time` (the firmware's block counter, 1500 per second), `kind`, `flags` (bit 0: an error, kept when debug is
 /// off), five argument words.
 /// Written by `patchkit gen` from `sdk/sdk.toml` (`gen_sdk.rs`), with the contract version numbers (`contract`).
+#[rustfmt::skip]
 mod gen_sdk;
 pub use gen_sdk::{contract, limits, logk, proto};
 
@@ -304,7 +387,10 @@ mod tests {
         let mut b = [0u8; 512];
         encode(&example(), &mut b);
         assert_eq!(&b[0..4], b"DKSL");
-        assert_eq!(&b[4..24], &[0, 0, 0, 1, 0, 0, 0, 7, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2]);
+        assert_eq!(
+            &b[4..24],
+            &[0, 0, 0, 1, 0, 0, 0, 7, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2]
+        );
         assert_eq!(&b[32..45], b"modules/a.dkm");
         assert_eq!(&b[32 + SEL_PATH..45 + SEL_PATH], b"modules/b.dkm");
         assert_eq!(&b[508..512], &0xce5a_5f11u32.to_be_bytes());

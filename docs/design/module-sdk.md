@@ -192,8 +192,10 @@ typedef enum {                         /* parameter kinds: decide the formatter 
 typedef struct dk_voice_in {            /* per call, built by the adapter                                         */
     int32_t  pitch;                     /* semitones << 8, MIDI note 60 = 60 << 8, tune already added            */
     int32_t  velocity;                  /* 0 .. 127 << 8                                                          */
-    uint32_t block;                     /* blocks since note-on, 0 on the note-on block; wraps at 2^32            */
-} dk_voice_in;
+    uint32_t block;                     /* byte 8: blocks since note-on, 0 on the note-on block; wraps at 2^32    */
+    float   *out;                       /* byte 12: render writes DK_BLOCK floats here                            */
+    uint32_t track;                     /* byte 16: source track 0 .. 15, latched at note_on (machine 1.1)        */
+} dk_voice_in;                          /* 20 bytes on SHARC; pitch at byte 0, velocity at byte 4                 */
 
 /* Static description, one per module, in the read-only data section; the packer reads it by the symbol `dk_machine_desc`. */
 typedef struct dk_machine_desc {
@@ -307,12 +309,12 @@ record_mark     = 0x1b9
 note_on         = "record"                # DN2: "trig-edge", trig_hw = 0x11
 pair            = "copy-even"             # DN2: "none"
 stock_knobs     = { pitch = 0xca, level = 0xd1 }   # pitch: the TUNE knob, folded into `pitch`; level: the engine's
-param_slots     = [1, 2, 4, 5]            # knob positions available to module parameters, in order (DN2: [0, 1, 2, 3])
+param_slots     = [1, 2, 4, 5, 6]         # knob positions available to module parameters, in order (DN2: [1, 2, 4, 5, 6, 0, 3, 7])
 param_template  = { percent = 0xd1, bipolar = 0xd1, enum = 0xd1 }   # DN2: 0xd5
 block_cycles    = 666666                  # dsp_clock_hz / dsp_blocks_per_second (existing [board] fields)
 ```
 
-`param_slots = [1,2,4,5]` keeps pluck's present knob positions (`pluck/module.toml:42`: knobs 3 and 6 empty), because a saved project stores values by
+`param_slots = [1,2,4,5,6]` keeps pluck's knob positions (`pluck/module.toml:42`: knobs 3 and 6 empty), because a saved project stores values by
 slot. Knob D (slot 3) is the sample slot on a SAMPLE clone (finding 02). Knob G (slot 6) is used by stock sample machines and works for a module; knob C is
 unused by every stock machine ([finding 100](../findings/100-module-limits.md)). A module with more
 parameters than `param_slots` is refused at build time with the profile's number in the message. (Slot rule: D1, section 11.5.)
@@ -420,7 +422,7 @@ into the open. DN2 needs per-device `voices` in `[limits]` if the memory is to b
 ### 6.4 What INFO and LIST report
 
 INFO (`upload.rs:470-493`, `digikit-upload.md:61`) keeps its layout (commands are only added; protocol 1). Proposal: a new command `MODULES` (index -> id, version, types, cf range,
-dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and `sha256`. INFO's flags gain "a module is disabled".
+dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and the file `hash`. INFO's flags gain "a module is disabled".
 `dkrt_module` (`lib.rs:671`) returns the same record through the C ABI so the DIGIKIT menu can show it (`digikit-runtime.md:58`).
 
 ### 6.5 What fits (built, docs/plans/what-fits.md)
@@ -482,7 +484,7 @@ file, the key path, the rule and the fix, and are produced by the same code in t
 
 ```
 modules/machines/pluck/module.toml: [[param]] "decay": max 0x8000 is above the largest word 0x7f00 for kind "percent".
-modules/machines/pluck/module.toml: 5 parameters declared; digitakt-ii allows 4 ([adapter.machine] param_slots in devices/digitakt-ii.toml).
+modules/machines/pluck/module.toml: 5 parameters declared; digitakt-ii allows 5 ([adapter.machine] param_slots in devices/digitakt-ii.toml).
 ```
 
 Generated constants: `build/gen/` per module as today (`consts.rs`, `<dev>.inc`, `gallery.json`; finding 27, `27-module-schema.md:20-21`), plus `desc.inc` (`n_params`, ranges) that the
@@ -538,7 +540,7 @@ The SDK a module author sees: `<dk/machine.h>` (or `sdk/asm/dk_machine.inc`), th
 
 ## 10. Migration
 
-Every step keeps `main` green (`mise run gate`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
+Every step keeps `main` green (`mise run test`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
 a step that would move a pin stops and asks.
 
 ### 10.1 Order
@@ -681,7 +683,7 @@ A module that needs a SysEx command of its own (the first is `digikit/remote`: k
 The handler is `int handler(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)`: it returns the number of reply bytes written to `out`, or a negative status. It runs in the firmware's
 MIDI task, so it is short and never waits. The ranges a module may take are reserved in `sdk/sdk.toml` `[protocol.ranges]`; a request outside them, over another module's, or empty
 returns `E_CMD_RANGE` (-64). The ranges are released when the module's `fini` has run. `docs/design/digikit-upload.md` ("Service commands") has the wire side; the fixture
-`test/svc-echo` and `modules/core/runtime/tests/service-commands.device.test.ts` show the round trip; the acceptance cases run with full verification, explicit `--only runtime-fixture`, or `pnpm nx:pilot run core/runtime:test-device` (see `tests/regression/README.md` for prerequisites).
+`test/svc-echo` and `modules/core/runtime/tests/service-commands/service-commands.device.test.ts` show the round trip; the acceptance cases run with default verification or `pnpm nx:pilot run core/runtime-service-tests:test-device` (see `tests/regression/README.md` for prerequisites).
 
 ### 11.7 The input adapter (`core/input`, runtime 0.2.5)
 

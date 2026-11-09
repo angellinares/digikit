@@ -444,7 +444,12 @@ pub fn check_text(sections: &[(String, Vec<u8>)], label: &str) -> Result<BTreeMa
         starts.push((lo, name));
     }
     let at = |a: u32| {
-        let (lo, name) = starts.iter().rev().find(|s| s.0 <= a).copied().unwrap_or((0, "?"));
+        let (lo, name) = starts
+            .iter()
+            .rev()
+            .find(|s| s.0 <= a)
+            .copied()
+            .unwrap_or((0, "?"));
         format!("{label}{name}+{:#x}", a - lo)
     };
     check_ranges(&image, 0, &ranges, &at)

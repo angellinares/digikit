@@ -1,0 +1,123 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 30,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 84,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 138,
+   "section": ".text",
+   "symbol": ".sec..bss",
+   "type": "cf.32"
+  },
+  {
+   "addend": 6,
+   "offset": 50,
+   "section": ".text",
+   "symbol": "storage_fault_site_a",
+   "type": "cf.32"
+  },
+  {
+   "addend": 6,
+   "offset": 104,
+   "section": ".text",
+   "symbol": "storage_fault_site_b",
+   "type": "cf.32"
+  },
+  {
+   "addend": 6,
+   "offset": 158,
+   "section": ".text",
+   "symbol": "storage_fault_site_c",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 4,
+   "hex": "2039fc0cc0304feffff848d7000240c13f410004220002810031000083b900000000322f000446c14cd700024fef00084ef9000000002039fc0cc0304feffff848d7000240c13f410004220002810031000083b900000000322f000446c14cd700024fef00084ef9000000002039fc0cc0304feffff848d7000240c13f410004220002810031000083b900000000322f000446c14cd700024fef00084ef900000000",
+   "kind": "text",
+   "name": ".text",
+   "size": 162
+  },
+  {
+   "align": 4,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss",
+   "size": 4
+  }
+ ],
+ "source_sha256": "0db3e4e64c00adb8eb4e8aaabf016f6076623f8ae8c88d6b7e45e08cb6493849",
+ "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss",
+   "section": ".bss",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "storage_fault_bits",
+   "section": ".bss",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "storage_fault_hook_a",
+   "section": ".text",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "storage_fault_hook_b",
+   "section": ".text",
+   "value": 54
+  },
+  {
+   "global": true,
+   "name": "storage_fault_hook_c",
+   "section": ".text",
+   "value": 108
+  },
+  {
+   "global": true,
+   "name": "storage_fault_site_a",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "storage_fault_site_b",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "storage_fault_site_c",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "39",
+  "isa_check": "21127f99b37d52a75ce8932a8014803f088d3dede5ff25cf6f531ca0424db54c",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

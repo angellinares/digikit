@@ -62,7 +62,7 @@ export const STATUS: [number, string, string][] = [
   [-53, 'E_STATE', 'no upload open (or not in this state)'],
   [-54, 'E_OFFSET', 'offset is neither the next byte nor a retry'],
   [-55, 'E_LENGTH', 'bad chunk length, or the file would pass its size'],
-  [-56, 'E_HASH', 'the staged file does not match the sha256 of BEGIN'],
+  [-56, 'E_HASH', 'the staged file does not match the file hash of BEGIN'],
   [-57, 'E_WRITE', "the firmware's block write failed"],
   [-58, 'E_READ', "the firmware's block read failed"],
   [-59, 'E_NOFILE', 'that path is not in the store'],
@@ -83,7 +83,7 @@ export const LOAD_STATUS: [number, string, string][] = [
   [-1, 'E_NOT_FOUND', 'no store, or no such file or module'],
   [-2, 'E_BAD_STORE', 'store header or table check failed'],
   [-3, 'E_READ', "the firmware's block read failed"],
-  [-4, 'E_SHA', 'store or .dkm sha256 does not match'],
+  [-4, 'E_SHA', 'store file hash or .dkm sha256 does not match'],
   [-5, 'E_FORMAT', 'bad magic, version, bounds or alignment of the .dkm'],
   [-6, 'E_RUNTIME', 'the module needs a newer runtime'],
   [-7, 'E_IMPORT', "an import name is not in the runtime's table"],
@@ -94,6 +94,9 @@ export const LOAD_STATUS: [number, string, string][] = [
   [-12, 'E_BUSY', 'a task is still inside the module'],
   [-13, 'E_TOO_BIG', 'larger than the staging buffer'],
   [-14, 'E_TABLE_FULL', 'no free module record'],
+  [-15, 'E_LOST', 'the sample backing was lost and the reload failed'],
+  [-16, 'E_POOL', 'the sample pool is full'],
+  [-17, 'E_CHANGED', 'the sample file differs from the selection snapshot'],
   [-20, 'E_NO_REGISTRY', 'register records, but the image has no registry'],
   [-21, 'E_REG_DEVICE', 'the records are for another device'],
   [-22, 'E_TYPE_RANGE', 'machine type outside the range, or bad clone_of'],
@@ -134,6 +137,7 @@ export const CAP = {
   SERVICE_CMDS: 9,
   FOLDERS: 10,
   SETTINGS: 11,
+  FILEHASH: 12,
 } as const;
 
 /** The command numbers a module may register: [first, last]. */
@@ -199,6 +203,10 @@ export const LOG_KIND = {
   FX_FAULT: 34,
   FX_DISABLED: 35,
   FAULT_FOUND: 36,
+  POOL_LOAD: 37,
+  POOL_PUBLISH: 38,
+  POOL_LOST: 39,
+  POOL_INVALID: 40,
 } as const;
 
 /** The kind of a LOG event by id: its name and the names of its five arguments ("-": not used). */
@@ -239,6 +247,10 @@ export const LOG_KINDS: Record<number, [string, [string, string, string, string,
   34: ['FX_FAULT', ['row', 'faults', '-', '-', '-']],
   35: ['FX_DISABLED', ['row', 'faults', '-', '-', '-']],
   36: ['FAULT_FOUND', ['kind_site_stage', 'id', 'step', 'at', 'module']],
+  37: ['POOL_LOAD', ['entry', 'result', 'frames', 'base_l', 'token']],
+  38: ['POOL_PUBLISH', ['entry', 'token', 'frames', 'base_l', 'base_r']],
+  39: ['POOL_LOST', ['count', '-', '-', '-', '-']],
+  40: ['POOL_INVALID', ['entry', 'reason', 'token', 'count', '-']],
 };
 
 /** `MACHINE_FAULT` argument 1, low byte: what the DSP guard found. */

@@ -18,10 +18,15 @@ impl CardPort for Card {
 
 #[test]
 fn reset_values_table_25_2_and_inserted_card() {
-    let mut h = Esdhc::new(Card::default());
-    assert_eq!(h.read(esdhc::BASE + esdhc::PRSSTAT, 4), Some(0xFF89_00F8));
-    assert_eq!(h.read(esdhc::BASE + esdhc::SYSCTL, 4), Some(0x0000_8008));
-    assert_eq!(h.read(esdhc::BASE + 0x34, 4), Some(0x117F_013F));
+    for policy in [RegisterPolicy::Oracle, RegisterPolicy::Device] {
+        let mut h = Esdhc::with_policy(Card::default(), policy);
+        assert_eq!(h.read(esdhc::BASE + esdhc::PRSSTAT, 4), Some(0xFF89_00F8));
+        assert_eq!(h.read(esdhc::BASE + esdhc::SYSCTL, 4), Some(0x0000_8008));
+        assert_eq!(h.read(esdhc::BASE + esdhc::IRQSTATEN, 4), Some(0x117F_013F));
+        assert_eq!(h.read(esdhc::BASE + esdhc::IRQSTAT, 4), Some(0));
+        assert_eq!(h.read(esdhc::BASE + esdhc::IRQSIGEN, 4), Some(0));
+        assert!(!h.interrupt_pending());
+    }
 }
 
 #[test]
@@ -43,7 +48,8 @@ fn oracle_irqstat_guest_write_round_trips() {
 #[test]
 fn device_irqstat_guest_write_is_w1c() {
     let mut h = Esdhc::with_policy(Card::default(), RegisterPolicy::Device);
-    h.write(esdhc::BASE + esdhc::XFERTYP, 4, 0); // command completion sets CC|TC
+    h.write(esdhc::BASE + esdhc::XFERTYP, 4, 0); // command completion sets CC
+    h.device_event(2).unwrap(); // explicit transfer completion
     h.write(esdhc::BASE + esdhc::IRQSTAT, 4, 1);
     assert_eq!(h.read(esdhc::BASE + esdhc::IRQSTAT, 4), Some(2));
 }

@@ -148,9 +148,9 @@ impl WriteGuards {
         }
     }
 
-    pub(crate) fn note_fetch(&mut self, pc: u32, icount: u64) {
+    pub(crate) fn note_fetch(&mut self, pc: u32, len: u32, icount: u64) {
         if let Some(w) = self.watch.as_mut() {
-            w.fetch(pc, icount);
+            w.fetch(pc, len, icount);
         }
     }
 
@@ -171,7 +171,9 @@ impl WriteGuards {
     }
 
     pub(crate) fn flush_hits(&self) -> Vec<FlushHit> {
-        self.watch.as_ref().map_or_else(Vec::new, |w| w.flush_hits())
+        self.watch
+            .as_ref()
+            .map_or_else(Vec::new, |w| w.flush_hits())
     }
 
     /// Forget recorded hits (including which ranges were already hit).

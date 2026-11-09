@@ -1,0 +1,142 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            null,
+            {
+              "param": "start",
+              "slot": 26
+            },
+            {
+              "param": "end",
+              "slot": 27
+            },
+            null,
+            {
+              "param": "reverse",
+              "slot": 29
+            }
+          ],
+          "level": 10,
+          "name": "Sample proof",
+          "own_dsp": true,
+          "page": {
+            "name": "SAMPLE",
+            "title": "Sample proof"
+          },
+          "position": null,
+          "short": "SMP",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "start",
+              "slot": 1
+            },
+            {
+              "param": "end",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "reverse",
+              "slot": 4
+            },
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "Sample proof",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "SMP",
+          "type": null
+        }
+      },
+      "id": "sample_proof",
+      "name": "Sample proof",
+      "short": "SMP"
+    }
+  ],
+  "module": "test/sample-proof",
+  "params": {
+    "dn2": [
+      {
+        "default": 0,
+        "id": "start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 32512,
+        "id": "end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 27,
+        "template": 213
+      },
+      {
+        "default": 0,
+        "id": "reverse",
+        "max": 32512,
+        "min": 0,
+        "name": "Reverse",
+        "short": "REV",
+        "slot": 29,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 0,
+        "id": "start",
+        "max": 32512,
+        "min": 0,
+        "name": "Start",
+        "short": "START",
+        "slot": 1,
+        "template": 204
+      },
+      {
+        "default": 32512,
+        "id": "end",
+        "max": 32512,
+        "min": 0,
+        "name": "End",
+        "short": "END",
+        "slot": 2,
+        "template": 204
+      },
+      {
+        "default": 0,
+        "id": "reverse",
+        "max": 32512,
+        "min": 0,
+        "name": "Reverse",
+        "short": "REV",
+        "slot": 4,
+        "template": 204
+      }
+    ]
+  }
+}

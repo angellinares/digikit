@@ -24,3 +24,27 @@
     lea     16(%sp),%sp
     jmp     \next
 .endm
+
+/* cf.link.hook.boot_wire_size: Private boot-only replacement for the wire-length getter call. */
+.macro dk_fw_link_boot_wire_size_hook handler, next
+    lea     -16(%sp),%sp
+    movem.l %d0-%d1/%a0-%a1,(%sp)
+    jsr     \handler
+    movem.l (%sp),%d0-%d1/%a0-%a1
+    lea     16(%sp),%sp
+    jmp     \next
+.endm
+
+/* cf.link.hook.reply_copy: Private wrapper preserves the original copy and return value, then copies the isolated extension before DMA rearming. */
+.macro dk_fw_link_reply_copy_hook handler, next
+    lea     -16(%sp),%sp
+    movem.l %d0-%d1/%a0-%a1,(%sp)
+    move.l  28(%sp),-(%sp)
+    move.l  28(%sp),-(%sp)
+    move.l  28(%sp),-(%sp)
+    jsr     \handler
+    lea     12(%sp),%sp
+    movem.l (%sp),%d0-%d1/%a0-%a1
+    lea     16(%sp),%sp
+    jmp     \next
+.endm

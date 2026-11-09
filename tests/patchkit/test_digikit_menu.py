@@ -64,11 +64,7 @@ def test_hook_displaces_the_selection_restore(image, tmp_path):
     hooks = [
         h
         for h in json.loads(plan_path.read_text())["hooks"]
-        if h["anchor"]
-        not in (
-            "cf.rtos.site.main_os_task",
-            "cf.midi.site.rx",
-        )  # the runtime's own hooks (boot, upload)
+        if h["module"].split("@")[0] == "core/ui"
     ]
     assert len(hooks) == 1 and hooks[0]["anchor"] == "cf.menu.site.settings_list.tail"
     assert [i.split(None, 2)[2] for i in hooks[0]["displaced_insns"]] == [

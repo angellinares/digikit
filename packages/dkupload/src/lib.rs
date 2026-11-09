@@ -7,6 +7,7 @@
 //! - `mock`: an in-memory device that follows the spec's state rules, for tests.
 //! - `wasm`: the C ABI the web app loads.
 pub mod codec;
+#[rustfmt::skip]
 mod gen_proto;
 pub mod mock;
 pub mod proto;
@@ -15,7 +16,7 @@ pub mod session;
 pub mod wasm;
 
 pub use codec::{
-    Message, decode, decode_8in7, encode, encode_8in7, encode_request, path_ok, sha256,
+    Message, decode, decode_8in7, encode, encode_8in7, encode_request, file_hash, path_ok,
 };
 pub use proto::{Entry, Error, Info, ListPage, Status};
 pub use put::PutMachine;

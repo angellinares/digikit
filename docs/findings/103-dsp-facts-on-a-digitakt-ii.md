@@ -64,7 +64,7 @@ Two reads of each register gave the same value (the registers are stable while t
 | SHL1C_RANGE 4 to 7 | all `0x00000000` | garbage for 4 and 5, 0 for 6 and 7 | |
 | CMMR_PFB_NOCHRT0_START, _END, CMMR_GPERR_STAT, CMMR_PWR_L1_SD_CTL, _GLB_CTL, _L1_LS_CTL, PFM_CFG | all `0x00000000` | same | |
 
-What matters for the model: the cache ranges (two cached ranges: `0x200fa000`-`0x200fe000` and `0x28240000`-`0x283a0000`), the ID registers (REVID `0x20`, OSPID `0x00224601`), IMASK and MODE2. A register read costs 2 to 5 cycles, IMASK and IRPTL 27, TPERIOD 22, CMMR_PWR_L1_SD_CTL 28 (the emulator: 2 for all).
+What matters for the model: the non-cacheable ranges (range registers 2 and 3, each from start up to but not including end: `0x200fa000`-`0x200fe000` and `0x28240000`-`0x283a0000`; SHL1C_CFG2 `0xf0` sets RR2EN, RR2SEL, RR3EN and RR3SEL, and RRnSEL = 1 means non-cacheable, SHARC+ Core Programming Reference, Table 32-3; L2 and DDR outside them are cached), the ID registers (REVID `0x20`, OSPID `0x00224601`), IMASK and MODE2. A register read costs 2 to 5 cycles, IMASK and IRPTL 27, TPERIOD 22, CMMR_PWR_L1_SD_CTL 28 (the emulator: 2 for all).
 
 ## 5. The emulator against the device **[D]**
 

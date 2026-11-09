@@ -1,0 +1,20 @@
+[module]
+id = "test/settings-a"
+version = "0.1.0"
+name = "Settings API A"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: the module settings API (put, get, remove through service commands run in slot 0; reads its key in dkm_init)."
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[object]]
+path = "build/settings-a.dko.json"
+sources = ["src/settings-proof.c"]
+place = "cf.expansion"

@@ -10,7 +10,7 @@
 //! 0x14 u32 align        placement alignment in bytes (8 or more, a power of two)
 //! 0x18 u32 image_off    0x1c u32 reloc_off   0x20 u32 reloc_count
 //! 0x24 u32 import_off   0x28 u32 import_count   0x2c u32 voice_off   0x30 u32 voice_count
-//! 0x34 u32 fx_off       0x38 u32 fx_count   (version 4: effect records; 0 before)   0x3c reserved (0)
+//! 0x34 u32 fx_off       0x38 u32 fx_count   (version 4+: effect records; 0 before)   0x3c u32 bank_record_off (version 5; 0 before)
 //! imports: 32-byte NUL padded names of DSP symbols the runtime resolves (`dyndsp_info` of core/dyn-dsp)
 //! relocs : 8 bytes each: u32 image byte offset of a 48-bit instruction, u32 kind << 28 | class << 24 | import index
 //!            kind 0 abs24 (the instruction's 24-bit address field), kind 1 abs32 (its 32-bit immediate)
@@ -21,7 +21,7 @@
 //!            guard of core/dsp-voice (min | max << 16; 0: undeclared), 2 x u32 reserved. Version 1 had 16 bytes (type, entry, 2 reserved)
 //!          version 3: 64 bytes each: 0 u32 type, 4 u32 render entry (image byte offset), 8 u32 note_on entry (image byte offset; 0: none),
 //!            12 u32 state_bytes (per voice), 16 u32 clear_bytes (zeroed at note-on), 20..51 8 x u32 ranges as above, 52 u32 voices (number of
-//!            voice states to reserve behind the image and bss), 56..63 reserved 0. The packer writes version 3 only when a voice has a
+//!            voice states to reserve behind the image and bss), 56 u32 parameter-word latch mask (contract 1.3), 60 reserved 0. The packer writes version 3 only when a voice has a
 //!            note_on entry or a state; otherwise version 2 (the runtime parses all three; v1 and v2 voices have note_on 0 and no state)
 //! fx     : version 4: 64 bytes each: 0 u32 process (image byte offset of the process routine), 4 u32 desc (image byte offset of its `dk_fx_desc`),
 //!            8 u32 state_bytes (from the desc: reserved behind the image, bss and voice states), 12 u32 n_params (from the desc), 16 u32 flags (the routes, below; 0 = master only),
@@ -48,6 +48,18 @@ pub const VERSION: u32 = 2;
 pub const VERSION_3: u32 = 3;
 /// The version with effect records (`FX_LEN` bytes each); its voices are those of version 3.
 pub const VERSION_4: u32 = 4;
+/// One module-owned sample bank; voices and effects retain version 4 layouts.
+pub const VERSION_5: u32 = 5;
+/// Little-endian words: version 1, local id, bank byte offset, capacity frames,
+/// descriptor byte offset, then three reserved zero words. Offsets are relative
+/// to the module DSP image base; unlike this record the enclosing header is BE.
+pub const SAMPLE_BANK_LEN: usize = 32;
+/// The same 32-byte record with kind word 2 declares the per-track sample table (API 1.5) instead of a bank: little-endian words
+/// kind, local id, records byte offset, control byte offset, then four reserved zero words. A module has a bank or a table, never both.
+pub const SAMPLE_TRACKS_KIND: u32 = 2;
+/// 16 `dk_strack` records of 8 words, and 16 control sets of 4 words (`<dk/sample_track.h>`).
+pub const STRACKS_RECORD_BYTES: u32 = 512;
+pub const STRACKS_CONTROL_BYTES: u32 = 256;
 /// The version without voice ranges (voices of `VOICE_LEN_V1` bytes); the runtime still loads it, with every range undeclared.
 pub const VERSION_1: u32 = 1;
 pub const HEADER: usize = 0x40;
@@ -57,6 +69,8 @@ pub const VOICE_LEN_V3: usize = 64;
 /// `dk_machine_desc` (SDK contract): magic "DKMA" and the contract number the packer accepts, and its size in u32 words.
 pub const DESC_MAGIC: u32 = 0x444b_4d41;
 pub const DESC_CONTRACT: u32 = 1;
+/// Bit 8 of the desc's contract word: a stereo machine (contract 1.2, `DK_MACHINE_STEREO`). The low byte is the major number.
+pub const DESC_STEREO: u32 = 0x100;
 pub const DESC_WORDS: usize = 10;
 pub const VOICE_LEN_V1: usize = 16;
 pub const FX_LEN: usize = 64;
@@ -110,12 +124,18 @@ pub struct Voice {
     pub voices: u32,
     /// range of machine knob 0 .. 7 (min | max << 16; 0 undeclared)
     pub ranges: [u32; 8],
+    /// Parameter-word latch mask (machine contract 1.3), in v3 reserved word 14.
+    pub latched: u32,
 }
 
 impl Voice {
     /// The record needs version 3.
     fn contract(&self) -> bool {
-        self.note_on != 0 || self.state_bytes != 0 || self.clear_bytes != 0 || self.voices != 0
+        self.note_on != 0
+            || self.state_bytes != 0
+            || self.clear_bytes != 0
+            || self.voices != 0
+            || self.latched != 0
     }
 }
 
@@ -127,7 +147,10 @@ pub struct VoiceSpec {
     pub render: String,
     pub note_on: Option<String>,
     pub desc: Option<String>,
+    /// Declared stereo in `DK_MACHINE`; the desc must carry `DESC_STEREO` too.
+    pub stereo: bool,
     pub ranges: [u32; 8],
+    pub latched: u32,
 }
 
 impl VoiceSpec {
@@ -138,6 +161,8 @@ impl VoiceSpec {
             render,
             note_on: None,
             desc: None,
+            stereo: false,
+            latched: 0,
             ranges,
         }
     }
@@ -231,8 +256,102 @@ pub struct Reloc {
     pub import: u32,
 }
 
+/// Version 1 sample-bank wire record (little-endian words).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SampleBank {
+    pub local_id: u32,
+    pub bank_byte_offset: u32,
+    pub capacity_frames: u32,
+    pub descriptor_byte_offset: u32,
+}
+
+impl SampleBank {
+    fn validate(&self, image: &[u8], bss: u32, relocs: &[Reloc]) -> Result<()> {
+        let image_end = u32::try_from(image.len()).map_err(|_| err!("DSP image too large"))?;
+        let end = image_end
+            .checked_add(bss)
+            .ok_or_else(|| err!("sample bank extent overflow"))?;
+        let bank_end = self
+            .capacity_frames
+            .checked_mul(4)
+            .and_then(|n| self.bank_byte_offset.checked_add(n))
+            .ok_or_else(|| err!("sample bank capacity overflow"))?;
+        let desc_end = self
+            .descriptor_byte_offset
+            .checked_add(16)
+            .ok_or_else(|| err!("sample descriptor overflow"))?;
+        if !(1..=8192).contains(&self.capacity_frames)
+            || self.bank_byte_offset % 4 != 0
+            || self.descriptor_byte_offset % 4 != 0
+            || self.bank_byte_offset < image_end
+            || bank_end > end
+            || desc_end > image_end
+        {
+            return Err(err!(
+                "sample bank or descriptor outside owned BSS/data, unaligned or invalid capacity"
+            ));
+        }
+        if image[self.descriptor_byte_offset as usize..desc_end as usize]
+            .iter()
+            .any(|&b| b != 0)
+            || relocs.iter().any(|r| {
+                u64::from(r.offset) < u64::from(desc_end)
+                    && u64::from(r.offset) + 6 > u64::from(self.descriptor_byte_offset)
+            })
+        {
+            return Err(err!(
+                "sample descriptor must be zero and contain no relocations"
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Version 5 sample-table wire record, kind 2 (little-endian words).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SampleTracks {
+    pub local_id: u32,
+    pub records_byte_offset: u32,
+    pub control_byte_offset: u32,
+}
+
+impl SampleTracks {
+    fn validate(&self, image: &[u8], relocs: &[Reloc]) -> Result<()> {
+        let blocks = [
+            (self.records_byte_offset, STRACKS_RECORD_BYTES),
+            (self.control_byte_offset, STRACKS_CONTROL_BYTES),
+        ];
+        for (off, len) in blocks {
+            let end = off
+                .checked_add(len)
+                .ok_or_else(|| err!("sample track table overflow"))?;
+            if off % 4 != 0 || end as usize > image.len() {
+                return Err(err!(
+                    "sample track table outside the initialized DSP data or unaligned"
+                ));
+            }
+            if image[off as usize..end as usize].iter().any(|&b| b != 0)
+                || relocs.iter().any(|r| {
+                    u64::from(r.offset) < u64::from(end) && u64::from(r.offset) + 6 > u64::from(off)
+                })
+            {
+                return Err(err!(
+                    "sample track table must be zero and contain no relocations"
+                ));
+            }
+        }
+        let (r, c) = (self.records_byte_offset, self.control_byte_offset);
+        if r < c + STRACKS_CONTROL_BYTES && c < r + STRACKS_RECORD_BYTES {
+            return Err(err!("sample track records and control sets overlap"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DspSection {
+    pub sample_bank: Option<SampleBank>,
+    pub sample_tracks: Option<SampleTracks>,
     pub device: u32,
     pub image: Vec<u8>,
     pub bss: u32,
@@ -246,6 +365,34 @@ pub struct DspSection {
 /// Link `obj` (a SHARC+ object) at the nominal base and encode the section. `voices` names the entry routine of each machine type
 /// (a global text symbol of the object), `fxs` the process routine and descriptor of each effect.
 pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec], fxs: &[FxSpec]) -> Result<Vec<u8>> {
+    pack_with_bank(obj, device, voices, fxs, None)
+}
+
+/// Pack an optional module-owned sample bank.
+pub fn pack_with_bank(
+    obj: &Dko,
+    device: u32,
+    voices: &[VoiceSpec],
+    fxs: &[FxSpec],
+    bank: Option<&crate::typed::SampleBankDef>,
+) -> Result<Vec<u8>> {
+    pack_with_samples(obj, device, voices, fxs, bank, None)
+}
+
+/// Pack an optional module-owned sample bank or per-track sample table (not both).
+pub fn pack_with_samples(
+    obj: &Dko,
+    device: u32,
+    voices: &[VoiceSpec],
+    fxs: &[FxSpec],
+    bank: Option<&crate::typed::SampleBankDef>,
+    tracks: Option<&crate::typed::SampleTracksDef>,
+) -> Result<Vec<u8>> {
+    if bank.is_some() && tracks.is_some() {
+        return Err(err!(
+            "a module declares a sample bank or a track table, not both"
+        ));
+    }
     if obj.arch != "sharc" {
         return Err(err!(
             "a DSP section holds a SHARC+ object; the object is {}",
@@ -368,6 +515,12 @@ pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec], fxs: &[FxSpec]) -> Res
         Ok(((pc - L2_SW_BASE as u64) * 2) as u32)
     };
     for v in voices {
+        if v.latched & !0xff != 0 || (v.latched != 0 && (v.note_on.is_none() || v.desc.is_none())) {
+            return Err(err!(
+                "voice {}: latching requires a contract note_on and an 8-bit parameter mask",
+                v.render
+            ));
+        }
         let entry = entry_of(&v.render)?;
         let note_on = match &v.note_on {
             Some(n) => {
@@ -403,10 +556,17 @@ pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec], fxs: &[FxSpec]) -> Res
                     w(0)
                 ));
             }
-            if w(1) != DESC_CONTRACT {
+            if w(1) & !DESC_STEREO != DESC_CONTRACT {
                 return Err(err!(
-                    "voice desc {d}: contract {}, this packer takes {DESC_CONTRACT}",
+                    "voice desc {d}: contract {:#x}, this packer takes {DESC_CONTRACT} (optionally with {DESC_STEREO:#x}, stereo)",
                     w(1)
+                ));
+            }
+            if (w(1) & DESC_STEREO != 0) != v.stereo {
+                return Err(err!(
+                    "voice desc {d}: DK_MACHINE says stereo = {}, the desc's contract word says {}",
+                    v.stereo as u32,
+                    (w(1) & DESC_STEREO != 0) as u32
                 ));
             }
             voices_n = w(3);
@@ -426,6 +586,7 @@ pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec], fxs: &[FxSpec]) -> Res
             clear_bytes,
             voices: voices_n,
             ranges: v.ranges,
+            latched: v.latched,
         });
     }
     if fxs.len() > MAX_FX {
@@ -499,10 +660,77 @@ pub fn pack(obj: &Dko, device: u32, voices: &[VoiceSpec], fxs: &[FxSpec]) -> Res
         });
         Effect::flags_of(f.routes, f.route).map_err(|e| err!("effect {}: {}", f.process, e.0))?;
     }
+    let symbol = |name: &str, kind: &str, len: u32| -> Result<u32> {
+        let sym = obj
+            .symbols
+            .iter()
+            .find(|s| s.name == name && s.section.is_some())
+            .ok_or_else(|| err!("sample symbol {name}: not defined by this DSP object"))?;
+        let sec = obj
+            .sections
+            .iter()
+            .find(|s| Some(&s.name) == sym.section.as_ref())
+            .unwrap();
+        if sec.kind != kind
+            || sym
+                .value
+                .checked_add(u64::from(len))
+                .is_none_or(|end| end > u64::from(sec.size))
+        {
+            return Err(err!(
+                "sample bank symbol {name}: outside its {kind} section"
+            ));
+        }
+        let at = linked.symbols[name]
+            .checked_sub(u64::from(L2_BYTE_BASE))
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| err!("sample symbol {name}: offset overflow"))?;
+        Ok(at)
+    };
+    let sample_bank = bank
+        .map(|b| -> Result<SampleBank> {
+            let len = b
+                .capacity_frames
+                .checked_mul(4)
+                .ok_or_else(|| err!("sample bank capacity overflow"))?;
+            let bank = SampleBank {
+                local_id: b.local_id,
+                bank_byte_offset: symbol(&b.bank, "bss", len)?,
+                descriptor_byte_offset: symbol(&b.descriptor, "data", 16)?,
+                capacity_frames: b.capacity_frames,
+            };
+            bank.validate(
+                &image,
+                u32::try_from(linked.bss_size).map_err(|_| err!("DSP BSS too large"))?,
+                &relocs,
+            )?;
+            Ok(bank)
+        })
+        .transpose()?;
+    let sample_tracks = tracks
+        .map(|t| -> Result<SampleTracks> {
+            let tracks = SampleTracks {
+                local_id: t.local_id,
+                records_byte_offset: symbol(&t.records, "data", STRACKS_RECORD_BYTES)?,
+                control_byte_offset: symbol(&t.control, "data", STRACKS_CONTROL_BYTES)?,
+            };
+            tracks.validate(&image, &relocs)?;
+            Ok(tracks)
+        })
+        .transpose()?;
     let s = DspSection {
+        sample_bank,
+        sample_tracks,
         device,
         image,
-        bss: linked.bss_size.div_ceil(4) as u32 * 4,
+        bss: u32::try_from(
+            linked
+                .bss_size
+                .div_ceil(4)
+                .checked_mul(4)
+                .ok_or_else(|| err!("DSP BSS overflow"))?,
+        )
+        .map_err(|_| err!("DSP BSS too large"))?,
         align,
         imports: imports.iter().map(|s| s.to_string()).collect(),
         relocs,
@@ -517,17 +745,21 @@ impl DspSection {
         let import_off = HEADER;
         let reloc_off = import_off + self.imports.len() * IMPORT_LEN;
         let voice_off = reloc_off + self.relocs.len() * RELOC_LEN;
-        let v4 = !self.fxs.is_empty();
+        let v5 = self.sample_bank.is_some() || self.sample_tracks.is_some();
+        let v4 = v5 || !self.fxs.is_empty();
         let v3 = v4 || self.voices.iter().any(|v| v.contract());
         let vlen = if v3 { VOICE_LEN_V3 } else { VOICE_LEN };
         let fx_off = voice_off + self.voices.len() * vlen;
-        let image_off = align_up(fx_off + self.fxs.len() * FX_LEN, 16);
+        let bank_off = fx_off + self.fxs.len() * FX_LEN;
+        let image_off = align_up(bank_off + if v5 { SAMPLE_BANK_LEN } else { 0 }, 16);
         let mut f = vec![0u8; image_off + self.image.len()];
         put(&mut f, 0, MAGIC);
         put(
             &mut f,
             4,
-            if v4 {
+            if v5 {
+                VERSION_5
+            } else if v4 {
                 VERSION_4
             } else if v3 {
                 VERSION_3
@@ -550,6 +782,35 @@ impl DspSection {
             put(&mut f, 0x34, fx_off as u32);
             put(&mut f, 0x38, self.fxs.len() as u32);
         }
+        let record = match (&self.sample_bank, &self.sample_tracks) {
+            (Some(b), _) => Some([
+                1,
+                b.local_id,
+                b.bank_byte_offset,
+                b.capacity_frames,
+                b.descriptor_byte_offset,
+                0,
+                0,
+                0,
+            ]),
+            (None, Some(t)) => Some([
+                SAMPLE_TRACKS_KIND,
+                t.local_id,
+                t.records_byte_offset,
+                t.control_byte_offset,
+                0,
+                0,
+                0,
+                0,
+            ]),
+            (None, None) => None,
+        };
+        if let Some(words) = record {
+            put(&mut f, 0x3c, bank_off as u32);
+            for (i, w) in words.iter().enumerate() {
+                f[bank_off + i * 4..bank_off + i * 4 + 4].copy_from_slice(&w.to_le_bytes());
+            }
+        }
         for (i, n) in self.imports.iter().enumerate() {
             let at = import_off + i * IMPORT_LEN;
             f[at..at + n.len()].copy_from_slice(n.as_bytes());
@@ -571,6 +832,7 @@ impl DspSection {
                     put(&mut f, at + 20 + 4 * k, *w);
                 }
                 put(&mut f, at + 52, v.voices);
+                put(&mut f, at + 56, v.latched);
             } else {
                 for (k, w) in v.ranges.iter().enumerate() {
                     put(&mut f, at + 8 + 4 * k, *w);
@@ -619,13 +881,14 @@ impl DspSection {
             && version != VERSION_1
             && version != VERSION_3
             && version != VERSION_4
+            && version != VERSION_5
         {
             return Err(err!("DSP section version {version}"));
         }
         let v3 = version >= VERSION_3;
         let vlen = match version {
             VERSION_1 => VOICE_LEN_V1,
-            VERSION_3 | VERSION_4 => VOICE_LEN_V3,
+            VERSION_3 | VERSION_4 | VERSION_5 => VOICE_LEN_V3,
             _ => VOICE_LEN,
         };
         let rng = |off: u32, n: usize| -> Result<&[u8]> {
@@ -648,7 +911,7 @@ impl DspSection {
         let nrel = get(f, 0x20) as usize;
         let nimp = get(f, 0x28) as usize;
         let nvoice = get(f, 0x30) as usize;
-        let (fx_off, nfx) = if version == VERSION_4 {
+        let (fx_off, nfx) = if version >= VERSION_4 {
             (get(f, 0x34), get(f, 0x38) as usize)
         } else {
             (0, 0)
@@ -697,9 +960,12 @@ impl DspSection {
                     state_bytes: if v3 { get(vo, at + 12) } else { 0 },
                     clear_bytes: if v3 { get(vo, at + 16) } else { 0 },
                     voices: if v3 { get(vo, at + 52) } else { 0 },
+                    latched: if v3 { get(vo, at + 56) } else { 0 },
                     ranges: match version {
                         VERSION_1 => [0; 8],
-                        VERSION_3 | VERSION_4 => std::array::from_fn(|k| get(vo, at + 20 + 4 * k)),
+                        VERSION_3 | VERSION_4 | VERSION_5 => {
+                            std::array::from_fn(|k| get(vo, at + 20 + 4 * k))
+                        }
                         _ => std::array::from_fn(|k| get(vo, at + 8 + 4 * k)),
                     },
                 }
@@ -711,6 +977,8 @@ impl DspSection {
                 || v.note_on as usize >= image_size
                 || v.note_on % 2 != 0
                 || v.clear_bytes > v.state_bytes
+                || v.latched & !0xff != 0
+                || (v.latched != 0 && v.note_on == 0)
         }) {
             return Err(err!("DSP voice entry outside the image"));
         }
@@ -740,7 +1008,83 @@ impl DspSection {
         }) {
             return Err(err!("DSP effect record outside the image or malformed"));
         }
+        let (sample_bank, sample_tracks) = if version == VERSION_5 {
+            let off = get(f, 0x3c);
+            let mut ranges = vec![
+                (0u64, HEADER as u64),
+                (
+                    u64::from(get(f, 0x18)),
+                    u64::from(get(f, 0x18)) + image_size as u64,
+                ),
+                (u64::from(off), u64::from(off) + SAMPLE_BANK_LEN as u64),
+            ];
+            for (start, len) in [
+                (get(f, 0x24), nimp * IMPORT_LEN),
+                (get(f, 0x1c), nrel * RELOC_LEN),
+                (get(f, 0x2c), nvoice * vlen),
+                (fx_off, nfx * FX_LEN),
+            ] {
+                if len != 0 {
+                    if start % 4 != 0 {
+                        return Err(err!("unaligned DSP table"));
+                    }
+                    ranges.push((u64::from(start), u64::from(start) + len as u64));
+                }
+            }
+            ranges.sort_unstable();
+            if get(f, 0x10) % 4 != 0 || ranges.windows(2).any(|w| w[0].1 > w[1].0) {
+                return Err(err!(
+                    "sample bank section has overlapping ranges or unaligned BSS"
+                ));
+            }
+            let table_end = [
+                HEADER as u64,
+                u64::from(get(f, 0x24)) + (nimp * IMPORT_LEN) as u64,
+                u64::from(get(f, 0x1c)) + (nrel * RELOC_LEN) as u64,
+                u64::from(get(f, 0x2c)) + (nvoice * vlen) as u64,
+                u64::from(fx_off) + (nfx * FX_LEN) as u64,
+            ]
+            .into_iter()
+            .max()
+            .unwrap();
+            if off % 4 != 0
+                || u64::from(off) < table_end
+                || u64::from(off) + SAMPLE_BANK_LEN as u64 > u64::from(get(f, 0x18))
+            {
+                return Err(err!("sample bank record overlaps header, tables or image"));
+            }
+            let raw = rng(off, SAMPLE_BANK_LEN)?;
+            let w = |i: usize| u32::from_le_bytes(raw[i * 4..i * 4 + 4].try_into().unwrap());
+            if w(0) == SAMPLE_TRACKS_KIND {
+                if (4..8).any(|i| w(i) != 0) {
+                    return Err(err!("sample track record reserved words"));
+                }
+                let t = SampleTracks {
+                    local_id: w(1),
+                    records_byte_offset: w(2),
+                    control_byte_offset: w(3),
+                };
+                t.validate(&image, &relocs)?;
+                (None, Some(t))
+            } else {
+                if w(0) != 1 || (5..8).any(|i| w(i) != 0) {
+                    return Err(err!("sample bank record version or reserved words"));
+                }
+                let b = SampleBank {
+                    local_id: w(1),
+                    bank_byte_offset: w(2),
+                    capacity_frames: w(3),
+                    descriptor_byte_offset: w(4),
+                };
+                b.validate(&image, get(f, 0x10), &relocs)?;
+                (Some(b), None)
+            }
+        } else {
+            (None, None)
+        };
         Ok(DspSection {
+            sample_bank,
+            sample_tracks,
             device: get(f, 8),
             image,
             bss: get(f, 0x10),
@@ -869,6 +1213,193 @@ mod tests {
         }
     }
 
+    fn bank_object() -> (Dko, crate::typed::SampleBankDef) {
+        let mut o = object();
+        o.sections[1] = sec("d", "data", 4, &[0; 16]);
+        o.relocs.clear();
+        (
+            o,
+            crate::typed::SampleBankDef {
+                local_id: 0x12345678,
+                bank: "buf".into(),
+                descriptor: "var".into(),
+                capacity_frames: 14,
+            },
+        )
+    }
+
+    fn tracks_object() -> (Dko, crate::typed::SampleTracksDef) {
+        let mut o = object();
+        o.sections[1] = sec("d", "data", 4, &[0; 768]);
+        o.symbols.push(sym("ctl", Some("d"), 512, true));
+        o.relocs.clear();
+        (
+            o,
+            crate::typed::SampleTracksDef {
+                local_id: 7,
+                records: "var".into(),
+                control: "ctl".into(),
+            },
+        )
+    }
+
+    #[test]
+    fn sample_tracks_record_roundtrips_and_a_bank_record_stays_a_bank() {
+        let (o, t) = tracks_object();
+        let bytes = pack_with_samples(&o, 1, &[], &[], None, Some(&t)).unwrap();
+        assert_eq!(get(&bytes, 4), VERSION_5);
+        let at = get(&bytes, 0x3c) as usize;
+        assert_eq!(&bytes[at..at + 8], &[2, 0, 0, 0, 7, 0, 0, 0]);
+        let d = DspSection::parse(&bytes).unwrap();
+        assert!(d.sample_bank.is_none());
+        let tr = d.sample_tracks.as_ref().unwrap();
+        assert_eq!(tr.control_byte_offset - tr.records_byte_offset, 512);
+        assert_eq!(d.encode(), bytes);
+        let (ob, b) = bank_object();
+        let bank = pack_with_bank(&ob, 1, &[], &[], Some(&b)).unwrap();
+        assert!(DspSection::parse(&bank).unwrap().sample_tracks.is_none());
+        assert!(pack_with_samples(&ob, 1, &[], &[], Some(&b), Some(&t)).is_err());
+    }
+
+    #[test]
+    fn sample_tracks_need_zero_data_inside_the_image_and_no_overlap() {
+        let (o, t) = tracks_object();
+        // a block that is not in an initialized data section, is too short, overlaps the other, or is not zero
+        for (records, control) in [
+            ("buf", "ctl"),
+            ("var", "buf"),
+            ("var", "var"),
+            ("helper", "ctl"),
+        ] {
+            let t = crate::typed::SampleTracksDef {
+                records: records.into(),
+                control: control.into(),
+                ..t.clone()
+            };
+            assert!(
+                pack_with_samples(&o, 1, &[], &[], None, Some(&t)).is_err(),
+                "{records} {control}"
+            );
+        }
+        let mut bad = o.clone();
+        bad.sections[1] = sec("d", "data", 4, &[0; 767]);
+        assert!(pack_with_samples(&bad, 1, &[], &[], None, Some(&t)).is_err());
+        let mut bad = o.clone();
+        let mut bytes = [0u8; 768];
+        bytes[700] = 1;
+        bad.sections[1] = sec("d", "data", 4, &bytes);
+        assert!(pack_with_samples(&bad, 1, &[], &[], None, Some(&t)).is_err());
+        // the parser refuses reserved words, a relocation inside a block and a wrong kind
+        let good = pack_with_samples(&o, 1, &[], &[], None, Some(&t)).unwrap();
+        let at = get(&good, 0x3c) as usize;
+        for (word, value) in [(0, 3u32), (2, 2), (3, u32::MAX - 3), (4, 1), (7, 1)] {
+            let mut bad = good.clone();
+            bad[at + word * 4..at + word * 4 + 4].copy_from_slice(&value.to_le_bytes());
+            assert!(DspSection::parse(&bad).is_err(), "word {word}: {value}");
+        }
+        let mut d = DspSection::parse(&good).unwrap();
+        d.relocs.push(Reloc {
+            offset: d.sample_tracks.as_ref().unwrap().control_byte_offset + 250,
+            kind: KIND_ABS32,
+            class: CLASS_DATA,
+            import: 0,
+        });
+        assert!(DspSection::parse(&d.encode()).is_err());
+    }
+
+    #[test]
+    fn sample_bank_v5_roundtrips_little_endian_record_and_old_sections_stay_old() {
+        let (o, b) = bank_object();
+        let bytes = pack_with_bank(&o, 1, &[], &[], Some(&b)).unwrap();
+        assert_eq!(get(&bytes, 4), VERSION_5);
+        let at = get(&bytes, 0x3c) as usize;
+        assert_eq!(&bytes[at..at + 8], &[1, 0, 0, 0, 0x78, 0x56, 0x34, 0x12]);
+        let d = DspSection::parse(&bytes).unwrap();
+        assert_eq!(d.sample_bank.as_ref().unwrap().capacity_frames, 14);
+        assert_eq!(d.encode(), bytes);
+        let old = pack(&o, 1, &[], &[]).unwrap();
+        assert_eq!(get(&old, 4), VERSION);
+        assert_eq!(get(&old, 0x3c), 0);
+        assert!(DspSection::parse(&old).unwrap().sample_bank.is_none());
+    }
+
+    #[test]
+    fn sample_bank_requires_owned_bss_and_initialized_zero_descriptor() {
+        let (o, b) = bank_object();
+        for (bank, desc, cap) in [
+            ("helper", "var", 1),
+            ("var", "var", 1),
+            ("buf", "buf", 1),
+            ("buf", "var", 15),
+            ("buf", "var", 0),
+            ("buf", "var", 8193),
+        ] {
+            let b = crate::typed::SampleBankDef {
+                bank: bank.into(),
+                descriptor: desc.into(),
+                capacity_frames: cap,
+                ..b.clone()
+            };
+            assert!(pack_with_bank(&o, 1, &[], &[], Some(&b)).is_err());
+        }
+        let mut bad = o.clone();
+        bad.sections[1].hex = hex(&[1; 16]);
+        assert!(pack_with_bank(&bad, 1, &[], &[], Some(&b)).is_err());
+        let mut bad = o.clone();
+        bad.symbols
+            .iter_mut()
+            .find(|s| s.name == "var")
+            .unwrap()
+            .value = 4;
+        assert!(pack_with_bank(&bad, 1, &[], &[], Some(&b)).is_err());
+        let mut bad = o;
+        bad.symbols
+            .iter_mut()
+            .find(|s| s.name == "buf")
+            .unwrap()
+            .value = 9;
+        assert!(pack_with_bank(&bad, 1, &[], &[], Some(&b)).is_err());
+    }
+
+    #[test]
+    fn sample_bank_parser_rejects_malformed_records_bounds_and_relocation_overlap() {
+        let (o, b) = bank_object();
+        let good = pack_with_bank(&o, 1, &[], &[], Some(&b)).unwrap();
+        let at = get(&good, 0x3c) as usize;
+        for (word, value) in [
+            (0, 2u32),
+            (2, 0),
+            (2, u32::MAX - 3),
+            (3, 0),
+            (3, 8193),
+            (4, 1),
+            (4, u32::MAX - 3),
+            (5, 1),
+            (6, 1),
+            (7, 1),
+        ] {
+            let mut bad = good.clone();
+            bad[at + word * 4..at + word * 4 + 4].copy_from_slice(&value.to_le_bytes());
+            assert!(DspSection::parse(&bad).is_err(), "word {word}: {value}");
+        }
+        for off in [0, HEADER as u32 + 1, get(&good, 0x18), u32::MAX - 3] {
+            let mut bad = good.clone();
+            put(&mut bad, 0x3c, off);
+            assert!(DspSection::parse(&bad).is_err());
+        }
+        let mut d = DspSection::parse(&good).unwrap();
+        d.relocs.push(Reloc {
+            offset: d.sample_bank.as_ref().unwrap().descriptor_byte_offset - 2,
+            kind: KIND_ABS32,
+            class: CLASS_DATA,
+            import: 0,
+        });
+        assert!(DspSection::parse(&d.encode()).is_err());
+        let mut d = DspSection::parse(&good).unwrap();
+        d.bss = u32::MAX;
+        assert!(DspSection::parse(&d.encode()).is_err());
+    }
+
     #[test]
     fn relocation_at_any_base_equals_the_linker() {
         let o = object();
@@ -895,6 +1426,7 @@ mod tests {
                 state_bytes: 0,
                 clear_bytes: 0,
                 voices: 0,
+                latched: 0,
                 ranges: [0, 0x7f00_0000, 0, 0, 0, 0, 0, 0]
             }]
         );
@@ -962,6 +1494,67 @@ mod tests {
             routes: ROUTE_MASTER,
             route: ROUTE_MASTER,
         }
+    }
+
+    /// A contract machine: `render` and `note_on` in the text, a `dk_machine_desc` with the given contract word in the data.
+    fn machine_object(contract: u32) -> Dko {
+        let mut o = object();
+        let words = [DESC_MAGIC, contract, 1, 1, 8, 8, 100, 100, 0, 0];
+        let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        o.sections[1] = sec("d", "data", 4, &desc);
+        o.symbols.push(sym("mdesc", Some("d"), 0, true));
+        o.symbols.push(sym("note", Some("t"), 3, true));
+        o
+    }
+
+    fn machine_spec(stereo: bool) -> VoiceSpec {
+        VoiceSpec {
+            type_no: 1,
+            render: "entry".into(),
+            note_on: Some("note".into()),
+            desc: Some("mdesc".into()),
+            stereo,
+            ranges: [0; 8],
+            latched: 0,
+        }
+    }
+
+    #[test]
+    fn latched_voice_mask_roundtrips_and_needs_a_contract_callback() {
+        let object = machine_object(DESC_CONTRACT);
+        let mut spec = machine_spec(false);
+        spec.latched = 1;
+        let bytes = pack(&object, 1, &[spec.clone()], &[]).unwrap();
+        assert_eq!(DspSection::parse(&bytes).unwrap().voices[0].latched, 1);
+        spec.latched = 0x100;
+        assert!(
+            pack(&object, 1, &[spec.clone()], &[])
+                .unwrap_err()
+                .0
+                .contains("8-bit parameter mask")
+        );
+        spec.latched = 1;
+        spec.note_on = None;
+        assert!(
+            pack(&object, 1, &[spec], &[])
+                .unwrap_err()
+                .0
+                .contains("contract note_on")
+        );
+    }
+
+    #[test]
+    fn a_stereo_declaration_must_agree_with_the_contract_word_of_the_desc() {
+        let mono = machine_object(DESC_CONTRACT);
+        let stereo = machine_object(DESC_CONTRACT | DESC_STEREO);
+        assert!(pack(&mono, 1, &[machine_spec(false)], &[]).is_ok());
+        assert!(pack(&stereo, 1, &[machine_spec(true)], &[]).is_ok());
+        let e = |o: &Dko, v: bool| pack(o, 1, &[machine_spec(v)], &[]).unwrap_err().0;
+        assert!(e(&stereo, false).contains("stereo = 0"));
+        assert!(e(&mono, true).contains("stereo = 1"));
+        // another major number, or an unknown flag, is refused
+        assert!(e(&machine_object(2), false).contains("contract 0x2"));
+        assert!(e(&machine_object(DESC_CONTRACT | 0x200), false).contains("contract 0x201"));
     }
 
     #[test]

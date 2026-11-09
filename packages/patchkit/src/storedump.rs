@@ -336,7 +336,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
             Ok(Some(s)) => json!({
                 "version": s.version, "seq": s.seq, "copy": if s.from_b { "B" } else { "A" }, "used_sectors": s.used_sectors, "limit_sectors": size,
                 "files": s.entries.iter().map(|e| json!({
-                    "path": e.path, "first_sector": e.first_sector, "size": e.size_bytes, "sha256": hex(&e.sha256), "folder": e.is_dir,
+                    "path": e.path, "first_sector": e.first_sector, "size": e.size_bytes, "hash": hex(&e.hash), "folder": e.is_dir,
                 })).collect::<Vec<_>>(),
             }),
             Ok(None) => Value::Null,
@@ -386,11 +386,11 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 } else {
                     let _ = writeln!(
                         out,
-                        "  {}  {} bytes  first sector {:#x}  sha256 {}",
+                        "  {}  {} bytes  first sector {:#x}  hash {}",
                         e.path,
                         e.size_bytes,
                         e.first_sector,
-                        hex(&e.sha256)
+                        hex(&e.hash)
                     );
                 }
             }

@@ -22,6 +22,8 @@ export interface WatchedSession {
 
 export interface Watchdog {
   stop(): void;
+  /** Use MS as the no-progress limit (a long multi-boot load, with the same bound as its timeout); undefined restores the limit it started with. */
+  setLimit(ms: number | undefined): void;
   /** The message written when the watchdog closed the session; undefined before. */
   readonly tripped: string | undefined;
 }
@@ -38,8 +40,9 @@ export interface WatchdogOptions {
  * once. A paused emulator without a job is idle on purpose (host work between steps) and resets the timer. */
 export function startNoProgressWatchdog(session: WatchedSession, options: WatchdogOptions = {}): Watchdog {
   const intervalMs = options.intervalMs ?? 5000;
-  const limitMs = options.limitMs ?? Number(process.env.DIGI_NO_PROGRESS_MS ?? 120_000);
-  if (limitMs <= 0) return { stop() {}, tripped: undefined };
+  const baseLimitMs = options.limitMs ?? Number(process.env.DIGI_NO_PROGRESS_MS ?? 120_000);
+  if (baseLimitMs <= 0) return { stop() {}, setLimit() {}, tripped: undefined };
+  let limitMs = baseLimitMs;
   const now = options.now ?? Date.now;
   const log =
     options.log ?? ((line: string) => console.error(`${line} [${session.runDir ?? 'session'}, limit ${limitMs} ms]`));
@@ -107,6 +110,9 @@ export function startNoProgressWatchdog(session: WatchedSession, options: Watchd
     stop() {
       stopped = true;
       clearInterval(timer);
+    },
+    setLimit(ms) {
+      limitMs = ms !== undefined && ms > 0 ? Math.max(ms, baseLimitMs) : baseLimitMs;
     },
     get tripped() {
       return tripped;

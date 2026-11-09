@@ -122,7 +122,7 @@ impl Transport for EmuTransport {
 
 fn entries(list: Vec<proto::Entry>) -> Value {
     list.into_iter()
-        .map(|e| json!({"path": e.path, "size": e.size, "sha256": proto::hex(&e.sha256)}))
+        .map(|e| json!({"path": e.path, "size": e.size, "hash": proto::hex(&e.hash)}))
         .collect()
 }
 
@@ -136,9 +136,9 @@ fn err_json(e: &Error) -> Value {
     }
 }
 
-/// A put with a wrong sha256 in BEGIN: the same requests `Session::put` sends, so END answers E_HASH.
+/// A put with a wrong file hash in BEGIN: the same requests `Session::put` sends, so END answers E_HASH.
 fn bad_hash(s: &mut Session<EmuTransport>, path: &str, data: &[u8]) -> Result<(), Error> {
-    let mut wrong = codec::sha256(data);
+    let mut wrong = codec::file_hash(data);
     wrong[0] ^= 0xFF;
     s.request(
         CMD_BEGIN,

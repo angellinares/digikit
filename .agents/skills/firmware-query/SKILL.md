@@ -79,7 +79,16 @@ It adds the table `catalog` to `out/atlas/<image>.sqlite` and writes `out/atlas/
 
 Review by group first, then rows. The build also writes `out/atlas/<image>-catalog-groups.tsv` (table `catalog_groups`) and `out/atlas/<image>-catalog-graph.json` (nodes and call edges between catalog rows). A group is a Louvain community of the call graph between catalog rows; group -1 is a row alone.
 
-Review page: `uv run python -m tools.firmware.catalog_page dt2-1.17 [--labels FILE ...]` writes `out/atlas/dt2-1.17-review.html`. Labels are JSONL files, by default every `*.jsonl` in `out/atlas/labels/<image>/`. Keep/later/skip decisions are stored by the published page; read them back with the artifact database tools.
+Full UI candidate review (after cataloguing both devices):
+
+    uv run python -m tools.firmware.catalog_page dt2-1.17 --all
+    uv run python -m tools.firmware.catalog_page dn2-1.12 --all
+
+Open `out/atlas/<image>-review.html`; keep both standard filenames together for paired-device links. `--all` includes every catalogue row/group, including small groups, anchored functions and ungrouped rows. Without it the visible set stays curated; omitted records remain lookup data so address/paired links can reveal them. Only the active group's filtered results render. Labels come from `out/atlas/labels/<image>/*.jsonl`, or `--labels FILE ...`.
+
+Each run also writes `out/atlas/<image>-review.tsv`: the complete catalogue with original evidence, flattened row/group labels and links to both pages, even when HTML is curated. Row links use `#r-0x...`. A pair outside the other candidate catalogue retains its address/match evidence without a dead link. SDK-use labels, hashes, stability, pair/rule agreement, UI-string counts and tags are visible on the page.
+
+Without Claude's database, Keep/Later/Skip uses per-image browser storage, with JSONL export/import for backup and transfer (`<image>-decisions.jsonl`). Local-file storage varies by browser: export before closing when storage is unavailable, and before moving review files. Published Claude pages keep the existing database path; local imports are disabled there. Bitmap/Parameter candidate shortcuts search function metadata; glyph IDs, glyph previews and bitmap assets are not in this catalogue. Full workflow: `docs/DEVELOPMENT.md`, "ColdFire UI candidate review".
 
 | column | meaning |
 | --- | --- |

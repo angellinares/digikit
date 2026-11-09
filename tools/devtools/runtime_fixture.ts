@@ -2,7 +2,11 @@
 // the fixed input set of `coupled-run` (two-core PGO training, timing matrix cells).
 //
 //   node tools/devtools/runtime_fixture.ts --device dn2|dt2 [--out DIR] [--binary DIGI_EMUD]
-//        [--patch-set emulator] [--samples DIR]
+//        [--patch-set emulator] [--samples DIR] [--state first-boot|reset]
+//
+// --state first-boot (default) saves the state right after the first boot. --state reset saves the state after
+// a guest soft reset has settled (what installing modules or Apply & Restart boots: another kit, effect sends
+// active); DN2 only, DT2 keeps its first-boot state. Default dir for reset: out/fixtures/runtime/<device>-reset/.
 //
 // Output (default out/fixtures/runtime/<device>/): firmware.syx (patched), dsp-image.bin,
 // dsp-state.snap.dsp, cf-snapshot.snap, card.img (DT2 only) and provenance.json.
@@ -16,7 +20,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { resolveInputs, repoRoot, type Device } from '../../packages/test-support/src/inputs.ts';
-import { Session } from '../../packages/test-support/src/session.ts';
+import { DkSession, EmuUsbTransport } from '../../packages/dk-session/src/index.ts';
+import { MS, Session } from '../../packages/test-support/src/session.ts';
 
 const FIRMWARE: Record<Device, string> = { dt2: '1.17', dn2: '1.12' };
 const BOOT_LIMIT_MS = 180_000;
@@ -60,16 +65,32 @@ const { values } = parseArgs({
     binary: { type: 'string' },
     'patch-set': { type: 'string', default: 'emulator' },
     samples: { type: 'string' },
+    state: { type: 'string', default: 'first-boot' },
   },
 });
 if (values.device !== 'dn2' && values.device !== 'dt2') {
-  throw new Error('usage: runtime_fixture.ts --device dn2|dt2 [--out DIR] [--binary DIGI_EMUD] [--samples DIR]');
+  throw new Error(
+    'usage: runtime_fixture.ts --device dn2|dt2 [--state first-boot|reset] [--out DIR] [--binary DIGI_EMUD] [--samples DIR]',
+  );
+}
+if (values.state !== 'first-boot' && values.state !== 'reset') {
+  throw new Error(`--state must be first-boot or reset, got ${values.state}`);
 }
 const device: Device = values.device;
+const state: 'first-boot' | 'reset' = values.state;
+if (state === 'reset' && device === 'dt2') {
+  console.error(
+    'DT2 keeps its first-boot state after a guest soft reset (its replay of a post-reset snapshot is not at ready); use --state first-boot',
+  );
+  process.exit(1);
+}
 const firmware = FIRMWARE[device];
 const patchSet = values['patch-set'] ?? 'emulator';
 const root = repoRoot();
-const outDir = path.resolve(root, values.out ?? path.join('out', 'fixtures', 'runtime', device));
+const outDir = path.resolve(
+  root,
+  values.out ?? path.join('out', 'fixtures', 'runtime', state === 'reset' ? `${device}-reset` : device),
+);
 const tmpDir = `${outDir}.tmp-${process.pid}`;
 const runDir = `${outDir}.run-${process.pid}`;
 const samples = device === 'dt2' ? path.resolve(root, values.samples ?? 'out/runs/patchkit/samples') : undefined;
@@ -104,7 +125,28 @@ try {
   if (!status.cf.ready || status.cf.error) throw new Error(`firmware not ready: phase=${status.cf.phase}`);
   if (Date.now() - started > BOOT_LIMIT_MS) throw new Error('boot exceeded its limit');
   const cacheDir = String((load as unknown as { cache_dir?: string }).cache_dir ?? '');
-  const snap = path.join(cacheDir, 'digi-audio-m5.snap');
+  let snapDir = cacheDir;
+  if (state === 'reset') {
+    // State B: a guest soft reset (RESTART) boots from the card into the used kit. The daemon caches the
+    // ready pair of that cold boot in a new directory under runDir/patched; it is the CF snapshot and DSP state.
+    const call = <T>(method: string, params?: Record<string, unknown>) => session!.client.call<T>(method, params);
+    const stepSeconds = (s: number) => session!.client.step(s * 1000 * MS, { timeout_wall_s: 300 });
+    const dk = new DkSession(new EmuUsbTransport(call, { stepInstructions: 20_000_000 }));
+    await stepSeconds(15);
+    await dk.restart();
+    await dk.waitForBoot(() => stepSeconds(5).then(() => undefined));
+    await stepSeconds(25);
+    const patchedRoot = path.join(runDir, 'patched');
+    const dirs = fs
+      .readdirSync(patchedRoot)
+      .map((name) => path.join(patchedRoot, name))
+      .filter((dir) => fs.existsSync(path.join(dir, 'digi-audio-m5.snap.dsp')))
+      .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+    snapDir = dirs.at(-1) ?? '';
+    if (!snapDir || snapDir === cacheDir)
+      throw new Error('the soft reset left no new ready snapshot in the daemon cache');
+  }
+  const snap = path.join(snapDir, 'digi-audio-m5.snap');
   const snapDsp = `${snap}.dsp`;
   const patchedSyx = load.runtime.cache_file;
   const card = session.cardPath;
@@ -141,6 +183,7 @@ try {
     device,
     firmware_version: firmware,
     patch_set: patchSet,
+    state,
     files,
     sha256,
     source_head: git(root, 'rev-parse', 'HEAD'),

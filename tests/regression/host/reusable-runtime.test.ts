@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 import type { RuntimeBaseline } from '@digi/test-support';
 
@@ -16,10 +19,16 @@ vi.mock('vitest', async (original) => ({
   afterAll: fake.afterAll,
 }));
 vi.mock('@digi/test-support', async (original) => ({ ...(await original<object>()), Session: { start: fake.start } }));
+import { flushFileTemps } from '../file-temp.ts';
 import { withReusablePatchedSession } from '../support.ts';
 
 async function fixture(
-  options: { startDelay?: number; hangPreparation?: boolean; afterClose?: (session: unknown) => Promise<void> } = {},
+  options: {
+    startDelay?: number;
+    hangPreparation?: boolean;
+    afterClose?: (session: unknown) => Promise<void>;
+    tempDirs?: () => string[];
+  } = {},
 ) {
   vi.resetAllMocks();
   const calls: string[] = [];
@@ -58,6 +67,7 @@ async function fixture(
       },
       finishCase: finish,
       afterClose: options.afterClose,
+      tempDirs: options.tempDirs,
     },
   );
   const beforeAll = fake.beforeAll.mock.calls[0]![0] as () => Promise<void>;
@@ -73,7 +83,7 @@ async function fixture(
     call,
     finish,
     baseline,
-    afterEach: () => afterEach({ task: { result: { state: 'pass' } } }),
+    afterEach: (state = 'pass') => afterEach({ task: { result: { state } } }),
     afterAll,
   };
 }
@@ -160,4 +170,36 @@ test('post-close evidence waits for owned shutdown and runs once after a failed 
   await closed;
   await f.afterAll();
   expect(checked).toHaveBeenCalledExactlyOnceWith(f.session);
+});
+
+// The fixtures of a file share its temp dirs: they go when the file ends (setup-temp.ts), and stay if a fixture of the file failed.
+test('fixture temp dirs stay after the fixture closes and go when the file ends clean', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-temp-rule-'));
+  try {
+    const clean = path.join(root, 'clean');
+    fs.mkdirSync(clean);
+    const first = await fixture({ tempDirs: () => [clean] });
+    await first.afterEach();
+    await first.afterAll();
+    expect(fs.existsSync(clean), 'a later fixture of the file may still read it').toBe(true);
+    flushFileTemps();
+    expect(fs.existsSync(clean)).toBe(false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fixture temp dirs are kept when a test of the file failed', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-temp-rule-'));
+  try {
+    const failed = path.join(root, 'failed');
+    fs.mkdirSync(failed);
+    const f = await fixture({ tempDirs: () => [failed] });
+    await f.afterEach('fail');
+    await f.afterAll();
+    flushFileTemps();
+    expect(fs.existsSync(failed)).toBe(true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

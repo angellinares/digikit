@@ -149,7 +149,8 @@ fn before_slow(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
                 if w.borrow_mut().insert(e.0) {
                     let bytes: Vec<u8> = words.iter().flat_map(|x| x.to_le_bytes()).collect();
                     let _ = std::fs::write(d.join(format!("kernel-{:016x}.bin", e.0)), bytes);
-                    let _ = std::fs::write(d.join(format!("kernel-{:016x}.txt", e.0)), format!("{k}"));
+                    let _ =
+                        std::fs::write(d.join(format!("kernel-{:016x}.txt", e.0)), format!("{k}"));
                 }
             });
         }

@@ -5,7 +5,8 @@
 //!   DSP_STATE  canonical SHRD state blob (a DN2 continuation; private)
 //!   DSP_IMAGE  packed loader image: `uv run python -m tools.sharc_dev.sharc_pack_image dn2-1.12 OUT`
 //!   OUT.wav    48 kHz stereo 32-bit float; OUT.q31 raw words; OUT.csv per frame
-//! env: NOTE_EVENTS=trig|play (see common/mod.rs), DSP_PERIOD (instructions
+//! env: BASE_SHA256=SHA: SYX is a patched build of that stock firmware.
+//!   NOTE_EVENTS=trig|play (see common/mod.rs), DSP_PERIOD (instructions
 //!   per frame, default 666667), DSP_CLOCK_BASE (default 573627620),
 //!   DSP_ATTACH=start|ready (default start: the DSP sees every frame from the
 //!   first one; ready: zero replies and no DSP time until the panel is ready).
@@ -40,8 +41,8 @@ mod common;
 use elektron_native_boot::{
     Emulator,
     sharc_peer::{
-        DEFAULT_PERIOD, DN2_IDLE, DT2_IDLE, NativeDsp, SharcPeer, Shared, SharedDsp, ThreadedHandle,
-        ThreadedPeer, open_engine_patched,
+        DEFAULT_PERIOD, DN2_IDLE, DT2_IDLE, NativeDsp, SharcPeer, Shared, SharedDsp,
+        ThreadedHandle, ThreadedPeer, open_engine_patched,
     },
 };
 use sha2::{Digest, Sha256};
@@ -205,7 +206,11 @@ fn main() {
         _ => state,
     };
 
-    let idle = if env::var("DSP_DEVICE").as_deref() == Ok("dt2") { DT2_IDLE } else { DN2_IDLE };
+    let idle = if env::var("DSP_DEVICE").as_deref() == Ok("dt2") {
+        DT2_IDLE
+    } else {
+        DN2_IDLE
+    };
     let threaded = env::var("DSP_THREAD").as_deref() == Ok("1");
     let (peer, dsp, shared): (Box<dyn periph::dspi::Peer>, DspCtl, _) = if threaded {
         let (image, state) = (image.clone(), state.clone());
@@ -220,7 +225,9 @@ fn main() {
         }
         (p.boxed(), DspCtl::Worker(h), sh)
     } else {
-        let d = SharedDsp::new(open_engine_patched(&image, &state, base, None, idle).expect("DSP engine"));
+        let d = SharedDsp::new(
+            open_engine_patched(&image, &state, base, None, idle).expect("DSP engine"),
+        );
         if env::var_os("DSP_PROFILE").is_some() {
             // The interpreter profile for tools/sharc_dev/sharc_rsgen.py (option 26).
             d.0.borrow_mut().set_option(26, 1);
@@ -237,7 +244,12 @@ fn main() {
     // CARD_IMAGE=FILE: boot from that +Drive image (the card the snapshot is for).
     let card = env::var_os("CARD_IMAGE")
         .map(|p| elektron_native_boot::card_file::card_from_image(p.as_ref()).unwrap());
-    let mut emu = Emulator::new(&syx, card).unwrap();
+    // BASE_SHA256=SHA: SYX is a patched build of that stock firmware (`Emulator::new_patched`).
+    let mut emu = match env::var("BASE_SHA256") {
+        Ok(base) => Emulator::new_patched(&syx, card, &base),
+        Err(_) => Emulator::new(&syx, card),
+    }
+    .unwrap();
     emu.enable_ssi_diagnostic(96_000).unwrap();
 
     let mut script = common::Script::from_env();
@@ -245,7 +257,9 @@ fn main() {
     // panel is ready, so save the snapshot at the first ready point where
     // link port 0 has been quiet for N frames with nothing queued, and hold
     // the QA inputs until then.
-    let quiet_frames: Option<usize> = env::var("SAVE_QUIET_FRAMES").ok().and_then(|v| v.parse().ok());
+    let quiet_frames: Option<usize> = env::var("SAVE_QUIET_FRAMES")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let (mut last_lp0, mut last_change) = ((0u64, 0u32), 0usize);
     let t0 = Instant::now();
     let mut saved = false;
@@ -280,7 +294,8 @@ fn main() {
             sh.lp0_pending == 0 && sh.frames.len() >= last_change + n
         });
         if let Some(p) = &snap_path {
-            if common::save_if_ready(&mut emu, p, &script, s.ready && quiet, &mut saved) && !attach_at_ready
+            if common::save_if_ready(&mut emu, p, &script, s.ready && quiet, &mut saved)
+                && !attach_at_ready
             {
                 let (exported, icount) = dsp.export(); // also syncs the worker
                 let mut f = DSP_MAGIC.to_vec();

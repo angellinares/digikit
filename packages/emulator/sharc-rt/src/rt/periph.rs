@@ -33,13 +33,7 @@ const SCTL_SEN: u32 = 0x4;
 pub const LP0_DMA: u32 = 0x30FF_F000;
 pub const SID_LP0_DMA: u32 = 81;
 /// SPI2 TX/RX (DMA26/27), SPORT4A/B (DMA10/11) and LP0.
-pub const DMA_BASES: [u32; 5] = [
-    0x3102_D200,
-    0x3102_D280,
-    0x3102_3000,
-    0x3102_3080,
-    LP0_DMA,
-];
+pub const DMA_BASES: [u32; 5] = [0x3102_D200, 0x3102_D280, 0x3102_3000, 0x3102_3080, LP0_DMA];
 const DMA_CFG: u32 = 0x08;
 const DMA_STAT: u32 = 0x30;
 const STAT_IRQDONE: u32 = 0x1;
@@ -335,7 +329,9 @@ pub fn write_acts(a: u32) -> bool {
     if a == SECI_ID || a == SEC_CSID || a == SEC_END || a == SEC_RAISE {
         return true;
     }
-    if (super::fir::FIR0..super::fir::FIR_END).contains(&a) || (super::iir::IIR0..super::iir::IIR_END).contains(&a) {
+    if (super::fir::FIR0..super::fir::FIR_END).contains(&a)
+        || (super::iir::IIR0..super::iir::IIR_END).contains(&a)
+    {
         return true;
     }
     if a >= SEC_SCTL && a < SEC_SCTL + 8 * SEC_SOURCES && (a - SEC_SCTL) & 7 == 4 {
@@ -470,7 +466,14 @@ mod arbitrate_tests {
             s.un = 0;
             s.mmr_put(SEC_GCTL, V::c(1));
             s.mmr_put(SEC_CCTL, V::c(if round % 11 == 0 { 0 } else { 1 }));
-            s.mmr_put(SEC_CSTAT, V::c(if round % 13 == 0 { CSTAT_SIDV as Int } else { 0 }));
+            s.mmr_put(
+                SEC_CSTAT,
+                V::c(if round % 13 == 0 {
+                    CSTAT_SIDV as Int
+                } else {
+                    0
+                }),
+            );
             for _ in 0..(next() % 12) {
                 let sid = (next() % SEC_SOURCES as u64) as u32;
                 let status = match next() % 5 {
@@ -488,7 +491,11 @@ mod arbitrate_tests {
                 s.mmr_put(sstat(sid), sstat_value);
                 if next() % 6 != 0 {
                     let sctl = (next() as u32 & 0x0F00_FF01) | ((next() as u32 & 0xFF) << 8);
-                    let value = if next() % 50 == 0 { V::UNK } else { V::c(sctl as Int) };
+                    let value = if next() % 50 == 0 {
+                        V::UNK
+                    } else {
+                        V::c(sctl as Int)
+                    };
                     s.mmr_put(SEC_SCTL + 8 * sid, value);
                 }
             }

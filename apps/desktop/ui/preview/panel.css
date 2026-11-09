@@ -1,0 +1,33 @@
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.faceplate-stage {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: clamp(12px, 3vw, 36px);
+  container-type: size;
+  background: radial-gradient(60% 60% at 50% 45%, #17191c, #0a0b0c);
+}
+.faceplate {
+  width: min(100cqw, 1200px, calc(100cqh * 215 / 176));
+}
+.connection-error {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 48px);
+  padding: 10px 14px;
+  border: 1px solid #714b45;
+  border-radius: 6px;
+  background: #241c1b;
+  color: #ffc1bc;
+  overflow-wrap: anywhere;
+}

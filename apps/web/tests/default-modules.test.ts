@@ -5,6 +5,7 @@ import {
   DefaultModuleError,
   installDefaults,
   parseUnticked,
+  patchSetFor,
   tickedIds,
   withTick,
   type DefaultOps,
@@ -137,4 +138,9 @@ test('a selection over 8 paths is refused without a change on the device', async
   for (const id of d.now) d.paths.set(id, `modules/${id.slice(2)}.dkm`);
   await assert.rejects(installDefaults(d, ['digikit/remote']), /the limit is 8/);
   assert.ok(!d.calls.includes('select'));
+});
+
+test('the Custom boot screen toggle picks the patch set that adds core/introblank', () => {
+  assert.equal(patchSetFor(false), 'device');
+  assert.equal(patchSetFor(true), 'device-introblank');
 });

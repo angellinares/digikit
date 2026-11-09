@@ -33,9 +33,9 @@ function run(sectors: number[], count = 1, summary: object = { events: 0, flush_
   return { output: path.join(dir, 'writewatch.jsonl'), overlay };
 }
 
-const check = (device: Device, sectors: number[], policy: SafetyPolicy = 'default') => {
+const check = (device: Device, sectors: number[], policy: SafetyPolicy = 'default', storeExtra: number[] = []) => {
   const { output, overlay } = run(sectors);
-  return runtimeSafety(device, output, [overlay], 1, policy);
+  return runtimeSafety(device, output, [overlay], 1, policy, storeExtra);
 };
 
 describe.each(['dt2', 'dn2'] as const)('runtime safety on %s', (device) => {
@@ -72,6 +72,16 @@ describe.each(['dt2', 'dn2'] as const)('runtime safety on %s', (device) => {
     for (const sector of [kitLo - 1, kitHi, store.first, store.setA]) {
       expect(check(device, [sector], 'fx-kit').pass, `sector ${sector}`).toBe(false);
     }
+  });
+
+  test('explicit scenario store sectors are reported and applied without widening firmware or adjacent ranges', () => {
+    expect(check(device, [store.setA]).pass).toBe(false);
+    const allowed = check(device, [store.setA], 'default', [store.setA]);
+    expect(allowed.pass).toBe(true);
+    expect(allowed.policy.store_extra).toEqual([store.setA]);
+    expect(check(device, [store.setA, store.setA + 1], 'default', [store.setA]).pass).toBe(false);
+    expect(check(device, [kitLo, store.setA], 'default', [store.setA]).pass).toBe(false);
+    expect(check(device, [kitLo, store.setA], 'fx-kit', [store.setA]).pass).toBe(true);
   });
 
   test('fx-routes also allows the settings copies, and nothing else in the store', () => {

@@ -11,7 +11,7 @@
 //! in free space, on every commit (`dkrt_sdk::store`, docs/design/digikit-store.md). Rules: no `match` on integers (a dense one becomes a jump
 //! table, which is not ColdFire code), no `core::fmt`, no slice indexing (a bounds panic hangs the task).
 
-use crate::sha256::Sha;
+use crate::hash32::{self, Hash32};
 use crate::{block_read, block_write, boot, card, dlog, midi_send, rd32, tx_in_flight, watch, wr32};
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::store::{self, Edit, Entry, Hdr, Io, Layout, Table, KIND_DIR, KIND_FILE};
@@ -54,8 +54,8 @@ struct Up {
     path: [u8; 160],
     size: u32,
     sha: [u8; 32],
-    /// The sha256 of the bytes received so far (DATA feeds it, END compares it with `sha`: a large file is not read back from the card).
-    run: Sha,
+    /// The hash of the bytes received so far (DATA feeds it, END compares its slot with `sha`: a large file is not read back from the card).
+    run: Hash32,
     /// Next expected byte offset.
     next: u32,
     last_off: u32,
@@ -70,7 +70,7 @@ static mut UP: Up = Up {
     path: [0; 160],
     size: 0,
     sha: [0; 32],
-    run: Sha::new(),
+    run: Hash32::new(),
     next: 0,
     last_off: 0,
     last_len: 0,
@@ -279,9 +279,9 @@ unsafe fn state(buf: *mut u8) -> Result<Table, i32> {
         Ok(t) => Ok(t),
         Err(e) => {
             if e == E_NOT_FOUND {
-                // "No store" is an empty area (or one with only a selection record, which also makes the card ours). Bytes in a header sector that are
-                // not a store header are somebody's data: a write would overwrite them, so refuse (finding 46, card safety).
-                if !header_sectors_blank(buf.add(SCRATCH_AT)) {
+                // "No store" is an empty area (or one with only a selection record, which also makes the card ours), or a store of another version.
+                // Bytes in a header sector that are not a store header are somebody's data: a write would overwrite them, so refuse (finding 46).
+                if !header_sectors_free(buf.add(SCRATCH_AT)) {
                     return Err(E_NOSTORE);
                 }
                 Ok(Table { h: Hdr::empty(&lay()), copy: 0, agree: true })
@@ -292,13 +292,13 @@ unsafe fn state(buf: *mut u8) -> Result<Table, i32> {
     }
 }
 
-/// Do both header sectors (A, B) read all 0x00 or all 0xFF? A sector that cannot be read does not count as blank.
-unsafe fn header_sectors_blank(scratch: *mut u8) -> bool {
+/// Does each header sector (A, B) read all 0x00 or all 0xFF, or hold a store header of another version? A sector that cannot be read is not free.
+unsafe fn header_sectors_free(scratch: *mut u8) -> bool {
     let l = lay();
     let mut k = 0;
     while k < 2 {
         let rel = if k == 0 { 0 } else { l.header_b() };
-        if block_read(l.first + rel, 512, scratch) != 0 || !card::blank(scratch) {
+        if block_read(l.first + rel, 512, scratch) != 0 || !(card::blank(scratch) || dkrt_sdk::store::old_header(scratch)) {
             return false;
         }
         k += 1;
@@ -429,7 +429,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
     let log_caps = if dlog::sink_present() { CAP_LOG | CAP_PEEK | CAP_LOGCFG } else { 0 };
-    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS);
+    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH);
     // appended after the capability bits: the id of the flashed image (patchkit stamps it; zeros when there is none)
     let id = crate::image_id();
     let mut i = 0;
@@ -559,8 +559,8 @@ unsafe fn path_ok(p: *const u8, max: usize) -> Option<usize> {
 
 /// LIST: body `u32 first`, then optionally `prefix NUL` (1 to 159 bytes, e.g. `samples/`). Without a prefix: `first` is an entry index, `count` all
 /// entries. With one: only the entries whose path starts with it (files, and folders with nothing in them), `first` indexes those and `count` is how many
-/// there are. Reply: `u32 count`, `u8 n`, then per entry `path NUL, u32 size, sha256[32]`, as many as fit, in table order (by first sector: a host sorts
-/// for display). A folder with no file in it has size 0 and a zero sha256.
+/// there are. Reply: `u32 count`, `u8 n`, then per entry `path NUL, u32 size, hash[32]`, as many as fit, in table order (by first sector: a host sorts
+/// for display). A folder with no file in it has size 0 and a zero hash slot.
 unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     if blen < 4 || (blen > 4 && (blen < 6 || blen > 4 + 160 || *body.add(blen - 1) != 0)) {
         return reply(CMD_LIST, seq, E_MSG, 0);
@@ -736,7 +736,7 @@ unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32
     copy(u.path.as_mut_ptr(), body, pl);
     u.size = size;
     copy(u.sha.as_mut_ptr(), body.add(pl + 5), 32);
-    u.run = Sha::new();
+    u.run = Hash32::new();
     u.next = 0;
     u.have_last = false;
     u.last_off = 0;
@@ -784,10 +784,10 @@ unsafe fn cmd_data(seq: u32, buf: *mut u8, blen: usize) -> i32 {
     reply(CMD_DATA, seq, OK, 0)
 }
 
-/// The sha256 of `size` bytes of the card from store sector `first`, read in chunks through `buf`.
+/// The hash slot of `size` bytes of the card from store sector `first`, read in chunks through `buf`.
 unsafe fn sha_of(buf: *mut u8, first: u32, size: u32, out: *mut u8) -> bool {
     let l = lay();
-    let mut sha = Sha::new();
+    let mut h = Hash32::new();
     let mut left = size;
     let mut sector = first;
     while left > 0 {
@@ -796,11 +796,11 @@ unsafe fn sha_of(buf: *mut u8, first: u32, size: u32, out: *mut u8) -> bool {
         if block_read(l.first + sector, secs * 512, buf.add(16)) != 0 {
             return false;
         }
-        sha.update(buf.add(16), n);
+        h.update(buf.add(16), n);
         left -= n;
         sector += secs;
     }
-    sha.finish(out);
+    core::ptr::copy_nonoverlapping(hash32::slot(h.finish()).as_ptr(), out, 32);
     true
 }
 
@@ -815,8 +815,7 @@ unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
         return reply(CMD_END, seq, E_LENGTH, 0);
     }
     // the hash of the bytes received (DATA fed it as they came: END does not read a large file back from the card; VERIFY does)
-    let mut got = [0u8; 32];
-    core::mem::replace(&mut u.run, Sha::new()).finish(got.as_mut_ptr());
+    let got = hash32::slot(core::mem::replace(&mut u.run, Hash32::new()).finish());
     let mut i = 0;
     while i < 32 {
         if got[i] != u.sha[i] {
@@ -953,8 +952,8 @@ unsafe fn cmd_settings(seq: u32, body: *const u8, blen: usize) -> i32 {
 }
 
 /// VERIFY: `path NUL`, optionally then `u32 offset, u32 length`. Reads the file (or that range of it) back from the card, in chunks, and replies its
-/// sha256 (32 bytes): what a host compares with its own hash to know that the bytes on the card are the bytes it sent. The cost is about 120 ColdFire
-/// instructions a byte, so a large file is checked in ranges (the offset is a multiple of 512). Errors: E_NOFILE, E_READ, E_OFFSET (not a multiple of
+/// hash slot (32 bytes): what a host compares with its own hash to know that the bytes on the card are the bytes it sent. The cost is about 7 ColdFire
+/// instructions a byte, and a large file is still checked in ranges (the offset is a multiple of 512). Errors: E_NOFILE, E_READ, E_OFFSET (not a multiple of
 /// 512, or at or past the end), E_LENGTH (0, or past the end of the file), E_MSG, E_PATH.
 unsafe fn cmd_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     let pl = match path_ok(body, blen) {

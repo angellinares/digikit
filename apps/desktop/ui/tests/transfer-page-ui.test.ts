@@ -1,6 +1,6 @@
 import type { UploadEvent, Uploads } from '../src/samples-core.ts';
 type WithoutFolder<T> = T extends unknown ? Omit<T, 'folder'> : never;
-type UploadEventWithoutFolder = WithoutFolder<UploadEvent>;
+type UploadEventWithoutFolder = WithoutFolder<Exclude<UploadEvent, { event: 'note' }>>;
 // The pure logic behind the Transfer page's behaviour: select all, the speed and the time left, when the page reads by itself, when it says
 // "Waiting for ...", the bottom bar of both modes (apps/web/src/transfer: select-core, rate-core, refresh-core, wait-core, activity, transfer-core,
 // samples-core). The pictures of the page are checked with `node tools/devtools/ui_shots.mjs` (docs/TESTING.md).
@@ -9,7 +9,14 @@ import { test } from 'vitest';
 import { instrument } from '../../../web/src/transfer/activity.ts';
 import { createRate, etaSeconds, fmtEta, fmtRate, statsLine } from '../../../web/src/transfer/rate-core.ts';
 import { FOCUS_GAP_MS, canAutoRefresh, focusReadDue, listingChanged } from '../../../web/src/transfer/refresh-core.ts';
-import { applyUpload, samplesBar } from '../src/samples-core.ts';
+import {
+  applyUpload,
+  samplesBar,
+  uploadCancelled,
+  uploadFailure,
+  uploadLines,
+  uploadStatus,
+} from '../src/samples-core.ts';
 import {
   MARQUEE_SLOP,
   ROWS_TYPE,
@@ -31,6 +38,7 @@ import {
   toggleAll,
 } from '../../../web/src/transfer/select-core.ts';
 import { countLabel, applyEvent, modulesBar, startProgress } from '../../../web/src/transfer/transfer-core.ts';
+import { beginJob, busy, endJob, error, setError } from '../../../web/src/transfer/transfer-state.ts';
 import { WAIT_QUIET_MS, createActivity, waitShown } from '../../../web/src/transfer/wait-core.ts';
 
 test('select all: none, some or all of the visible rows; a click ticks all, or clears them when all are ticked', () => {
@@ -60,8 +68,8 @@ test('button counts: in parentheses, none when nothing is ticked', () => {
   assert.equal(countLabel('Install', 12), 'Install (12)');
 });
 
-test('the rate is smoothed over the last 2 s and falls when the transfer stops', () => {
-  const r = createRate();
+test('the rate is smoothed over the window and falls when the transfer stops', () => {
+  const r = createRate(2000);
   assert.equal(r.rate(0), undefined, 'nothing yet');
   r.add(0, 0);
   assert.equal(r.rate(100), undefined, 'one sample, or too short a span, says nothing');
@@ -226,6 +234,70 @@ test('the bottom bar of a samples upload: only what this run touched, one messag
   bar = samplesBar(u, base, false)!;
   assert.deepEqual([bar.failed, bar.message], [true, '2 of 3 uploaded, 1 failed.']);
   assert.equal(samplesBar(u, base, false)!.sent, 4000, 'the bytes of a failed file are not counted as sent');
+  // files queued that never ran (the run stopped): not "Uploaded 0 files, verified."
+  const queued = ev(base, { event: 'queued', name: 'q', bytes: 100 });
+  bar = samplesBar(queued, base, false)!;
+  assert.deepEqual([bar.failed, bar.message], [true, 'Nothing was uploaded.']);
+});
+
+test('the speed in the bar: BEGIN, END and VERIFY count as time, so a stall pulls it down; it shows in a stall too', () => {
+  // one file after the other: bytes come in bursts (DATA), then a gap with no byte event (END, VERIFY, BEGIN of the next)
+  const r = createRate();
+  let sent = 0;
+  for (let t = 0; t <= 1000; t += 100) {
+    r.add(t, sent);
+    sent += 50_000;
+  }
+  const busyRate = r.rate(1000)!;
+  assert.ok(busyRate > 400_000 && busyRate < 600_000, String(busyRate));
+  // VERIFY: no byte for 3 s. The number falls, and the bar still shows it (a 2 s window would be empty here and statsLine would hide it)
+  const stalled = r.rate(4000)!;
+  assert.ok(stalled > 0 && stalled < busyRate / 3, String(stalled));
+  assert.match(statsLine(3, true, stalled, 1_000_000), /^3% · \d+ KB\/s · /);
+  // a stall as long as the window: 0 B/s, shown, with no time left
+  assert.equal(r.rate(20_000), 0);
+  assert.equal(statsLine(3, true, 0, 1_000_000), '3% · 0 B/s');
+});
+
+test('the bar of an upload: the bytes that went, a cancel is not red and not 100%, the end text has the average', () => {
+  const ev = (u: Uploads, e: UploadEventWithoutFolder) => applyUpload(u, { folder: 'd', ...e });
+  let u: Uploads = {};
+  for (const n of ['a', 'b', 'c']) u = ev(u, { event: 'queued', name: n, bytes: 1000 });
+  u = ev(u, { event: 'progress', name: 'a', sent: 1000, bytes: 1000 });
+  u = ev(u, { event: 'verified', name: 'a', ok: true, message: '' });
+  u = ev(u, { event: 'progress', name: 'b', sent: 400, bytes: 1000 });
+  assert.equal(samplesBar(u, {}, true)!.message, 'Uploading b (2 of 3)');
+  assert.equal(samplesBar(u, {}, true, 5000)!.message, 'Uploading b (2 of 3)', 'the average is for the end text');
+  // the user cancels: b is cut off, c was not started
+  u = ev(u, { event: 'cancelled', name: 'b', message: 'cancelled while sending' });
+  u = ev(u, { event: 'cancelled', name: 'c', message: 'not sent: cancelled' });
+  const cut = samplesBar(u, {}, false, 8000)!;
+  assert.equal(cut.message, 'Cancelled: 1 of 3 uploaded, 2 not sent. · 8 KB/s average');
+  assert.equal(cut.failed, false, 'not red');
+  assert.equal(cut.sent, 1400);
+  assert.equal(cut.fraction, 1400 / 3000, 'the real fraction');
+  assert.equal(uploadFailure(u, {}), undefined, 'a cancelled run is not an error');
+  assert.equal(uploadCancelled(u, {}), '1 of 3 uploaded, 2 not sent');
+  assert.deepEqual(uploadLines(u, {}), ['a: verified', 'b: cancelled while sending', 'c: not sent: cancelled']);
+  assert.equal(uploadStatus(u['d/b'])!.kind, 'cancelled');
+  // a failed file with the rest not sent stays a failure, and its fraction is not 100% either
+  let f: Uploads = {};
+  for (const n of ['a', 'b']) f = ev(f, { event: 'queued', name: n, bytes: 1000 });
+  f = ev(f, { event: 'progress', name: 'a', sent: 300, bytes: 1000 });
+  f = ev(f, { event: 'failed', name: 'a', message: 'E_FULL' });
+  f = ev(f, { event: 'failed', name: 'b', message: 'not sent: the upload of a failed' });
+  const bad = samplesBar(f, {}, false)!;
+  assert.deepEqual([bad.failed, bad.fraction, bad.message], [true, 0.15, '0 of 2 uploaded, 2 failed.']);
+  assert.equal(uploadCancelled(f, {}), undefined);
+  assert.match(uploadFailure(f, {})!, /^Uploading failed: E_FULL \(0 of 2 sent, 2 not sent\)$/);
+  // a full run is 100% with the average
+  let ok: Uploads = ev({}, { event: 'queued', name: 'k', bytes: 1000 });
+  ok = ev(ok, { event: 'verified', name: 'k', ok: true, message: '' });
+  const done = samplesBar(ok, {}, false, 1_240_000)!;
+  assert.deepEqual(
+    [done.fraction, done.failed, done.message],
+    [1, false, 'Uploaded 1 file, verified. · 1.2 MB/s average'],
+  );
 });
 
 // ---- the selection of a list, like a file explorer (select-core.ts) ----------------------------------------------------------------------
@@ -348,4 +420,99 @@ test('drop targets: the folder row the drop is on, else the open folder; rows of
   assert.equal(dragKind(['text/plain']), 'none');
   assert.equal(dragKind(undefined), 'none');
   assert.equal(dragKind(['Files', ROWS_TYPE]), 'rows', 'our own drag wins');
+});
+
+test('the busy action outlives the page: a page that comes back during an upload sees it, and its end clears it once', () => {
+  assert.equal(beginJob('Uploading'), true);
+  // a second page (a new mount) reads busy from the shared state: the bar stays running, the buttons stay off, no job starts
+  assert.equal(busy(), 'Uploading');
+  let u = applyUpload(
+    {},
+    { folder: 'd', event: 'prepared', name: 'k', source: 'k.wav', kind: 'converted', bytes: 1000 },
+  );
+  u = applyUpload(u, { folder: 'd', event: 'progress', name: 'k', sent: 500, bytes: 1000 });
+  assert.equal(
+    samplesBar(u, {}, busy() === 'Uploading')!.message,
+    'Uploading k (1 of 1)',
+    'still running, not "1 of 1 uploaded."',
+  );
+  assert.equal(beginJob('Uploading'), false, 'no second upload');
+  assert.equal(beginJob('Deleting'), false);
+  assert.equal(busy(), 'Uploading', 'a refused job does not change the running one');
+  // a failure that arrives after the new page was made is on the error line it shows
+  setError('Cancelled.');
+  assert.equal(error(), 'Cancelled.');
+  // a read asked for during the job is remembered and runs once at its end
+  assert.equal(beginJob('Reading'), false);
+  assert.equal(endJob(), true);
+  assert.equal(busy(), '');
+  assert.equal(beginJob('Reading'), true);
+  assert.equal(endJob(), false, 'the read is asked for once');
+  assert.equal(busy(), '');
+  setError('');
+});
+
+test('the bar of a resumed upload: files on the device are done at once, but add nothing to the bytes behind the speed and the time left', () => {
+  const ev = (u: Uploads, e: UploadEventWithoutFolder) => applyUpload(u, { folder: 'd', ...e });
+  let u: Uploads = {};
+  for (const n of ['a', 'b', 'c']) u = ev(u, { event: 'queued', name: n, bytes: 1000 });
+  u = ev(u, { event: 'same', name: 'a' });
+  u = ev(u, { event: 'same', name: 'b' });
+  let bar = samplesBar(u, {}, true)!;
+  assert.deepEqual([bar.sent, bar.total], [0, 1000], 'the rate sees only what is sent');
+  assert.equal(bar.fraction, 2 / 3, 'the fraction counts the skipped files as done');
+  assert.equal(bar.message, 'Preparing…');
+  u = ev(u, { event: 'progress', name: 'c', sent: 500, bytes: 1000 });
+  bar = samplesBar(u, {}, true)!;
+  assert.deepEqual([bar.sent, bar.total, bar.message], [500, 1000, 'Uploading c (3 of 3)']);
+  u = ev(u, { event: 'verified', name: 'c', ok: true, message: '' });
+  bar = samplesBar(u, {}, false, 2_000_000)!;
+  assert.deepEqual(
+    [bar.fraction, bar.failed, bar.message],
+    [1, false, 'Uploaded 1 file, 2 already on the device. · 2.0 MB/s average'],
+  );
+  assert.deepEqual([bar.sent, bar.total], [1000, 1000]);
+  assert.equal(uploadFailure(u, {}), undefined);
+  assert.deepEqual(uploadLines(u, {}), ['a: already on the device', 'b: already on the device', 'c: verified']);
+});
+
+test('the bar when everything is on the device: no bytes, the whole bar, no average, not red', () => {
+  const ev = (u: Uploads, e: UploadEventWithoutFolder) => applyUpload(u, { folder: 'd', ...e });
+  let u: Uploads = {};
+  for (let i = 0; i < 357; i++) u = ev(u, { event: 'queued', name: `s${i}`, bytes: 100 });
+  for (let i = 0; i < 357; i++) u = ev(u, { event: 'same', name: `s${i}` });
+  const bar = samplesBar(u, {}, false, 5000)!;
+  assert.deepEqual(
+    [bar.fraction, bar.failed, bar.sent, bar.total, bar.message],
+    [1, false, 0, 0, 'All 357 files are already on the device.'],
+  );
+  assert.equal(uploadCancelled(u, {}), undefined);
+});
+
+test('a stopped or failed run says how many files were on the device', () => {
+  const ev = (u: Uploads, e: UploadEventWithoutFolder) => applyUpload(u, { folder: 'd', ...e });
+  let u: Uploads = {};
+  for (const n of ['a', 'b', 'c', 'd']) u = ev(u, { event: 'queued', name: n, bytes: 1000 });
+  u = ev(u, { event: 'same', name: 'a' });
+  u = ev(u, { event: 'verified', name: 'b', ok: true, message: '' });
+  u = ev(u, { event: 'cancelled', name: 'c', message: 'cancelled while sending' });
+  u = ev(u, { event: 'cancelled', name: 'd', message: 'not sent: cancelled' });
+  assert.equal(samplesBar(u, {}, false)!.message, 'Cancelled: 1 of 4 uploaded, 1 already on the device, 2 not sent.');
+  assert.equal(uploadCancelled(u, {}), '1 of 4 uploaded, 1 already on the device, 2 not sent');
+  u = ev(u, { event: 'failed', name: 'c', message: 'E_FULL' });
+  assert.equal(samplesBar(u, {}, false)!.message, '1 of 4 uploaded, 1 already on the device, 1 failed.');
+  assert.match(uploadFailure(u, {})!, /^Uploading failed: E_FULL \(2 of 4 sent, 2 not sent\)$/);
+});
+
+test('the speed of the bar does not see skipped files: its bytes only grow with what was sent', () => {
+  const ev = (u: Uploads, e: UploadEventWithoutFolder) => applyUpload(u, { folder: 'd', ...e });
+  let u: Uploads = {};
+  for (const n of ['a', 'b']) u = ev(u, { event: 'queued', name: n, bytes: 1_000_000 });
+  const r = createRate();
+  r.add(0, samplesBar(u, {}, true)!.sent);
+  u = ev(u, { event: 'same', name: 'a' });
+  r.add(1000, samplesBar(u, {}, true)!.sent);
+  u = ev(u, { event: 'progress', name: 'b', sent: 100_000, bytes: 1_000_000 });
+  r.add(2000, samplesBar(u, {}, true)!.sent);
+  assert.equal(r.rate(2000), 50_000, '100 KB in 2 s, not 1.1 MB');
 });

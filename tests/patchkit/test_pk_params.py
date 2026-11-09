@@ -24,12 +24,19 @@ def test_the_site_scan_finds_references_and_clamp_bounds_but_not_loop_ends():
 
 
 def test_rules_are_declared_for_the_three_anchors():
+    declarations = {
+        entry["name"]: entry
+        for entries in tomllib.loads(
+            (REPO_ROOT / "devices/fw/param.toml").read_text()
+        ).values()
+        for entry in entries
+    }
     params_rules = [
         r
         for r in pr.fw_rules(REPO_ROOT)
         if r["name"].startswith("cf.param.")
         and r["_source"] == "fw/param"
-        and r["name"] != "cf.param.data.descriptor_table.master_sidechain_filter"
+        and "core/params" in declarations[r["name"]].get("users", [])
     ]
     for device in ("dt2", "dn2"):
         rules = {r["name"]: r for r in params_rules if device in r["devices"]}

@@ -112,6 +112,15 @@ async fn emu_source_info(host: State<'_, Host>) -> Result<Option<Value>, String>
         .map_err(|e| e.to_string())?
 }
 
+/// How the running binary was built: the PGO state the launcher passed in the environment (null when unknown).
+#[tauri::command]
+async fn emu_build_info() -> Value {
+    serde_json::json!({
+        "pgo": std::env::var("DIGI_PGO_STATUS").ok(),
+        "pgo_detail": std::env::var("DIGI_PGO_DETAIL").ok(),
+    })
+}
+
 fn source_info(path: &std::path::Path) -> Result<Option<Value>, String> {
     let fail = |error: &dyn std::fmt::Display| format!("{}: {error}", path.display());
     let metadata = std::fs::metadata(path).map_err(|e| fail(&e))?;
@@ -147,7 +156,12 @@ async fn emu_call(
         .map_err(|e| e.to_string())?
 }
 
-fn call_method(handle: &Handle, method: &str, params: Option<Value>, session: Option<u64>) -> Result<Value, String> {
+fn call_method(
+    handle: &Handle,
+    method: &str,
+    params: Option<Value>,
+    session: Option<u64>,
+) -> Result<Value, String> {
     if method == "quit" {
         return Err("quit is not available to the webview".into());
     }
@@ -164,7 +178,10 @@ fn call_method(handle: &Handle, method: &str, params: Option<Value>, session: Op
 /// Put the bytes of a firmware file the webview picked (Open...) where the controller can read them: `<run dir>/open/<name>`
 /// (the name is the percent-encoded `x-name`). Returns the path for `firmware.load {syx}`.
 #[tauri::command]
-async fn emu_stage_syx(host: State<'_, Host>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
+async fn emu_stage_syx(
+    host: State<'_, Host>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, String> {
     let name = request
         .headers()
         .get("x-name")
@@ -175,7 +192,11 @@ async fn emu_stage_syx(host: State<'_, Host>, request: tauri::ipc::Request<'_>) 
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
         .collect();
-    let safe = if safe.is_empty() { "opened.syx".to_string() } else { safe };
+    let safe = if safe.is_empty() {
+        "opened.syx".to_string()
+    } else {
+        safe
+    };
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
         _ => return Err("firmware must use a raw byte body".into()),
@@ -395,7 +416,12 @@ fn app_data_dir_in(
 
 /// `firmware.load` of the startup .syx as session 1. Without a usable module library or port for the runtime patch (a build outside
 /// the repository, a firmware that has no port) the image loads as it is, with a note on stderr.
-fn load_startup(handle: &Handle, syx: &std::path::Path, card: Option<&std::path::Path>, runtime: bool) -> Result<(), String> {
+fn load_startup(
+    handle: &Handle,
+    syx: &std::path::Path,
+    card: Option<&std::path::Path>,
+    runtime: bool,
+) -> Result<(), String> {
     let mut params = serde_json::json!({"syx": syx.display().to_string(), "session": 1});
     if let Some(card) = card {
         params["card"] = card.display().to_string().into();
@@ -405,9 +431,15 @@ fn load_startup(handle: &Handle, syx: &std::path::Path, card: Option<&std::path:
     }
     match handle.call("firmware.load", params.clone()) {
         Err(error) if runtime && error.message.starts_with("runtime patch:") => {
-            eprintln!("{}; loading the image without the digikit runtime", error.message);
+            eprintln!(
+                "{}; loading the image without the digikit runtime",
+                error.message
+            );
             params["runtime"] = false.into();
-            handle.call("firmware.load", params).map(drop).map_err(|e| e.message)
+            handle
+                .call("firmware.load", params)
+                .map(drop)
+                .map_err(|e| e.message)
         }
         other => other.map(drop).map_err(|e| e.message),
     }
@@ -453,11 +485,13 @@ fn main() {
     config.run_dir = run_dir.clone();
     config.mirror_dir = startup.mirror_dir.clone();
     // One folder per device; the user's choices are kept in the app data folder (the controller reads them at every load).
-    config.device_folders = startup.device_folders.then(|| digi_control::DeviceFoldersConfig {
-        root: None,
-        choices: app_data_dir(&identifier).map(|dir| dir.join("card-folders.json")),
-        sync: startup.card_sync,
-    });
+    config.device_folders = startup
+        .device_folders
+        .then(|| digi_control::DeviceFoldersConfig {
+            root: None,
+            choices: app_data_dir(&identifier).map(|dir| dir.join("card-folders.json")),
+            sync: startup.card_sync,
+        });
     config.card_folder = startup
         .card_folder
         .clone()
@@ -492,7 +526,9 @@ fn main() {
         // `--no-runtime` or a scenario run (scenarios are stock).
         let runtime = startup.runtime.unwrap_or(!has_scenario);
         if runtime {
-            eprintln!("emulator startup: patching the digikit runtime in; a first boot of a new image takes a while, later ones come from the cache");
+            eprintln!(
+                "emulator startup: patching the digikit runtime in; a first boot of a new image takes a while, later ones come from the cache"
+            );
         }
         if let Err(error) = load_startup(&handle, &path, startup.card_image.as_deref(), runtime) {
             eprintln!("emulator startup: {error}");
@@ -548,6 +584,7 @@ fn main() {
             emu_stage_syx,
             emu_save_diagnostics,
             emu_source_info,
+            emu_build_info,
             emu_audio_status,
             emu_startup,
             emu_step,
@@ -593,16 +630,25 @@ async fn card_open_folder(app: tauri::AppHandle, host: State<'_, Host>) -> Resul
     use tauri_plugin_opener::OpenerExt;
     let handle = host.handle.clone();
     let folder = tauri::async_runtime::spawn_blocking(move || {
-        let v = handle.call("card.folder", serde_json::json!({})).map_err(|e| e.message)?;
-        v["folder"].as_str().map(PathBuf::from).ok_or_else(|| "no folder is set for the module store".to_string())
+        let v = handle
+            .call("card.folder", serde_json::json!({}))
+            .map_err(|e| e.message)?;
+        v["folder"]
+            .as_str()
+            .map(PathBuf::from)
+            .ok_or_else(|| "no folder is set for the module store".to_string())
     })
     .await
     .map_err(|e| e.to_string())??;
     let made = folder.clone();
-    tauri::async_runtime::spawn_blocking(move || std::fs::create_dir_all(&made).map_err(|e| format!("{}: {e}", made.display())))
-        .await
-        .map_err(|e| e.to_string())??;
-    app.opener().open_path(folder.display().to_string(), None::<&str>).map_err(|e| e.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::create_dir_all(&made).map_err(|e| format!("{}: {e}", made.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    app.opener()
+        .open_path(folder.display().to_string(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -628,7 +674,9 @@ mod cli_tests {
                     continue;
                 }
                 found += 1;
-                let next = lines[i + 1..].iter().find(|l| !l.trim_start().starts_with("///") && !l.trim_start().starts_with("#["));
+                let next = lines[i + 1..].iter().find(|l| {
+                    !l.trim_start().starts_with("///") && !l.trim_start().starts_with("#[")
+                });
                 let next = next.expect("a function follows").trim_start();
                 assert!(
                     next.starts_with("async fn ") || next.starts_with("pub async fn "),
@@ -649,9 +697,18 @@ mod cli_tests {
     #[test]
     fn app_data_dir_is_the_systems_data_folder_and_the_identifier() {
         let os = |s: &str| Some(std::ffi::OsString::from(s));
-        let dir = app_data_dir_in("dev.digiemu.panel", os("/home/u"), os("/data"), os("C:/Roaming")).unwrap();
+        let dir = app_data_dir_in(
+            "dev.digiemu.panel",
+            os("/home/u"),
+            os("/data"),
+            os("C:/Roaming"),
+        )
+        .unwrap();
         if cfg!(target_os = "macos") {
-            assert_eq!(dir, PathBuf::from("/home/u/Library/Application Support/dev.digiemu.panel"));
+            assert_eq!(
+                dir,
+                PathBuf::from("/home/u/Library/Application Support/dev.digiemu.panel")
+            );
         } else if cfg!(windows) {
             assert_eq!(dir, PathBuf::from("C:/Roaming/dev.digiemu.panel"));
         } else {
@@ -892,9 +949,15 @@ mod emu_call_tests {
         assert!(call_method(&handle, "status", None, None).unwrap()["firmware"].is_null());
         // The current session (0 before the first load) passes; another one is stale and nothing runs.
         assert!(call_method(&handle, "status", None, Some(0)).is_ok());
-        assert_eq!(call_method(&handle, "diagnostics", None, Some(4)).unwrap_err(), "stale emulator session");
+        assert_eq!(
+            call_method(&handle, "diagnostics", None, Some(4)).unwrap_err(),
+            "stale emulator session"
+        );
         // `firmware.load` and `restart` start a session: the token must be newer than the current one.
-        assert_eq!(call_method(&handle, "restart", None, Some(0)).unwrap_err(), "stale emulator session");
+        assert_eq!(
+            call_method(&handle, "restart", None, Some(0)).unwrap_err(),
+            "stale emulator session"
+        );
         // A start that fails does not take the token.
         let missing = json!({"syx": "/nonexistent/none.syx"});
         assert!(call_method(&handle, "firmware.load", Some(missing), Some(7)).is_err());

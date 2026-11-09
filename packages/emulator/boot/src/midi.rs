@@ -6,7 +6,10 @@
 //! MIDI parser. The emulator has no UART9 model: it does what the channel would do (store the byte into the
 //! ring, advance DADDR) and offers the vector, one byte per wire time. Output: the driver stores bytes straight
 //! into the data register (its status register reads back the value the driver wrote, 0xdd: always ready), which
-//! `Board` records.
+//! `Board` records. DN2 1.11 also sends through a 4 KiB ring that eDMA channel 37 drains into the data register
+//! (the ring write `FUN_40002612`, the completion handler `0x40002102` on vector 157). `Board` runs the channel's
+//! major loop at its SERQ write and records the bytes. The runtime offers vector 157 (INTC1 source 29) once the
+//! bytes' wire time has passed, so the driver can start its next transfer.
 
 use std::collections::VecDeque;
 
@@ -63,7 +66,8 @@ pub const USB_PERIOD: u64 = 132_000;
 pub(crate) fn resolve_usb(main: &[u8], load: u32) -> Option<(u32, u32)> {
     const REG: [u8; 6] = [0x4e, 0xb9, 0x40, 0x00, 0x43, 0x4a];
     const TX_SIG: [u8; 16] = [
-        0x4f, 0xef, 0xff, 0xe4, 0x72, 0x01, 0x48, 0xd7, 0x0c, 0x7c, 0x20, 0x2f, 0x00, 0x20, 0x22, 0x6f,
+        0x4f, 0xef, 0xff, 0xe4, 0x72, 0x01, 0x48, 0xd7, 0x0c, 0x7c, 0x20, 0x2f, 0x00, 0x20, 0x22,
+        0x6f,
     ];
     let at = |addr: u32, n: usize| main.get(addr.checked_sub(load)? as usize..)?.get(..n);
     if at(0x4000_4734, TX_SIG.len())? != TX_SIG {
@@ -90,12 +94,21 @@ pub(crate) struct MidiPort {
     pub rx_bytes: u64,
     pub rx_irqs: u64,
     pub tx_bytes: u64,
+    /// An eDMA channel-37 transfer is on the wire: its completion interrupt is due at this count.
+    pub tx_due: Option<u64>,
+    /// Channel-37 transfers started, and their completion interrupts taken.
+    pub tx_dma: u64,
+    pub tx_irqs: u64,
 }
 
 impl MidiPort {
     #[inline]
     pub fn busy(&self) -> bool {
-        self.pending || !self.queue.is_empty() || self.usb.active.is_some() || !self.usb.queue.is_empty()
+        self.pending
+            || self.tx_due.is_some()
+            || !self.queue.is_empty()
+            || self.usb.active.is_some()
+            || !self.usb.queue.is_empty()
     }
 
     /// Bytes on the DIN input still to hand over (every instruction boundary is a delivery chance for them, so the fast path stays off).
@@ -104,11 +117,19 @@ impl MidiPort {
         self.pending || !self.queue.is_empty()
     }
 
+    /// A DIN output transfer is on the wire: its completion interrupt is due in the returned number of instructions
+    /// (`Some(0)`: due now). The fast paths run up to that count, as for the USB input.
+    #[inline]
+    pub fn tx_due_in(&self, icount: u64) -> Option<u64> {
+        self.tx_due.map(|due| due.saturating_sub(icount))
+    }
+
     /// The USB input is idle until the guest's instruction count reaches the returned value: the next callback call is not due (a call
     /// in progress, or nothing queued, needs no deadline: `None`). `Some(0)` when a call is due now: step it.
     #[inline]
     pub fn usb_due_in(&self, icount: u64) -> Option<u64> {
-        (self.usb.active.is_none() && !self.usb.queue.is_empty()).then(|| self.usb.next_ic.saturating_sub(icount))
+        (self.usb.active.is_none() && !self.usb.queue.is_empty())
+            .then(|| self.usb.next_ic.saturating_sub(icount))
     }
 }
 
@@ -123,6 +144,9 @@ pub struct MidiStatus {
     pub rx_irqs: u64,
     /// Bytes the guest sent so far (taken with `take_midi_out`, or still pending).
     pub tx_bytes: u64,
+    /// eDMA channel-37 transfers started, and their completion interrupts the guest took.
+    pub tx_dma: u64,
+    pub tx_irqs: u64,
     /// USB bytes still queued, handed over so far, callback calls, and bytes the firmware sent to USB (not yet taken).
     pub usb_queued: usize,
     pub usb_in_bytes: u64,
@@ -141,11 +165,13 @@ mod tests {
         // transmit function prologue at 0x40004734
         let tx = (0x4000_4734 - LOAD) as usize;
         main[tx..tx + 16].copy_from_slice(&[
-            0x4f, 0xef, 0xff, 0xe4, 0x72, 0x01, 0x48, 0xd7, 0x0c, 0x7c, 0x20, 0x2f, 0x00, 0x20, 0x22, 0x6f,
+            0x4f, 0xef, 0xff, 0xe4, 0x72, 0x01, 0x48, 0xd7, 0x0c, 0x7c, 0x20, 0x2f, 0x00, 0x20,
+            0x22, 0x6f,
         ]);
         // pea cb2; pea cb1; jsr 0x4000434a
         let call = [
-            0x48, 0x79, 0x40, 0x11, 0xd9, 0xa0, 0x48, 0x79, 0x40, 0x11, 0xd7, 0x6c, 0x4e, 0xb9, 0x40, 0x00, 0x43, 0x4a,
+            0x48, 0x79, 0x40, 0x11, 0xd9, 0xa0, 0x48, 0x79, 0x40, 0x11, 0xd7, 0x6c, 0x4e, 0xb9,
+            0x40, 0x00, 0x43, 0x4a,
         ];
         main[0x100..0x100 + call.len()].copy_from_slice(&call);
         main
@@ -153,7 +179,10 @@ mod tests {
 
     #[test]
     fn usb_callback_is_the_first_argument_of_the_registration_call() {
-        assert_eq!(resolve_usb(&image(), LOAD), Some((0x4011_d76c, 0x4000_4734)));
+        assert_eq!(
+            resolve_usb(&image(), LOAD),
+            Some((0x4011_d76c, 0x4000_4734))
+        );
     }
 
     #[test]
@@ -166,9 +195,20 @@ mod tests {
         assert_eq!(port.usb_due_in(100), Some(900));
         assert_eq!(port.usb_due_in(1_000), Some(0), "due now");
         assert_eq!(port.usb_due_in(5_000), Some(0), "late: due, never negative");
-        assert!(port.busy() && !port.din_busy(), "the DIN fast-path gate is not the USB queue");
-        port.usb.active = Some(UsbCall { sp_after_rts: 0, frame_sp: 0, saved: [0; 4] });
-        assert_eq!(port.usb_due_in(100), None, "a call in progress has no deadline");
+        assert!(
+            port.busy() && !port.din_busy(),
+            "the DIN fast-path gate is not the USB queue"
+        );
+        port.usb.active = Some(UsbCall {
+            sp_after_rts: 0,
+            frame_sp: 0,
+            saved: [0; 4],
+        });
+        assert_eq!(
+            port.usb_due_in(100),
+            None,
+            "a call in progress has no deadline"
+        );
         port.usb.active = None;
         port.pending = true;
         assert!(port.din_busy());

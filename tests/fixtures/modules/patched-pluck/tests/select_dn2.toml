@@ -1,6 +1,6 @@
 # PLUCK on the Digitone II: the 5th entry of the machine list (before MIDI); YES commits type 9 (the audio mirror, SRAM
-# 0x8000487c, first byte, after a TRIG); the SYN page is PLUCK's own page (DECAY, PICK, BRIGHT, COLOR on knobs A..D); a
-# trig sounds (a plucked string) and encoder C (BRIGHT) changes the page.
+# 0x8000487c, first byte, after a TRIG); the SYN page is PLUCK's own page (DECAY, PICK, BRIGHT, COLOR on knobs B, C, E, F); a
+# trig sounds (a plucked string) and encoder E (BRIGHT) changes the page.
 
 [test]
 name = "select_pluck_dn2"
@@ -56,7 +56,7 @@ expect_pcm_db = { min = -60, max = -3 }
 [[step]]
 expect_no_fault = true
 [[step]]
-turn = "ENC C"
+turn = "ENC E"
 by = 4
 events = 30
 [[step]]

@@ -310,13 +310,9 @@ fn expand_op(m: &Module, port: &Port, op: &Op) -> Result<Op> {
     let Some(name) = op.hook.as_deref().filter(|_| op.op == "hook") else {
         return Ok(op.clone());
     };
-    let h = port.hook(name).ok_or_else(|| {
-        err!(
-            "{}: no hook {name} on {}",
-            m.id(),
-            port.port.device
-        )
-    })?;
+    let h = port
+        .hook(name)
+        .ok_or_else(|| err!("{}: no hook {name} on {}", m.id(), port.port.device))?;
     let mut x = op.clone();
     x.anchor = h.site.clone();
     x.offset = h.offset;

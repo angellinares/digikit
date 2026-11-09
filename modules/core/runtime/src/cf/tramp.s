@@ -117,3 +117,28 @@ dkrt_exc_hook:
     move.l  52(%sp),-(%sp)      /* frame: 4 (saved) + 44 + 4 (return address) = 52, read before the push */
     jsr     dkrt_exc
 1:  bra.s   1b
+
+/* dkrt_pagekey_hook, dkrt_pageturn_hook: the hooks at the entry of the machine page's key handler and turn handler
+ * (cf.page.hook.source_key, cf.page.hook.source_turn; SourcePageView on the Digitakt II, MultiSourcePageView on the Digitone II). At
+ * the entry 0(sp) = the return address, 4(sp) = the view, 8(sp) = the event; d0/d1/a0/a1 are free. The C function gets (view, event)
+ * and returns; keys and ordinary PARAM turns continue with the original stack. A native page's LOCAL/unused turn returns one,
+ * which the stock dispatcher treats as consumed (src/rs/src/pageclick.rs). */
+    .globl dkrt_pagekey_hook
+dkrt_pagekey_hook:
+    move.l  8(%sp),-(%sp)       /* event */
+    move.l  8(%sp),-(%sp)       /* view: 4(sp) at the entry, 8 after one push */
+    jsr     dkrt_page_key
+    addq.l  #8,%sp
+    jmp     dkrt_pagekey_next
+
+    .globl dkrt_pageturn_hook
+dkrt_pageturn_hook:
+    move.l  8(%sp),-(%sp)
+    move.l  8(%sp),-(%sp)
+    jsr     dkrt_page_turn
+    addq.l  #8,%sp
+    tst.b   %d0
+    beq.s   1f
+    moveq   #1,%d0                 /* native dispatcher consumes a nonzero D0b */
+    rts
+1:  jmp     dkrt_pageturn_next

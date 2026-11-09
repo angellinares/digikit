@@ -58,6 +58,13 @@ CORE_MMR_REGS = {
     0x31402: "SHBTB_LOCK_END",
     0x3E000: "SHL1C_CFG",
     0x3E002: "SHL1C_CFG2",
+    # SHARC+ Core Programming Reference Rev 1.5, Table 33-5, pp. 33-7–8.
+    # These compact word addresses are separate 32-bit MMRs, not RAM bytes.
+    **{
+        0x3E010 + 2 * index + offset: f"SHL1C_RANGE_{kind}{index}"
+        for index in range(8)
+        for offset, kind in enumerate(("START", "END"))
+    },
 }
 
 SPI_REGS = {

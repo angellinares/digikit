@@ -10,6 +10,7 @@
 //!   kind 1 PARAM   (0x50): u32 index, template, slot; i32 min, max, default; name[32]; short[16]
 //!   kind 2 MACHINE (0x6c): u32 key, clone_of, position, own_dsp, level; i32 knobs[8]; name[24]; short[24]
 //!   kind 3 PAGE    (0x60): u32 type, knobs[8], level; name[24]; title[24]            (Digitone II)
+//!   kind 5 ACTION  (0x10): u32 param (the index of a PARAM record of the same file), image offset of the click callback `void fn(u32 track)`
 //!   kind 4 EFFECT  (0x1a4): u32 fx, mix, n_knobs, id; tab[8]; title[24]; 7 knobs of (u32 position, display, f32 min, max, default; name[24]; short[8])
 //!                           (the page of a run-time effect, Digitakt II; `fx` is the index of the effect record in the DSP section; `id` is the
 //!                           effect's 16-bit ID, `effect_id`: the kit stores it with the effect's values, so a kit load restores values only to the effect they came from)
@@ -37,6 +38,13 @@ pub const LEN_MACHINE: usize = 0x6c;
 pub const LEN_PAGE: usize = 0x60;
 pub const KIND_EFFECT: u32 = 4;
 pub const LEN_EFFECT: usize = 0x1a4;
+/// kind 5 ACTION (0x10): u32 param, offset. The click callback of the file's PARAM record `param`: `offset` is its image offset (the runtime adds the load address).
+pub const KIND_ACTION: u32 = 5;
+pub const LEN_ACTION: usize = 0x10;
+pub const KIND_NATIVE_PAGE: u32 = 6;
+pub const LEN_NATIVE_PAGE: usize = 0x90;
+pub const KIND_NATIVE_PAGE_V2: u32 = 7;
+pub const LEN_NATIVE_PAGE_V2: usize = 0x98;
 /// Knobs of an effect page (the 8th word of its parameters is MIX), the text fields, and the MIX default's range (the knob's raw 0 .. 127).
 pub const EFFECT_KNOBS: usize = 7;
 pub const EFFECT_TAB: usize = 8;
@@ -157,13 +165,29 @@ pub struct EffectPage {
     pub knobs: Vec<EffectKnob>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativePage {
+    pub version: u32,
+    pub page: u32,
+    pub flags: u32,
+    pub type_no: u32,
+    pub draw: u32,
+    pub event: u32,
+    pub title: String,
+    /// (kind, PARAM index / LOCAL id, encoder position).
+    pub bindings: [[u32; 3]; KNOBS],
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Register {
     pub device: u32,
     pub params: Vec<Param>,
+    /// Click callbacks: (the PARAM record's index, the image offset of the function), by parameter.
+    pub actions: Vec<(u32, u32)>,
     pub machines: Vec<Machine>,
     pub pages: Vec<Page>,
     pub effects: Vec<EffectPage>,
+    pub native_pages: Vec<NativePage>,
 }
 
 /// The f32 of a manifest number, checked finite.
@@ -452,6 +476,58 @@ impl Register {
         Ok(reg)
     }
 
+    /// The click callbacks of the module's parameters (`DK_PARAM_ACTION`): the image offset of each one's symbol. `symbols` are the
+    /// module's global ColdFire symbols with their offsets in the loaded image (`dkm::image_symbols`).
+    pub fn set_actions(
+        &mut self,
+        r: &DevResolved,
+        symbols: &std::collections::BTreeMap<String, u32>,
+    ) -> Result<()> {
+        self.actions.clear();
+        for (i, p) in r.params.iter().enumerate() {
+            let Some(func) = &p.action else { continue };
+            let off = symbols.get(func).ok_or_else(|| {
+                err!(
+                    "param {}: the click callback {func} is not a global function of the module (a static function has no symbol)",
+                    p.id
+                )
+            })?;
+            self.actions.push((i as u32, *off));
+        }
+        self.check()
+    }
+
+    pub fn set_native_pages(
+        &mut self,
+        r: &DevResolved,
+        module: &str,
+        symbols: &std::collections::BTreeMap<String, u32>,
+    ) -> Result<()> {
+        self.native_pages.clear();
+        for page in &r.native_pages {
+            let get = |name: &str| {
+                symbols.get(name).copied().ok_or_else(|| {
+                    err!("native page callback {name} is not a global function of the module")
+                })
+            };
+            let mut bindings = [[0; 3]; KNOBS];
+            for (out, binding) in bindings.iter_mut().zip(&page.bindings) {
+                *out = [binding.kind, binding.value, binding.position];
+            }
+            self.native_pages.push(NativePage {
+                version: page.version,
+                page: page.page,
+                flags: page.flags,
+                type_no: machine_key(module, &page.owner),
+                draw: get(&page.draw)?,
+                event: get(&page.event)?,
+                title: page.title.clone(),
+                bindings,
+            });
+        }
+        self.check()
+    }
+
     /// The checks the runtime repeats on the file.
     pub fn check(&self) -> Result<()> {
         let max = crate::sdkgen::limits_max();
@@ -460,6 +536,81 @@ impl Register {
             max.machine_rows as usize,
             max.page_rows as usize,
         );
+        let mut owners = vec![];
+        for page in &self.native_pages {
+            text_ok("native page title", &page.title, MACHINE_NAME - 1)?;
+            if !self.machines.iter().any(|m| m.type_no == page.type_no)
+                || owners.contains(&(page.type_no, page.page))
+            {
+                return Err(err!(
+                    "native page needs a declared machine and unique native page indexes"
+                ));
+            }
+            owners.push((page.type_no, page.page));
+            let owner_pages: Vec<_> = self
+                .native_pages
+                .iter()
+                .filter(|p| p.type_no == page.type_no)
+                .collect();
+            if owner_pages.iter().filter(|p| p.page == page.page).count() > 1 {
+                return Err(err!("unique native page indexes required"));
+            }
+            if page.flags & !3 != 0
+                || (page.flags != 0 && page.version != 2)
+                || (page.flags & 1 != 0 && page.page != 0)
+                || (page.flags & 2 != 0 && page.page != 1)
+                || !matches!(page.version, 1 | 2)
+                || page.page > 1
+                || owner_pages.iter().any(|p| p.version != page.version)
+                || (page.version == 1 && (page.page != 1 || owner_pages.len() != 1))
+                || (page.version == 2
+                    && (owner_pages.len() != 2
+                        || !owner_pages.iter().any(|p| p.page == 0)
+                        || !owner_pages.iter().any(|p| p.page == 1)))
+            {
+                return Err(err!(
+                    "native v2 requires exactly pages 0 and 1; cannot mix versions"
+                ));
+            }
+            let mut positions = 0u32;
+            let mut absent = false;
+            for &[kind, value, position] in &page.bindings {
+                if kind == 0 {
+                    if value != 0 || position != 0 {
+                        return Err(err!("unused native binding must be zero"));
+                    }
+                    absent = true;
+                } else {
+                    if absent
+                        || kind > 2
+                        || position >= KNOBS as u32
+                        || positions & (1 << position) != 0
+                        || (kind == 1 && value >= self.params.len() as u32)
+                        || (kind == 2 && value >= 256)
+                    {
+                        return Err(err!("invalid native page binding"));
+                    }
+                    positions |= 1 << position;
+                    if kind == 1 {
+                        let param = KNOB_PARAM | value;
+                        let owned = self
+                            .machines
+                            .iter()
+                            .any(|m| m.type_no == page.type_no && m.knobs.contains(&param))
+                            || self
+                                .pages
+                                .iter()
+                                .any(|p| p.type_no == page.type_no && p.knobs.contains(&param));
+                        if !owned {
+                            return Err(err!("native page PARAM must belong to its machine"));
+                        }
+                    }
+                }
+            }
+            if positions == 0 {
+                return Err(err!("native page needs a binding"));
+            }
+        }
         if self.params.len() > max_params
             || self.machines.len() > max_machines
             || self.pages.len() > max_pages
@@ -489,9 +640,26 @@ impl Register {
                 }
             }
         }
+        let mut acted = vec![];
+        for &(param, off) in &self.actions {
+            if param as usize >= self.params.len() || acted.contains(&param) {
+                return Err(err!(
+                    "click action of param {param}: no such param in the file, or two actions"
+                ));
+            }
+            if off == u32::MAX {
+                return Err(err!("click action of param {param}: no callback offset"));
+            }
+            acted.push(param);
+        }
         let max_effects = max.fx_slots as usize;
         if self.effects.len() > max_effects
-            || self.params.len() + self.machines.len() + self.pages.len() + self.effects.len()
+            || self.params.len()
+                + self.actions.len()
+                + self.machines.len()
+                + self.pages.len()
+                + self.effects.len()
+                + self.native_pages.len()
                 > MAX_RECORDS
         {
             return Err(err!(
@@ -534,8 +702,12 @@ impl Register {
         p32(&mut o, self.device);
         p32(
             &mut o,
-            (self.params.len() + self.machines.len() + self.pages.len() + self.effects.len())
-                as u32,
+            (self.params.len()
+                + self.actions.len()
+                + self.machines.len()
+                + self.pages.len()
+                + self.effects.len()
+                + self.native_pages.len()) as u32,
         );
         for p in &self.params {
             p32(&mut o, KIND_PARAM);
@@ -548,6 +720,12 @@ impl Register {
             p32(&mut o, p.default as u32);
             put_text(&mut o, &p.name, PARAM_NAME);
             put_text(&mut o, &p.short, PARAM_SHORT);
+        }
+        for &(param, off) in &self.actions {
+            p32(&mut o, KIND_ACTION);
+            p32(&mut o, LEN_ACTION as u32);
+            p32(&mut o, param);
+            p32(&mut o, off);
         }
         for m in &self.machines {
             p32(&mut o, KIND_MACHINE);
@@ -571,6 +749,37 @@ impl Register {
             p32(&mut o, g.level);
             put_text(&mut o, &g.name, MACHINE_NAME);
             put_text(&mut o, &g.title, MACHINE_NAME);
+        }
+        for page in &self.native_pages {
+            p32(
+                &mut o,
+                if page.version == 2 {
+                    KIND_NATIVE_PAGE_V2
+                } else {
+                    KIND_NATIVE_PAGE
+                },
+            );
+            p32(
+                &mut o,
+                if page.version == 2 {
+                    LEN_NATIVE_PAGE_V2
+                } else {
+                    LEN_NATIVE_PAGE
+                } as u32,
+            );
+            for value in [page.version, page.type_no, page.draw, page.event] {
+                p32(&mut o, value);
+            }
+            put_text(&mut o, &page.title, MACHINE_NAME);
+            if page.version == 2 {
+                p32(&mut o, page.page);
+                p32(&mut o, page.flags);
+            }
+            for binding in page.bindings {
+                for value in binding {
+                    p32(&mut o, value);
+                }
+            }
         }
         for e in &self.effects {
             p32(&mut o, KIND_EFFECT);
@@ -635,6 +844,31 @@ impl Register {
                     name: txt(rec + 24, PARAM_NAME)?,
                     short: txt(rec + 24 + PARAM_NAME, PARAM_SHORT)?,
                 }),
+                (KIND_ACTION, LEN_ACTION) => reg.actions.push((g(rec)?, g(rec + 4)?)),
+                (KIND_NATIVE_PAGE, LEN_NATIVE_PAGE) | (KIND_NATIVE_PAGE_V2, LEN_NATIVE_PAGE_V2) => {
+                    let version = if kind == KIND_NATIVE_PAGE_V2 { 2 } else { 1 };
+                    if g(rec)? != version {
+                        return Err(err!("invalid native page version"));
+                    }
+                    let page = if version == 2 { g(rec + 40)? } else { 1 };
+                    let binding_offset = if version == 2 { 48 } else { 40 };
+                    let mut bindings = [[0; 3]; KNOBS];
+                    for (i, binding) in bindings.iter_mut().enumerate() {
+                        for (j, value) in binding.iter_mut().enumerate() {
+                            *value = g(rec + binding_offset + i * 12 + j * 4)?;
+                        }
+                    }
+                    reg.native_pages.push(NativePage {
+                        version,
+                        page,
+                        flags: if version == 2 { g(rec + 44)? } else { 0 },
+                        type_no: g(rec + 4)?,
+                        draw: g(rec + 8)?,
+                        event: g(rec + 12)?,
+                        title: txt(rec + 16, MACHINE_NAME)?,
+                        bindings,
+                    });
+                }
                 (KIND_MACHINE, LEN_MACHINE) => {
                     let mut knobs = [0u32; KNOBS];
                     for (j, k) in knobs.iter_mut().enumerate() {
@@ -727,6 +961,7 @@ mod tests {
                 name: "Decay".into(),
                 short: "DECAY".into(),
             }],
+            actions: vec![],
             machines: vec![Machine {
                 type_no: 16,
                 clone_of: 6,
@@ -739,6 +974,7 @@ mod tests {
             }],
             pages: vec![],
             effects: vec![],
+            native_pages: vec![],
         }
     }
 
@@ -754,6 +990,94 @@ mod tests {
             title: "Syn".into(),
         });
         r
+    }
+
+    #[test]
+    fn native_page_roundtrip_and_invalid_bindings() {
+        let mut r = sample();
+        r.native_pages.push(NativePage {
+            version: 1,
+            page: 1,
+            flags: 0,
+            type_no: 16,
+            draw: 2,
+            event: 4,
+            title: "Native".into(),
+            bindings: [
+                [1, 0, 0],
+                [2, 0, 2],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+                [0; 3],
+            ],
+        });
+        assert_eq!(Register::parse(&r.encode()).unwrap(), r);
+        r.native_pages[0].bindings[1][2] = 0;
+        assert!(r.check().unwrap_err().0.contains("binding"));
+        r.native_pages[0].bindings[1][2] = 2;
+        r.native_pages[0].bindings[0][1] = 1;
+        assert!(r.check().unwrap_err().0.contains("binding"));
+        r.native_pages[0].bindings[0][1] = 0;
+        r.native_pages[0].type_no = 17;
+        assert!(r.check().unwrap_err().0.contains("declared machine"));
+    }
+
+    #[test]
+    fn native_replacement_pair_roundtrips_and_rejects_missing_or_mixed_pages() {
+        let mut r = sample();
+        for page in 0..2 {
+            r.native_pages.push(NativePage {
+                version: 2,
+                page,
+                flags: 0,
+                type_no: 16,
+                draw: 2,
+                event: 4,
+                title: "Custom".into(),
+                bindings: [
+                    [1, 0, 7],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                    [0; 3],
+                ],
+            });
+        }
+        assert_eq!(Register::parse(&r.encode()).unwrap(), r);
+        r.native_pages[0].flags = 1;
+        assert_eq!(Register::parse(&r.encode()).unwrap(), r);
+        r.native_pages[1].flags = 1;
+        assert!(r.check().is_err());
+        r.native_pages[1].flags = 2;
+        r.check().unwrap();
+        assert_eq!(Register::parse(&r.encode()).unwrap(), r);
+        for flags in [3, 4] {
+            r.native_pages[1].flags = flags;
+            assert!(r.check().is_err());
+        }
+        r.native_pages[1].flags = 0;
+        r.native_pages[0].flags = 2;
+        assert!(r.check().is_err());
+        r.native_pages[0].flags = 0;
+        let second = r.native_pages.pop().unwrap();
+        assert!(r.check().unwrap_err().0.contains("exactly pages"));
+        r.native_pages.push(second);
+        r.native_pages[1].version = 1;
+        assert!(r.check().unwrap_err().0.contains("cannot mix"));
+        r.native_pages[1].version = 2;
+        r.native_pages[1].page = 0;
+        assert!(
+            r.check()
+                .unwrap_err()
+                .0
+                .contains("unique native page indexes")
+        );
     }
 
     #[test]
@@ -964,6 +1288,27 @@ mod tests {
         assert!(ok(&|e| e.id = 0x1_0000));
         let big: Vec<_> = (0..8).map(|_| effect().knobs[0].clone()).collect();
         assert!(ok(&|e| e.knobs = big.clone()));
+    }
+
+    #[test]
+    fn click_actions_round_trip_and_are_checked() {
+        let mut r = sample();
+        r.actions = vec![(0, 0x1c4)];
+        r.check().unwrap();
+        let b = r.encode();
+        assert_eq!(Register::parse(&b).unwrap(), r);
+        // the record is 0x10 bytes: kind, length, param, offset
+        let at = b.len() - 0x10 - (LEN_MACHINE);
+        assert_eq!(
+            &b[at..at + 16],
+            &[0, 0, 0, 5, 0, 0, 0, 0x10, 0, 0, 0, 0, 0, 0, 1, 0xc4]
+        );
+        // a param the file has not, two actions on one param, no offset
+        for bad in [vec![(1, 4)], vec![(0, 4), (0, 8)], vec![(0, u32::MAX)]] {
+            let mut r = sample();
+            r.actions = bad;
+            assert!(r.check().is_err());
+        }
     }
 
     #[test]

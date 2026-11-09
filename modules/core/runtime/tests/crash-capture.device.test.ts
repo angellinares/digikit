@@ -6,7 +6,7 @@ import { CARD_TIMEOUT, crashRecord, pausedProtocol } from '@digi/regression/runt
 import { rpc } from '@digi/regression/runtime/fx-live.ts';
 
 /**
- * CPU exception capture (Python `run_crash` of pk_digikit_debug.py; scenario crash-capture, DT2, full tier). A module raises an exception some blocks into the
+ * CPU exception capture (DT2, full tier; the Python scenario crash-capture is deleted). A module raises an exception some blocks into the
  * session (an illegal instruction for the early crash, a division by zero for the late one); the firmware's default handler calls the runtime's hook, which
  * records the fault in RAM that the soft reset keeps, and resets; the next boot logs the record. The stable period is shortened to 12,000 blocks. EARLY: the crash
  * is before the period (the boot counter stays raised); LATE: after it (the counter was cleared, the crashed boot is counted bad at the next boot).
@@ -35,11 +35,9 @@ async function observe(h: CardRig) {
   };
 }
 
-const OPEN = 'open: fails in the full tier, see docs/handovers/HANDOVER-2026-11-02-scenario-migration.md';
-
 cardRigs(
   'crash capture',
-  { devices: ['dt2'], full: true, skip: { dt2: OPEN }, faults: true, roots: RT, symbols: CARD_SYMBOLS },
+  { devices: ['dt2'], full: true, faults: true, roots: RT, symbols: CARD_SYMBOLS },
   (h) => {
     for (const [kind, { blocks, mode, vector }] of Object.entries(KINDS)) {
       test(
@@ -59,6 +57,8 @@ cardRigs(
           for (let boot = 0; boot < 3; boot++) {
             if (boot) await h.waitReset();
             seen.push(await observe(h));
+            // the boot that finds the record keeps it on the card as the settings key dk/fault: store writes on purpose
+            h.allowStoreWrites(await h.storeWrites());
           }
           const [b0, b1, b2] = seen as [(typeof seen)[0], (typeof seen)[0], (typeof seen)[0]];
 

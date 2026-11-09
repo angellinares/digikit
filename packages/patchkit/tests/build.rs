@@ -89,7 +89,9 @@ const LIBGCC_NOT_CALLED: [&str; 14] = [
 fn compiler_helper_names_match_libgcc() {
     let Some(env) = toolchain() else { return };
     let Some(lib) = env.libgcc_cf() else {
-        eprintln!("SKIP: libgcc-cf54418.a is not built (uv run python -m tools.patchkit.pk_toolchains libgcc-cf)");
+        eprintln!(
+            "SKIP: libgcc-cf54418.a is not built (uv run python -m tools.patchkit.pk_toolchains libgcc-cf)"
+        );
         return;
     };
     let out = std::process::Command::new(env.m68k("nm").unwrap())
@@ -119,7 +121,10 @@ fn compiler_helper_names_match_libgcc() {
         .iter()
         .filter(|n| rust::is_helper(n) || !defined.contains(**n))
         .collect();
-    assert!(wrong.is_empty(), "stale LIBGCC_NOT_CALLED entries: {wrong:?}");
+    assert!(
+        wrong.is_empty(),
+        "stale LIBGCC_NOT_CALLED entries: {wrong:?}"
+    );
 }
 
 #[test]
@@ -361,9 +366,15 @@ fn the_object_carries_its_isa_record() {
 #[test]
 fn isa_check_of_blobs_and_archives() {
     // divs.l d1,d2:d0 (64-bit dividend), bfextu: 68020 forms with no ColdFire encoding
-    let bad = vec![(".text".to_string(), vec![0x4c, 0x41, 0x0c, 0x02, 0xe9, 0xc0, 0x10, 0x00, 0x4e, 0x75])];
+    let bad = vec![(
+        ".text".to_string(),
+        vec![0x4c, 0x41, 0x0c, 0x02, 0xe9, 0xc0, 0x10, 0x00, 0x4e, 0x75],
+    )];
     let e = cf::check_text(&bad, "x: ").unwrap_err().0;
-    assert!(e.contains("x: .text+0x0:") && e.contains("outside ISA_A/B/C+EMAC"), "{e}");
+    assert!(
+        e.contains("x: .text+0x0:") && e.contains("outside ISA_A/B/C+EMAC"),
+        "{e}"
+    );
     let ok = vec![(".text".to_string(), vec![0x4e, 0x75])];
     assert_eq!(cf::check_text(&ok, "").unwrap().values().sum::<u32>(), 1);
     let Some(env) = toolchain() else { return };
@@ -512,7 +523,7 @@ fn a_module_builds_once_and_then_is_unchanged() {
     let _ = std::fs::remove_dir_all(&out);
 }
 
-/// A content module (any category but `core`) keeps its objects in the cache `out/cache/dko/<id>/<path>`, not in the module; the
+/// A content module (any category but `core`) keeps its objects in the cache `out/cache/dko/<id>/<src12>/<path>`, not in the module; the
 /// library builds a stale or missing one on demand and leaves out the objects of modules it was not asked for.
 #[test]
 fn a_content_module_builds_into_the_cache_on_demand() {
@@ -529,11 +540,25 @@ fn a_content_module_builds_into_the_cache_on_demand() {
         ),
     )
     .unwrap();
-    std::fs::write(moddir.join("src/t.c"), "int twice(int x) { return x + x; }\n").unwrap();
-    let cached = build::cache_dir(&root()).join(&id).join("build/tiny.dko.json");
+    std::fs::write(
+        moddir.join("src/t.c"),
+        "int twice(int x) { return x + x; }\n",
+    )
+    .unwrap();
+    let cached_now = || build::object_files(&root(), &moddir).unwrap()[0].1.clone();
+    let cached = cached_now();
     let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
     let scan = |only: Option<&[String]>| {
-        Library::scan_in(Some(Build { root: &root(), only, defines: &[] }), &d, false).unwrap()
+        Library::scan_in(
+            Some(Build {
+                root: &root(),
+                only,
+                defines: &[],
+            }),
+            &d,
+            false,
+        )
+        .unwrap()
     };
 
     // asked for nothing: no object, nothing built
@@ -543,19 +568,40 @@ fn a_content_module_builds_into_the_cache_on_demand() {
     assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
     assert!(cached.is_file() && !moddir.join("build").exists());
     let text = std::fs::read_to_string(&cached).unwrap();
-    let stamp = std::fs::metadata(&cached).unwrap().modified().unwrap();
+    // a build writes a new file (a rename), a use only touches it: the inode tells them apart
+    let inode = || std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&cached).unwrap());
+    let stamp = inode();
     // a current object is read, not built again
     assert_eq!(scan(Some(&[id.clone()])).get(&id).unwrap().objects.len(), 1);
-    assert_eq!(std::fs::metadata(&cached).unwrap().modified().unwrap(), stamp);
+    assert_eq!(inode(), stamp);
     // a changed source makes it stale; the next scan builds it again
-    std::fs::write(moddir.join("src/t.c"), "int twice(int x) { return 2 * x + 1; }\n").unwrap();
+    std::fs::write(
+        moddir.join("src/t.c"),
+        "int twice(int x) { return 2 * x + 1; }\n",
+    )
+    .unwrap();
     assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
-    assert_ne!(std::fs::read_to_string(&cached).unwrap(), text);
+    // the new sources have their own entry; the old one stays beside it
+    let cached2 = cached_now();
+    assert_ne!(cached2, cached);
+    assert!(cached.is_file());
+    assert_ne!(std::fs::read_to_string(&cached2).unwrap(), text);
+    let cached = cached2;
     // `patchkit build` finds it current
-    let r = build::build_module(&moddir, &BuildOptions { root: root(), ..Default::default() }).unwrap();
+    let r = build::build_module(
+        &moddir,
+        &BuildOptions {
+            root: root(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_eq!(r.objects[0].status, Status::Unchanged);
     // both canonical: in a lane `out` is a symlink to the main tree's
-    assert_eq!(std::fs::canonicalize(&r.objects[0].path).unwrap(), std::fs::canonicalize(&cached).unwrap());
+    assert_eq!(
+        std::fs::canonicalize(&r.objects[0].path).unwrap(),
+        std::fs::canonicalize(&cached).unwrap()
+    );
     let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
     let _ = std::fs::remove_dir_all(&d);
 }
@@ -584,7 +630,10 @@ fn sharc_sources_given_as_texts_make_the_object_of_the_files() {
         .to_string();
     let build = |defines: &[String]| {
         let t = sharc::source_text_from(std::slice::from_ref(&src), &includes, defines).unwrap();
-        (sharc::source_hash(&t), build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap())
+        (
+            sharc::source_hash(&t),
+            build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap(),
+        )
     };
     let (h0, plain) = build(&[]);
     let (h1, extra) = build(&["EXTRA".into()]);
@@ -597,10 +646,170 @@ fn sharc_sources_given_as_texts_make_the_object_of_the_files() {
     std::fs::write(d.join("k.inc"), &includes["k.inc"]).unwrap();
     std::fs::write(d.join("m.s"), &src).unwrap();
     let t = sharc::source_text_in(vec![d.clone()], &[d.join("m.s")], &[]).unwrap();
-    assert_eq!(build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap(), plain);
+    assert_eq!(
+        build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap(),
+        plain
+    );
     std::fs::remove_dir_all(&d).unwrap();
     // a missing include and a refused instruction are errors, not panics
     assert!(sharc::source_text_from(&["#include \"no.inc\"".into()], &includes, &[]).is_err());
     let e = sharc::sharc_object(".SECTION/PM seg_pmco;\nDM(15, I4) = I0;\n").unwrap_err();
     assert!(e.0.contains("the ISA does not allow"), "{e}");
+}
+
+/// Exercise endian conversions compiled by the actual ColdFire Rust backend.
+/// The weak compiler_builtins bswap used to call itself, overflowing the guest
+/// stack; host-endian tests could not detect that target-only recursion.
+#[test]
+fn coldfire_rust_endian_conversions_return_without_recursive_helpers() {
+    use coldfire::{Bus, BusError, Cpu};
+    let Some(env) = toolchain() else { return };
+    if !env.codegen_gcc_ready() {
+        return;
+    }
+    let dir = patchkit::build::toolchain::TempDir::new("pk-rust-endian-test-").unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    let manifest = dir.path().join("Cargo.toml");
+    std::fs::write(
+        &manifest,
+        r#"
+[package]
+name = "cf-endian-proof"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["staticlib"]
+[workspace]
+[profile.release]
+panic = "abort"
+opt-level = "s"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("src/lib.rs"),
+        r#"
+#![no_std]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! { loop {} }
+#[no_mangle]
+pub unsafe extern "C" fn endian_read(p: *const u8) -> u32 {
+    u32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)])
+}
+#[no_mangle]
+pub unsafe extern "C" fn endian_write(value: u32, p: *mut u32) {
+    core::ptr::write_unaligned(p, value.to_le());
+}
+"#,
+    )
+    .unwrap();
+    let (proto, hash, info) = rust::object_proto(&env, &manifest).unwrap();
+    let helper = proto
+        .symbols
+        .iter()
+        .find(|s| s.name == "__bswapsi2")
+        .unwrap();
+    assert!(
+        !helper.global,
+        "compiler helpers remain private to each object"
+    );
+    assert!(
+        proto
+            .relocs
+            .iter()
+            .all(|r| Some(&r.section) != helper.section.as_ref()),
+        "the target helper must have no calls, including self recursion"
+    );
+    let object = cf::dko_from_proto(&proto, hash, info).unwrap();
+    let linked = patchkit::link::link(&object, 0x1000, &Default::default()).unwrap();
+    assert!(linked.image.len() < 0x6000);
+
+    struct Ram(Vec<u8>);
+    impl Bus for Ram {
+        fn read8(&mut self, addr: u32) -> Result<u8, BusError> {
+            self.0
+                .get(addr as usize)
+                .copied()
+                .ok_or(BusError { addr, write: false })
+        }
+        fn read16(&mut self, addr: u32) -> Result<u16, BusError> {
+            Ok(u16::from_be_bytes([
+                self.read8(addr)?,
+                self.read8(addr + 1)?,
+            ]))
+        }
+        fn read32(&mut self, addr: u32) -> Result<u32, BusError> {
+            Ok(u32::from_be_bytes([
+                self.read8(addr)?,
+                self.read8(addr + 1)?,
+                self.read8(addr + 2)?,
+                self.read8(addr + 3)?,
+            ]))
+        }
+        fn write8(&mut self, addr: u32, value: u8) -> Result<(), BusError> {
+            *self
+                .0
+                .get_mut(addr as usize)
+                .ok_or(BusError { addr, write: true })? = value;
+            Ok(())
+        }
+        fn write16(&mut self, addr: u32, value: u16) -> Result<(), BusError> {
+            for (i, byte) in value.to_be_bytes().iter().enumerate() {
+                self.write8(addr + i as u32, *byte)?;
+            }
+            Ok(())
+        }
+        fn write32(&mut self, addr: u32, value: u32) -> Result<(), BusError> {
+            for (i, byte) in value.to_be_bytes().iter().enumerate() {
+                self.write8(addr + i as u32, *byte)?;
+            }
+            Ok(())
+        }
+    }
+    for value in [0u32, 0x01234567, 0x00200000, 0x80000001, u32::MAX] {
+        for entry in ["endian_read", "endian_write"] {
+            let mut ram = Ram(vec![0; 0x10000]);
+            ram.0[0x1000..0x1000 + linked.image.len()].copy_from_slice(&linked.image);
+            ram.0[0x8000..0x8004].copy_from_slice(&value.to_le_bytes());
+            let mut cpu = Cpu::new();
+            cpu.pc = linked.symbols[entry] as u32;
+            cpu.sr = 0x2700;
+            cpu.a[7] = 0xf000;
+            for i in 2..8 {
+                cpu.d[i] = 0x12340000 + i as u32;
+            }
+            for i in 2..7 {
+                cpu.a[i] = 0x56780000 + i as u32;
+            }
+            let before_d = cpu.d;
+            let before_a = cpu.a;
+            ram.write32(0xf000, 0x9000).unwrap();
+            ram.write32(
+                0xf004,
+                if entry == "endian_read" {
+                    0x8000
+                } else {
+                    value
+                },
+            )
+            .unwrap();
+            ram.write32(0xf008, 0x8100).unwrap();
+            for _ in 0..100 {
+                if cpu.pc == 0x9000 {
+                    break;
+                }
+                cpu.step(&mut ram).unwrap();
+                assert_eq!(cpu.last_exception, None);
+            }
+            assert_eq!(cpu.pc, 0x9000, "{entry} must return, value {value:#x}");
+            assert_eq!(cpu.a[7], 0xf004, "cdecl stack restored");
+            assert_eq!(&cpu.d[2..], &before_d[2..]);
+            assert_eq!(&cpu.a[2..7], &before_a[2..7]);
+            if entry == "endian_read" {
+                assert_eq!(cpu.d[0], value);
+            } else {
+                assert_eq!(&ram.0[0x8100..0x8104], &value.to_le_bytes());
+            }
+        }
+    }
 }

@@ -22,7 +22,7 @@ runtime keeps fault capture. Agreed with Em on 2026-10-31. Sources: the sampler 
 - [x] IRQSTATEN **[D]**: no code in DT2 1.17 or DN2 1.12 reads or writes `0xfc0cc034` (byte scan of all sections; no base-register form). The
       firmware still depends on its enable bits: the polled driver waits for TC with IRQSIGEN cleared, and the ISR tests the CC, TC and error
       bits. Because nothing writes it, it holds the power-on value `0x117F_013F` whether RSTA resets it or keeps it. The emulator uses that value
-      after RSTA; no device read is needed. The fix goes on the sampler branch, with an update to its finding 100, after a second byte check.
+      after RSTA; no device read is needed. The fix goes on the sampler branch, with an update to its finding 107, after a second byte check.
 - [x] Runtime size (`runtime.dko.json`, 2026-10-31): text 110,290, data 3,547, bss 671,140 bytes, mostly the module arena (512 KiB), the stage
       (64 KiB) and the upload buffer (36 KiB). Log code is 4.2 KB, the log ring 16 KiB, the LOG, PEEK and LOGCFG handlers 0.9 KB. The split
       saves about 15 KB; its main value is that debug and probe code lives outside the runtime. Parts of `dlog.rs` are not logging and stay:

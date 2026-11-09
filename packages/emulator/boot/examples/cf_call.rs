@@ -19,7 +19,10 @@ use serde_json::{Value, json};
 use std::{env, fs};
 
 fn num(v: &Value) -> u32 {
-    let s = v.as_str().map(str::to_owned).unwrap_or_else(|| v.to_string());
+    let s = v
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| v.to_string());
     match s.trim().strip_prefix("0x") {
         Some(h) => u32::from_str_radix(h, 16).unwrap(),
         None => s.trim().parse::<i64>().unwrap() as u32,
@@ -34,8 +37,14 @@ fn main() {
     }
     let syx = fs::read(&args[1]).unwrap();
     let req: Value = serde_json::from_slice(&fs::read(&args[2]).unwrap()).unwrap();
-    let state = args.iter().position(|a| a == "--state").map(|i| args[i + 1].clone());
-    let base_sha = args.iter().position(|a| a == "--base-sha").map(|i| args[i + 1].clone());
+    let state = args
+        .iter()
+        .position(|a| a == "--state")
+        .map(|i| args[i + 1].clone());
+    let base_sha = args
+        .iter()
+        .position(|a| a == "--base-sha")
+        .map(|i| args[i + 1].clone());
     let mut emu = match &base_sha {
         Some(b) => Emulator::new_patched(&syx, None, b).unwrap(),
         None => Emulator::new(&syx, None).unwrap(),
@@ -76,7 +85,12 @@ fn main() {
     for c in req["calls"].as_array().into_iter().flatten() {
         let spec = CallSpec {
             pc: num(&c["pc"]),
-            args: c["args"].as_array().into_iter().flatten().map(num).collect(),
+            args: c["args"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(num)
+                .collect(),
             sp: c.get("sp").map_or(0x47fe_0000, num),
             ret_pc: c.get("ret").map_or(0x47fd_f000, num),
             sr: c.get("sr").map_or(0x2700, num) as u16,
@@ -88,7 +102,9 @@ fn main() {
             .into_iter()
             .flatten()
             .map(|rd| {
-                let b = emu.peek_bytes(num(&rd["addr"]), num(&rd["len"]) as usize).unwrap();
+                let b = emu
+                    .peek_bytes(num(&rd["addr"]), num(&rd["len"]) as usize)
+                    .unwrap();
                 b.iter().map(|x| format!("{x:02x}")).collect()
             })
             .collect();
