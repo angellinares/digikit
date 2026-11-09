@@ -99,13 +99,19 @@ const GATE = {
       executor: 'nx:run-commands',
       cache: false,
       parallelism: false,
-      options: { command: 'uv run python -m tools.emulator.coupled build', cwd: '.' },
+      // dist/coupled-dn2.json holds the sha256 of the built binary: the cache key of the targets that run it.
+      outputs: ['{workspaceRoot}/dist/coupled-dn2.json'],
+      options: { command: 'uv run python -m tools.emulator.coupled build --id-out dist/coupled-dn2.json', cwd: '.' },
     },
     'build-dt2': {
       executor: 'nx:run-commands',
       cache: false,
       parallelism: false,
-      options: { command: 'uv run python -m tools.emulator.coupled build --device dt2', cwd: '.' },
+      outputs: ['{workspaceRoot}/dist/coupled-dt2.json'],
+      options: {
+        command: 'uv run python -m tools.emulator.coupled build --device dt2 --id-out dist/coupled-dt2.json',
+        cwd: '.',
+      },
     },
   },
 };

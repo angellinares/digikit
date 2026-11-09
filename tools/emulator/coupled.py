@@ -709,9 +709,21 @@ def run_parallel(binary: pathlib.Path, args) -> int:
     return 2 if bad else 0
 
 
+def binary_identity(binary: pathlib.Path, device: str) -> dict[str, str]:
+    """Names a built binary by its bytes. The path is not part of it: each lane has its own."""
+    return {"device": device, "sha256": render_cache.file_digest(binary)}
+
+
 def cmd_build(args) -> int:
-    binary = build(getattr(args, "device", "dn2"), pgo=True)
+    device = getattr(args, "device", "dn2")
+    binary = build(device, pgo=True)
     print(binary)
+    if args.id_out:
+        # An Nx output: a task that depends on this build keys on the binary's content.
+        args.id_out.parent.mkdir(parents=True, exist_ok=True)
+        args.id_out.write_text(
+            json.dumps(binary_identity(binary, device), indent=2) + "\n"
+        )
     return 0
 
 
@@ -945,6 +957,11 @@ def parser() -> argparse.ArgumentParser:
 
     p = add("build", cmd_build, "build coupled-run")
     p.add_argument("--device", choices=["dn2", "dt2"], default="dn2")
+    p.add_argument(
+        "--id-out",
+        type=pathlib.Path,
+        help="write the binary's sha256 here (JSON), for the Nx cache key",
+    )
     p = add("scenario", cmd_scenario, "run named scenarios")
     p.add_argument("names", nargs="*", metavar="NAME")
     p.add_argument("--all", action="store_true", help="run every scenario of the file")
