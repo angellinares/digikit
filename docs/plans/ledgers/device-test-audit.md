@@ -24,7 +24,7 @@ host tests: their checks stay device tests until the logic is split out.
 | `settings` | restart, blank, overlap, oldcard | | E | boot paths in `settings.rs` and `boot.rs` without host tests | Keep |
 | `settings-api` | put/get after restart, same key in two modules, key rules | 155 (6 tests) | E / S | The key rule is `settings/tests.rs` (`a_module_key_…refused`) **[V]**; test 3 re-tests it through the mailbox | **[?]** Drop test 3, if the mailbox error mapping is not the point. Not applied: not an exact duplicate |
 | `bootscreen` | valid file, tick hash, stock intro with a bad file (several), fault halts, reset reaches safe mode | 1170 (16 tests) | E | the slowest file; every case needs a cold boot with a module on the intro task | Keep. **[?]** `reset from the intro callback reaches safe mode on boot 3` re-tests the boot counter that `safe-mode` ("two boots never reach the UI loop") and `boot.rs` host tests cover; only the reset site differs |
-| `bootscreen` | REC held with a valid file | | D | `introblank` "REC held" runs the same card (module, data file, `active`) and asserts the same boot info (`safe 1, reason KEY, loaded 0`) and more (the safe-mode frame). The images differ (introblank runs with the `core/introblank` adapter, bootscreen without it); the key check is in the runtime's `boot.rs`, not in the adapter | **Deleted** (applied) |
+| `bootscreen` | REC held with a valid file | | E | Safe-mode entry by key on the image without the `core/introblank` adapter. `introblank` "REC held" checks the same boot info on another image | Keep |
 | `introblank` | 6 groups, 12 tests | 843 | E | the intro is firmware | Keep. "control: a note plays on the stock image" is the oracle of the next test |
 | `memaudit` | clean set, stray store, full set (12 tests, 4 skipped) | 535 | E | ColdFire write guard over a boot | Keep. **[?]** "clean set" appears twice with different rigs; read the rigs before merging them |
 | `memaudit-module.manual` | one module | n/a | E | manual, no gate cost | Keep |
@@ -78,7 +78,6 @@ host tests: their checks stay device tests until the logic is split out.
 ## Applied
 
 1. `shot-picker.device.test.ts` rewritten (see the plan, step 7 first case).
-2. `bootscreen.device.test.ts`: the "REC held from cold with a valid file" block deleted (duplicate of `introblank` REC held).
 
 ## For Em to decide
 
