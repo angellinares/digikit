@@ -24,7 +24,7 @@ const floatWord = (raw: number) => {
 // The legacy runner exercises all four pristine-card legs on BOTH devices.
 // In particular, the old DN2 TOML's "no send cells" header is stale.
 for (const device of DEVICES) {
-  describe.sequential(`${device.toUpperCase()} ${FIRMWARE[device]} frequency shifter`, () => {
+  describe(`${device.toUpperCase()} ${FIRMWARE[device]} frequency shifter`, () => {
     const context = withPreparedFxSession(device, 'frequency shifter', {
       image: {
         name: 'fx-freqshift',

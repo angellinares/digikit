@@ -88,8 +88,8 @@ Highest payoff first. Each step states its proof.
    - selection for step 5: a changed function selects the tests that execute it, instead of every test that declares the image as an input;
    - host gaps: `cargo llvm-cov` on the runtime unit tests shows logic that only a device test reaches, the first candidates for host tests.
    Vitest's own coverage is not used: it covers only the TS harness. Proof: per-function test lists for one core adapter, checked by hand against its tests.
-9. [ ] **Vitest 5.** One PR from 3.2.4 to 5.x (needs Node 22.12 or later; we run 24): `singleFork` and `poolOptions` become `maxWorkers`/`isolate`
-   settings, `workspace` is `projects`. Then close the Dependabot Vitest PRs. Use tags for the DSP mode and `--last-failed` for reruns.
+9. [x] **Vitest 5.** All packages are on 5.1.0. `singleFork` became `fileParallelism: false`, the default `pool: 'forks'` and `extends: true` were removed, and the root
+   package is `"type": "module"` (Vitest 5 loads the config natively). Tags for the DSP mode and `--last-failed` for reruns stay for later.
 10. [ ] **Python device scenarios to TS** only where they boot an emulator: module `equiv-*`, the pluck menu flows, `pages-dyn-pluck`, `upload-rust`
    ([ledgers](ledgers/)). Other Python tests stay; moving them buys no speed. `py_select` is a second, coarser selector next to Nx (file patterns and
    the import graph); each ported or deleted scenario takes work away from it.

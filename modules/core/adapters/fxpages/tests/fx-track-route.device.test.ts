@@ -45,7 +45,7 @@ interface StoreDump {
 // Every leg starts from an overlay-free card and ready snapshot. The image without
 // core/fxpages closes before the regular image starts; only artifacts cross that boundary.
 for (const device of DEVICES) {
-  describe.sequential(`${device.toUpperCase()} ${FIRMWARE[device]} track FX send page`, () => {
+  describe(`${device.toUpperCase()} ${FIRMWARE[device]} track FX send page`, () => {
     let baseHash: string;
     let basePcm: string;
     const triggerFrame = triggerFor(device);

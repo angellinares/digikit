@@ -24,7 +24,7 @@ import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 for (const device of DEVICES) {
   // These nested suites are ordered: the plain owned process closes before the hooked image starts.
-  describe.sequential(`${device.toUpperCase()} ${FIRMWARE[device]} BASIC FX chain`, () => {
+  describe(`${device.toUpperCase()} ${FIRMWARE[device]} BASIC FX chain`, () => {
     const slots = slotsFor(device);
     const effects = Array.from({ length: slots + 1 }, (_, index) => (index === 0 ? GAIN : `${GAIN}-${index + 1}`));
     const inventory = [SINE, ...effects];
