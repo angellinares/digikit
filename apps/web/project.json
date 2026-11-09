@@ -13,7 +13,30 @@
   "targets": {
     "patchkit-wasm": {
       "executor": "nx:run-commands",
-      "cache": false,
+      "cache": true,
+      "description": "Builds patchkit.wasm, dkupload.wasm and dksample.wasm into public/. The cargo wasm build recompiles on every call, so Nx replays it when the inputs are unchanged.",
+      "inputs": [
+        "production",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/tools/nx/wasm.mjs",
+        "{workspaceRoot}/tools/nx/rust-env.mjs",
+        "{workspaceRoot}/Cargo.toml",
+        "{workspaceRoot}/Cargo.lock",
+        "{workspaceRoot}/.cargo/**/*",
+        "{workspaceRoot}/rust-toolchain*",
+        "{workspaceRoot}/sdk/sdk.toml",
+        "{workspaceRoot}/sdk/vectors/**/*",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/tools/patchkit/toolchain/**/*",
+        { "runtime": "rustc -vV" },
+        { "runtime": "command -v wasm-opt >/dev/null && wasm-opt --version || echo no-wasm-opt" }
+      ],
+      "outputs": [
+        "{workspaceRoot}/apps/web/public/patchkit.wasm",
+        "{workspaceRoot}/apps/web/public/dkupload.wasm",
+        "{workspaceRoot}/apps/web/public/dksample.wasm"
+      ],
       "options": {
         "command": "node tools/nx/wasm.mjs --patchkit-only",
         "cwd": "."
@@ -48,6 +71,7 @@
     "test-host": {
       "executor": "nx:run-commands",
       "cache": false,
+      "dependsOn": ["patchkit-wasm"],
       "inputs": ["hostTests"],
       "outputs": [],
       "options": {
