@@ -203,6 +203,17 @@ export async function selectDt2(session: Session, track: number, type: number, h
   throw new Error(`no list position gives type ${type} on track ${track}: (downs, type) ${JSON.stringify(seen)}`);
 }
 
+/** Put the machine of type `type` on `track` from the list cursor where it stands (no UP presses, so the setup stays short): the position `hint` and its neighbours are tried until the track holds `type` (Python `select_type`). */
+export async function selectType(session: Session, track: number, type: number, hint: number): Promise<number> {
+  const seen: [number, number][] = [];
+  for (const downs of [hint, hint + 1, hint - 1, hint + 2, hint + 3]) {
+    await pickSine(session, downs);
+    seen.push([downs, await trackType(session, track)]);
+    if (seen.at(-1)![1] === type) return downs;
+  }
+  throw new Error(`no list position gives type ${type} on track ${track}: (downs, type) ${JSON.stringify(seen)}`);
+}
+
 /** The panel script that makes a project: the machines on their tracks with two parameter values, then on track 1 a note trig with a p-lock and a sound lock. */
 export async function buildPanelProject(
   session: Session,

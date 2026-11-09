@@ -10,7 +10,7 @@
       },
       {
         "files": ["tests/equiv.device.test.ts"],
-        "modules": ["test/dyn-dn2", "test/sine"],
+        "modules": ["test/dyn-dn2", "test/sine", "digikit/pluck", "fadedlimes/analog", "fadedlimes/bd", "fadedlimes/pd"],
         "plusdrive": true
       }
     ]

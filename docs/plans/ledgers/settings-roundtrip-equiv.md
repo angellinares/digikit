@@ -1,6 +1,6 @@
 # Ledger: settings, roundtrip and equiv scenarios ported to TypeScript
 
-Status 2026-11-02: the Python scenarios, wrappers and pk_digikit_settings.py are deleted; the module equiv TOMLs and test_equiv_*.py stay.
+Status 2026-11-02: the Python scenarios, wrappers and pk_digikit_settings.py are deleted; `test_equiv_dt2.py` and the equiv TOMLs of analog, bd, pd and mixed were deleted 2026-11-10; `equiv-dyn-pluck` and `test_equiv_dn2.py` too (DN2 pluck ported with the `plain` card rig option).
 
 Line format: `scenario | file:line | what | -> TS file:test | or COVERED by <test> | or DROPPED/NOT PORTED: reason`.
 Python files: `S` = `6a5bb1ed:tools/patchkit/pk_digikit_settings.py`, `P` = `tools/patchkit/pk_digikit_project.py`, `C` = `tools/patchkit/pk_digikit_scen.py`, `M` = `tools/patchkit/pk_dkrt_machine.py`.
@@ -86,3 +86,13 @@ equiv | C:653 | reference note audible | DROPPED: runs only when no pcm_sha256 p
 equiv | M:466 | pcm_check run against reference PCM | DROPPED: runs only without a pin
 equiv | C:751 | common checks | -> card-rig.ts cardRig afterClose (both daemons)
 equiv | C:674 | report of boot_ready (frames_at_ready, voice rows at ready) | DROPPED: report fields, no assertion
+
+## equiv-dyn-analog, equiv-dyn-bd, equiv-dyn-pd (quick, both devices), equiv-dyn-pluck (quick), equiv-mixed (full, dt2)
+
+Same checks as the rows above, every one in `equiv.device.test.ts` (rows `SCENARIOS`); the `SHARC_UNINIT` environment of analog and pd is the row's `envRun`.
+equiv | C:665..726 | boot result, voice row, rows equal the twin (or the no-module boot when there is no twin), added rows | -> equiv.test.ts: the rows equal the reference; a set without a twin compares with `run.load('none', {})`
+equiv | M:503 | pcm_pin for analog, bd, pd on DT2 and DN2 (the pins of the deleted TOMLs, unchanged) | -> equiv.test.ts, same SHA-256 values
+equiv | C:653, M:466 | pluck on DT2: the twin's note is audible and the run-time note equals it (equal, or sample for sample from the onset, shift at most 128) | -> equiv.test.ts: equiv-dyn-pluck (`pcmMatches`)
+equiv | C:737 | equiv-mixed (DT2, full tier, note at frame 9500) | -> equiv.test.ts: equiv-mixed, skipped unless `DIGIKIT_TIER=full`
+equiv | C:751 | common checks | -> card-rig.ts cardRig afterClose
+equiv | C:640 (ref_plain) | pluck on DN2: the reference image holds the twin only, with no runtime; its note is audible and the run-time note equals it | -> equiv.test.ts: equiv-dyn-pluck (DN2) with `cardRig` option `plain` (no `DKRT_BOOT`, no write watch, ready 300 ms after the stock ready point; the Python `PlainRig` had no write-watch checks either)
