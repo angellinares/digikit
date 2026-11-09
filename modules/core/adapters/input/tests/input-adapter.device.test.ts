@@ -18,7 +18,7 @@ async function expectInputAdapter(device: Device): Promise<void> {
   const bytes = fs.readFileSync(moduleArtifact(device, 'test/input-probe'));
   const results: { frames: Record<string, string>; rows: string[] }[] = [];
   for (const source of ['panel', 'probe'] as const) {
-    const runtime = await startPatchedSession({ dsp: 'sharc', ...liveOptions(device), autoNo: false }, `input adapter ${source}`);
+    const runtime = await startPatchedSession({ ...liveOptions(device), autoNo: false }, `input adapter ${source}`);
     const { session } = runtime;
     let protocol = liveProtocol(session);
     const artifacts = liveArtifacts(session, 'input-adapter');
