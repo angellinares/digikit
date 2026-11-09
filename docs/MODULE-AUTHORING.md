@@ -437,7 +437,9 @@ The adapter enters your routine with `I13` = return address and `JUMP (M13, I12)
 `track` requires machine contract 1.1; the first four offsets and the V1 descriptor are unchanged. On Digitone II it identifies the source
 track independently of the physical voice slot, and stays latched until retrigger. The first trigger-edge block remains silent; the owner is
 latched on the following note-on block. An invalid owner ends only that slot without calling the module.
-6 `gate` (1 from the note-on until the note is released, then 0; the Digitone II has no release yet and gives 1). `render` also runs on the note-on block, after `note_on`.
+6 `gate` (1 from the note-on until the note is released, then 0; the Digitone II has no release yet and gives 1). A machine that reads `gate` sets
+`DK_MACHINE_GATE` in the contract word of its `dk_machine_desc` (`DK_MACHINE_V1 | DK_MACHINE_GATE`, 513) and needs runtime 0.5.6 (machine contract 1.6);
+`pack` then declares 1.6. A machine that does not read `gate` is unchanged. `render` also runs on the note-on block, after `note_on`.
 
 Stereo machines (machine contract 1.2, additive). A machine that has two output channels declares `.stereo = 1` in `DK_MACHINE`, sets
 `DK_MACHINE_STEREO` in the contract word of its `dk_machine_desc` (`DK_MACHINE_V1 | DK_MACHINE_STEREO`, 257; `pack` refuses a mismatch), writes
@@ -705,7 +707,7 @@ Trace marks (`DK_TRACE_LOG`, `DK_STEP`) are switched on with `--trace` on `modul
   | Contract | Version | Covers |
   | --- | --- | --- |
   | `api` | `[1, 5]` | The `dk_api` table. Every module has it, `raw` included. `pack` declares 1.5 only for a module with a pool table, else 1.4. |
-  | `machine` | `[1, 2]` | `<dk/machine.h>`; minor 1: `track`; minor 2: stereo machines |
+  | `machine` | `[1, 6]` | `<dk/machine.h>`; minor 1: `track`; minor 2: stereo machines; minor 6: `gate`, a machine that reads it sets `DK_MACHINE_GATE` and needs runtime 0.5.6 |
   | `fx` | `[1, 0]` | `<dk/fx.h>` |
   | `service` | `[1, 0]` | Service modules |
 

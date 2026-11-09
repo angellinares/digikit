@@ -89,6 +89,8 @@ pub const MACHINE_STEREO_MINOR: u8 = 2;
 pub const MACHINE_LATCHED_MINOR: u8 = 3;
 pub const MACHINE_NATIVE_PAGE_MINOR: u8 = 4;
 pub const MACHINE_NATIVE_PAGES_MINOR: u8 = 5;
+/// A machine whose desc carries `DK_MACHINE_GATE` reads `gate` in `dk_voice_in` (1.6).
+pub const MACHINE_GATE_MINOR: u8 = 6;
 /// The newest minor of the Api contract before the per-track sample table (1.5). A module declares 1.5 only when its DSP section holds a
 /// track table (`DK_SAMPLE_TRACKS`); every other module declares 1.4, so a runtime of Api 1.4 still accepts it.
 pub const API_PRE_TRACKS_MINOR: u8 = 4;
@@ -117,6 +119,8 @@ pub struct Options {
     /// A stereo machine (`DK_MACHINE_STEREO`): the file declares machine contract 1.2. A mono machine declares 1.1, so a runtime of
     /// machine contract 1.1 still accepts it.
     pub stereo: bool,
+    /// A machine that reads `gate` (`DK_MACHINE_GATE` in its desc): the file declares machine contract 1.6.
+    pub gate: bool,
     /// The newest Api minor of the entries the manifest lists in `uses_api` (0: none); see [`api_minor`].
     pub api_minor: u8,
 }
@@ -440,6 +444,8 @@ pub fn pack_full_max(
         (sdk.api.0, api_minor(sdk.api.1, uses_tracks, o.api_minor)),
         if (dsp.is_empty() || fx_only) && !has_machine_record(reg) {
             none
+        } else if o.gate {
+            (sdk.machine.0, sdk.machine.1.min(MACHINE_GATE_MINOR))
         } else if !reg.is_empty()
             && crate::register::Register::parse(reg)?
                 .native_pages
@@ -734,6 +740,7 @@ mod tests {
             runtime_min: 1,
             trace: false,
             stereo: false,
+            gate: false,
             api_minor: 0,
         }
     }
@@ -936,6 +943,20 @@ mod tests {
         };
         let f = pack_full(Some(&object()), &[], &[0u8; 16], &stereo).unwrap();
         assert_eq!(c(&f), vec![1, 4, 1, 2, 0, 0, 1, 0]);
+        // a machine that reads the gate: contract 1.6, above every other machine minor
+        let gate = Options {
+            gate: true,
+            ..opts()
+        };
+        let f = pack_full(Some(&object()), &[], &[0u8; 16], &gate).unwrap();
+        assert_eq!(c(&f), vec![1, 4, 1, 6, 0, 0, 1, 0]);
+        let both = Options {
+            gate: true,
+            stereo: true,
+            ..opts()
+        };
+        let f = pack_full(Some(&object()), &[], &[0u8; 16], &both).unwrap();
+        assert_eq!(c(&f), vec![1, 4, 1, 6, 0, 0, 1, 0]);
         // a DSP section with a track table: Api 1.5, and nothing else changes
         let tracks = crate::dkmdsp::DspSection {
             sample_bank: None,

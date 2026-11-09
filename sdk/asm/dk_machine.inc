@@ -9,6 +9,7 @@
 #define DK_DONE 1
 #define DK_STEREO 2
 #define DK_MACHINE_STEREO 256
+#define DK_MACHINE_GATE 512
 #define DK_P_PERCENT 0
 #define DK_P_BIPOLAR 1
 #define DK_P_ENUM 2

@@ -16,6 +16,7 @@ fn opts() -> dkm::Options {
         runtime_min: 1,
         trace: false,
         stereo: false,
+        gate: false,
         api_minor: 0,
     }
 }

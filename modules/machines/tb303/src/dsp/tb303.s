@@ -704,7 +704,7 @@ _tb_word01:
 // max_call_depth, stack_bytes
 .GLOBAL _tb_desc;
 .VAR _tb_desc = DK_MAGIC;
-.VAR _tb_desc1 = DK_MACHINE_V1;
+.VAR _tb_desc1 = 513;  // DK_MACHINE_V1 | DK_MACHINE_GATE (an expression is not accepted here)
 .VAR _tb_desc2 = 6;
 .VAR _tb_desc3 = DK_MAX_VOICES;
 .VAR _tb_desc4 = 256;

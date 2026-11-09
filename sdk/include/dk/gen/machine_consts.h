@@ -14,6 +14,8 @@
 #define DK_STEREO 2
 /* Or-ed into dk_machine_desc.contract by a stereo machine (contract 1.2): the major number is the low byte (DK_MACHINE_V1). */
 #define DK_MACHINE_STEREO 256
+/* Or-ed into dk_machine_desc.contract by a machine that reads `gate` in dk_voice_in (contract 1.6). */
+#define DK_MACHINE_GATE 512
 /* |sample| above DK_LEVEL_BOUND is a fault (+18 dB over full scale). */
 #define DK_LEVEL_BOUND_BITS 1090519040
 #define DK_LEVEL_BOUND 8.0f
