@@ -225,12 +225,26 @@ def bundle(extra: list[Path] | None = None) -> dict:
     ports = [p.read_text() for p in sorted((ROOT / "devices" / "ports").glob("*.toml"))]
     modules = []
     roots = [*(ROOT / r for r in modroots.REPO_ROOTS), *(extra or [])]
-    # the objects of content modules are build output: build what is stale, then read them from the cache
-    r = _build_cmd(["build"])
-    if r.returncode:
-        raise BuildError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
-    for m in (m for r in roots for m in sorted(r.rglob("module.toml"))):
-        d = tomllib.loads(m.read_text())
+    manifests = [
+        (m, tomllib.loads(m.read_text()))
+        for r in roots
+        for m in sorted(r.rglob("module.toml"))
+    ]
+    # the objects of content modules are build output: build what is stale, then read them from the cache.
+    # Core objects are committed and only read: a build here would rewrite a stale one (`patchkit:objects-check` finds it).
+    committed = [ROOT / r for r in modroots.REPO_ROOTS]
+    content = [
+        str(m.parent)
+        for m, d in manifests
+        if any(r in m.parents for r in committed)
+        and d["module"].get("category") != "core"
+        and any(o.get("sources") for o in d.get("object", []))
+    ]
+    if content:
+        r = _build_cmd(["build", *content])
+        if r.returncode:
+            raise BuildError((r.stderr or r.stdout).strip().removeprefix("patchkit: "))
+    for m, d in manifests:
         files = {
             o["path"]: modroots.object_path(d, m.parent, o).read_text()
             for o in d.get("object", [])

@@ -8,7 +8,7 @@
 // (public/modules/<dev>/<leaf>.dkm, the bytes `mise run module:pack-all` writes), public/modules/index.json and the sources of the
 // modules (public/modules/src/<id>/: module.toml, README.md, src/**; nothing of build/ or out/).
 //
-// The objects of `core/*` modules are committed in the module. The browser never builds: patchkit.wasm packs from the bundle.
+// The objects of `core/*` modules are committed in the module and are only read here, never rebuilt. The browser never builds: patchkit.wasm packs from the bundle.
 //
 //   node scripts/gen-modules.mjs [--out DIR]
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSync, rmSync } from 'node:fs';
@@ -41,12 +41,16 @@ const byParts = (a, b) => {
 
 const GALLERY = 'build/gen/gallery.json';
 
-/** `patchkit build` over the repository's module roots: builds the stale objects of content modules into the cache. */
-export function buildObjects(root = repoRoot) {
+/**
+ * `patchkit build DIR...` over the given content-module directories: builds their stale objects into the cache.
+ * Core modules are never passed: their objects are committed and read as they are (`patchkit:objects-check` finds a stale one).
+ */
+export function buildObjects(dirs, root = repoRoot) {
+  if (!dirs.length) return;
   const env = { ...process.env, PYTHONPATH: root };
   delete env.PATCHKIT_MODULES; // only the committed roots go into the bundle
   try {
-    execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build'], {
+    execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build', ...dirs], {
       cwd: root,
       env,
       encoding: 'utf8',
@@ -81,7 +85,6 @@ const objectText = (dir, d, o, stored) =>
 
 /** `{bundle}` from the committed tree under `root` plus the built objects of the content modules. */
 export function buildModuleData(root = repoRoot) {
-  buildObjects(root);
   const ports = readdirSync(join(root, 'devices', 'ports'))
     .filter((f) => f.endsWith('.toml'))
     .sort()
@@ -90,16 +93,19 @@ export function buildModuleData(root = repoRoot) {
   const manifests = ['modules', join('tests', 'fixtures', 'modules')].flatMap((r) =>
     walk(join(root, r), 'module.toml').sort(byParts),
   );
-  const modules = [];
-  for (const file of manifests) {
-    const dir = dirname(file);
+  const parsed = manifests.map((file) => {
     const text = readFileSync(file, 'utf8');
-    const d = parse(text);
+    return { dir: dirname(file), text, d: parse(text) };
+  });
+  const built = (d) => d.module.category !== 'core' && (d.object ?? []).some((o) => (o.sources ?? []).length > 0);
+  buildObjects(
+    parsed.filter((m) => built(m.d)).map((m) => m.dir),
+    root,
+  );
+  const modules = [];
+  for (const { dir, text, d } of parsed) {
     const files = {};
-    const stored =
-      d.module.category !== 'core' && (d.object ?? []).some((o) => (o.sources ?? []).length > 0)
-        ? cachedPaths(root, dir)
-        : {};
+    const stored = built(d) ? cachedPaths(root, dir) : {};
     for (const o of d.object ?? []) files[o.path] = objectText(dir, d, o, stored);
     for (const r of d.registry ?? [])
       if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
