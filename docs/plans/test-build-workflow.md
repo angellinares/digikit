@@ -38,9 +38,7 @@ gate was repeated for this checkpoint.
 
 ## Deferred: event-driven test observer
 
-Revisit an opt-in, test-only observer module after the [module/SDK iteration](module-sdk-iteration.md) merges. For normal boots, load it as the first selected card module and reuse the existing runtime log sink; it is not the user debug module. Preserve the single-sink constraint. Safe-mode and failures before card-module loading need a fallback through the existing runtime boot record or a small ring.
-
-Design the host event bridge and TypeScript cursor, epoch and loss semantics before replacing waits, including detection of missing events and resets. Preserve per-file fresh-card/reset isolation and tests whose subject requires a duration. This is future work: no observer is implemented and no speedup has been measured.
+Moved to the [test speed plan](test-speed.md), step 3 (wait on events, not fixed times), with its constraints.
 
 ## Sequence and checkpoints
 
