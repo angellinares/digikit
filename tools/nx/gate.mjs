@@ -50,6 +50,7 @@ const MERGE_TARGETS = [
   'check:ui',
   'rust-tests',
   'catalog-check',
+  'objects-check',
   'pack',
   'test-device',
   'test-conformance',
