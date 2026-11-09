@@ -88,10 +88,10 @@ dn2Tests('DN2 supersede and SMP entry choice', 'shot-dn2-supersede', ['t', 'l', 
       expect(o, `${name} is audible`).toBeGreaterThanOrEqual(0);
       return expectSplitPair(name, cap, o + 4800, o + RATE, hzL, hzR);
     };
-    log.smpTurnToL = await setSmp(runtime, readSmp, index);
+    log.smpTurnToL = await setSmp(runtime, readSmp, index, 30, true);
     log.smpL = await note('smp-l', 220, 330);
-    log.smpTurnToT = await setSmp(runtime, readSmp, 0);
+    log.smpTurnToT = await setSmp(runtime, readSmp, 0, 30, true);
     log.smpT = await note('smp-t', 440, 660);
     await expectNoNewFault('smp');
   });
-});
+}, ['digikit/remote']);

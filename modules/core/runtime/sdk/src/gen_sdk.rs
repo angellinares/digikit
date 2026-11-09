@@ -51,6 +51,7 @@ pub mod logk {
     pub const POOL_PUBLISH: u16 = 38;
     pub const POOL_LOST: u16 = 39;
     pub const POOL_INVALID: u16 = 40;
+    pub const INPUT_TAKEN: u16 = 41;
     pub const MENU_SELECT: u32 = 1;
     pub const MENU_RESTART: u32 = 2;
     pub const MENU_DEBUG: u32 = 3;

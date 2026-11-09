@@ -58,7 +58,7 @@ const SPECS: Record<string, () => [Uint8Array, number]> = {
 
 export type Dn2 = Awaited<ReturnType<typeof setup>>;
 
-async function setup(runtime: Parameters<Parameters<typeof runtimeTests>[1]>[0], id: string, uploads: string[]) {
+async function setup(runtime: Parameters<Parameters<typeof runtimeTests>[1]>[0], id: string, uploads: string[], extraModules: string[]) {
   const { session, dk } = runtime;
   const artifacts = liveArtifacts(session, id);
   const api = trackApi(runtime);
@@ -90,8 +90,8 @@ async function setup(runtime: Parameters<Parameters<typeof runtimeTests>[1]>[0],
     }
   }
   log.stage = 'install';
-  await installWithDebug(runtime, 'digikit/shot', 'test/track-select');
-  expect((await dk.modules()).map((m) => m.name)).toEqual(expect.arrayContaining(['digikit/shot', 'test/track-select']));
+  await installWithDebug(runtime, 'digikit/shot', 'test/track-select', ...extraModules);
+  expect((await dk.modules()).map((m) => m.name)).toEqual(expect.arrayContaining(['digikit/shot', 'test/track-select', ...extraModules]));
   log.stage = 'plan';
   const plan = await prepareRuntimePlan(session, artifacts, [
     'RECORDS',
@@ -199,7 +199,8 @@ async function setup(runtime: Parameters<Parameters<typeof runtimeTests>[1]>[0],
 }
 
 /** One DN2 SHOT test file: boot, install, upload `uploads`, run `body` (which calls `c.phase`), then the end checks and the measurement record. */
-export function dn2Tests(title: string, id: string, uploads: string[], body: (c: Dn2) => Promise<void>): void {
+/** `extraModules`: more modules to install (digikit/remote for a file that turns knobs with setSmp). */
+export function dn2Tests(title: string, id: string, uploads: string[], body: (c: Dn2) => Promise<void>, extraModules: string[] = []): void {
   runtimeTests(
     title,
     async (runtime) => {
@@ -207,7 +208,7 @@ export function dn2Tests(title: string, id: string, uploads: string[], body: (c:
       const artifacts = liveArtifacts(session, id);
       let c: Dn2 | undefined;
       try {
-        c = await setup(runtime, id, uploads);
+        c = await setup(runtime, id, uploads, extraModules);
         await body(c);
         await c.finish();
       } finally {

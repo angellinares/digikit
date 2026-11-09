@@ -90,11 +90,25 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 38 | POOL_PUBLISH | client << 8 \| track, token, frames, base_l, base_r | |
 | 39 | POOL_LOST | calls of `dkrt_pool_lost` since the start (warning level) | |
 | 40 | POOL_INVALID | client << 8 \| pool index (client 0xff: periodic check), reason (1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed; check result in the high 16 bits), token, drops so far (first 64, then every 64th) | |
+| 41 | INPUT_TAKEN | what (1 key, 2 turn), key code or encoder, delta taken (turn: signed; key: 1 down, 0 up). Logged by `digikit/remote` at debug level (3) when core/input handed the input to the firmware decoder | |
 
 **Periodic work** (`watch::tick`, once per UI pass, reads the block counter): the DSP poll once a second (1500 blocks), a HEALTH snapshot every ten seconds
 (the heap walk only in every fourth, because it takes the heap's mutex: the snapshot uses `dkrt_health_light`, which skips the store figures and, when asked,
 the walk). **[D]** `debug-log` (full tier, coupled daemon): snapshots 15,000 blocks apart, the stable-period event once after 30 s. A daemon without DSP does
 not advance the block counter, so the periodic events do not happen there (the quick tier runs the cf-only daemon and checks the rest).
+
+**INPUT_TAKEN and the host wait.** `digikit/remote` logs `INPUT_TAKEN` (kind 41) after `input_key` or `input_turn` returned 0, with the delta the module let through (a turn is
+paced to 30 detents, so the delta can be smaller than the request). Level debug (3): the default level (info) drops it, so a host raises the level of the module
+record with LOGCFG. The event says "the firmware decoder took it". The firmware applies a turn at its next tick, so it does not say "the parameter changed". A refused
+input (a negative result of core/input) is not logged. The host side is `Events` (`packages/test-support/src/events.ts`; `listenEvents` and `remoteTurnTaken` in
+`tests/regression/runtime/events.ts`): `listen()` puts a cursor at the newest event and sets the levels of `digikit/remote` and `digikit/debug` to 3 (the default stays);
+`until(kind, predicate, {emulatedMs})` consumes events up to the match. Only sequence numbers order events (no block counter on a zero-DSP daemon). A restart restarts the
+log at sequence 1: the helper keeps the last consumed event, reads it again at each poll, and treats a different event, a shorter log or a BOOT_START after the cursor as a new
+boot (cursor to the new first event, levels set again). A sequence gap (oldest kept event after the cursor) is an error. A miss fails with the last events.
+**[O]** A `PARAM_CHANGE` event of `digikit/debug` (track, parameter, old and new raw value) was not built: the track watch reads the machine type through three anchors, but the
+sound parameter array is read in tests only through fixed addresses and offsets of finding 02 (`*0x80004704 + 0x34 + 0x450 t + 0x14` on DT2; DN2 has a different, odd stride).
+No anchor gives the Sound array of a track. It needs: the Sound array offset and stride per device in the device files (or an anchored accessor), a check that `active_kit` returns
+that kit object, and the map from a parameter code to its mirror index (the descriptor table).
 
 **Machine-change watch.** `digikit/debug` (its tick, once per UI pass) reads each of the 16 tracks' machine type through the runtime import `dkrt_track_type`, which calls three anchored accessors
 (`dkrt.fw.project`, `dkrt.fw.kit_of`, `dkrt.fw.track_type`: `Project *f()`, `Kit *f(Project *)`, `int f(Kit *, int track)`; the functions of the archived hot-reload

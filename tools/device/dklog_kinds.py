@@ -50,6 +50,7 @@ KINDS: dict[int, tuple[str, tuple[str, str, str, str, str]]] = {
     38: ("POOL_PUBLISH", ("entry", "token", "frames", "base_l", "base_r")),
     39: ("POOL_LOST", ("count", "-", "-", "-", "-")),
     40: ("POOL_INVALID", ("entry", "reason", "token", "count", "-")),
+    41: ("INPUT_TAKEN", ("what", "control", "delta", "-", "-")),
 }
 GUARD_KINDS: dict[int, str] = {1: "nonfinite", 2: "overlevel"}
 F_ERROR = 1

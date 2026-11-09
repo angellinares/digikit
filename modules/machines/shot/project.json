@@ -23,7 +23,7 @@
       },
       {
         "files": ["tests/shot-dn2-supersede.device.test.ts"],
-        "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
+        "modules": ["digikit/shot", "digikit/debug", "digikit/remote", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       },

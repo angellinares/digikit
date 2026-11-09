@@ -46,7 +46,13 @@ Highest payoff first. Each step states its proof.
    its constraints apply (one log sink, safe-mode fallback, cursor, epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
    - [x] Stage 1: `settleUi` is deleted. **[D]** It waited a fixed 45 s of emulated time on DN2 and 12 s on DT2 (`shot-dn2`: 262 of 697 s in a loaded gate),
      after readiness was already established. Without it the `shot-dn2` body takes about 215 s instead of about 390 s.
-   - [ ] Stage 2, first job: the runtime reports "input consumed" and "parameter applied", and an install waits on "ready for input". **[D]** `main_ui_reached`
+   - [ ] Stage 2, first job (partly built, no new module): `digikit/remote` logs `INPUT_TAKEN` (kind 41, debug level) when core/input handed a key or turn to the firmware
+     decoder, and the host helper `events.until(kind, predicate, {emulatedMs})` (`packages/test-support/src/events.ts`, `listenEvents` and `remoteTurnTaken` in
+     `tests/regression/runtime/events.ts`) waits on it with a cursor over sequence numbers (new boot resets it, a gap fails). `setSmp` of `shot-dn2-supersede` turns
+     through the remote and waits on the event; a failure lists the detents taken and the last events. 4 of 4 runs passed (about 1 m 52 s each, same as before).
+     DT2's `shot-dt2` keeps the panel input: its `test/stock-pool` fixture holds the remote commands 0x38 to 0x3b. Not built: `PARAM_CHANGE` ([finding 46](../findings/46-digikit-debug.md):
+     no anchor for a track's Sound array), the "ready for input" wait after an install, and the `tap` helper (a key event says the decoder took it, not that the UI redrew).
+     **[D]** `main_ui_reached`
      does not mean ready for input: `shot-dn2` failed in its SMP step in 9 of 19 runs with a wait on `main_ui_reached` after the install and in 0 of 12 without it
      (the SMP word reaches 0x100 and does not move for 43 more detents). **[O]** Why the word stops moving (a guess: the DSP word freezes when the note ends)
      belongs here.

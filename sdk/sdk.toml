@@ -893,6 +893,12 @@ id = 40
 name = "POOL_INVALID"
 args = ["entry", "reason", "token", "count", "-"]
 
+# the remote module's input reached the firmware decoder (debug level 3): key or turn, which control, and the delta the decoder accepted (a key: 1 down, 0 up)
+[[log.kind]]
+id = 41
+name = "INPUT_TAKEN"
+args = ["what", "control", "delta", "-", "-"]
+
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
 
