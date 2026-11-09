@@ -10,7 +10,6 @@ import { liveArtifacts, record } from './artifacts.ts';
 import { installModule, moduleArtifact } from './install.ts';
 import { memory, panel } from './panel.ts';
 import { runtimeTests } from './ready.ts';
-import { settleUi } from './waits.ts';
 
 // DT2 1.17 stock sample pool (findings 81, 82, 85). All firmware state is read with peeks.
 const POOL = { slotMap: 0x405b5368, slotKey: 0x405b1368, slotLength: 0x405ba768, blocks: 0x405a0f64 };
@@ -161,9 +160,7 @@ runtimeTests(
     const dir = liveArtifacts(session, 'stock-pool-borrow');
     const out = path.join(repoRoot(), 'out/runs/stock-pool-borrow');
     mkdirSync(out, { recursive: true });
-    await settleUi(session);
     await installModule(dk, 'test/stock-pool', moduleArtifact('dt2', 'test/stock-pool'));
-    await settleUi(session);
     const ui = panel(session);
     const mod = moduleApi(runtime);
     const p = await pool(runtime);

@@ -11,7 +11,6 @@ import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
 import { memory, panel } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
-import { settleUi } from '@digi/regression/runtime/waits.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import {
   RATE,
@@ -75,9 +74,7 @@ runtimeTests(
     };
     const click = async () => ui.tap('PUSH D', 600);
     try {
-      await settleUi(session);
       await installWithDebug(runtime, 'digikit/shot', 'test/track-select', 'test/stock-pool');
-      await settleUi(session);
       const plan = await prepareRuntimePlan(session, artifacts, ['_dv_params']);
       await selectDynamicMachine(runtime, artifacts);
       await ui.settle(2500);
