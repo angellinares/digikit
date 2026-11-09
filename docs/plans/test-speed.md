@@ -84,7 +84,19 @@ Highest payoff first. Each step states its proof.
 9. [ ] **Vitest 5.** One PR from 3.2.4 to 5.x (needs Node 22.12 or later; we run 24): `singleFork` and `poolOptions` become `maxWorkers`/`isolate`
    settings, `workspace` is `projects`. Then close the Dependabot Vitest PRs. Use tags for the DSP mode and `--last-failed` for reruns.
 10. [ ] **Python device scenarios to TS** only where they boot an emulator: module `equiv-*`, the pluck menu flows, `pages-dyn-pluck`, `upload-rust`
-   ([ledgers](ledgers/)). Other Python tests stay; moving them buys no speed.
+   ([ledgers](ledgers/)). Other Python tests stay; moving them buys no speed. `py_select` is a second, coarser selector next to Nx (file patterns and
+   the import graph); each ported or deleted scenario takes work away from it.
+   - [ ] **[D]** Narrow first: `tests/digikit/scen_cases.py:9` imports `pk_dkrt` only for `DEVICE_SYX` (two firmware file names), so any edit to
+     `tools/patchkit/pk_dkrt.py` selects every `tests/digikit` scenario (equiv, menu, upload). PR 362 (one line in `pk_dkrt.py`) ran
+     `test_equiv_dt2` 493 s and `test_menu_dt2` 528 s for it. Move `DEVICE_SYX` to `tools.firmware.config`; check which edge brings `pk_dkrt` into
+     `test_machine_conformance.py` and `test_fx_conformance.py` and cut it.
+   - [ ] Port next: the `equiv-dyn-pluck`, `-analog`, `-bd`, `-pd` scenarios as rows of `equiv.device.test.ts` (only `equiv-dn2-set` is ported;
+     the PCM pins are already approved, a port reuses the same values). Then `test_equiv_dt2.py` and `test_equiv_dn2.py` go. Then the menu flows
+     (`zero/menu.device.test.ts` covers only the empty-store menu) and the `pk_dkrt` boot proof as a safe-mode-style test.
+   - [ ] Zero DSP where the subject allows: the boot, restart and safe-mode proofs of `test_patchkit_dkrt*.py` and the C-demo test. Equiv, menu and
+     the conformance rigs keep the DSP (audio or SHARC subject).
+   - Keep in Python (host or RE tooling): `test_machine_conformance.py`, `test_fx_conformance.py`, `test_pk_current.py` and the static parts of the
+     patchkit tests.
 11. [ ] Carried over: smoke per-cell results, so a rerun repeats the failed cells only.
 12. [ ] Carried over: runtime-resident DSP code at 0xbec4xx is still interpreted on DN2 (needs a JIT or a runtime-aware gen).
 13. [ ] **Test quality: mutation testing**, later and occasionally, on host unit tests of logic-heavy code only (runtime loader, store format and
